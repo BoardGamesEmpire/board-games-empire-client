@@ -1,0 +1,28 @@
+name: board_games_empire
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dev_dependencies:
+  melos: ^7.1.0
+
+workspace:
+  - apps/web
+  - apps/mobile
+  - apps/desktop
+  # - packages/shared
+
+melos:  
+  scripts:
+    generate:
+      run: melos exec -c 1 --depends-on build_runner -- dart run build_runner build
+
+    analyze:
+        run: melos exec -- flutter analyze .
+        description: Run `dart analyze` in all packages.
+
+    web:
+      run: melos exec -- flutter run
+      description: Build the web application.
+      packageFilter:
+        dirExists: 'apps/web'
