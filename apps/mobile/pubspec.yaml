@@ -1,8 +1,6 @@
 name: mobile
 description: "Board Games Empire mobile application"
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -31,6 +29,41 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+
+  # Core packages
+  interfaces:
+    path: ../../packages/core/interfaces
+  models:
+    path: ../../packages/core/models
+  di:
+    path: ../../packages/core/di
+    
+  # Storage - mobile uses drift
+  storage_interface:
+    path: ../../packages/storage/storage_interface
+  drift_storage:
+    path: ../../packages/storage/drift_storage
+    
+  # Network
+  network_interface:
+    path: ../../packages/network/network_interface
+  dio_network:
+    path: ../../packages/network/dio_network
+    
+  # Platform
+  mobile_platform:
+    path: ../../packages/platform/mobile
+    
+  # UI
+  ui:
+    path: ../../packages/ui
+    
+  # State Management
+  flutter_bloc: ^9.1.1
+  hydrated_bloc: ^10.1.1
+  
+  # Navigation
+  go_router: ^15.1.3
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
