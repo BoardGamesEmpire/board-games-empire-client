@@ -58,12 +58,6 @@ melos:
       packageFilters:
         scope: 'mobile'
 
-    desktop:
-      run: melos exec -c 1 -- flutter
-      description: Run the desktop application and autodetect system
-      packageFilters:
-        scope: 'desktop'
-
     desktop-windows:
       run: melos exec -c 1 -- flutter run -d windows
       description: Run the desktop application on Windows
@@ -134,7 +128,7 @@ melos:
         echo "Starting all applications..."
         echo "Web: http://localhost:8080"
         echo "Note: Mobile and Desktop require connected devices"
-        melos run web_app &
+        melos run web &
         melos run mobile &
         melos run desktop &
         wait
