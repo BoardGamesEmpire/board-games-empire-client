@@ -1,0 +1,18 @@
+name: storage_interface
+description: "Storage abstractions and contracts"
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+resolution: workspace
+
+dependencies:
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+
+dev_dependencies:
+  test: ^1.25.6
+  very_good_analysis: ^9.0.0
+  lints: ^6.0.0

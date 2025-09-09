@@ -5,24 +5,141 @@ environment:
 
 dev_dependencies:
   melos: ^7.1.0
+  very_good_analysis: ^9.0.0
 
 workspace:
-  - apps/web
   - apps/mobile
   - apps/desktop
-  # - packages/shared
+  - apps/web
+  - packages/core/interfaces
+  - packages/core/models
+  - packages/core/di
+  - packages/storage/drift_storage
+  - packages/storage/storage_interface
+  - packages/storage/memory_storage
+  - packages/network/dio_network
+  - packages/network/network_interface
+  - packages/network/web_network
+  - packages/platform/mobile
+  - packages/platform/desktop
+  - packages/platform/web
+  - packages/ui
 
-melos:  
+melos:
   scripts:
     generate:
       run: melos exec -c 1 --depends-on build_runner -- dart run build_runner build
+      description: Run code generation for all packages
 
+    # Analysis and testing
     analyze:
-        run: melos exec -- flutter analyze .
-        description: Run `dart analyze` in all packages.
+      run: melos exec -- dart analyze . || melos exec -- flutter analyze .
+      description: Run analysis on all packages
+      
+    test:
+      run: melos exec -- dart test || melos exec -- flutter test
+      description: Run tests for all packages
 
+    # Clean and get dependencies
+    clean:
+      run: melos exec -- flutter clean && melos bootstrap
+      description: Clean all packages and reinstall dependencies
+
+    # Individual app runners
     web:
-      run: melos exec -- flutter run
-      description: Build the web application.
-      packageFilter:
-        dirExists: 'apps/web'
+      run: melos exec -c 1 -- flutter run -d chrome
+      description: Run the web application
+      packageFilters:
+        scope: 'web_app'
+        
+    mobile:
+      run: melos exec -c 1 -- flutter run
+      description: Run the mobile application (requires connected device/emulator)
+      packageFilters:
+        scope: 'mobile'
+
+    desktop-windows:
+      run: melos exec -c 1 -- flutter run -d windows
+      description: Run the desktop application on Windows
+      packageFilters:
+        scope: 'desktop'
+        
+    desktop-macos:
+      run: melos exec -c 1 -- flutter run -d macos
+      description: Run the desktop application on macOS
+      packageFilters:
+        scope: 'desktop'
+        
+    desktop-linux:
+      run: melos exec -c 1 -- flutter run -d linux
+      description: Run the desktop application on Linux
+      packageFilters:
+        scope: 'desktop'
+
+      # Build commands for CI/CD
+    build-web:
+      run: melos exec -c 1 -- flutter build web --release
+      description: Build the web application for production
+      packageFilters:
+        scope: 'web_app'
+        
+    build-mobile-android:
+      run: melos exec -c 1 -- flutter build apk --release
+      description: Build Android APK
+      packageFilters:
+        scope: 'mobile'
+        
+    build-mobile-ios:
+      run: melos exec -c 1 -- flutter build ios --release --no-codesign
+      description: Build iOS application (no code signing for CI)
+      packageFilters:
+        scope: 'mobile'
+        
+    build-desktop-windows:
+      run: melos exec -c 1 -- flutter build windows --release
+      description: Build Windows desktop application
+      packageFilters:
+        scope: 'desktop'
+        
+    build-desktop-macos:
+      run: melos exec -c 1 -- flutter build macos --release
+      description: Build macOS desktop application
+      packageFilters:
+        scope: 'desktop'
+        
+    build-desktop-linux:
+      run: melos exec -c 1 -- flutter build linux --release
+      description: Build Linux desktop application
+      packageFilters:
+        scope: 'desktop'
+      
+    # Development utilities
+    devices:
+      run: flutter devices
+      description: List all available devices
+      
+    doctor:
+      run: flutter doctor
+      description: Run Flutter doctor
+      
+    # Run all apps (requires multiple terminals or background processes)
+    run-all:
+      run: |
+        echo "Starting all applications..."
+        echo "Web: http://localhost:8080"
+        echo "Note: Mobile and Desktop require connected devices"
+        melos run web &
+        melos run mobile &
+        melos run desktop &
+        wait
+      description: Run all applications simultaneously (experimental)
+
+    build-all:
+      run: |
+        echo "Building all platforms..."
+        melos run build-web
+        melos run build-mobile-android  
+        melos run build-desktop-windows
+        melos run build-desktop-macos
+        melos run build-desktop-linux
+      description: Build all platforms (requires appropriate OS)
