@@ -1,6 +1,6 @@
-# web
+# browser
 
-Board Games Empire web frontend
+A new Flutter project.
 
 ## Getting Started
 
