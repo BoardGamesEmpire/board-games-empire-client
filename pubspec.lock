@@ -125,10 +125,10 @@ packages:
     dependency: transitive
     description:
       name: build_runner
-      sha256: "74691599a5bc750dc96a6b4bfd48f7d9d66453eab04c7f4063134800d6a5c573"
+      sha256: "058fe9dce1de7d69c4b84fada934df3e0153dd000758c4d65964d0166779aa99"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.14"
+    version: "2.4.15"
   build_runner_core:
     dependency: transitive
     description:
@@ -1408,10 +1408,10 @@ packages:
     dependency: transitive
     description:
       name: reactive_forms_generator
-      sha256: "105da21784090f326ffa8b59f98c5089215eda437199710cf0757771b645a551"
+      sha256: "1878c91ec7d3e0bb494d955b079576fc4bd1cc5d8f33c071830e679cf922cc34"
       url: "https://pub.dev"
     source: hosted
-    version: "6.1.0"
+    version: "8.0.3"
   recase:
     dependency: transitive
     description:

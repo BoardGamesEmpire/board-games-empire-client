@@ -10,7 +10,7 @@ dev_dependencies:
 workspace:
   - apps/mobile
   - apps/desktop
-  - apps/web
+  - apps/browser
   - packages/core/interfaces
   - packages/core/models
   - packages/core/di
@@ -35,7 +35,7 @@ melos:
     analyze:
       run: melos exec -- dart analyze . || melos exec -- flutter analyze .
       description: Run analysis on all packages
-      
+
     test:
       run: melos exec -- dart test || melos exec -- flutter test
       description: Run tests for all packages
@@ -48,9 +48,9 @@ melos:
     # Individual app runners
     web:
       run: melos exec -c 1 -- flutter run -d chrome
-      description: Run the web application
+      description: Run the browser application
       packageFilters:
-        scope: 'web_app'
+        scope: 'browser'
         
     mobile:
       run: melos exec -c 1 -- flutter run

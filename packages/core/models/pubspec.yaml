@@ -11,11 +11,12 @@ dependencies:
     path: ../interfaces
     
   # Serialization
-  freezed: ^3.0.6
   json_annotation: ^4.9.0
   equatable: ^2.0.5
+  freezed_annotation: ^3.1.0
 
 dev_dependencies:
+  freezed: ^3.0.6
   build_runner: ^2.4.12
   json_serializable: ^6.8.0
   test: ^1.25.6
