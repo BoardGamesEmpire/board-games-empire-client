@@ -10,7 +10,9 @@
 .history
 .svn/
 .swiftpm/
+logs/
 migrate_working_dir/
+lcov.info
 
 # IntelliJ related
 *.iml

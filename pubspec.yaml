@@ -1,10 +1,11 @@
 name: board_games_empire
 
 environment:
-  sdk: ">=3.8.0 <4.0.0"
+  sdk: ">=3.9.0 <4.0.0"
 
 dev_dependencies:
   melos: ^7.1.0
+  mocktail: ^1.0.4
   very_good_analysis: ^9.0.0
 
 workspace:
@@ -28,7 +29,7 @@ workspace:
 melos:
   scripts:
     generate:
-      run: melos exec -c 1 --depends-on build_runner -- dart run build_runner build
+      run: melos exec -c 1 --depends-on build_runner -- dart run build_runner build --delete-conflicting-outputs
       description: Run code generation for all packages
 
     # Analysis and testing
@@ -37,8 +38,22 @@ melos:
       description: Run analysis on all packages
 
     test:
-      run: melos exec -- dart test || melos exec -- flutter test
-      description: Run tests for all packages
+      run: melos exec -c 1 -- "flutter test --coverage --test-randomize-ordering-seed random"
+      description: Run all Flutter tests in workspace
+      select-package:
+        dir-exists: test
+
+    test:core:
+      run: melos exec -c 1 --scope="packages/core/*" -- "dart test"
+      description: Test all core packages
+      select-package:
+        dir-exists: test
+        
+    test:storage:
+      run: melos exec -c 1 --scope="packages/storage/*" -- "dart test"
+      description: Test all storage packages
+      select-package:
+        dir-exists: test
 
     # Clean and get dependencies
     clean:
