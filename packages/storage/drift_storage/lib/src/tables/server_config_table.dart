@@ -4,17 +4,20 @@ import 'dart:convert';
 @DataClassName('ServerConfigData')
 class ServerConfigs extends Table {
   TextColumn get id => text()();
-  TextColumn get displayName => text().named('display_name')();
-  TextColumn get serverUrl => text().named('server_url')();
-  TextColumn get connectionState => text().named('connection_state')();
+  TextColumn get displayName =>
+    text().named('display_name')();
+  TextColumn get serverUrl =>
+    text().named('server_url').customConstraint('UNIQUE COLLATE NOCASE')();
+  TextColumn get connectionState =>
+    text().named('connection_state')();
+
   DateTimeColumn get lastActiveAt =>
-      dateTime().named('last_active_at').nullable()();
+    dateTime().named('last_active_at').nullable()();
   TextColumn get metadata =>
       text().map(const JsonMapConverter()).withDefault(const Constant('{}'))();
-  DateTimeColumn get createdAt =>
-      dateTime().named('created_at').withDefault(currentDateAndTime)();
-  DateTimeColumn get updatedAt =>
-      dateTime().named('updated_at').withDefault(currentDateAndTime)();
+
+  DateTimeColumn get createdAt => dateTime().named('created_at')();
+  DateTimeColumn get updatedAt => dateTime().named('updated_at')();
 
   @override
   Set<Column> get primaryKey => {id};
