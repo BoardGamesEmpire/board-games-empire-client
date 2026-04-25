@@ -1,95 +1,81 @@
 import 'server_context.dart';
 
-/// Coordinates lifecycle and state transitions across multiple server contexts
-/// while enforcing resource capacity constraints and maintaining exactly one
-/// active foreground context
+/// Coordinates lifecycle and atomic state transitions across all server
+/// contexts, enforcing capacity constraints and maintaining exactly one
+/// active foreground context at a time.
+///
+/// The orchestrator is the single authority over [ServerContext] creation
+/// and destruction. Blocs and UI components interact with it indirectly
+/// through streams and the active context's [DependencyContainer].
 abstract class ServerOrchestrator {
-  /// Maximum number of servers that can be simultaneously monitored for
-  /// background notifications and state updates
+  /// User-configured maximum number of simultaneously connected servers
+  /// (active + backgrounding + monitoring). Sourced from [DevicePreferences].
   int get maxMonitoringCapacity;
 
-  /// Current number of servers in active or monitoring states consuming
-  /// orchestrator resources
-  int get currentMonitoredCount;
+  /// Number of servers currently in active, backgrounding, or monitoring state.
+  int get currentConnectedCount;
 
-  /// Identifier of the currently active foreground server, or null if no
-  /// server is active (only possible during initialization)
+  /// Local server id of the currently active foreground server.
+  /// Null only before [initialize] completes.
   String? get activeServerId;
 
-  /// Whether the orchestrator has completed initialization and is ready
-  /// to process connection requests
+  /// Whether [initialize] has completed successfully.
   bool get isInitialized;
 
-  /// Initializes the orchestrator by loading server configurations from
-  /// repository and restoring runtime contexts for connected servers
-  ///
-  /// Throws [StateError] if called multiple times without disposal
-  Future<void> initialize();
-
-  /// Transitions a disconnected server to monitoring or active state by
-  /// instantiating its ServerContext and establishing network connections
-  ///
-  /// If this is the first connected server or if makeActive is true, the
-  /// server becomes active. Otherwise it enters monitoring state.
-  ///
-  /// Throws [ServerCapacityExceededException] when attempting to connect
-  /// beyond the monitoring capacity limit
-  /// Throws [ServerNotFoundException] if serverId doesn't exist
-  /// Throws [StateError] if server is already connected
-  Future<void> connectServer(String serverId, {bool makeActive = false});
-
-  /// Transitions a monitored or active server to disconnected state by
-  /// disposing its ServerContext and closing network connections
-  ///
-  /// If disconnecting the currently active server, prompts user to select
-  /// a replacement or leaves no active server if this was the last connected
-  /// server
-  ///
-  /// Throws [ServerNotFoundException] if serverId doesn't exist
-  /// Throws [StateError] if server is already disconnected
-  Future<void> disconnectServer(String serverId);
-
-  /// Changes which server operates as the active foreground context while
-  /// transitioning the previous active server to monitoring state
-  ///
-  /// This operation suspends the current active context by flushing pending
-  /// operations and downgrading network connections before activating the
-  /// target context with full foreground resource allocation
-  ///
-  /// Throws [ServerNotFoundException] if targetServerId doesn't exist
-  /// Throws [StateError] if target server is disconnected
-  Future<void> switchActiveServer(String targetServerId);
-
-  /// Retrieves the ServerContext for a specific server if it exists in
-  /// active or monitoring state, returning null for disconnected servers
-  /// that have no instantiated context
-  ServerContext? getContext(String serverId);
-
-  /// Retrieves the currently active foreground ServerContext, throwing if
-  /// no server is active which should only occur during initialization
-  /// before the first server is connected
-  ///
-  /// Throws [StateError] if no active server exists
-  ServerContext getActiveContext();
-
-  /// Stream emitting the active ServerContext whenever the active server
-  /// changes through switching or connection state transitions
-  ///
-  /// Subscribers receive the current active context immediately if one exists,
-  /// then receive updates on each activation event
-  Stream<ServerContext> watchActiveContext();
-
-  /// Stream emitting current monitored count whenever servers connect or
-  /// disconnect, enabling UI elements to reactively enable or disable
-  /// connection actions based on capacity availability
-  Stream<int> watchMonitoredCount();
-
-  /// Determines whether connecting an additional server is possible given
-  /// current capacity utilization, providing a synchronous check that UI
-  /// can use to enable or disable connection buttons
+  /// Whether a new server can be connected without exceeding capacity.
   bool canConnect();
 
-  /// Disposes all server contexts and releases orchestrator resources in
-  /// preparation for application shutdown or orchestrator replacement
+  /// Loads server configurations from the repository and restores contexts
+  /// for any servers that were connected at last shutdown.
+  ///
+  /// Throws [StateError] if called more than once without disposal.
+  Future<void> initialize();
+
+  /// Creates a context for a disconnected server and connects it.
+  ///
+  /// If [makeActive] is true or no server is currently active, the server
+  /// becomes [ServerContextState.active]. Otherwise it enters
+  /// [ServerContextState.monitoring].
+  ///
+  /// Throws [ServerCapacityExceededException] if at capacity.
+  /// Throws [ServerNotFoundException] if [serverId] is not in the repository.
+  /// Throws [StateError] if server is already connected.
+  Future<void> connectServer(String serverId, {bool makeActive = false});
+
+  /// Disposes the context for a connected server and marks it disconnected.
+  ///
+  /// If disconnecting the active server and other connected servers exist,
+  /// the most recently active among them becomes the new active server.
+  ///
+  /// Throws [ServerNotFoundException] if [serverId] is not in the repository.
+  /// Throws [StateError] if server is already disconnected.
+  Future<void> disconnectServer(String serverId);
+
+  /// Backgrounds the current active server and activates [targetServerId].
+  ///
+  /// - Transitions the current active context to [ServerContextState.backgrounding]
+  ///   and starts the backgrounding timer for it.
+  /// - Transitions [targetServerId] from monitoring or backgrounding to
+  ///   [ServerContextState.active], cancelling its backgrounding timer if present.
+  ///
+  /// Throws [ServerNotFoundException] if [targetServerId] is not connected.
+  /// Throws [StateError] if [targetServerId] is already active or disconnected.
+  Future<void> switchActiveServer(String targetServerId);
+
+  /// Returns the context for [serverId], or null if disconnected.
+  ServerContext? getContext(String serverId);
+
+  /// Returns the currently active context.
+  /// Null only before [initialize] completes or if no server is active.
+  ServerContext? getActiveContext();
+
+  /// Stream emitting the active [ServerContext] whenever it changes.
+  /// Emits null if no server is active.
+  Stream<ServerContext?> watchActiveContext();
+
+  /// Stream emitting the full map of connected contexts on any change.
+  Stream<Map<String, ServerContext>> watchContexts();
+
+  /// Disposes all contexts and resets orchestrator state.
   Future<void> dispose();
 }

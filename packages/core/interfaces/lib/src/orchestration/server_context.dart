@@ -2,35 +2,48 @@ import 'dependency_container.dart';
 import 'server_context_state.dart';
 
 /// Encapsulates the isolated dependency injection scope, storage, networking,
-/// and lifecycle state for a single server instance
+/// and lifecycle state for a single BGE server instance.
+///
+/// State is owned and mutated exclusively by [ServerOrchestrator]. External
+/// consumers observe via [watchState] and retrieve services via [container].
 abstract class ServerContext {
-  /// Unique identifier matching the ServerConfig this context represents
+  /// Local server id matching the [ServerConfig.id] this context represents.
   String get serverId;
 
-  /// Current lifecycle state indicating resource allocation level
+  /// Current lifecycle state.
   ServerContextState get state;
 
-  /// Dependency injection container holding all server-specific services
-  /// including repositories, network clients, and storage managers
-  ///
-  /// Consumers retrieve dependencies through context.container.get<T>()
-  /// ensuring all resolution occurs within this server's isolated scope
+  /// Isolated dependency injection container for this server's services.
+  /// Retrieve dependencies via `context.container.get<T>()`.
   DependencyContainer get container;
 
-  /// Transitions this context to active state by initializing full foreground
-  /// services and establishing primary network connections
+  /// Transitions to [ServerContextState.active].
+  ///
+  /// Opens the per-server DB and WebSocket connection.
+  /// Throws [StateError] if current state is not [ServerContextState.monitoring],
+  /// [ServerContextState.backgrounding], or [ServerContextState.initializing].
   Future<void> activate();
 
-  /// Transitions this context to monitoring state by downgrading to minimal
-  /// background services while maintaining notification connectivity
+  /// Transitions to [ServerContextState.backgrounding].
+  ///
+  /// Retains all open resources. Called by the orchestrator when the user
+  /// switches to another server. The backgrounding timer is managed by the
+  /// orchestrator, which calls [suspend] when it expires.
+  /// Throws [StateError] if current state is not [ServerContextState.active].
+  Future<void> background();
+
+  /// Transitions to [ServerContextState.monitoring].
+  ///
+  /// Closes the WebSocket and per-server DB. Only the root DB summary path
+  /// remains live for incoming OS push notifications (post-MVP stub).
+  /// Throws [StateError] if current state is not [ServerContextState.backgrounding].
   Future<void> suspend();
 
-  /// Fully disposes this context by closing all network connections, flushing
-  /// pending storage operations, and releasing the dependency container
+  /// Disposes all resources and transitions to [ServerContextState.disposed].
+  ///
+  /// Idempotent — safe to call on an already-disposed context.
   Future<void> dispose();
 
-  /// Stream emitting lifecycle state changes for observation by components
-  /// that need to adapt behavior based on whether this context is active,
-  /// monitoring, or transitioning between states
+  /// Stream of lifecycle state changes. Replays the current state on subscribe.
   Stream<ServerContextState> watchState();
 }

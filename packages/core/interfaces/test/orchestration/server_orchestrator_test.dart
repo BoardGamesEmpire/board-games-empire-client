@@ -1,5 +1,5 @@
 import 'package:test/test.dart';
-import 'package:interfaces/interfaces.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 
@@ -19,10 +19,10 @@ void main() {
 
     test('enforces capacity limits during connection', () async {
       when(() => orchestrator.maxMonitoringCapacity).thenReturn(5);
-      when(() => orchestrator.currentMonitoredCount).thenReturn(5);
+      when(() => orchestrator.currentConnectedCount).thenReturn(5);
       when(() => orchestrator.canConnect()).thenReturn(false);
       when(() => orchestrator.connectServer('server_6')).thenThrow(
-        ServerCapacityExceededException(currentMonitored: 5, maxCapacity: 5),
+        ServerCapacityExceededException(currentConnected: 5, maxCapacity: 5),
       );
 
       expect(orchestrator.canConnect(), isFalse);
@@ -34,7 +34,7 @@ void main() {
 
     test('allows connection when capacity available', () async {
       when(() => orchestrator.maxMonitoringCapacity).thenReturn(5);
-      when(() => orchestrator.currentMonitoredCount).thenReturn(3);
+      when(() => orchestrator.currentConnectedCount).thenReturn(3);
       when(() => orchestrator.canConnect()).thenReturn(true);
       when(
         () => orchestrator.connectServer('server_4'),
@@ -53,8 +53,8 @@ void main() {
       when(() => orchestrator.getActiveContext()).thenReturn(activeContext);
 
       final context = orchestrator.getActiveContext();
-      expect(context.serverId, 'server_1');
-      expect(context.state, ServerContextState.active);
+      expect(context?.serverId, 'server_1');
+      expect(context?.state, ServerContextState.active);
     });
 
     test('switches active server atomically', () async {
@@ -85,7 +85,7 @@ void main() {
       'disconnecting active server requires replacement selection',
       () async {
         when(() => orchestrator.activeServerId).thenReturn('server_1');
-        when(() => orchestrator.currentMonitoredCount).thenReturn(2);
+        when(() => orchestrator.currentConnectedCount).thenReturn(2);
         when(
           () => orchestrator.disconnectServer('server_1'),
         ).thenAnswer((_) async {});

@@ -1,88 +1,114 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
-import 'package:interfaces/interfaces.dart';
-import 'package:models/domain.dart';
 import 'package:injectable/injectable.dart';
-import '../databases/meta_database.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 import 'package:cuid2/cuid2.dart';
+
+import '../databases/meta_database.dart';
 
 @LazySingleton(as: ServerRepository)
 class ServerRepositoryImpl implements ServerRepository {
-  final MetaDatabase _database;
-
   ServerRepositoryImpl(this._database);
+
+  final MetaDatabase _database;
 
   @override
   Future<ServerConfig> addServer({
     required String displayName,
     required String serverUrl,
+    required String bgeServerId,
+    required ServerIdentity identity,
+    int? backgroundingTimeoutSeconds,
     Map<String, dynamic>? metadata,
   }) async {
-    // Check for duplicate URL
-    final existing = await (_database.select(
+    final existingUrl = await (_database.select(
       _database.serverConfigs,
-    )..where((tbl) => tbl.serverUrl.equals(serverUrl))).getSingleOrNull();
+    )..where((t) => t.serverUrl.equals(serverUrl))).getSingleOrNull();
+    if (existingUrl != null) throw DuplicateServerException(serverUrl);
 
-    if (existing != null) {
-      throw DuplicateServerException(serverUrl);
-    }
+    final existingId = await (_database.select(
+      _database.serverConfigs,
+    )..where((t) => t.bgeServerId.equals(bgeServerId))).getSingleOrNull();
+    if (existingId != null) throw DuplicateServerException(serverUrl);
 
     final now = DateTime.now().toUtc();
-    final config = ServerConfigsCompanion.insert(
-      id: cuid(),
-      displayName: displayName,
-      serverUrl: serverUrl,
-      connectionState: ConnectionState.disconnected.toJsonValue(),
-      metadata: Value(metadata ?? {}),
-      lastActiveAt: Value(null),
-      createdAt: now,
-      updatedAt: now,
-    );
+    final id = cuid();
 
-    await _database.into(_database.serverConfigs).insert(config);
+    await _database
+        .into(_database.serverConfigs)
+        .insert(
+          ServerConfigsCompanion.insert(
+            id: id,
+            bgeServerId: bgeServerId,
+            displayName: displayName,
+            serverUrl: serverUrl,
+            connectionState: ConnectionState.disconnected.toJsonValue(),
+            cachedIdentityJson: jsonEncode(identity.toJson()),
+            lastIdentityFetchedAt: now,
+            lastActiveAt: const Value(null),
+            backgroundingTimeoutSeconds: Value(backgroundingTimeoutSeconds),
+            metadata: Value(metadata ?? {}),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
 
-    final inserted = await (_database.select(
-      _database.serverConfigs,
-    )..where((tbl) => tbl.serverUrl.equals(serverUrl))).getSingle();
-
-    return _mapToModel(inserted);
+    return (await getServer(id))!;
   }
 
   @override
   Future<void> removeServer(String serverId) async {
     final server = await getServer(serverId);
-    if (server == null) {
-      throw ServerNotFoundException(serverId);
-    }
-
-    if (server.connectionState == ConnectionState.active) {
-      throw ActiveServerException(serverId);
-    }
+    if (server == null) throw ServerNotFoundException(serverId);
+    if (server.isActive) throw ActiveServerException(serverId);
 
     await (_database.delete(
       _database.serverConfigs,
-    )..where((tbl) => tbl.id.equals(serverId))).go();
+    )..where((t) => t.id.equals(serverId))).go();
   }
 
   @override
   Future<ServerConfig> updateServer(ServerConfig config) async {
-    final existing = await getServer(config.id);
-    if (existing == null) {
+    if (await getServer(config.id) == null) {
       throw ServerNotFoundException(config.id);
     }
 
-    final companion = ServerConfigsCompanion(
-      id: Value(config.id),
-      displayName: Value(config.displayName),
-      serverUrl: Value(config.serverUrl),
-      metadata: Value(config.metadata),
-      updatedAt: Value(DateTime.now().toUtc()),
+    await (_database.update(
+      _database.serverConfigs,
+    )..where((t) => t.id.equals(config.id))).write(
+      ServerConfigsCompanion(
+        displayName: Value(config.displayName),
+        serverUrl: Value(config.serverUrl),
+        backgroundingTimeoutSeconds: Value(config.backgroundingTimeoutSeconds),
+        metadata: Value(config.metadata),
+        updatedAt: Value(DateTime.now().toUtc()),
+      ),
     );
+
+    return (await getServer(config.id))!;
+  }
+
+  @override
+  Future<ServerConfig> cacheIdentity({
+    required String serverId,
+    required ServerIdentity identity,
+  }) async {
+    if (await getServer(serverId) == null) {
+      throw ServerNotFoundException(serverId);
+    }
 
     await (_database.update(
       _database.serverConfigs,
-    )..where((tbl) => tbl.id.equals(config.id))).write(companion);
+    )..where((t) => t.id.equals(serverId))).write(
+      ServerConfigsCompanion(
+        cachedIdentityJson: Value(jsonEncode(identity.toJson())),
+        lastIdentityFetchedAt: Value(DateTime.now().toUtc()),
+        updatedAt: Value(DateTime.now().toUtc()),
+      ),
+    );
 
-    return (await getServer(config.id))!;
+    return (await getServer(serverId))!;
   }
 
   @override
@@ -90,177 +116,169 @@ class ServerRepositoryImpl implements ServerRepository {
     required String serverId,
     required ConnectionState newState,
   }) async {
-    return await _database.transaction(() async {
-      final server = await getServer(serverId);
-      if (server == null) {
-        throw ServerNotFoundException(serverId);
-      }
+    if (await getServer(serverId) == null) {
+      throw ServerNotFoundException(serverId);
+    }
 
-      // If transitioning to connected state, enforce capacity
-      if (newState != ConnectionState.disconnected &&
-          server.connectionState == ConnectionState.disconnected) {
-        final currentCount = await getMonitoredCount();
-        // Note: maxMonitoringCapacity should be injected or configured
-        // For now using hardcoded 5 as specified
-        const maxCapacity = 5;
-
-        if (currentCount >= maxCapacity) {
-          // TODO: open a dialog or notify user about capacity limit
-          throw ServerCapacityExceededException(
-            currentMonitored: currentCount,
-            maxCapacity: maxCapacity,
-          );
-        }
-      }
-
-      final companion = ServerConfigsCompanion(
+    await (_database.update(
+      _database.serverConfigs,
+    )..where((t) => t.id.equals(serverId))).write(
+      ServerConfigsCompanion(
         connectionState: Value(newState.toJsonValue()),
         updatedAt: Value(DateTime.now().toUtc()),
-      );
+      ),
+    );
 
-      await (_database.update(
-        _database.serverConfigs,
-      )..where((tbl) => tbl.id.equals(serverId))).write(companion);
-
-      return (await getServer(serverId))!;
-    });
+    return (await getServer(serverId))!;
   }
 
   @override
   Future<ServerConfig?> getServer(String serverId) async {
-    final result = await (_database.select(
+    final row = await (_database.select(
       _database.serverConfigs,
-    )..where((tbl) => tbl.id.equals(serverId))).getSingleOrNull();
+    )..where((t) => t.id.equals(serverId))).getSingleOrNull();
+    return row != null ? _mapToModel(row) : null;
+  }
 
-    return result != null ? _mapToModel(result) : null;
+  @override
+  Future<ServerConfig?> getServerByBgeId(String bgeServerId) async {
+    final row = await (_database.select(
+      _database.serverConfigs,
+    )..where((t) => t.bgeServerId.equals(bgeServerId))).getSingleOrNull();
+    return row != null ? _mapToModel(row) : null;
   }
 
   @override
   Future<List<ServerConfig>> getAllServers() async {
-    final results = await _database.select(_database.serverConfigs).get();
-    return results.map(_mapToModel).toList();
+    final rows = await _database.select(_database.serverConfigs).get();
+    return rows.map(_mapToModel).toList();
   }
 
   @override
-  Future<List<ServerConfig>> getMonitoredServers() async {
-    final results =
+  Future<List<ServerConfig>> getConnectedServers() async {
+    final rows =
         await (_database.select(_database.serverConfigs)..where(
-              (tbl) =>
-                  tbl.connectionState.equals(
+              (t) =>
+                  t.connectionState.equals(
                     ConnectionState.active.toJsonValue(),
                   ) |
-                  tbl.connectionState.equals(
+                  t.connectionState.equals(
+                    ConnectionState.backgrounding.toJsonValue(),
+                  ) |
+                  t.connectionState.equals(
                     ConnectionState.monitoring.toJsonValue(),
                   ),
             ))
             .get();
-
-    return results.map(_mapToModel).toList();
+    return rows.map(_mapToModel).toList();
   }
 
   @override
   Future<List<ServerConfig>> getDisconnectedServers() async {
-    final results =
+    final rows =
         await (_database.select(_database.serverConfigs)..where(
-              (tbl) => tbl.connectionState.equals(
+              (t) => t.connectionState.equals(
                 ConnectionState.disconnected.toJsonValue(),
               ),
             ))
             .get();
-
-    return results.map(_mapToModel).toList();
+    return rows.map(_mapToModel).toList();
   }
 
   @override
-  Future<int> getMonitoredCount() async {
-    final count =
+  Future<int> getConnectedCount() async {
+    final expr = _database.serverConfigs.id.count();
+    final result =
         await (_database.selectOnly(_database.serverConfigs)
-              ..addColumns([_database.serverConfigs.id.count()])
+              ..addColumns([expr])
               ..where(
                 _database.serverConfigs.connectionState.equals(
                       ConnectionState.active.toJsonValue(),
+                    ) |
+                    _database.serverConfigs.connectionState.equals(
+                      ConnectionState.backgrounding.toJsonValue(),
                     ) |
                     _database.serverConfigs.connectionState.equals(
                       ConnectionState.monitoring.toJsonValue(),
                     ),
               ))
             .getSingle();
-
-    return count.read(_database.serverConfigs.id.count()) ?? 0;
+    return result.read(expr) ?? 0;
   }
 
   @override
   Future<void> updateLastActive(String serverId, DateTime timestamp) async {
-    final companion = ServerConfigsCompanion(
-      lastActiveAt: Value(timestamp.toUtc()),
-      updatedAt: Value(DateTime.now().toUtc()),
-    );
-
     await (_database.update(
       _database.serverConfigs,
-    )..where((tbl) => tbl.id.equals(serverId))).write(companion);
+    )..where((t) => t.id.equals(serverId))).write(
+      ServerConfigsCompanion(
+        lastActiveAt: Value(timestamp.toUtc()),
+        updatedAt: Value(DateTime.now().toUtc()),
+      ),
+    );
   }
 
   @override
-  Stream<List<ServerConfig>> watchServers() {
-    return _database
-        .select(_database.serverConfigs)
-        .watch()
-        .map((rows) => rows.map(_mapToModel).toList());
-  }
+  Stream<List<ServerConfig>> watchServers() => _database
+      .select(_database.serverConfigs)
+      .watch()
+      .map((rows) => rows.map(_mapToModel).toList());
 
   @override
-  Stream<int> watchMonitoredCount() {
+  Stream<int> watchConnectedCount() {
+    final expr = _database.serverConfigs.id.count();
     return (_database.selectOnly(_database.serverConfigs)
-          ..addColumns([_database.serverConfigs.id.count()])
+          ..addColumns([expr])
           ..where(
             _database.serverConfigs.connectionState.equals(
                   ConnectionState.active.toJsonValue(),
+                ) |
+                _database.serverConfigs.connectionState.equals(
+                  ConnectionState.backgrounding.toJsonValue(),
                 ) |
                 _database.serverConfigs.connectionState.equals(
                   ConnectionState.monitoring.toJsonValue(),
                 ),
           ))
         .watchSingle()
-        .map((row) => row.read(_database.serverConfigs.id.count()) ?? 0);
+        .map((row) => row.read(expr) ?? 0);
   }
 
   ServerConfig _mapToModel(ServerConfigData data) {
+    ServerIdentity identity = ServerIdentity.fromJson(
+      jsonDecode(data.cachedIdentityJson) as Map<String, dynamic>,
+    );
+
     return ServerConfig(
       id: data.id,
+      bgeServerId: data.bgeServerId,
       displayName: data.displayName,
       serverUrl: data.serverUrl,
       connectionState: _parseConnectionState(data.connectionState),
+      cachedIdentity: identity,
+      lastIdentityFetchedAt: data.lastIdentityFetchedAt,
       lastActiveAt: data.lastActiveAt,
+      backgroundingTimeoutSeconds: data.backgroundingTimeoutSeconds,
       metadata: data.metadata,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     );
   }
 
-  ConnectionState _parseConnectionState(String value) {
-    switch (value) {
-      case 'Active':
-        return ConnectionState.active;
-      case 'Monitoring':
-        return ConnectionState.monitoring;
-      case 'Disconnected':
-        return ConnectionState.disconnected;
-      default:
-        throw ArgumentError('Unknown connection state: $value');
-    }
-  }
+  static ConnectionState _parseConnectionState(String value) => switch (value) {
+    'Active' => ConnectionState.active,
+    'Backgrounding' => ConnectionState.backgrounding,
+    'Monitoring' => ConnectionState.monitoring,
+    'Disconnected' => ConnectionState.disconnected,
+    _ => throw ArgumentError('Unknown ConnectionState: $value'),
+  };
 }
 
-extension on ConnectionState {
-  String toJsonValue() {
-    switch (this) {
-      case ConnectionState.active:
-        return 'Active';
-      case ConnectionState.monitoring:
-        return 'Monitoring';
-      case ConnectionState.disconnected:
-        return 'Disconnected';
-    }
-  }
+extension _ConnectionStateJson on ConnectionState {
+  String toJsonValue() => switch (this) {
+    ConnectionState.active => 'Active',
+    ConnectionState.backgrounding => 'Backgrounding',
+    ConnectionState.monitoring => 'Monitoring',
+    ConnectionState.disconnected => 'Disconnected',
+  };
 }

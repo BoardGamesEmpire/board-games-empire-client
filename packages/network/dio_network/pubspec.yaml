@@ -18,6 +18,8 @@ dependencies:
     path: ../../core/models
   di:
     path: ../../core/di
+  interfaces:
+    path: ../../core/interfaces
 
   dio: ^5.9.2
   web_socket_channel: ^3.0.3
@@ -28,12 +30,14 @@ dependencies:
   get_it: ^9.2.1
   injectable: ^2.4.2
 
+  http_status: ^3.3.3
+
 dev_dependencies:
   build_runner: ^2.4.12
   injectable_generator: ^2.6.1
   flutter_test:
     sdk: flutter
-  mocktail: ^1.0.3
+  mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
 

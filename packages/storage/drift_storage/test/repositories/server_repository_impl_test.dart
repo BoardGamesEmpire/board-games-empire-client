@@ -2,8 +2,39 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
 import 'package:drift_storage/src/repositories/server_repository_impl.dart';
-import 'package:interfaces/interfaces.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+
+const _kBgeServerId = '550e8400-e29b-41d4-a716-446655440000';
+const _kServerUrl = 'https://api.example.com';
+
+ServerIdentity _makeIdentity({
+  String serverId = _kBgeServerId,
+  String issuer = _kServerUrl,
+}) => ServerIdentity(
+  serverId: serverId,
+  issuer: issuer,
+  deviceAuthorizationEndpoint: '$issuer/api/auth/device',
+  authBaseUrl: '$issuer/api/auth',
+  sessionEndpoint: '$issuer/api/auth/get-session',
+  signOutEndpoint: '$issuer/api/auth/sign-out',
+  passkeySupported: true,
+  twoFactorSupported: true,
+  anonymousAuthSupported: true,
+);
+
+Future<ServerConfig> _addServer(
+  ServerRepository repo, {
+  String displayName = 'Test Server',
+  String serverUrl = _kServerUrl,
+  String bgeServerId = _kBgeServerId,
+  ServerIdentity? identity,
+}) => repo.addServer(
+  displayName: displayName,
+  serverUrl: serverUrl,
+  bgeServerId: bgeServerId,
+  identity: identity ?? _makeIdentity(serverId: bgeServerId),
+);
 
 void main() {
   late MetaDatabase database;
@@ -14,87 +45,102 @@ void main() {
     repository = ServerRepositoryImpl(database);
   });
 
-  tearDown(() async {
-    await database.close();
-  });
+  tearDown(() async => database.close());
 
   group('ServerRepositoryImpl', () {
     group('addServer', () {
       test('creates server with disconnected state', () async {
-        final server = await repository.addServer(
-          displayName: 'Test Server',
-          serverUrl: 'https://test.example.com',
-          metadata: {'region': 'us-east'},
-        );
+        final server = await _addServer(repository);
 
         expect(server.id, isNotEmpty);
         expect(server.displayName, 'Test Server');
-        expect(server.serverUrl, 'https://test.example.com');
+        expect(server.serverUrl, _kServerUrl);
         expect(server.connectionState, ConnectionState.disconnected);
-        expect(server.metadata['region'], 'us-east');
+        expect(server.bgeServerId, _kBgeServerId);
+        expect(server.cachedIdentity, isNotNull);
+        expect(server.lastIdentityFetchedAt, isNotNull);
         expect(server.createdAt, isNotNull);
         expect(server.updatedAt, isNotNull);
       });
 
-      test('prevents duplicate server URLs', () async {
-        await repository.addServer(
-          displayName: 'First',
-          serverUrl: 'https://duplicate.example.com',
+      test('caches identity on creation', () async {
+        final identity = _makeIdentity();
+        final server = await repository.addServer(
+          displayName: 'Test',
+          serverUrl: _kServerUrl,
+          bgeServerId: _kBgeServerId,
+          identity: identity,
         );
 
+        expect(server.cachedIdentity.serverId, _kBgeServerId);
+        expect(server.cachedIdentity.issuer, _kServerUrl);
+        expect(server.isIdentityStale, isFalse);
+      });
+
+      test('prevents duplicate server URL', () async {
+        await _addServer(repository);
+
         expect(
-          () => repository.addServer(
-            displayName: 'Second',
-            serverUrl: 'https://duplicate.example.com',
+          () => _addServer(
+            repository,
+            bgeServerId: 'different-uuid-1111-1111-111111111111',
           ),
           throwsA(isA<DuplicateServerException>()),
         );
       });
 
-      test('allows different URLs for different servers', () async {
-        final first = await repository.addServer(
-          displayName: 'First',
-          serverUrl: 'https://first.example.com',
+      test('prevents duplicate bgeServerId', () async {
+        await _addServer(repository);
+
+        expect(
+          () => _addServer(repository, serverUrl: 'https://other.example.com'),
+          throwsA(isA<DuplicateServerException>()),
+        );
+      });
+
+      test('allows multiple servers with distinct URLs and UUIDs', () async {
+        final a = await _addServer(
+          repository,
+          serverUrl: 'https://server-a.example.com',
+          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        );
+        final b = await _addServer(
+          repository,
+          serverUrl: 'https://server-b.example.com',
+          bgeServerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
         );
 
-        final second = await repository.addServer(
-          displayName: 'Second',
-          serverUrl: 'https://second.example.com',
+        expect(a.id, isNot(equals(b.id)));
+      });
+
+      test('stores optional backgroundingTimeoutSeconds', () async {
+        final server = await repository.addServer(
+          displayName: 'Custom Timeout',
+          serverUrl: _kServerUrl,
+          bgeServerId: _kBgeServerId,
+          identity: _makeIdentity(),
+          backgroundingTimeoutSeconds: 600,
         );
 
-        expect(first.id, isNot(equals(second.id)));
-        expect(first.serverUrl, isNot(equals(second.serverUrl)));
+        expect(server.backgroundingTimeoutSeconds, 600);
       });
 
       test('handles empty metadata gracefully', () async {
-        final server = await repository.addServer(
-          displayName: 'Minimal',
-          serverUrl: 'https://minimal.example.com',
-        );
-
+        final server = await _addServer(repository);
         expect(server.metadata, isEmpty);
       });
     });
 
     group('removeServer', () {
-      test('removes disconnected server successfully', () async {
-        final server = await repository.addServer(
-          displayName: 'To Remove',
-          serverUrl: 'https://remove.example.com',
-        );
-
+      test('removes disconnected server', () async {
+        final server = await _addServer(repository);
         await repository.removeServer(server.id);
 
-        final retrieved = await repository.getServer(server.id);
-        expect(retrieved, isNull);
+        expect(await repository.getServer(server.id), isNull);
       });
 
-      test('prevents removing active server', () async {
-        final server = await repository.addServer(
-          displayName: 'Active',
-          serverUrl: 'https://active.example.com',
-        );
-
+      test('throws ActiveServerException for active server', () async {
+        final server = await _addServer(repository);
         await repository.updateConnectionState(
           serverId: server.id,
           newState: ConnectionState.active,
@@ -106,157 +152,91 @@ void main() {
         );
       });
 
-      test('throws when removing non-existent server', () async {
+      test('throws ServerNotFoundException for unknown id', () async {
         expect(
-          () => repository.removeServer('non_existent_id'),
+          () => repository.removeServer('non-existent'),
           throwsA(isA<ServerNotFoundException>()),
         );
       });
     });
 
     group('updateServer', () {
-      test('updates display name and metadata', () async {
-        final original = await repository.addServer(
-          displayName: 'Original',
-          serverUrl: 'https://original.example.com',
-          metadata: {'key': 'value'},
-        );
-
+      test('updates displayName and metadata', () async {
+        final server = await _addServer(repository);
         final updated = await repository.updateServer(
-          original.copyWith(
-            displayName: 'Updated',
-            metadata: {'key': 'new_value', 'extra': 'data'},
-          ),
+          server.copyWith(displayName: 'Renamed', metadata: {'env': 'prod'}),
         );
 
-        expect(updated.displayName, 'Updated');
-        expect(updated.metadata['key'], 'new_value');
-        expect(updated.metadata['extra'], 'data');
-        expect(updated.serverUrl, original.serverUrl);
-        expect(updated.id, original.id);
+        expect(updated.displayName, 'Renamed');
+        expect(updated.metadata['env'], 'prod');
+        expect(updated.serverUrl, server.serverUrl);
       });
 
-      test('throws when updating non-existent server', () async {
-        final config = ServerConfig(
-          id: 'non_existent',
+      test('throws ServerNotFoundException for unknown id', () async {
+        final ghost = ServerConfig(
+          id: 'ghost',
+          bgeServerId: _kBgeServerId,
+          cachedIdentity: _makeIdentity(),
+          lastIdentityFetchedAt: DateTime.now().toUtc(),
           displayName: 'Ghost',
           serverUrl: 'https://ghost.example.com',
           connectionState: ConnectionState.disconnected,
         );
-
         expect(
-          () => repository.updateServer(config),
+          () => repository.updateServer(ghost),
           throwsA(isA<ServerNotFoundException>()),
         );
       });
     });
 
     group('updateConnectionState', () {
-      test('transitions from disconnected to monitoring', () async {
-        final server = await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
-
-        final updated = await repository.updateConnectionState(
-          serverId: server.id,
-          newState: ConnectionState.monitoring,
-        );
-
-        expect(updated.connectionState, ConnectionState.monitoring);
-      });
-
-      test('transitions from monitoring to active', () async {
-        final server = await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
-
-        await repository.updateConnectionState(
-          serverId: server.id,
-          newState: ConnectionState.monitoring,
-        );
-
+      test('transitions to active', () async {
+        final server = await _addServer(repository);
         final updated = await repository.updateConnectionState(
           serverId: server.id,
           newState: ConnectionState.active,
         );
 
         expect(updated.connectionState, ConnectionState.active);
+        expect(updated.isActive, isTrue);
+        expect(updated.isConnected, isTrue);
       });
 
-      test('enforces monitoring capacity limit', () async {
-        // Create and connect 5 servers
-        for (int i = 0; i < 5; i++) {
-          final server = await repository.addServer(
-            displayName: 'Server $i',
-            serverUrl: 'https://server$i.example.com',
-          );
-          await repository.updateConnectionState(
-            serverId: server.id,
-            newState: ConnectionState.monitoring,
-          );
-        }
+      test('transitions through full lifecycle', () async {
+        final server = await _addServer(repository);
 
-        // Attempt to connect 6th server
-        final sixth = await repository.addServer(
-          displayName: 'Server 6',
-          serverUrl: 'https://server6.example.com',
+        final active = await repository.updateConnectionState(
+          serverId: server.id,
+          newState: ConnectionState.active,
         );
+        expect(active.isActive, isTrue);
 
-        expect(
-          () => repository.updateConnectionState(
-            serverId: sixth.id,
-            newState: ConnectionState.monitoring,
-          ),
-          throwsA(
-            isA<ServerCapacityExceededException>()
-                .having((e) => e.currentMonitored, 'currentMonitored', 5)
-                .having((e) => e.maxCapacity, 'maxCapacity', 5),
-          ),
+        final backgrounding = await repository.updateConnectionState(
+          serverId: server.id,
+          newState: ConnectionState.backgrounding,
         );
-      });
+        expect(backgrounding.isBackgrounding, isTrue);
+        expect(backgrounding.isConnected, isTrue);
 
-      test('allows disconnecting monitored server freeing capacity', () async {
-        // Fill capacity
-        final servers = <ServerConfig>[];
-        for (int i = 0; i < 5; i++) {
-          final server = await repository.addServer(
-            displayName: 'Server $i',
-            serverUrl: 'https://server$i.example.com',
-          );
-          await repository.updateConnectionState(
-            serverId: server.id,
-            newState: ConnectionState.monitoring,
-          );
-          servers.add(server);
-        }
+        final monitoring = await repository.updateConnectionState(
+          serverId: server.id,
+          newState: ConnectionState.monitoring,
+        );
+        expect(monitoring.isMonitoring, isTrue);
+        expect(monitoring.isConnected, isTrue);
 
-        // Disconnect one
-        await repository.updateConnectionState(
-          serverId: servers[0].id,
+        final disconnected = await repository.updateConnectionState(
+          serverId: server.id,
           newState: ConnectionState.disconnected,
         );
-
-        // Now can connect another
-        final newServer = await repository.addServer(
-          displayName: 'New Server',
-          serverUrl: 'https://newserver.example.com',
-        );
-
-        await expectLater(
-          repository.updateConnectionState(
-            serverId: newServer.id,
-            newState: ConnectionState.monitoring,
-          ),
-          completes,
-        );
+        expect(disconnected.isDisconnected, isTrue);
+        expect(disconnected.isConnected, isFalse);
       });
 
-      test('throws when updating non-existent server', () async {
+      test('throws ServerNotFoundException for unknown id', () async {
         expect(
           () => repository.updateConnectionState(
-            serverId: 'non_existent',
+            serverId: 'ghost',
             newState: ConnectionState.active,
           ),
           throwsA(isA<ServerNotFoundException>()),
@@ -265,239 +245,186 @@ void main() {
     });
 
     group('getServer', () {
-      test('retrieves existing server by id', () async {
-        final created = await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
-
+      test('returns existing server', () async {
+        final created = await _addServer(repository);
         final retrieved = await repository.getServer(created.id);
 
-        expect(retrieved, isNotNull);
-        expect(retrieved!.id, created.id);
-        expect(retrieved.displayName, created.displayName);
+        expect(retrieved?.id, created.id);
+        expect(retrieved?.bgeServerId, _kBgeServerId);
       });
 
-      test('returns null for non-existent server', () async {
-        final result = await repository.getServer('non_existent');
-        expect(result, isNull);
+      test('returns null for unknown id', () async {
+        expect(await repository.getServer('ghost'), isNull);
+      });
+    });
+
+    group('getServerByBgeId', () {
+      test('finds server by BGE UUID', () async {
+        final server = await _addServer(repository);
+        final found = await repository.getServerByBgeId(_kBgeServerId);
+
+        expect(found?.id, server.id);
+      });
+
+      test('returns null for unknown UUID', () async {
+        expect(await repository.getServerByBgeId('unknown-uuid'), isNull);
       });
     });
 
     group('getAllServers', () {
       test('returns all servers regardless of state', () async {
-        await repository.addServer(
-          displayName: 'Active',
-          serverUrl: 'https://active.example.com',
+        await _addServer(
+          repository,
+          serverUrl: 'https://a.example.com',
+          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         );
-        await repository.addServer(
-          displayName: 'Monitoring',
-          serverUrl: 'https://monitoring.example.com',
-        );
-        await repository.addServer(
-          displayName: 'Disconnected',
-          serverUrl: 'https://disconnected.example.com',
+        await _addServer(
+          repository,
+          serverUrl: 'https://b.example.com',
+          bgeServerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
         );
 
         final all = await repository.getAllServers();
-        expect(all, hasLength(3));
-      });
-
-      test('returns empty list when no servers configured', () async {
-        final all = await repository.getAllServers();
-        expect(all, isEmpty);
+        expect(all, hasLength(2));
       });
     });
 
-    group('getMonitoredServers', () {
-      test('returns only active and monitoring servers', () async {
-        final active = await repository.addServer(
-          displayName: 'Active',
+    group('getConnectedServers', () {
+      test('returns active, backgrounding, and monitoring servers', () async {
+        final active = await _addServer(
+          repository,
           serverUrl: 'https://active.example.com',
+          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         );
-        final monitoring = await repository.addServer(
-          displayName: 'Monitoring',
+        final backgrounding = await _addServer(
+          repository,
+          serverUrl: 'https://backgrounding.example.com',
+          bgeServerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        );
+        final monitoring = await _addServer(
+          repository,
           serverUrl: 'https://monitoring.example.com',
+          bgeServerId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
         );
-        await repository.addServer(
-          displayName: 'Disconnected',
+        await _addServer(
+          repository,
           serverUrl: 'https://disconnected.example.com',
+          bgeServerId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
         );
 
         await repository.updateConnectionState(
           serverId: active.id,
           newState: ConnectionState.active,
+        );
+        await repository.updateConnectionState(
+          serverId: backgrounding.id,
+          newState: ConnectionState.backgrounding,
         );
         await repository.updateConnectionState(
           serverId: monitoring.id,
           newState: ConnectionState.monitoring,
         );
 
-        final monitored = await repository.getMonitoredServers();
-        expect(monitored, hasLength(2));
+        final connected = await repository.getConnectedServers();
+        expect(connected, hasLength(3));
         expect(
-          monitored.map((s) => s.id),
-          containsAll([active.id, monitoring.id]),
+          connected.map((s) => s.id),
+          containsAll([active.id, backgrounding.id, monitoring.id]),
         );
       });
     });
 
-    group('getDisconnectedServers', () {
-      test('returns only disconnected servers', () async {
-        final disconnected = await repository.addServer(
-          displayName: 'Disconnected',
-          serverUrl: 'https://disconnected.example.com',
+    group('getConnectedCount', () {
+      test('counts active + backgrounding + monitoring', () async {
+        final s1 = await _addServer(
+          repository,
+          serverUrl: 'https://s1.example.com',
+          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         );
-        final active = await repository.addServer(
-          displayName: 'Active',
-          serverUrl: 'https://active.example.com',
+        final s2 = await _addServer(
+          repository,
+          serverUrl: 'https://s2.example.com',
+          bgeServerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
         );
-
-        await repository.updateConnectionState(
-          serverId: active.id,
-          newState: ConnectionState.active,
-        );
-
-        final disconnectedList = await repository.getDisconnectedServers();
-        expect(disconnectedList, hasLength(1));
-        expect(disconnectedList[0].id, disconnected.id);
-      });
-    });
-
-    group('getMonitoredCount', () {
-      test('counts active and monitoring servers', () async {
-        final server1 = await repository.addServer(
-          displayName: 'Server 1',
-          serverUrl: 'https://server1.example.com',
-        );
-        final server2 = await repository.addServer(
-          displayName: 'Server 2',
-          serverUrl: 'https://server2.example.com',
-        );
-        await repository.addServer(
-          displayName: 'Server 3',
-          serverUrl: 'https://server3.example.com',
+        await _addServer(
+          repository,
+          serverUrl: 'https://s3.example.com',
+          bgeServerId: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
         );
 
         await repository.updateConnectionState(
-          serverId: server1.id,
+          serverId: s1.id,
           newState: ConnectionState.active,
         );
         await repository.updateConnectionState(
-          serverId: server2.id,
+          serverId: s2.id,
           newState: ConnectionState.monitoring,
         );
 
-        final count = await repository.getMonitoredCount();
-        expect(count, 2);
+        expect(await repository.getConnectedCount(), 2);
       });
 
-      test('returns zero when no servers monitored', () async {
-        await repository.addServer(
-          displayName: 'Disconnected',
-          serverUrl: 'https://disconnected.example.com',
-        );
-
-        final count = await repository.getMonitoredCount();
-        expect(count, 0);
+      test('returns 0 when all disconnected', () async {
+        await _addServer(repository);
+        expect(await repository.getConnectedCount(), 0);
       });
     });
 
     group('updateLastActive', () {
       test('updates timestamp without affecting other fields', () async {
-        final server = await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
+        final server = await _addServer(repository);
+        final ts = DateTime.parse('2024-06-01T12:00:00Z');
 
-        final timestamp = DateTime.parse('2024-01-15T10:30:00Z').toUtc();
-        await repository.updateLastActive(server.id, timestamp);
+        await repository.updateLastActive(server.id, ts);
 
         final updated = await repository.getServer(server.id);
-        expect(updated!.lastActiveAt!.toUtc(), timestamp.toUtc());
+        expect(updated!.lastActiveAt?.toUtc(), ts);
         expect(updated.displayName, server.displayName);
         expect(updated.connectionState, server.connectionState);
       });
     });
 
     group('watchServers', () {
-      test('emits current servers immediately', () async {
-        await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
+      test('emits current list immediately', () async {
+        await _addServer(repository);
 
-        final stream = repository.watchServers();
-        final first = await stream.first;
-        expect(first, hasLength(1));
+        await expectLater(
+          repository.watchServers().take(1),
+          emits(hasLength(1)),
+        );
       });
 
-      test('emits updates when servers added', () async {
+      test('emits on add', () async {
         final stream = repository.watchServers();
-        final events = <List<ServerConfig>>[];
 
-        final subscription = stream.listen(events.add);
-
-        await Future.delayed(Duration(milliseconds: 50));
-
-        await repository.addServer(
-          displayName: 'First',
-          serverUrl: 'https://first.example.com',
+        await _addServer(
+          repository,
+          serverUrl: 'https://a.example.com',
+          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         );
 
-        await Future.delayed(Duration(milliseconds: 50));
-
-        await repository.addServer(
-          displayName: 'Second',
-          serverUrl: 'https://second.example.com',
+        await expectLater(
+          stream.take(2),
+          emitsInOrder([isEmpty, hasLength(1)]),
         );
-
-        await Future.delayed(Duration(milliseconds: 50));
-        await subscription.cancel();
-
-        expect(events.length, greaterThanOrEqualTo(2));
-        expect(events.last, hasLength(2));
       });
     });
 
-    group('watchMonitoredCount', () {
-      test('emits initial count', () async {
-        final server = await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
-        await repository.updateConnectionState(
-          serverId: server.id,
-          newState: ConnectionState.monitoring,
-        );
-
-        final stream = repository.watchMonitoredCount();
-        final first = await stream.first;
-        expect(first, 1);
+    group('watchConnectedCount', () {
+      test('emits 0 initially', () async {
+        await expectLater(repository.watchConnectedCount().take(1), emits(0));
       });
 
-      test('emits updates when connection state changes', () async {
-        final server = await repository.addServer(
-          displayName: 'Test',
-          serverUrl: 'https://test.example.com',
-        );
-
-        final stream = repository.watchMonitoredCount();
-        final events = <int>[];
-
-        final subscription = stream.listen(events.add);
-        await Future.delayed(Duration(milliseconds: 50));
+      test('increments on connection state change', () async {
+        final server = await _addServer(repository);
+        final stream = repository.watchConnectedCount();
 
         await repository.updateConnectionState(
           serverId: server.id,
-          newState: ConnectionState.monitoring,
+          newState: ConnectionState.active,
         );
 
-        await Future.delayed(Duration(milliseconds: 50));
-        await subscription.cancel();
-
-        expect(events, contains(0));
-        expect(events, contains(1));
+        await expectLater(stream.take(2), emitsInOrder([0, 1]));
       });
     });
   });

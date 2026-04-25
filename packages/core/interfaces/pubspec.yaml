@@ -6,10 +6,13 @@ environment:
 resolution: workspace
 
 dependencies:
-  # Minimal dependencies for interfaces
   meta: ^1.12.0
+  models:
+    path: ../models
+
 
 dev_dependencies:
   test: ^1.25.6
   very_good_analysis: ^10.2.0
   lints: ^6.1.0
+  mocktail: ^1.0.5

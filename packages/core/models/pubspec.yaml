@@ -7,10 +7,6 @@ environment:
 resolution: workspace
 
 dependencies:
-  interfaces:
-    path: ../interfaces
-
-  # Serialization
   json_annotation: ^4.9.0
   equatable: ^2.0.6
   freezed_annotation: ^3.1.0

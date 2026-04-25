@@ -1,18 +1,36 @@
-/// Lifecycle states a ServerContext transitions through based on its role
-/// in the orchestrator's resource allocation model
+/// Lifecycle states a [ServerContext] transitions through.
+///
+/// Valid transitions:
+/// ```
+/// initializing → active          (first activation)
+/// active → backgrounding         (user switches server; co-active window begins)
+/// backgrounding → active         (user switches back within timeout)
+/// backgrounding → monitoring     (timeout expires or battery threshold)
+/// monitoring → active            (user re-activates)
+/// any → disposed                 (explicit disconnect or fatal error)
+/// ```
+///
+/// [transitioning] is a guard state held during async state changes to
+/// prevent concurrent mutation.
 enum ServerContextState {
-  /// Context is being constructed and dependencies are initializing
+  /// Context is being constructed; dependencies initialising.
   initializing,
 
-  /// Context is the active foreground server with full resource allocation
+  /// Full foreground connection. WS open, DB open, all repos live.
   active,
 
-  /// Context is monitoring in background with minimal resource allocation
+  /// Co-active window after the user switched away. WS and DB remain open
+  /// for the configured backgrounding timeout. In-flight and new operations
+  /// are still allowed. Transitions to [monitoring] on timeout.
+  backgrounding,
+
+  /// Passive background connection. WS closed, DB closed. Notifications
+  /// arrive via OS push (post-MVP) and are written as root-DB summaries only.
   monitoring,
 
-  /// Context is transitioning between states and should not process requests
+  /// Async state change in progress. No operations accepted.
   transitioning,
 
-  /// Context has been disposed and should not be used
+  /// Context disposed. Must not be used.
   disposed,
 }
