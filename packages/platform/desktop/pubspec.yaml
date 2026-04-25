@@ -11,29 +11,29 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-    
+
   interfaces:
     path: ../../core/interfaces
   models:
     path: ../../core/models
   di:
     path: ../../core/di
-    
+
   # Desktop-specific
   window_manager: ^0.5.1           # Window management
-  tray_manager: ^0.5.1             # System tray
-  connectivity_plus: ^6.0.3        # Desktop connectivity
-  package_info_plus: ^8.0.0        # App info
-  
+  tray_manager: ^0.5.2             # System tray
+  connectivity_plus: ^7.1.1        # Desktop connectivity
+  package_info_plus: ^9.0.1        # App info
+
   # DI
-  get_it: ^7.7.0
+  get_it: ^9.2.1
   injectable: ^2.4.2
 
 dev_dependencies:
   injectable_generator: ^2.6.1
   flutter_test:
     sdk: flutter
-  very_good_analysis: ^9.0.0
+  very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
 
 flutter:

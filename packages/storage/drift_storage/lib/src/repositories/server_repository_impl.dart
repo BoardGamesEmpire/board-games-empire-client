@@ -34,8 +34,8 @@ class ServerRepositoryImpl implements ServerRepository {
       connectionState: ConnectionState.disconnected.toJsonValue(),
       metadata: Value(metadata ?? {}),
       lastActiveAt: Value(null),
-      createdAt: Value(now),
-      updatedAt: Value(now),
+      createdAt: now,
+      updatedAt: now,
     );
 
     await _database.into(_database.serverConfigs).insert(config);

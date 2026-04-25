@@ -11,26 +11,26 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-    
+
   interfaces:
     path: ../../core/interfaces
   models:
     path: ../../core/models
   di:
     path: ../../core/di
-    
-  connectivity_plus: ^6.0.3
-  package_info_plus: ^8.0.0
-  device_info_plus: ^11.3.0
-  
-  get_it: ^7.7.0
+
+  connectivity_plus: ^7.1.1
+  package_info_plus: ^9.0.1
+  device_info_plus: ^12.4.0
+
+  get_it: ^9.2.1
   injectable: ^2.4.2
 
 dev_dependencies:
   injectable_generator: ^2.6.1
   flutter_test:
     sdk: flutter
-  very_good_analysis: ^9.0.0
+  very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the

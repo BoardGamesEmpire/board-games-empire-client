@@ -6,7 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
   file_selector_windows
   flutter_secure_storage_windows
-  rive_common
+  rive_native
   screen_retriever_windows
   tray_manager
   window_manager

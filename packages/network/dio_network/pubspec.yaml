@@ -11,21 +11,21 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-    
+
   network_interface:
     path: ../network_interface
   models:
     path: ../../core/models
   di:
     path: ../../core/di
-    
-  dio: ^5.4.3+1
+
+  dio: ^5.9.2
   web_socket_channel: ^3.0.3
   oauth2: ^2.0.2
-  flutter_secure_storage: ^10.0.0-beta.4
+  flutter_secure_storage: ^10.0.0
   retry: ^3.1.2
-  
-  get_it: ^7.7.0
+
+  get_it: ^9.2.1
   injectable: ^2.4.2
 
 dev_dependencies:
@@ -34,7 +34,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   mocktail: ^1.0.3
-  very_good_analysis: ^9.0.0
+  very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
