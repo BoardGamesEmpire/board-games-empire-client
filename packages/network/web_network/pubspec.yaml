@@ -20,14 +20,14 @@ dependencies:
     path: ../../core/di
 
   # Base networking (inherits from dio_network)
-  dio: ^5.4.3+1
+  dio: ^5.9.2
   web_socket_channel: ^3.0.3
 
   # Web-specific networking
   # dart:html is automatically available on web
 
   # DI
-  get_it: ^7.7.0
+  get_it: ^9.2.1
   injectable: ^2.4.2
 
 dev_dependencies:

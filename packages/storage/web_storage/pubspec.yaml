@@ -11,20 +11,20 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
-    
+
   storage_interface:
     path: ../storage_interface
   models:
     path: ../../core/models
   di:
     path: ../../core/di
-    
+
   # Web storage
-  drift: ^2.18.0
+  drift: ^2.28.2
   idb_shim: ^2.4.1+1
-  
+
   # DI
-  get_it: ^7.7.0
+  get_it: ^9.2.1
   injectable: ^2.4.2
 
 dev_dependencies:

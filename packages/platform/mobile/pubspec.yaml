@@ -23,7 +23,7 @@ dependencies:
   package_info_plus: ^9.0.1
   device_info_plus: ^12.4.0
 
-  get_it: ^7.7.0
+  get_it: ^9.2.1
   injectable: ^2.4.2
 
 dev_dependencies:

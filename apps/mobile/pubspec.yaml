@@ -37,37 +37,37 @@ dependencies:
     path: ../../packages/core/models
   di:
     path: ../../packages/core/di
-    
+
   # Storage - mobile uses drift
   storage_interface:
     path: ../../packages/storage/storage_interface
   drift_storage:
     path: ../../packages/storage/drift_storage
-    
+
   # Network
   network_interface:
     path: ../../packages/network/network_interface
   dio_network:
     path: ../../packages/network/dio_network
-    
+
   # Platform
   mobile_platform:
     path: ../../packages/platform/mobile
-    
+
   # UI
   ui:
     path: ../../packages/ui
-    
+
   # State Management
   flutter_bloc: ^9.1.1
   hydrated_bloc: ^11.0.0
-  
+
   # Navigation
   go_router: ^17.2.2
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^1.0.9
 
 dev_dependencies:
   flutter_test:
