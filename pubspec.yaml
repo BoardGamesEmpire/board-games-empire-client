@@ -36,39 +36,39 @@ melos:
 
   scripts:
     generate:
-      run: melos exec -c 1 --order-dependents --depends-on build_runner -- flutter pub run build_runner build --delete-conflicting-outputs
+      run: melos exec -c 1 --order-dependents --depends-on build_runner -- dart run build_runner build --delete-conflicting-outputs
       description: Run code generation for all packages
 
     # Analysis and testing
     analyze:
       run: melos exec -- flutter analyze .
       description: Run flutter analyze on all packages
-      select-package:
+      packageFilters:
         flutter: true
 
     analyze:dart:
       run: melos exec -- dart analyze .
       description: Run dart analyze on pure-Dart packages
-      select-package:
+      packageFilters:
         flutter: false
 
     test:
       run: melos exec -c 1 -- "flutter test --coverage --test-randomize-ordering-seed random"
       description: Run all Flutter tests in workspace
-      select-package:
-        dir-exists: test
+      packageFilters:
+        dirExists: test
 
     test:core:
       run: melos exec -c 1 --scope="packages/core/*" -- "dart test"
       description: Test all core packages
-      select-package:
-        dir-exists: test
+      packageFilters:
+        dirExists: test
 
     test:storage:
       run: melos exec -c 1 --scope="packages/storage/*" -- "dart test"
       description: Test all storage packages
-      select-package:
-        dir-exists: test
+      packageFilters:
+        dirExists: test
 
     # Clean and get dependencies
     clean:
