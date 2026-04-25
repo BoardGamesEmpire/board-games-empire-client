@@ -21,7 +21,7 @@ dependencies:
 
   # Desktop-specific
   window_manager: ^0.5.1           # Window management
-  tray_manager: ^0.5.1             # System tray
+  tray_manager: ^0.5.2             # System tray
   connectivity_plus: ^7.1.1        # Desktop connectivity
   package_info_plus: ^9.0.1        # App info
 
