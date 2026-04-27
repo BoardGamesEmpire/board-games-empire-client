@@ -9,12 +9,10 @@ part 'server_config.g.dart';
 ///
 /// [id] is a client-generated cuid used as the root DB primary key.
 /// [bgeServerId] is the stable UUID vended by the server via
-/// /.well-known/bge-identity. Null on schema migration for pre-existing rows;
-/// always set for newly added servers.
+/// /.well-known/bge-identity.
 ///
 /// [cachedIdentity] is the last-known [ServerIdentity] fetched from the
-/// server. Null until first successful identity fetch. Stored as JSON in the
-/// DB and deserialized on read.
+/// server.
 @freezed
 abstract class ServerConfig with _$ServerConfig {
   const ServerConfig._();
