@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-import 'package:models/dto.dart';
 
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
@@ -29,6 +28,7 @@ class ServerContextImpl implements ServerContext {
   @override
   final String serverId;
 
+  // Used in activate() (Phase 2: DB open) and suspend() (Phase 3: WS close).
   final ServerConfig _config;
 
   @override
@@ -166,6 +166,5 @@ typedef ServerContextFactory = ServerContext Function(ServerConfig config);
 
 /// Default production factory. Creates a [ServerContextImpl] with a fresh
 /// [DependencyContainerImpl] for each server config.
-@visibleForTesting
 ServerContext defaultServerContextFactory(ServerConfig config) =>
     ServerContextImpl(config: config);

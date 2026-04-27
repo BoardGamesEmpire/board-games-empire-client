@@ -84,8 +84,8 @@ class AuthRepositoryImpl implements AuthRepository {
           'email': email,
           'password': password,
           'username': username,
-          if (firstName != null) 'first_name': firstName,
-          if (lastName != null) 'last_name': lastName,
+          'first_name': ?firstName,
+          'last_name': ?lastName,
         },
       );
     } on DioException catch (e) {

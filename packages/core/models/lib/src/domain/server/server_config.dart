@@ -58,9 +58,6 @@ abstract class ServerConfig with _$ServerConfig {
   bool get isMonitoring => connectionState == ConnectionState.monitoring;
   bool get isDisconnected => connectionState == ConnectionState.disconnected;
 
-  /// Whether a server-vended UUID has been obtained.
-  bool get hasIdentity => bgeServerId != null;
-
   /// Whether the cached identity should be refreshed.
   /// True if never fetched, or if older than the server's Cache-Control
   /// max-age of 3600 seconds.

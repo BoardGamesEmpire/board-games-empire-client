@@ -188,11 +188,11 @@ void main() {
   group('ServerCapacityExceededException', () {
     test('formats message correctly', () {
       final exception = ServerCapacityExceededException(
-        currentMonitored: 5,
+        currentConnected: 5,
         maxCapacity: 5,
       );
 
-      expect(exception.currentMonitored, 5);
+      expect(exception.currentConnected, 5);
       expect(exception.maxCapacity, 5);
       expect(
         exception.message,

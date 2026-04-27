@@ -89,7 +89,6 @@ class ServerRepositoryImpl implements ServerRepository {
     return (await getServer(config.id))!;
   }
 
-  @override
   Future<ServerConfig> cacheIdentity({
     required String serverId,
     required ServerIdentity identity,
