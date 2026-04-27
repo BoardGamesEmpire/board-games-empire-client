@@ -1,3 +1,5 @@
+library;
+
 export 'src/domain/achievement/achievement_type.dart';
 export 'src/domain/achievement/achievement.dart';
 export 'src/domain/achievement/user_achievement.dart';
@@ -5,8 +7,13 @@ export 'src/domain/achievement/user_achievement.dart';
 export 'src/domain/common/visibility.dart';
 
 export 'src/domain/server/connection_state.dart';
+export 'src/domain/server/notification_summary.dart';
+export 'src/domain/server/server_auth_strategy.dart';
 export 'src/domain/server/server_capacity_exceeded_exception.dart';
 export 'src/domain/server/server_config.dart';
+export 'src/domain/server/server_identity.dart';
+
+export 'src/domain/device/device_preferences.dart';
 
 export 'src/domain/social/friendship_status.dart';
 export 'src/domain/social/friendship.dart';

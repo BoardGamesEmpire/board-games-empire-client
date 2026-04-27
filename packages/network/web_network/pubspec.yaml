@@ -5,7 +5,7 @@ publish_to: none
 
 environment:
   sdk: ">=3.9.0 <4.0.0"
-  flutter: ">=1.17.0"
+  flutter: ">=3.0.0"
 resolution: workspace
 
 dependencies:
@@ -18,10 +18,14 @@ dependencies:
     path: ../../core/models
   di:
     path: ../../core/di
+  interfaces:
+    path: ../../core/interfaces
 
   # Base networking (inherits from dio_network)
   dio: ^5.9.2
   web_socket_channel: ^3.0.3
+
+  http_status: ^3.3.3
 
   # Web-specific networking
   # dart:html is automatically available on web
@@ -35,7 +39,7 @@ dev_dependencies:
   injectable_generator: ^2.6.1
   flutter_test:
     sdk: flutter
-  mocktail: ^1.0.3
+  mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
 

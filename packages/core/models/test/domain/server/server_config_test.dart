@@ -1,13 +1,34 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
+const _kBgeServerId = '550e8400-e29b-41d4-a716-446655440000';
+const _kServerUrl = 'https://api.example.com';
+
+ServerIdentity _makeIdentity({
+  String serverId = _kBgeServerId,
+  String issuer = _kServerUrl,
+}) => ServerIdentity(
+  serverId: serverId,
+  issuer: issuer,
+  deviceAuthorizationEndpoint: '$issuer/api/auth/device',
+  authBaseUrl: '$issuer/api/auth',
+  sessionEndpoint: '$issuer/api/auth/get-session',
+  signOutEndpoint: '$issuer/api/auth/sign-out',
+  passkeySupported: true,
+  twoFactorSupported: true,
+  anonymousAuthSupported: true,
+);
+
 void main() {
   group('ServerConfig', () {
     test('creates with required fields', () {
       final config = ServerConfig(
         id: 'server_123',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
         displayName: 'Production Server',
-        serverUrl: 'https://api.example.com',
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.disconnected,
       );
 
@@ -22,7 +43,10 @@ void main() {
       final config = ServerConfig(
         id: 'server_123',
         displayName: 'Test Server',
-        serverUrl: 'https://test.example.com',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.monitoring,
         lastActiveAt: DateTime.parse('2024-01-15T10:30:00Z'),
         metadata: {'region': 'us-east'},
@@ -55,8 +79,11 @@ void main() {
     test('computes connection state predicates correctly', () {
       final activeConfig = ServerConfig(
         id: 'active',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
         displayName: 'Active',
-        serverUrl: 'https://active.example.com',
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.active,
       );
 
@@ -88,7 +115,10 @@ void main() {
       final config = ServerConfig(
         id: 'server_abc123',
         displayName: 'Test',
-        serverUrl: 'https://test.example.com',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.disconnected,
       );
 
@@ -102,7 +132,10 @@ void main() {
       final original = ServerConfig(
         id: 'server_1',
         displayName: 'Original',
-        serverUrl: 'https://original.example.com',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.disconnected,
       );
 
@@ -123,7 +156,10 @@ void main() {
       final withMetadata = ServerConfig(
         id: 'server_1',
         displayName: 'Test',
-        serverUrl: 'https://test.example.com',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.disconnected,
         metadata: {
           'region': 'us-west',
@@ -138,7 +174,10 @@ void main() {
       final withoutMetadata = ServerConfig(
         id: 'server_2',
         displayName: 'Minimal',
-        serverUrl: 'https://minimal.example.com',
+        bgeServerId: _kBgeServerId,
+        cachedIdentity: _makeIdentity(),
+        lastIdentityFetchedAt: DateTime.now().toUtc(),
+        serverUrl: _kServerUrl,
         connectionState: ConnectionState.disconnected,
       );
 
@@ -149,11 +188,11 @@ void main() {
   group('ServerCapacityExceededException', () {
     test('formats message correctly', () {
       final exception = ServerCapacityExceededException(
-        currentMonitored: 5,
+        currentConnected: 5,
         maxCapacity: 5,
       );
 
-      expect(exception.currentMonitored, 5);
+      expect(exception.currentConnected, 5);
       expect(exception.maxCapacity, 5);
       expect(
         exception.message,

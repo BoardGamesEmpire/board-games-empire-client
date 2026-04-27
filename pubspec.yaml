@@ -18,6 +18,7 @@ workspace:
   - packages/core/interfaces
   - packages/core/models
   - packages/core/di
+  - packages/features/auth
   - packages/storage/drift_storage
   - packages/storage/storage_interface
   - packages/storage/memory_storage
@@ -116,10 +117,10 @@ melos:
 
       # Build commands for CI/CD
     build-web:
-      run: melos exec -c 1 -- flutter build web --release
+      run: melos exec -c 1 -- flutter build web --release --wasm
       description: Build the web application for production
       packageFilters:
-        scope: "web_app"
+        scope: "browser"
 
     build-mobile-android:
       run: melos exec -c 1 -- flutter build apk --release

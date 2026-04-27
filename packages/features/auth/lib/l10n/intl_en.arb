@@ -1,0 +1,87 @@
+{
+  "@@locale": "en",
+
+  "authSignInTitle": "Sign In",
+  "@authSignInTitle": { "description": "Title for the sign-in form" },
+
+  "authRegisterTitle": "Create Account",
+  "@authRegisterTitle": { "description": "Title for the registration form" },
+
+  "authSwitchToRegister": "Don't have an account? Register",
+  "@authSwitchToRegister": { "description": "Link to switch to registration form" },
+
+  "authSwitchToSignIn": "Already have an account? Sign in",
+  "@authSwitchToSignIn": { "description": "Link to switch to sign-in form" },
+
+  "authEmailLabel": "Email",
+  "@authEmailLabel": { "description": "Email field label" },
+
+  "authEmailHint": "Enter your email address",
+  "@authEmailHint": { "description": "Email field hint text" },
+
+  "authPasswordLabel": "Password",
+  "@authPasswordLabel": { "description": "Password field label" },
+
+  "authPasswordHint": "Enter your password",
+  "@authPasswordHint": { "description": "Password field hint text" },
+
+  "authUsernameLabel": "Username",
+  "@authUsernameLabel": { "description": "Username field label" },
+
+  "authUsernameHint": "Choose a username",
+  "@authUsernameHint": { "description": "Username field hint text" },
+
+  "authFirstNameLabel": "First Name",
+  "@authFirstNameLabel": { "description": "First name field label" },
+
+  "authLastNameLabel": "Last Name",
+  "@authLastNameLabel": { "description": "Last name field label" },
+
+  "authSignInButton": "Sign In",
+  "@authSignInButton": { "description": "Sign-in submit button label" },
+
+  "authRegisterButton": "Create Account",
+  "@authRegisterButton": { "description": "Registration submit button label" },
+
+  "authLoadingLabel": "Signing in, please wait",
+  "@authLoadingLabel": { "description": "Semantic label for loading indicator" },
+
+  "authOrDivider": "or",
+  "@authOrDivider": { "description": "Divider between email/password and OIDC options" },
+
+  "authContinueWith": "Continue with {provider}",
+  "@authContinueWith": {
+    "description": "OIDC button label",
+    "placeholders": { "provider": { "type": "String" } }
+  },
+
+  "authErrorRequired": "This field is required",
+  "@authErrorRequired": { "description": "Validation error for empty required field" },
+
+  "authErrorInvalidEmail": "Enter a valid email address",
+  "@authErrorInvalidEmail": { "description": "Validation error for bad email format" },
+
+  "authErrorPasswordTooShort": "Password must be at least {minLength} characters",
+  "@authErrorPasswordTooShort": {
+    "description": "Validation error for short password",
+    "placeholders": { "minLength": { "type": "int" } }
+  },
+
+  "authErrorUsernameTooShort": "Username must be at least {minLength} characters",
+  "@authErrorUsernameTooShort": {
+    "description": "Validation error for short username",
+    "placeholders": { "minLength": { "type": "int" } }
+  },
+
+  "authPasswordVisibilityShow": "Show password",
+  "@authPasswordVisibilityShow": { "description": "Semantic label to show password" },
+
+  "authPasswordVisibilityHide": "Hide password",
+  "@authPasswordVisibilityHide": { "description": "Semantic label to hide password" },
+
+  "authServerLabel": "Server",
+  "@authServerLabel": { "description": "Label showing which server the user is signing into" },
+
+  "authRegistrationDisabled": "Registration is currently disabled on this server.",
+  "@authRegistrationDisabled": { "description": "Error when server disables sign-up" }
+}

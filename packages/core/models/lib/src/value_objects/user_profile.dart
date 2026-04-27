@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+
 import '../domain/user/user.dart';
 import '../domain/user/user_preferences.dart';
 import '../domain/achievement/user_achievement.dart';
