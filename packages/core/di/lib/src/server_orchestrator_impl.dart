@@ -36,9 +36,9 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   final Map<String, Timer> _backgroundingTimers = {};
 
   final StreamController<ServerContext?> _activeContextController =
-      StreamController<ServerContext?>.broadcast();
+      StreamController<ServerContext?>.broadcast(sync: true);
   final StreamController<Map<String, ServerContext>> _contextsController =
-      StreamController<Map<String, ServerContext>>.broadcast();
+      StreamController<Map<String, ServerContext>>.broadcast(sync: true);
 
   String? _activeServerId;
   bool _isInitialized = false;

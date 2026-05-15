@@ -23,7 +23,9 @@ class ServerContextImpl implements ServerContext {
        _config = config,
        _container = container ?? DependencyContainerImpl(),
        _state = ServerContextState.initializing,
-       _stateController = StreamController<ServerContextState>.broadcast();
+       _stateController = StreamController<ServerContextState>.broadcast(
+         sync: true,
+       );
 
   @override
   final String serverId;
@@ -109,13 +111,24 @@ class ServerContextImpl implements ServerContext {
     _setState(ServerContextState.disposed);
     await _container.dispose();
     await _stateController.close();
+    // Drain remaining microtasks so any buffered stream events are delivered
+    // to subscribers before dispose() returns.
+    await Future<void>(() {});
   }
 
   @override
-  Stream<ServerContextState> watchState() async* {
-    // Replay current state immediately, then follow live changes.
-    yield _state;
-    yield* _stateController.stream;
+  Stream<ServerContextState> watchState() {
+    // Stream.multi runs the callback synchronously on each listen(),
+    // guaranteeing the initial state is emitted before any mutations.
+    return Stream.multi((controller) {
+      controller.add(_state);
+      final sub = _stateController.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = sub.cancel;
+    });
   }
 
   /// Executes [body] with the transitioning guard held.

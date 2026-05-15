@@ -66,6 +66,10 @@ MockServerContext _mockContext(String serverId) {
 }
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(ConnectionState.disconnected);
+  });
+
   late MockServerRepository mockRepo;
   late MockDevicePreferencesRepository mockPrefsRepo;
   late Map<String, MockServerContext> mockContexts;

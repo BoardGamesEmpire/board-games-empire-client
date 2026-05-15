@@ -25,7 +25,7 @@ class WebAuthRepositoryImpl implements AuthRepository {
     @visibleForTesting Dio? dio,
   }) : _identity = identity,
        _dio = dio ?? _buildDio(),
-       _stateController = StreamController<AuthState>.broadcast();
+       _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   final ServerIdentity _identity;
   final Dio _dio;
@@ -166,9 +166,16 @@ class WebAuthRepositoryImpl implements AuthRepository {
   Future<AuthResponse?> getCachedSession() => getSession();
 
   @override
-  Stream<AuthState> watchAuthState() async* {
-    yield _currentState;
-    yield* _stateController.stream;
+  Stream<AuthState> watchAuthState() {
+    return Stream.multi((controller) {
+      controller.add(_currentState);
+      final sub = _stateController.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = sub.cancel;
+    });
   }
 
   void _setState(AuthState next) {

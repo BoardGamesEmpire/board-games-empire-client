@@ -65,6 +65,22 @@ void main() {
         'displayName': 'Staging',
         'serverUrl': 'https://staging.example.com',
         'connectionState': 'Active',
+        'bgeServerId': _kBgeServerId,
+        'cachedIdentity': {
+          'bge_server_id': _kBgeServerId,
+          'issuer': 'https://staging.example.com',
+          'device_authorization_endpoint':
+              'https://staging.example.com/api/auth/device',
+          'bge_auth_base_url': 'https://staging.example.com/api/auth',
+          'bge_session_endpoint':
+              'https://staging.example.com/api/auth/get-session',
+          'bge_sign_out_endpoint':
+              'https://staging.example.com/api/auth/sign-out',
+          'bge_passkey_supported': true,
+          'bge_two_factor_supported': true,
+          'bge_anonymous_auth_supported': true,
+        },
+        'lastIdentityFetchedAt': '2024-01-15T10:30:00Z',
         'lastActiveAt': '2024-01-15T10:30:00Z',
         'metadata': {'environment': 'staging'},
       };

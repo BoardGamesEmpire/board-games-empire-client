@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
 import 'package:interfaces/repositories.dart';
@@ -110,26 +111,46 @@ class NotificationSummaryRepositoryImpl
   }
 
   @override
-  Stream<List<NotificationSummary>> watchAll() =>
-      (_database.select(_database.notificationSummaries)
-            ..orderBy([(t) => OrderingTerm.desc(t.receivedAt)]))
-          .watch()
-          .map((rows) => rows.map(_mapToModel).toList());
+  Stream<List<NotificationSummary>> watchAll() => _watchAll();
 
-  @override
-  Stream<int> watchUnreadCount() {
-    final expr = _database.notificationSummaries.id.count();
-    return (_database.selectOnly(_database.notificationSummaries)
-          ..addColumns([expr])
-          ..where(_database.notificationSummaries.isRead.equals(false)))
-        .watchSingle()
-        .map((row) => row.read(expr) ?? 0);
+  Stream<List<NotificationSummary>> _watchAll() async* {
+    yield const <NotificationSummary>[];
+    yield* (_database.select(_database.notificationSummaries)
+          ..orderBy([(t) => OrderingTerm.desc(t.receivedAt)]))
+        .watch()
+        .map((rows) => rows.map(_mapToModel).toList());
   }
 
   @override
-  Stream<int> watchUnreadCountForServer(String localServerId) {
+  Stream<int> watchUnreadCount() => _watchUnreadCount();
+
+  Stream<int> _watchUnreadCount() {
+    // Add initial 0 immediately so it's captured before any mutations,
+    // then start Drift watch eagerly so mutations are also captured before consumer subscribes
+    final controller = StreamController<int>();
+    controller.add(0);
     final expr = _database.notificationSummaries.id.count();
-    return (_database.selectOnly(_database.notificationSummaries)
+    (_database.selectOnly(_database.notificationSummaries)
+          ..addColumns([expr])
+          ..where(_database.notificationSummaries.isRead.equals(false)))
+        .watchSingle()
+        .map((row) => row.read(expr) ?? 0)
+        .listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+    return controller.stream;
+  }
+
+  @override
+  Stream<int> watchUnreadCountForServer(String localServerId) =>
+      _watchUnreadCountForServer(localServerId);
+
+  Stream<int> _watchUnreadCountForServer(String localServerId) async* {
+    yield 0;
+    final expr = _database.notificationSummaries.id.count();
+    yield* (_database.selectOnly(_database.notificationSummaries)
           ..addColumns([expr])
           ..where(
             _database.notificationSummaries.localServerId.equals(
