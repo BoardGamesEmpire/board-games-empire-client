@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -124,12 +122,16 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   }
 
   @override
-  Stream<int> watchPendingCount() => _watchPendingCount();
-
-  Stream<int> _watchPendingCount() async* {
-    yield 0;
+  Stream<int> watchPendingCount() {
+    // Drift's .watch() already emits the current value on subscribe
+    // and re-emits on every change to the sync_queue table, so the
+    // prior `async* { yield 0; yield* ...}` wrapper was emitting a
+    // misleading fake-zero ahead of the real value. Returning the
+    // Drift stream directly also avoids a category of bugs where the
+    // wrapper is implemented via a leaky StreamController whose inner
+    // subscription is never cancelled when the consumer cancels.
     final count = _db.syncQueueTable.id.count();
-    yield* (_db.selectOnly(_db.syncQueueTable)
+    return (_db.selectOnly(_db.syncQueueTable)
           ..addColumns([count])
           ..where(_db.syncQueueTable.status.isIn(['pending', 'inProgress'])))
         .watchSingle()

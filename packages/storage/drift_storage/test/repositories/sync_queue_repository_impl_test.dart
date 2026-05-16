@@ -145,9 +145,6 @@ void main() {
       );
 
       test('is a no-op when the id does not exist', () async {
-        // The prior impl early-returned on row==null. The atomic
-        // UPDATE just affects zero rows. Either way the call must not
-        // throw.
         await repo.markFailed('nonexistent', error: 'oops');
         expect(await repo.getAllEntries(), isEmpty);
       });
@@ -185,16 +182,40 @@ void main() {
     });
 
     group('watchPendingCount()', () {
-      test('emits 0 initially', () async {
+      test('emits the current pending count on subscribe', () async {
+        // Empty queue → emits 0 immediately on subscribe.
         await expectLater(repo.watchPendingCount().take(1), emits(0));
       });
 
-      test('increments on enqueue', () async {
-        final stream = repo.watchPendingCount();
+      test('emits the current count when entries exist at subscribe time',
+          () async {
+        // Pass 3c change: the wrapper used to prepend a fake `yield 0`
+        // before the real value. Now we get the actual current count
+        // on first emission.
         await repo.enqueue(_kOperation);
-
-        await expectLater(stream.take(2), emitsInOrder([0, 1]));
+        await expectLater(repo.watchPendingCount().take(1), emits(1));
       });
+
+      test(
+        're-emits when an entry is enqueued after subscribe',
+        () async {
+          // Subscribe-then-mutate: take(2).toList() listens synchronously
+          // and returns a Future that resolves when both emissions arrive.
+          // The empty Future.delayed yields the event loop so Drift's
+          // initial emission lands before the enqueue mutates the table.
+          final futureEmissions =
+              repo.watchPendingCount().take(2).toList();
+
+          await Future<void>.delayed(Duration.zero);
+
+          await repo.enqueue(_kOperation);
+
+          expect(
+            await futureEmissions.timeout(const Duration(seconds: 5)),
+            equals([0, 1]),
+          );
+        },
+      );
     });
 
     group('SyncOperation round-trip', () {

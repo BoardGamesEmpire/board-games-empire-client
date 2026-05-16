@@ -41,18 +41,15 @@ class DevicePreferencesRepositoryImpl implements DevicePreferencesRepository {
   }
 
   @override
-  Stream<DevicePreferences> watch() {
-    return _watchStream();
-  }
-
-  Stream<DevicePreferences> _watchStream() async* {
-    yield const DevicePreferences();
-    yield* (_database.select(
-      _database.devicePreferencesTable,
-    )..where((t) => t.id.equals(kDevicePreferencesId))).watchSingleOrNull().map(
-      (row) => row != null ? _mapToModel(row) : const DevicePreferences(),
-    );
-  }
+  Stream<DevicePreferences> watch() =>
+      (_database.select(
+            _database.devicePreferencesTable,
+          )..where((t) => t.id.equals(kDevicePreferencesId)))
+          .watchSingleOrNull()
+          .map(
+            (row) =>
+                row != null ? _mapToModel(row) : const DevicePreferences(),
+          );
 
   DevicePreferences _mapToModel(
     DevicePreferencesData data,

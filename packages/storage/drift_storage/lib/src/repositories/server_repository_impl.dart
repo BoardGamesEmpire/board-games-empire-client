@@ -1,5 +1,5 @@
-import 'dart:async';
 import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
 import 'package:interfaces/repositories.dart';
@@ -219,31 +219,15 @@ class ServerRepositoryImpl implements ServerRepository {
   }
 
   @override
-  Stream<List<ServerConfig>> watchServers() => _watchServers();
-
-  Stream<List<ServerConfig>> _watchServers() {
-    // Start listening immediately so events are buffered before consumer subscribes
-    final controller = StreamController<List<ServerConfig>>();
-    _database
-        .select(_database.serverConfigs)
-        .watch()
-        .map((rows) => rows.map(_mapToModel).toList())
-        .listen(
-          controller.add,
-          onError: controller.addError,
-          onDone: controller.close,
-        );
-    return controller.stream;
-  }
+  Stream<List<ServerConfig>> watchServers() => _database
+      .select(_database.serverConfigs)
+      .watch()
+      .map((rows) => rows.map(_mapToModel).toList());
 
   @override
-  Stream<int> watchConnectedCount() => _watchConnectedCount();
-
-  Stream<int> _watchConnectedCount() {
-    // Start listening immediately so events are buffered before consumer subscribes
+  Stream<int> watchConnectedCount() {
     final expr = _database.serverConfigs.id.count();
-    final controller = StreamController<int>();
-    (_database.selectOnly(_database.serverConfigs)
+    return (_database.selectOnly(_database.serverConfigs)
           ..addColumns([expr])
           ..where(
             _database.serverConfigs.connectionState.equals(
@@ -257,13 +241,7 @@ class ServerRepositoryImpl implements ServerRepository {
                 ),
           ))
         .watchSingle()
-        .map((row) => row.read(expr) ?? 0)
-        .listen(
-          controller.add,
-          onError: controller.addError,
-          onDone: controller.close,
-        );
-    return controller.stream;
+        .map((row) => row.read(expr) ?? 0);
   }
 
   ServerConfig _mapToModel(ServerConfigData data) {
