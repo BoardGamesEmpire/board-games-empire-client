@@ -28,6 +28,15 @@ import '../databases/server_database.dart';
 /// throw [StateError] if it does not exist; the transaction then
 /// rolls back without enqueuing a sync op.
 ///
+/// ## Quantity validation
+///
+/// `addToCollection.quantity` must be `> 0`. `updateCollectionEntry.quantity`
+/// must be `> 0` when provided (`null` means "leave unchanged"). Both
+/// methods throw [ArgumentError] **before** opening the transaction,
+/// so the local cache and sync queue stay untouched on invalid input.
+/// Removing an entry uses [removeFromCollection], not
+/// `addToCollection(quantity: 0)` or `updateCollectionEntry(quantity: 0)`.
+///
 /// ## Tombstones
 ///
 /// `deletedAt` is the canonical tombstone marker (matches the model's
@@ -137,6 +146,20 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     int? rating,
     String? comment,
   }) async {
+    // Validate BEFORE opening the transaction so the cache and the
+    // sync queue stay untouched on bad input. A zero or negative
+    // quantity makes no business sense — the duplicate-triplet path
+    // would increment a live row by 0 (no-op DB write that still
+    // enqueues an Add op) or DECREMENT it (silently corrupts the
+    // count). Use [removeFromCollection] to delete an entry.
+    if (quantity <= 0) {
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'must be positive (use removeFromCollection to delete an entry)',
+      );
+    }
+
     return _db.transaction(() async {
       final now = DateTime.now().toUtc();
       final wireMedium = medium.toWire();
@@ -240,6 +263,18 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     String? comment,
     DateTime? lastPlayed,
   }) async {
+    // null = "leave unchanged" by the API contract; only validate
+    // when the caller actually supplied a value. Same pre-transaction
+    // fail-fast rationale as addToCollection.
+    if (quantity != null && quantity <= 0) {
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'must be positive when provided (omit to leave unchanged; '
+            'use removeFromCollection to delete the entry entirely)',
+      );
+    }
+
     return _db.transaction(() async {
       final now = DateTime.now().toUtc();
 
@@ -424,7 +459,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
           .watchSingleOrNull()
           .map((row) => row == null ? null : _mapRow(row));
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────────
 
   /// Look up the canonical row for a `(_userId, platformGameId,
   /// medium)` triplet. See the class doc for the ordering rationale.
@@ -455,7 +490,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         .getSingleOrNull();
   }
 
-  // ── Mappers ─────────────────────────────────────────────────────────────────
+  // ── Mappers ───────────────────────────────────────────────────────────────────
 
   GameCollection _mapRow(GameCollectionsTableData row) => GameCollection(
     id: row.id,

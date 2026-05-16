@@ -11,7 +11,7 @@ class GameRepositoryImpl implements GameRepository {
 
   final ServerDatabase _db;
 
-  // ── Game ────────────────────────────────────────────────────────────────────
+  // ── Game ──────────────────────────────────────────────────────────────────────
 
   @override
   Future<Game?> getGame(String id) async {
@@ -58,9 +58,34 @@ class GameRepositoryImpl implements GameRepository {
     });
   }
 
+  /// Matches LIKE-wildcard metacharacters: `%` and `_`.
+  static final RegExp _likeWildcardChars = RegExp(r'[%_]');
+
   @override
   Future<List<Game>> searchGames(String query, {int limit = 20}) async {
-    final q = query.trim().toLowerCase();
+    // Reject non-positive limits up front. Without this, passing
+    // `limit: -1` would silently disable SQLite's LIMIT clause and
+    // turn the query into a full cache scan; `limit: 0` would emit
+    // SQL with `LIMIT 0` that returns nothing but still pays the
+    // ORDER BY cost.
+    if (limit <= 0) return [];
+
+    // Strip SQL `LIKE` wildcards (`%`, `_`) from the user's input.
+    //
+    // Drift's expression API doesn't expose the `LIKE ... ESCAPE`
+    // clause directly, and rewriting the whole searchGames body as a
+    // `customSelect` to add `ESCAPE '\\'` would mean replacing the
+    // type-safe `select(_db.gamesTable).where(...).orderBy(...)` chain
+    // with raw SQL plus manual `QueryRow` -> `GamesTableData` mapping.
+    // The pragmatic compromise: drop the wildcards before building
+    // the predicate. For board game titles/subtitles, `%` and `_`
+    // are vanishingly rare, so the lossiness is acceptable. A user
+    // searching for "100%" will get results for "100" instead.
+    //
+    // TODO(search-literal-wildcards): if a future requirement needs
+    // literal `%`/`_` matching, switch this method to `customSelect`
+    // with explicit `LIKE ? ESCAPE '\\'` and a row mapper.
+    final q = query.trim().toLowerCase().replaceAll(_likeWildcardChars, '');
     if (q.isEmpty) return [];
 
     // Order in SQL before LIMIT (Copilot J): the previous impl
@@ -110,7 +135,7 @@ class GameRepositoryImpl implements GameRepository {
           .watch()
           .map((rows) => rows.map(_mapGame).toList());
 
-  // ── PlatformGame ───────────────────────────────────────────────────────────
+  // ── PlatformGame ─────────────────────────────────────────────────────────
 
   @override
   Future<PlatformGame?> getPlatformGame(String id) async {
@@ -148,7 +173,7 @@ class GameRepositoryImpl implements GameRepository {
     });
   }
 
-  // ── Mappers ───────────────────────────────────────────────────────────────────
+  // ── Mappers ────────────────────────────────────────────────────────────────────
 
   Game _mapGame(GamesTableData row) => Game(
     id: row.id,
