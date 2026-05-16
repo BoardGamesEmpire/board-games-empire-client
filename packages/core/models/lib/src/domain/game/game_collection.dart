@@ -8,6 +8,10 @@ part 'game_collection.g.dart';
 ///
 /// The primary offline-capable entity. Create/update/delete operations
 /// are written locally immediately and enqueued for server sync.
+///
+/// Soft delete: [deletedAt] is the canonical tombstone marker. A row
+/// with `deletedAt != null` is awaiting remote confirmation before
+/// being purged. UI consumers should treat tombstoned rows as removed.
 @freezed
 abstract class GameCollection with _$GameCollection {
   const GameCollection._();
@@ -17,6 +21,9 @@ abstract class GameCollection with _$GameCollection {
     required String userId,
     required String platformGameId,
     required GameMedium medium,
+
+    /// Optional link to a specific [GameRelease] (printing/edition).
+    String? releaseId,
 
     @Default(1) int quantity,
     int? rating,
@@ -33,6 +40,9 @@ abstract class GameCollection with _$GameCollection {
     /// True when this entry was created offline and not yet confirmed by server.
     @Default(false) bool isLocalOnly,
 
+    /// Soft-delete timestamp. Non-null means tombstoned awaiting purge.
+    DateTime? deletedAt,
+
     required DateTime createdAt,
     required DateTime updatedAt,
   }) = _GameCollection;
@@ -40,6 +50,12 @@ abstract class GameCollection with _$GameCollection {
   factory GameCollection.fromJson(Map<String, dynamic> json) =>
       _$GameCollectionFromJson(json);
 
-  bool get isOwned => quantity > 0;
+  /// True when the entry is live (not tombstoned) and the user owns at
+  /// least one copy. UI lists should filter on this for ownership state.
+  bool get isOwned => !isDeleted && quantity > 0;
+
   bool get hasFavorited => favorite == true;
+
+  /// True iff [deletedAt] is set (tombstoned).
+  bool get isDeleted => deletedAt != null;
 }

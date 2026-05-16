@@ -1,8 +1,14 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'household_role.dart';
 
 part 'household_member.freezed.dart';
 part 'household_member.g.dart';
 
+/// Membership record linking a user to a household.
+///
+/// `role` was previously a stringly-typed `roleName`; it is now a typed
+/// [HouseholdRole] enum. Unknown server-defined role names deserialize
+/// to [HouseholdRole.unknown] rather than failing.
 @freezed
 abstract class HouseholdMember with _$HouseholdMember {
   const HouseholdMember._();
@@ -15,8 +21,9 @@ abstract class HouseholdMember with _$HouseholdMember {
     /// When true, household game pool includes all member games.
     @Default(true) bool showAllGames,
 
-    /// Role name from server RBAC (e.g. 'HouseholdOwner', 'HouseholdMember').
-    String? roleName,
+    /// Membership role. Null when the server returns no role binding.
+    /// Unrecognized server role names deserialize to [HouseholdRole.unknown].
+    @JsonKey(unknownEnumValue: HouseholdRole.unknown) HouseholdRole? role,
 
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -25,7 +32,8 @@ abstract class HouseholdMember with _$HouseholdMember {
   factory HouseholdMember.fromJson(Map<String, dynamic> json) =>
       _$HouseholdMemberFromJson(json);
 
-  bool get isOwner => roleName == 'HouseholdOwner';
+  bool get isOwner => role == HouseholdRole.householdOwner;
   bool get isAdmin =>
-      roleName == 'HouseholdOwner' || roleName == 'HouseholdAdmin';
+      role == HouseholdRole.householdOwner ||
+      role == HouseholdRole.householdAdmin;
 }

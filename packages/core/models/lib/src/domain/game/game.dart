@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+import '../common/visibility.dart';
 import 'content_type.dart';
 import 'time_measure.dart';
 
@@ -28,6 +29,8 @@ abstract class Game with _$Game {
     int? maxPlayers,
 
     // Play time
+    /// Aggregate playing time in minutes (server `Game.playingTime`).
+    int? playingTime,
     int? minPlayTime,
     TimeMeasure? minPlayTimeMeasure,
     int? maxPlayTime,
@@ -38,16 +41,22 @@ abstract class Game with _$Game {
     @Default(ContentType.baseGame) ContentType contentType,
 
     // Aggregate metadata from server
+    @Default(0) int totalPlayCount,
     double? averageRating,
     double? bayesRating,
     int? ratingsCount,
     @Default(0) int ownedByCount,
 
     // Denormalized relation lists — stored as JSON in local DB
-    @Default([]) List<String> categories,
-    @Default([]) List<String> mechanics,
-    @Default([]) List<String> designers,
-    @Default([]) List<String> publishers,
+    @Default(<String>[]) List<String> categories,
+    @Default(<String>[]) List<String> mechanics,
+    @Default(<String>[]) List<String> designers,
+    @Default(<String>[]) List<String> publishers,
+    @Default(<String>[]) List<String> tags,
+
+    // Access control
+    @Default(Visibility.public) Visibility visibility,
+    String? createdById,
 
     DateTime? deletedAt,
     required DateTime createdAt,

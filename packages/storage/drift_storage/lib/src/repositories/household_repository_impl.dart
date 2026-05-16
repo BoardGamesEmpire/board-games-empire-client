@@ -35,9 +35,10 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<HouseholdMember?> getCurrentUserMember(String householdId) async {
-    // currentUserId is resolved at the caller level via DI
-    // For the interface, we match on householdId only — callers filter by userId
-    return null; // TODO: inject currentUserId in constructor, same pattern as GameCollectionRepository
+    // currentUserId is resolved at the caller level via DI.
+    // Pass 3 injects currentUserId in the constructor (same pattern as
+    // GameCollectionRepository) so this query filters by both fields.
+    return null;
   }
 
   @override
@@ -90,6 +91,8 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
           .watch()
           .map((rows) => rows.map(_mapMember).toList());
 
+  // ── Mappers ───────────────────────────────────────────────────────────────
+
   Household _mapHousehold(HouseholdsTableData row) => Household(
     id: row.id,
     name: row.name,
@@ -105,7 +108,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
     userId: row.userId,
     householdId: row.householdId,
     showAllGames: row.showAllGames,
-    roleName: row.roleName,
+    role: _decodeRole(row.roleName),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );
@@ -116,8 +119,37 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
         userId: m.userId,
         householdId: m.householdId,
         showAllGames: Value(m.showAllGames),
-        roleName: Value(m.roleName),
+        roleName: Value(_encodeRole(m.role)),
         createdAt: m.createdAt,
         updatedAt: m.updatedAt,
       );
+
+  /// Maps a persisted role-name string to a typed [HouseholdRole].
+  /// Unknown server-defined names map to [HouseholdRole.unknown].
+  static HouseholdRole? _decodeRole(String? value) {
+    if (value == null) return null;
+    return switch (value) {
+      'HouseholdOwner' => HouseholdRole.householdOwner,
+      'HouseholdAdmin' => HouseholdRole.householdAdmin,
+      'HouseholdMember' => HouseholdRole.householdMember,
+      'HouseholdGuest' => HouseholdRole.householdGuest,
+      _ => HouseholdRole.unknown,
+    };
+  }
+
+  /// Maps a typed [HouseholdRole] back to the persisted role-name string.
+  /// [HouseholdRole.unknown] persists as `'Unknown'`; the originating
+  /// custom role name from the server is not preserved through this
+  /// bridge. Pass 2 may introduce a parallel `originalRoleName` column
+  /// if higher-fidelity persistence is needed.
+  static String? _encodeRole(HouseholdRole? role) {
+    if (role == null) return null;
+    return switch (role) {
+      HouseholdRole.householdOwner => 'HouseholdOwner',
+      HouseholdRole.householdAdmin => 'HouseholdAdmin',
+      HouseholdRole.householdMember => 'HouseholdMember',
+      HouseholdRole.householdGuest => 'HouseholdGuest',
+      HouseholdRole.unknown => 'Unknown',
+    };
+  }
 }

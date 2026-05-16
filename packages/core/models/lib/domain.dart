@@ -17,6 +17,7 @@ export 'src/domain/game/time_measure.dart';
 
 export 'src/domain/household/household.dart';
 export 'src/domain/household/household_member.dart';
+export 'src/domain/household/household_role.dart';
 
 export 'src/domain/server/connection_state.dart';
 export 'src/domain/server/notification_summary.dart';
