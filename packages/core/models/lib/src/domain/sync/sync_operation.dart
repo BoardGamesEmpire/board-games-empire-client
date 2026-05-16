@@ -29,7 +29,7 @@ sealed class SyncOperation {
       SyncOperation.fromJson(jsonDecode(payload) as Map<String, dynamic>);
 }
 
-// ── GameCollection operations ─────────────────────────────────────────────
+// ── GameCollection operations ────────────────────────────────────────
 
 final class AddToCollectionOperation extends SyncOperation {
   const AddToCollectionOperation({
@@ -53,7 +53,18 @@ final class AddToCollectionOperation extends SyncOperation {
         comment: json['comment'] as String?,
       );
 
-  /// The local Drift-generated ID for reconciliation after server confirms.
+  /// The local id of the [GameCollection] row this op writes. Generated
+  /// by `GameCollectionRepositoryImpl.addToCollection` as a UUID v4 via
+  /// `package:uuid` **before** the insert, so it's present on both the
+  /// local row and the enqueued op. The server uses it during
+  /// reconciliation: when the server's response comes back with the
+  /// canonical id, `reconcileFromServer` looks up the local row by
+  /// `(userId, platformGameId, medium)` triplet and drops/upserts it
+  /// against the server id (see `GameCollectionRepositoryImpl` class
+  /// doc for the full flow).
+  ///
+  /// Note: Drift does **not** generate this id — the column is a
+  /// `TEXT PRIMARY KEY` whose value the repo supplies on insert.
   final String localId;
   final String platformGameId;
   final String medium;

@@ -19,6 +19,12 @@ abstract class GameCollectionRepository {
 
   /// Adds a game to the collection.
   ///
+  /// [quantity] must be `> 0`. Implementations should throw
+  /// [ArgumentError] before opening the local transaction if it isn't,
+  /// so the cache and the sync queue stay untouched on bad input.
+  /// Use [removeFromCollection] to delete an entry rather than
+  /// passing `quantity: 0`.
+  ///
   /// Writes locally, enqueues [AddToCollectionOperation].
   Future<GameCollection> addToCollection({
     required String platformGameId,
@@ -30,7 +36,20 @@ abstract class GameCollectionRepository {
 
   /// Updates an existing collection entry.
   ///
-  /// Only non-null fields are updated. Enqueues [UpdateCollectionOperation].
+  /// Only non-null fields are updated. [quantity] must be `> 0` when
+  /// provided; implementations should throw [ArgumentError] before
+  /// opening the transaction for non-positive values. Enqueues
+  /// [UpdateCollectionOperation].
+  ///
+  /// **TODO(clear-fields)**: this method cannot currently distinguish
+  /// "don't touch this field" from "explicitly clear this nullable
+  /// field to null". For nullable columns ([rating], [comment],
+  /// [lastPlayed]), `null` always means leave-unchanged. A planned
+  /// follow-up will add a separate `clearFields` method (or an enum
+  /// parameter on this one) plus a `ClearFieldsOperation` sync op,
+  /// so callers can explicitly null out a previously-set rating or
+  /// comment. Until then, the workaround is to remove and re-add
+  /// the entry without the field.
   Future<GameCollection> updateCollectionEntry({
     required String id,
     int? quantity,
