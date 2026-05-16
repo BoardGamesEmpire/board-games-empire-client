@@ -328,6 +328,13 @@ void main() {
 
     group('watchActiveContext()', () {
       test('emits new context after switch', () async {
+        // Subscribe-then-mutate-then-pump. Post-Pass-6 Tier-5, the
+        // active-context broadcast controller no longer uses sync:true,
+        // so listener callbacks fire in a microtask after add() rather
+        // than synchronously inside the orchestrator method that emitted.
+        // The `await pumpEventQueue()` before sub.cancel() drains the
+        // pending delivery microtasks so `emitted` captures both
+        // emissions before the subscription is torn down.
         await orchestrator.initialize();
         stubUpdateConnectionState();
         stubUpdateLastActive();
@@ -336,10 +343,12 @@ void main() {
 
         final emitted = <ServerContext?>[];
         final sub = orchestrator.watchActiveContext().listen(emitted.add);
+        await pumpEventQueue();
 
         await orchestrator.connectServer('server-a');
         await orchestrator.connectServer('server-b', makeActive: true);
 
+        await pumpEventQueue();
         await sub.cancel();
 
         expect(emitted.map((c) => c?.serverId), contains('server-b'));
