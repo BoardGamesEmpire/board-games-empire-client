@@ -8,24 +8,43 @@ import 'package:drift_storage/src/repositories/game_collection_repository_impl.d
 
 class MockSyncQueue extends Mock implements SyncQueueRepository {}
 
-// ── Fixtures ─────────────────────────────────────────────────────────────────
+// ── Fixtures ────────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kPlatformGameId = 'pg-1';
 const _kMedium = GameMedium.physical;
 
-// Insert a minimal PlatformGame row to satisfy FK
+// Insert a minimal PlatformGame row plus its parent Game so the FK
+// chain games <- platform_games <- game_collections is satisfied.
+// Pre-Pass-2 the database had PRAGMA foreign_keys = OFF, so the
+// missing parent Game row was silently accepted; the pragma is now ON
+// in beforeOpen and the parent must exist.
 Future<void> _seedPlatformGame(
   ServerDatabase db, {
   String id = _kPlatformGameId,
+  String gameId = 'game-1',
 }) async {
   final now = DateTime.now().toUtc();
+
+  // Upsert the parent Game so repeat _seedPlatformGame calls in the
+  // same test (sharing the default gameId) don't trip the games PK.
+  await db
+      .into(db.gamesTable)
+      .insertOnConflictUpdate(
+        GamesTableCompanion.insert(
+          id: gameId,
+          title: 'Test Game',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
   await db
       .into(db.platformGamesTable)
       .insert(
         PlatformGamesTableCompanion.insert(
           id: id,
-          gameId: 'game-1',
+          gameId: gameId,
           platformId: 'plat-1',
           platformName: 'Tabletop',
           createdAt: now,
@@ -34,7 +53,7 @@ Future<void> _seedPlatformGame(
       );
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 void main() {
   setUpAll(() {

@@ -18,21 +18,26 @@ part 'server_database.g.dart';
 /// Opened lazily when the [ServerContext] activates; closed when it
 /// transitions to [ServerContextState.monitoring].
 ///
-/// ## Schema versions
+/// ## Schema
 ///
-/// - **v1**: initial. games, platform_games, game_collections,
-///   households, household_members, sync_queue.
-/// - **v2**: + `deleted_at` and `release_id` on `game_collections`;
-///   the single-column `game_collections_platform_game_idx` is
-///   replaced with a partial unique index on
-///   `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL`,
-///   enforcing one live ownership row per triplet while permitting
-///   tombstones; `household_members_household_idx` renamed to
-///   `household_members_household_user_unique_idx` (same columns,
-///   clearer name); legacy `sync_queue.status` value `'in_progress'`
-///   rewritten to `'inProgress'` to match `SyncStatus.name`; PRAGMA
-///   `foreign_keys = ON` enabled so `REFERENCES` constraints are
-///   actually enforced (SQLite ignores them by default).
+/// Tables: games, platform_games, game_collections, households,
+/// household_members, sync_queue.
+///
+/// `game_collections` enforces uniqueness on
+/// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
+/// a partial unique index — one live ownership row per triplet, with
+/// tombstones (`deleted_at IS NOT NULL`) exempt from the constraint so
+/// a user can resurrect a previously deleted entry.
+///
+/// `PRAGMA foreign_keys = ON` is set on every open so `REFERENCES`
+/// constraints are actually enforced (SQLite defaults to OFF). WAL
+/// improves concurrent read/write performance.
+///
+/// Pre-production: this codebase has no released clients yet, so
+/// schema changes are applied destructively in place rather than via
+/// versioned migrations. `schemaVersion` stays at 1; bump it (and add
+/// an `onUpgrade` handler in [migration]) once a versioned client
+/// ships.
 @DriftDatabase(
   tables: [
     GamesTable,
@@ -50,60 +55,12 @@ class ServerDatabase extends _$ServerDatabase {
   ServerDatabase.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 1;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (Migrator m) async {
       await m.createAll();
-    },
-    onUpgrade: (Migrator m, int from, int to) async {
-      if (from < 2) {
-        // 1. Add the new columns to game_collections. Both are nullable,
-        //    so SQLite ALTER TABLE ADD COLUMN backfills NULL safely.
-        await m.addColumn(
-          gameCollectionsTable,
-          gameCollectionsTable.deletedAt,
-        );
-        await m.addColumn(
-          gameCollectionsTable,
-          gameCollectionsTable.releaseId,
-        );
-
-        // 2. Replace the single-column platform-game index with the
-        //    partial unique index. Note: this CREATE fails loudly if
-        //    pre-existing data contains duplicates on the triplet,
-        //    which is the intended signal in pre-production.
-        await customStatement(
-          'DROP INDEX IF EXISTS game_collections_platform_game_idx',
-        );
-        await customStatement(
-          'CREATE UNIQUE INDEX IF NOT EXISTS '
-          'game_collections_user_pgame_medium_unique_idx '
-          'ON game_collections (user_id, platform_game_id, medium) '
-          'WHERE deleted_at IS NULL',
-        );
-
-        // 3. Rename the household_members uniqueness index.
-        await customStatement(
-          'DROP INDEX IF EXISTS household_members_household_idx',
-        );
-        await customStatement(
-          'CREATE UNIQUE INDEX IF NOT EXISTS '
-          'household_members_household_user_unique_idx '
-          'ON household_members (household_id, user_id)',
-        );
-
-        // 4. Rewrite sync_queue.status legacy value 'in_progress' to
-        //    'inProgress' to match SyncStatus.name. The repository
-        //    parses both forms during the transition; Pass 3 may drop
-        //    the legacy parse arm once we are confident no v1-state
-        //    DBs survive.
-        await customStatement(
-          "UPDATE sync_queue SET status = 'inProgress' "
-          "WHERE status = 'in_progress'",
-        );
-      }
     },
     beforeOpen: (details) async {
       // FK enforcement: SQLite silently ignores REFERENCES constraints

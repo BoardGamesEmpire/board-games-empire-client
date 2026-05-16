@@ -1,18 +1,57 @@
-import 'package:drift/drift.dart';
+// Narrow drift import to `show Value`: drift's full export surface
+// includes an `isNull` symbol (query-builder utility) that collides
+// with matcher's `isNull` from flutter_test. Showing only `Value`
+// keeps the companion-construction helper available while leaving
+// matcher's `isNull` unambiguous.
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqlite3/sqlite3.dart';
 
 import 'package:drift_storage/src/databases/server_database.dart';
 
-// ── Fixtures ─────────────────────────────────────────────────────────────────
+// ── Matchers ────────────────────────────────────────────────────────────────────
+
+// Match against the underlying SqliteException's message text rather
+// than its type so we don't need to import package:sqlite3 (which is a
+// transitive dep of drift, not a direct dep of drift_storage).
+final _isFkViolation = throwsA(
+  predicate<Object>(
+    (e) => e.toString().contains('FOREIGN KEY constraint failed'),
+    'an FK constraint violation',
+  ),
+);
+
+final _isUniqueViolation = throwsA(
+  predicate<Object>(
+    (e) => e.toString().contains('UNIQUE constraint failed'),
+    'a UNIQUE constraint violation',
+  ),
+);
+
+// ── Fixtures ───────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-1';
 const _kPlatformGameId = 'pg-1';
+
+Future<void> _seedGame(ServerDatabase db, {String id = 'game-1'}) async {
+  final now = DateTime.now().toUtc();
+  // Upsert so repeat seeds in the same test don't trip the games PK.
+  await db
+      .into(db.gamesTable)
+      .insertOnConflictUpdate(
+        GamesTableCompanion.insert(
+          id: id,
+          title: 'Test Game',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+}
 
 Future<void> _seedPlatformGame(
   ServerDatabase db, {
   String id = _kPlatformGameId,
 }) async {
+  await _seedGame(db);
   final now = DateTime.now().toUtc();
   await db
       .into(db.platformGamesTable)
@@ -22,20 +61,6 @@ Future<void> _seedPlatformGame(
           gameId: 'game-1',
           platformId: 'plat-1',
           platformName: 'Tabletop',
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-}
-
-Future<void> _seedGame(ServerDatabase db, {String id = 'game-1'}) async {
-  final now = DateTime.now().toUtc();
-  await db
-      .into(db.gamesTable)
-      .insert(
-        GamesTableCompanion.insert(
-          id: id,
-          title: 'Test Game',
           createdAt: now,
           updatedAt: now,
         ),
@@ -91,8 +116,8 @@ void main() {
   tearDown(() async => db.close());
 
   group('ServerDatabase', () {
-    test('reports schemaVersion 2', () {
-      expect(db.schemaVersion, equals(2));
+    test('reports schemaVersion 1', () {
+      expect(db.schemaVersion, equals(1));
     });
 
     group('PRAGMA foreign_keys', () {
@@ -103,7 +128,7 @@ void main() {
 
       test('rejects insert with non-existent household_id', () async {
         // household_members.household_id references households.id.
-        // Without PRAGMA foreign_keys = ON this insert would silently
+        // Without PRAGMA foreign_keys=ON this insert would silently
         // succeed; with FK enforcement it throws.
         final now = DateTime.now().toUtc();
         await expectLater(
@@ -118,37 +143,32 @@ void main() {
                   updatedAt: now,
                 ),
               ),
-          throwsA(isA<SqliteException>()),
+          _isFkViolation,
         );
       });
 
-      test(
-        'rejects insert with non-existent platform_game_id on '
-        'game_collections',
-        () async {
-          final now = DateTime.now().toUtc();
-          await expectLater(
-            () => db
-                .into(db.gameCollectionsTable)
-                .insert(
-                  GameCollectionsTableCompanion.insert(
-                    id: 'col-1',
-                    userId: _kUserId,
-                    platformGameId: 'nonexistent-pg',
-                    medium: 'Physical',
-                    createdAt: now,
-                    updatedAt: now,
-                  ),
+      test('rejects insert with non-existent platform_game_id', () async {
+        final now = DateTime.now().toUtc();
+        await expectLater(
+          () => db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'col-1',
+                  userId: _kUserId,
+                  platformGameId: 'nonexistent-pg',
+                  medium: 'Physical',
+                  createdAt: now,
+                  updatedAt: now,
                 ),
-            throwsA(isA<SqliteException>()),
-          );
-        },
-      );
+              ),
+          _isFkViolation,
+        );
+      });
     });
 
     group('game_collections.deletedAt column', () {
       test('stores and reads back nullable DateTime', () async {
-        await _seedGame(db);
         await _seedPlatformGame(db);
         final ts = DateTime.parse('2024-01-15T10:30:00Z');
         await db
@@ -159,7 +179,6 @@ void main() {
       });
 
       test('defaults to null when omitted', () async {
-        await _seedGame(db);
         await _seedPlatformGame(db);
         await db
             .into(db.gameCollectionsTable)
@@ -171,7 +190,6 @@ void main() {
 
     group('game_collections.releaseId column', () {
       test('stores and reads back nullable text', () async {
-        await _seedGame(db);
         await _seedPlatformGame(db);
         await db
             .into(db.gameCollectionsTable)
@@ -181,7 +199,6 @@ void main() {
       });
 
       test('defaults to null when omitted', () async {
-        await _seedGame(db);
         await _seedPlatformGame(db);
         await db
             .into(db.gameCollectionsTable)
@@ -193,7 +210,6 @@ void main() {
 
     group('partial unique index on game_collections', () {
       setUp(() async {
-        await _seedGame(db);
         await _seedPlatformGame(db);
       });
 
@@ -206,7 +222,7 @@ void main() {
           () => db
               .into(db.gameCollectionsTable)
               .insert(_collection(id: 'col-2')),
-          throwsA(isA<SqliteException>()),
+          _isUniqueViolation,
         );
       });
 
@@ -296,7 +312,7 @@ void main() {
                   updatedAt: now,
                 ),
               ),
-          throwsA(isA<SqliteException>()),
+          _isUniqueViolation,
         );
       });
 
@@ -331,40 +347,6 @@ void main() {
         final rows = await db.select(db.householdMembersTable).get();
         expect(rows, hasLength(2));
       });
-    });
-
-    group('sync_queue.status legacy migration step', () {
-      test(
-        "raw SQL UPDATE rewrites 'in_progress' to 'inProgress'",
-        () async {
-          // Insert a row, then mutate its status to the legacy form
-          // using raw SQL to simulate a row that survived from
-          // schema v1. The migration step (run inline here) should
-          // rewrite it to the canonical 'inProgress' form.
-          await db
-              .into(db.syncQueueTable)
-              .insert(
-                SyncQueueTableCompanion.insert(
-                  id: 'q-1',
-                  payload: '{}',
-                  createdAt: DateTime.now().toUtc(),
-                ),
-              );
-          await db.customStatement(
-            "UPDATE sync_queue SET status = 'in_progress' WHERE id = 'q-1'",
-          );
-
-          // The exact statement used by the v1->v2 migration in
-          // ServerDatabase.migration.onUpgrade.
-          await db.customStatement(
-            "UPDATE sync_queue SET status = 'inProgress' "
-            "WHERE status = 'in_progress'",
-          );
-
-          final row = await db.select(db.syncQueueTable).getSingle();
-          expect(row.status, equals('inProgress'));
-        },
-      );
     });
   });
 }
