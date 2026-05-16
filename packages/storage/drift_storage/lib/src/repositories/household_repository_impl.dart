@@ -6,20 +6,48 @@ import '../databases/server_database.dart';
 
 /// Read cache + queued-write implementation of [HouseholdRepository].
 ///
-/// Scoped to a current user via [currentUserId]: list and watch reads
-/// inner-join `household_members` so the caller only ever sees
-/// households they belong to. Single-household lookup likewise returns
-/// null when the current user is not a member, regardless of whether
-/// the household exists in the local cache.
+/// Scoped to a current user via [currentUserId]. Every read path that
+/// returns household data — list, single-by-id, watch, member list,
+/// member watch — gates on the current user being a member of the
+/// household in question. A caller who passes an id for a household
+/// they don't belong to sees:
 ///
-/// Member-list reads (`getMembers`, `watchMembers`) intentionally do
-/// NOT re-filter by current user — once the household is visible, the
-/// caller can see all co-members. The visibility gate lives at the
-/// household level.
+/// - `null` from [getHousehold]
+/// - `const []` from [getMembers]
+/// - a stream that emits `const []` from [watchMembers]
+///
+/// … regardless of whether the household and its members are present
+/// in the local cache. This holds the household-level visibility
+/// boundary at the read layer rather than trusting upstream callers
+/// to only pass ids they obtained from [getHouseholds].
 ///
 /// The cache writers (`cacheHousehold`, `cacheMember`, `cacheMembers`)
-/// are user-agnostic: the server has already done auth filtering on
-/// the response payload it sent us.
+/// remain user-agnostic: the server has already done auth filtering
+/// on the response payload, and the local cache may legitimately
+/// contain rows for households the current user isn't a member of
+/// (e.g. a household their friend belongs to, populated by a friend
+/// graph query). The boundary enforcement happens at read time so
+/// the cache stays a faithful local mirror of what the server sent.
+///
+/// ## Future: per-household visibility
+///
+/// The current rule is binary — you're either a member of the
+/// household or you see nothing. A planned `visibility` field on
+/// [Household] will let households opt into being viewable by
+/// non-members (e.g. public households, friends-of-friends, or
+/// friends-of-household-members). When that field lands:
+///
+/// - [getMembers] and [watchMembers] will check
+///   `household.visibility` first; for households marked public (or
+///   any tier the current user qualifies for under the visibility
+///   rules), the membership preflight will be skipped and the full
+///   member list returned.
+/// - [getHousehold] will likewise return the household to non-members
+///   when the visibility tier permits.
+///
+/// Until then the conservative "members-only" rule applies, matching
+/// the auth contract the server-side `HouseholdsService` enforces
+/// today.
 class HouseholdRepositoryImpl implements HouseholdRepository {
   HouseholdRepositoryImpl({
     required ServerDatabase db,
@@ -58,7 +86,10 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
             ) &
             _db.householdMembersTable.userId.equals(_userId),
       ),
-    ])..where(_db.householdsTable.id.equals(id));
+    ])..where(
+      _db.householdsTable.id.equals(id) &
+          _db.householdsTable.deletedAt.isNull(),
+    );
 
     final row = await query.getSingleOrNull();
     return row == null
@@ -68,9 +99,26 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<List<HouseholdMember>> getMembers(String householdId) async {
+    // Boundary enforcement: fetch all members of the household, then
+    // gate on whether the current user is among them. A caller who
+    // passes a household id they don't belong to sees empty even if
+    // the cache has rows for that household.
+    //
+    // The two-step (fetch then filter in Dart) keeps the query simple
+    // and avoids an EXISTS subquery that doesn't compose cleanly with
+    // Drift's selectable types. With realistic household sizes
+    // (<= dozens of members) the cost difference vs. an EXISTS is
+    // negligible.
+    //
+    // TODO(visibility): when [Household.visibility] lands, short-
+    // circuit this check for visibility tiers that permit non-member
+    // reads (public households, friends-of-household, etc.) so users
+    // can browse a friend's household roster. See class doc.
     final rows = await (_db.select(
       _db.householdMembersTable,
     )..where((t) => t.householdId.equals(householdId))).get();
+    final isMember = rows.any((r) => r.userId == _userId);
+    if (!isMember) return const [];
     return rows.map(_mapMember).toList();
   }
 
@@ -147,9 +195,19 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
       (_db.select(_db.householdMembersTable)
             ..where((t) => t.householdId.equals(householdId)))
           .watch()
-          .map((rows) => rows.map(_mapMember).toList());
+          .map((rows) {
+            // Reactive form of [getMembers]: if the current user is
+            // added or removed from the household, subsequent
+            // emissions automatically reflect the change in
+            // visibility (empty ↔ populated).
+            //
+            // TODO(visibility): see [getMembers].
+            final isMember = rows.any((r) => r.userId == _userId);
+            if (!isMember) return const <HouseholdMember>[];
+            return rows.map(_mapMember).toList();
+          });
 
-  // ── Mappers ────────────────────────────────────────────────────────────────
+  // ── Mappers ───────────────────────────────────────────────────────────────────────
 
   Household _mapHousehold(HouseholdsTableData row) => Household(
     id: row.id,

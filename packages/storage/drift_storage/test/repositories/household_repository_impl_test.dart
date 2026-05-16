@@ -5,7 +5,7 @@ import 'package:models/domain.dart';
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/household_repository_impl.dart';
 
-// ── Fixtures ────────────────────────────────────────────────────────────────────
+// ── Fixtures ───────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kOtherUserId = 'user-other';
@@ -52,7 +52,7 @@ Future<void> _seedMember(
       );
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// ── Tests ───────────────────────────────────────────────────────────────────────
 
 void main() {
   late ServerDatabase db;
@@ -149,28 +149,91 @@ void main() {
       test('returns null when the household does not exist', () async {
         expect(await repo.getHousehold('nonexistent'), isNull);
       });
+
+      test(
+        'returns null for a tombstoned household even when user is a member',
+        () async {
+          // Pre-fix, getHousehold(id) had no deletedAt filter while
+          // getHouseholds() and watchHouseholds() did — fetching a
+          // tombstoned household by id surfaced data the list/watch
+          // APIs correctly hid.
+          final now = DateTime.now().toUtc();
+          await _seedHousehold(
+            db,
+            id: 'h-1',
+            name: 'Removed',
+            deletedAt: now,
+          );
+          await _seedMember(
+            db,
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+          );
+
+          expect(await repo.getHousehold('h-1'), isNull);
+        },
+      );
     });
 
     group('getMembers()', () {
-      test('returns all members of a household (no user filter)', () async {
-        await _seedHousehold(db, id: 'h-1');
-        await _seedMember(
-          db,
-          id: 'm-1',
-          userId: _kUserId,
-          householdId: 'h-1',
-          roleName: 'HouseholdOwner',
-        );
-        await _seedMember(
-          db,
-          id: 'm-2',
-          userId: _kOtherUserId,
-          householdId: 'h-1',
-          roleName: 'HouseholdMember',
-        );
+      test(
+        'returns all members when the current user is a member of the household',
+        () async {
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+          await _seedMember(
+            db,
+            id: 'm-2',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdMember',
+          );
 
-        final members = await repo.getMembers('h-1');
-        expect(members, hasLength(2));
+          final members = await repo.getMembers('h-1');
+          expect(members, hasLength(2));
+          expect(
+            members.map((m) => m.userId),
+            unorderedEquals([_kUserId, _kOtherUserId]),
+          );
+        },
+      );
+
+      test(
+        'returns empty when the current user is NOT a member of the household '
+        '(boundary enforcement — see class doc TODO for the planned '
+        'visibility-field exception)',
+        () async {
+          // The local cache has members for h-1, but the current user
+          // isn't among them. Pre-fix, getMembers would have leaked
+          // that roster to whoever knew the household id.
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-other',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+          await _seedMember(
+            db,
+            id: 'm-third',
+            userId: 'user-third',
+            householdId: 'h-1',
+          );
+
+          expect(await repo.getMembers('h-1'), isEmpty);
+        },
+      );
+
+      test('returns empty when the household has no rows at all', () async {
+        expect(await repo.getMembers('nonexistent'), isEmpty);
       });
     });
 
@@ -281,6 +344,93 @@ void main() {
 
         await expectLater(repo.watchHouseholds().take(1), emits(isEmpty));
       });
+    });
+
+    group('watchMembers()', () {
+      test(
+        'emits an empty list when the current user is not a member',
+        () async {
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-other',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+          );
+
+          await expectLater(
+            repo.watchMembers('h-1').take(1),
+            emits(isEmpty),
+          );
+        },
+      );
+
+      test(
+        'emits the full member list when the current user is a member',
+        () async {
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+          await _seedMember(
+            db,
+            id: 'm-2',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdMember',
+          );
+
+          await expectLater(
+            repo.watchMembers('h-1').take(1),
+            emits(hasLength(2)),
+          );
+        },
+      );
+
+      test(
+        'transitions from empty to full list when the current user joins',
+        () async {
+          // Reactive form of the boundary check: the watch stream
+          // updates automatically when the membership changes.
+          // Initial state: only _kOtherUserId is a member, so the
+          // current user sees empty. After _kUserId joins, the next
+          // emission contains both members.
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-other',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+
+          final futureEmissions =
+              repo.watchMembers('h-1').take(2).toList();
+          await pumpEventQueue();
+
+          await _seedMember(
+            db,
+            id: 'm-mine',
+            userId: _kUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdMember',
+          );
+
+          final emissions =
+              await futureEmissions.timeout(const Duration(seconds: 5));
+          expect(emissions, hasLength(2));
+          expect(emissions[0], isEmpty);
+          expect(emissions[1], hasLength(2));
+          expect(
+            emissions[1].map((m) => m.userId),
+            unorderedEquals([_kUserId, _kOtherUserId]),
+          );
+        },
+      );
     });
   });
 }
