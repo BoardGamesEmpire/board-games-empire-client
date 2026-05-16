@@ -87,7 +87,7 @@ PlatformGame _makePlatformGame({
   );
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 void main() {
   late ServerDatabase db;
@@ -180,11 +180,6 @@ void main() {
         'round-trips the Pass-1 fields '
         '(playingTime / totalPlayCount / tags / visibility / createdById)',
         () async {
-          // These fields were added to the Game domain model in Pass 1
-          // but had no corresponding storage columns until Pass 5. Each
-          // cached game silently lost these values on read-back; this
-          // test locks in the fix and would fail again if the columns
-          // or mapper rows go missing.
           await repo.cacheGame(
             _makeGame(
               id: 'g-pass1',
@@ -206,10 +201,6 @@ void main() {
       );
 
       test('preserves model defaults for unset Pass-1 fields', () async {
-        // _makeGame defaults: playingTime=null, totalPlayCount=0,
-        // tags=[], visibility=Visibility.public, createdById=null.
-        // These must round-trip cleanly so cached games whose origin
-        // didn't populate the new fields don't shift on read-back.
         await repo.cacheGame(_makeGame(id: 'g-defaults'));
 
         final found = (await repo.getGame('g-defaults'))!;
@@ -258,10 +249,6 @@ void main() {
       });
 
       test('excludes tombstoned games from the result', () async {
-        // Pass-6 Tier-1 fix: bulk lookup must also hide tombstoned
-        // rows. Pre-fix, getGames(['g-live', 'g-deleted']) would
-        // return both, making the bulk read inconsistent with
-        // getGame which now correctly returns null for tombstones.
         await repo.cacheGame(_makeGame(id: 'g-live', title: 'Live'));
         await repo.cacheGame(
           _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
@@ -324,20 +311,12 @@ void main() {
 
       test('ranks title-prefix matches ahead of in-title (substring) matches '
           '(ORDER BY runs before LIMIT — Copilot J)', () async {
-        // Pre-Pass-3b bug: LIMIT was applied in SQL with no ORDER BY,
-        // then a Dart-side sort ran over the truncated slice — so the
-        // "best" matches could be silently dropped before sorting.
-        // The fixed impl pushes ranking into SQL via OrderingTerm.
         await repo.cacheGame(_makeGame(id: 'g-zoo', title: 'Zoo Cat'));
         await repo.cacheGame(_makeGame(id: 'g-emp', title: 'Cat Empire'));
         await repo.cacheGame(_makeGame(id: 'g-box', title: 'Cat in the Box'));
         await repo.cacheGame(_makeGame(id: 'g-wld', title: 'Wildcat'));
 
         final result = await repo.searchGames('cat');
-        // Title-prefix matches first, then in-title; ties broken
-        // alphabetically by title:
-        //   Cat Empire, Cat in the Box  ← prefix
-        //   Wildcat, Zoo Cat            ← substring
         expect(
           result.map((g) => g.id),
           equals(['g-emp', 'g-box', 'g-wld', 'g-zoo']),
@@ -366,10 +345,6 @@ void main() {
       });
 
       test('excludes tombstoned games from search results', () async {
-        // Pass-6 Tier-1 fix: search must hide tombstoned rows even
-        // when they match the query. Pre-fix, a deleted game whose
-        // title matched would still surface, inconsistent with
-        // getGame and watchGames.
         await repo.cacheGame(_makeGame(id: 'g-live', title: 'Catan'));
         await repo.cacheGame(
           _makeGame(
@@ -382,6 +357,50 @@ void main() {
         final result = await repo.searchGames('cat');
         expect(result.map((g) => g.id), equals(['g-live']));
       });
+
+      // ── Tier-2 input validation ──────────────────────────────────────────────────
+
+      test('returns empty when limit is zero', () async {
+        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+
+        expect(await repo.searchGames('cat', limit: 0), isEmpty);
+      });
+
+      test('returns empty when limit is negative', () async {
+        // Pre-fix, `limit: -1` would silently disable SQLite's LIMIT
+        // clause (negative LIMIT === no limit in SQLite) and turn the
+        // search into an unbounded cache scan. Now short-circuited
+        // before any SQL.
+        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+
+        expect(await repo.searchGames('cat', limit: -1), isEmpty);
+        expect(await repo.searchGames('cat', limit: -100), isEmpty);
+      });
+
+      test(
+        'strips LIKE wildcards (% and _) so they cannot match unintended rows',
+        () async {
+          // Pre-fix, q='%' would have compiled to LIKE '%%%' which
+          // matches every cached row — turning the search into a
+          // cache flood that distorts the prefix ranking. Now the
+          // impl strips `%` and `_` from the input before building
+          // the predicate, so a pure-wildcard query becomes '' and
+          // short-circuits to [].
+          await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+          await repo.cacheGame(_makeGame(id: 'g-2', title: 'Wingspan'));
+          await repo.cacheGame(_makeGame(id: 'g-3', title: 'Ticket to Ride'));
+
+          // Pure-wildcard queries strip down to '' and return empty.
+          expect(await repo.searchGames('%'), isEmpty);
+          expect(await repo.searchGames('_'), isEmpty);
+          expect(await repo.searchGames('%_%'), isEmpty);
+
+          // Mixed input: wildcards stripped, remaining text searched.
+          // 'cat%' → 'cat', matches only 'Catan'.
+          final result = await repo.searchGames('cat%');
+          expect(result.map((g) => g.id), equals(['g-1']));
+        },
+      );
     });
 
     group('watchGame()', () {
@@ -401,10 +420,6 @@ void main() {
       test('re-emits when the watched game is updated', () async {
         await repo.cacheGame(_makeGame(id: 'g-w', title: 'Before'));
 
-        // Subscribe-then-mutate. Post-Pass-3c, Drift's watch returns
-        // directly without a fake initial yield, so we listen first
-        // (via take(2).toList()), let the initial emission land, then
-        // upsert to trigger the second emission.
         final futureEmissions = repo.watchGame('g-w').take(2).toList();
         await pumpEventQueue();
 
@@ -419,11 +434,6 @@ void main() {
       });
 
       test('emits null for a tombstoned game id', () async {
-        // Pass-6 Tier-1 fix: the watch's predicate now includes
-        // `deletedAt.isNull()`, so when a game is tombstoned
-        // (or seeded as already-deleted), the watch sees no
-        // matching row and emits null — same shape as for an
-        // unknown id, which is the contract a UI consumer needs.
         await repo.cacheGame(
           _makeGame(
             id: 'g-deleted',
@@ -451,11 +461,6 @@ void main() {
       });
 
       test('excludes tombstoned games from the emission', () async {
-        // Pass-6 Tier-1 fix: the list watch now filters
-        // `deletedAt IS NULL`, matching the snapshot read.
-        // Pre-fix, deleted games would still appear in the list
-        // stream while getGame returned null for them — the two
-        // APIs would disagree.
         await repo.cacheGame(_makeGame(id: 'g-live', title: 'Live'));
         await repo.cacheGame(
           _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
@@ -473,9 +478,6 @@ void main() {
     // ── PlatformGame ─────────────────────────────────────────────────────────
 
     group('PlatformGame', () {
-      // Each platform-games test needs a parent game row because the
-      // platform_games table declares a FK to games.id and Pass 2 turned
-      // PRAGMA foreign_keys ON via the beforeOpen callback.
       setUp(() async {
         await repo.cacheGame(_makeGame(id: 'g-1', title: 'Parent'));
       });
@@ -546,9 +548,7 @@ void main() {
       test(
         'getPlatformGamesForGame returns empty when no rows match',
         () async {
-          // 'g-1' is seeded but has no platform_games rows.
           expect(await repo.getPlatformGamesForGame('g-1'), isEmpty);
-          // Non-existent parent game is also fine.
           expect(await repo.getPlatformGamesForGame('nonexistent'), isEmpty);
         },
       );
@@ -580,8 +580,6 @@ void main() {
       test(
         'rejects orphan platform game (FK enforced by PRAGMA foreign_keys)',
         () async {
-          // platform_games.game_id has FK → games.id. With foreign_keys
-          // ON (Pass 2 beforeOpen) this must throw at insert time.
           await expectLater(
             () => repo.cachePlatformGame(
               _makePlatformGame(id: 'orphan', gameId: 'nonexistent'),

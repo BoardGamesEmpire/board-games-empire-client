@@ -373,6 +373,133 @@ void main() {
       );
     });
 
+    // ── Tier-2 quantity validation ───────────────────────────────────────────────
+
+    group('quantity validation (Tier 2)', () {
+      // The validation runs BEFORE the transaction opens, so all of
+      // these assertions also verify that no DB row was written and
+      // no sync op was enqueued.
+
+      test(
+        'addToCollection throws ArgumentError on quantity == 0',
+        () async {
+          await expectLater(
+            () => repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 0,
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          // No row in cache, no enqueue.
+          expect(await repo.getCollection(), isEmpty);
+          verifyNever(() => mockSync.enqueue(any()));
+        },
+      );
+
+      test(
+        'addToCollection throws ArgumentError on negative quantity',
+        () async {
+          await expectLater(
+            () => repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: -3,
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          expect(await repo.getCollection(), isEmpty);
+          verifyNever(() => mockSync.enqueue(any()));
+        },
+      );
+
+      test(
+        'updateCollectionEntry throws ArgumentError on quantity == 0',
+        () async {
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 5,
+          );
+          // Reset the mock so we can verify NO further enqueues fire
+          // from the failed update.
+          reset(mockSync);
+          when(() => mockSync.enqueue(any())).thenAnswer(
+            (_) async => SyncQueueEntry(
+              id: 'sq-2',
+              payload: '{}',
+              createdAt: DateTime.now().toUtc(),
+            ),
+          );
+          when(() => mockSync.markCompleted(any())).thenAnswer((_) async {});
+
+          await expectLater(
+            () => repo.updateCollectionEntry(id: entry.id, quantity: 0),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          verifyNever(() => mockSync.enqueue(any()));
+          // Underlying quantity unchanged.
+          final row = (await repo.getCollection()).single;
+          expect(row.quantity, equals(5));
+        },
+      );
+
+      test(
+        'updateCollectionEntry throws ArgumentError on negative quantity',
+        () async {
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 5,
+          );
+          reset(mockSync);
+          when(() => mockSync.enqueue(any())).thenAnswer(
+            (_) async => SyncQueueEntry(
+              id: 'sq-2',
+              payload: '{}',
+              createdAt: DateTime.now().toUtc(),
+            ),
+          );
+          when(() => mockSync.markCompleted(any())).thenAnswer((_) async {});
+
+          await expectLater(
+            () => repo.updateCollectionEntry(id: entry.id, quantity: -2),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          verifyNever(() => mockSync.enqueue(any()));
+          final row = (await repo.getCollection()).single;
+          expect(row.quantity, equals(5));
+        },
+      );
+
+      test(
+        'updateCollectionEntry accepts null quantity (leave-unchanged semantic)',
+        () async {
+          // Sanity: the validation only fires on non-null negatives.
+          // null means "don't touch this field" by API contract, which
+          // is the path callers use to update other fields without
+          // affecting quantity.
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 5,
+          );
+
+          final updated = await repo.updateCollectionEntry(
+            id: entry.id,
+            rating: 9,
+          );
+
+          expect(updated.quantity, equals(5));
+          expect(updated.rating, equals(9));
+        },
+      );
+    });
+
     group('removeFromCollection()', () {
       test('tombstones entry by setting deletedAt', () async {
         final entry = await repo.addToCollection(
@@ -606,13 +733,6 @@ void main() {
           // two or more would make the lookup throw StateError,
           // blocking reconciliation entirely. The fix shares the
           // ordered+limited helper with addToCollection.
-          //
-          // Seed two tombstones plus a live row for the same
-          // triplet via the table directly (the public API can't
-          // produce this state on its own), then reconcile a
-          // server-confirmed entry with a fresh canonical id and
-          // assert it applies cleanly: the existing rows are
-          // dropped (id mismatch) and the server entry is inserted.
           final now = DateTime.now().toUtc();
           final older = now.subtract(const Duration(hours: 2));
           final mid = now.subtract(const Duration(hours: 1));
@@ -661,7 +781,6 @@ void main() {
           // Pre-fix this would have thrown StateError immediately.
           await repo.reconcileFromServer(serverEntry);
 
-          // The server entry now lives under the canonical id.
           final live = await repo.getCollectionEntry(
             platformGameId: _kPlatformGameId,
             medium: _kMedium,
