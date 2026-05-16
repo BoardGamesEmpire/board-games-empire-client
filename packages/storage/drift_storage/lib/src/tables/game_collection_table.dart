@@ -1,6 +1,12 @@
 import 'package:drift/drift.dart';
 import 'platform_game_table.dart';
 
+@TableIndex(name: 'game_collections_user_idx', columns: {#userId})
+@TableIndex.sql(
+  'CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx '
+  'ON game_collections (user_id, platform_game_id, medium) '
+  'WHERE deleted_at IS NULL',
+)
 class GameCollectionsTable extends Table {
   TextColumn get id => text()();
   TextColumn get userId => text()();
@@ -34,27 +40,6 @@ class GameCollectionsTable extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
-
-  @override
-  List<Index> get indexes => [
-    Index(
-      'game_collections_user_idx',
-      'CREATE INDEX game_collections_user_idx '
-          'ON game_collections (user_id)',
-    ),
-    // Partial unique index: enforces one live ownership row per
-    // (user_id, platform_game_id, medium) while ignoring tombstoned
-    // rows. This serves both as the uniqueness constraint and as the
-    // primary lookup path for getCollectionEntry({platformGameId,
-    // medium}) on the current user.
-    Index(
-      'game_collections_user_pgame_medium_unique_idx',
-      'CREATE UNIQUE INDEX '
-          'game_collections_user_pgame_medium_unique_idx '
-          'ON game_collections (user_id, platform_game_id, medium) '
-          'WHERE deleted_at IS NULL',
-    ),
-  ];
 
   @override
   String get tableName => 'game_collections';

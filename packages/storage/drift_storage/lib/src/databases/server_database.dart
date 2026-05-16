@@ -5,6 +5,7 @@ import '../tables/game_table.dart';
 import '../tables/platform_game_table.dart';
 import '../tables/game_collection_table.dart';
 import '../tables/household_table.dart';
+import '../tables/household_members_table.dart';
 import '../tables/sync_queue_table.dart';
 
 part 'server_database.g.dart';

@@ -175,14 +175,12 @@ void main() {
             .into(db.gameCollectionsTable)
             .insert(_collection(id: 'col-1', deletedAt: ts));
         final row = await db.select(db.gameCollectionsTable).getSingle();
-        expect(row.deletedAt, equals(ts));
+        expect(row.deletedAt?.toUtc(), equals(ts));
       });
 
       test('defaults to null when omitted', () async {
         await _seedPlatformGame(db);
-        await db
-            .into(db.gameCollectionsTable)
-            .insert(_collection(id: 'col-1'));
+        await db.into(db.gameCollectionsTable).insert(_collection(id: 'col-1'));
         final row = await db.select(db.gameCollectionsTable).getSingle();
         expect(row.deletedAt, isNull);
       });
@@ -200,9 +198,7 @@ void main() {
 
       test('defaults to null when omitted', () async {
         await _seedPlatformGame(db);
-        await db
-            .into(db.gameCollectionsTable)
-            .insert(_collection(id: 'col-1'));
+        await db.into(db.gameCollectionsTable).insert(_collection(id: 'col-1'));
         final row = await db.select(db.gameCollectionsTable).getSingle();
         expect(row.releaseId, isNull);
       });
@@ -214,14 +210,11 @@ void main() {
       });
 
       test('rejects a second live row with same (user, pg, medium)', () async {
-        await db
-            .into(db.gameCollectionsTable)
-            .insert(_collection(id: 'col-1'));
+        await db.into(db.gameCollectionsTable).insert(_collection(id: 'col-1'));
 
         await expectLater(
-          () => db
-              .into(db.gameCollectionsTable)
-              .insert(_collection(id: 'col-2')),
+          () =>
+              db.into(db.gameCollectionsTable).insert(_collection(id: 'col-2')),
           _isUniqueViolation,
         );
       });

@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+@TableIndex(name: 'sync_queue_status_idx', columns: {#status, #createdAt})
 class SyncQueueTable extends Table {
   TextColumn get id => text()();
 
@@ -16,15 +17,6 @@ class SyncQueueTable extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
-
-  @override
-  List<Index> get indexes => [
-    Index(
-      'sync_queue_status_idx',
-      'CREATE INDEX sync_queue_status_idx '
-          'ON sync_queue (status, created_at)',
-    ),
-  ];
 
   @override
   String get tableName => 'sync_queue';
