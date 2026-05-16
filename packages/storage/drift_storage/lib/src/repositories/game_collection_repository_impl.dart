@@ -35,10 +35,29 @@ import '../databases/server_database.dart';
 /// fresh row for the same triplet, which is what makes the
 /// resurrect path in [addToCollection] safe.
 ///
+/// Read and mutation paths all exclude tombstones explicitly:
+///
+/// - [getCollection] / [watchCollection] filter `deletedAt IS NULL`.
+/// - [getCollectionEntry] filters `deletedAt IS NULL`.
+/// - [watchEntry] filters `deletedAt IS NULL` so subscribers see
+///   `null` (not the tombstoned row) after [removeFromCollection].
+/// - [updateCollectionEntry] preflight filters `deletedAt IS NULL`,
+///   so an id whose row is tombstoned throws [StateError] rather
+///   than silently mutating a removed entry.
+/// - [removeFromCollection] is idempotent: re-removing an already
+///   tombstoned row is a silent no-op, neither bumping `deletedAt`
+///   nor enqueuing a second `RemoveFromCollectionOperation`.
+///
 /// ## addToCollection semantics on duplicate triplet
 ///
-/// - **Tombstoned row exists**: resurrect (clear `deletedAt`,
-///   overwrite fields, keep the original id, mark dirty + localOnly).
+/// - **Tombstoned row(s) exist, no live row**: resurrect the
+///   **most recent** tombstone (clear `deletedAt`, overwrite fields,
+///   keep its id, mark dirty + localOnly). Older tombstones are
+///   left alone. The schema explicitly allows multiple tombstones
+///   per triplet, so the lookup uses an ordered+limited query
+///   rather than a bare [SingleOrNullSelectable.getSingleOrNull]
+///   which would throw [StateError] when more than one tombstone
+///   is present.
 /// - **Live row exists**: increment `quantity` by the requested
 ///   amount (rating/comment overwritten only if the caller supplied
 ///   them; existing values otherwise preserved).
@@ -61,7 +80,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   final String _userId;
   static const _uuid = Uuid();
 
-  // ── Reads ─────────────────────────────────────────────────────────────────────────
+  // ── Reads ──────────────────────────────────────────────────────────────────────
 
   @override
   Future<List<GameCollection>> getCollection() async {
@@ -90,7 +109,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     return row == null ? null : _mapRow(row);
   }
 
-  // ── Mutations ──────────────────────────────────────────────────────────────────
+  // ── Mutations ─────────────────────────────────────────────────────────────────
 
   @override
   Future<GameCollection> addToCollection({
@@ -104,17 +123,39 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       final now = DateTime.now().toUtc();
       final wireMedium = medium.toWire();
 
-      // Look at ALL rows for the triplet (including tombstones).
-      // The partial unique index ignores tombstoned rows for INSERT
-      // uniqueness, but queries still see them — we need to in order
-      // to choose between resurrect, increment, and fresh insert.
+      // Look up the canonical row for this triplet.
+      //
+      // The partial unique index `(user_id, platform_game_id, medium)
+      // WHERE deleted_at IS NULL` guarantees at most ONE live row,
+      // but MULTIPLE tombstoned rows are allowed for the same triplet
+      // (each removal creates a tombstone; resurrection only clears
+      // one at a time). A naive `getSingleOrNull()` would throw
+      // [StateError] the moment two or more tombstones coexist for
+      // the triplet — the order+limit form below picks the live row
+      // if any, else the most recent tombstone, else nothing, and
+      // never throws.
       final existing =
-          await (_db.select(_db.gameCollectionsTable)..where(
-                (t) =>
-                    t.userId.equals(_userId) &
-                    t.platformGameId.equals(platformGameId) &
-                    t.medium.equals(wireMedium),
-              ))
+          await ((_db.select(_db.gameCollectionsTable)..where(
+                    (t) =>
+                        t.userId.equals(_userId) &
+                        t.platformGameId.equals(platformGameId) &
+                        t.medium.equals(wireMedium),
+                  ))
+                ..orderBy([
+                  // Live row first: `deletedAt IS NULL` evaluates to
+                  // 1 for live rows, 0 for tombstones; DESC ranks 1
+                  // ahead of 0.
+                  (t) => OrderingTerm(
+                    expression: t.deletedAt.isNull(),
+                    mode: OrderingMode.desc,
+                  ),
+                  // Among tombstones (or as tiebreaker among live
+                  // rows — there's at most one but the partial index
+                  // doesn't prevent older orphans from a corrupt
+                  // state), prefer the most recently touched row.
+                  (t) => OrderingTerm.desc(t.updatedAt),
+                ])
+                ..limit(1))
               .getSingleOrNull();
 
       final String entryId;
@@ -142,8 +183,9 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
               ),
             );
       } else if (existing.deletedAt != null) {
-        // Resurrect a tombstoned row. Keep the id (server may still
-        // know about it from a prior sync); reset the lifecycle.
+        // Resurrect the most recent tombstone. Keep the id (server
+        // may still know about it from a prior sync); reset the
+        // lifecycle.
         entryId = existing.id;
         finalQuantity = quantity;
         await (_db.update(_db.gameCollectionsTable)
@@ -211,15 +253,22 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     return _db.transaction(() async {
       final now = DateTime.now().toUtc();
 
-      // Preflight: the row must exist AND belong to the current user.
+      // Preflight: the row must exist, belong to the current user,
+      // AND be live (not tombstoned). A tombstoned row is treated as
+      // "not found" — mutating a removed entry would leave the local
+      // state inconsistent with what the user can see in the UI.
       final existing =
           await (_db.select(_db.gameCollectionsTable)..where(
-                (t) => t.id.equals(id) & t.userId.equals(_userId),
+                (t) =>
+                    t.id.equals(id) &
+                    t.userId.equals(_userId) &
+                    t.deletedAt.isNull(),
               ))
               .getSingleOrNull();
       if (existing == null) {
         throw StateError(
-          'GameCollection entry $id not found for current user',
+          'GameCollection entry $id not found for current user '
+          '(either absent or already removed)',
         );
       }
 
@@ -280,9 +329,18 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
               ))
               .getSingleOrNull();
       if (existing == null) {
+        // Genuinely missing or cross-user: throw to keep the existing
+        // contract for callers that pass an id they shouldn't.
         throw StateError(
           'GameCollection entry $id not found for current user',
         );
+      }
+      if (existing.deletedAt != null) {
+        // Already tombstoned. Re-remove is an idempotent silent
+        // no-op: no DB write, no second
+        // [RemoveFromCollectionOperation] enqueued. The server
+        // already received the original removal.
+        return;
       }
 
       // Tombstone via deletedAt. The partial unique index ignores
@@ -350,12 +408,15 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   @override
   Stream<GameCollection?> watchEntry(String id) =>
       (_db.select(_db.gameCollectionsTable)..where(
-            (t) => t.id.equals(id) & t.userId.equals(_userId),
+            (t) =>
+                t.id.equals(id) &
+                t.userId.equals(_userId) &
+                t.deletedAt.isNull(),
           ))
           .watchSingleOrNull()
           .map((row) => row == null ? null : _mapRow(row));
 
-  // ── Mappers ──────────────────────────────────────────────────────────────────
+  // ── Mappers ───────────────────────────────────────────────────────────────────
 
   GameCollection _mapRow(GameCollectionsTableData row) => GameCollection(
     id: row.id,

@@ -9,7 +9,7 @@ import 'package:drift_storage/src/repositories/game_collection_repository_impl.d
 
 class MockSyncQueue extends Mock implements SyncQueueRepository {}
 
-// ── Fixtures ────────────────────────────────────────────────────────────────────
+// ── Fixtures ───────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kPlatformGameId = 'pg-1';
@@ -45,7 +45,7 @@ Future<void> _seedPlatformGame(
       );
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 void main() {
   setUpAll(() {
@@ -211,6 +211,82 @@ void main() {
           expect(second.comment, equals('good'));
         },
       );
+
+      test(
+        'resurrects the MOST RECENT tombstone when multiple coexist for the triplet',
+        () async {
+          // Schema allows multiple tombstoned rows per
+          // (user, platformGame, medium) triplet. A bare
+          // getSingleOrNull() in addToCollection would throw
+          // StateError as soon as two such rows existed; the
+          // order+limit form must pick the latest tombstone and
+          // resurrect it cleanly.
+          //
+          // We can't generate this state through the public API
+          // (because the partial unique index serialises the
+          // live↔tombstoned transitions), so we seed both rows
+          // directly. createdAt/updatedAt distinguishes which one
+          // "newest" means.
+          final now = DateTime.now().toUtc();
+          final older = now.subtract(const Duration(hours: 1));
+
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'old-tomb',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(2),
+                  rating: const Value(5),
+                  deletedAt: Value(older),
+                  isDirty: const Value(true),
+                  createdAt: older,
+                  updatedAt: older,
+                ),
+              );
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'new-tomb',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(3),
+                  rating: const Value(8),
+                  deletedAt: Value(now),
+                  isDirty: const Value(true),
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              );
+
+          // Sanity: both tombstones present.
+          expect(await db.select(db.gameCollectionsTable).get(), hasLength(2));
+
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            rating: 9,
+          );
+
+          // The newer tombstone was resurrected.
+          expect(entry.id, equals('new-tomb'));
+          expect(entry.deletedAt, isNull);
+          expect(entry.rating, equals(9));
+          expect(entry.quantity, equals(1));
+
+          // The older tombstone is untouched.
+          final old = await (db.select(db.gameCollectionsTable)
+                ..where((t) => t.id.equals('old-tomb')))
+              .getSingle();
+          expect(old.deletedAt, isNotNull);
+          expect(old.rating, equals(5));
+        },
+      );
     });
 
     group('updateCollectionEntry()', () {
@@ -232,7 +308,7 @@ void main() {
         expect(updated.medium, original.medium); // unchanged
       });
 
-      test('enqueues UpdateCollectionOperation', () async {
+      test('enqueues exactly one UpdateCollectionOperation', () async {
         final entry = await repo.addToCollection(
           platformGameId: _kPlatformGameId,
           medium: _kMedium,
@@ -240,9 +316,12 @@ void main() {
 
         await repo.updateCollectionEntry(id: entry.id, playCount: 3);
 
+        // Strict count (Copilot original review item L2): the prior
+        // `called(greaterThan(0))` would have let an accidental
+        // double-enqueue slip past.
         verify(
           () => mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
-        ).called(greaterThan(0));
+        ).called(1);
       });
 
       test('throws StateError when entry belongs to a different user', () async {
@@ -287,6 +366,32 @@ void main() {
             throwsStateError,
           );
           verifyNever(() => mockSync.enqueue(any()));
+        },
+      );
+
+      test(
+        'throws StateError when the target entry is tombstoned',
+        () async {
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+          await repo.removeFromCollection(entry.id);
+
+          // Update against a tombstoned id must throw — a removed
+          // entry isn't visible in the UI and mutating it would
+          // leave the local cache inconsistent with what the user
+          // sees.
+          await expectLater(
+            () => repo.updateCollectionEntry(id: entry.id, rating: 10),
+            throwsStateError,
+          );
+
+          // No UpdateCollectionOperation was enqueued.
+          verifyNever(
+            () =>
+                mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
+          );
         },
       );
     });
@@ -359,6 +464,43 @@ void main() {
             .getSingle();
         expect(row.deletedAt, isNull);
       });
+
+      test(
+        'is idempotent on an already-tombstoned entry '
+        '(no double-enqueue, no DB write)',
+        () async {
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+          await repo.removeFromCollection(entry.id);
+
+          // Capture the deletedAt timestamp written by the first remove.
+          final firstTombstone = (await (db.select(db.gameCollectionsTable)
+                    ..where((t) => t.id.equals(entry.id)))
+                  .getSingle())
+              .deletedAt;
+          expect(firstTombstone, isNotNull);
+
+          // Second remove must be a silent no-op: no exception, no
+          // DB mutation, no second RemoveFromCollectionOperation.
+          await repo.removeFromCollection(entry.id);
+
+          final secondTombstone = (await (db.select(db.gameCollectionsTable)
+                    ..where((t) => t.id.equals(entry.id)))
+                  .getSingle())
+              .deletedAt;
+          // The tombstone timestamp wasn't refreshed by the second call.
+          expect(secondTombstone, equals(firstTombstone));
+
+          // Exactly one RemoveFromCollectionOperation was enqueued
+          // total — the first remove's. The second was a no-op.
+          verify(
+            () => mockSync
+                .enqueue(any(that: isA<RemoveFromCollectionOperation>())),
+          ).called(1);
+        },
+      );
     });
 
     group('transaction atomicity', () {
@@ -521,6 +663,29 @@ void main() {
             );
 
         await expectLater(repo.watchEntry('other-entry').take(1), emits(isNull));
+      });
+
+      test('emits null after the entry is tombstoned', () async {
+        final entry = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+
+        // Subscribe-then-mutate: take(2).toList() listens
+        // synchronously, pumpEventQueue lets the initial live emission
+        // land, then removeFromCollection sets deletedAt and the
+        // where-clause stops matching — the second emission is null.
+        final futureEmissions = repo.watchEntry(entry.id).take(2).toList();
+        await pumpEventQueue();
+
+        await repo.removeFromCollection(entry.id);
+
+        final emissions =
+            await futureEmissions.timeout(const Duration(seconds: 5));
+        expect(emissions, hasLength(2));
+        expect(emissions[0]!.id, equals(entry.id));
+        expect(emissions[0]!.deletedAt, isNull);
+        expect(emissions[1], isNull);
       });
     });
   });
