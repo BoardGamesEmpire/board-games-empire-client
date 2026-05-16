@@ -117,17 +117,17 @@ void main() {
           _makeGame(
             id: 'g-tm',
             minPlayTime: 30,
-            minPlayTimeMeasure: TimeMeasure.minute,
+            minPlayTimeMeasure: TimeMeasure.minutes,
             maxPlayTime: 2,
-            maxPlayTimeMeasure: TimeMeasure.hour,
+            maxPlayTimeMeasure: TimeMeasure.hours,
           ),
         );
 
         final found = (await repo.getGame('g-tm'))!;
         expect(found.minPlayTime, 30);
-        expect(found.minPlayTimeMeasure, TimeMeasure.minute);
+        expect(found.minPlayTimeMeasure, TimeMeasure.minutes);
         expect(found.maxPlayTime, 2);
-        expect(found.maxPlayTimeMeasure, TimeMeasure.hour);
+        expect(found.maxPlayTimeMeasure, TimeMeasure.hours);
       });
 
       test('round-trips ContentType enum', () async {
@@ -238,30 +238,27 @@ void main() {
         expect(result.map((g) => g.id), equals(['g-1']));
       });
 
-      test(
-        'ranks title-prefix matches ahead of in-title (substring) matches '
-        '(ORDER BY runs before LIMIT — Copilot J)',
-        () async {
-          // Pre-Pass-3b bug: LIMIT was applied in SQL with no ORDER BY,
-          // then a Dart-side sort ran over the truncated slice — so the
-          // "best" matches could be silently dropped before sorting.
-          // The fixed impl pushes ranking into SQL via OrderingTerm.
-          await repo.cacheGame(_makeGame(id: 'g-zoo', title: 'Zoo Cat'));
-          await repo.cacheGame(_makeGame(id: 'g-emp', title: 'Cat Empire'));
-          await repo.cacheGame(_makeGame(id: 'g-box', title: 'Cat in the Box'));
-          await repo.cacheGame(_makeGame(id: 'g-wld', title: 'Wildcat'));
+      test('ranks title-prefix matches ahead of in-title (substring) matches '
+          '(ORDER BY runs before LIMIT — Copilot J)', () async {
+        // Pre-Pass-3b bug: LIMIT was applied in SQL with no ORDER BY,
+        // then a Dart-side sort ran over the truncated slice — so the
+        // "best" matches could be silently dropped before sorting.
+        // The fixed impl pushes ranking into SQL via OrderingTerm.
+        await repo.cacheGame(_makeGame(id: 'g-zoo', title: 'Zoo Cat'));
+        await repo.cacheGame(_makeGame(id: 'g-emp', title: 'Cat Empire'));
+        await repo.cacheGame(_makeGame(id: 'g-box', title: 'Cat in the Box'));
+        await repo.cacheGame(_makeGame(id: 'g-wld', title: 'Wildcat'));
 
-          final result = await repo.searchGames('cat');
-          // Title-prefix matches first, then in-title; ties broken
-          // alphabetically by title:
-          //   Cat Empire, Cat in the Box  ← prefix
-          //   Wildcat, Zoo Cat            ← substring
-          expect(
-            result.map((g) => g.id),
-            equals(['g-emp', 'g-box', 'g-wld', 'g-zoo']),
-          );
-        },
-      );
+        final result = await repo.searchGames('cat');
+        // Title-prefix matches first, then in-title; ties broken
+        // alphabetically by title:
+        //   Cat Empire, Cat in the Box  ← prefix
+        //   Wildcat, Zoo Cat            ← substring
+        expect(
+          result.map((g) => g.id),
+          equals(['g-emp', 'g-box', 'g-wld', 'g-zoo']),
+        );
+      });
 
       test(
         'breaks ties among prefix matches alphabetically by title',
@@ -271,10 +268,7 @@ void main() {
           await repo.cacheGame(_makeGame(id: 'g-cmb', title: 'Catacombs'));
 
           final result = await repo.searchGames('cat');
-          expect(
-            result.map((g) => g.id),
-            equals(['g-cmb', 'g-tan', 'g-hed']),
-          );
+          expect(result.map((g) => g.id), equals(['g-cmb', 'g-tan', 'g-hed']));
         },
       );
 
@@ -329,15 +323,9 @@ void main() {
       });
 
       test('emits all cached games', () async {
-        await repo.cacheGames([
-          _makeGame(id: 'g-1'),
-          _makeGame(id: 'g-2'),
-        ]);
+        await repo.cacheGames([_makeGame(id: 'g-1'), _makeGame(id: 'g-2')]);
 
-        await expectLater(
-          repo.watchGames().take(1),
-          emits(hasLength(2)),
-        );
+        await expectLater(repo.watchGames().take(1), emits(hasLength(2)));
       });
     });
 
@@ -407,22 +395,22 @@ void main() {
           ]);
 
           final forG1 = await repo.getPlatformGamesForGame('g-1');
-          expect(
-            forG1.map((p) => p.id),
-            unorderedEquals(['pg-1a', 'pg-1b']),
-          );
+          expect(forG1.map((p) => p.id), unorderedEquals(['pg-1a', 'pg-1b']));
 
           final forG2 = await repo.getPlatformGamesForGame('g-2');
           expect(forG2.map((p) => p.id), equals(['pg-2a']));
         },
       );
 
-      test('getPlatformGamesForGame returns empty when no rows match', () async {
-        // 'g-1' is seeded but has no platform_games rows.
-        expect(await repo.getPlatformGamesForGame('g-1'), isEmpty);
-        // Non-existent parent game is also fine.
-        expect(await repo.getPlatformGamesForGame('nonexistent'), isEmpty);
-      });
+      test(
+        'getPlatformGamesForGame returns empty when no rows match',
+        () async {
+          // 'g-1' is seeded but has no platform_games rows.
+          expect(await repo.getPlatformGamesForGame('g-1'), isEmpty);
+          // Non-existent parent game is also fine.
+          expect(await repo.getPlatformGamesForGame('nonexistent'), isEmpty);
+        },
+      );
 
       test('cachePlatformGames upserts in batch', () async {
         await repo.cachePlatformGames([
@@ -434,16 +422,8 @@ void main() {
         ]);
 
         await repo.cachePlatformGames([
-          _makePlatformGame(
-            id: 'pg-1',
-            gameId: 'g-1',
-            platformName: 'Updated',
-          ),
-          _makePlatformGame(
-            id: 'pg-new',
-            gameId: 'g-1',
-            platformName: 'New',
-          ),
+          _makePlatformGame(id: 'pg-1', gameId: 'g-1', platformName: 'Updated'),
+          _makePlatformGame(id: 'pg-new', gameId: 'g-1', platformName: 'New'),
         ]);
 
         expect(
