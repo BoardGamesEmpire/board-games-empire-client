@@ -105,6 +105,24 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   }
 
   @override
+  Future<int> resetStaleInProgress() async {
+    // Recovery path for sync-worker crashes. Entries left in the
+    // inProgress state after a crash are counted as pending by
+    // [getPendingCount] / [watchPendingCount] (both of which include
+    // 'inProgress' for badge purposes) but never returned by
+    // [getPendingEntries] (which only returns 'pending' / 'failed'),
+    // so without this method they'd sit stuck forever — visible to
+    // the UI but unreachable to the worker.
+    //
+    // Single bulk UPDATE so the reset is atomic; .write() returns
+    // the affected row count which we propagate to the caller for
+    // logging / metrics.
+    return (_db.update(_db.syncQueueTable)
+          ..where((t) => t.status.equals('inProgress')))
+        .write(const SyncQueueTableCompanion(status: Value('pending')));
+  }
+
+  @override
   Future<int> purgeCompleted() async {
     return (_db.delete(
       _db.syncQueueTable,

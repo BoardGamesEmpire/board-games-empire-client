@@ -51,8 +51,21 @@ abstract class GameCollectionRepository {
   /// Reconciles a confirmed server response after a sync.
   ///
   /// Replaces the local entry (including [isLocalOnly] → false,
-  /// [isDirty] → false) and clears the associated sync queue entry.
-  Future<void> reconcileFromServer(GameCollection serverEntry);
+  /// [isDirty] → false). If [completedSyncQueueId] is provided, the
+  /// matching sync-queue entry is marked completed in the same
+  /// transaction — this is how reconciliation closes the loop with
+  /// the queued operation that triggered the server write, so the
+  /// same op isn't retried later. Implementations MUST perform the
+  /// local upsert and the queue update atomically; either both
+  /// succeed or neither does.
+  ///
+  /// Callers that reconcile from a server-driven sync (not
+  /// originating from a local mutation — e.g. a full re-pull) may
+  /// omit [completedSyncQueueId] to skip the queue step.
+  Future<void> reconcileFromServer(
+    GameCollection serverEntry, {
+    String? completedSyncQueueId,
+  });
 
   /// Watches the full collection, emitting on any change.
   Stream<List<GameCollection>> watchCollection();

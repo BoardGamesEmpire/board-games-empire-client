@@ -1,11 +1,19 @@
 /// Status of a [SyncQueueEntry] in its lifecycle.
 ///
-/// Client-only enum: never crosses the wire to the server. Serialization
-/// uses the default `json_serializable` behaviour (Dart enum name),
-/// producing `'pending'`, `'inProgress'`, `'failed'`, `'completed'`.
+/// Client-only enum: never crosses the wire to the server.
+/// Serialization uses the default `json_serializable` behaviour
+/// (Dart enum name), producing `'pending'`, `'inProgress'`,
+/// `'failed'`, `'completed'`. The Drift mapper in
+/// `SyncQueueRepositoryImpl` reads and writes the same string
+/// form, so JSON and storage agree.
 ///
-/// The pre-existing storage representation `'in_progress'` is migrated
-/// to `'inProgress'` in schema v2 (Pass 2).
+/// Pre-production, the storage schema is at version 1 and is
+/// applied destructively — there is no v1→v2 migration step and no
+/// legacy values to translate. The storage layer's `_parseStatus`
+/// recognises only the canonical camelCase names and throws
+/// `StateError` on anything else, so an unknown value surfaces as
+/// corruption rather than being silently coerced into
+/// `SyncStatus.pending`.
 enum SyncStatus {
   /// Awaiting processing.
   pending,

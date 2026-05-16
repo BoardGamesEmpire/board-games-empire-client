@@ -15,7 +15,9 @@ import '../databases/server_database.dart';
 /// sync-queue enqueue in a single [GeneratedDatabase.transaction]. If
 /// the enqueue fails (e.g. queue table constraint), the local write
 /// rolls back so the on-disk state cannot drift away from the sync
-/// log.
+/// log. [reconcileFromServer] applies the same rule to the local
+/// upsert + the optional `markCompleted` of the originating queue
+/// entry: either both land or neither does.
 ///
 /// ## Current-user boundary
 ///
@@ -363,7 +365,10 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   }
 
   @override
-  Future<void> reconcileFromServer(GameCollection serverEntry) async {
+  Future<void> reconcileFromServer(
+    GameCollection serverEntry, {
+    String? completedSyncQueueId,
+  }) async {
     return _db.transaction(() async {
       // Find any local row for the same triplet (live or tombstoned).
       // We need to see tombstones too because the server-confirmed
@@ -392,6 +397,18 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
               serverEntry.copyWith(isDirty: false, isLocalOnly: false),
             ),
           );
+
+      // Close the loop with the queued op that triggered this server
+      // write, if the caller knows which one it was. Drift's
+      // zone-scoped transactions mean the sync-queue update
+      // participates in the same transaction as the upsert above:
+      // if either step throws, both roll back together. This is
+      // what the [GameCollectionRepository.reconcileFromServer]
+      // contract promises ("clears the associated sync queue entry
+      // in the same transaction").
+      if (completedSyncQueueId != null) {
+        await _syncQueue.markCompleted(completedSyncQueueId);
+      }
     });
   }
 

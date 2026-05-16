@@ -1,6 +1,12 @@
 import 'package:drift/drift.dart';
 import 'game_table.dart';
 
+/// Index on [PlatformGamesTable.gameId] backs the
+/// `getPlatformGamesForGame(gameId)` lookup in
+/// `GameRepositoryImpl`. Without it, that query degrades to a full
+/// table scan as the cache grows. The primary-key index on [id]
+/// doesn't help because the lookup filters by [gameId], not by [id].
+@TableIndex(name: 'platform_games_game_id_idx', columns: {#gameId})
 class PlatformGamesTable extends Table {
   TextColumn get id => text()();
   TextColumn get gameId => text().references(GamesTable, #id)();

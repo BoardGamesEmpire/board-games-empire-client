@@ -46,13 +46,38 @@ void main() {
 
     group('getPendingEntries()', () {
       test('returns pending entries in createdAt order', () async {
-        await repo.enqueue(_kOperation);
-        await repo.enqueue(
-          const UpdateCollectionOperation(collectionId: 'col-1', rating: 7),
-        );
+        // Seed with EXPLICIT timestamps so the ordering assertion is
+        // unambiguous: two back-to-back repo.enqueue() calls can
+        // land on the same microsecond on a fast machine, which
+        // would let the pre-fix test (only `hasLength(2)`) silently
+        // hide a real ordering regression.
+        final older = DateTime.now().toUtc().subtract(const Duration(
+              seconds: 10,
+            ));
+        final newer = DateTime.now().toUtc();
+
+        await db.into(db.syncQueueTable).insert(
+              SyncQueueTableCompanion.insert(
+                id: 'queue-older',
+                payload: _kOperation.serialized,
+                status: const Value('pending'),
+                createdAt: older,
+              ),
+            );
+        await db.into(db.syncQueueTable).insert(
+              SyncQueueTableCompanion.insert(
+                id: 'queue-newer',
+                payload: _kOperation.serialized,
+                status: const Value('pending'),
+                createdAt: newer,
+              ),
+            );
 
         final entries = await repo.getPendingEntries();
-        expect(entries, hasLength(2));
+        expect(
+          entries.map((e) => e.id),
+          equals(['queue-older', 'queue-newer']),
+        );
       });
 
       test('excludes completed entries', () async {
@@ -83,6 +108,20 @@ void main() {
 
         expect(await repo.getPendingEntries(), isEmpty);
       });
+
+      test(
+        'excludes inProgress entries (they go through resetStaleInProgress first)',
+        () async {
+          // getPendingEntries returns only 'pending' and 'failed'.
+          // 'inProgress' entries are stuck if the worker died after
+          // markInProgress — they need [resetStaleInProgress] on
+          // startup to be retryable.
+          final entry = await repo.enqueue(_kOperation);
+          await repo.markInProgress(entry.id);
+
+          expect(await repo.getPendingEntries(), isEmpty);
+        },
+      );
     });
 
     group('markInProgress()', () {
@@ -151,6 +190,95 @@ void main() {
       });
     });
 
+    group('resetStaleInProgress()', () {
+      test(
+        'resets all inProgress entries to pending and returns the affected count',
+        () async {
+          final a = await repo.enqueue(_kOperation);
+          final b = await repo.enqueue(
+            const UpdateCollectionOperation(collectionId: 'col-1'),
+          );
+          await repo.markInProgress(a.id);
+          await repo.markInProgress(b.id);
+
+          // Sanity: both inProgress.
+          final pre = await repo.getAllEntries();
+          expect(
+            pre.where((e) => e.status == SyncStatus.inProgress),
+            hasLength(2),
+          );
+
+          final reset = await repo.resetStaleInProgress();
+
+          expect(reset, equals(2));
+          final post = await repo.getAllEntries();
+          expect(
+            post.every((e) => e.status == SyncStatus.pending),
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'returns 0 and writes nothing when no entries are inProgress',
+        () async {
+          await repo.enqueue(_kOperation);
+
+          final reset = await repo.resetStaleInProgress();
+
+          expect(reset, equals(0));
+          final entry = (await repo.getAllEntries()).first;
+          expect(entry.status, SyncStatus.pending);
+        },
+      );
+
+      test(
+        'does not affect completed or failed entries',
+        () async {
+          final a = await repo.enqueue(_kOperation);
+          final b = await repo.enqueue(
+            const UpdateCollectionOperation(collectionId: 'col-1'),
+          );
+          await repo.markCompleted(a.id);
+          await repo.markFailed(b.id, error: 'oops');
+
+          final reset = await repo.resetStaleInProgress();
+          expect(reset, equals(0));
+
+          final byId = {
+            for (final e in await repo.getAllEntries()) e.id: e,
+          };
+          expect(byId[a.id]!.status, SyncStatus.completed);
+          expect(byId[b.id]!.status, SyncStatus.failed);
+        },
+      );
+
+      test(
+        'makes a crash-stuck inProgress entry retryable via getPendingEntries',
+        () async {
+          // The recovery use case end-to-end: an entry gets
+          // markInProgress'd, the worker process dies before
+          // markCompleted/markFailed, and on the next startup the
+          // entry must end up back in the queue worker's pickup
+          // list — not silently stuck forever.
+          final entry = await repo.enqueue(_kOperation);
+          await repo.markInProgress(entry.id);
+
+          // Pre-reset: counted as pending by the badge, but the
+          // worker's pickup query never sees it.
+          expect(await repo.getPendingCount(), 1);
+          expect(await repo.getPendingEntries(), isEmpty);
+
+          await repo.resetStaleInProgress();
+
+          // Post-reset: visible to the worker again.
+          final pending = await repo.getPendingEntries();
+          expect(pending.map((e) => e.id), equals([entry.id]));
+          expect(pending.first.status, SyncStatus.pending);
+        },
+      );
+    });
+
     group('purgeCompleted()', () {
       test('removes completed entries and returns count', () async {
         final a = await repo.enqueue(_kOperation);
@@ -188,14 +316,16 @@ void main() {
         await expectLater(repo.watchPendingCount().take(1), emits(0));
       });
 
-      test('emits the current count when entries exist at subscribe time',
-          () async {
-        // Pass 3c change: the wrapper used to prepend a fake `yield 0`
-        // before the real value. Now we get the actual current count
-        // on first emission.
-        await repo.enqueue(_kOperation);
-        await expectLater(repo.watchPendingCount().take(1), emits(1));
-      });
+      test(
+        'emits the current count when entries exist at subscribe time',
+        () async {
+          // Pass 3c change: the wrapper used to prepend a fake `yield 0`
+          // before the real value. Now we get the actual current count
+          // on first emission.
+          await repo.enqueue(_kOperation);
+          await expectLater(repo.watchPendingCount().take(1), emits(1));
+        },
+      );
 
       test(
         're-emits when an entry is enqueued after subscribe',

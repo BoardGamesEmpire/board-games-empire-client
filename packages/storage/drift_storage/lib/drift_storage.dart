@@ -10,3 +10,11 @@ export 'src/repositories/household_repository_impl.dart';
 export 'src/repositories/notification_summary_repository_impl.dart';
 export 'src/repositories/server_repository_impl.dart';
 export 'src/repositories/sync_queue_repository_impl.dart';
+
+// Table libraries that earlier revisions exposed through this barrel.
+// External consumers depend on the generated table/companion types
+// (e.g. `NotificationSummariesTableCompanion`) via this single import,
+// so dropping these exports silently broke them.
+export 'src/tables/device_preferences_table.dart';
+export 'src/tables/notification_summary_table.dart';
+export 'src/tables/server_config_table.dart';
