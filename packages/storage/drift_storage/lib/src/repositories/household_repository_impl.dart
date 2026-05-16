@@ -77,19 +77,20 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   }
 
   @override
-  Future<Household?> getHousehold(String id) async {
-    final query = _db.select(_db.householdsTable).join([
-      innerJoin(
-        _db.householdMembersTable,
-        _db.householdMembersTable.householdId.equalsExp(
-              _db.householdsTable.id,
-            ) &
-            _db.householdMembersTable.userId.equals(_userId),
-      ),
-    ])..where(
-      _db.householdsTable.id.equals(id) &
-          _db.householdsTable.deletedAt.isNull(),
-    );
+  Future<Household?> getHousehold(String householdId) async {
+    final query =
+        _db.select(_db.householdsTable).join([
+          innerJoin(
+            _db.householdMembersTable,
+            _db.householdMembersTable.householdId.equalsExp(
+                  _db.householdsTable.id,
+                ) &
+                _db.householdMembersTable.userId.equals(_userId),
+          ),
+        ])..where(
+          _db.householdsTable.id.equals(householdId) &
+              _db.householdsTable.deletedAt.isNull(),
+        );
 
     final row = await query.getSingleOrNull();
     return row == null
@@ -99,27 +100,31 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<List<HouseholdMember>> getMembers(String householdId) async {
-    // Boundary enforcement: fetch all members of the household, then
-    // gate on whether the current user is among them. A caller who
-    // passes a household id they don't belong to sees empty even if
-    // the cache has rows for that household.
+    // Self-join the members table with itself, aliased as `me`: the
+    // outer side returns all rows for the household, but only when
+    // there's a matching `me` row proving the current user is also
+    // a member. If the user isn't a member, the inner join yields
+    // nothing and the result is empty — boundary enforced in SQL.
     //
-    // The two-step (fetch then filter in Dart) keeps the query simple
-    // and avoids an EXISTS subquery that doesn't compose cleanly with
-    // Drift's selectable types. With realistic household sizes
-    // (<= dozens of members) the cost difference vs. an EXISTS is
-    // negligible.
+    // The `household_members_household_user_unique_idx` unique index
+    // on (householdId, userId) guarantees at most one `me` row per
+    // household, so the join can't fan out duplicates.
     //
-    // TODO(visibility): when [Household.visibility] lands, short-
-    // circuit this check for visibility tiers that permit non-member
-    // reads (public households, friends-of-household, etc.) so users
-    // can browse a friend's household roster. See class doc.
-    final rows = await (_db.select(
-      _db.householdMembersTable,
-    )..where((t) => t.householdId.equals(householdId))).get();
-    final isMember = rows.any((r) => r.userId == _userId);
-    if (!isMember) return const [];
-    return rows.map(_mapMember).toList();
+    // TODO(visibility): see class doc — when Household.visibility
+    // lands, public/restricted tiers can bypass this join.
+    final me = _db.alias(_db.householdMembersTable, 'me');
+    final query = _db.select(_db.householdMembersTable).join([
+      innerJoin(
+        me,
+        me.householdId.equalsExp(_db.householdMembersTable.householdId) &
+            me.userId.equals(_userId),
+      ),
+    ])..where(_db.householdMembersTable.householdId.equals(householdId));
+
+    final rows = await query.get();
+    return rows
+        .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
+        .toList();
   }
 
   @override
@@ -127,8 +132,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
     final row =
         await (_db.select(_db.householdMembersTable)..where(
               (t) =>
-                  t.householdId.equals(householdId) &
-                  t.userId.equals(_userId),
+                  t.householdId.equals(householdId) & t.userId.equals(_userId),
             ))
             .getSingleOrNull();
     return row == null ? null : _mapMember(row);
@@ -191,21 +195,23 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   }
 
   @override
-  Stream<List<HouseholdMember>> watchMembers(String householdId) =>
-      (_db.select(_db.householdMembersTable)
-            ..where((t) => t.householdId.equals(householdId)))
-          .watch()
-          .map((rows) {
-            // Reactive form of [getMembers]: if the current user is
-            // added or removed from the household, subsequent
-            // emissions automatically reflect the change in
-            // visibility (empty ↔ populated).
-            //
-            // TODO(visibility): see [getMembers].
-            final isMember = rows.any((r) => r.userId == _userId);
-            if (!isMember) return const <HouseholdMember>[];
-            return rows.map(_mapMember).toList();
-          });
+  Stream<List<HouseholdMember>> watchMembers(String householdId) {
+    // TODO(visibility): see [getMembers].
+    final me = _db.alias(_db.householdMembersTable, 'me');
+    final query = _db.select(_db.householdMembersTable).join([
+      innerJoin(
+        me,
+        me.householdId.equalsExp(_db.householdMembersTable.householdId) &
+            me.userId.equals(_userId),
+      ),
+    ])..where(_db.householdMembersTable.householdId.equals(householdId));
+
+    return query.watch().map(
+      (rows) => rows
+          .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
+          .toList(),
+    );
+  }
 
   // ── Mappers ───────────────────────────────────────────────────────────────────────
 

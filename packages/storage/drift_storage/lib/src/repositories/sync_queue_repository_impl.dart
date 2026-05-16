@@ -172,15 +172,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   /// throws [StateError]. A row whose `status` column holds an
   /// unrecognised value represents either DB corruption or a newer
   /// code-side enum case that's been deployed before this read path
-  /// was updated. Both must surface rather than be silently coerced
-  /// into [SyncStatus.pending] — the prior fallback would have caused
-  /// a corrupt or unknown-status row to be retried as a live sync op
-  /// against the server.
-  ///
-  /// The legacy `'in_progress'` snake_case arm has been removed:
-  /// pre-production, no v1-state DBs exist, so there is nothing to
-  /// migrate from. The canonical wire form is the camelCase
-  /// [SyncStatus] `name` (e.g. `'inProgress'`).
+  /// was updated.
   SyncStatus _parseStatus(String value) => switch (value) {
     'pending' => SyncStatus.pending,
     'inProgress' => SyncStatus.inProgress,
