@@ -50,24 +50,40 @@ import '../databases/server_database.dart';
 ///   tombstoned row is a silent no-op, neither bumping `deletedAt`
 ///   nor enqueuing a second `RemoveFromCollectionOperation`.
 ///
-/// ## addToCollection semantics on duplicate triplet
+/// ## addToCollection / reconcileFromServer semantics on duplicate triplet
 ///
-/// - **Tombstoned row(s) exist, no live row**: resurrect the
-///   **most recent** tombstone (clear `deletedAt`, overwrite fields,
-///   keep its id, mark dirty + localOnly). Older tombstones are
-///   left alone. The schema explicitly allows multiple tombstones
-///   per triplet, so the lookup uses an ordered+limited query
-///   rather than a bare [SingleOrNullSelectable.getSingleOrNull]
-///   which would throw [StateError] when more than one tombstone
-///   is present.
+/// Both methods need to find "the" canonical local row for a
+/// `(userId, platformGameId, medium)` triplet — except the schema
+/// permits multiple tombstoned rows per triplet, so a bare
+/// [SingleOrNullSelectable.getSingleOrNull] throws [StateError] the
+/// moment two or more tombstones coexist. Both methods therefore
+/// use the same ordered+limited lookup pattern:
+///
+/// ```text
+/// ORDER BY (deletedAt IS NULL) DESC, updatedAt DESC LIMIT 1
+/// ```
+///
+/// which picks the live row if any, else the most recent tombstone,
+/// else nothing — never throws.
+///
+/// `addToCollection` then branches on the result:
+///
+/// - **No row exists**: fresh insert with a new UUID v4 id.
 /// - **Live row exists**: increment `quantity` by the requested
 ///   amount (rating/comment overwritten only if the caller supplied
 ///   them; existing values otherwise preserved).
-/// - **No row exists**: fresh insert with a new cuid.
+/// - **Tombstoned row(s) exist, no live row**: resurrect the **most
+///   recent** tombstone (clear `deletedAt`, overwrite fields, keep
+///   its id, mark dirty + localOnly). Older tombstones are left
+///   alone.
 ///
 /// Whatever branch fires, an `AddToCollectionOperation` is enqueued
 /// with the final post-write quantity; the server is expected to
 /// dedup or merge on its side.
+///
+/// `reconcileFromServer` uses the lookup to decide whether to drop
+/// a stale local row whose id differs from the server's canonical
+/// id (see [reconcileFromServer] for the full flow).
 class GameCollectionRepositoryImpl implements GameCollectionRepository {
   GameCollectionRepositoryImpl({
     required ServerDatabase db,
@@ -125,46 +141,18 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       final now = DateTime.now().toUtc();
       final wireMedium = medium.toWire();
 
-      // Look up the canonical row for this triplet.
-      //
-      // The partial unique index `(user_id, platform_game_id, medium)
-      // WHERE deleted_at IS NULL` guarantees at most ONE live row,
-      // but MULTIPLE tombstoned rows are allowed for the same triplet
-      // (each removal creates a tombstone; resurrection only clears
-      // one at a time). A naive `getSingleOrNull()` would throw
-      // [StateError] the moment two or more tombstones coexist for
-      // the triplet — the order+limit form below picks the live row
-      // if any, else the most recent tombstone, else nothing, and
-      // never throws.
-      final existing =
-          await ((_db.select(_db.gameCollectionsTable)..where(
-                    (t) =>
-                        t.userId.equals(_userId) &
-                        t.platformGameId.equals(platformGameId) &
-                        t.medium.equals(wireMedium),
-                  ))
-                ..orderBy([
-                  // Live row first: `deletedAt IS NULL` evaluates to
-                  // 1 for live rows, 0 for tombstones; DESC ranks 1
-                  // ahead of 0.
-                  (t) => OrderingTerm(
-                    expression: t.deletedAt.isNull(),
-                    mode: OrderingMode.desc,
-                  ),
-                  // Among tombstones (or as tiebreaker among live
-                  // rows — there's at most one but the partial index
-                  // doesn't prevent older orphans from a corrupt
-                  // state), prefer the most recently touched row.
-                  (t) => OrderingTerm.desc(t.updatedAt),
-                ])
-                ..limit(1))
-              .getSingleOrNull();
+      final existing = await _findCanonicalRow(
+        platformGameId: platformGameId,
+        wireMedium: wireMedium,
+      );
 
       final String entryId;
       final int finalQuantity;
 
       if (existing == null) {
-        // Fresh insert.
+        // Fresh insert. UUID v4 id (NOT a cuid — the rest of the
+        // codebase uses cuid2 elsewhere, but this repository uses
+        // UUID v4 via the package:uuid dependency).
         entryId = _uuid.v4();
         finalQuantity = quantity;
         await _db
@@ -373,14 +361,17 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       // Find any local row for the same triplet (live or tombstoned).
       // We need to see tombstones too because the server-confirmed
       // entry may correspond to a row we already tombstoned locally.
-      final local =
-          await (_db.select(_db.gameCollectionsTable)..where(
-                (t) =>
-                    t.userId.equals(_userId) &
-                    t.platformGameId.equals(serverEntry.platformGameId) &
-                    t.medium.equals(serverEntry.medium.toWire()),
-              ))
-              .getSingleOrNull();
+      //
+      // Uses the same ordered+limited lookup as [addToCollection]:
+      // the schema permits multiple tombstones per triplet, so a
+      // bare getSingleOrNull() would throw [StateError] the moment
+      // two or more coexist. The order+limit form picks the live
+      // row if any, else the most recent tombstone, else nothing,
+      // and never throws.
+      final local = await _findCanonicalRow(
+        platformGameId: serverEntry.platformGameId,
+        wireMedium: serverEntry.medium.toWire(),
+      );
 
       // Drop the local row if its id differs from the server's
       // canonical id (server reassigned during sync).
@@ -433,7 +424,38 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
           .watchSingleOrNull()
           .map((row) => row == null ? null : _mapRow(row));
 
-  // ── Mappers ───────────────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /// Look up the canonical row for a `(_userId, platformGameId,
+  /// medium)` triplet. See the class doc for the ordering rationale.
+  Future<GameCollectionsTableData?> _findCanonicalRow({
+    required String platformGameId,
+    required String wireMedium,
+  }) async {
+    return ((_db.select(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  t.platformGameId.equals(platformGameId) &
+                  t.medium.equals(wireMedium),
+            ))
+          ..orderBy([
+            // Live row first: `deletedAt IS NULL` evaluates to 1 for
+            // live rows, 0 for tombstones; DESC ranks 1 ahead of 0.
+            (t) => OrderingTerm(
+              expression: t.deletedAt.isNull(),
+              mode: OrderingMode.desc,
+            ),
+            // Among tombstones (or as tiebreaker among live rows —
+            // there's at most one but the partial index doesn't
+            // prevent older orphans from a corrupt state), prefer
+            // the most recently touched row.
+            (t) => OrderingTerm.desc(t.updatedAt),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  // ── Mappers ─────────────────────────────────────────────────────────────────
 
   GameCollection _mapRow(GameCollectionsTableData row) => GameCollection(
     id: row.id,

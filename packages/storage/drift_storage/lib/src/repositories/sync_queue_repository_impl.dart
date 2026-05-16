@@ -36,6 +36,15 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
   @override
   Future<List<SyncQueueEntry>> getPendingEntries() async {
+    // Ordering: primary by createdAt (ASC, FIFO), tiebroken by SQLite
+    // rowid (ASC, monotonic insertion order). The tiebreaker is
+    // necessary because [DateTime.now()] resolves to microseconds and
+    // two back-to-back enqueues on a fast machine can land on the
+    // same microsecond — in which case createdAt-only ordering is
+    // not deterministic and dependent ops (add → update → remove)
+    // could be processed out of order. SQLite assigns rowids in
+    // insertion order on tables that aren't `WITHOUT ROWID`, so it
+    // gives us free monotonic enqueue-order.
     final rows =
         await (_db.select(_db.syncQueueTable)
               ..where(
@@ -43,16 +52,22 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
                     t.status.isIn(['pending', 'failed']) &
                     t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries),
               )
-              ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.createdAt),
+                (t) => OrderingTerm.asc(t.rowId),
+              ]))
             .get();
     return rows.map(_mapRow).toList();
   }
 
   @override
   Future<List<SyncQueueEntry>> getAllEntries() async {
-    final rows = await (_db.select(
-      _db.syncQueueTable,
-    )..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
+    final rows =
+        await (_db.select(_db.syncQueueTable)..orderBy([
+              (t) => OrderingTerm.asc(t.createdAt),
+              (t) => OrderingTerm.asc(t.rowId),
+            ]))
+            .get();
     return rows.map(_mapRow).toList();
   }
 
@@ -134,7 +149,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     final count = _db.syncQueueTable.id.count();
     final query = _db.selectOnly(_db.syncQueueTable)
       ..addColumns([count])
-      ..where(_db.syncQueueTable.status.isIn(['pending', 'inProgress']));
+      ..where(_pendingPredicate());
     final result = await query.getSingle();
     return result.read(count) ?? 0;
   }
@@ -151,9 +166,28 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     final count = _db.syncQueueTable.id.count();
     return (_db.selectOnly(_db.syncQueueTable)
           ..addColumns([count])
-          ..where(_db.syncQueueTable.status.isIn(['pending', 'inProgress'])))
+          ..where(_pendingPredicate()))
         .watchSingle()
         .map((row) => row.read(count) ?? 0);
+  }
+
+  /// Predicate matching the same set of entries that
+  /// [getPendingEntries] returns plus those currently in
+  /// [SyncStatus.inProgress] (which are still outstanding work even
+  /// if the worker can't pick them up directly — they need
+  /// [resetStaleInProgress] first).
+  ///
+  /// Symmetry with [getPendingEntries] is important: the badge that
+  /// `watchPendingCount` feeds is meant to indicate "outstanding sync
+  /// work", which must include retryable failures. Pre-fix, the
+  /// count excluded `failed` rows entirely, so after a transient
+  /// network failure the badge dropped to 0 even though the worker
+  /// would retry the entry on its next cycle.
+  Expression<bool> _pendingPredicate() {
+    final t = _db.syncQueueTable;
+    return t.status.isIn(['pending', 'inProgress']) |
+        (t.status.equals('failed') &
+            t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries));
   }
 
   SyncQueueEntry _mapRow(SyncQueueTableData row) => SyncQueueEntry(
@@ -172,7 +206,15 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   /// throws [StateError]. A row whose `status` column holds an
   /// unrecognised value represents either DB corruption or a newer
   /// code-side enum case that's been deployed before this read path
-  /// was updated.
+  /// was updated. Both must surface rather than be silently coerced
+  /// into [SyncStatus.pending] — the prior fallback would have caused
+  /// a corrupt or unknown-status row to be retried as a live sync op
+  /// against the server.
+  ///
+  /// The legacy `'in_progress'` snake_case arm has been removed:
+  /// pre-production, no v1-state DBs exist, so there is nothing to
+  /// migrate from. The canonical wire form is the camelCase
+  /// [SyncStatus] `name` (e.g. `'inProgress'`).
   SyncStatus _parseStatus(String value) => switch (value) {
     'pending' => SyncStatus.pending,
     'inProgress' => SyncStatus.inProgress,

@@ -9,8 +9,9 @@ import '../databases/server_database.dart';
 /// Scoped to a current user via [currentUserId]. Every read path that
 /// returns household data — list, single-by-id, watch, member list,
 /// member watch — gates on the current user being a member of the
-/// household in question. A caller who passes an id for a household
-/// they don't belong to sees:
+/// household in question AND on the household itself being live
+/// (not tombstoned). A caller who passes an id for a household they
+/// don't belong to, or for one that's been deleted, sees:
 ///
 /// - `null` from [getHousehold]
 /// - `const []` from [getMembers]
@@ -100,28 +101,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<List<HouseholdMember>> getMembers(String householdId) async {
-    // Self-join the members table with itself, aliased as `me`: the
-    // outer side returns all rows for the household, but only when
-    // there's a matching `me` row proving the current user is also
-    // a member. If the user isn't a member, the inner join yields
-    // nothing and the result is empty — boundary enforced in SQL.
-    //
-    // The `household_members_household_user_unique_idx` unique index
-    // on (householdId, userId) guarantees at most one `me` row per
-    // household, so the join can't fan out duplicates.
-    //
-    // TODO(visibility): see class doc — when Household.visibility
-    // lands, public/restricted tiers can bypass this join.
-    final me = _db.alias(_db.householdMembersTable, 'me');
-    final query = _db.select(_db.householdMembersTable).join([
-      innerJoin(
-        me,
-        me.householdId.equalsExp(_db.householdMembersTable.householdId) &
-            me.userId.equals(_userId),
-      ),
-    ])..where(_db.householdMembersTable.householdId.equals(householdId));
-
-    final rows = await query.get();
+    final rows = await _membersQuery(householdId).get();
     return rows
         .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
         .toList();
@@ -196,24 +176,60 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Stream<List<HouseholdMember>> watchMembers(String householdId) {
-    // TODO(visibility): see [getMembers].
-    final me = _db.alias(_db.householdMembersTable, 'me');
-    final query = _db.select(_db.householdMembersTable).join([
-      innerJoin(
-        me,
-        me.householdId.equalsExp(_db.householdMembersTable.householdId) &
-            me.userId.equals(_userId),
-      ),
-    ])..where(_db.householdMembersTable.householdId.equals(householdId));
-
-    return query.watch().map(
+    return _membersQuery(householdId).watch().map(
       (rows) => rows
           .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
           .toList(),
     );
   }
 
-  // ── Mappers ───────────────────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  /// Common selectable for [getMembers] and [watchMembers]: returns
+  /// the members of [householdId] iff (a) the household exists and
+  /// is not tombstoned, AND (b) the current user is one of its
+  /// members.
+  ///
+  /// Implementation uses two inner joins on the same
+  /// `household_members` row:
+  ///
+  /// - One to [householdsTable] filtered by `deletedAt IS NULL`,
+  ///   which fails the row if the household itself has been
+  ///   tombstoned. Pre-fix, a stale member row pointing at a
+  ///   tombstoned household would still leak the roster.
+  /// - One to an alias `me` of [householdMembersTable] filtered by
+  ///   the current user id, which fails the row if the current user
+  ///   isn't a member. The
+  ///   `household_members_household_user_unique_idx` unique index on
+  ///   `(householdId, userId)` guarantees at most one `me` row per
+  ///   household, so the self-join can't fan out duplicates.
+  ///
+  /// Both joins must match for any rows to come back, so the empty
+  /// result correctly covers all three negative cases: deleted
+  /// household, non-member, or genuinely empty household.
+  ///
+  /// TODO(visibility): when [Household.visibility] lands, public /
+  /// restricted tiers can bypass the `me` self-join so non-members
+  /// can browse a friend's household roster. See class doc.
+  JoinedSelectStatement _membersQuery(String householdId) {
+    final me = _db.alias(_db.householdMembersTable, 'me');
+    return _db.select(_db.householdMembersTable).join([
+      innerJoin(
+        _db.householdsTable,
+        _db.householdsTable.id.equalsExp(
+              _db.householdMembersTable.householdId,
+            ) &
+            _db.householdsTable.deletedAt.isNull(),
+      ),
+      innerJoin(
+        me,
+        me.householdId.equalsExp(_db.householdMembersTable.householdId) &
+            me.userId.equals(_userId),
+      ),
+    ])..where(_db.householdMembersTable.householdId.equals(householdId));
+  }
+
+  // ── Mappers ─────────────────────────────────────────────────────────────────
 
   Household _mapHousehold(HouseholdsTableData row) => Household(
     id: row.id,

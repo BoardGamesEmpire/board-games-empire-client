@@ -15,18 +15,26 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Future<Game?> getGame(String id) async {
-    final row = await (_db.select(
-      _db.gamesTable,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    // Tombstoned games are hidden from all read paths so single-item
+    // lookups stay consistent with the list/watch APIs. The schema
+    // permits `deletedAt` on games for soft-delete; this filter
+    // ensures the rest of the app never has to special-case it.
+    final row =
+        await (_db.select(_db.gamesTable)..where(
+              (t) => t.id.equals(id) & t.deletedAt.isNull(),
+            ))
+            .getSingleOrNull();
     return row == null ? null : _mapGame(row);
   }
 
   @override
   Future<List<Game>> getGames(List<String> ids) async {
     if (ids.isEmpty) return [];
-    final rows = await (_db.select(
-      _db.gamesTable,
-    )..where((t) => t.id.isIn(ids))).get();
+    final rows =
+        await (_db.select(_db.gamesTable)..where(
+              (t) => t.id.isIn(ids) & t.deletedAt.isNull(),
+            ))
+            .get();
     return rows.map(_mapGame).toList();
   }
 
@@ -68,8 +76,9 @@ class GameRepositoryImpl implements GameRepository {
         await (_db.select(_db.gamesTable)
               ..where(
                 (t) =>
-                    t.title.lower().contains(q) |
-                    t.subtitle.lower().contains(q),
+                    t.deletedAt.isNull() &
+                    (t.title.lower().contains(q) |
+                        t.subtitle.lower().contains(q)),
               )
               ..orderBy([
                 // Title-prefix matches first. The LIKE expression
@@ -89,15 +98,17 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Stream<Game?> watchGame(String id) =>
-      (_db.select(_db.gamesTable)..where((t) => t.id.equals(id)))
+      (_db.select(_db.gamesTable)..where(
+            (t) => t.id.equals(id) & t.deletedAt.isNull(),
+          ))
           .watchSingleOrNull()
           .map((row) => row == null ? null : _mapGame(row));
 
   @override
-  Stream<List<Game>> watchGames() => _db
-      .select(_db.gamesTable)
-      .watch()
-      .map((rows) => rows.map(_mapGame).toList());
+  Stream<List<Game>> watchGames() =>
+      (_db.select(_db.gamesTable)..where((t) => t.deletedAt.isNull()))
+          .watch()
+          .map((rows) => rows.map(_mapGame).toList());
 
   // ── PlatformGame ───────────────────────────────────────────────────────────
 
