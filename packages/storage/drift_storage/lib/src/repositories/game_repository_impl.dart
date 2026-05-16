@@ -11,7 +11,7 @@ class GameRepositoryImpl implements GameRepository {
 
   final ServerDatabase _db;
 
-  // ── Game ──────────────────────────────────────────────────────────────────────
+  // ── Game ────────────────────────────────────────────────────────────────────
 
   @override
   Future<Game?> getGame(String id) async {
@@ -99,7 +99,7 @@ class GameRepositoryImpl implements GameRepository {
       .watch()
       .map((rows) => rows.map(_mapGame).toList());
 
-  // ── PlatformGame ───────────────────────────────────────────────────────────────
+  // ── PlatformGame ───────────────────────────────────────────────────────────
 
   @override
   Future<PlatformGame?> getPlatformGame(String id) async {
@@ -137,7 +137,7 @@ class GameRepositoryImpl implements GameRepository {
     });
   }
 
-  // ── Mappers ──────────────────────────────────────────────────────────────────
+  // ── Mappers ───────────────────────────────────────────────────────────────────
 
   Game _mapGame(GamesTableData row) => Game(
     id: row.id,
@@ -149,6 +149,7 @@ class GameRepositoryImpl implements GameRepository {
     publishYear: row.publishYear,
     minPlayers: row.minPlayers,
     maxPlayers: row.maxPlayers,
+    playingTime: row.playingTime,
     minPlayTime: row.minPlayTime,
     minPlayTimeMeasure: row.minPlayTimeMeasure != null
         ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
@@ -160,6 +161,7 @@ class GameRepositoryImpl implements GameRepository {
     minAge: row.minAge,
     complexity: row.complexity,
     contentType: ContentType.fromWire(row.contentType),
+    totalPlayCount: row.totalPlayCount,
     averageRating: row.averageRating,
     bayesRating: row.bayesRating,
     ratingsCount: row.ratingsCount,
@@ -168,6 +170,9 @@ class GameRepositoryImpl implements GameRepository {
     mechanics: _decodeStringList(row.mechanicsJson),
     designers: _decodeStringList(row.designersJson),
     publishers: _decodeStringList(row.publishersJson),
+    tags: _decodeStringList(row.tagsJson),
+    visibility: Visibility.fromWire(row.visibility),
+    createdById: row.createdById,
     deletedAt: row.deletedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -183,6 +188,7 @@ class GameRepositoryImpl implements GameRepository {
     publishYear: Value(g.publishYear),
     minPlayers: Value(g.minPlayers),
     maxPlayers: Value(g.maxPlayers),
+    playingTime: Value(g.playingTime),
     minPlayTime: Value(g.minPlayTime),
     minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toWire()),
     maxPlayTime: Value(g.maxPlayTime),
@@ -190,6 +196,7 @@ class GameRepositoryImpl implements GameRepository {
     minAge: Value(g.minAge),
     complexity: Value(g.complexity),
     contentType: Value(g.contentType.toWire()),
+    totalPlayCount: Value(g.totalPlayCount),
     averageRating: Value(g.averageRating),
     bayesRating: Value(g.bayesRating),
     ratingsCount: Value(g.ratingsCount),
@@ -198,6 +205,9 @@ class GameRepositoryImpl implements GameRepository {
     mechanicsJson: Value(jsonEncode(g.mechanics)),
     designersJson: Value(jsonEncode(g.designers)),
     publishersJson: Value(jsonEncode(g.publishers)),
+    tagsJson: Value(jsonEncode(g.tags)),
+    visibility: Value(g.visibility.toWire()),
+    createdById: Value(g.createdById),
     deletedAt: Value(g.deletedAt),
     createdAt: g.createdAt,
     updatedAt: g.updatedAt,
