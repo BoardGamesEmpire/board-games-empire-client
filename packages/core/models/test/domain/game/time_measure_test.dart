@@ -60,13 +60,20 @@ void main() {
       }
     });
 
-    test('static fromJson/toJson helpers agree with @JsonValue mappings', () {
+    test('wire helpers agree with @JsonValue mappings', () {
       for (final value in TimeMeasure.values) {
         final viaJsonValue =
             _makeGame(measure: value).toJson()['minPlayTimeMeasure'] as String;
-        expect(value.toJson(), equals(viaJsonValue));
-        expect(TimeMeasure.fromJson(viaJsonValue), equals(value));
+        expect(value.toWire(), equals(viaJsonValue));
+        expect(TimeMeasure.fromWire(viaJsonValue), equals(value));
       }
+    });
+
+    test('fromWire throws on unrecognized value', () {
+      expect(
+        () => TimeMeasure.fromWire('Decades'),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 }

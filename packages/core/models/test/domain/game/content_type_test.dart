@@ -81,16 +81,28 @@ void main() {
       }
     });
 
-    test('static fromJson/toJson helpers agree with @JsonValue mappings', () {
-      // Storage layer calls the static helpers directly; they must
-      // produce the same wire strings as @JsonValue. Guards against
-      // drift between the two paths during the Pass 1->3 transition.
+    test('wire helpers agree with @JsonValue mappings', () {
+      // The storage layer uses ContentType.toWire() / fromWire() directly
+      // (Drift columns hold these as strings). They MUST produce the same
+      // wire strings as @JsonValue. Guards against drift between the two paths.
       for (final value in ContentType.values) {
         final viaJsonValue =
             _makeGame(contentType: value).toJson()['contentType'] as String;
-        expect(value.toJson(), equals(viaJsonValue));
-        expect(ContentType.fromJson(viaJsonValue), equals(value));
+        expect(
+          value.toWire(),
+          equals(viaJsonValue),
+          reason: 'ContentType.${value.name}.toWire() must equal @JsonValue',
+        );
+        expect(
+          ContentType.fromWire(viaJsonValue),
+          equals(value),
+          reason: 'fromWire("$viaJsonValue") must round-trip',
+        );
       }
+    });
+
+    test('fromWire falls back to unknown for unrecognized values', () {
+      expect(ContentType.fromWire('SomeFutureType'), ContentType.unknown);
     });
   });
 }

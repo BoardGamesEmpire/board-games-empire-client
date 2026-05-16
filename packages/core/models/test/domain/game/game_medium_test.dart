@@ -47,13 +47,20 @@ void main() {
       }
     });
 
-    test('static fromJson/toJson helpers agree with @JsonValue mappings', () {
+    test('wire helpers agree with @JsonValue mappings', () {
       for (final value in GameMedium.values) {
         final viaJsonValue =
             _makeCollection(medium: value).toJson()['medium'] as String;
-        expect(value.toJson(), equals(viaJsonValue));
-        expect(GameMedium.fromJson(viaJsonValue), equals(value));
+        expect(value.toWire(), equals(viaJsonValue));
+        expect(GameMedium.fromWire(viaJsonValue), equals(value));
       }
+    });
+
+    test('fromWire throws on unrecognized value', () {
+      expect(
+        () => GameMedium.fromWire('Holographic'),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 }

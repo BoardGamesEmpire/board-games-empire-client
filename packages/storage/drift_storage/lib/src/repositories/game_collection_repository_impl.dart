@@ -37,7 +37,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
               (t) =>
                   t.userId.equals(_userId) &
                   t.platformGameId.equals(platformGameId) &
-                  t.medium.equals(medium.toJson()),
+                  t.medium.equals(medium.toWire()),
             ))
             .getSingleOrNull();
     return row == null ? null : _mapRow(row);
@@ -58,7 +58,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       id: id,
       userId: _userId,
       platformGameId: platformGameId,
-      medium: medium.toJson(),
+      medium: medium.toWire(),
       quantity: Value(quantity),
       rating: Value(rating),
       comment: Value(comment),
@@ -74,7 +74,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       AddToCollectionOperation(
         localId: id,
         platformGameId: platformGameId,
-        medium: medium.toJson(),
+        medium: medium.toWire(),
         quantity: quantity,
         rating: rating,
         comment: comment,
@@ -155,30 +155,31 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
 
   @override
   Future<void> reconcileFromServer(GameCollection serverEntry) async {
-      // Find the local entry with same platformGameId and medium
-      final local = await (_db.select(_db.gameCollectionsTable)..where(
-            (t) =>
-                t.userId.equals(_userId) &
-                t.platformGameId.equals(serverEntry.platformGameId) &
-                t.medium.equals(serverEntry.medium.toJson()),
-          ))
-          .getSingleOrNull();
+    // Find the local entry with same platformGameId and medium
+    final local =
+        await (_db.select(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  t.platformGameId.equals(serverEntry.platformGameId) &
+                  t.medium.equals(serverEntry.medium.toWire()),
+            ))
+            .getSingleOrNull();
 
-      // Delete the local entry if it exists (it has a different ID)
-      if (local != null && local.id != serverEntry.id) {
-        await (_db.delete(
-          _db.gameCollectionsTable,
-        )..where((t) => t.id.equals(local.id))).go();
-      }
+    // Delete the local entry if it exists (it has a different ID)
+    if (local != null && local.id != serverEntry.id) {
+      await (_db.delete(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(local.id))).go();
+    }
 
-      // Insert/update the server entry
-      await _db
-          .into(_db.gameCollectionsTable)
-          .insertOnConflictUpdate(
-            _modelToCompanion(
-              serverEntry.copyWith(isDirty: false, isLocalOnly: false),
-            ),
-          );
+    // Insert/update the server entry
+    await _db
+        .into(_db.gameCollectionsTable)
+        .insertOnConflictUpdate(
+          _modelToCompanion(
+            serverEntry.copyWith(isDirty: false, isLocalOnly: false),
+          ),
+        );
   }
 
   @override
@@ -201,7 +202,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     id: row.id,
     userId: row.userId,
     platformGameId: row.platformGameId,
-    medium: GameMedium.fromJson(row.medium),
+    medium: GameMedium.fromWire(row.medium),
     quantity: row.quantity,
     rating: row.rating,
     playCount: row.playCount,
@@ -221,7 +222,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         id: m.id,
         userId: m.userId,
         platformGameId: m.platformGameId,
-        medium: m.medium.toJson(),
+        medium: m.medium.toWire(),
         quantity: Value(m.quantity),
         rating: Value(m.rating),
         playCount: Value(m.playCount),

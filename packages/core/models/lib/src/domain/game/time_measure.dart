@@ -3,7 +3,8 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 /// Unit of measure for play duration fields on [Game] and [PlatformGame].
 ///
 /// Wire format mirrors the server `TimeMeasure` enum (PascalCase) via
-/// `@JsonValue` annotations.
+/// `@JsonValue` annotations. See `content_type.dart` for the rationale
+/// behind the [fromWire] / [toWire] naming.
 ///
 /// See: `prisma/models/enums/time-measure.prisma` in
 /// `board-games-empire-backend`.
@@ -21,7 +22,7 @@ enum TimeMeasure {
   @JsonValue('Years')
   years;
 
-  static TimeMeasure fromJson(String value) => switch (value) {
+  static TimeMeasure fromWire(String value) => switch (value) {
     'Minutes' => minutes,
     'Hours' => hours,
     'Days' => days,
@@ -31,7 +32,7 @@ enum TimeMeasure {
     _ => throw FormatException('Unknown TimeMeasure: $value'),
   };
 
-  String toJson() => switch (this) {
+  String toWire() => switch (this) {
     minutes => 'Minutes',
     hours => 'Hours',
     days => 'Days',

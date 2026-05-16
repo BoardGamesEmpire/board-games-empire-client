@@ -11,7 +11,7 @@ class GameRepositoryImpl implements GameRepository {
 
   final ServerDatabase _db;
 
-  // ── Game ─────────────────────────────────────────────────────────────────
+  // ── Game ──────────────────────────────────────────────────────────────────
 
   @override
   Future<Game?> getGame(String id) async {
@@ -90,7 +90,7 @@ class GameRepositoryImpl implements GameRepository {
       .watch()
       .map((rows) => rows.map(_mapGame).toList());
 
-  // ── PlatformGame ──────────────────────────────────────────────────────────
+  // ── PlatformGame ───────────────────────────────────────────────────────────────
 
   @override
   Future<PlatformGame?> getPlatformGame(String id) async {
@@ -142,15 +142,15 @@ class GameRepositoryImpl implements GameRepository {
     maxPlayers: row.maxPlayers,
     minPlayTime: row.minPlayTime,
     minPlayTimeMeasure: row.minPlayTimeMeasure != null
-        ? TimeMeasure.fromJson(row.minPlayTimeMeasure!)
+        ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
         : null,
     maxPlayTime: row.maxPlayTime,
     maxPlayTimeMeasure: row.maxPlayTimeMeasure != null
-        ? TimeMeasure.fromJson(row.maxPlayTimeMeasure!)
+        ? TimeMeasure.fromWire(row.maxPlayTimeMeasure!)
         : null,
     minAge: row.minAge,
     complexity: row.complexity,
-    contentType: ContentType.fromJson(row.contentType),
+    contentType: ContentType.fromWire(row.contentType),
     averageRating: row.averageRating,
     bayesRating: row.bayesRating,
     ratingsCount: row.ratingsCount,
@@ -175,12 +175,12 @@ class GameRepositoryImpl implements GameRepository {
     minPlayers: Value(g.minPlayers),
     maxPlayers: Value(g.maxPlayers),
     minPlayTime: Value(g.minPlayTime),
-    minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toJson()),
+    minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toWire()),
     maxPlayTime: Value(g.maxPlayTime),
-    maxPlayTimeMeasure: Value(g.maxPlayTimeMeasure?.toJson()),
+    maxPlayTimeMeasure: Value(g.maxPlayTimeMeasure?.toWire()),
     minAge: Value(g.minAge),
     complexity: Value(g.complexity),
-    contentType: Value(g.contentType.toJson()),
+    contentType: Value(g.contentType.toWire()),
     averageRating: Value(g.averageRating),
     bayesRating: Value(g.bayesRating),
     ratingsCount: Value(g.ratingsCount),
@@ -203,11 +203,11 @@ class GameRepositoryImpl implements GameRepository {
     maxPlayers: row.maxPlayers,
     minPlayTime: row.minPlayTime,
     minPlayTimeMeasure: row.minPlayTimeMeasure != null
-        ? TimeMeasure.fromJson(row.minPlayTimeMeasure!)
+        ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
         : null,
     maxPlayTime: row.maxPlayTime,
     maxPlayTimeMeasure: row.maxPlayTimeMeasure != null
-        ? TimeMeasure.fromJson(row.maxPlayTimeMeasure!)
+        ? TimeMeasure.fromWire(row.maxPlayTimeMeasure!)
         : null,
     image: row.image,
     thumbnail: row.thumbnail,
@@ -230,9 +230,9 @@ class GameRepositoryImpl implements GameRepository {
         minPlayers: Value(pg.minPlayers),
         maxPlayers: Value(pg.maxPlayers),
         minPlayTime: Value(pg.minPlayTime),
-        minPlayTimeMeasure: Value(pg.minPlayTimeMeasure?.toJson()),
+        minPlayTimeMeasure: Value(pg.minPlayTimeMeasure?.toWire()),
         maxPlayTime: Value(pg.maxPlayTime),
-        maxPlayTimeMeasure: Value(pg.maxPlayTimeMeasure?.toJson()),
+        maxPlayTimeMeasure: Value(pg.maxPlayTimeMeasure?.toWire()),
         image: Value(pg.image),
         thumbnail: Value(pg.thumbnail),
         supportsSolo: Value(pg.supportsSolo),
