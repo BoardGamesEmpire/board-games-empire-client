@@ -80,6 +80,37 @@ void main() {
         );
       });
 
+      test(
+        'tiebreaks deterministically by rowId when createdAt collides',
+        () async {
+          // Pass-6 Tier-1 fix: ORDER BY createdAt alone is not enough
+          // because DateTime.now() resolves to microseconds and two
+          // back-to-back enqueues on a fast machine can collide on
+          // the same microsecond. Without a tiebreaker, dependent
+          // ops (add → update → remove) could come back out of order
+          // and be sent to the server in the wrong sequence.
+          //
+          // We seed three rows sharing the SAME createdAt timestamp;
+          // SQLite assigns rowids in insertion order on non-WITHOUT-
+          // ROWID tables, and the impl's secondary ORDER BY rowId ASC
+          // pins the result to insertion order.
+          final t = DateTime.now().toUtc();
+          for (final id in const ['op-a', 'op-b', 'op-c']) {
+            await db.into(db.syncQueueTable).insert(
+                  SyncQueueTableCompanion.insert(
+                    id: id,
+                    payload: _kOperation.serialized,
+                    status: const Value('pending'),
+                    createdAt: t,
+                  ),
+                );
+          }
+
+          final entries = await repo.getPendingEntries();
+          expect(entries.map((e) => e.id), equals(['op-a', 'op-b', 'op-c']));
+        },
+      );
+
       test('excludes completed entries', () async {
         final entry = await repo.enqueue(_kOperation);
         await repo.markCompleted(entry.id);
@@ -293,8 +324,30 @@ void main() {
       });
     });
 
-    group('getPendingCount()', () {
-      test('counts pending and in-progress entries', () async {
+    group('getPendingCount() / watchPendingCount() — _pendingPredicate symmetry', () {
+      // Pass-6 Tier-1 fix: the count and watch used to filter by
+      // `status IN ('pending', 'inProgress')`, while getPendingEntries
+      // returns rows in `('pending', 'failed') AND retryCount <
+      // maxRetries`. The two diverged: after a transient network
+      // failure, the badge dropped to 0 even though the worker would
+      // retry the entry on its next cycle.
+      //
+      // The fixed impl extracts the predicate into _pendingPredicate
+      // shared by both count and watch, matching getPendingEntries +
+      // inProgress. These tests lock in the symmetry — a future
+      // change to one of {predicate, getPendingEntries} must come
+      // with a matching change to the other or these tests fail.
+
+      test('counts pending entries', () async {
+        await repo.enqueue(_kOperation);
+        await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'col-1'),
+        );
+
+        expect(await repo.getPendingCount(), 2);
+      });
+
+      test('counts inProgress entries (still outstanding work)', () async {
         final a = await repo.enqueue(_kOperation);
         final b = await repo.enqueue(
           const UpdateCollectionOperation(collectionId: 'col-1'),
@@ -303,11 +356,64 @@ void main() {
         await repo.markInProgress(b.id);
 
         expect(await repo.getPendingCount(), 2);
+        expect((await repo.getAllEntries()).map((e) => e.id),
+            unorderedEquals([a.id, b.id]));
+      });
+
+      test(
+        'INCLUDES failed entries that have not exceeded maxRetries',
+        () async {
+          // The whole point of the fix: a transient network failure
+          // bumps the entry to status=failed, but the worker will
+          // pick it up again on the next cycle, so it IS outstanding
+          // work and the badge should reflect that.
+          final entry = await repo.enqueue(_kOperation);
+          await repo.markFailed(entry.id, error: 'timeout');
+
+          expect(await repo.getPendingCount(), 1);
+        },
+      );
+
+      test(
+        'EXCLUDES failed entries that exhausted maxRetries',
+        () async {
+          // Symmetric with getPendingEntries — once the entry has
+          // burned through its retry budget, the worker won't pick
+          // it up, so it's no longer outstanding work and shouldn't
+          // count toward the badge either.
+          final entry = await repo.enqueue(_kOperation);
+          for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+            await repo.markFailed(entry.id, error: 'error $i');
+          }
+
+          expect(await repo.getPendingCount(), 0);
+        },
+      );
+
+      test('excludes completed entries', () async {
+        final entry = await repo.enqueue(_kOperation);
+        await repo.markCompleted(entry.id);
+
+        expect(await repo.getPendingCount(), 0);
       });
 
       test('returns 0 when empty', () async {
         expect(await repo.getPendingCount(), 0);
       });
+
+      test(
+        'watchPendingCount also includes retryable failed entries',
+        () async {
+          // The same predicate fix applies to the watch. Without it,
+          // the live badge would drop to 0 immediately when the
+          // worker marked the entry failed, then re-appear only when
+          // some other queue mutation happened to fire the .watch().
+          final entry = await repo.enqueue(_kOperation);
+          await repo.markFailed(entry.id, error: 'timeout');
+
+          await expectLater(repo.watchPendingCount().take(1), emits(1));
+        },
+      );
     });
 
     group('watchPendingCount()', () {
