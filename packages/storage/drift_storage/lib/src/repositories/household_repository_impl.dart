@@ -4,25 +4,66 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 
+/// Read cache + queued-write implementation of [HouseholdRepository].
+///
+/// Scoped to a current user via [currentUserId]: list and watch reads
+/// inner-join `household_members` so the caller only ever sees
+/// households they belong to. Single-household lookup likewise returns
+/// null when the current user is not a member, regardless of whether
+/// the household exists in the local cache.
+///
+/// Member-list reads (`getMembers`, `watchMembers`) intentionally do
+/// NOT re-filter by current user — once the household is visible, the
+/// caller can see all co-members. The visibility gate lives at the
+/// household level.
+///
+/// The cache writers (`cacheHousehold`, `cacheMember`, `cacheMembers`)
+/// are user-agnostic: the server has already done auth filtering on
+/// the response payload it sent us.
 class HouseholdRepositoryImpl implements HouseholdRepository {
-  const HouseholdRepositoryImpl(this._db);
+  HouseholdRepositoryImpl({
+    required ServerDatabase db,
+    required String currentUserId,
+  }) : _db = db,
+       _userId = currentUserId;
 
   final ServerDatabase _db;
+  final String _userId;
 
   @override
   Future<List<Household>> getHouseholds() async {
-    final rows = await (_db.select(
-      _db.householdsTable,
-    )..where((t) => t.deletedAt.isNull())).get();
-    return rows.map(_mapHousehold).toList();
+    final query = _db.select(_db.householdsTable).join([
+      innerJoin(
+        _db.householdMembersTable,
+        _db.householdMembersTable.householdId.equalsExp(
+              _db.householdsTable.id,
+            ) &
+            _db.householdMembersTable.userId.equals(_userId),
+      ),
+    ])..where(_db.householdsTable.deletedAt.isNull());
+
+    final rows = await query.get();
+    return rows
+        .map((r) => _mapHousehold(r.readTable(_db.householdsTable)))
+        .toList();
   }
 
   @override
   Future<Household?> getHousehold(String id) async {
-    final row = await (_db.select(
-      _db.householdsTable,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
-    return row == null ? null : _mapHousehold(row);
+    final query = _db.select(_db.householdsTable).join([
+      innerJoin(
+        _db.householdMembersTable,
+        _db.householdMembersTable.householdId.equalsExp(
+              _db.householdsTable.id,
+            ) &
+            _db.householdMembersTable.userId.equals(_userId),
+      ),
+    ])..where(_db.householdsTable.id.equals(id));
+
+    final row = await query.getSingleOrNull();
+    return row == null
+        ? null
+        : _mapHousehold(row.readTable(_db.householdsTable));
   }
 
   @override
@@ -35,10 +76,14 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<HouseholdMember?> getCurrentUserMember(String householdId) async {
-    // currentUserId is resolved at the caller level via DI.
-    // Pass 3 injects currentUserId in the constructor (same pattern as
-    // GameCollectionRepository) so this query filters by both fields.
-    return null;
+    final row =
+        await (_db.select(_db.householdMembersTable)..where(
+              (t) =>
+                  t.householdId.equals(householdId) &
+                  t.userId.equals(_userId),
+            ))
+            .getSingleOrNull();
+    return row == null ? null : _mapMember(row);
   }
 
   @override
@@ -79,10 +124,23 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   }
 
   @override
-  Stream<List<Household>> watchHouseholds() =>
-      (_db.select(_db.householdsTable)..where((t) => t.deletedAt.isNull()))
-          .watch()
-          .map((rows) => rows.map(_mapHousehold).toList());
+  Stream<List<Household>> watchHouseholds() {
+    final query = _db.select(_db.householdsTable).join([
+      innerJoin(
+        _db.householdMembersTable,
+        _db.householdMembersTable.householdId.equalsExp(
+              _db.householdsTable.id,
+            ) &
+            _db.householdMembersTable.userId.equals(_userId),
+      ),
+    ])..where(_db.householdsTable.deletedAt.isNull());
+
+    return query.watch().map(
+      (rows) => rows
+          .map((r) => _mapHousehold(r.readTable(_db.householdsTable)))
+          .toList(),
+    );
+  }
 
   @override
   Stream<List<HouseholdMember>> watchMembers(String householdId) =>
@@ -91,7 +149,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
           .watch()
           .map((rows) => rows.map(_mapMember).toList());
 
-  // ── Mappers ───────────────────────────────────────────────────────────────
+  // ── Mappers ────────────────────────────────────────────────────────────────
 
   Household _mapHousehold(HouseholdsTableData row) => Household(
     id: row.id,
@@ -140,8 +198,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   /// Maps a typed [HouseholdRole] back to the persisted role-name string.
   /// [HouseholdRole.unknown] persists as `'Unknown'`; the originating
   /// custom role name from the server is not preserved through this
-  /// bridge. Pass 2 may introduce a parallel `originalRoleName` column
-  /// if higher-fidelity persistence is needed.
+  /// bridge.
   static String? _encodeRole(HouseholdRole? role) {
     if (role == null) return null;
     return switch (role) {

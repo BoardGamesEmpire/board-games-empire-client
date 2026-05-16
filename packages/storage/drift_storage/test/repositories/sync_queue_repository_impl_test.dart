@@ -115,6 +115,42 @@ void main() {
         expect(updated.lastError, 'network error');
         expect(updated.status, SyncStatus.failed);
       });
+
+      test(
+        'atomic increment: concurrent markFailed calls do not lose retries',
+        () async {
+          // Without the atomic UPDATE the prior implementation read
+          // retry_count, then wrote retry_count + 1 in a second
+          // statement. Two concurrent markFailed calls against the
+          // same id could both read the same value and both write
+          // value + 1, losing one increment.
+          //
+          // The fix uses a single UPDATE with a column expression
+          // (`retry_count = retry_count + 1`) so each call sees the
+          // post-image of the previous one.
+          final entry = await repo.enqueue(_kOperation);
+
+          const concurrent = 5;
+          await Future.wait(
+            List.generate(
+              concurrent,
+              (i) => repo.markFailed(entry.id, error: 'fail $i'),
+            ),
+          );
+
+          final updated = (await repo.getAllEntries()).first;
+          expect(updated.retryCount, equals(concurrent));
+          expect(updated.status, SyncStatus.failed);
+        },
+      );
+
+      test('is a no-op when the id does not exist', () async {
+        // The prior impl early-returned on row==null. The atomic
+        // UPDATE just affects zero rows. Either way the call must not
+        // throw.
+        await repo.markFailed('nonexistent', error: 'oops');
+        expect(await repo.getAllEntries(), isEmpty);
+      });
     });
 
     group('purgeCompleted()', () {

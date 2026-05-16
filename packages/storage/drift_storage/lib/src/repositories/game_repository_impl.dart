@@ -11,7 +11,7 @@ class GameRepositoryImpl implements GameRepository {
 
   final ServerDatabase _db;
 
-  // ── Game ──────────────────────────────────────────────────────────────────
+  // ── Game ──────────────────────────────────────────────────────────────────────
 
   @override
   Future<Game?> getGame(String id) async {
@@ -55,6 +55,15 @@ class GameRepositoryImpl implements GameRepository {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return [];
 
+    // Order in SQL before LIMIT (Copilot J): the previous impl
+    // sorted in Dart AFTER applying SQL LIMIT, so when many games
+    // matched, the LIMIT clause picked an arbitrary slice and the
+    // post-hoc Dart sort could not produce the true top-N by
+    // prefix-matching. The two-term SQL ORDER BY below gives the
+    // same ranking the Dart sort used to attempt, but on the full
+    // result set before LIMIT trims it down.
+    final prefixPattern = '$q%';
+
     final rows =
         await (_db.select(_db.gamesTable)
               ..where(
@@ -62,18 +71,18 @@ class GameRepositoryImpl implements GameRepository {
                     t.title.lower().contains(q) |
                     t.subtitle.lower().contains(q),
               )
+              ..orderBy([
+                // Title-prefix matches first. The LIKE expression
+                // evaluates to 1/0; DESC puts 1 (prefix matches) ahead.
+                (t) => OrderingTerm(
+                  expression: t.title.lower().like(prefixPattern),
+                  mode: OrderingMode.desc,
+                ),
+                // Then alphabetical by title.
+                (t) => OrderingTerm.asc(t.title),
+              ])
               ..limit(limit))
             .get();
-
-    // Sort: title-prefix matches first
-    rows.sort((a, b) {
-      final aTitle = a.title.toLowerCase();
-      final bTitle = b.title.toLowerCase();
-      final aPrefix = aTitle.startsWith(q) ? 0 : 1;
-      final bPrefix = bTitle.startsWith(q) ? 0 : 1;
-      if (aPrefix != bPrefix) return aPrefix - bPrefix;
-      return aTitle.compareTo(bTitle);
-    });
 
     return rows.map(_mapGame).toList();
   }
@@ -128,7 +137,7 @@ class GameRepositoryImpl implements GameRepository {
     });
   }
 
-  // ── Mappers ───────────────────────────────────────────────────────────────
+  // ── Mappers ──────────────────────────────────────────────────────────────────
 
   Game _mapGame(GamesTableData row) => Game(
     id: row.id,

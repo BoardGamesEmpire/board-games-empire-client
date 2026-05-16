@@ -77,18 +77,32 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
   @override
   Future<void> markFailed(String id, {required String error}) async {
-    final row = await (_db.select(
-      _db.syncQueueTable,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
-    if (row == null) return;
-
-    await (_db.update(_db.syncQueueTable)..where((t) => t.id.equals(id))).write(
-      SyncQueueTableCompanion(
-        status: const Value('failed'),
-        retryCount: Value(row.retryCount + 1),
-        lastError: Value(error),
-        lastAttemptAt: Value(DateTime.now().toUtc()),
-      ),
+    // Atomic increment: the retry count is bumped via a column
+    // expression (`retry_count = retry_count + 1`) in a single UPDATE
+    // statement rather than a read-then-write, so concurrent
+    // markFailed calls against the same id cannot lose increments.
+    //
+    // If the id no longer exists (e.g. already purged), the UPDATE
+    // affects zero rows and we move on — same effective behaviour as
+    // the prior `if (row == null) return` early-return.
+    //
+    // The `updates: {syncQueueTable}` argument hooks the raw UPDATE
+    // into Drift's reactivity so any `.watch()`s on the queue table
+    // (notably [watchPendingCount]) re-emit.
+    await _db.customUpdate(
+      'UPDATE sync_queue '
+      'SET status = ?, '
+      '    retry_count = retry_count + 1, '
+      '    last_error = ?, '
+      '    last_attempt_at = ? '
+      'WHERE id = ?',
+      variables: [
+        Variable.withString('failed'),
+        Variable.withString(error),
+        Variable.withDateTime(DateTime.now().toUtc()),
+        Variable.withString(id),
+      ],
+      updates: {_db.syncQueueTable},
     );
   }
 
