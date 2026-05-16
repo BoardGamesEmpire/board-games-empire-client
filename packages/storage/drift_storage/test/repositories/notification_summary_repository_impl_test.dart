@@ -188,17 +188,23 @@ void main() {
       });
 
       test('emits updated list after add', () async {
-        final stream = repository.watchAll();
+        // Subscribe-then-mutate. Post-Pass-3c the stream emits the
+        // current state on subscribe (no fake `yield <empty>`), so we
+        // must listen BEFORE mutating to capture both the initial empty
+        // list and the post-add list.
+        final futureEmissions = repository.watchAll().take(2).toList();
+
+        await pumpEventQueue();
+
         await repository.add(_makeNotification(title: 'Watch Test'));
 
-        await expectLater(
-          stream.take(2),
-          emitsInOrder([
-            isEmpty,
-            predicate<List<NotificationSummary>>(
-              (list) => list.any((n) => n.title == 'Watch Test'),
-            ),
-          ]),
+        final emissions =
+            await futureEmissions.timeout(const Duration(seconds: 5));
+        expect(emissions, hasLength(2));
+        expect(emissions[0], isEmpty);
+        expect(
+          emissions[1].any((n) => n.title == 'Watch Test'),
+          isTrue,
         );
       });
     });
@@ -209,23 +215,52 @@ void main() {
       });
 
       test('increments after add, decrements after markRead', () async {
-        final stream = repository.watchUnreadCount();
-        final n = await repository.add(_makeNotification());
-        await repository.markRead(n.id);
+        // Subscribe-then-mutate-then-pump for each step. pumpEventQueue
+        // between mutations gives Drift's reactivity time to deliver
+        // the emission to the subscriber before the next mutation
+        // fires, keeping the sequence deterministic.
+        final futureEmissions =
+            repository.watchUnreadCount().take(3).toList();
 
-        await expectLater(stream.take(3), emitsInOrder([0, 1, 0]));
+        await pumpEventQueue(); // emission 1: 0 (empty)
+
+        final n = await repository.add(_makeNotification());
+        await pumpEventQueue(); // emission 2: 1 (one unread)
+
+        await repository.markRead(n.id);
+        // emission 3 (back to 0) lands during the take(3) await below.
+
+        expect(
+          await futureEmissions.timeout(const Duration(seconds: 5)),
+          equals([0, 1, 0]),
+        );
       });
     });
 
     group('watchUnreadCountForServer', () {
       test('is isolated to the given server', () async {
-        final stream = repository.watchUnreadCountForServer('server-a');
+        // Subscribe-then-mutate. The take(2) caps emissions at the
+        // first two values; the server-b add at the end does not
+        // change server-a's count and the subscription is already
+        // cancelled by then.
+        final futureEmissions = repository
+            .watchUnreadCountForServer('server-a')
+            .take(2)
+            .toList();
+
+        await pumpEventQueue();
+
         await repository.add(_makeNotification(localServerId: 'server-a'));
+        // The server-b add below is included to assert (implicitly) that
+        // server-a's stream doesn't observe a higher count when an
+        // unrelated server's notifications change — the take(2) above
+        // would have already received [0, 1] by then.
+        await pumpEventQueue();
         await repository.add(_makeNotification(localServerId: 'server-b'));
 
-        await expectLater(
-          stream.take(2),
-          emitsInOrder([0, 1]), // only server-a count changes
+        expect(
+          await futureEmissions.timeout(const Duration(seconds: 5)),
+          equals([0, 1]),
         );
       });
     });
