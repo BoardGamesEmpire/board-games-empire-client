@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
@@ -264,6 +265,58 @@ void main() {
           throwsA(isA<FormatException>()),
         );
       });
+    });
+
+    group('_parseStatus (via row mapping)', () {
+      test(
+        'throws StateError on a corrupt or unknown status value in the DB',
+        () async {
+          // Seed a row directly with a bogus status string, bypassing
+          // the repo's write path. A future code-side enum extension
+          // or DB corruption must surface here rather than be silently
+          // coerced into 'pending' (which would cause the corrupt row
+          // to be retried as a live sync op against the server).
+          await db
+              .into(db.syncQueueTable)
+              .insert(
+                SyncQueueTableCompanion.insert(
+                  id: 'corrupt-1',
+                  payload: '{}',
+                  status: const Value('mystery-state'),
+                  createdAt: DateTime.now().toUtc(),
+                ),
+              );
+
+          await expectLater(
+            repo.getAllEntries(),
+            throwsA(isA<StateError>()),
+          );
+        },
+      );
+
+      test(
+        'no longer accepts the legacy snake_case "in_progress" form',
+        () async {
+          // Pre-production, no v1-state DBs exist, so the
+          // backwards-compat arm was dropped. The canonical wire form
+          // is the camelCase [SyncStatus] name (`inProgress`).
+          await db
+              .into(db.syncQueueTable)
+              .insert(
+                SyncQueueTableCompanion.insert(
+                  id: 'legacy-1',
+                  payload: '{}',
+                  status: const Value('in_progress'),
+                  createdAt: DateTime.now().toUtc(),
+                ),
+              );
+
+          await expectLater(
+            repo.getAllEntries(),
+            throwsA(isA<StateError>()),
+          );
+        },
+      );
     });
   });
 }
