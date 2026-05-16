@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
@@ -14,20 +15,12 @@ const _kUserId = 'user-abc';
 const _kPlatformGameId = 'pg-1';
 const _kMedium = GameMedium.physical;
 
-// Insert a minimal PlatformGame row plus its parent Game so the FK
-// chain games <- platform_games <- game_collections is satisfied.
-// Pre-Pass-2 the database had PRAGMA foreign_keys = OFF, so the
-// missing parent Game row was silently accepted; the pragma is now ON
-// in beforeOpen and the parent must exist.
 Future<void> _seedPlatformGame(
   ServerDatabase db, {
   String id = _kPlatformGameId,
   String gameId = 'game-1',
 }) async {
   final now = DateTime.now().toUtc();
-
-  // Upsert the parent Game so repeat _seedPlatformGame calls in the
-  // same test (sharing the default gameId) don't trip the games PK.
   await db
       .into(db.gamesTable)
       .insertOnConflictUpdate(
@@ -38,7 +31,6 @@ Future<void> _seedPlatformGame(
           updatedAt: now,
         ),
       );
-
   await db
       .into(db.platformGamesTable)
       .insert(
@@ -57,7 +49,6 @@ Future<void> _seedPlatformGame(
 
 void main() {
   setUpAll(() {
-    // Register fallback values for mocktail to use with any()
     registerFallbackValue(
       const AddToCollectionOperation(
         localId: '',
@@ -80,7 +71,6 @@ void main() {
     db = ServerDatabase.memory();
     mockSync = MockSyncQueue();
 
-    // Stub enqueue — returns a dummy entry
     when(() => mockSync.enqueue(any())).thenAnswer(
       (_) async => SyncQueueEntry(
         id: 'sq-1',
@@ -101,7 +91,7 @@ void main() {
   tearDown(() async => db.close());
 
   group('GameCollectionRepositoryImpl', () {
-    group('addToCollection()', () {
+    group('addToCollection() — fresh insert path', () {
       test('creates entry with isDirty and isLocalOnly true', () async {
         final entry = await repo.addToCollection(
           platformGameId: _kPlatformGameId,
@@ -113,6 +103,7 @@ void main() {
         expect(entry.userId, _kUserId);
         expect(entry.medium, _kMedium);
         expect(entry.quantity, 1);
+        expect(entry.deletedAt, isNull);
       });
 
       test('enqueues AddToCollectionOperation', () async {
@@ -137,6 +128,89 @@ void main() {
         expect(entry.rating, 8);
         expect(entry.comment, 'Great game');
       });
+    });
+
+    group('addToCollection() — duplicate triplet', () {
+      test(
+        'resurrects a tombstoned row (clears deletedAt, keeps id, overwrites fields)',
+        () async {
+          final first = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            rating: 5,
+          );
+          await repo.removeFromCollection(first.id);
+
+          // Sanity: getCollectionEntry must hide the tombstone.
+          expect(
+            await repo.getCollectionEntry(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            ),
+            isNull,
+          );
+
+          final second = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            rating: 9,
+          );
+
+          expect(second.id, equals(first.id));
+          expect(second.deletedAt, isNull);
+          expect(second.rating, equals(9));
+          expect(second.quantity, equals(1));
+          expect(second.isDirty, isTrue);
+          expect(second.isLocalOnly, isTrue);
+
+          // The collection now shows exactly one live entry.
+          final collection = await repo.getCollection();
+          expect(collection, hasLength(1));
+          expect(collection.single.id, equals(first.id));
+        },
+      );
+
+      test('increments quantity on a live duplicate', () async {
+        final first = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+        expect(first.quantity, equals(1));
+
+        final second = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+          quantity: 2,
+        );
+
+        expect(second.id, equals(first.id));
+        expect(second.quantity, equals(3));
+
+        // Still one row.
+        expect(await repo.getCollection(), hasLength(1));
+      });
+
+      test(
+        'increment preserves existing rating/comment when caller omits them',
+        () async {
+          final first = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            rating: 7,
+            comment: 'good',
+          );
+
+          final second = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+
+          expect(second.id, equals(first.id));
+          expect(second.rating, equals(7));
+          expect(second.comment, equals('good'));
+        },
+      );
     });
 
     group('updateCollectionEntry()', () {
@@ -168,12 +242,57 @@ void main() {
 
         verify(
           () => mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
-        ).called(greaterThan(0)); // once for add, once for update
+        ).called(greaterThan(0));
       });
+
+      test('throws StateError when entry belongs to a different user', () async {
+        await _seedPlatformGame(db, id: 'pg-other');
+        final now = DateTime.now().toUtc();
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'other-entry',
+                userId: 'other-user',
+                platformGameId: 'pg-other',
+                medium: 'Physical',
+                quantity: const Value(5),
+                rating: const Value(7),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+
+        await expectLater(
+          () => repo.updateCollectionEntry(id: 'other-entry', rating: 1),
+          throwsStateError,
+        );
+
+        // Untouched.
+        final row = await (db.select(db.gameCollectionsTable)
+              ..where((t) => t.id.equals('other-entry')))
+            .getSingle();
+        expect(row.rating, equals(7));
+        expect(row.userId, equals('other-user'));
+      });
+
+      test(
+        'does NOT enqueue a sync op when the entry is not found (transaction rolled back)',
+        () async {
+          await expectLater(
+            () => repo.updateCollectionEntry(
+              id: 'nonexistent',
+              rating: 1,
+            ),
+            throwsStateError,
+          );
+          verifyNever(() => mockSync.enqueue(any()));
+        },
+      );
     });
 
     group('removeFromCollection()', () {
-      test('tombstones entry by setting quantity to 0', () async {
+      test('tombstones entry by setting deletedAt', () async {
         final entry = await repo.addToCollection(
           platformGameId: _kPlatformGameId,
           medium: _kMedium,
@@ -181,12 +300,22 @@ void main() {
 
         await repo.removeFromCollection(entry.id);
 
-        final result = await repo.getCollectionEntry(
-          platformGameId: _kPlatformGameId,
-          medium: _kMedium,
+        // The repo's user-facing reads hide tombstones now.
+        expect(
+          await repo.getCollectionEntry(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          ),
+          isNull,
         );
-        // Still in DB but quantity = 0 (tombstone)
-        expect(result?.quantity, 0);
+
+        // Underlying row still exists with deletedAt set.
+        final row = await (db.select(db.gameCollectionsTable)
+              ..where((t) => t.id.equals(entry.id)))
+            .getSingleOrNull();
+        expect(row, isNotNull);
+        expect(row!.deletedAt, isNotNull);
+        expect(row.isDirty, isTrue);
       });
 
       test('enqueues RemoveFromCollectionOperation', () async {
@@ -202,6 +331,81 @@ void main() {
               mockSync.enqueue(any(that: isA<RemoveFromCollectionOperation>())),
         ).called(1);
       });
+
+      test('throws StateError when entry belongs to a different user', () async {
+        await _seedPlatformGame(db, id: 'pg-other');
+        final now = DateTime.now().toUtc();
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'other-entry',
+                userId: 'other-user',
+                platformGameId: 'pg-other',
+                medium: 'Physical',
+                quantity: const Value(3),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+
+        await expectLater(
+          () => repo.removeFromCollection('other-entry'),
+          throwsStateError,
+        );
+
+        final row = await (db.select(db.gameCollectionsTable)
+              ..where((t) => t.id.equals('other-entry')))
+            .getSingle();
+        expect(row.deletedAt, isNull);
+      });
+    });
+
+    group('transaction atomicity', () {
+      test(
+        'addToCollection rolls back the local insert when enqueue throws',
+        () async {
+          when(() => mockSync.enqueue(any()))
+              .thenThrow(Exception('queue offline'));
+
+          await expectLater(
+            () => repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            ),
+            throwsException,
+          );
+
+          // No row should have been persisted.
+          expect(await repo.getCollection(), isEmpty);
+          final rawRows = await db.select(db.gameCollectionsTable).get();
+          expect(rawRows, isEmpty);
+        },
+      );
+
+      test(
+        'removeFromCollection rolls back the tombstone when enqueue throws',
+        () async {
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+
+          when(() => mockSync.enqueue(any()))
+              .thenThrow(Exception('queue offline'));
+
+          await expectLater(
+            () => repo.removeFromCollection(entry.id),
+            throwsException,
+          );
+
+          // Tombstone must not have been written.
+          final row = await (db.select(db.gameCollectionsTable)
+                ..where((t) => t.id.equals(entry.id)))
+              .getSingle();
+          expect(row.deletedAt, isNull);
+        },
+      );
     });
 
     group('reconcileFromServer()', () {
@@ -223,8 +427,18 @@ void main() {
           platformGameId: _kPlatformGameId,
           medium: _kMedium,
         );
-        expect(result?.isDirty, isFalse);
-        expect(result?.isLocalOnly, isFalse);
+        expect(result, isNotNull);
+        expect(result!.id, equals('server-confirmed-id'));
+        expect(result.isDirty, isFalse);
+        expect(result.isLocalOnly, isFalse);
+
+        // Old local row should be gone.
+        expect(
+          await (db.select(db.gameCollectionsTable)
+                ..where((t) => t.id.equals(local.id)))
+              .getSingleOrNull(),
+          isNull,
+        );
       });
     });
 
@@ -235,7 +449,6 @@ void main() {
           medium: _kMedium,
         );
 
-        // Simulate another user's entry via raw insert
         await _seedPlatformGame(db, id: 'pg-other');
         final otherRepo = GameCollectionRepositoryImpl(
           db: db,
@@ -251,6 +464,16 @@ void main() {
         expect(myCollection.every((e) => e.userId == _kUserId), isTrue);
         expect(myCollection, hasLength(1));
       });
+
+      test('excludes tombstoned entries', () async {
+        final entry = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+        await repo.removeFromCollection(entry.id);
+
+        expect(await repo.getCollection(), isEmpty);
+      });
     });
 
     group('watchCollection()', () {
@@ -260,17 +483,44 @@ void main() {
           medium: _kMedium,
         );
 
-        await expectLater(repo.watchCollection().take(1), emits(hasLength(1)));
+        await expectLater(
+          repo.watchCollection().take(1),
+          emits(hasLength(1)),
+        );
       });
 
-      test('excludes tombstoned entries (quantity = 0)', () async {
+      test('excludes tombstoned entries', () async {
         final entry = await repo.addToCollection(
           platformGameId: _kPlatformGameId,
           medium: _kMedium,
         );
         await repo.removeFromCollection(entry.id);
 
-        await expectLater(repo.watchCollection().take(1), emits(isEmpty));
+        await expectLater(
+          repo.watchCollection().take(1),
+          emits(isEmpty),
+        );
+      });
+    });
+
+    group('watchEntry()', () {
+      test('emits null for an id belonging to a different user', () async {
+        await _seedPlatformGame(db, id: 'pg-other');
+        final now = DateTime.now().toUtc();
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'other-entry',
+                userId: 'other-user',
+                platformGameId: 'pg-other',
+                medium: 'Physical',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+
+        await expectLater(repo.watchEntry('other-entry').take(1), emits(isNull));
       });
     });
   });
