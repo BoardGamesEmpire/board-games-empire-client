@@ -1,0 +1,370 @@
+import 'package:drift/drift.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart';
+
+import 'package:drift_storage/src/databases/server_database.dart';
+
+// ── Fixtures ─────────────────────────────────────────────────────────────────
+
+const _kUserId = 'user-1';
+const _kPlatformGameId = 'pg-1';
+
+Future<void> _seedPlatformGame(
+  ServerDatabase db, {
+  String id = _kPlatformGameId,
+}) async {
+  final now = DateTime.now().toUtc();
+  await db
+      .into(db.platformGamesTable)
+      .insert(
+        PlatformGamesTableCompanion.insert(
+          id: id,
+          gameId: 'game-1',
+          platformId: 'plat-1',
+          platformName: 'Tabletop',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+}
+
+Future<void> _seedGame(ServerDatabase db, {String id = 'game-1'}) async {
+  final now = DateTime.now().toUtc();
+  await db
+      .into(db.gamesTable)
+      .insert(
+        GamesTableCompanion.insert(
+          id: id,
+          title: 'Test Game',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+}
+
+Future<void> _seedHousehold(ServerDatabase db, {String id = 'h-1'}) async {
+  final now = DateTime.now().toUtc();
+  await db
+      .into(db.householdsTable)
+      .insert(
+        HouseholdsTableCompanion.insert(
+          id: id,
+          name: 'Test Household',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+}
+
+GameCollectionsTableCompanion _collection({
+  required String id,
+  String userId = _kUserId,
+  String platformGameId = _kPlatformGameId,
+  String medium = 'Physical',
+  DateTime? deletedAt,
+  String? releaseId,
+  int quantity = 1,
+}) {
+  final now = DateTime.now().toUtc();
+  return GameCollectionsTableCompanion.insert(
+    id: id,
+    userId: userId,
+    platformGameId: platformGameId,
+    medium: medium,
+    quantity: Value(quantity),
+    deletedAt: Value(deletedAt),
+    releaseId: Value(releaseId),
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+void main() {
+  late ServerDatabase db;
+
+  setUp(() {
+    db = ServerDatabase.memory();
+  });
+
+  tearDown(() async => db.close());
+
+  group('ServerDatabase', () {
+    test('reports schemaVersion 2', () {
+      expect(db.schemaVersion, equals(2));
+    });
+
+    group('PRAGMA foreign_keys', () {
+      test('is enabled (pragma reads back as 1)', () async {
+        final row = await db.customSelect('PRAGMA foreign_keys').getSingle();
+        expect(row.data['foreign_keys'], equals(1));
+      });
+
+      test('rejects insert with non-existent household_id', () async {
+        // household_members.household_id references households.id.
+        // Without PRAGMA foreign_keys = ON this insert would silently
+        // succeed; with FK enforcement it throws.
+        final now = DateTime.now().toUtc();
+        await expectLater(
+          () => db
+              .into(db.householdMembersTable)
+              .insert(
+                HouseholdMembersTableCompanion.insert(
+                  id: 'hm-1',
+                  userId: _kUserId,
+                  householdId: 'nonexistent-household',
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              ),
+          throwsA(isA<SqliteException>()),
+        );
+      });
+
+      test(
+        'rejects insert with non-existent platform_game_id on '
+        'game_collections',
+        () async {
+          final now = DateTime.now().toUtc();
+          await expectLater(
+            () => db
+                .into(db.gameCollectionsTable)
+                .insert(
+                  GameCollectionsTableCompanion.insert(
+                    id: 'col-1',
+                    userId: _kUserId,
+                    platformGameId: 'nonexistent-pg',
+                    medium: 'Physical',
+                    createdAt: now,
+                    updatedAt: now,
+                  ),
+                ),
+            throwsA(isA<SqliteException>()),
+          );
+        },
+      );
+    });
+
+    group('game_collections.deletedAt column', () {
+      test('stores and reads back nullable DateTime', () async {
+        await _seedGame(db);
+        await _seedPlatformGame(db);
+        final ts = DateTime.parse('2024-01-15T10:30:00Z');
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1', deletedAt: ts));
+        final row = await db.select(db.gameCollectionsTable).getSingle();
+        expect(row.deletedAt, equals(ts));
+      });
+
+      test('defaults to null when omitted', () async {
+        await _seedGame(db);
+        await _seedPlatformGame(db);
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1'));
+        final row = await db.select(db.gameCollectionsTable).getSingle();
+        expect(row.deletedAt, isNull);
+      });
+    });
+
+    group('game_collections.releaseId column', () {
+      test('stores and reads back nullable text', () async {
+        await _seedGame(db);
+        await _seedPlatformGame(db);
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1', releaseId: 'rel-42'));
+        final row = await db.select(db.gameCollectionsTable).getSingle();
+        expect(row.releaseId, equals('rel-42'));
+      });
+
+      test('defaults to null when omitted', () async {
+        await _seedGame(db);
+        await _seedPlatformGame(db);
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1'));
+        final row = await db.select(db.gameCollectionsTable).getSingle();
+        expect(row.releaseId, isNull);
+      });
+    });
+
+    group('partial unique index on game_collections', () {
+      setUp(() async {
+        await _seedGame(db);
+        await _seedPlatformGame(db);
+      });
+
+      test('rejects a second live row with same (user, pg, medium)', () async {
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1'));
+
+        await expectLater(
+          () => db
+              .into(db.gameCollectionsTable)
+              .insert(_collection(id: 'col-2')),
+          throwsA(isA<SqliteException>()),
+        );
+      });
+
+      test(
+        'permits a new live row when the existing one is tombstoned',
+        () async {
+          final tombstone = DateTime.now().toUtc();
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(_collection(id: 'col-1', deletedAt: tombstone));
+
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(_collection(id: 'col-2'));
+
+          final rows = await db.select(db.gameCollectionsTable).get();
+          expect(rows, hasLength(2));
+        },
+      );
+
+      test('permits multiple tombstoned rows with the same triplet', () async {
+        final t1 = DateTime.parse('2024-01-15T10:30:00Z');
+        final t2 = DateTime.parse('2024-01-16T10:30:00Z');
+
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1', deletedAt: t1));
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-2', deletedAt: t2));
+
+        final rows = await db.select(db.gameCollectionsTable).get();
+        expect(rows, hasLength(2));
+      });
+
+      test('permits different medium for same (user, pg)', () async {
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1', medium: 'Physical'));
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-2', medium: 'Digital'));
+
+        final rows = await db.select(db.gameCollectionsTable).get();
+        expect(rows, hasLength(2));
+      });
+
+      test('permits different users for same (pg, medium)', () async {
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1', userId: 'user-a'));
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-2', userId: 'user-b'));
+
+        final rows = await db.select(db.gameCollectionsTable).get();
+        expect(rows, hasLength(2));
+      });
+    });
+
+    group('household_members_household_user_unique_idx', () {
+      test('rejects duplicate (household_id, user_id) memberships', () async {
+        await _seedHousehold(db);
+
+        final now = DateTime.now().toUtc();
+        await db
+            .into(db.householdMembersTable)
+            .insert(
+              HouseholdMembersTableCompanion.insert(
+                id: 'hm-1',
+                userId: _kUserId,
+                householdId: 'h-1',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+
+        await expectLater(
+          () => db
+              .into(db.householdMembersTable)
+              .insert(
+                HouseholdMembersTableCompanion.insert(
+                  id: 'hm-2',
+                  userId: _kUserId,
+                  householdId: 'h-1',
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              ),
+          throwsA(isA<SqliteException>()),
+        );
+      });
+
+      test('permits the same user in different households', () async {
+        await _seedHousehold(db, id: 'h-1');
+        await _seedHousehold(db, id: 'h-2');
+
+        final now = DateTime.now().toUtc();
+        await db
+            .into(db.householdMembersTable)
+            .insert(
+              HouseholdMembersTableCompanion.insert(
+                id: 'hm-1',
+                userId: _kUserId,
+                householdId: 'h-1',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+        await db
+            .into(db.householdMembersTable)
+            .insert(
+              HouseholdMembersTableCompanion.insert(
+                id: 'hm-2',
+                userId: _kUserId,
+                householdId: 'h-2',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+
+        final rows = await db.select(db.householdMembersTable).get();
+        expect(rows, hasLength(2));
+      });
+    });
+
+    group('sync_queue.status legacy migration step', () {
+      test(
+        "raw SQL UPDATE rewrites 'in_progress' to 'inProgress'",
+        () async {
+          // Insert a row, then mutate its status to the legacy form
+          // using raw SQL to simulate a row that survived from
+          // schema v1. The migration step (run inline here) should
+          // rewrite it to the canonical 'inProgress' form.
+          await db
+              .into(db.syncQueueTable)
+              .insert(
+                SyncQueueTableCompanion.insert(
+                  id: 'q-1',
+                  payload: '{}',
+                  createdAt: DateTime.now().toUtc(),
+                ),
+              );
+          await db.customStatement(
+            "UPDATE sync_queue SET status = 'in_progress' WHERE id = 'q-1'",
+          );
+
+          // The exact statement used by the v1->v2 migration in
+          // ServerDatabase.migration.onUpgrade.
+          await db.customStatement(
+            "UPDATE sync_queue SET status = 'inProgress' "
+            "WHERE status = 'in_progress'",
+          );
+
+          final row = await db.select(db.syncQueueTable).getSingle();
+          expect(row.status, equals('inProgress'));
+        },
+      );
+    });
+  });
+}

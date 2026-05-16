@@ -62,7 +62,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   Future<void> markInProgress(String id) async {
     await (_db.update(_db.syncQueueTable)..where((t) => t.id.equals(id))).write(
       SyncQueueTableCompanion(
-        status: const Value('in_progress'),
+        status: const Value('inProgress'),
         lastAttemptAt: Value(DateTime.now().toUtc()),
       ),
     );
@@ -104,7 +104,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     final count = _db.syncQueueTable.id.count();
     final query = _db.selectOnly(_db.syncQueueTable)
       ..addColumns([count])
-      ..where(_db.syncQueueTable.status.isIn(['pending', 'in_progress']));
+      ..where(_db.syncQueueTable.status.isIn(['pending', 'inProgress']));
     final result = await query.getSingle();
     return result.read(count) ?? 0;
   }
@@ -117,7 +117,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     final count = _db.syncQueueTable.id.count();
     yield* (_db.selectOnly(_db.syncQueueTable)
           ..addColumns([count])
-          ..where(_db.syncQueueTable.status.isIn(['pending', 'in_progress'])))
+          ..where(_db.syncQueueTable.status.isIn(['pending', 'inProgress'])))
         .watchSingle()
         .map((row) => row.read(count) ?? 0);
   }
@@ -132,9 +132,16 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     lastAttemptAt: row.lastAttemptAt,
   );
 
+  /// Parses a stored status string back to a [SyncStatus].
+  ///
+  /// Accepts both the new canonical form (matching [SyncStatus.name]:
+  /// `'inProgress'`) and the legacy schema-v1 form (`'in_progress'`)
+  /// during the migration window. Pass 3 may drop the legacy arm once
+  /// no v1-state DBs are expected.
   SyncStatus _parseStatus(String value) => switch (value) {
     'pending' => SyncStatus.pending,
-    'in_progress' => SyncStatus.inProgress,
+    'inProgress' => SyncStatus.inProgress,
+    'in_progress' => SyncStatus.inProgress, // legacy pre-schema-v2
     'failed' => SyncStatus.failed,
     'completed' => SyncStatus.completed,
     _ => SyncStatus.pending,
