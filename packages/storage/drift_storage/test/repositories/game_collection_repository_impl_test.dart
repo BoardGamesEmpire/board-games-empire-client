@@ -9,7 +9,7 @@ import 'package:drift_storage/src/repositories/game_collection_repository_impl.d
 
 class MockSyncQueue extends Mock implements SyncQueueRepository {}
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kPlatformGameId = 'pg-1';
@@ -591,6 +591,86 @@ void main() {
           await repo.reconcileFromServer(serverEntry);
 
           verifyNever(() => mockSync.markCompleted(any()));
+        },
+      );
+
+      test(
+        'does not throw when multiple tombstones coexist for the triplet '
+        '(uses the shared _findCanonicalRow ordered+limited lookup)',
+        () async {
+          // Pass-6 Tier-1 fix: reconcileFromServer used to do a
+          // bare getSingleOrNull() over live+tombstoned rows for
+          // the (userId, platformGameId, medium) triplet. The
+          // schema permits multiple tombstones per triplet (the
+          // partial unique index only constrains live rows), so
+          // two or more would make the lookup throw StateError,
+          // blocking reconciliation entirely. The fix shares the
+          // ordered+limited helper with addToCollection.
+          //
+          // Seed two tombstones plus a live row for the same
+          // triplet via the table directly (the public API can't
+          // produce this state on its own), then reconcile a
+          // server-confirmed entry with a fresh canonical id and
+          // assert it applies cleanly: the existing rows are
+          // dropped (id mismatch) and the server entry is inserted.
+          final now = DateTime.now().toUtc();
+          final older = now.subtract(const Duration(hours: 2));
+          final mid = now.subtract(const Duration(hours: 1));
+
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'old-tomb',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(1),
+                  deletedAt: Value(older),
+                  createdAt: older,
+                  updatedAt: older,
+                ),
+              );
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'new-tomb',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(2),
+                  deletedAt: Value(mid),
+                  createdAt: mid,
+                  updatedAt: mid,
+                ),
+              );
+
+          final serverEntry = GameCollection(
+            id: 'server-canonical',
+            userId: _kUserId,
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 3,
+            isDirty: false,
+            isLocalOnly: false,
+            createdAt: now,
+            updatedAt: now,
+          );
+
+          // Pre-fix this would have thrown StateError immediately.
+          await repo.reconcileFromServer(serverEntry);
+
+          // The server entry now lives under the canonical id.
+          final live = await repo.getCollectionEntry(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+          expect(live, isNotNull);
+          expect(live!.id, equals('server-canonical'));
+          expect(live.quantity, equals(3));
+          expect(live.isDirty, isFalse);
+          expect(live.isLocalOnly, isFalse);
         },
       );
     });

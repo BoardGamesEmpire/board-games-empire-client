@@ -52,7 +52,7 @@ Future<void> _seedMember(
       );
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 void main() {
   late ServerDatabase db;
@@ -235,6 +235,39 @@ void main() {
       test('returns empty when the household has no rows at all', () async {
         expect(await repo.getMembers('nonexistent'), isEmpty);
       });
+
+      test(
+        'returns empty for a tombstoned household even when the current user is a member',
+        () async {
+          // Pass-6 Tier-1 fix: getMembers used to only join to the
+          // members table, not to households — so a stale member
+          // row pointing at a tombstoned household would still leak
+          // its roster. The fixed _membersQuery now also inner-joins
+          // householdsTable filtered by `deletedAt.isNull()`.
+          final now = DateTime.now().toUtc();
+          await _seedHousehold(
+            db,
+            id: 'h-1',
+            name: 'Removed',
+            deletedAt: now,
+          );
+          await _seedMember(
+            db,
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+          await _seedMember(
+            db,
+            id: 'm-2',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+          );
+
+          expect(await repo.getMembers('h-1'), isEmpty);
+        },
+      );
     });
 
     group('getCurrentUserMember()', () {
@@ -392,6 +425,41 @@ void main() {
       );
 
       test(
+        'emits an empty list for a tombstoned household even when the current user is a member',
+        () async {
+          // Pass-6 Tier-1 fix: same as getMembers, the watch's join
+          // now includes householdsTable.deletedAt.isNull(). Pre-fix,
+          // the watch would still emit the roster of a tombstoned
+          // household to whoever held a stale member row.
+          final now = DateTime.now().toUtc();
+          await _seedHousehold(
+            db,
+            id: 'h-1',
+            name: 'Removed',
+            deletedAt: now,
+          );
+          await _seedMember(
+            db,
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+            roleName: 'HouseholdOwner',
+          );
+          await _seedMember(
+            db,
+            id: 'm-2',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+          );
+
+          await expectLater(
+            repo.watchMembers('h-1').take(1),
+            emits(isEmpty),
+          );
+        },
+      );
+
+      test(
         'transitions from empty to full list when the current user joins',
         () async {
           // Reactive form of the boundary check: the watch stream
@@ -431,6 +499,6 @@ void main() {
           );
         },
       );
-    });
+  });
   });
 }
