@@ -1,10 +1,11 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_repository_impl.dart';
 
-// ── Fixtures ───────────────────────────────────────────────────────────────────
+// ── Fixtures ────────────────────────────────────────────────────────────────
 
 DateTime _now() => DateTime.now().toUtc();
 
@@ -28,6 +29,7 @@ Game _makeGame({
   List<String> tags = const <String>[],
   Visibility visibility = Visibility.public,
   String? createdById,
+  DateTime? deletedAt,
 }) {
   final t = _now();
   return Game(
@@ -50,6 +52,7 @@ Game _makeGame({
     tags: tags,
     visibility: visibility,
     createdById: createdById,
+    deletedAt: deletedAt,
     createdAt: t,
     updatedAt: t,
   );
@@ -84,7 +87,7 @@ PlatformGame _makePlatformGame({
   );
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 void main() {
   late ServerDatabase db;
@@ -98,7 +101,7 @@ void main() {
   tearDown(() async => db.close());
 
   group('GameRepositoryImpl', () {
-    // ── Game ──────────────────────────────────────────────────────────
+    // ── Game ────────────────────────────────────────────────────────────
 
     group('cacheGame() / getGame()', () {
       test('persists a game and reads it back', () async {
@@ -216,6 +219,19 @@ void main() {
         expect(found.visibility, Visibility.public);
         expect(found.createdById, isNull);
       });
+
+      test('getGame returns null for a tombstoned game', () async {
+        // Pass-6 Tier-1 fix: the five game read paths (getGame,
+        // getGames, searchGames, watchGame, watchGames) all
+        // skipped the `deletedAt IS NULL` filter that the
+        // collection and household repositories apply. This test
+        // locks in the fix for the single-item lookup.
+        await repo.cacheGame(
+          _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
+        );
+
+        expect(await repo.getGame('g-deleted'), isNull);
+      });
     });
 
     group('getGames()', () {
@@ -239,6 +255,20 @@ void main() {
 
       test('short-circuits on an empty list without hitting the DB', () async {
         expect(await repo.getGames([]), isEmpty);
+      });
+
+      test('excludes tombstoned games from the result', () async {
+        // Pass-6 Tier-1 fix: bulk lookup must also hide tombstoned
+        // rows. Pre-fix, getGames(['g-live', 'g-deleted']) would
+        // return both, making the bulk read inconsistent with
+        // getGame which now correctly returns null for tombstones.
+        await repo.cacheGame(_makeGame(id: 'g-live', title: 'Live'));
+        await repo.cacheGame(
+          _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
+        );
+
+        final result = await repo.getGames(['g-live', 'g-deleted']);
+        expect(result.map((g) => g.id), equals(['g-live']));
       });
     });
 
@@ -334,6 +364,24 @@ void main() {
         final result = await repo.searchGames('cat', limit: 3);
         expect(result, hasLength(3));
       });
+
+      test('excludes tombstoned games from search results', () async {
+        // Pass-6 Tier-1 fix: search must hide tombstoned rows even
+        // when they match the query. Pre-fix, a deleted game whose
+        // title matched would still surface, inconsistent with
+        // getGame and watchGames.
+        await repo.cacheGame(_makeGame(id: 'g-live', title: 'Catan'));
+        await repo.cacheGame(
+          _makeGame(
+            id: 'g-deleted',
+            title: 'Cathedral',
+            deletedAt: _now(),
+          ),
+        );
+
+        final result = await repo.searchGames('cat');
+        expect(result.map((g) => g.id), equals(['g-live']));
+      });
     });
 
     group('watchGame()', () {
@@ -369,6 +417,26 @@ void main() {
         expect(emissions[0]!.title, 'Before');
         expect(emissions[1]!.title, 'After');
       });
+
+      test('emits null for a tombstoned game id', () async {
+        // Pass-6 Tier-1 fix: the watch's predicate now includes
+        // `deletedAt.isNull()`, so when a game is tombstoned
+        // (or seeded as already-deleted), the watch sees no
+        // matching row and emits null — same shape as for an
+        // unknown id, which is the contract a UI consumer needs.
+        await repo.cacheGame(
+          _makeGame(
+            id: 'g-deleted',
+            title: 'Removed',
+            deletedAt: _now(),
+          ),
+        );
+
+        await expectLater(
+          repo.watchGame('g-deleted').take(1),
+          emits(isNull),
+        );
+      });
     });
 
     group('watchGames()', () {
@@ -380,6 +448,25 @@ void main() {
         await repo.cacheGames([_makeGame(id: 'g-1'), _makeGame(id: 'g-2')]);
 
         await expectLater(repo.watchGames().take(1), emits(hasLength(2)));
+      });
+
+      test('excludes tombstoned games from the emission', () async {
+        // Pass-6 Tier-1 fix: the list watch now filters
+        // `deletedAt IS NULL`, matching the snapshot read.
+        // Pre-fix, deleted games would still appear in the list
+        // stream while getGame returned null for them — the two
+        // APIs would disagree.
+        await repo.cacheGame(_makeGame(id: 'g-live', title: 'Live'));
+        await repo.cacheGame(
+          _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
+        );
+
+        await expectLater(
+          repo.watchGames().take(1),
+          emits(predicate<List<Game>>(
+            (games) => games.length == 1 && games.single.id == 'g-live',
+          )),
+        );
       });
     });
 
