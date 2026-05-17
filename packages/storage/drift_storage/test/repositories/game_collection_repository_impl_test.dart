@@ -304,7 +304,7 @@ void main() {
           // The pre-existing "MOST RECENT tombstone" test uses
           // distinct updatedAt values one hour apart, so it never
           // exercises the tiebreaker. This test pins identical
-          // updatedAt values to ISOLATE the tiebreaker.
+          // updatedAt values to ISOLATE the rowId DESC tail term.
           final t = DateTime.now().toUtc();
 
           await db
@@ -1008,6 +1008,12 @@ void main() {
             // several tombstones over time. A server-confirmed
             // removal should cleanly purge all of them so the
             // cache doesn't keep growing with stale ghosts.
+            //
+            // Post-Pass-8 thread #4: this still works because both
+            // tombstones have `deletedAt != null`, so the surgical
+            // predicate `(deletedAt.isNotNull() | isLocalOnly.equals(false))`
+            // matches both. The carve-out only excludes
+            // local-only LIVE rows, not tombstones.
             final now = DateTime.now().toUtc();
             final older = now.subtract(const Duration(hours: 2));
             final mid = now.subtract(const Duration(hours: 1));
@@ -1098,6 +1104,115 @@ void main() {
               await db.select(db.gameCollectionsTable).get(),
               isEmpty,
             );
+          },
+        );
+
+        test(
+          'preserves a local-only resurrection when a stale tombstone '
+          'confirmation arrives (Pass-8 thread #4 race)',
+          () async {
+            // The race the surgical-purge fix in 9ebd91dd defends
+            // against:
+            //
+            // 1. User adds → server-confirmed (id=X, deletedAt=null,
+            //    isLocalOnly=false).
+            // 2. User removes → tombstone (id=X, deletedAt=t0,
+            //    isLocalOnly=false). RemoveOp queued.
+            // 3. RemoveOp completes → server has tombstoned id=X.
+            // 4. User re-adds. addToCollection finds the local
+            //    tombstone via _findCanonicalRow and resurrects:
+            //    same id, deletedAt cleared, isLocalOnly flipped
+            //    to true. Pending AddOp queued.
+            // 5. The server's confirmation of step-2's removal —
+            //    in flight the whole time — finally arrives at
+            //    reconcileFromServer with serverEntry.id=X,
+            //    deletedAt != null.
+            //
+            // Pre-fix: the broad triplet purge deleted the
+            // resurrection along with everything else, silently
+            // dropping the user's pending re-add intent.
+            //
+            // Post-fix: the
+            // `(deletedAt.isNotNull() | isLocalOnly.equals(false))`
+            // exclusion preserves the local-only resurrection. The
+            // pending AddOp continues through the queue with its
+            // target row intact.
+
+            // Set up the post-removal, pre-resurrection state
+            // directly: a server-confirmed tombstone exists locally
+            // with id 'shared-id'.
+            final t0 =
+                DateTime.now().toUtc().subtract(const Duration(minutes: 5));
+            await db.into(db.gameCollectionsTable).insert(
+                  GameCollectionsTableCompanion.insert(
+                    id: 'shared-id',
+                    userId: _kUserId,
+                    platformGameId: _kPlatformGameId,
+                    medium: 'Physical',
+                    quantity: const Value(1),
+                    deletedAt: Value(t0),
+                    isLocalOnly: const Value(false),
+                    createdAt:
+                        t0.subtract(const Duration(hours: 1)),
+                    updatedAt: t0,
+                  ),
+                );
+
+            // Step 4: user re-adds. _findCanonicalRow picks up the
+            // tombstone and addToCollection resurrects it with the
+            // same id.
+            final resurrected = await repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              rating: 9,
+            );
+            expect(resurrected.id, equals('shared-id'));
+            expect(resurrected.deletedAt, isNull);
+            expect(resurrected.isLocalOnly, isTrue);
+            expect(resurrected.rating, equals(9));
+
+            // Step 5: the stale tombstone confirmation arrives.
+            // serverEntry carries the deletedAt the server has on
+            // record for the row — from BEFORE the user re-added.
+            final staleTombstone = GameCollection(
+              id: 'shared-id',
+              userId: _kUserId,
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              isDirty: false,
+              isLocalOnly: false,
+              deletedAt: t0,
+              createdAt: t0.subtract(const Duration(hours: 1)),
+              updatedAt: t0,
+            );
+            await repo.reconcileFromServer(
+              staleTombstone,
+              completedSyncQueueId: 'sq-stale-remove',
+            );
+
+            // The resurrection survives unchanged. The reconcile
+            // didn't touch it.
+            final live = await repo.getCollectionEntry(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            );
+            expect(live, isNotNull);
+            expect(live!.id, equals('shared-id'));
+            expect(live.deletedAt, isNull);
+            expect(live.isLocalOnly, isTrue);
+            expect(live.rating, equals(9));
+            expect(live.quantity, equals(1));
+
+            // The stale RemoveOp's sync-queue entry is still marked
+            // completed — the reconcile-side queue closure fires
+            // regardless of what the purge predicate matched. The
+            // AddOp the resurrection enqueued stays untouched in
+            // the queue (the mock tracks calls only; the AddOp
+            // isn't a markCompleted target here).
+            verify(() => mockSync.markCompleted('sq-stale-remove'))
+                .called(1);
           },
         );
       });
