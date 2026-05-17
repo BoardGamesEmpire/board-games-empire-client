@@ -54,14 +54,20 @@ final class AddToCollectionOperation extends SyncOperation {
       );
 
   /// The local id of the [GameCollection] row this op writes. Generated
-  /// by `GameCollectionRepositoryImpl.addToCollection` as a UUID v4 via
-  /// `package:uuid` **before** the insert, so it's present on both the
-  /// local row and the enqueued op. The server uses it during
-  /// reconciliation: when the server's response comes back with the
-  /// canonical id, `reconcileFromServer` looks up the local row by
-  /// `(userId, platformGameId, medium)` triplet and drops/upserts it
-  /// against the server id (see `GameCollectionRepositoryImpl` class
-  /// doc for the full flow).
+  /// by `GameCollectionRepositoryImpl.addToCollection` as a cuid2 id
+  /// (via `package:cuid2`) **before** the insert, so it's present on
+  /// both the local row and the enqueued op.
+  ///
+  /// The format matches the backend's id format (cuid2). When the
+  /// backend honours the client-supplied id, this id round-trips
+  /// unchanged through reconciliation. Today the backend's create
+  /// DTO strips ids before reaching Prisma, so the server returns a
+  /// freshly-generated cuid2 instead; `reconcileFromServer` then
+  /// looks up the local row by `(userId, platformGameId, medium)`
+  /// triplet, calls `SyncQueueRepository.remapCollectionId` to
+  /// rewrite any other pending ops still referencing this local id,
+  /// and drops/upserts the row against the server's id (see
+  /// `GameCollectionRepositoryImpl` class doc for the full flow).
   ///
   /// Note: Drift does **not** generate this id — the column is a
   /// `TEXT PRIMARY KEY` whose value the repo supplies on insert.
