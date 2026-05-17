@@ -91,6 +91,46 @@ import '../databases/server_database.dart';
 /// an unsynced re-add intent. See [reconcileFromServer] for the
 /// race scenario the carve-out defends against.
 ///
+/// ## Resurrection preserves play history
+///
+/// When [addToCollection] finds a tombstoned row for the same
+/// `(userId, platformGameId, medium)` triplet, it resurrects that
+/// row rather than inserting a new one. The resurrection
+/// deliberately preserves per-game metadata that is NOT tied to
+/// the current ownership state:
+///
+/// - **Play history** (`playCount`, `lastPlayed`): factual records
+///   of past plays. The user removing an entry means "I don't own
+///   this anymore", not "I never played this." Orphaning play
+///   stats on every removal would lose data BGG-style tracking
+///   relies on (games-I've-played extends past current
+///   ownership). The resurrection update does not touch these
+///   columns.
+/// - **Opinion fields** (`playAgain`, `favorite`): the user's
+///   opinion of the GAME, not of the current ownership entry.
+///   Preserved on the same principle — surviving an
+///   ownership-state toggle.
+/// - **Rating / comment**: same semantic as the live-row update
+///   path — if the caller supplies a new value, the prior value
+///   is overwritten; if null/omitted, the prior value is
+///   preserved (`Value.absent()` on the companion).
+/// - **Quantity**: always uses the caller-supplied value; the
+///   prior quantity was tied to the previous ownership, which is
+///   over. (Contrast the live-row branch, which INCREMENTS
+///   quantity — a resurrected row is a fresh ownership
+///   declaration, not an increment of the prior one.)
+/// - **Lifecycle markers** (`deletedAt`, `isDirty`, `isLocalOnly`,
+///   `updatedAt`): reset to "new local-only entry" state so the
+///   row goes through the normal sync flow.
+///
+/// (Copilot's Pass-9 review thread #5 suggested resetting all
+/// per-entry metadata on resurrection. We deliberately chose the
+/// opposite: in this product, your relationship with a game
+/// survives an ownership-state toggle. A future
+/// "restore-as-fresh-entry" operation can be added if the
+/// inverse is needed for a specific UI flow; the default
+/// addToCollection preserves continuity.)
+///
 /// ## addToCollection / reconcileFromServer canonical-row lookup
 ///
 /// Both methods need to find "the" canonical local row for a
@@ -116,9 +156,9 @@ import '../databases/server_database.dart';
 ///   amount (rating/comment overwritten only if the caller supplied
 ///   them; existing values otherwise preserved).
 /// - **Tombstoned row(s) exist, no live row**: resurrect the **most
-///   recent** tombstone (clear `deletedAt`, overwrite fields, keep
-///   its id, mark dirty + localOnly). Older tombstones are left
-///   alone.
+///   recent** tombstone — see "Resurrection preserves play history"
+///   above for the field-by-field semantics. Older tombstones are
+///   left alone.
 ///
 /// Whatever branch fires, an `AddToCollectionOperation` is enqueued
 /// with the final post-write quantity; the server is expected to
@@ -235,8 +275,41 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
             );
       } else if (existing.deletedAt != null) {
         // Resurrect the most recent tombstone. Keep the id (server
-        // may still know about it from a prior sync); reset the
-        // lifecycle.
+        // may still know about it from a prior sync) and the
+        // per-game metadata that survives ownership toggles — see
+        // the "Resurrection preserves play history" section in the
+        // class doc for the full rationale.
+        //
+        // What this write TOUCHES (lifecycle + caller-supplied):
+        //   - deletedAt:    cleared (alive again)
+        //   - isDirty:      true (queued for sync)
+        //   - isLocalOnly:  true (server hasn't seen this
+        //                   re-add yet; reconcileFromServer
+        //                   will flip it back after the AddOp
+        //                   completes)
+        //   - updatedAt:    now
+        //   - quantity:     caller-supplied value (a fresh
+        //                   ownership declaration, NOT an
+        //                   increment of the prior quantity)
+        //   - rating:       caller-supplied IF provided;
+        //                   else preserved
+        //   - comment:      caller-supplied IF provided;
+        //                   else preserved
+        //
+        // What this write LEAVES UNTOUCHED (preserved per-game
+        // metadata):
+        //   - playCount:    factual play history
+        //   - lastPlayed:   factual play history
+        //   - playAgain:    opinion about the game itself
+        //   - favorite:     opinion about the game itself
+        //   - releaseId:    server-managed edition reference
+        //   - lastUpdated:  display-only timestamp
+        //
+        // The Value.absent() guards on rating/comment match the
+        // live-row branch's "null means leave-unchanged" semantic,
+        // closing a pre-Pass-9 asymmetry where the resurrection
+        // branch always overwrote with whatever the caller passed
+        // (including null) while the live-row branch preserved.
         entryId = existing.id;
         finalQuantity = quantity;
         await (_db.update(_db.gameCollectionsTable)
@@ -244,8 +317,12 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
             .write(
               GameCollectionsTableCompanion(
                 quantity: Value(quantity),
-                rating: Value(rating),
-                comment: Value(comment),
+                rating: rating != null
+                    ? Value(rating)
+                    : const Value.absent(),
+                comment: comment != null
+                    ? Value(comment)
+                    : const Value.absent(),
                 deletedAt: const Value(null),
                 isDirty: const Value(true),
                 isLocalOnly: const Value(true),
