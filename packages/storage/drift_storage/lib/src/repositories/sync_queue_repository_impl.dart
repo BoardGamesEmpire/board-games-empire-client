@@ -14,10 +14,10 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   Future<SyncQueueEntry> enqueue(SyncOperation operation) async {
     // cuid2 id — matches the format used everywhere else in the
     // codebase (game collections, household entities, the backend's
-    // Prisma `@default(cuid())`). Sync-queue ids never round-trip
-    // to the server, so the format is a pure codebase-consistency
-    // choice here — a log scanner inspecting both queue entries and
-    // their target rows sees one id format throughout.
+    // Prisma cuid2 ids). Sync-queue ids never round-trip to the
+    // server, so the format is a pure codebase-consistency choice
+    // here — a log scanner inspecting both queue entries and their
+    // target rows sees one id format throughout.
     final id = cuid();
     final now = DateTime.now().toUtc();
 
@@ -265,17 +265,29 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   /// if the worker can't pick them up directly — they need
   /// [resetStaleInProgress] first).
   ///
-  /// Symmetry with [getPendingEntries] is important: the badge that
-  /// `watchPendingCount` feeds is meant to indicate "outstanding sync
-  /// work", which must include retryable failures. Pre-fix, the
-  /// count excluded `failed` rows entirely, so after a transient
-  /// network failure the badge dropped to 0 even though the worker
-  /// would retry the entry on its next cycle.
+  /// Symmetry with [getPendingEntries] takes two forms here:
+  ///
+  /// 1. Status set: `pending`, `inProgress`, `failed` — all three
+  ///    represent outstanding work. The badge that
+  ///    `watchPendingCount` feeds must include retryable failures
+  ///    so a transient network failure doesn't make the badge
+  ///    misleadingly drop to 0 while the worker still has retry
+  ///    work queued.
+  ///
+  /// 2. Retry budget: the `retryCount < maxRetries` guard applies
+  ///    to ALL three states, not just `failed`. A pending or
+  ///    inProgress row with `retryCount >= maxRetries` shouldn't
+  ///    occur in normal flow (retryCount only grows via
+  ///    markFailed, which sets status=failed), but
+  ///    [resetStaleInProgress] flips a maxed-out inProgress to
+  ///    pending without resetting the count — that's the one path
+  ///    that can produce such a row. The badge must not count it
+  ///    as outstanding work because [getPendingEntries] won't
+  ///    return it (and the worker therefore can't pick it up).
   Expression<bool> _pendingPredicate() {
     final t = _db.syncQueueTable;
-    return t.status.isIn(['pending', 'inProgress']) |
-        (t.status.equals('failed') &
-            t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries));
+    return t.status.isIn(['pending', 'inProgress', 'failed']) &
+        t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries);
   }
 
   SyncQueueEntry _mapRow(SyncQueueTableData row) => SyncQueueEntry(
