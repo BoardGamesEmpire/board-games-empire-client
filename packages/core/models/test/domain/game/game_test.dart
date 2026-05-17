@@ -116,6 +116,39 @@ void main() {
       expect(round.visibility, equals(Visibility.public));
     });
 
+    test(
+      'Game.fromJson with an unknown contentType wire value falls back to '
+      'ContentType.unknown (Pass-9 thread #6)',
+      () {
+        // Pre-Pass-9, the freezed JSON path lacked
+        // `@JsonKey(unknownEnumValue: ContentType.unknown)` on the
+        // contentType field, so json_serializable would throw when a
+        // server payload returned a contentType value the client
+        // didn't know about — e.g. a newly added ContentType variant
+        // deployed server-side before this client was updated. The
+        // Drift storage path already had the fallback via
+        // `ContentType.fromWire`'s `_ => unknown` arm; this test
+        // pins the JSON path's now-matching behaviour so a future
+        // regression that drops the annotation fails here.
+        final json = _make().toJson();
+
+        // Sanity: the wire form for ContentType is the @JsonValue
+        // PascalCase string ('BaseGame'), not the Dart enum name.
+        expect(json['contentType'], equals('BaseGame'));
+
+        // Replace with a value the client doesn't know about,
+        // simulating a server-added ContentType variant.
+        json['contentType'] = 'NewServerContentType';
+
+        // Pre-fix this would throw (ArgumentError /
+        // CheckedFromJsonException from json_serializable). Post-fix
+        // it lands cleanly on ContentType.unknown — same outcome
+        // the storage `fromWire` fallback already produces.
+        final game = Game.fromJson(json);
+        expect(game.contentType, equals(ContentType.unknown));
+      },
+    );
+
     group('playerCountDisplay', () {
       test('shows range', () {
         expect(_make().playerCountDisplay, equals('3–4'));
