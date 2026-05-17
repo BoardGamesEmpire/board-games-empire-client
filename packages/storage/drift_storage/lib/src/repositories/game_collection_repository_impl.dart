@@ -1,13 +1,27 @@
+import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-import 'package:uuid/uuid.dart';
 
 import '../databases/server_database.dart';
 
 /// Offline-first implementation of [GameCollectionRepository] backed by
 /// the per-server [ServerDatabase] plus a [SyncQueueRepository] for
 /// outbound mutations.
+///
+/// ## ID generation
+///
+/// Fresh local rows get a [cuid2] id. This matches the backend's id
+/// format (Prisma's `@default(cuid())` is the same cuid2 spec), so a
+/// row's id is the same string from local creation through to the
+/// server cache — *when the backend honours the client-supplied id*.
+/// Today the backend's create DTO strips ids before forwarding to
+/// Prisma, so the server returns a freshly-generated cuid2 on insert
+/// and [reconcileFromServer] handles the id-reassignment path via
+/// [SyncQueueRepository.remapCollectionId]. If the backend's DTO is
+/// later updated to accept client ids, the local id round-trips
+/// unchanged and the remap call becomes a no-op without any
+/// client-side change.
 ///
 /// ## Atomicity
 ///
@@ -87,7 +101,7 @@ import '../databases/server_database.dart';
 ///
 /// `addToCollection` branches on the result:
 ///
-/// - **No row exists**: fresh insert with a new UUID v4 id.
+/// - **No row exists**: fresh insert with a new cuid2 id.
 /// - **Live row exists**: increment `quantity` by the requested
 ///   amount (rating/comment overwritten only if the caller supplied
 ///   them; existing values otherwise preserved).
@@ -115,7 +129,6 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   final ServerDatabase _db;
   final SyncQueueRepository _syncQueue;
   final String _userId;
-  static const _uuid = Uuid();
 
   // ── Reads ──────────────────────────────────────────────────────────────────────
 
@@ -183,10 +196,15 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       final int finalQuantity;
 
       if (existing == null) {
-        // Fresh insert. UUID v4 id (NOT a cuid — the rest of the
-        // codebase uses cuid2 elsewhere, but this repository uses
-        // UUID v4 via the package:uuid dependency).
-        entryId = _uuid.v4();
+        // Fresh insert. cuid2 id — matches the backend's id format
+        // (Prisma's `@default(cuid())` uses the same spec). When
+        // the backend honours the client-supplied id, the round-trip
+        // preserves this id; today the backend's create DTO strips
+        // ids before reaching Prisma so a different canonical id
+        // comes back and `reconcileFromServer` calls
+        // `_syncQueue.remapCollectionId` to rewrite any pending ops
+        // still referencing this local id.
+        entryId = cuid();
         finalQuantity = quantity;
         await _db
             .into(_db.gameCollectionsTable)
@@ -411,12 +429,15 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   /// ## Id reassignment + pending-op remap
   ///
   /// If the server returns a canonical id different from the local
-  /// row's id (e.g. the server prefers its own UUID generator), any
-  /// pending Update/Remove ops queued against the local-only id
-  /// would otherwise be sent to the server with an id the server
-  /// doesn't know. This method calls
-  /// [SyncQueueRepository.remapCollectionId] to rewrite those
-  /// payloads BEFORE dropping the stale local row.
+  /// row's id (which is the steady state today: the backend's create
+  /// DTO strips client ids before reaching Prisma), any pending
+  /// Update/Remove ops queued against the local id would otherwise
+  /// be sent to the server with an id the server doesn't know. This
+  /// method calls [SyncQueueRepository.remapCollectionId] to rewrite
+  /// those payloads BEFORE dropping the stale local row. If the
+  /// backend's DTO is later updated to forward client ids, this
+  /// branch becomes a no-op (local.id == serverEntry.id always)
+  /// without any client-side change.
   ///
   /// ## Tombstone confirmation
   ///

@@ -1,7 +1,7 @@
+import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
-import 'package:uuid/uuid.dart';
 
 import '../databases/server_database.dart';
 
@@ -9,11 +9,16 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   const SyncQueueRepositoryImpl(this._db);
 
   final ServerDatabase _db;
-  static const _uuid = Uuid();
 
   @override
   Future<SyncQueueEntry> enqueue(SyncOperation operation) async {
-    final id = _uuid.v4();
+    // cuid2 id — matches the format used everywhere else in the
+    // codebase (game collections, household entities, the backend's
+    // Prisma `@default(cuid())`). Sync-queue ids never round-trip
+    // to the server, so the format is a pure codebase-consistency
+    // choice here — a log scanner inspecting both queue entries and
+    // their target rows sees one id format throughout.
+    final id = cuid();
     final now = DateTime.now().toUtc();
 
     await _db
