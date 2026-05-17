@@ -37,6 +37,49 @@ abstract class GameCollectionRepository {
   /// passing `quantity: 0`.
   ///
   /// Writes locally, enqueues [AddToCollectionOperation].
+  ///
+  /// ### Re-adding a previously removed entry (resurrection)
+  ///
+  /// If a tombstoned row exists for the same
+  /// `(userId, platformGameId, medium)` triplet — i.e. the user
+  /// previously called [removeFromCollection] for this game and
+  /// medium — implementations MUST resurrect that row rather than
+  /// inserting a new one. The resurrection's per-field handling
+  /// reflects a product decision: in BGE, removing a collection
+  /// entry means "I don't own this anymore", not "I never played
+  /// this." A user's relationship with a game — play history,
+  /// opinions — survives an ownership-state toggle.
+  ///
+  /// Required behaviour:
+  ///
+  /// - **Lifecycle markers reset**: `deletedAt` cleared, `isDirty`
+  ///   and `isLocalOnly` set to true, `updatedAt` touched. The row
+  ///   re-enters the normal sync flow under its existing id.
+  /// - **`quantity` overwritten** with the caller-supplied value
+  ///   (or the `quantity: 1` default). A resurrection is a fresh
+  ///   ownership declaration, NOT an increment of the prior
+  ///   quantity — contrast the duplicate-triplet-on-live-row case,
+  ///   which increments.
+  /// - **`rating` and `comment`**: same null-handling semantic as
+  ///   [updateCollectionEntry] — `null`/omitted means
+  ///   leave-unchanged, supplied value overwrites. The prior
+  ///   rating and comment survive a remove + re-add if the caller
+  ///   doesn't override them.
+  /// - **`playCount`, `lastPlayed`, `playAgain`, `favorite`**:
+  ///   PRESERVED across the resurrection. These are factual play
+  ///   records and opinions about the game itself, not about the
+  ///   current ownership entry. The resurrection write MUST NOT
+  ///   touch these columns.
+  ///
+  /// An [AddToCollectionOperation] is enqueued with the final
+  /// post-write quantity regardless of whether the row was a fresh
+  /// insert, a live-row increment, or a tombstone resurrection.
+  /// The server is expected to dedup or merge on its side.
+  ///
+  /// If a "fresh-start" semantic is needed for a specific UI flow
+  /// (e.g. an explicit "clear my history for this game" action),
+  /// it should be added as a separate operation rather than
+  /// changing the default add-after-remove behaviour.
   Future<GameCollection> addToCollection({
     required String platformGameId,
     required GameMedium medium,
@@ -99,6 +142,13 @@ abstract class GameCollectionRepository {
   /// callers, so the only paths that remove rows are
   /// [removeFromCollection] (tombstone) and [reconcileFromServer]
   /// with a tombstoned server entry (surgical physical purge).
+  ///
+  /// ### Re-adding before purge
+  ///
+  /// A subsequent [addToCollection] for the same triplet resurrects
+  /// the tombstone with the original row id intact and preserves
+  /// play history — see [addToCollection]'s "Re-adding a previously
+  /// removed entry" section for the per-field rules.
   ///
   /// ### Throws
   ///
