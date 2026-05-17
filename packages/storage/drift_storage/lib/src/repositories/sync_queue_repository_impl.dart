@@ -122,12 +122,12 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   @override
   Future<int> resetStaleInProgress() async {
     // Recovery path for sync-worker crashes. Entries left in the
-    // inProgress state after a crash are counted as pending by
+    // inProgress state after a crash are counted as outstanding by
     // [getPendingCount] / [watchPendingCount] (both of which include
-    // 'inProgress' for badge purposes) but never returned by
-    // [getPendingEntries] (which only returns 'pending' / 'failed'),
-    // so without this method they'd sit stuck forever — visible to
-    // the UI but unreachable to the worker.
+    // 'inProgress') but never returned by [getPendingEntries] (which
+    // only returns 'pending' / 'failed'), so without this method
+    // they'd sit stuck forever — visible to the UI but unreachable
+    // to the worker.
     //
     // Single bulk UPDATE so the reset is atomic; .write() returns
     // the affected row count which we propagate to the caller for
@@ -142,6 +142,55 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     return (_db.delete(
       _db.syncQueueTable,
     )..where((t) => t.status.equals('completed'))).go();
+  }
+
+  @override
+  Future<int> remapCollectionId({
+    required String oldCollectionId,
+    required String newCollectionId,
+  }) async {
+    // Identity short-circuit — nothing to do if the caller passed
+    // the same id twice. (Defensive; the only caller today
+    // (reconcileFromServer) already guards against this.)
+    if (oldCollectionId == newCollectionId) return 0;
+
+    return _db.transaction(() async {
+      // We can't push the id filter into SQL because the target id
+      // is buried inside the JSON payload. Fetch all retryable
+      // entries, deserialize each, and rewrite the ones that match.
+      // The query uses the same predicate as [getPendingEntries] so
+      // we only ever touch entries the worker can still pick up.
+      final rows =
+          await (_db.select(_db.syncQueueTable)..where(
+                (t) =>
+                    t.status.isIn(['pending', 'failed']) &
+                    t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries),
+              ))
+              .get();
+
+      var remapped = 0;
+      for (final row in rows) {
+        final SyncOperation op;
+        try {
+          op = SyncOperation.deserialize(row.payload);
+        } catch (_) {
+          // Skip un-parseable rows; the worker will surface the
+          // failure on its next pickup attempt.
+          continue;
+        }
+
+        final rewritten = _remapOp(op, oldCollectionId, newCollectionId);
+        if (rewritten == null) continue;
+
+        await (_db.update(_db.syncQueueTable)
+              ..where((t) => t.id.equals(row.id)))
+            .write(
+              SyncQueueTableCompanion(payload: Value(rewritten.serialized)),
+            );
+        remapped++;
+      }
+      return remapped;
+    });
   }
 
   @override
@@ -169,6 +218,40 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
           ..where(_pendingPredicate()))
         .watchSingle()
         .map((row) => row.read(count) ?? 0);
+  }
+
+  /// Returns a rewritten op when [op] targets [oldId], else null.
+  ///
+  /// Sealed-hierarchy switch with `when` guards: each case both
+  /// narrows the op type AND filters by the relevant id field, so
+  /// we don't accidentally remap unrelated ops that happen to
+  /// stringify to the same id.
+  SyncOperation? _remapOp(SyncOperation op, String oldId, String newId) {
+    return switch (op) {
+      AddToCollectionOperation() when op.localId == oldId =>
+        AddToCollectionOperation(
+          localId: newId,
+          platformGameId: op.platformGameId,
+          medium: op.medium,
+          quantity: op.quantity,
+          rating: op.rating,
+          comment: op.comment,
+        ),
+      UpdateCollectionOperation() when op.collectionId == oldId =>
+        UpdateCollectionOperation(
+          collectionId: newId,
+          quantity: op.quantity,
+          rating: op.rating,
+          playCount: op.playCount,
+          playAgain: op.playAgain,
+          favorite: op.favorite,
+          comment: op.comment,
+          lastPlayed: op.lastPlayed,
+        ),
+      RemoveFromCollectionOperation() when op.collectionId == oldId =>
+        RemoveFromCollectionOperation(collectionId: newId),
+      _ => null,
+    };
   }
 
   /// Predicate matching the same set of entries that
