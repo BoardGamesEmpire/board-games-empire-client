@@ -188,18 +188,18 @@ void main() {
       });
 
       test('emits updated list after add', () async {
-        final stream = repository.watchAll();
+        final futureEmissions = repository.watchAll().take(2).toList();
+
+        await pumpEventQueue();
+
         await repository.add(_makeNotification(title: 'Watch Test'));
 
-        await expectLater(
-          stream.take(2),
-          emitsInOrder([
-            isEmpty,
-            predicate<List<NotificationSummary>>(
-              (list) => list.any((n) => n.title == 'Watch Test'),
-            ),
-          ]),
+        final emissions = await futureEmissions.timeout(
+          const Duration(seconds: 5),
         );
+        expect(emissions, hasLength(2));
+        expect(emissions[0], isEmpty);
+        expect(emissions[1].any((n) => n.title == 'Watch Test'), isTrue);
       });
     });
 
@@ -209,24 +209,84 @@ void main() {
       });
 
       test('increments after add, decrements after markRead', () async {
-        final stream = repository.watchUnreadCount();
-        final n = await repository.add(_makeNotification());
-        await repository.markRead(n.id);
+        // Subscribe-then-mutate-then-pump for each step. pumpEventQueue
+        // between mutations gives Drift's reactivity time to deliver
+        // the emission to the subscriber before the next mutation
+        // fires, keeping the sequence deterministic.
+        final futureEmissions = repository.watchUnreadCount().take(3).toList();
 
-        await expectLater(stream.take(3), emitsInOrder([0, 1, 0]));
+        await pumpEventQueue(); // emission 1: 0 (empty)
+
+        final n = await repository.add(_makeNotification());
+        await pumpEventQueue(); // emission 2: 1 (one unread)
+
+        await repository.markRead(n.id);
+        // emission 3 (back to 0) lands during the take(3) await below.
+
+        expect(
+          await futureEmissions.timeout(const Duration(seconds: 5)),
+          equals([0, 1, 0]),
+        );
       });
     });
 
     group('watchUnreadCountForServer', () {
-      test('is isolated to the given server', () async {
-        final stream = repository.watchUnreadCountForServer('server-a');
-        await repository.add(_makeNotification(localServerId: 'server-a'));
-        await repository.add(_makeNotification(localServerId: 'server-b'));
+      test('is isolated to the given server '
+          '(server-b mutations never raise server-a\'s count)', () async {
+        // Listener-based capture rather than take(N). The prior
+        // test capped emissions with take(2), which cancelled the
+        // subscription as soon as [0, 1] arrived — BEFORE the
+        // server-b add ran. That meant the test never actually
+        // verified isolation; it only confirmed that the first two
+        // emissions for server-a were [0, 1] (true regardless of
+        // any cross-server interaction).
+        //
+        // Here we listen until cancel, perform the cross-server
+        // mutation, and then assert two things:
+        //
+        // 1. The last emission for server-a is still 1 — the
+        //    server-b row did not change the count.
+        // 2. No emission for server-a is greater than 1 across the
+        //    entire stream — even if Drift's reactivity re-fires
+        //    the query on the server-b add (it may, since the
+        //    table changed), the value comes back the same.
+        final emissions = <int>[];
+        final sub = repository
+            .watchUnreadCountForServer('server-a')
+            .listen(emissions.add);
 
-        await expectLater(
-          stream.take(2),
-          emitsInOrder([0, 1]), // only server-a count changes
+        await pumpEventQueue();
+        expect(
+          emissions,
+          equals([0]),
+          reason: 'initial emission should be 0 (empty queue)',
         );
+
+        await repository.add(_makeNotification(localServerId: 'server-a'));
+        await pumpEventQueue();
+        expect(
+          emissions.last,
+          equals(1),
+          reason: 'server-a add should bring the count to 1',
+        );
+
+        // Cross-server mutation: must not change server-a's count.
+        await repository.add(_makeNotification(localServerId: 'server-b'));
+        await pumpEventQueue();
+
+        expect(
+          emissions.last,
+          equals(1),
+          reason: 'server-b add must not change server-a\'s count',
+        );
+        expect(
+          emissions,
+          everyElement(lessThanOrEqualTo(1)),
+          reason:
+              'no emission for server-a should ever exceed 1 across the run',
+        );
+
+        await sub.cancel();
       });
     });
   });

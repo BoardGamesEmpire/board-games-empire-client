@@ -66,5 +66,5 @@ abstract class ServerConfig with _$ServerConfig {
 
   /// Relative path for the per-server Drift DB file.
   /// Resolved against the app support directory by the storage layer.
-  String get databasePath => 'servers/$id/server.db';
+  String get databasePath => 'app_secure_storage/$id/game_empire.db';
 }

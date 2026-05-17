@@ -21,7 +21,7 @@ class AuthRepositoryImpl implements AuthRepository {
   }) : _identity = identity,
        _tokenStorage = tokenStorage,
        _dio = dio ?? _buildDio(),
-       _stateController = StreamController<AuthState>.broadcast() {
+       _stateController = StreamController<AuthState>.broadcast(sync: true) {
     _addTokenInterceptor();
   }
 
@@ -173,9 +173,16 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Stream<AuthState> watchAuthState() async* {
-    yield _currentState;
-    yield* _stateController.stream;
+  Stream<AuthState> watchAuthState() {
+    return Stream.multi((controller) {
+      controller.add(_currentState);
+      final sub = _stateController.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = sub.cancel;
+    });
   }
 
   void _setState(AuthState next) {

@@ -196,12 +196,16 @@ void main() {
           () => mockDio.get<Map<String, dynamic>>(any()),
         ).thenAnswer((_) async => _status(401));
 
-        expect(await repo.getSession(), isNull);
-
-        await expectLater(
+        final future = expectLater(
           repo.watchAuthState().take(2),
-          emitsInOrder([anything, isA<AuthStateUnauthenticated>()]),
+          emitsInOrder([
+            isA<AuthStateUnknown>(),
+            isA<AuthStateUnauthenticated>(),
+          ]),
         );
+
+        expect(await repo.getSession(), isNull);
+        await future;
       });
 
       test('emits AuthStateAuthenticated on success', () async {
@@ -209,12 +213,16 @@ void main() {
           () => mockDio.get<Map<String, dynamic>>(any()),
         ).thenAnswer((_) async => _ok(_sessionJson()));
 
-        await repo.getSession();
-
-        await expectLater(
+        final future = expectLater(
           repo.watchAuthState().take(2),
-          emitsInOrder([anything, isA<AuthStateAuthenticated>()]),
+          emitsInOrder([
+            isA<AuthStateUnknown>(),
+            isA<AuthStateAuthenticated>(),
+          ]),
         );
+
+        await repo.getSession();
+        await future;
       });
     });
 
@@ -239,12 +247,16 @@ void main() {
           ),
         );
 
-        await repo.signOut();
-
-        await expectLater(
+        final future = expectLater(
           repo.watchAuthState().take(2),
-          emitsInOrder([anything, isA<AuthStateUnauthenticated>()]),
+          emitsInOrder([
+            isA<AuthStateUnknown>(),
+            isA<AuthStateUnauthenticated>(),
+          ]),
         );
+
+        await repo.signOut();
+        await future;
       });
 
       test('POSTs to the sign-out endpoint', () async {

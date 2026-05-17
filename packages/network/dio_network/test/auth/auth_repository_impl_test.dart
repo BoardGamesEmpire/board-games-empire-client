@@ -193,11 +193,16 @@ void main() {
         () async {
           when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
 
-          expect(await repo.getSession(), isNull);
-          await expectLater(
+          final future = expectLater(
             repo.watchAuthState().take(2),
-            emitsInOrder([anything, isA<AuthStateUnauthenticated>()]),
+            emitsInOrder([
+              isA<AuthStateUnknown>(),
+              isA<AuthStateUnauthenticated>(),
+            ]),
           );
+
+          expect(await repo.getSession(), isNull);
+          await future;
         },
       );
 

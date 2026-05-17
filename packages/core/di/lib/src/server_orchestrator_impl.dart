@@ -16,6 +16,21 @@ import 'server_context_impl.dart';
 ///
 /// Thread-safety: all public methods serialize through [_operationLock] to
 /// prevent race conditions during concurrent server switches or connects.
+///
+/// ## Broadcast controllers — async delivery
+///
+/// [_activeContextController] and [_contextsController] use the default
+/// async delivery. Listener callbacks fire in a microtask after `add()`,
+/// not inside the orchestrator method that emitted the event.
+///
+/// This matters for re-entrancy: a listener that calls back into the
+/// orchestrator (e.g. a Bloc that observes `watchActiveContext` and
+/// reacts by calling `switchActiveServer`) would otherwise execute
+/// inside the original method's lock-held window, tripping the
+/// `_operationInProgress` guard with a confusing
+/// "Concurrent orchestrator operation attempted" error. With async
+/// delivery the listener runs after the originating method returns
+/// and the lock has been released.
 class ServerOrchestratorImpl implements ServerOrchestrator {
   ServerOrchestratorImpl({
     required ServerRepository serverRepository,

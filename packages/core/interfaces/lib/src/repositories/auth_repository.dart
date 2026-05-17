@@ -51,21 +51,69 @@ abstract class AuthRepository {
   Stream<AuthState> watchAuthState();
 }
 
+/// Sealed hierarchy of authentication states.
+///
+/// ## Value equality
+///
+/// All three variants implement value equality:
+///
+/// - [AuthStateUnknown] and [AuthStateUnauthenticated]: const-no-field
+///   singletons. Dart canonicalises const constructors, so two
+///   `const AuthStateUnknown()` literals are already the same
+///   instance and identity equality works. The explicit
+///   `==`/`hashCode` overrides defend the non-const construction
+///   case (e.g. a caller writing `AuthStateUnknown()` without
+///   `const`) so the type alone determines equality.
+/// - [AuthStateAuthenticated]: compares by `session` (which is an
+///   `AuthResponse` — a freezed model with built-in value equality
+///   from `@freezed`'s generated `==`/`hashCode`).
+///
+/// Value equality matters for [AuthRepositoryStateChanged] in the
+/// bloc layer: that event extends Equatable with `props =
+/// [repoState]`, and Equatable's equality only works correctly if
+/// `repoState`'s own `==` is value-based. Without these overrides,
+/// `AuthRepositoryStateChanged(AuthStateAuthenticated(s)) ==
+/// AuthRepositoryStateChanged(AuthStateAuthenticated(s))` returned
+/// false for freshly-constructed instances, breaking bloc-test
+/// matchers like
+/// `emits(AuthRepositoryStateChanged(AuthStateAuthenticated(expectedSession)))`.
 sealed class AuthState {
   const AuthState();
 }
 
 final class AuthStateUnknown extends AuthState {
   const AuthStateUnknown();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is AuthStateUnknown;
+
+  @override
+  int get hashCode => (AuthStateUnknown).hashCode;
 }
 
 final class AuthStateAuthenticated extends AuthState {
   const AuthStateAuthenticated({required this.session});
   final AuthResponse session;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AuthStateAuthenticated && other.session == session);
+
+  @override
+  int get hashCode => Object.hash(runtimeType, session);
 }
 
 final class AuthStateUnauthenticated extends AuthState {
   const AuthStateUnauthenticated();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is AuthStateUnauthenticated;
+
+  @override
+  int get hashCode => (AuthStateUnauthenticated).hashCode;
 }
 
 sealed class AuthException implements Exception {

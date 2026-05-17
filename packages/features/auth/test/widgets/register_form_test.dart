@@ -19,6 +19,11 @@ Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
 );
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(const AuthSessionCheckRequested());
+    registerFallbackValue(const AuthInitial());
+  });
+
   late MockAuthBloc mockBloc;
 
   setUp(() {

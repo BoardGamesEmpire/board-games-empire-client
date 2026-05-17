@@ -67,13 +67,20 @@ void main() {
       test('emits updated preferences after save', () async {
         const updated = DevicePreferences(maxMonitoredServers: 2);
 
-        final stream = repository.watch();
+        // Subscribe-then-mutate: Drift's .watch() emits
+        // the current value on subscribe (no fake initial yield).
+        // take(2).toList() listens synchronously; pumpEventQueue lets
+        // Drift's initial emission land before we mutate.
+        final futureEmissions = repository.watch().take(2).toList();
+
+        await pumpEventQueue();
+
         await repository.save(updated);
 
-        await expectLater(
-          stream.take(2),
-          emitsInOrder([
-            const DevicePreferences(), // initial
+        expect(
+          await futureEmissions.timeout(const Duration(seconds: 5)),
+          equals([
+            const DevicePreferences(), // initial (no row → defaults)
             updated, // after save
           ]),
         );

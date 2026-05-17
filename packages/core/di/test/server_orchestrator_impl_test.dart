@@ -66,6 +66,10 @@ MockServerContext _mockContext(String serverId) {
 }
 
 void main() {
+  setUpAll(() {
+    registerFallbackValue(ConnectionState.disconnected);
+  });
+
   late MockServerRepository mockRepo;
   late MockDevicePreferencesRepository mockPrefsRepo;
   late Map<String, MockServerContext> mockContexts;
@@ -324,6 +328,10 @@ void main() {
 
     group('watchActiveContext()', () {
       test('emits new context after switch', () async {
+        // Subscribe-then-mutate-then-pump.
+        // The `await pumpEventQueue()` before sub.cancel() drains the
+        // pending delivery microtasks so `emitted` captures both
+        // emissions before the subscription is torn down.
         await orchestrator.initialize();
         stubUpdateConnectionState();
         stubUpdateLastActive();
@@ -332,10 +340,12 @@ void main() {
 
         final emitted = <ServerContext?>[];
         final sub = orchestrator.watchActiveContext().listen(emitted.add);
+        await pumpEventQueue();
 
         await orchestrator.connectServer('server-a');
         await orchestrator.connectServer('server-b', makeActive: true);
 
+        await pumpEventQueue();
         await sub.cancel();
 
         expect(emitted.map((c) => c?.serverId), contains('server-b'));

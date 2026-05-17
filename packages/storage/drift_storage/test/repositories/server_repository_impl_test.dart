@@ -394,20 +394,30 @@ void main() {
         );
       });
 
-      test('emits on add', () async {
-        final stream = repository.watchServers();
+      test(
+        're-emits when a server is added after subscribe',
+        () async {
+          // Subscribe-then-mutate: take(2).toList() listens synchronously
+          // so both the initial emission and the post-mutation emission
+          // are captured.
+          final futureEmissions =
+              repository.watchServers().take(2).toList();
 
-        await _addServer(
-          repository,
-          serverUrl: 'https://a.example.com',
-          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        );
+          await Future<void>.delayed(Duration.zero);
 
-        await expectLater(
-          stream.take(2),
-          emitsInOrder([isEmpty, hasLength(1)]),
-        );
-      });
+          await _addServer(
+            repository,
+            serverUrl: 'https://a.example.com',
+            bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          );
+
+          final emissions =
+              await futureEmissions.timeout(const Duration(seconds: 5));
+          expect(emissions, hasLength(2));
+          expect(emissions[0], isEmpty);
+          expect(emissions[1], hasLength(1));
+        },
+      );
     });
 
     group('watchConnectedCount', () {
@@ -415,17 +425,26 @@ void main() {
         await expectLater(repository.watchConnectedCount().take(1), emits(0));
       });
 
-      test('increments on connection state change', () async {
-        final server = await _addServer(repository);
-        final stream = repository.watchConnectedCount();
+      test(
+        're-emits when connection state changes after subscribe',
+        () async {
+          final server = await _addServer(repository);
+          final futureEmissions =
+              repository.watchConnectedCount().take(2).toList();
 
-        await repository.updateConnectionState(
-          serverId: server.id,
-          newState: ConnectionState.active,
-        );
+          await Future<void>.delayed(Duration.zero);
 
-        await expectLater(stream.take(2), emitsInOrder([0, 1]));
-      });
+          await repository.updateConnectionState(
+            serverId: server.id,
+            newState: ConnectionState.active,
+          );
+
+          expect(
+            await futureEmissions.timeout(const Duration(seconds: 5)),
+            equals([0, 1]),
+          );
+        },
+      );
     });
   });
 }

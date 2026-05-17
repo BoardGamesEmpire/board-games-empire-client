@@ -71,9 +71,12 @@ void main() {
 
       when(() => orchestrator.activeServerId).thenReturn('server_1');
       when(() => orchestrator.getActiveContext()).thenReturn(originalActive);
-      when(
-        () => orchestrator.switchActiveServer('server_2'),
-      ).thenAnswer((_) async {});
+      when(() => orchestrator.switchActiveServer('server_2')).thenAnswer((
+        _,
+      ) async {
+        await originalActive.suspend();
+        await newActive.activate();
+      });
 
       await orchestrator.switchActiveServer('server_2');
 
