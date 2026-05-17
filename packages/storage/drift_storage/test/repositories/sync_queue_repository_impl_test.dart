@@ -46,11 +46,6 @@ void main() {
 
     group('getPendingEntries()', () {
       test('returns pending entries in createdAt order', () async {
-        // Seed with EXPLICIT timestamps so the ordering assertion is
-        // unambiguous: two back-to-back repo.enqueue() calls can
-        // land on the same microsecond on a fast machine, which
-        // would let the pre-fix test (only `hasLength(2)`) silently
-        // hide a real ordering regression.
         final older = DateTime.now().toUtc().subtract(const Duration(
               seconds: 10,
             ));
@@ -83,17 +78,6 @@ void main() {
       test(
         'tiebreaks deterministically by rowId when createdAt collides',
         () async {
-          // Pass-6 Tier-1 fix: ORDER BY createdAt alone is not enough
-          // because DateTime.now() resolves to microseconds and two
-          // back-to-back enqueues on a fast machine can collide on
-          // the same microsecond. Without a tiebreaker, dependent
-          // ops (add → update → remove) could come back out of order
-          // and be sent to the server in the wrong sequence.
-          //
-          // We seed three rows sharing the SAME createdAt timestamp;
-          // SQLite assigns rowids in insertion order on non-WITHOUT-
-          // ROWID tables, and the impl's secondary ORDER BY rowId ASC
-          // pins the result to insertion order.
           final t = DateTime.now().toUtc();
           for (final id in const ['op-a', 'op-b', 'op-c']) {
             await db.into(db.syncQueueTable).insert(
@@ -143,10 +127,6 @@ void main() {
       test(
         'excludes inProgress entries (they go through resetStaleInProgress first)',
         () async {
-          // getPendingEntries returns only 'pending' and 'failed'.
-          // 'inProgress' entries are stuck if the worker died after
-          // markInProgress — they need [resetStaleInProgress] on
-          // startup to be retryable.
           final entry = await repo.enqueue(_kOperation);
           await repo.markInProgress(entry.id);
 
@@ -190,15 +170,6 @@ void main() {
       test(
         'atomic increment: concurrent markFailed calls do not lose retries',
         () async {
-          // Without the atomic UPDATE the prior implementation read
-          // retry_count, then wrote retry_count + 1 in a second
-          // statement. Two concurrent markFailed calls against the
-          // same id could both read the same value and both write
-          // value + 1, losing one increment.
-          //
-          // The fix uses a single UPDATE with a column expression
-          // (`retry_count = retry_count + 1`) so each call sees the
-          // post-image of the previous one.
           final entry = await repo.enqueue(_kOperation);
 
           const concurrent = 5;
@@ -232,7 +203,6 @@ void main() {
           await repo.markInProgress(a.id);
           await repo.markInProgress(b.id);
 
-          // Sanity: both inProgress.
           final pre = await repo.getAllEntries();
           expect(
             pre.where((e) => e.status == SyncStatus.inProgress),
@@ -287,22 +257,14 @@ void main() {
       test(
         'makes a crash-stuck inProgress entry retryable via getPendingEntries',
         () async {
-          // The recovery use case end-to-end: an entry gets
-          // markInProgress'd, the worker process dies before
-          // markCompleted/markFailed, and on the next startup the
-          // entry must end up back in the queue worker's pickup
-          // list — not silently stuck forever.
           final entry = await repo.enqueue(_kOperation);
           await repo.markInProgress(entry.id);
 
-          // Pre-reset: counted as pending by the badge, but the
-          // worker's pickup query never sees it.
           expect(await repo.getPendingCount(), 1);
           expect(await repo.getPendingEntries(), isEmpty);
 
           await repo.resetStaleInProgress();
 
-          // Post-reset: visible to the worker again.
           final pending = await repo.getPendingEntries();
           expect(pending.map((e) => e.id), equals([entry.id]));
           expect(pending.first.status, SyncStatus.pending);
@@ -324,20 +286,332 @@ void main() {
       });
     });
 
-    group('getPendingCount() / watchPendingCount() — _pendingPredicate symmetry', () {
-      // Pass-6 Tier-1 fix: the count and watch used to filter by
-      // `status IN ('pending', 'inProgress')`, while getPendingEntries
-      // returns rows in `('pending', 'failed') AND retryCount <
-      // maxRetries`. The two diverged: after a transient network
-      // failure, the badge dropped to 0 even though the worker would
-      // retry the entry on its next cycle.
-      //
-      // The fixed impl extracts the predicate into _pendingPredicate
-      // shared by both count and watch, matching getPendingEntries +
-      // inProgress. These tests lock in the symmetry — a future
-      // change to one of {predicate, getPendingEntries} must come
-      // with a matching change to the other or these tests fail.
+    // ── remapCollectionId ─────────────────────────────────────────────────────────────
 
+    group('remapCollectionId()', () {
+      // Pass-7 commit 1: the sync-queue side of the fix for
+      // Copilot fourth-pass thread 1. Locks in the behaviour
+      // that lets reconcileFromServer rewrite pending Update /
+      // Remove ops when the server reassigns the canonical id
+      // of a collection row.
+
+      test(
+        'rewrites a pending UpdateCollectionOperation that targets oldId',
+        () async {
+          final entry = await repo.enqueue(
+            const UpdateCollectionOperation(
+              collectionId: 'local-1',
+              rating: 9,
+              favorite: true,
+            ),
+          );
+
+          final remapped = await repo.remapCollectionId(
+            oldCollectionId: 'local-1',
+            newCollectionId: 'server-99',
+          );
+          expect(remapped, equals(1));
+
+          final updated = (await repo.getAllEntries()).single;
+          expect(updated.id, equals(entry.id));
+          final op =
+              SyncOperation.deserialize(updated.payload)
+                  as UpdateCollectionOperation;
+          expect(op.collectionId, equals('server-99'));
+          // Other fields preserved.
+          expect(op.rating, equals(9));
+          expect(op.favorite, isTrue);
+        },
+      );
+
+      test(
+        'rewrites a pending RemoveFromCollectionOperation that targets oldId',
+        () async {
+          await repo.enqueue(
+            const RemoveFromCollectionOperation(collectionId: 'local-1'),
+          );
+
+          final remapped = await repo.remapCollectionId(
+            oldCollectionId: 'local-1',
+            newCollectionId: 'server-99',
+          );
+          expect(remapped, equals(1));
+
+          final op =
+              SyncOperation.deserialize(
+                    (await repo.getAllEntries()).single.payload,
+                  )
+                  as RemoveFromCollectionOperation;
+          expect(op.collectionId, equals('server-99'));
+        },
+      );
+
+      test(
+        'rewrites a pending AddToCollectionOperation whose localId == oldId',
+        () async {
+          // The localId on AddToCollectionOperation is informational
+          // (the server uses it for reconciliation echo), but we still
+          // keep it consistent with the canonical id so the queue's
+          // serialised form doesn't lie about which local row it
+          // created.
+          await repo.enqueue(
+            const AddToCollectionOperation(
+              localId: 'local-1',
+              platformGameId: 'pg-7',
+              medium: 'Digital',
+              quantity: 1,
+            ),
+          );
+
+          final remapped = await repo.remapCollectionId(
+            oldCollectionId: 'local-1',
+            newCollectionId: 'server-99',
+          );
+          expect(remapped, equals(1));
+
+          final op =
+              SyncOperation.deserialize(
+                    (await repo.getAllEntries()).single.payload,
+                  )
+                  as AddToCollectionOperation;
+          expect(op.localId, equals('server-99'));
+          expect(op.platformGameId, equals('pg-7'));
+          expect(op.medium, equals('Digital'));
+        },
+      );
+
+      test(
+        'rewrites every retryable entry that targets oldId in a single call',
+        () async {
+          // End-to-end scenario the production callsite exercises:
+          // user added + updated + removed a single local-only row,
+          // all three ops are queued, then the server reassigns the
+          // id. All three must be rewritten in one go.
+          await repo.enqueue(
+            const AddToCollectionOperation(
+              localId: 'local-X',
+              platformGameId: 'pg-1',
+              medium: 'Physical',
+              quantity: 1,
+            ),
+          );
+          await repo.enqueue(
+            const UpdateCollectionOperation(
+              collectionId: 'local-X',
+              rating: 8,
+            ),
+          );
+          await repo.enqueue(
+            const RemoveFromCollectionOperation(collectionId: 'local-X'),
+          );
+
+          final remapped = await repo.remapCollectionId(
+            oldCollectionId: 'local-X',
+            newCollectionId: 'server-Y',
+          );
+          expect(remapped, equals(3));
+
+          final entries = await repo.getAllEntries();
+          final ids = entries
+              .map((e) => SyncOperation.deserialize(e.payload))
+              .map(
+                (op) => switch (op) {
+                  AddToCollectionOperation() => op.localId,
+                  UpdateCollectionOperation() => op.collectionId,
+                  RemoveFromCollectionOperation() => op.collectionId,
+                },
+              )
+              .toList();
+          expect(ids, everyElement(equals('server-Y')));
+        },
+      );
+
+      test('leaves ops that do not target oldId untouched', () async {
+        // Mix of targets — only the local-1 ops should be rewritten.
+        await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 5),
+        );
+        await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'other-id', rating: 7),
+        );
+        await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'unrelated'),
+        );
+
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(1));
+
+        final targets = (await repo.getAllEntries())
+            .map((e) => SyncOperation.deserialize(e.payload))
+            .map(
+              (op) => switch (op) {
+                AddToCollectionOperation() => op.localId,
+                UpdateCollectionOperation() => op.collectionId,
+                RemoveFromCollectionOperation() => op.collectionId,
+              },
+            )
+            .toSet();
+        expect(targets, equals({'server-99', 'other-id', 'unrelated'}));
+      });
+
+      test('does not touch completed entries', () async {
+        // The op already shipped to the server with the old id and
+        // got confirmed. Rewriting now would put the queue out of
+        // sync with what the server already accepted.
+        final entry = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 9),
+        );
+        await repo.markCompleted(entry.id);
+
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(0));
+
+        final op =
+            SyncOperation.deserialize(
+                  (await repo.getAllEntries()).single.payload,
+                )
+                as UpdateCollectionOperation;
+        expect(op.collectionId, equals('local-1'));
+      });
+
+      test('does not touch inProgress entries', () async {
+        // Same rationale as completed — the worker has already sent
+        // the op (or is sending it now) with the old id.
+        // resetStaleInProgress is the only path back to retryable
+        // for an inProgress entry; the remap should run AFTER that.
+        final entry = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'local-1'),
+        );
+        await repo.markInProgress(entry.id);
+
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(0));
+
+        final op =
+            SyncOperation.deserialize(
+                  (await repo.getAllEntries()).single.payload,
+                )
+                as RemoveFromCollectionOperation;
+        expect(op.collectionId, equals('local-1'));
+      });
+
+      test(
+        'does not touch failed entries that exhausted maxRetries',
+        () async {
+          // Symmetric with getPendingEntries: once an entry has burned
+          // its retry budget, the worker won't pick it up, and remap
+          // shouldn't rewrite it either. The op is effectively dead
+          // queue contents waiting to be purged.
+          final entry = await repo.enqueue(
+            const UpdateCollectionOperation(
+              collectionId: 'local-1',
+              rating: 1,
+            ),
+          );
+          for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+            await repo.markFailed(entry.id, error: 'fail $i');
+          }
+
+          final remapped = await repo.remapCollectionId(
+            oldCollectionId: 'local-1',
+            newCollectionId: 'server-99',
+          );
+          expect(remapped, equals(0));
+
+          final op =
+              SyncOperation.deserialize(
+                    (await repo.getAllEntries()).single.payload,
+                  )
+                  as UpdateCollectionOperation;
+          expect(op.collectionId, equals('local-1'));
+        },
+      );
+
+      test(
+        'rewrites retryable failed entries (still outstanding work)',
+        () async {
+          // The retryable-failed case: the worker hit a transient
+          // error, the entry is still in the pickup set, and the
+          // server may now respond with a different canonical id
+          // on the next attempt. The op must be rewritten so the
+          // retry uses the new id.
+          final entry = await repo.enqueue(
+            const UpdateCollectionOperation(
+              collectionId: 'local-1',
+              rating: 6,
+            ),
+          );
+          await repo.markFailed(entry.id, error: 'transient timeout');
+
+          final remapped = await repo.remapCollectionId(
+            oldCollectionId: 'local-1',
+            newCollectionId: 'server-99',
+          );
+          expect(remapped, equals(1));
+
+          final op =
+              SyncOperation.deserialize(
+                    (await repo.getAllEntries()).single.payload,
+                  )
+                  as UpdateCollectionOperation;
+          expect(op.collectionId, equals('server-99'));
+        },
+      );
+
+      test('is a no-op when oldId == newId', () async {
+        // Defensive short-circuit. The production callsite already
+        // guards against this (reconcileFromServer only calls remap
+        // when local.id != serverEntry.id), but the contract should
+        // also be safe in isolation: a redundant remap shouldn't
+        // re-serialise the payload and re-bump updatedAt-like state.
+        await repo.enqueue(
+          const UpdateCollectionOperation(
+            collectionId: 'local-1',
+            rating: 5,
+          ),
+        );
+
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'local-1',
+        );
+        expect(remapped, equals(0));
+      });
+
+      test('returns 0 when no entries reference oldId', () async {
+        await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'other-id'),
+        );
+        await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'unrelated'),
+        );
+
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(0));
+      });
+
+      test('returns 0 when the queue is empty', () async {
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(0));
+      });
+    });
+
+    group('getPendingCount() / watchPendingCount() — _pendingPredicate symmetry', () {
       test('counts pending entries', () async {
         await repo.enqueue(_kOperation);
         await repo.enqueue(
@@ -363,10 +637,6 @@ void main() {
       test(
         'INCLUDES failed entries that have not exceeded maxRetries',
         () async {
-          // The whole point of the fix: a transient network failure
-          // bumps the entry to status=failed, but the worker will
-          // pick it up again on the next cycle, so it IS outstanding
-          // work and the badge should reflect that.
           final entry = await repo.enqueue(_kOperation);
           await repo.markFailed(entry.id, error: 'timeout');
 
@@ -377,10 +647,6 @@ void main() {
       test(
         'EXCLUDES failed entries that exhausted maxRetries',
         () async {
-          // Symmetric with getPendingEntries — once the entry has
-          // burned through its retry budget, the worker won't pick
-          // it up, so it's no longer outstanding work and shouldn't
-          // count toward the badge either.
           final entry = await repo.enqueue(_kOperation);
           for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
             await repo.markFailed(entry.id, error: 'error $i');
@@ -404,10 +670,6 @@ void main() {
       test(
         'watchPendingCount also includes retryable failed entries',
         () async {
-          // The same predicate fix applies to the watch. Without it,
-          // the live badge would drop to 0 immediately when the
-          // worker marked the entry failed, then re-appear only when
-          // some other queue mutation happened to fire the .watch().
           final entry = await repo.enqueue(_kOperation);
           await repo.markFailed(entry.id, error: 'timeout');
 
@@ -418,16 +680,12 @@ void main() {
 
     group('watchPendingCount()', () {
       test('emits the current pending count on subscribe', () async {
-        // Empty queue → emits 0 immediately on subscribe.
         await expectLater(repo.watchPendingCount().take(1), emits(0));
       });
 
       test(
         'emits the current count when entries exist at subscribe time',
         () async {
-          // Pass 3c change: the wrapper used to prepend a fake `yield 0`
-          // before the real value. Now we get the actual current count
-          // on first emission.
           await repo.enqueue(_kOperation);
           await expectLater(repo.watchPendingCount().take(1), emits(1));
         },
@@ -436,10 +694,6 @@ void main() {
       test(
         're-emits when an entry is enqueued after subscribe',
         () async {
-          // Subscribe-then-mutate: take(2).toList() listens synchronously
-          // and returns a Future that resolves when both emissions arrive.
-          // The empty Future.delayed yields the event loop so Drift's
-          // initial emission lands before the enqueue mutates the table.
           final futureEmissions =
               repo.watchPendingCount().take(2).toList();
 
@@ -507,11 +761,6 @@ void main() {
       test(
         'throws StateError on a corrupt or unknown status value in the DB',
         () async {
-          // Seed a row directly with a bogus status string, bypassing
-          // the repo's write path. A future code-side enum extension
-          // or DB corruption must surface here rather than be silently
-          // coerced into 'pending' (which would cause the corrupt row
-          // to be retried as a live sync op against the server).
           await db
               .into(db.syncQueueTable)
               .insert(
@@ -533,9 +782,6 @@ void main() {
       test(
         'no longer accepts the legacy snake_case "in_progress" form',
         () async {
-          // Pre-production, no v1-state DBs exist, so the
-          // backwards-compat arm was dropped. The canonical wire form
-          // is the camelCase [SyncStatus] name (`inProgress`).
           await db
               .into(db.syncQueueTable)
               .insert(
