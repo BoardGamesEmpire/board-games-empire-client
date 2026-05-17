@@ -80,8 +80,12 @@ import '../databases/server_database.dart';
 ///   nor enqueuing a second `RemoveFromCollectionOperation`.
 ///
 /// Tombstones are physically purged by [reconcileFromServer] when
-/// the server confirms a removal (server entry with
-/// `deletedAt != null`). See the method doc for the full flow.
+/// the server confirms a removal. The purge is SURGICAL: it
+/// deletes tombstones and server-confirmed live rows for the
+/// matching triplet, but preserves any local-only live row
+/// (`deletedAt == null && isLocalOnly == true`) that represents
+/// an unsynced re-add intent. See [reconcileFromServer] for the
+/// race scenario the carve-out defends against.
 ///
 /// ## addToCollection / reconcileFromServer canonical-row lookup
 ///
@@ -441,14 +445,19 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   /// branch becomes a no-op (local.id == serverEntry.id always)
   /// without any client-side change.
   ///
-  /// ## Tombstone confirmation
+  /// ## Tombstone confirmation (surgical purge)
   ///
   /// When `serverEntry.deletedAt` is non-null, the server has
-  /// confirmed a removal. This call physically deletes every local
-  /// row for the `(userId, platformGameId, medium)` triplet — live
-  /// row, current tombstone, and any older tombstones that may
-  /// have accumulated. No upsert of the server entry happens; the
-  /// row is gone.
+  /// confirmed a removal. This call deletes every tombstone and
+  /// every server-confirmed live row for the matching triplet —
+  /// but preserves local-only resurrections
+  /// (`deletedAt == null && isLocalOnly == true`) so the
+  /// remove→add→stale-confirmation race doesn't clobber the user's
+  /// pending re-add. See the interface doc for the race scenario;
+  /// the predicate's exclusion clause is the carve-out.
+  ///
+  /// No upsert of the server entry happens in this branch; row
+  /// identity is owned by the queue from here on.
   ///
   /// ## Live-entry upsert
   ///
@@ -456,6 +465,13 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   /// upserted with `isDirty: false, isLocalOnly: false`. If the
   /// local row had a different id, that stale row is dropped
   /// before the upsert (after the remap).
+  ///
+  /// **TODO(server-driven-dirty-merge)**: see the interface
+  /// `reconcileFromServer` doc — this upsert clobbers unsynced
+  /// local dirty edits when the reconcile is a server-driven
+  /// background pull (no `completedSyncQueueId`). Phase 3 sync-
+  /// orchestrator scope: split into `acknowledge` /
+  /// `mergeFromServer` with explicit conflict resolution.
   ///
   /// ## Sync-queue closure
   ///
@@ -503,15 +519,41 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       final serverIsTombstone = serverEntry.deletedAt != null;
 
       if (serverIsTombstone) {
-        // Server confirmed removal. Physically delete every local
-        // row for this triplet — the server's confirmation
-        // supersedes any local state, including older tombstones
-        // that may have accumulated. No upsert.
+        // Surgical purge. Pre-Pass-8, the predicate was a broad
+        // `userId AND platformGameId AND medium` sweep that deleted
+        // every row for the triplet — including a local-only
+        // resurrection that had appeared AFTER the original
+        // tombstone was synced. The exclusion clause
+        // `(deletedAt.isNotNull() OR isLocalOnly.equals(false))`
+        // defends the resurrection:
+        //
+        // 1. User removes → tombstone (deletedAt set,
+        //    isLocalOnly=false), RemoveOp queued.
+        // 2. RemoveOp completes — server has tombstoned the row.
+        // 3. User re-adds. addToCollection resurrects the tombstone
+        //    via _findCanonicalRow: same id, deletedAt cleared,
+        //    isLocalOnly flipped to true, AddOp queued.
+        // 4. The server's confirmation of the step-1 removal —
+        //    which has been in flight — finally arrives here.
+        //
+        // Pre-fix the purge deleted the resurrection along with
+        // any other tombstones for the triplet. The pending AddOp
+        // continued through the queue under an id whose row was
+        // gone, leaving a dangling op and silently dropping the
+        // user's re-add intent.
+        //
+        // Post-fix: the resurrection has `deletedAt == null AND
+        // isLocalOnly == true`, so the exclusion clause filters
+        // it out of the delete predicate. Tombstones (deletedAt
+        // not null) and server-confirmed lives (isLocalOnly false)
+        // for the triplet are still deleted, which keeps the
+        // multi-tombstone cleanup behaviour intact.
         await (_db.delete(_db.gameCollectionsTable)..where(
               (t) =>
                   t.userId.equals(_userId) &
                   t.platformGameId.equals(serverEntry.platformGameId) &
-                  t.medium.equals(serverEntry.medium.toWire()),
+                  t.medium.equals(serverEntry.medium.toWire()) &
+                  (t.deletedAt.isNotNull() | t.isLocalOnly.equals(false)),
             ))
             .go();
       } else {
