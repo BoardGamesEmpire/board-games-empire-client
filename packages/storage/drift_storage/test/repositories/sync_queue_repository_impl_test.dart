@@ -656,6 +656,84 @@ void main() {
         },
       );
 
+      test(
+        'EXCLUDES pending entries with retryCount >= maxRetries '
+        '(Pass-8 thread #1: post-resetStaleInProgress dead weight)',
+        () async {
+          // Reachable in production via:
+          // 1. enqueue → markInProgress → markFailed (loop until
+          //    retryCount == maxRetries-1, status=failed)
+          // 2. a worker manually calls markInProgress on the failed
+          //    row (for diagnostics or a manual retry attempt)
+          // 3. the worker crashes
+          // 4. resetStaleInProgress flips inProgress → pending
+          //    WITHOUT touching retryCount
+          //
+          // Result: status='pending', retryCount=maxRetries-1. One
+          // more failed cycle and we're at retryCount=maxRetries
+          // still in pending after the next resetStaleInProgress.
+          //
+          // The pre-Pass-8 _pendingPredicate counted this row as
+          // outstanding (status IN ('pending', 'inProgress') had
+          // no retry guard) while getPendingEntries excluded it
+          // (its retry guard applies to all retryable statuses).
+          // Badge inflation by dead weight the worker can't touch.
+          //
+          // Direct-insert is the cleanest way to construct the
+          // state; the multi-step path through the public API
+          // produces the same row but at the cost of test
+          // signal-to-noise.
+          await db
+              .into(db.syncQueueTable)
+              .insert(
+                SyncQueueTableCompanion.insert(
+                  id: 'dead-pending',
+                  payload: _kOperation.serialized,
+                  status: const Value('pending'),
+                  retryCount: const Value(SyncQueueEntry.maxRetries),
+                  createdAt: DateTime.now().toUtc(),
+                ),
+              );
+
+          // Predicate-driven count: row excluded.
+          expect(await repo.getPendingCount(), 0);
+          // Watch stream agrees: same predicate.
+          await expectLater(repo.watchPendingCount().take(1), emits(0));
+          // Worker pickup set agrees: same retry cap. Locks in the
+          // symmetry between the two predicates.
+          expect(await repo.getPendingEntries(), isEmpty);
+        },
+      );
+
+      test(
+        'EXCLUDES inProgress entries with retryCount >= maxRetries '
+        '(Pass-8 thread #1: defensive)',
+        () async {
+          // Companion to the pending case. Not reachable through the
+          // public API in normal flow (markInProgress doesn't touch
+          // retryCount; markFailed sets status='failed' at the same
+          // time it bumps retry), but a future code path or
+          // direct-DB migration during the recovery scripts could
+          // land it. The predicate must exclude it for the same
+          // reason as the pending case: the worker won't pick it up
+          // anyway, so the badge shouldn't pretend it's outstanding.
+          await db
+              .into(db.syncQueueTable)
+              .insert(
+                SyncQueueTableCompanion.insert(
+                  id: 'dead-inprogress',
+                  payload: _kOperation.serialized,
+                  status: const Value('inProgress'),
+                  retryCount: const Value(SyncQueueEntry.maxRetries),
+                  createdAt: DateTime.now().toUtc(),
+                ),
+              );
+
+          expect(await repo.getPendingCount(), 0);
+          await expectLater(repo.watchPendingCount().take(1), emits(0));
+        },
+      );
+
       test('excludes completed entries', () async {
         final entry = await repo.enqueue(_kOperation);
         await repo.markCompleted(entry.id);
