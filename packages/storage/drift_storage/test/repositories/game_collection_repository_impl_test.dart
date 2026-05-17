@@ -357,6 +357,90 @@ void main() {
           expect(first.rating, equals(3));
         },
       );
+
+      test(
+        'resurrection preserves play history and prior rating/comment '
+        'when caller omits them (Pass-9 thread #5)',
+        () async {
+          // The design call, documented in
+          // `GameCollectionRepository.addToCollection` and in the
+          // repo impl's "Resurrection preserves play history"
+          // section: removing a collection entry means "I don't
+          // own this anymore", not "I never played this." Per-game
+          // metadata — play history AND opinion fields — survives
+          // the remove → re-add cycle. rating/comment follow the
+          // updateCollectionEntry null-handling: null/omitted means
+          // leave-unchanged, so they also survive when the caller
+          // doesn't supply new values (closes the pre-Pass-9
+          // asymmetry between the resurrection branch and the
+          // live-row update branch).
+          //
+          // This test pins ALL the preserved columns at once, so a
+          // future regression that resets any of them — playCount,
+          // playAgain, favorite, lastPlayed, rating, comment —
+          // fails here loudly with a clear name.
+          final first = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 2,
+            rating: 8,
+            comment: 'great party game',
+          );
+
+          // Simulate play history accumulated over the entry's
+          // lifetime: 5 plays, favorited, marked "would play
+          // again", last played on a known date.
+          final lastPlayedTimestamp = DateTime.utc(2025, 6, 1);
+          await repo.updateCollectionEntry(
+            id: first.id,
+            playCount: 5,
+            playAgain: true,
+            favorite: true,
+            lastPlayed: lastPlayedTimestamp,
+          );
+
+          // Tombstone, then re-add WITHOUT supplying any optional
+          // fields — only the required triplet identity and a
+          // fresh quantity.
+          await repo.removeFromCollection(first.id);
+          final second = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            // rating + comment intentionally omitted.
+          );
+
+          // Same row resurrected, lifecycle flags reset.
+          expect(second.id, equals(first.id));
+          expect(second.deletedAt, isNull);
+          expect(second.isDirty, isTrue);
+          expect(second.isLocalOnly, isTrue);
+
+          // Quantity uses the caller-supplied value — a fresh
+          // ownership declaration, NOT a sum of prior + new.
+          expect(second.quantity, equals(1));
+
+          // Play history preserved: the resurrection write must
+          // not touch these columns.
+          expect(second.playCount, equals(5));
+          expect(second.playAgain, isTrue);
+          expect(second.favorite, isTrue);
+          expect(second.lastPlayed, equals(lastPlayedTimestamp));
+
+          // Rating + comment preserved: caller didn't supply new
+          // values, so Value.absent() guards leave the prior
+          // values alone — symmetric with the live-row update
+          // branch's null-handling.
+          expect(second.rating, equals(8));
+          expect(second.comment, equals('great party game'));
+
+          // The collection presents exactly one live entry under
+          // the resurrected id.
+          final collection = await repo.getCollection();
+          expect(collection, hasLength(1));
+          expect(collection.single.id, equals(first.id));
+        },
+      );
     });
 
     group('updateCollectionEntry()', () {
