@@ -38,7 +38,15 @@ abstract class Game with _$Game {
     int? minAge,
 
     double? complexity,
-    @Default(ContentType.baseGame) ContentType contentType,
+    // `unknownEnumValue` makes Game.fromJson degrade gracefully when the
+    // server adds a new ContentType variant before this client has been
+    // updated — the unknown wire value lands on ContentType.unknown
+    // instead of throwing during deserialization. Matches the
+    // ContentType.fromWire() fallback used by the Drift mapper, so the
+    // JSON path and the storage path now agree.
+    @JsonKey(unknownEnumValue: ContentType.unknown)
+    @Default(ContentType.baseGame)
+    ContentType contentType,
 
     // Aggregate metadata from server
     @Default(0) int totalPlayCount,
