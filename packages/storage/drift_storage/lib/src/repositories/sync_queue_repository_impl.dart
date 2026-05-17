@@ -13,11 +13,12 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   @override
   Future<SyncQueueEntry> enqueue(SyncOperation operation) async {
     // cuid2 id — matches the format used everywhere else in the
-    // codebase (game collections, household entities, the backend's
-    // Prisma `@default(cuid())`). Sync-queue ids never round-trip
-    // to the server, so the format is a pure codebase-consistency
-    // choice here — a log scanner inspecting both queue entries and
-    // their target rows sees one id format throughout.
+    // codebase (game collections, household entities, the
+    // backend's explicit cuid2 usage). Sync-queue ids never
+    // round-trip to the server, so the format is a pure
+    // codebase-consistency choice here — a log scanner inspecting
+    // both queue entries and their target rows sees one id format
+    // throughout.
     final id = cuid();
     final now = DateTime.now().toUtc();
 
