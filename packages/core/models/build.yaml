@@ -1,0 +1,22 @@
+# Build configuration for `package:models`.
+#
+# `explicit_to_json: true` tells json_serializable to recursively call
+# `.toJson()` on nested objects when serialising a containing class.
+# Without it, a Freezed/json_serializable class with another Freezed
+# class as a field passes the nested object through to the output map
+# *as a Dart instance*, so `containing.toJson()['nested']` is a `_Foo`
+# rather than a `Map<String, dynamic>`. That's a footgun: tests, HTTP
+# bodies, and storage round-trips all silently produce the wrong shape
+# until a downstream consumer tries to subscript the nested field and
+# trips on `NoSuchMethodError: Class '_Foo' has no instance method '[]'`.
+#
+# Notable affected DTOs in this package today: `AuthResponse` nests
+# `User`, and `BgeSessionResponse` nests both `BgeSession` and `User`.
+# Setting the option globally avoids per-class annotations and
+# guarantees every future nested DTO inherits the safe default.
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          explicit_to_json: true
