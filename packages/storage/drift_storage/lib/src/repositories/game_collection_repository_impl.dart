@@ -28,6 +28,12 @@ import '../databases/server_database.dart';
 /// throw [StateError] if it does not exist; the transaction then
 /// rolls back without enqueuing a sync op.
 ///
+/// `reconcileFromServer` extends the same boundary to inbound server
+/// responses: it verifies `serverEntry.userId == currentUserId` and
+/// throws [StateError] if the response is for a different user. A
+/// wrong/stale server response or a buggy caller cannot inject
+/// another user's collection row into this repository's cache.
+///
 /// ## Quantity validation
 ///
 /// `addToCollection.quantity` must be `> 0`. `updateCollectionEntry.quantity`
@@ -59,14 +65,18 @@ import '../databases/server_database.dart';
 ///   tombstoned row is a silent no-op, neither bumping `deletedAt`
 ///   nor enqueuing a second `RemoveFromCollectionOperation`.
 ///
-/// ## addToCollection / reconcileFromServer semantics on duplicate triplet
+/// Tombstones are physically purged by [reconcileFromServer] when
+/// the server confirms a removal (server entry with
+/// `deletedAt != null`). See the method doc for the full flow.
+///
+/// ## addToCollection / reconcileFromServer canonical-row lookup
 ///
 /// Both methods need to find "the" canonical local row for a
 /// `(userId, platformGameId, medium)` triplet — except the schema
 /// permits multiple tombstoned rows per triplet, so a bare
 /// [SingleOrNullSelectable.getSingleOrNull] throws [StateError] the
 /// moment two or more tombstones coexist. Both methods therefore
-/// use the same ordered+limited lookup pattern:
+/// use the same ordered+limited lookup helper, [_findCanonicalRow]:
 ///
 /// ```text
 /// ORDER BY (deletedAt IS NULL) DESC, updatedAt DESC LIMIT 1
@@ -75,7 +85,7 @@ import '../databases/server_database.dart';
 /// which picks the live row if any, else the most recent tombstone,
 /// else nothing — never throws.
 ///
-/// `addToCollection` then branches on the result:
+/// `addToCollection` branches on the result:
 ///
 /// - **No row exists**: fresh insert with a new UUID v4 id.
 /// - **Live row exists**: increment `quantity` by the requested
@@ -90,9 +100,9 @@ import '../databases/server_database.dart';
 /// with the final post-write quantity; the server is expected to
 /// dedup or merge on its side.
 ///
-/// `reconcileFromServer` uses the lookup to decide whether to drop
-/// a stale local row whose id differs from the server's canonical
-/// id (see [reconcileFromServer] for the full flow).
+/// `reconcileFromServer` uses the same helper to detect id
+/// reassignment and tombstone confirmation — see [reconcileFromServer]
+/// for the full flow.
 class GameCollectionRepositoryImpl implements GameCollectionRepository {
   GameCollectionRepositoryImpl({
     required ServerDatabase db,
@@ -371,6 +381,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       // Tombstone via deletedAt. The partial unique index ignores
       // tombstoned rows, so a subsequent addToCollection on the same
       // triplet can resurrect this row (see addToCollection).
+      // Physical purge happens later via reconcileFromServer.
       await (_db.update(_db.gameCollectionsTable)
             ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
           .write(
@@ -387,51 +398,123 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     });
   }
 
+  /// Reconciles a confirmed server response.
+  ///
+  /// ## Current-user boundary
+  ///
+  /// Verifies `serverEntry.userId == _userId` and throws [StateError]
+  /// otherwise. The repository is scoped to a single user and cannot
+  /// silently persist another user's row — a wrong/stale server
+  /// response or a buggy caller is a programming error, not a data
+  /// condition to absorb.
+  ///
+  /// ## Id reassignment + pending-op remap
+  ///
+  /// If the server returns a canonical id different from the local
+  /// row's id (e.g. the server prefers its own UUID generator), any
+  /// pending Update/Remove ops queued against the local-only id
+  /// would otherwise be sent to the server with an id the server
+  /// doesn't know. This method calls
+  /// [SyncQueueRepository.remapCollectionId] to rewrite those
+  /// payloads BEFORE dropping the stale local row.
+  ///
+  /// ## Tombstone confirmation
+  ///
+  /// When `serverEntry.deletedAt` is non-null, the server has
+  /// confirmed a removal. This call physically deletes every local
+  /// row for the `(userId, platformGameId, medium)` triplet — live
+  /// row, current tombstone, and any older tombstones that may
+  /// have accumulated. No upsert of the server entry happens; the
+  /// row is gone.
+  ///
+  /// ## Live-entry upsert
+  ///
+  /// When `serverEntry.deletedAt` is null, the local row is
+  /// upserted with `isDirty: false, isLocalOnly: false`. If the
+  /// local row had a different id, that stale row is dropped
+  /// before the upsert (after the remap).
+  ///
+  /// ## Sync-queue closure
+  ///
+  /// If [completedSyncQueueId] is provided, the matching queue
+  /// entry is marked completed in the same Drift transaction. If
+  /// any step throws, all writes roll back together.
   @override
   Future<void> reconcileFromServer(
     GameCollection serverEntry, {
     String? completedSyncQueueId,
   }) async {
+    // Boundary check: fail fast BEFORE opening the transaction so
+    // the local cache and sync queue stay untouched on a
+    // misrouted server response.
+    if (serverEntry.userId != _userId) {
+      throw StateError(
+        'reconcileFromServer received an entry for userId '
+        '"${serverEntry.userId}" but this repository is scoped to '
+        '"$_userId". Server response routing is misconfigured.',
+      );
+    }
+
     return _db.transaction(() async {
-      // Find any local row for the same triplet (live or tombstoned).
-      // We need to see tombstones too because the server-confirmed
-      // entry may correspond to a row we already tombstoned locally.
-      //
-      // Uses the same ordered+limited lookup as [addToCollection]:
-      // the schema permits multiple tombstones per triplet, so a
-      // bare getSingleOrNull() would throw [StateError] the moment
-      // two or more coexist. The order+limit form picks the live
-      // row if any, else the most recent tombstone, else nothing,
-      // and never throws.
+      // Look up any local row for the same triplet (live or
+      // tombstoned). The schema permits multiple tombstones per
+      // triplet, so this uses the same ordered+limited helper as
+      // addToCollection: picks the live row if any, else the most
+      // recent tombstone, else nothing — never throws.
       final local = await _findCanonicalRow(
         platformGameId: serverEntry.platformGameId,
         wireMedium: serverEntry.medium.toWire(),
       );
 
-      // Drop the local row if its id differs from the server's
-      // canonical id (server reassigned during sync).
+      // Id reassignment: rewrite pending Update/Remove ops that
+      // reference the OLD local id so they don't get sent to the
+      // server with an unknown id once we drop the local row
+      // below.
       if (local != null && local.id != serverEntry.id) {
-        await (_db.delete(_db.gameCollectionsTable)
-              ..where((t) => t.id.equals(local.id)))
-            .go();
+        await _syncQueue.remapCollectionId(
+          oldCollectionId: local.id,
+          newCollectionId: serverEntry.id,
+        );
       }
 
-      await _db
-          .into(_db.gameCollectionsTable)
-          .insertOnConflictUpdate(
-            _modelToCompanion(
-              serverEntry.copyWith(isDirty: false, isLocalOnly: false),
-            ),
-          );
+      final serverIsTombstone = serverEntry.deletedAt != null;
+
+      if (serverIsTombstone) {
+        // Server confirmed removal. Physically delete every local
+        // row for this triplet — the server's confirmation
+        // supersedes any local state, including older tombstones
+        // that may have accumulated. No upsert.
+        await (_db.delete(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  t.platformGameId.equals(serverEntry.platformGameId) &
+                  t.medium.equals(serverEntry.medium.toWire()),
+            ))
+            .go();
+      } else {
+        // Live entry path. Drop the stale local row if its id
+        // differs (after we already remapped any pending ops
+        // referencing it above), then upsert with the canonical
+        // server id.
+        if (local != null && local.id != serverEntry.id) {
+          await (_db.delete(_db.gameCollectionsTable)
+                ..where((t) => t.id.equals(local.id)))
+              .go();
+        }
+        await _db
+            .into(_db.gameCollectionsTable)
+            .insertOnConflictUpdate(
+              _modelToCompanion(
+                serverEntry.copyWith(isDirty: false, isLocalOnly: false),
+              ),
+            );
+      }
 
       // Close the loop with the queued op that triggered this server
       // write, if the caller knows which one it was. Drift's
       // zone-scoped transactions mean the sync-queue update
-      // participates in the same transaction as the upsert above:
-      // if either step throws, both roll back together. This is
-      // what the [GameCollectionRepository.reconcileFromServer]
-      // contract promises ("clears the associated sync queue entry
-      // in the same transaction").
+      // participates in the same transaction as the writes above:
+      // if either step throws, both roll back together.
       if (completedSyncQueueId != null) {
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
