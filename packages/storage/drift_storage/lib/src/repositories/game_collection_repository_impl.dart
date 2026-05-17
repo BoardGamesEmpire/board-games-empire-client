@@ -93,11 +93,13 @@ import '../databases/server_database.dart';
 /// use the same ordered+limited lookup helper, [_findCanonicalRow]:
 ///
 /// ```text
-/// ORDER BY (deletedAt IS NULL) DESC, updatedAt DESC LIMIT 1
+/// ORDER BY (deletedAt IS NULL) DESC, updatedAt DESC, rowId DESC LIMIT 1
 /// ```
 ///
 /// which picks the live row if any, else the most recent tombstone,
-/// else nothing — never throws.
+/// else nothing — deterministically, never throws. The `rowId DESC`
+/// tail breaks ties when multiple rows share the same `updatedAt`
+/// (microsecond-precision collision on a fast machine).
 ///
 /// `addToCollection` branches on the result:
 ///
@@ -589,6 +591,22 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
             // prevent older orphans from a corrupt state), prefer
             // the most recently touched row.
             (t) => OrderingTerm.desc(t.updatedAt),
+            // Deterministic tiebreaker when multiple rows share the
+            // same updatedAt. DateTime.now().toUtc() resolves to
+            // microseconds, so two tombstones produced by a fast
+            // addToCollection → removeFromCollection burst on a
+            // quick machine can land on the same microsecond — in
+            // which case the prior `(deletedAt IS NULL) DESC,
+            // updatedAt DESC` ordering would let SQLite pick either
+            // row implementation-definedly, so the resurrection path
+            // in addToCollection could revive different tombstones
+            // across runs. SQLite assigns rowids in insertion order
+            // on non-WITHOUT-ROWID tables; `.desc(rowId)` therefore
+            // selects the most recently inserted row when updatedAt
+            // is identical, which is the consistent extension of
+            // "prefer the most recent tombstone" already encoded in
+            // the previous term.
+            (t) => OrderingTerm.desc(t.rowId),
           ])
           ..limit(1))
         .getSingleOrNull();

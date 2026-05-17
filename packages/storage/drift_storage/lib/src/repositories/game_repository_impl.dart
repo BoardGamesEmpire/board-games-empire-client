@@ -11,7 +11,7 @@ class GameRepositoryImpl implements GameRepository {
 
   final ServerDatabase _db;
 
-  // ── Game ──────────────────────────────────────────────────────────────────────
+  // ── Game ───────────────────────────────────────────────────────────────────────
 
   @override
   Future<Game?> getGame(String id) async {
@@ -88,13 +88,13 @@ class GameRepositoryImpl implements GameRepository {
     final q = query.trim().toLowerCase().replaceAll(_likeWildcardChars, '');
     if (q.isEmpty) return [];
 
-    // Order in SQL before LIMIT (Copilot J): the previous impl
-    // sorted in Dart AFTER applying SQL LIMIT, so when many games
-    // matched, the LIMIT clause picked an arbitrary slice and the
-    // post-hoc Dart sort could not produce the true top-N by
-    // prefix-matching. The two-term SQL ORDER BY below gives the
-    // same ranking the Dart sort used to attempt, but on the full
-    // result set before LIMIT trims it down.
+    // Order in SQL before LIMIT: the previous impl sorted in Dart
+    // AFTER applying SQL LIMIT, so when many games matched, the
+    // LIMIT clause picked an arbitrary slice and the post-hoc Dart
+    // sort could not produce the true top-N by prefix-matching.
+    // The two-term SQL ORDER BY below gives the same ranking the
+    // Dart sort used to attempt, but on the full result set before
+    // LIMIT trims it down.
     final prefixPattern = '$q%';
 
     final rows =
@@ -135,7 +135,7 @@ class GameRepositoryImpl implements GameRepository {
           .watch()
           .map((rows) => rows.map(_mapGame).toList());
 
-  // ── PlatformGame ─────────────────────────────────────────────────────────
+  // ── PlatformGame ───────────────────────────────────────────────────────────────────
 
   @override
   Future<PlatformGame?> getPlatformGame(String id) async {
@@ -173,7 +173,7 @@ class GameRepositoryImpl implements GameRepository {
     });
   }
 
-  // ── Mappers ────────────────────────────────────────────────────────────────────
+  // ── Mappers ──────────────────────────────────────────────────────────────────────────
 
   Game _mapGame(GamesTableData row) => Game(
     id: row.id,
@@ -300,9 +300,24 @@ class GameRepositoryImpl implements GameRepository {
         updatedAt: pg.updatedAt,
       );
 
+  /// Decodes a JSON-encoded list of strings, returning `[]` on any
+  /// failure (malformed JSON, wrong shape at the top level, or a
+  /// non-String element).
+  ///
+  /// The trailing `.toList()` after `.cast<String>()` is
+  /// load-bearing. `cast<String>()` returns a LAZY view that
+  /// defers per-element type-checking until access; without an
+  /// eager materialisation, a corrupt element (e.g. an integer
+  /// slipped into a list otherwise full of strings) would not
+  /// throw here — it would throw LATER, when a downstream
+  /// consumer iterates the returned list, OUTSIDE this method's
+  /// try/catch. `.toList()` forces the type-checked walk to
+  /// happen inside the try, so the catch can do its job and the
+  /// caller sees an empty list rather than an unhandled
+  /// [TypeError] in unrelated mapping code.
   List<String> _decodeStringList(String json) {
     try {
-      return (jsonDecode(json) as List).cast<String>();
+      return (jsonDecode(json) as List).cast<String>().toList();
     } catch (_) {
       return [];
     }
