@@ -4,7 +4,7 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 
-/// Read cache + queued-write implementation of [HouseholdRepository].
+/// Read cache + cache-writer implementation of [HouseholdRepository].
 ///
 /// Scoped to a current user via [currentUserId]. Every read path that
 /// returns household data — list, single-by-id, watch, member list,
@@ -29,6 +29,30 @@ import '../databases/server_database.dart';
 /// (e.g. a household their friend belongs to, populated by a friend
 /// graph query). The boundary enforcement happens at read time so
 /// the cache stays a faithful local mirror of what the server sent.
+///
+/// ## Scope today: no queued writes
+///
+/// There are no mutation methods on this implementation — no
+/// `leaveHousehold`, `removeMember`, `transferOwnership`, etc. —
+/// because user-initiated household mutations are Phase 4 scope.
+/// Today's "cache-writer" methods ([cacheHousehold], [cacheMember],
+/// [cacheMembers]) are server-driven populators that accept payloads
+/// the server already auth-filtered, not user-initiated mutations
+/// against a sync queue.
+///
+/// **TODO(household-mutations-phase-4)**: a stale-cache window
+/// exists between server-side membership changes (leaves, removals,
+/// role swaps performed via the web UI or another device) and the
+/// next resync arriving at this device. During that window the
+/// read-side membership gate is making decisions on a cache the
+/// server has already moved past — e.g., a user who has actually
+/// been removed from a household will still see it via
+/// [getHousehold] / [watchHouseholds] until the cache catches up.
+/// Phase 4 will close this by introducing membership-mutation sync
+/// ops that update the local member rows in the same Drift
+/// transaction they enqueue against the sync queue. Until then the
+/// gate is best-effort, with eventual consistency at the next
+/// sync tick.
 ///
 /// ## Future: per-household visibility
 ///
@@ -183,7 +207,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
     );
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────────
 
   /// Common selectable for [getMembers] and [watchMembers]: returns
   /// the members of [householdId] iff (a) the household exists and
@@ -229,7 +253,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
     ])..where(_db.householdMembersTable.householdId.equals(householdId));
   }
 
-  // ── Mappers ─────────────────────────────────────────────────────────────────
+  // ── Mappers ──────────────────────────────────────────────────────────────────────
 
   Household _mapHousehold(HouseholdsTableData row) => Household(
     id: row.id,

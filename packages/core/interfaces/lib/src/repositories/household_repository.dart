@@ -1,6 +1,32 @@
 import 'package:models/domain.dart';
 
-/// Read cache + queued-write repository for [Household] data.
+/// Read cache + cache-writer repository for [Household] data.
+///
+/// ## Scope today: read-cache + cache-writer
+///
+/// This repository does not currently expose any user-initiated
+/// mutation methods (no leave, kick, transfer-ownership, delete, or
+/// invite). The cache writers ([cacheHousehold], [cacheMember],
+/// [cacheMembers]) are server-driven cache populators that accept
+/// payloads the server already auth-filtered, not user-facing
+/// mutations. User-initiated mutations land in Phase 4 alongside
+/// invites, role changes, and the household-settings UI; this
+/// interface will grow accordingly at that point (and a sync queue
+/// will start participating, hence the deliberate "cache-writer"
+/// framing rather than "queued-write").
+///
+/// **TODO(household-mutations-phase-4)**: a known gap exists between
+/// now and Phase 4. If a user leaves a household on another device
+/// (or the web UI), this device's cache won't know until a full
+/// resync arrives, and the read-side membership gate below trusts
+/// the cache — so a stale local member row will keep the household
+/// visible to a user who has actually been removed. The mitigation
+/// today is the read-cache nature of the repo: every server
+/// response refreshes the membership, so the stale window closes
+/// on the next sync tick. Phase 4 will close it deterministically
+/// by introducing membership-mutation sync ops that update the
+/// local member rows in the same transaction they enqueue against
+/// the sync queue.
 ///
 /// ## Access boundary (members-only by default)
 ///
