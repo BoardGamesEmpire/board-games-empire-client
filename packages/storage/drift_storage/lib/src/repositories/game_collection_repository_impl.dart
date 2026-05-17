@@ -12,16 +12,20 @@ import '../databases/server_database.dart';
 /// ## ID generation
 ///
 /// Fresh local rows get a [cuid2] id. This matches the backend's id
-/// format (Prisma's `@default(cuid())` is the same cuid2 spec), so a
-/// row's id is the same string from local creation through to the
-/// server cache — *when the backend honours the client-supplied id*.
-/// Today the backend's create DTO strips ids before forwarding to
-/// Prisma, so the server returns a freshly-generated cuid2 on insert
-/// and [reconcileFromServer] handles the id-reassignment path via
+/// format — the backend uses cuid2 explicitly — so a row's id is the
+/// same string from local creation through to the server cache *when
+/// the backend honours the client-supplied id*. Today the backend's
+/// create DTO strips ids before forwarding to Prisma, so the server
+/// returns a freshly-generated cuid2 on insert and
+/// [reconcileFromServer] handles the id-reassignment path via
 /// [SyncQueueRepository.remapCollectionId]. If the backend's DTO is
 /// later updated to accept client ids, the local id round-trips
 /// unchanged and the remap call becomes a no-op without any
 /// client-side change.
+///
+/// (Aside: Prisma's default `@default(cuid())` is CUID v1, not v2;
+/// the backend is using `@default(cuid(2))` or an equivalent helper
+/// to opt in to cuid2 explicitly.)
 ///
 /// ## Atomicity
 ///
@@ -203,13 +207,13 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
 
       if (existing == null) {
         // Fresh insert. cuid2 id — matches the backend's id format
-        // (Prisma's `@default(cuid())` uses the same spec). When
-        // the backend honours the client-supplied id, the round-trip
-        // preserves this id; today the backend's create DTO strips
-        // ids before reaching Prisma so a different canonical id
-        // comes back and `reconcileFromServer` calls
-        // `_syncQueue.remapCollectionId` to rewrite any pending ops
-        // still referencing this local id.
+        // (the backend uses cuid2 explicitly). When the backend
+        // honours the client-supplied id, the round-trip preserves
+        // this id; today the backend's create DTO strips ids
+        // before reaching Prisma so a different canonical id comes
+        // back and `reconcileFromServer` calls
+        // `_syncQueue.remapCollectionId` to rewrite any pending
+        // ops still referencing this local id.
         entryId = cuid();
         finalQuantity = quantity;
         await _db
