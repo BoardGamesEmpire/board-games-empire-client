@@ -285,6 +285,78 @@ void main() {
           expect(old.rating, equals(5));
         },
       );
+
+      test(
+        'rowId tiebreaker resurrects the LATER-INSERTED tombstone when two '
+        'share the same updatedAt (Pass-8 thread #8)',
+        () async {
+          // The same-microsecond race: an addToCollection →
+          // removeFromCollection burst on a fast machine can land
+          // two tombstones at identical updatedAt. Pre-Pass-8, the
+          // `(deletedAt IS NULL) DESC, updatedAt DESC` ordering
+          // alone left the pick implementation-defined, so the
+          // resurrection target varied across runs. The new
+          // `rowId DESC` tail term breaks the tie deterministically
+          // toward the later insert, matching the existing "prefer
+          // the most recent tombstone" semantic already encoded by
+          // the updatedAt term.
+          //
+          // The pre-existing "MOST RECENT tombstone" test uses
+          // distinct updatedAt values one hour apart, so it never
+          // exercises the tiebreaker. This test pins identical
+          // updatedAt values to ISOLATE the tiebreaker.
+          final t = DateTime.now().toUtc();
+
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'tomb-first',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(1),
+                  rating: const Value(3),
+                  deletedAt: Value(t),
+                  isDirty: const Value(true),
+                  createdAt: t,
+                  updatedAt: t,
+                ),
+              );
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'tomb-second',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(1),
+                  rating: const Value(7),
+                  deletedAt: Value(t),
+                  isDirty: const Value(true),
+                  createdAt: t,
+                  updatedAt: t,
+                ),
+              );
+
+          final entry = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            rating: 9,
+          );
+
+          expect(entry.id, equals('tomb-second'));
+          expect(entry.rating, equals(9));
+          // tomb-first is left untouched.
+          final first = await (db.select(db.gameCollectionsTable)
+                ..where((t) => t.id.equals('tomb-first')))
+              .getSingle();
+          expect(first.deletedAt, isNotNull);
+          expect(first.rating, equals(3));
+        },
+      );
     });
 
     group('updateCollectionEntry()', () {
@@ -821,9 +893,20 @@ void main() {
         test(
           'does NOT write a row or touch the sync queue when boundary throws',
           () async {
-            // The check is BEFORE the transaction opens, so a wrong-
-            // userId response leaves the local cache and the sync
-            // queue completely untouched.
+            // Pass-8 thread #6 tightening: the boundary check is
+            // BEFORE the transaction opens, so a wrong-userId
+            // response must leave the local cache AND the sync
+            // queue completely untouched. The pre-Pass-8 version
+            // wrapped the reconcile call in `try { ... } catch (_)
+            // {}` which swallowed ANY error type silently — if a
+            // future regression made the method succeed for the
+            // wrong reason (e.g. the boundary check was deleted
+            // and the cache happened to already be empty), the
+            // assertions below would still pass without the
+            // boundary firing. Using `expectLater(...throwsStateError)`
+            // makes the StateError a REQUIRED part of the
+            // assertion, so the post-throw cache/queue checks only
+            // run after the boundary fired correctly.
             final now = DateTime.now().toUtc();
             final foreign = GameCollection(
               id: 'foreign-id',
@@ -837,14 +920,13 @@ void main() {
               updatedAt: now,
             );
 
-            try {
-              await repo.reconcileFromServer(
+            await expectLater(
+              () => repo.reconcileFromServer(
                 foreign,
                 completedSyncQueueId: 'sq-misrouted',
-              );
-            } catch (_) {
-              // expected
-            }
+              ),
+              throwsStateError,
+            );
 
             expect(await db.select(db.gameCollectionsTable).get(), isEmpty);
             verifyNever(() => mockSync.markCompleted(any()));
@@ -1027,7 +1109,7 @@ void main() {
           'calls remapCollectionId(local.id, serverEntry.id) when ids differ',
           () async {
             // The integration shape: a local-only row exists with
-            // its UUID-v4 id. The server reassigns to a different
+            // its cuid2 id. The server reassigns to a different
             // canonical id. reconcileFromServer must rewrite any
             // pending Update/Remove ops that referenced the old
             // local id BEFORE dropping the row.
@@ -1057,7 +1139,7 @@ void main() {
         );
 
         test('does NOT call remapCollectionId when ids match', () async {
-          // Optimistic case: the client-generated UUID round-tripped
+          // Optimistic case: the client-generated cuid2 round-tripped
           // through the server unchanged. No remap needed; the
           // method is skipped entirely (and importantly, no
           // self-targeting rewrite is performed against the queue).
