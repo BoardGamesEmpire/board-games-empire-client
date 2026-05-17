@@ -93,12 +93,12 @@ abstract class GameCollectionRepository {
   /// The tombstone is physically deleted by [reconcileFromServer]
   /// when the server replies with a `serverEntry` whose
   /// `deletedAt` is non-null — see that method's doc for the full
-  /// flow. There is intentionally no separate `purge` method on
-  /// this interface: tombstone lifecycle is owned by the sync
-  /// engine, not by callers, so the only paths that remove rows
-  /// are [removeFromCollection] (tombstone) and
-  /// [reconcileFromServer] with a tombstoned server entry
-  /// (physical purge).
+  /// flow, including the resurrection-race carve-out. There is
+  /// intentionally no separate `purge` method on this interface:
+  /// tombstone lifecycle is owned by the sync engine, not by
+  /// callers, so the only paths that remove rows are
+  /// [removeFromCollection] (tombstone) and [reconcileFromServer]
+  /// with a tombstoned server entry (surgical physical purge).
   ///
   /// ### Throws
   ///
@@ -130,15 +130,44 @@ abstract class GameCollectionRepository {
   /// know. The Drift implementation does this via
   /// [SyncQueueRepository.remapCollectionId].
   ///
-  /// ### Tombstone confirmation (physical purge)
+  /// ### Tombstone confirmation (surgical physical purge)
   ///
   /// When `serverEntry.deletedAt` is non-null, the server is
   /// confirming a removal. Implementations MUST physically delete
-  /// every local row for the matching triplet (the live row plus
-  /// any tombstones that may have accumulated). No upsert of the
-  /// server entry happens in this branch — the row is gone. This
-  /// is the only path that physically removes tombstoned rows
-  /// created by [removeFromCollection].
+  /// every tombstone and every server-confirmed live row for the
+  /// matching triplet — the row whose id matches `serverEntry.id`,
+  /// plus any older tombstones that may have accumulated.
+  ///
+  /// Implementations MUST NOT delete a local-only live row
+  /// (`deletedAt == null && isLocalOnly == true`) even when the
+  /// triplet matches. Such a row represents a user intent (a
+  /// re-add after an earlier removal) that is still pending in the
+  /// sync queue, and clobbering it would silently drop the user's
+  /// most recent action. The race the carve-out defends against:
+  ///
+  /// 1. User adds entry, server confirms (live, isLocalOnly=false).
+  /// 2. User removes → tombstone (deletedAt set, isLocalOnly=false),
+  ///    RemoveOp queued.
+  /// 3. RemoveOp completes — server has tombstoned the row.
+  /// 4. User re-adds. The Drift implementation's `addToCollection`
+  ///    resurrects the tombstone via its canonical-row lookup:
+  ///    same id, `deletedAt` cleared, `isLocalOnly=true`, AddOp
+  ///    queued.
+  /// 5. The server's confirmation of the step-2 removal — which
+  ///    has been in flight — finally arrives at
+  ///    [reconcileFromServer]. Without the carve-out, the purge
+  ///    would delete the resurrection along with everything else
+  ///    for the triplet, silently dropping the user's pending
+  ///    re-add intent.
+  ///
+  /// With the carve-out, the resurrection survives the purge and
+  /// its pending AddOp continues through the queue under its
+  /// (remapped, if necessary) id.
+  ///
+  /// No upsert of `serverEntry` happens in the tombstone branch —
+  /// the rows the predicate matches are gone, the exclusion clause
+  /// keeps the resurrection alive, and the row identity is owned
+  /// by the queue from here on.
   ///
   /// ### Live-entry upsert
   ///
@@ -146,6 +175,20 @@ abstract class GameCollectionRepository {
   /// the server entry with `isDirty: false, isLocalOnly: false`.
   /// If a local row had a different id, that stale row is dropped
   /// first (after the remap step above).
+  ///
+  /// **TODO(server-driven-dirty-merge)**: this contract treats
+  /// every live-entry reconcile as authoritative — server wins,
+  /// `isDirty` is cleared. That's correct when [completedSyncQueueId]
+  /// is supplied (the reconcile is the ack of a specific queued
+  /// mutation, so the local dirty state was that mutation, and
+  /// clearing it is exactly right). It is NOT correct for a
+  /// server-driven background pull arriving while unrelated local
+  /// dirty edits are queued: the upsert clobbers those edits and
+  /// marks the row clean, while the queued Update ops may still be
+  /// in flight. A future revision will split this into
+  /// `acknowledge(serverEntry, syncQueueId)` and
+  /// `mergeFromServer(serverEntry)` with explicit conflict
+  /// resolution for the latter. Phase 3 sync-orchestrator scope.
   ///
   /// ### Sync-queue closure
   ///
