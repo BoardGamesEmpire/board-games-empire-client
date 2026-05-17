@@ -20,9 +20,8 @@ import 'server_context_impl.dart';
 /// ## Broadcast controllers — async delivery
 ///
 /// [_activeContextController] and [_contextsController] use the default
-/// async delivery (no `sync: true`). Listener callbacks fire in a
-/// microtask after `add()`, not synchronously inside the orchestrator
-/// method that emitted the event.
+/// async delivery. Listener callbacks fire in a microtask after `add()`,
+/// not inside the orchestrator method that emitted the event.
 ///
 /// This matters for re-entrancy: a listener that calls back into the
 /// orchestrator (e.g. a Bloc that observes `watchActiveContext` and

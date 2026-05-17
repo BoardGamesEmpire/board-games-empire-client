@@ -13,9 +13,6 @@ Household _make({DateTime? deletedAt}) => Household(
 
 void main() {
   group('Household', () {
-    // Pass-9 review thread #3. Analogous helpers on Game and
-    // GameCollection had coverage; this one did not. Locking it in.
-
     test('isDeleted is false when deletedAt is null', () {
       expect(_make().isDeleted, isFalse);
     });

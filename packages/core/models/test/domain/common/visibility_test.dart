@@ -2,11 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
 void main() {
-  // Pass-9 review thread #8. ContentType / TimeMeasure / GameMedium /
-  // HouseholdRole all have wire-helper tests; Visibility did not.
-  // Locking the @JsonValue ↔ toWire/fromWire correspondence in so a
-  // future enum-extension change can't silently let the two diverge.
-
   group('Visibility', () {
     group('toWire', () {
       test('every value maps to its @JsonValue PascalCase string', () {
@@ -47,10 +42,7 @@ void main() {
           'Public': Visibility.public,
         };
 
-        expect(
-          expectations.values.toSet(),
-          equals(Visibility.values.toSet()),
-        );
+        expect(expectations.values.toSet(), equals(Visibility.values.toSet()));
 
         for (final entry in expectations.entries) {
           expect(
@@ -62,37 +54,36 @@ void main() {
         }
       });
 
-      test('round-trip: every value survives Visibility → wire → Visibility',
-          () {
-        for (final value in Visibility.values) {
-          expect(
-            Visibility.fromWire(value.toWire()),
-            equals(value),
-            reason: 'Round-trip failed for Visibility.${value.name}',
-          );
-        }
-      });
-
       test(
-        'fromWire throws StateError on an unrecognised wire value',
+        'round-trip: every value survives Visibility → wire → Visibility',
         () {
-          // Visibility's design is deliberately strict: there's no
-          // `unknown` fallback variant (unlike ContentType,
-          // TimeMeasure, GameMedium, HouseholdRole). An unrecognised
-          // wire string represents either DB corruption or a
-          // server-side enum extension this client hasn't been
-          // updated for, and both must surface rather than be
-          // silently coerced into one of the existing variants.
-          //
-          // A future regression that adds an `unknown` fallback or
-          // changes the default arm to a silent coercion would fail
-          // this assertion.
-          expect(
-            () => Visibility.fromWire('NotARealVisibility'),
-            throwsStateError,
-          );
+          for (final value in Visibility.values) {
+            expect(
+              Visibility.fromWire(value.toWire()),
+              equals(value),
+              reason: 'Round-trip failed for Visibility.${value.name}',
+            );
+          }
         },
       );
+
+      test('fromWire throws StateError on an unrecognised wire value', () {
+        // Visibility's design is deliberately strict: there's no
+        // `unknown` fallback variant (unlike ContentType,
+        // TimeMeasure, GameMedium, HouseholdRole). An unrecognised
+        // wire string represents either DB corruption or a
+        // server-side enum extension this client hasn't been
+        // updated for, and both must surface rather than be
+        // silently coerced into one of the existing variants.
+        //
+        // A future regression that adds an `unknown` fallback or
+        // changes the default arm to a silent coercion would fail
+        // this assertion.
+        expect(
+          () => Visibility.fromWire('NotARealVisibility'),
+          throwsStateError,
+        );
+      });
     });
   });
 }

@@ -3,10 +3,7 @@ import 'package:models/domain.dart';
 
 DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');
 
-PlatformGame _make({
-  int? minPlayers,
-  int? maxPlayers,
-}) => PlatformGame(
+PlatformGame _make({int? minPlayers, int? maxPlayers}) => PlatformGame(
   id: 'pg_1',
   gameId: 'g_1',
   platformId: 'plat_1',
@@ -18,15 +15,6 @@ PlatformGame _make({
 );
 
 void main() {
-  // Pass-9 review thread #2. The resolved* helpers encode the
-  // platform-override / parent-fallback rule that the rest of the
-  // app (UI code reading effective player counts, search filters)
-  // depends on. Without coverage, a regression that drops the
-  // fallback or inverts the priority would only surface in a real
-  // PlatformGame whose minPlayers is null and whose parent Game's
-  // minPlayers is non-null — a relatively rare combo in test
-  // fixtures.
-
   group('PlatformGame', () {
     group('resolvedMinPlayers', () {
       test('returns the platform override when set', () {
@@ -43,20 +31,17 @@ void main() {
         expect(_make().resolvedMinPlayers(null), isNull);
       });
 
-      test(
-        'override of 0 is still preferred over a non-null parent '
-        '(?? semantic, not truthy-style fallback)',
-        () {
-          // The implementation uses `minPlayers ?? gameMinPlayers`,
-          // which only falls back on null — NOT on a falsy/zero
-          // value. A zero override is a valid platform-specific
-          // "this platform supports zero-player runs" declaration
-          // and must be preserved. If a future refactor switched
-          // to a truthy check (`minPlayers != null && minPlayers > 0
-          // ? minPlayers : gameMinPlayers`), this test would fail.
-          expect(_make(minPlayers: 0).resolvedMinPlayers(4), equals(0));
-        },
-      );
+      test('override of 0 is still preferred over a non-null parent '
+          '(?? semantic, not truthy-style fallback)', () {
+        // The implementation uses `minPlayers ?? gameMinPlayers`,
+        // which only falls back on null — NOT on a falsy/zero
+        // value. A zero override is a valid platform-specific
+        // "this platform supports zero-player runs" declaration
+        // and must be preserved. If a future refactor switched
+        // to a truthy check (`minPlayers != null && minPlayers > 0
+        // ? minPlayers : gameMinPlayers`), this test would fail.
+        expect(_make(minPlayers: 0).resolvedMinPlayers(4), equals(0));
+      });
     });
 
     group('resolvedMaxPlayers', () {
@@ -72,13 +57,10 @@ void main() {
         expect(_make().resolvedMaxPlayers(null), isNull);
       });
 
-      test(
-        'override of 0 is preferred over a non-null parent '
-        '(same ?? semantic as resolvedMinPlayers)',
-        () {
-          expect(_make(maxPlayers: 0).resolvedMaxPlayers(8), equals(0));
-        },
-      );
+      test('override of 0 is preferred over a non-null parent '
+          '(same ?? semantic as resolvedMinPlayers)', () {
+        expect(_make(maxPlayers: 0).resolvedMaxPlayers(8), equals(0));
+      });
     });
   });
 }

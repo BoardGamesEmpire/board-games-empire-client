@@ -278,169 +278,154 @@ void main() {
           expect(entry.rating, equals(9));
           expect(entry.quantity, equals(1));
 
-          final old = await (db.select(db.gameCollectionsTable)
-                ..where((t) => t.id.equals('old-tomb')))
-              .getSingle();
+          final old = await (db.select(
+            db.gameCollectionsTable,
+          )..where((t) => t.id.equals('old-tomb'))).getSingle();
           expect(old.deletedAt, isNotNull);
           expect(old.rating, equals(5));
         },
       );
 
-      test(
-        'rowId tiebreaker resurrects the LATER-INSERTED tombstone when two '
-        'share the same updatedAt (Pass-8 thread #8)',
-        () async {
-          // The same-microsecond race: an addToCollection →
-          // removeFromCollection burst on a fast machine can land
-          // two tombstones at identical updatedAt. Pre-Pass-8, the
-          // `(deletedAt IS NULL) DESC, updatedAt DESC` ordering
-          // alone left the pick implementation-defined, so the
-          // resurrection target varied across runs. The new
-          // `rowId DESC` tail term breaks the tie deterministically
-          // toward the later insert, matching the existing "prefer
-          // the most recent tombstone" semantic already encoded by
-          // the updatedAt term.
-          //
-          // The pre-existing "MOST RECENT tombstone" test uses
-          // distinct updatedAt values one hour apart, so it never
-          // exercises the tiebreaker. This test pins identical
-          // updatedAt values to ISOLATE the rowId DESC tail term.
-          final t = DateTime.now().toUtc();
+      test('rowId tiebreaker resurrects the LATER-INSERTED tombstone when two '
+          'share the same updatedAt', () async {
+        // The same-microsecond race: an addToCollection →
+        // removeFromCollection burst on a fast machine can land
+        // two tombstones at identical updatedAt.
+        //
+        // The pre-existing "MOST RECENT tombstone" test uses
+        // distinct updatedAt values one hour apart, so it never
+        // exercises the tiebreaker. This test pins identical
+        // updatedAt values to ISOLATE the rowId DESC tail term.
+        final t = DateTime.now().toUtc();
 
-          await db
-              .into(db.gameCollectionsTable)
-              .insert(
-                GameCollectionsTableCompanion.insert(
-                  id: 'tomb-first',
-                  userId: _kUserId,
-                  platformGameId: _kPlatformGameId,
-                  medium: 'Physical',
-                  quantity: const Value(1),
-                  rating: const Value(3),
-                  deletedAt: Value(t),
-                  isDirty: const Value(true),
-                  createdAt: t,
-                  updatedAt: t,
-                ),
-              );
-          await db
-              .into(db.gameCollectionsTable)
-              .insert(
-                GameCollectionsTableCompanion.insert(
-                  id: 'tomb-second',
-                  userId: _kUserId,
-                  platformGameId: _kPlatformGameId,
-                  medium: 'Physical',
-                  quantity: const Value(1),
-                  rating: const Value(7),
-                  deletedAt: Value(t),
-                  isDirty: const Value(true),
-                  createdAt: t,
-                  updatedAt: t,
-                ),
-              );
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'tomb-first',
+                userId: _kUserId,
+                platformGameId: _kPlatformGameId,
+                medium: 'Physical',
+                quantity: const Value(1),
+                rating: const Value(3),
+                deletedAt: Value(t),
+                isDirty: const Value(true),
+                createdAt: t,
+                updatedAt: t,
+              ),
+            );
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'tomb-second',
+                userId: _kUserId,
+                platformGameId: _kPlatformGameId,
+                medium: 'Physical',
+                quantity: const Value(1),
+                rating: const Value(7),
+                deletedAt: Value(t),
+                isDirty: const Value(true),
+                createdAt: t,
+                updatedAt: t,
+              ),
+            );
 
-          final entry = await repo.addToCollection(
-            platformGameId: _kPlatformGameId,
-            medium: _kMedium,
-            quantity: 1,
-            rating: 9,
-          );
+        final entry = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+          quantity: 1,
+          rating: 9,
+        );
 
-          expect(entry.id, equals('tomb-second'));
-          expect(entry.rating, equals(9));
-          // tomb-first is left untouched.
-          final first = await (db.select(db.gameCollectionsTable)
-                ..where((t) => t.id.equals('tomb-first')))
-              .getSingle();
-          expect(first.deletedAt, isNotNull);
-          expect(first.rating, equals(3));
-        },
-      );
+        expect(entry.id, equals('tomb-second'));
+        expect(entry.rating, equals(9));
+        // tomb-first is left untouched.
+        final first = await (db.select(
+          db.gameCollectionsTable,
+        )..where((t) => t.id.equals('tomb-first'))).getSingle();
+        expect(first.deletedAt, isNotNull);
+        expect(first.rating, equals(3));
+      });
 
-      test(
-        'resurrection preserves play history and prior rating/comment '
-        'when caller omits them (Pass-9 thread #5)',
-        () async {
-          // The design call, documented in
-          // `GameCollectionRepository.addToCollection` and in the
-          // repo impl's "Resurrection preserves play history"
-          // section: removing a collection entry means "I don't
-          // own this anymore", not "I never played this." Per-game
-          // metadata — play history AND opinion fields — survives
-          // the remove → re-add cycle. rating/comment follow the
-          // updateCollectionEntry null-handling: null/omitted means
-          // leave-unchanged, so they also survive when the caller
-          // doesn't supply new values (closes the pre-Pass-9
-          // asymmetry between the resurrection branch and the
-          // live-row update branch).
-          //
-          // This test pins ALL the preserved columns at once, so a
-          // future regression that resets any of them — playCount,
-          // playAgain, favorite, lastPlayed, rating, comment —
-          // fails here loudly with a clear name.
-          final first = await repo.addToCollection(
-            platformGameId: _kPlatformGameId,
-            medium: _kMedium,
-            quantity: 2,
-            rating: 8,
-            comment: 'great party game',
-          );
+      test('resurrection preserves play history and prior rating/comment '
+          'when caller omits them', () async {
+        // The design call, documented in
+        // `GameCollectionRepository.addToCollection` and in the
+        // repo impl's "Resurrection preserves play history"
+        // section: removing a collection entry means "I don't
+        // own this anymore", not "I never played this." Per-game
+        // metadata — play history AND opinion fields — survives
+        // the remove → re-add cycle. rating/comment follow the
+        // updateCollectionEntry null-handling: null/omitted means
+        // leave-unchanged, so they also survive when the caller
+        // doesn't supply new values
+        //
+        // This test pins ALL the preserved columns at once, so a
+        // future regression that resets any of them — playCount,
+        // playAgain, favorite, lastPlayed, rating, comment —
+        // fails here loudly with a clear name.
+        final first = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+          quantity: 2,
+          rating: 8,
+          comment: 'great party game',
+        );
 
-          // Simulate play history accumulated over the entry's
-          // lifetime: 5 plays, favorited, marked "would play
-          // again", last played on a known date.
-          final lastPlayedTimestamp = DateTime.utc(2025, 6, 1);
-          await repo.updateCollectionEntry(
-            id: first.id,
-            playCount: 5,
-            playAgain: true,
-            favorite: true,
-            lastPlayed: lastPlayedTimestamp,
-          );
+        // Simulate play history accumulated over the entry's
+        // lifetime: 5 plays, favorited, marked "would play
+        // again", last played on a known date.
+        final lastPlayedTimestamp = DateTime.utc(2025, 6, 1);
+        await repo.updateCollectionEntry(
+          id: first.id,
+          playCount: 5,
+          playAgain: true,
+          favorite: true,
+          lastPlayed: lastPlayedTimestamp,
+        );
 
-          // Tombstone, then re-add WITHOUT supplying any optional
-          // fields — only the required triplet identity and a
-          // fresh quantity.
-          await repo.removeFromCollection(first.id);
-          final second = await repo.addToCollection(
-            platformGameId: _kPlatformGameId,
-            medium: _kMedium,
-            quantity: 1,
-            // rating + comment intentionally omitted.
-          );
+        // Tombstone, then re-add WITHOUT supplying any optional
+        // fields — only the required triplet identity and a
+        // fresh quantity.
+        await repo.removeFromCollection(first.id);
+        final second = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+          quantity: 1,
+          // rating + comment intentionally omitted.
+        );
 
-          // Same row resurrected, lifecycle flags reset.
-          expect(second.id, equals(first.id));
-          expect(second.deletedAt, isNull);
-          expect(second.isDirty, isTrue);
-          expect(second.isLocalOnly, isTrue);
+        // Same row resurrected, lifecycle flags reset.
+        expect(second.id, equals(first.id));
+        expect(second.deletedAt, isNull);
+        expect(second.isDirty, isTrue);
+        expect(second.isLocalOnly, isTrue);
 
-          // Quantity uses the caller-supplied value — a fresh
-          // ownership declaration, NOT a sum of prior + new.
-          expect(second.quantity, equals(1));
+        // Quantity uses the caller-supplied value — a fresh
+        // ownership declaration, NOT a sum of prior + new.
+        expect(second.quantity, equals(1));
 
-          // Play history preserved: the resurrection write must
-          // not touch these columns.
-          expect(second.playCount, equals(5));
-          expect(second.playAgain, isTrue);
-          expect(second.favorite, isTrue);
-          expect(second.lastPlayed, equals(lastPlayedTimestamp));
+        // Play history preserved: the resurrection write must
+        // not touch these columns.
+        expect(second.playCount, equals(5));
+        expect(second.playAgain, isTrue);
+        expect(second.favorite, isTrue);
+        expect(second.lastPlayed, equals(lastPlayedTimestamp));
 
-          // Rating + comment preserved: caller didn't supply new
-          // values, so Value.absent() guards leave the prior
-          // values alone — symmetric with the live-row update
-          // branch's null-handling.
-          expect(second.rating, equals(8));
-          expect(second.comment, equals('great party game'));
+        // Rating + comment preserved: caller didn't supply new
+        // values, so Value.absent() guards leave the prior
+        // values alone — symmetric with the live-row update
+        // branch's null-handling.
+        expect(second.rating, equals(8));
+        expect(second.comment, equals('great party game'));
 
-          // The collection presents exactly one live entry under
-          // the resurrected id.
-          final collection = await repo.getCollection();
-          expect(collection, hasLength(1));
-          expect(collection.single.id, equals(first.id));
-        },
-      );
+        // The collection presents exactly one live entry under
+        // the resurrected id.
+        final collection = await repo.getCollection();
+        expect(collection, hasLength(1));
+        expect(collection.single.id, equals(first.id));
+      });
     });
 
     group('updateCollectionEntry()', () {
@@ -475,96 +460,87 @@ void main() {
         ).called(1);
       });
 
-      test('throws StateError when entry belongs to a different user', () async {
-        await _seedPlatformGame(db, id: 'pg-other');
-        final now = DateTime.now().toUtc();
-        await db
-            .into(db.gameCollectionsTable)
-            .insert(
-              GameCollectionsTableCompanion.insert(
-                id: 'other-entry',
-                userId: 'other-user',
-                platformGameId: 'pg-other',
-                medium: 'Physical',
-                quantity: const Value(5),
-                rating: const Value(7),
-                createdAt: now,
-                updatedAt: now,
-              ),
-            );
+      test(
+        'throws StateError when entry belongs to a different user',
+        () async {
+          await _seedPlatformGame(db, id: 'pg-other');
+          final now = DateTime.now().toUtc();
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'other-entry',
+                  userId: 'other-user',
+                  platformGameId: 'pg-other',
+                  medium: 'Physical',
+                  quantity: const Value(5),
+                  rating: const Value(7),
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              );
 
-        await expectLater(
-          () => repo.updateCollectionEntry(id: 'other-entry', rating: 1),
-          throwsStateError,
-        );
+          await expectLater(
+            () => repo.updateCollectionEntry(id: 'other-entry', rating: 1),
+            throwsStateError,
+          );
 
-        final row = await (db.select(db.gameCollectionsTable)
-              ..where((t) => t.id.equals('other-entry')))
-            .getSingle();
-        expect(row.rating, equals(7));
-        expect(row.userId, equals('other-user'));
-      });
+          final row = await (db.select(
+            db.gameCollectionsTable,
+          )..where((t) => t.id.equals('other-entry'))).getSingle();
+          expect(row.rating, equals(7));
+          expect(row.userId, equals('other-user'));
+        },
+      );
 
       test(
         'does NOT enqueue a sync op when the entry is not found (transaction rolled back)',
         () async {
           await expectLater(
-            () => repo.updateCollectionEntry(
-              id: 'nonexistent',
-              rating: 1,
-            ),
+            () => repo.updateCollectionEntry(id: 'nonexistent', rating: 1),
             throwsStateError,
           );
           verifyNever(() => mockSync.enqueue(any()));
         },
       );
 
-      test(
-        'throws StateError when the target entry is tombstoned',
-        () async {
-          final entry = await repo.addToCollection(
-            platformGameId: _kPlatformGameId,
-            medium: _kMedium,
-          );
-          await repo.removeFromCollection(entry.id);
+      test('throws StateError when the target entry is tombstoned', () async {
+        final entry = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+        await repo.removeFromCollection(entry.id);
 
-          await expectLater(
-            () => repo.updateCollectionEntry(id: entry.id, rating: 10),
-            throwsStateError,
-          );
+        await expectLater(
+          () => repo.updateCollectionEntry(id: entry.id, rating: 10),
+          throwsStateError,
+        );
 
-          verifyNever(
-            () =>
-                mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
-          );
-        },
-      );
+        verifyNever(
+          () => mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
+        );
+      });
     });
 
-    // ── Tier-2 quantity validation ──────────────────────────────────────────────
-
-    group('quantity validation (Tier 2)', () {
+    group('quantity validation', () {
       // The validation runs BEFORE the transaction opens, so all of
       // these assertions also verify that no DB row was written and
       // no sync op was enqueued.
 
-      test(
-        'addToCollection throws ArgumentError on quantity == 0',
-        () async {
-          await expectLater(
-            () => repo.addToCollection(
-              platformGameId: _kPlatformGameId,
-              medium: _kMedium,
-              quantity: 0,
-            ),
-            throwsA(isA<ArgumentError>()),
-          );
+      test('addToCollection throws ArgumentError on quantity == 0', () async {
+        await expectLater(
+          () => repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 0,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
 
-          // No row in cache, no enqueue.
-          expect(await repo.getCollection(), isEmpty);
-          verifyNever(() => mockSync.enqueue(any()));
-        },
-      );
+        // No row in cache, no enqueue.
+        expect(await repo.getCollection(), isEmpty);
+        verifyNever(() => mockSync.enqueue(any()));
+      });
 
       test(
         'addToCollection throws ArgumentError on negative quantity',
@@ -671,9 +647,9 @@ void main() {
           isNull,
         );
 
-        final row = await (db.select(db.gameCollectionsTable)
-              ..where((t) => t.id.equals(entry.id)))
-            .getSingleOrNull();
+        final row = await (db.select(
+          db.gameCollectionsTable,
+        )..where((t) => t.id.equals(entry.id))).getSingleOrNull();
         expect(row, isNotNull);
         expect(row!.deletedAt, isNotNull);
         expect(row.isDirty, isTrue);
@@ -693,72 +669,71 @@ void main() {
         ).called(1);
       });
 
-      test('throws StateError when entry belongs to a different user', () async {
-        await _seedPlatformGame(db, id: 'pg-other');
-        final now = DateTime.now().toUtc();
-        await db
-            .into(db.gameCollectionsTable)
-            .insert(
-              GameCollectionsTableCompanion.insert(
-                id: 'other-entry',
-                userId: 'other-user',
-                platformGameId: 'pg-other',
-                medium: 'Physical',
-                quantity: const Value(3),
-                createdAt: now,
-                updatedAt: now,
-              ),
-            );
-
-        await expectLater(
-          () => repo.removeFromCollection('other-entry'),
-          throwsStateError,
-        );
-
-        final row = await (db.select(db.gameCollectionsTable)
-              ..where((t) => t.id.equals('other-entry')))
-            .getSingle();
-        expect(row.deletedAt, isNull);
-      });
-
       test(
-        'is idempotent on an already-tombstoned entry '
-        '(no double-enqueue, no DB write)',
+        'throws StateError when entry belongs to a different user',
         () async {
-          final entry = await repo.addToCollection(
-            platformGameId: _kPlatformGameId,
-            medium: _kMedium,
+          await _seedPlatformGame(db, id: 'pg-other');
+          final now = DateTime.now().toUtc();
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'other-entry',
+                  userId: 'other-user',
+                  platformGameId: 'pg-other',
+                  medium: 'Physical',
+                  quantity: const Value(3),
+                  createdAt: now,
+                  updatedAt: now,
+                ),
+              );
+
+          await expectLater(
+            () => repo.removeFromCollection('other-entry'),
+            throwsStateError,
           );
-          await repo.removeFromCollection(entry.id);
 
-          final firstTombstone = (await (db.select(db.gameCollectionsTable)
-                    ..where((t) => t.id.equals(entry.id)))
-                  .getSingle())
-              .deletedAt;
-          expect(firstTombstone, isNotNull);
-
-          await repo.removeFromCollection(entry.id);
-
-          final secondTombstone = (await (db.select(db.gameCollectionsTable)
-                    ..where((t) => t.id.equals(entry.id)))
-                  .getSingle())
-              .deletedAt;
-          expect(secondTombstone, equals(firstTombstone));
-
-          verify(
-            () => mockSync
-                .enqueue(any(that: isA<RemoveFromCollectionOperation>())),
-          ).called(1);
+          final row = await (db.select(
+            db.gameCollectionsTable,
+          )..where((t) => t.id.equals('other-entry'))).getSingle();
+          expect(row.deletedAt, isNull);
         },
       );
+
+      test('is idempotent on an already-tombstoned entry '
+          '(no double-enqueue, no DB write)', () async {
+        final entry = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+        await repo.removeFromCollection(entry.id);
+
+        final firstTombstone = (await (db.select(
+          db.gameCollectionsTable,
+        )..where((t) => t.id.equals(entry.id))).getSingle()).deletedAt;
+        expect(firstTombstone, isNotNull);
+
+        await repo.removeFromCollection(entry.id);
+
+        final secondTombstone = (await (db.select(
+          db.gameCollectionsTable,
+        )..where((t) => t.id.equals(entry.id))).getSingle()).deletedAt;
+        expect(secondTombstone, equals(firstTombstone));
+
+        verify(
+          () =>
+              mockSync.enqueue(any(that: isA<RemoveFromCollectionOperation>())),
+        ).called(1);
+      });
     });
 
     group('transaction atomicity', () {
       test(
         'addToCollection rolls back the local insert when enqueue throws',
         () async {
-          when(() => mockSync.enqueue(any()))
-              .thenThrow(Exception('queue offline'));
+          when(
+            () => mockSync.enqueue(any()),
+          ).thenThrow(Exception('queue offline'));
 
           await expectLater(
             () => repo.addToCollection(
@@ -782,17 +757,18 @@ void main() {
             medium: _kMedium,
           );
 
-          when(() => mockSync.enqueue(any()))
-              .thenThrow(Exception('queue offline'));
+          when(
+            () => mockSync.enqueue(any()),
+          ).thenThrow(Exception('queue offline'));
 
           await expectLater(
             () => repo.removeFromCollection(entry.id),
             throwsException,
           );
 
-          final row = await (db.select(db.gameCollectionsTable)
-                ..where((t) => t.id.equals(entry.id)))
-              .getSingle();
+          final row = await (db.select(
+            db.gameCollectionsTable,
+          )..where((t) => t.id.equals(entry.id))).getSingle();
           expect(row.deletedAt, isNull);
         },
       );
@@ -823,35 +799,32 @@ void main() {
         expect(result.isLocalOnly, isFalse);
 
         expect(
-          await (db.select(db.gameCollectionsTable)
-                ..where((t) => t.id.equals(local.id)))
-              .getSingleOrNull(),
+          await (db.select(
+            db.gameCollectionsTable,
+          )..where((t) => t.id.equals(local.id))).getSingleOrNull(),
           isNull,
         );
       });
 
-      test(
-        'marks the matching sync-queue entry completed when '
-        '[completedSyncQueueId] is provided',
-        () async {
-          final local = await repo.addToCollection(
-            platformGameId: _kPlatformGameId,
-            medium: _kMedium,
-          );
+      test('marks the matching sync-queue entry completed when '
+          '[completedSyncQueueId] is provided', () async {
+        final local = await repo.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
 
-          final serverEntry = local.copyWith(
-            id: 'server-confirmed-id',
-            isDirty: false,
-            isLocalOnly: false,
-          );
-          await repo.reconcileFromServer(
-            serverEntry,
-            completedSyncQueueId: 'sq-add-1',
-          );
+        final serverEntry = local.copyWith(
+          id: 'server-confirmed-id',
+          isDirty: false,
+          isLocalOnly: false,
+        );
+        await repo.reconcileFromServer(
+          serverEntry,
+          completedSyncQueueId: 'sq-add-1',
+        );
 
-          verify(() => mockSync.markCompleted('sq-add-1')).called(1);
-        },
-      );
+        verify(() => mockSync.markCompleted('sq-add-1')).called(1);
+      });
 
       test(
         'does not touch the sync queue when [completedSyncQueueId] is omitted',
@@ -879,14 +852,6 @@ void main() {
         'does not throw when multiple tombstones coexist for the triplet '
         '(uses the shared _findCanonicalRow ordered+limited lookup)',
         () async {
-          // Pass-6 Tier-1 fix: reconcileFromServer used to do a
-          // bare getSingleOrNull() over live+tombstoned rows for
-          // the (userId, platformGameId, medium) triplet. The
-          // schema permits multiple tombstones per triplet (the
-          // partial unique index only constrains live rows), so
-          // two or more would make the lookup throw StateError,
-          // blocking reconciliation entirely. The fix shares the
-          // ordered+limited helper with addToCollection.
           final now = DateTime.now().toUtc();
           final older = now.subtract(const Duration(hours: 2));
           final mid = now.subtract(const Duration(hours: 1));
@@ -932,7 +897,6 @@ void main() {
             updatedAt: now,
           );
 
-          // Pre-fix this would have thrown StateError immediately.
           await repo.reconcileFromServer(serverEntry);
 
           final live = await repo.getCollectionEntry(
@@ -947,50 +911,31 @@ void main() {
         },
       );
 
-      // ── Pass-7: current-user boundary (Thread 2) ──────────────────────────────
+      group('current-user boundary', () {
+        test('throws StateError when serverEntry.userId differs from the '
+            'repository scope', () async {
+          final now = DateTime.now().toUtc();
+          final foreign = GameCollection(
+            id: 'foreign-id',
+            userId: 'someone-else',
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            isDirty: false,
+            isLocalOnly: false,
+            createdAt: now,
+            updatedAt: now,
+          );
 
-      group('current-user boundary (Pass-7 Thread 2)', () {
-        test(
-          'throws StateError when serverEntry.userId differs from the '
-          'repository scope',
-          () async {
-            final now = DateTime.now().toUtc();
-            final foreign = GameCollection(
-              id: 'foreign-id',
-              userId: 'someone-else',
-              platformGameId: _kPlatformGameId,
-              medium: _kMedium,
-              quantity: 1,
-              isDirty: false,
-              isLocalOnly: false,
-              createdAt: now,
-              updatedAt: now,
-            );
-
-            await expectLater(
-              () => repo.reconcileFromServer(foreign),
-              throwsStateError,
-            );
-          },
-        );
+          await expectLater(
+            () => repo.reconcileFromServer(foreign),
+            throwsStateError,
+          );
+        });
 
         test(
           'does NOT write a row or touch the sync queue when boundary throws',
           () async {
-            // Pass-8 thread #6 tightening: the boundary check is
-            // BEFORE the transaction opens, so a wrong-userId
-            // response must leave the local cache AND the sync
-            // queue completely untouched. The pre-Pass-8 version
-            // wrapped the reconcile call in `try { ... } catch (_)
-            // {}` which swallowed ANY error type silently — if a
-            // future regression made the method succeed for the
-            // wrong reason (e.g. the boundary check was deleted
-            // and the cache happened to already be empty), the
-            // assertions below would still pass without the
-            // boundary firing. Using `expectLater(...throwsStateError)`
-            // makes the StateError a REQUIRED part of the
-            // assertion, so the post-throw cache/queue checks only
-            // run after the boundary fired correctly.
             final now = DateTime.now().toUtc();
             final foreign = GameCollection(
               id: 'foreign-id',
@@ -1024,9 +969,7 @@ void main() {
         );
       });
 
-      // ── Pass-7: tombstone confirmation (Thread 4 impl side) ───────────────
-
-      group('tombstone confirmation (Pass-7 Thread 4)', () {
+      group('tombstone confirmation', () {
         test(
           'physically deletes the local row when serverEntry.deletedAt is set',
           () async {
@@ -1045,9 +988,9 @@ void main() {
 
             // Tombstone exists locally.
             expect(
-              await (db.select(db.gameCollectionsTable)
-                    ..where((t) => t.id.equals(local.id)))
-                  .getSingleOrNull(),
+              await (db.select(
+                db.gameCollectionsTable,
+              )..where((t) => t.id.equals(local.id))).getSingleOrNull(),
               isNotNull,
             );
 
@@ -1066,9 +1009,9 @@ void main() {
 
             // Local row gone (not just re-tombstoned).
             expect(
-              await (db.select(db.gameCollectionsTable)
-                    ..where((t) => t.id.equals(local.id)))
-                  .getSingleOrNull(),
+              await (db.select(
+                db.gameCollectionsTable,
+              )..where((t) => t.id.equals(local.id))).getSingleOrNull(),
               isNull,
             );
             // No live entry resurfaces.
@@ -1092,12 +1035,6 @@ void main() {
             // several tombstones over time. A server-confirmed
             // removal should cleanly purge all of them so the
             // cache doesn't keep growing with stale ghosts.
-            //
-            // Post-Pass-8 thread #4: this still works because both
-            // tombstones have `deletedAt != null`, so the surgical
-            // predicate `(deletedAt.isNotNull() | isLocalOnly.equals(false))`
-            // matches both. The carve-out only excludes
-            // local-only LIVE rows, not tombstones.
             final now = DateTime.now().toUtc();
             final older = now.subtract(const Duration(hours: 2));
             final mid = now.subtract(const Duration(hours: 1));
@@ -1152,10 +1089,7 @@ void main() {
             await repo.reconcileFromServer(serverTombstone);
 
             // Both tombstones gone.
-            expect(
-              await db.select(db.gameCollectionsTable).get(),
-              isEmpty,
-            );
+            expect(await db.select(db.gameCollectionsTable).get(), isEmpty);
           },
         );
 
@@ -1184,126 +1118,109 @@ void main() {
 
             await repo.reconcileFromServer(serverTombstone);
 
-            expect(
-              await db.select(db.gameCollectionsTable).get(),
-              isEmpty,
-            );
+            expect(await db.select(db.gameCollectionsTable).get(), isEmpty);
           },
         );
 
-        test(
-          'preserves a local-only resurrection when a stale tombstone '
-          'confirmation arrives (Pass-8 thread #4 race)',
-          () async {
-            // The race the surgical-purge fix in 9ebd91dd defends
-            // against:
-            //
-            // 1. User adds → server-confirmed (id=X, deletedAt=null,
-            //    isLocalOnly=false).
-            // 2. User removes → tombstone (id=X, deletedAt=t0,
-            //    isLocalOnly=false). RemoveOp queued.
-            // 3. RemoveOp completes → server has tombstoned id=X.
-            // 4. User re-adds. addToCollection finds the local
-            //    tombstone via _findCanonicalRow and resurrects:
-            //    same id, deletedAt cleared, isLocalOnly flipped
-            //    to true. Pending AddOp queued.
-            // 5. The server's confirmation of step-2's removal —
-            //    in flight the whole time — finally arrives at
-            //    reconcileFromServer with serverEntry.id=X,
-            //    deletedAt != null.
-            //
-            // Pre-fix: the broad triplet purge deleted the
-            // resurrection along with everything else, silently
-            // dropping the user's pending re-add intent.
-            //
-            // Post-fix: the
-            // `(deletedAt.isNotNull() | isLocalOnly.equals(false))`
-            // exclusion preserves the local-only resurrection. The
-            // pending AddOp continues through the queue with its
-            // target row intact.
+        test('preserves a local-only resurrection when a stale tombstone '
+            'confirmation arrives', () async {
+          // The race the surgical-purge fix in 9ebd91dd defends
+          // against:
+          //
+          // 1. User adds → server-confirmed (id=X, deletedAt=null,
+          //    isLocalOnly=false).
+          // 2. User removes → tombstone (id=X, deletedAt=t0,
+          //    isLocalOnly=false). RemoveOp queued.
+          // 3. RemoveOp completes → server has tombstoned id=X.
+          // 4. User re-adds. addToCollection finds the local
+          //    tombstone via _findCanonicalRow and resurrects:
+          //    same id, deletedAt cleared, isLocalOnly flipped
+          //    to true. Pending AddOp queued.
+          // 5. The server's confirmation of step-2's removal —
+          //    in flight the whole time — finally arrives at
+          //    reconcileFromServer with serverEntry.id=X,
+          //    deletedAt != null.
+          //
+          // Set up the post-removal, pre-resurrection state
+          // directly: a server-confirmed tombstone exists locally
+          // with id 'shared-id'.
+          final t0 = DateTime.now().toUtc().subtract(
+            const Duration(minutes: 5),
+          );
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: 'shared-id',
+                  userId: _kUserId,
+                  platformGameId: _kPlatformGameId,
+                  medium: 'Physical',
+                  quantity: const Value(1),
+                  deletedAt: Value(t0),
+                  isLocalOnly: const Value(false),
+                  createdAt: t0.subtract(const Duration(hours: 1)),
+                  updatedAt: t0,
+                ),
+              );
 
-            // Set up the post-removal, pre-resurrection state
-            // directly: a server-confirmed tombstone exists locally
-            // with id 'shared-id'.
-            final t0 =
-                DateTime.now().toUtc().subtract(const Duration(minutes: 5));
-            await db.into(db.gameCollectionsTable).insert(
-                  GameCollectionsTableCompanion.insert(
-                    id: 'shared-id',
-                    userId: _kUserId,
-                    platformGameId: _kPlatformGameId,
-                    medium: 'Physical',
-                    quantity: const Value(1),
-                    deletedAt: Value(t0),
-                    isLocalOnly: const Value(false),
-                    createdAt:
-                        t0.subtract(const Duration(hours: 1)),
-                    updatedAt: t0,
-                  ),
-                );
+          // Step 4: user re-adds. _findCanonicalRow picks up the
+          // tombstone and addToCollection resurrects it with the
+          // same id.
+          final resurrected = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            rating: 9,
+          );
+          expect(resurrected.id, equals('shared-id'));
+          expect(resurrected.deletedAt, isNull);
+          expect(resurrected.isLocalOnly, isTrue);
+          expect(resurrected.rating, equals(9));
 
-            // Step 4: user re-adds. _findCanonicalRow picks up the
-            // tombstone and addToCollection resurrects it with the
-            // same id.
-            final resurrected = await repo.addToCollection(
-              platformGameId: _kPlatformGameId,
-              medium: _kMedium,
-              quantity: 1,
-              rating: 9,
-            );
-            expect(resurrected.id, equals('shared-id'));
-            expect(resurrected.deletedAt, isNull);
-            expect(resurrected.isLocalOnly, isTrue);
-            expect(resurrected.rating, equals(9));
+          // Step 5: the stale tombstone confirmation arrives.
+          // serverEntry carries the deletedAt the server has on
+          // record for the row — from BEFORE the user re-added.
+          final staleTombstone = GameCollection(
+            id: 'shared-id',
+            userId: _kUserId,
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+            quantity: 1,
+            isDirty: false,
+            isLocalOnly: false,
+            deletedAt: t0,
+            createdAt: t0.subtract(const Duration(hours: 1)),
+            updatedAt: t0,
+          );
+          await repo.reconcileFromServer(
+            staleTombstone,
+            completedSyncQueueId: 'sq-stale-remove',
+          );
 
-            // Step 5: the stale tombstone confirmation arrives.
-            // serverEntry carries the deletedAt the server has on
-            // record for the row — from BEFORE the user re-added.
-            final staleTombstone = GameCollection(
-              id: 'shared-id',
-              userId: _kUserId,
-              platformGameId: _kPlatformGameId,
-              medium: _kMedium,
-              quantity: 1,
-              isDirty: false,
-              isLocalOnly: false,
-              deletedAt: t0,
-              createdAt: t0.subtract(const Duration(hours: 1)),
-              updatedAt: t0,
-            );
-            await repo.reconcileFromServer(
-              staleTombstone,
-              completedSyncQueueId: 'sq-stale-remove',
-            );
+          // The resurrection survives unchanged. The reconcile
+          // didn't touch it.
+          final live = await repo.getCollectionEntry(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+          expect(live, isNotNull);
+          expect(live!.id, equals('shared-id'));
+          expect(live.deletedAt, isNull);
+          expect(live.isLocalOnly, isTrue);
+          expect(live.rating, equals(9));
+          expect(live.quantity, equals(1));
 
-            // The resurrection survives unchanged. The reconcile
-            // didn't touch it.
-            final live = await repo.getCollectionEntry(
-              platformGameId: _kPlatformGameId,
-              medium: _kMedium,
-            );
-            expect(live, isNotNull);
-            expect(live!.id, equals('shared-id'));
-            expect(live.deletedAt, isNull);
-            expect(live.isLocalOnly, isTrue);
-            expect(live.rating, equals(9));
-            expect(live.quantity, equals(1));
-
-            // The stale RemoveOp's sync-queue entry is still marked
-            // completed — the reconcile-side queue closure fires
-            // regardless of what the purge predicate matched. The
-            // AddOp the resurrection enqueued stays untouched in
-            // the queue (the mock tracks calls only; the AddOp
-            // isn't a markCompleted target here).
-            verify(() => mockSync.markCompleted('sq-stale-remove'))
-                .called(1);
-          },
-        );
+          // The stale RemoveOp's sync-queue entry is still marked
+          // completed — the reconcile-side queue closure fires
+          // regardless of what the purge predicate matched. The
+          // AddOp the resurrection enqueued stays untouched in
+          // the queue (the mock tracks calls only; the AddOp
+          // isn't a markCompleted target here).
+          verify(() => mockSync.markCompleted('sq-stale-remove')).called(1);
+        });
       });
 
-      // ── Pass-7: id reassignment + pending-op remap (Thread 1) ─────────────
-
-      group('id reassignment + pending-op remap (Pass-7 Thread 1)', () {
+      group('id reassignment + pending-op remap', () {
         test(
           'calls remapCollectionId(local.id, serverEntry.id) when ids differ',
           () async {
@@ -1400,40 +1317,37 @@ void main() {
           },
         );
 
-        test(
-          'calls remapCollectionId on a tombstone reconciliation when '
-          'ids differ',
-          () async {
-            // Even on the tombstone branch, queued Update/Remove ops
-            // still reference the old local id and must be rewritten
-            // — the server may have ack'd the delete while the
-            // earlier queued ops were still in flight under the
-            // local-only id.
-            final local = await repo.addToCollection(
-              platformGameId: _kPlatformGameId,
-              medium: _kMedium,
-            );
-            clearInteractions(mockSync);
-            _stubMockSyncDefaults(mockSync);
+        test('calls remapCollectionId on a tombstone reconciliation when '
+            'ids differ', () async {
+          // Even on the tombstone branch, queued Update/Remove ops
+          // still reference the old local id and must be rewritten
+          // — the server may have ack'd the delete while the
+          // earlier queued ops were still in flight under the
+          // local-only id.
+          final local = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+          clearInteractions(mockSync);
+          _stubMockSyncDefaults(mockSync);
 
-            final now = DateTime.now().toUtc();
-            final serverTombstone = local.copyWith(
-              id: 'server-tomb-id',
-              isDirty: false,
-              isLocalOnly: false,
-              deletedAt: now,
-              updatedAt: now,
-            );
-            await repo.reconcileFromServer(serverTombstone);
+          final now = DateTime.now().toUtc();
+          final serverTombstone = local.copyWith(
+            id: 'server-tomb-id',
+            isDirty: false,
+            isLocalOnly: false,
+            deletedAt: now,
+            updatedAt: now,
+          );
+          await repo.reconcileFromServer(serverTombstone);
 
-            verify(
-              () => mockSync.remapCollectionId(
-                oldCollectionId: local.id,
-                newCollectionId: 'server-tomb-id',
-              ),
-            ).called(1);
-          },
-        );
+          verify(
+            () => mockSync.remapCollectionId(
+              oldCollectionId: local.id,
+              newCollectionId: 'server-tomb-id',
+            ),
+          ).called(1);
+        });
       });
     });
 
@@ -1478,10 +1392,7 @@ void main() {
           medium: _kMedium,
         );
 
-        await expectLater(
-          repo.watchCollection().take(1),
-          emits(hasLength(1)),
-        );
+        await expectLater(repo.watchCollection().take(1), emits(hasLength(1)));
       });
 
       test('excludes tombstoned entries', () async {
@@ -1491,10 +1402,7 @@ void main() {
         );
         await repo.removeFromCollection(entry.id);
 
-        await expectLater(
-          repo.watchCollection().take(1),
-          emits(isEmpty),
-        );
+        await expectLater(repo.watchCollection().take(1), emits(isEmpty));
       });
     });
 
@@ -1515,7 +1423,10 @@ void main() {
               ),
             );
 
-        await expectLater(repo.watchEntry('other-entry').take(1), emits(isNull));
+        await expectLater(
+          repo.watchEntry('other-entry').take(1),
+          emits(isNull),
+        );
       });
 
       test('emits null after the entry is tombstoned', () async {
@@ -1529,8 +1440,9 @@ void main() {
 
         await repo.removeFromCollection(entry.id);
 
-        final emissions =
-            await futureEmissions.timeout(const Duration(seconds: 5));
+        final emissions = await futureEmissions.timeout(
+          const Duration(seconds: 5),
+        );
         expect(emissions, hasLength(2));
         expect(emissions[0]!.id, equals(entry.id));
         expect(emissions[0]!.deletedAt, isNull);

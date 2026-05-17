@@ -176,7 +176,6 @@ void main() {
       );
 
       test(
-        'round-trips the Pass-1 fields '
         '(playingTime / totalPlayCount / tags / visibility / createdById)',
         () async {
           await repo.cacheGame(
@@ -199,7 +198,7 @@ void main() {
         },
       );
 
-      test('preserves model defaults for unset Pass-1 fields', () async {
+      test('preserves model defaults for unset fields', () async {
         await repo.cacheGame(_makeGame(id: 'g-defaults'));
 
         final found = (await repo.getGame('g-defaults'))!;
@@ -211,11 +210,6 @@ void main() {
       });
 
       test('getGame returns null for a tombstoned game', () async {
-        // Pass-6 Tier-1 fix: the five game read paths (getGame,
-        // getGames, searchGames, watchGame, watchGames) all
-        // skipped the `deletedAt IS NULL` filter that the
-        // collection and household repositories apply. This test
-        // locks in the fix for the single-item lookup.
         await repo.cacheGame(
           _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
         );
@@ -346,18 +340,12 @@ void main() {
       test('excludes tombstoned games from search results', () async {
         await repo.cacheGame(_makeGame(id: 'g-live', title: 'Catan'));
         await repo.cacheGame(
-          _makeGame(
-            id: 'g-deleted',
-            title: 'Cathedral',
-            deletedAt: _now(),
-          ),
+          _makeGame(id: 'g-deleted', title: 'Cathedral', deletedAt: _now()),
         );
 
         final result = await repo.searchGames('cat');
         expect(result.map((g) => g.id), equals(['g-live']));
       });
-
-      // ── Tier-2 input validation ──────────────────────────────────────────────────
 
       test('returns empty when limit is zero', () async {
         await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
@@ -366,10 +354,6 @@ void main() {
       });
 
       test('returns empty when limit is negative', () async {
-        // Pre-fix, `limit: -1` would silently disable SQLite's LIMIT
-        // clause (negative LIMIT === no limit in SQLite) and turn the
-        // search into an unbounded cache scan. Now short-circuited
-        // before any SQL.
         await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
 
         expect(await repo.searchGames('cat', limit: -1), isEmpty);
@@ -379,12 +363,6 @@ void main() {
       test(
         'strips LIKE wildcards (% and _) so they cannot match unintended rows',
         () async {
-          // Pre-fix, q='%' would have compiled to LIKE '%%%' which
-          // matches every cached row — turning the search into a
-          // cache flood that distorts the prefix ranking. Now the
-          // impl strips `%` and `_` from the input before building
-          // the predicate, so a pure-wildcard query becomes '' and
-          // short-circuits to [].
           await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
           await repo.cacheGame(_makeGame(id: 'g-2', title: 'Wingspan'));
           await repo.cacheGame(_makeGame(id: 'g-3', title: 'Ticket to Ride'));
@@ -434,17 +412,10 @@ void main() {
 
       test('emits null for a tombstoned game id', () async {
         await repo.cacheGame(
-          _makeGame(
-            id: 'g-deleted',
-            title: 'Removed',
-            deletedAt: _now(),
-          ),
+          _makeGame(id: 'g-deleted', title: 'Removed', deletedAt: _now()),
         );
 
-        await expectLater(
-          repo.watchGame('g-deleted').take(1),
-          emits(isNull),
-        );
+        await expectLater(repo.watchGame('g-deleted').take(1), emits(isNull));
       });
     });
 
@@ -467,9 +438,11 @@ void main() {
 
         await expectLater(
           repo.watchGames().take(1),
-          emits(predicate<List<Game>>(
-            (games) => games.length == 1 && games.single.id == 'g-live',
-          )),
+          emits(
+            predicate<List<Game>>(
+              (games) => games.length == 1 && games.single.id == 'g-live',
+            ),
+          ),
         );
       });
     });

@@ -188,24 +188,18 @@ void main() {
       });
 
       test('emits updated list after add', () async {
-        // Subscribe-then-mutate. Post-Pass-3c the stream emits the
-        // current state on subscribe (no fake `yield <empty>`), so we
-        // must listen BEFORE mutating to capture both the initial empty
-        // list and the post-add list.
         final futureEmissions = repository.watchAll().take(2).toList();
 
         await pumpEventQueue();
 
         await repository.add(_makeNotification(title: 'Watch Test'));
 
-        final emissions =
-            await futureEmissions.timeout(const Duration(seconds: 5));
+        final emissions = await futureEmissions.timeout(
+          const Duration(seconds: 5),
+        );
         expect(emissions, hasLength(2));
         expect(emissions[0], isEmpty);
-        expect(
-          emissions[1].any((n) => n.title == 'Watch Test'),
-          isTrue,
-        );
+        expect(emissions[1].any((n) => n.title == 'Watch Test'), isTrue);
       });
     });
 
@@ -219,8 +213,7 @@ void main() {
         // between mutations gives Drift's reactivity time to deliver
         // the emission to the subscriber before the next mutation
         // fires, keeping the sequence deterministic.
-        final futureEmissions =
-            repository.watchUnreadCount().take(3).toList();
+        final futureEmissions = repository.watchUnreadCount().take(3).toList();
 
         await pumpEventQueue(); // emission 1: 0 (empty)
 
@@ -238,66 +231,63 @@ void main() {
     });
 
     group('watchUnreadCountForServer', () {
-      test(
-        'is isolated to the given server '
-        '(server-b mutations never raise server-a\'s count)',
-        () async {
-          // Listener-based capture rather than take(N). The prior
-          // test capped emissions with take(2), which cancelled the
-          // subscription as soon as [0, 1] arrived — BEFORE the
-          // server-b add ran. That meant the test never actually
-          // verified isolation; it only confirmed that the first two
-          // emissions for server-a were [0, 1] (true regardless of
-          // any cross-server interaction).
-          //
-          // Here we listen until cancel, perform the cross-server
-          // mutation, and then assert two things:
-          //
-          // 1. The last emission for server-a is still 1 — the
-          //    server-b row did not change the count.
-          // 2. No emission for server-a is greater than 1 across the
-          //    entire stream — even if Drift's reactivity re-fires
-          //    the query on the server-b add (it may, since the
-          //    table changed), the value comes back the same.
-          final emissions = <int>[];
-          final sub = repository
-              .watchUnreadCountForServer('server-a')
-              .listen(emissions.add);
+      test('is isolated to the given server '
+          '(server-b mutations never raise server-a\'s count)', () async {
+        // Listener-based capture rather than take(N). The prior
+        // test capped emissions with take(2), which cancelled the
+        // subscription as soon as [0, 1] arrived — BEFORE the
+        // server-b add ran. That meant the test never actually
+        // verified isolation; it only confirmed that the first two
+        // emissions for server-a were [0, 1] (true regardless of
+        // any cross-server interaction).
+        //
+        // Here we listen until cancel, perform the cross-server
+        // mutation, and then assert two things:
+        //
+        // 1. The last emission for server-a is still 1 — the
+        //    server-b row did not change the count.
+        // 2. No emission for server-a is greater than 1 across the
+        //    entire stream — even if Drift's reactivity re-fires
+        //    the query on the server-b add (it may, since the
+        //    table changed), the value comes back the same.
+        final emissions = <int>[];
+        final sub = repository
+            .watchUnreadCountForServer('server-a')
+            .listen(emissions.add);
 
-          await pumpEventQueue();
-          expect(
-            emissions,
-            equals([0]),
-            reason: 'initial emission should be 0 (empty queue)',
-          );
+        await pumpEventQueue();
+        expect(
+          emissions,
+          equals([0]),
+          reason: 'initial emission should be 0 (empty queue)',
+        );
 
-          await repository.add(_makeNotification(localServerId: 'server-a'));
-          await pumpEventQueue();
-          expect(
-            emissions.last,
-            equals(1),
-            reason: 'server-a add should bring the count to 1',
-          );
+        await repository.add(_makeNotification(localServerId: 'server-a'));
+        await pumpEventQueue();
+        expect(
+          emissions.last,
+          equals(1),
+          reason: 'server-a add should bring the count to 1',
+        );
 
-          // Cross-server mutation: must not change server-a's count.
-          await repository.add(_makeNotification(localServerId: 'server-b'));
-          await pumpEventQueue();
+        // Cross-server mutation: must not change server-a's count.
+        await repository.add(_makeNotification(localServerId: 'server-b'));
+        await pumpEventQueue();
 
-          expect(
-            emissions.last,
-            equals(1),
-            reason: 'server-b add must not change server-a\'s count',
-          );
-          expect(
-            emissions,
-            everyElement(lessThanOrEqualTo(1)),
-            reason:
-                'no emission for server-a should ever exceed 1 across the run',
-          );
+        expect(
+          emissions.last,
+          equals(1),
+          reason: 'server-b add must not change server-a\'s count',
+        );
+        expect(
+          emissions,
+          everyElement(lessThanOrEqualTo(1)),
+          reason:
+              'no emission for server-a should ever exceed 1 across the run',
+        );
 
-          await sub.cancel();
-        },
-      );
+        await sub.cancel();
+      });
     });
   });
 }

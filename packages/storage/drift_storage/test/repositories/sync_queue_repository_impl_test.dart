@@ -46,12 +46,14 @@ void main() {
 
     group('getPendingEntries()', () {
       test('returns pending entries in createdAt order', () async {
-        final older = DateTime.now().toUtc().subtract(const Duration(
-              seconds: 10,
-            ));
+        final older = DateTime.now().toUtc().subtract(
+          const Duration(seconds: 10),
+        );
         final newer = DateTime.now().toUtc();
 
-        await db.into(db.syncQueueTable).insert(
+        await db
+            .into(db.syncQueueTable)
+            .insert(
               SyncQueueTableCompanion.insert(
                 id: 'queue-older',
                 payload: _kOperation.serialized,
@@ -59,7 +61,9 @@ void main() {
                 createdAt: older,
               ),
             );
-        await db.into(db.syncQueueTable).insert(
+        await db
+            .into(db.syncQueueTable)
+            .insert(
               SyncQueueTableCompanion.insert(
                 id: 'queue-newer',
                 payload: _kOperation.serialized,
@@ -80,7 +84,9 @@ void main() {
         () async {
           final t = DateTime.now().toUtc();
           for (final id in const ['op-a', 'op-b', 'op-c']) {
-            await db.into(db.syncQueueTable).insert(
+            await db
+                .into(db.syncQueueTable)
+                .insert(
                   SyncQueueTableCompanion.insert(
                     id: id,
                     payload: _kOperation.serialized,
@@ -213,10 +219,7 @@ void main() {
 
           expect(reset, equals(2));
           final post = await repo.getAllEntries();
-          expect(
-            post.every((e) => e.status == SyncStatus.pending),
-            isTrue,
-          );
+          expect(post.every((e) => e.status == SyncStatus.pending), isTrue);
         },
       );
 
@@ -233,26 +236,21 @@ void main() {
         },
       );
 
-      test(
-        'does not affect completed or failed entries',
-        () async {
-          final a = await repo.enqueue(_kOperation);
-          final b = await repo.enqueue(
-            const UpdateCollectionOperation(collectionId: 'col-1'),
-          );
-          await repo.markCompleted(a.id);
-          await repo.markFailed(b.id, error: 'oops');
+      test('does not affect completed or failed entries', () async {
+        final a = await repo.enqueue(_kOperation);
+        final b = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'col-1'),
+        );
+        await repo.markCompleted(a.id);
+        await repo.markFailed(b.id, error: 'oops');
 
-          final reset = await repo.resetStaleInProgress();
-          expect(reset, equals(0));
+        final reset = await repo.resetStaleInProgress();
+        expect(reset, equals(0));
 
-          final byId = {
-            for (final e in await repo.getAllEntries()) e.id: e,
-          };
-          expect(byId[a.id]!.status, SyncStatus.completed);
-          expect(byId[b.id]!.status, SyncStatus.failed);
-        },
-      );
+        final byId = {for (final e in await repo.getAllEntries()) e.id: e};
+        expect(byId[a.id]!.status, SyncStatus.completed);
+        expect(byId[b.id]!.status, SyncStatus.failed);
+      });
 
       test(
         'makes a crash-stuck inProgress entry retryable via getPendingEntries',
@@ -289,12 +287,6 @@ void main() {
     // ── remapCollectionId ─────────────────────────────────────────────────────────────
 
     group('remapCollectionId()', () {
-      // Pass-7 commit 1: the sync-queue side of the fix for
-      // Copilot fourth-pass thread 1. Locks in the behaviour
-      // that lets reconcileFromServer rewrite pending Update /
-      // Remove ops when the server reassigns the canonical id
-      // of a collection row.
-
       test(
         'rewrites a pending UpdateCollectionOperation that targets oldId',
         () async {
@@ -396,10 +388,7 @@ void main() {
             ),
           );
           await repo.enqueue(
-            const UpdateCollectionOperation(
-              collectionId: 'local-X',
-              rating: 8,
-            ),
+            const UpdateCollectionOperation(collectionId: 'local-X', rating: 8),
           );
           await repo.enqueue(
             const RemoveFromCollectionOperation(collectionId: 'local-X'),
@@ -504,37 +493,31 @@ void main() {
         expect(op.collectionId, equals('local-1'));
       });
 
-      test(
-        'does not touch failed entries that exhausted maxRetries',
-        () async {
-          // Symmetric with getPendingEntries: once an entry has burned
-          // its retry budget, the worker won't pick it up, and remap
-          // shouldn't rewrite it either. The op is effectively dead
-          // queue contents waiting to be purged.
-          final entry = await repo.enqueue(
-            const UpdateCollectionOperation(
-              collectionId: 'local-1',
-              rating: 1,
-            ),
-          );
-          for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
-            await repo.markFailed(entry.id, error: 'fail $i');
-          }
+      test('does not touch failed entries that exhausted maxRetries', () async {
+        // Symmetric with getPendingEntries: once an entry has burned
+        // its retry budget, the worker won't pick it up, and remap
+        // shouldn't rewrite it either. The op is effectively dead
+        // queue contents waiting to be purged.
+        final entry = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 1),
+        );
+        for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(entry.id, error: 'fail $i');
+        }
 
-          final remapped = await repo.remapCollectionId(
-            oldCollectionId: 'local-1',
-            newCollectionId: 'server-99',
-          );
-          expect(remapped, equals(0));
+        final remapped = await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(0));
 
-          final op =
-              SyncOperation.deserialize(
-                    (await repo.getAllEntries()).single.payload,
-                  )
-                  as UpdateCollectionOperation;
-          expect(op.collectionId, equals('local-1'));
-        },
-      );
+        final op =
+            SyncOperation.deserialize(
+                  (await repo.getAllEntries()).single.payload,
+                )
+                as UpdateCollectionOperation;
+        expect(op.collectionId, equals('local-1'));
+      });
 
       test(
         'rewrites retryable failed entries (still outstanding work)',
@@ -545,10 +528,7 @@ void main() {
           // on the next attempt. The op must be rewritten so the
           // retry uses the new id.
           final entry = await repo.enqueue(
-            const UpdateCollectionOperation(
-              collectionId: 'local-1',
-              rating: 6,
-            ),
+            const UpdateCollectionOperation(collectionId: 'local-1', rating: 6),
           );
           await repo.markFailed(entry.id, error: 'transient timeout');
 
@@ -574,10 +554,7 @@ void main() {
         // also be safe in isolation: a redundant remap shouldn't
         // re-serialise the payload and re-bump updatedAt-like state.
         await repo.enqueue(
-          const UpdateCollectionOperation(
-            collectionId: 'local-1',
-            rating: 5,
-          ),
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 5),
         );
 
         final remapped = await repo.remapCollectionId(
@@ -611,150 +588,144 @@ void main() {
       });
     });
 
-    group('getPendingCount() / watchPendingCount() — _pendingPredicate symmetry', () {
-      test('counts pending entries', () async {
-        await repo.enqueue(_kOperation);
-        await repo.enqueue(
-          const UpdateCollectionOperation(collectionId: 'col-1'),
+    group(
+      'getPendingCount() / watchPendingCount() — _pendingPredicate symmetry',
+      () {
+        test('counts pending entries', () async {
+          await repo.enqueue(_kOperation);
+          await repo.enqueue(
+            const UpdateCollectionOperation(collectionId: 'col-1'),
+          );
+
+          expect(await repo.getPendingCount(), 2);
+        });
+
+        test('counts inProgress entries (still outstanding work)', () async {
+          final a = await repo.enqueue(_kOperation);
+          final b = await repo.enqueue(
+            const UpdateCollectionOperation(collectionId: 'col-1'),
+          );
+
+          await repo.markInProgress(b.id);
+
+          expect(await repo.getPendingCount(), 2);
+          expect(
+            (await repo.getAllEntries()).map((e) => e.id),
+            unorderedEquals([a.id, b.id]),
+          );
+        });
+
+        test(
+          'INCLUDES failed entries that have not exceeded maxRetries',
+          () async {
+            final entry = await repo.enqueue(_kOperation);
+            await repo.markFailed(entry.id, error: 'timeout');
+
+            expect(await repo.getPendingCount(), 1);
+          },
         );
 
-        expect(await repo.getPendingCount(), 2);
-      });
-
-      test('counts inProgress entries (still outstanding work)', () async {
-        final a = await repo.enqueue(_kOperation);
-        final b = await repo.enqueue(
-          const UpdateCollectionOperation(collectionId: 'col-1'),
-        );
-
-        await repo.markInProgress(b.id);
-
-        expect(await repo.getPendingCount(), 2);
-        expect((await repo.getAllEntries()).map((e) => e.id),
-            unorderedEquals([a.id, b.id]));
-      });
-
-      test(
-        'INCLUDES failed entries that have not exceeded maxRetries',
-        () async {
-          final entry = await repo.enqueue(_kOperation);
-          await repo.markFailed(entry.id, error: 'timeout');
-
-          expect(await repo.getPendingCount(), 1);
-        },
-      );
-
-      test(
-        'EXCLUDES failed entries that exhausted maxRetries',
-        () async {
+        test('EXCLUDES failed entries that exhausted maxRetries', () async {
           final entry = await repo.enqueue(_kOperation);
           for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
             await repo.markFailed(entry.id, error: 'error $i');
           }
 
           expect(await repo.getPendingCount(), 0);
-        },
-      );
+        });
 
-      test(
-        'EXCLUDES pending entries with retryCount >= maxRetries '
-        '(Pass-8 thread #1: post-resetStaleInProgress dead weight)',
-        () async {
-          // Reachable in production via:
-          // 1. enqueue → markInProgress → markFailed (loop until
-          //    retryCount == maxRetries-1, status=failed)
-          // 2. a worker manually calls markInProgress on the failed
-          //    row (for diagnostics or a manual retry attempt)
-          // 3. the worker crashes
-          // 4. resetStaleInProgress flips inProgress → pending
-          //    WITHOUT touching retryCount
-          //
-          // Result: status='pending', retryCount=maxRetries-1. One
-          // more failed cycle and we're at retryCount=maxRetries
-          // still in pending after the next resetStaleInProgress.
-          //
-          // The pre-Pass-8 _pendingPredicate counted this row as
-          // outstanding (status IN ('pending', 'inProgress') had
-          // no retry guard) while getPendingEntries excluded it
-          // (its retry guard applies to all retryable statuses).
-          // Badge inflation by dead weight the worker can't touch.
-          //
-          // Direct-insert is the cleanest way to construct the
-          // state; the multi-step path through the public API
-          // produces the same row but at the cost of test
-          // signal-to-noise.
-          await db
-              .into(db.syncQueueTable)
-              .insert(
-                SyncQueueTableCompanion.insert(
-                  id: 'dead-pending',
-                  payload: _kOperation.serialized,
-                  status: const Value('pending'),
-                  retryCount: const Value(SyncQueueEntry.maxRetries),
-                  createdAt: DateTime.now().toUtc(),
-                ),
-              );
+        test(
+          'EXCLUDES pending entries with retryCount >= maxRetries',
+          () async {
+            // Reachable in production via:
+            // 1. enqueue → markInProgress → markFailed (loop until
+            //    retryCount == maxRetries-1, status=failed)
+            // 2. a worker manually calls markInProgress on the failed
+            //    row (for diagnostics or a manual retry attempt)
+            // 3. the worker crashes
+            // 4. resetStaleInProgress flips inProgress → pending
+            //    WITHOUT touching retryCount
+            //
+            // Result: status='pending', retryCount=maxRetries-1. One
+            // more failed cycle and we're at retryCount=maxRetries
+            // still in pending after the next resetStaleInProgress.
+            //
+            // Direct-insert is the cleanest way to construct the
+            // state; the multi-step path through the public API
+            // produces the same row but at the cost of test
+            // signal-to-noise.
+            await db
+                .into(db.syncQueueTable)
+                .insert(
+                  SyncQueueTableCompanion.insert(
+                    id: 'dead-pending',
+                    payload: _kOperation.serialized,
+                    status: const Value('pending'),
+                    retryCount: const Value(SyncQueueEntry.maxRetries),
+                    createdAt: DateTime.now().toUtc(),
+                  ),
+                );
 
-          // Predicate-driven count: row excluded.
-          expect(await repo.getPendingCount(), 0);
-          // Watch stream agrees: same predicate.
-          await expectLater(repo.watchPendingCount().take(1), emits(0));
-          // Worker pickup set agrees: same retry cap. Locks in the
-          // symmetry between the two predicates.
-          expect(await repo.getPendingEntries(), isEmpty);
-        },
-      );
+            // Predicate-driven count: row excluded.
+            expect(await repo.getPendingCount(), 0);
+            // Watch stream agrees: same predicate.
+            await expectLater(repo.watchPendingCount().take(1), emits(0));
+            // Worker pickup set agrees: same retry cap. Locks in the
+            // symmetry between the two predicates.
+            expect(await repo.getPendingEntries(), isEmpty);
+          },
+        );
 
-      test(
-        'EXCLUDES inProgress entries with retryCount >= maxRetries '
-        '(Pass-8 thread #1: defensive)',
-        () async {
-          // Companion to the pending case. Not reachable through the
-          // public API in normal flow (markInProgress doesn't touch
-          // retryCount; markFailed sets status='failed' at the same
-          // time it bumps retry), but a future code path or
-          // direct-DB migration during the recovery scripts could
-          // land it. The predicate must exclude it for the same
-          // reason as the pending case: the worker won't pick it up
-          // anyway, so the badge shouldn't pretend it's outstanding.
-          await db
-              .into(db.syncQueueTable)
-              .insert(
-                SyncQueueTableCompanion.insert(
-                  id: 'dead-inprogress',
-                  payload: _kOperation.serialized,
-                  status: const Value('inProgress'),
-                  retryCount: const Value(SyncQueueEntry.maxRetries),
-                  createdAt: DateTime.now().toUtc(),
-                ),
-              );
+        test(
+          'EXCLUDES inProgress entries with retryCount >= maxRetries',
+          () async {
+            // Companion to the pending case. Not reachable through the
+            // public API in normal flow (markInProgress doesn't touch
+            // retryCount; markFailed sets status='failed' at the same
+            // time it bumps retry), but a future code path or
+            // direct-DB migration during the recovery scripts could
+            // land it. The predicate must exclude it for the same
+            // reason as the pending case: the worker won't pick it up
+            // anyway, so the badge shouldn't pretend it's outstanding.
+            await db
+                .into(db.syncQueueTable)
+                .insert(
+                  SyncQueueTableCompanion.insert(
+                    id: 'dead-inprogress',
+                    payload: _kOperation.serialized,
+                    status: const Value('inProgress'),
+                    retryCount: const Value(SyncQueueEntry.maxRetries),
+                    createdAt: DateTime.now().toUtc(),
+                  ),
+                );
 
-          expect(await repo.getPendingCount(), 0);
-          await expectLater(repo.watchPendingCount().take(1), emits(0));
-        },
-      );
+            expect(await repo.getPendingCount(), 0);
+            await expectLater(repo.watchPendingCount().take(1), emits(0));
+          },
+        );
 
-      test('excludes completed entries', () async {
-        final entry = await repo.enqueue(_kOperation);
-        await repo.markCompleted(entry.id);
-
-        expect(await repo.getPendingCount(), 0);
-      });
-
-      test('returns 0 when empty', () async {
-        expect(await repo.getPendingCount(), 0);
-      });
-
-      test(
-        'watchPendingCount also includes retryable failed entries',
-        () async {
+        test('excludes completed entries', () async {
           final entry = await repo.enqueue(_kOperation);
-          await repo.markFailed(entry.id, error: 'timeout');
+          await repo.markCompleted(entry.id);
 
-          await expectLater(repo.watchPendingCount().take(1), emits(1));
-        },
-      );
-    });
+          expect(await repo.getPendingCount(), 0);
+        });
+
+        test('returns 0 when empty', () async {
+          expect(await repo.getPendingCount(), 0);
+        });
+
+        test(
+          'watchPendingCount also includes retryable failed entries',
+          () async {
+            final entry = await repo.enqueue(_kOperation);
+            await repo.markFailed(entry.id, error: 'timeout');
+
+            await expectLater(repo.watchPendingCount().take(1), emits(1));
+          },
+        );
+      },
+    );
 
     group('watchPendingCount()', () {
       test('emits the current pending count on subscribe', () async {
@@ -769,22 +740,18 @@ void main() {
         },
       );
 
-      test(
-        're-emits when an entry is enqueued after subscribe',
-        () async {
-          final futureEmissions =
-              repo.watchPendingCount().take(2).toList();
+      test('re-emits when an entry is enqueued after subscribe', () async {
+        final futureEmissions = repo.watchPendingCount().take(2).toList();
 
-          await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-          await repo.enqueue(_kOperation);
+        await repo.enqueue(_kOperation);
 
-          expect(
-            await futureEmissions.timeout(const Duration(seconds: 5)),
-            equals([0, 1]),
-          );
-        },
-      );
+        expect(
+          await futureEmissions.timeout(const Duration(seconds: 5)),
+          equals([0, 1]),
+        );
+      });
     });
 
     group('SyncOperation round-trip', () {
@@ -850,10 +817,7 @@ void main() {
                 ),
               );
 
-          await expectLater(
-            repo.getAllEntries(),
-            throwsA(isA<StateError>()),
-          );
+          await expectLater(repo.getAllEntries(), throwsA(isA<StateError>()));
         },
       );
 
@@ -871,10 +835,7 @@ void main() {
                 ),
               );
 
-          await expectLater(
-            repo.getAllEntries(),
-            throwsA(isA<StateError>()),
-          );
+          await expectLater(repo.getAllEntries(), throwsA(isA<StateError>()));
         },
       );
     });

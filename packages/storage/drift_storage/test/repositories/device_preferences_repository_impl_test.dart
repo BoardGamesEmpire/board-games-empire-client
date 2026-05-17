@@ -67,7 +67,7 @@ void main() {
       test('emits updated preferences after save', () async {
         const updated = DevicePreferences(maxMonitoredServers: 2);
 
-        // Subscribe-then-mutate: post-Pass-3c, Drift's .watch() emits
+        // Subscribe-then-mutate: Drift's .watch() emits
         // the current value on subscribe (no fake initial yield).
         // take(2).toList() listens synchronously; pumpEventQueue lets
         // Drift's initial emission land before we mutate.

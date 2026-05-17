@@ -18,14 +18,7 @@ import '../databases/server_database.dart';
 /// create DTO strips ids before forwarding to Prisma, so the server
 /// returns a freshly-generated cuid2 on insert and
 /// [reconcileFromServer] handles the id-reassignment path via
-/// [SyncQueueRepository.remapCollectionId]. If the backend's DTO is
-/// later updated to accept client ids, the local id round-trips
-/// unchanged and the remap call becomes a no-op without any
-/// client-side change.
-///
-/// (Aside: Prisma's default `@default(cuid())` is CUID v1, not v2;
-/// the backend is using `@default(cuid(2))` or an equivalent helper
-/// to opt in to cuid2 explicitly.)
+/// [SyncQueueRepository.remapCollectionId].
 ///
 /// ## Atomicity
 ///
@@ -123,14 +116,6 @@ import '../databases/server_database.dart';
 ///   `updatedAt`): reset to "new local-only entry" state so the
 ///   row goes through the normal sync flow.
 ///
-/// (Copilot's Pass-9 review thread #5 suggested resetting all
-/// per-entry metadata on resurrection. We deliberately chose the
-/// opposite: in this product, your relationship with a game
-/// survives an ownership-state toggle. A future
-/// "restore-as-fresh-entry" operation can be added if the
-/// inverse is needed for a specific UI flow; the default
-/// addToCollection preserves continuity.)
-///
 /// ## addToCollection / reconcileFromServer canonical-row lookup
 ///
 /// Both methods need to find "the" canonical local row for a
@@ -184,11 +169,9 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
 
   @override
   Future<List<GameCollection>> getCollection() async {
-    final rows =
-        await (_db.select(_db.gameCollectionsTable)..where(
-              (t) => t.userId.equals(_userId) & t.deletedAt.isNull(),
-            ))
-            .get();
+    final rows = await (_db.select(
+      _db.gameCollectionsTable,
+    )..where((t) => t.userId.equals(_userId) & t.deletedAt.isNull())).get();
     return rows.map(_mapRow).toList();
   }
 
@@ -307,46 +290,41 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         //
         // The Value.absent() guards on rating/comment match the
         // live-row branch's "null means leave-unchanged" semantic,
-        // closing a pre-Pass-9 asymmetry where the resurrection
+        // closing an asymmetry where the resurrection
         // branch always overwrote with whatever the caller passed
         // (including null) while the live-row branch preserved.
         entryId = existing.id;
         finalQuantity = quantity;
-        await (_db.update(_db.gameCollectionsTable)
-              ..where((t) => t.id.equals(entryId)))
-            .write(
-              GameCollectionsTableCompanion(
-                quantity: Value(quantity),
-                rating: rating != null
-                    ? Value(rating)
-                    : const Value.absent(),
-                comment: comment != null
-                    ? Value(comment)
-                    : const Value.absent(),
-                deletedAt: const Value(null),
-                isDirty: const Value(true),
-                isLocalOnly: const Value(true),
-                updatedAt: Value(now),
-              ),
-            );
+        await (_db.update(
+          _db.gameCollectionsTable,
+        )..where((t) => t.id.equals(entryId))).write(
+          GameCollectionsTableCompanion(
+            quantity: Value(quantity),
+            rating: rating != null ? Value(rating) : const Value.absent(),
+            comment: comment != null ? Value(comment) : const Value.absent(),
+            deletedAt: const Value(null),
+            isDirty: const Value(true),
+            isLocalOnly: const Value(true),
+            updatedAt: Value(now),
+          ),
+        );
       } else {
         // Live row: increment quantity by the requested amount.
         // Preserve existing rating/comment unless the caller supplied
         // a new value.
         entryId = existing.id;
         finalQuantity = existing.quantity + quantity;
-        await (_db.update(_db.gameCollectionsTable)
-              ..where((t) => t.id.equals(entryId)))
-            .write(
-              GameCollectionsTableCompanion(
-                quantity: Value(finalQuantity),
-                rating: rating != null ? Value(rating) : const Value.absent(),
-                comment:
-                    comment != null ? Value(comment) : const Value.absent(),
-                isDirty: const Value(true),
-                updatedAt: Value(now),
-              ),
-            );
+        await (_db.update(
+          _db.gameCollectionsTable,
+        )..where((t) => t.id.equals(entryId))).write(
+          GameCollectionsTableCompanion(
+            quantity: Value(finalQuantity),
+            rating: rating != null ? Value(rating) : const Value.absent(),
+            comment: comment != null ? Value(comment) : const Value.absent(),
+            isDirty: const Value(true),
+            updatedAt: Value(now),
+          ),
+        );
       }
 
       await _syncQueue.enqueue(
@@ -360,9 +338,9 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         ),
       );
 
-      final row = await (_db.select(_db.gameCollectionsTable)
-            ..where((t) => t.id.equals(entryId)))
-          .getSingle();
+      final row = await (_db.select(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(entryId))).getSingle();
       return _mapRow(row);
     });
   }
@@ -412,31 +390,27 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         );
       }
 
-      await (_db.update(_db.gameCollectionsTable)
-            ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
-          .write(
-            GameCollectionsTableCompanion(
-              quantity: quantity != null
-                  ? Value(quantity)
-                  : const Value.absent(),
-              rating: rating != null ? Value(rating) : const Value.absent(),
-              playCount: playCount != null
-                  ? Value(playCount)
-                  : const Value.absent(),
-              playAgain: playAgain != null
-                  ? Value(playAgain)
-                  : const Value.absent(),
-              favorite: favorite != null
-                  ? Value(favorite)
-                  : const Value.absent(),
-              comment: comment != null ? Value(comment) : const Value.absent(),
-              lastPlayed: lastPlayed != null
-                  ? Value(lastPlayed)
-                  : const Value.absent(),
-              isDirty: const Value(true),
-              updatedAt: Value(now),
-            ),
-          );
+      await (_db.update(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
+        GameCollectionsTableCompanion(
+          quantity: quantity != null ? Value(quantity) : const Value.absent(),
+          rating: rating != null ? Value(rating) : const Value.absent(),
+          playCount: playCount != null
+              ? Value(playCount)
+              : const Value.absent(),
+          playAgain: playAgain != null
+              ? Value(playAgain)
+              : const Value.absent(),
+          favorite: favorite != null ? Value(favorite) : const Value.absent(),
+          comment: comment != null ? Value(comment) : const Value.absent(),
+          lastPlayed: lastPlayed != null
+              ? Value(lastPlayed)
+              : const Value.absent(),
+          isDirty: const Value(true),
+          updatedAt: Value(now),
+        ),
+      );
 
       await _syncQueue.enqueue(
         UpdateCollectionOperation(
@@ -451,9 +425,9 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         ),
       );
 
-      final row = await (_db.select(_db.gameCollectionsTable)
-            ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
-          .getSingle();
+      final row = await (_db.select(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).getSingle();
       return _mapRow(row);
     });
   }
@@ -464,16 +438,13 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       final now = DateTime.now().toUtc();
 
       final existing =
-          await (_db.select(_db.gameCollectionsTable)..where(
-                (t) => t.id.equals(id) & t.userId.equals(_userId),
-              ))
+          await (_db.select(_db.gameCollectionsTable)
+                ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
               .getSingleOrNull();
       if (existing == null) {
         // Genuinely missing or cross-user: throw to keep the existing
         // contract for callers that pass an id they shouldn't.
-        throw StateError(
-          'GameCollection entry $id not found for current user',
-        );
+        throw StateError('GameCollection entry $id not found for current user');
       }
       if (existing.deletedAt != null) {
         // Already tombstoned. Re-remove is an idempotent silent
@@ -487,19 +458,17 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       // tombstoned rows, so a subsequent addToCollection on the same
       // triplet can resurrect this row (see addToCollection).
       // Physical purge happens later via reconcileFromServer.
-      await (_db.update(_db.gameCollectionsTable)
-            ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
-          .write(
-            GameCollectionsTableCompanion(
-              deletedAt: Value(now),
-              isDirty: const Value(true),
-              updatedAt: Value(now),
-            ),
-          );
-
-      await _syncQueue.enqueue(
-        RemoveFromCollectionOperation(collectionId: id),
+      await (_db.update(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
+        GameCollectionsTableCompanion(
+          deletedAt: Value(now),
+          isDirty: const Value(true),
+          updatedAt: Value(now),
+        ),
       );
+
+      await _syncQueue.enqueue(RemoveFromCollectionOperation(collectionId: id));
     });
   }
 
@@ -600,35 +569,6 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
       final serverIsTombstone = serverEntry.deletedAt != null;
 
       if (serverIsTombstone) {
-        // Surgical purge. Pre-Pass-8, the predicate was a broad
-        // `userId AND platformGameId AND medium` sweep that deleted
-        // every row for the triplet — including a local-only
-        // resurrection that had appeared AFTER the original
-        // tombstone was synced. The exclusion clause
-        // `(deletedAt.isNotNull() OR isLocalOnly.equals(false))`
-        // defends the resurrection:
-        //
-        // 1. User removes → tombstone (deletedAt set,
-        //    isLocalOnly=false), RemoveOp queued.
-        // 2. RemoveOp completes — server has tombstoned the row.
-        // 3. User re-adds. addToCollection resurrects the tombstone
-        //    via _findCanonicalRow: same id, deletedAt cleared,
-        //    isLocalOnly flipped to true, AddOp queued.
-        // 4. The server's confirmation of the step-1 removal —
-        //    which has been in flight — finally arrives here.
-        //
-        // Pre-fix the purge deleted the resurrection along with
-        // any other tombstones for the triplet. The pending AddOp
-        // continued through the queue under an id whose row was
-        // gone, leaving a dangling op and silently dropping the
-        // user's re-add intent.
-        //
-        // Post-fix: the resurrection has `deletedAt == null AND
-        // isLocalOnly == true`, so the exclusion clause filters
-        // it out of the delete predicate. Tombstones (deletedAt
-        // not null) and server-confirmed lives (isLocalOnly false)
-        // for the triplet are still deleted, which keeps the
-        // multi-tombstone cleanup behaviour intact.
         await (_db.delete(_db.gameCollectionsTable)..where(
               (t) =>
                   t.userId.equals(_userId) &
@@ -643,9 +583,9 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
         // referencing it above), then upsert with the canonical
         // server id.
         if (local != null && local.id != serverEntry.id) {
-          await (_db.delete(_db.gameCollectionsTable)
-                ..where((t) => t.id.equals(local.id)))
-              .go();
+          await (_db.delete(
+            _db.gameCollectionsTable,
+          )..where((t) => t.id.equals(local.id))).go();
         }
         await _db
             .into(_db.gameCollectionsTable)
@@ -671,9 +611,8 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
 
   @override
   Stream<List<GameCollection>> watchCollection() =>
-      (_db.select(_db.gameCollectionsTable)..where(
-            (t) => t.userId.equals(_userId) & t.deletedAt.isNull(),
-          ))
+      (_db.select(_db.gameCollectionsTable)
+            ..where((t) => t.userId.equals(_userId) & t.deletedAt.isNull()))
           .watch()
           .map((rows) => rows.map(_mapRow).toList());
 
@@ -697,11 +636,11 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     required String wireMedium,
   }) async {
     return ((_db.select(_db.gameCollectionsTable)..where(
-              (t) =>
-                  t.userId.equals(_userId) &
-                  t.platformGameId.equals(platformGameId) &
-                  t.medium.equals(wireMedium),
-            ))
+            (t) =>
+                t.userId.equals(_userId) &
+                t.platformGameId.equals(platformGameId) &
+                t.medium.equals(wireMedium),
+          ))
           ..orderBy([
             // Live row first: `deletedAt IS NULL` evaluates to 1 for
             // live rows, 0 for tombstones; DESC ranks 1 ahead of 0.

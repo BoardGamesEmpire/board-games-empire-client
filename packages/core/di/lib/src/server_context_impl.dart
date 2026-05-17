@@ -42,8 +42,7 @@ class ServerContextImpl implements ServerContext {
        _config = config,
        _container = container ?? DependencyContainerImpl(),
        _state = ServerContextState.initializing,
-       _stateController =
-           StreamController<ServerContextState>.broadcast();
+       _stateController = StreamController<ServerContextState>.broadcast();
 
   @override
   final String serverId;
@@ -157,7 +156,7 @@ class ServerContextImpl implements ServerContext {
     // (async — first microtask after listen), but it's guaranteed to land
     // ahead of any subsequent state change emitted via [_stateController]
     // because [_setState] is called synchronously while [_stateController]
-    // delivery is itself async (post-fix). The combination keeps the
+    // delivery is itself async. The combination keeps the
     // "current state on subscribe" semantic without needing a sync
     // controller.
     return Stream.multi((controller) {

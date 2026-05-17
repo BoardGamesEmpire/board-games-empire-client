@@ -188,11 +188,11 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
         final rewritten = _remapOp(op, oldCollectionId, newCollectionId);
         if (rewritten == null) continue;
 
-        await (_db.update(_db.syncQueueTable)
-              ..where((t) => t.id.equals(row.id)))
-            .write(
-              SyncQueueTableCompanion(payload: Value(rewritten.serialized)),
-            );
+        await (_db.update(
+          _db.syncQueueTable,
+        )..where((t) => t.id.equals(row.id))).write(
+          SyncQueueTableCompanion(payload: Value(rewritten.serialized)),
+        );
         remapped++;
       }
       return remapped;
@@ -279,16 +279,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   ///    work.
   ///
   /// 2. **`retryCount < maxRetries` applies to ALL three**, not
-  ///    just `failed`. The pre-fix predicate left `pending` and
-  ///    `inProgress` uncapped, which created an asymmetry with
-  ///    [getPendingEntries] (which caps all retry budgets the
-  ///    same way). A `pending` entry with `retryCount ==
-  ///    maxRetries` (reachable via [resetStaleInProgress] on a
-  ///    row whose retry budget was already exhausted, or via
-  ///    direct DB writes during tests/migrations) would have
-  ///    been counted as outstanding here but excluded from the
-  ///    worker's pickup set — dead weight inflating the badge
-  ///    with rows the worker will never touch.
+  ///    just `failed`.
   ///
   /// 3. **Symmetry with [getPendingEntries]** is enforced by the
   ///    test group: every change to one predicate gets a

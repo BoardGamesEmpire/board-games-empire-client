@@ -67,29 +67,21 @@ void main() {
 
   group('HouseholdRepositoryImpl', () {
     group('getHouseholds()', () {
-      test(
-        'returns only households the current user is a member of',
-        () async {
-          await _seedHousehold(db, id: 'h-1', name: 'Mine');
-          await _seedHousehold(db, id: 'h-2', name: 'Not Mine');
-          await _seedMember(
-            db,
-            id: 'm-1',
-            userId: _kUserId,
-            householdId: 'h-1',
-          );
-          await _seedMember(
-            db,
-            id: 'm-2',
-            userId: _kOtherUserId,
-            householdId: 'h-2',
-          );
+      test('returns only households the current user is a member of', () async {
+        await _seedHousehold(db, id: 'h-1', name: 'Mine');
+        await _seedHousehold(db, id: 'h-2', name: 'Not Mine');
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
+        await _seedMember(
+          db,
+          id: 'm-2',
+          userId: _kOtherUserId,
+          householdId: 'h-2',
+        );
 
-          final households = await repo.getHouseholds();
-          expect(households, hasLength(1));
-          expect(households.single.id, equals('h-1'));
-        },
-      );
+        final households = await repo.getHouseholds();
+        expect(households, hasLength(1));
+        expect(households.single.id, equals('h-1'));
+      });
 
       test('excludes tombstoned households', () async {
         final now = DateTime.now().toUtc();
@@ -99,12 +91,7 @@ void main() {
           name: 'Mine (deleted)',
           deletedAt: now,
         );
-        await _seedMember(
-          db,
-          id: 'm-1',
-          userId: _kUserId,
-          householdId: 'h-1',
-        );
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
 
         expect(await repo.getHouseholds(), isEmpty);
       });
@@ -122,12 +109,7 @@ void main() {
     group('getHousehold()', () {
       test('returns the household when the user is a member', () async {
         await _seedHousehold(db, id: 'h-1', name: 'Mine');
-        await _seedMember(
-          db,
-          id: 'm-1',
-          userId: _kUserId,
-          householdId: 'h-1',
-        );
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
 
         final h = await repo.getHousehold('h-1');
         expect(h, isNotNull);
@@ -153,17 +135,8 @@ void main() {
       test(
         'returns null for a tombstoned household even when user is a member',
         () async {
-          // Pre-fix, getHousehold(id) had no deletedAt filter while
-          // getHouseholds() and watchHouseholds() did — fetching a
-          // tombstoned household by id surfaced data the list/watch
-          // APIs correctly hid.
           final now = DateTime.now().toUtc();
-          await _seedHousehold(
-            db,
-            id: 'h-1',
-            name: 'Removed',
-            deletedAt: now,
-          );
+          await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
           await _seedMember(
             db,
             id: 'm-1',
@@ -210,9 +183,6 @@ void main() {
         '(boundary enforcement — see class doc TODO for the planned '
         'visibility-field exception)',
         () async {
-          // The local cache has members for h-1, but the current user
-          // isn't among them. Pre-fix, getMembers would have leaked
-          // that roster to whoever knew the household id.
           await _seedHousehold(db, id: 'h-1');
           await _seedMember(
             db,
@@ -239,18 +209,8 @@ void main() {
       test(
         'returns empty for a tombstoned household even when the current user is a member',
         () async {
-          // Pass-6 Tier-1 fix: getMembers used to only join to the
-          // members table, not to households — so a stale member
-          // row pointing at a tombstoned household would still leak
-          // its roster. The fixed _membersQuery now also inner-joins
-          // householdsTable filtered by `deletedAt.isNull()`.
           final now = DateTime.now().toUtc();
-          await _seedHousehold(
-            db,
-            id: 'h-1',
-            name: 'Removed',
-            deletedAt: now,
-          );
+          await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
           await _seedMember(
             db,
             id: 'm-1',
@@ -329,12 +289,7 @@ void main() {
 
         // Make the user a member so getHousehold can see it through
         // the inner-join filter.
-        await _seedMember(
-          db,
-          id: 'm-1',
-          userId: _kUserId,
-          householdId: 'h-1',
-        );
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
 
         final retrieved = await repo.getHousehold('h-1');
         expect(retrieved, isNotNull);
@@ -343,13 +298,6 @@ void main() {
     });
 
     group('cacheMember() / cacheMembers()', () {
-      // Pass-9 review thread #4. These are the only public way to
-      // populate member rows from server responses — including the
-      // role-name <-> HouseholdRole bridge (_encodeRole /
-      // _decodeRole), the showAllGames boolean, and the
-      // (householdId, userId) unique-index upsert behaviour.
-      // They had no direct coverage; this group fills the gap.
-
       test('cacheMember persists a single row and reads it back', () async {
         await _seedHousehold(db, id: 'h-1');
         final now = DateTime.now().toUtc();
@@ -470,38 +418,34 @@ void main() {
             expect(
               m.role,
               equals(role),
-              reason:
-                  'role round-trip failed for HouseholdRole.${role.name}',
+              reason: 'role round-trip failed for HouseholdRole.${role.name}',
             );
           }
         },
       );
 
-      test(
-        'cacheMember stores null role and reads it back as null',
-        () async {
-          // Role is nullable in the model (e.g., a transient
-          // invitee with no role pinned yet). _encodeRole and
-          // _decodeRole both short-circuit on null without touching
-          // the 'Unknown' bridge.
-          await _seedHousehold(db, id: 'h-1');
-          final now = DateTime.now().toUtc();
+      test('cacheMember stores null role and reads it back as null', () async {
+        // Role is nullable in the model (e.g., a transient
+        // invitee with no role pinned yet). _encodeRole and
+        // _decodeRole both short-circuit on null without touching
+        // the 'Unknown' bridge.
+        await _seedHousehold(db, id: 'h-1');
+        final now = DateTime.now().toUtc();
 
-          await repo.cacheMember(
-            HouseholdMember(
-              id: 'm-1',
-              userId: _kUserId,
-              householdId: 'h-1',
-              createdAt: now,
-              updatedAt: now,
-            ),
-          );
+        await repo.cacheMember(
+          HouseholdMember(
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
 
-          final me = await repo.getCurrentUserMember('h-1');
-          expect(me, isNotNull);
-          expect(me!.role, isNull);
-        },
-      );
+        final me = await repo.getCurrentUserMember('h-1');
+        expect(me, isNotNull);
+        expect(me!.role, isNull);
+      });
 
       test('cacheMembers persists multiple rows in one batch', () async {
         await _seedHousehold(db, id: 'h-1');
@@ -589,64 +533,54 @@ void main() {
           final me = members.firstWhere((m) => m.userId == _kUserId);
           expect(me.role, equals(HouseholdRole.householdOwner));
 
-          final third =
-              members.firstWhere((m) => m.userId == 'user-third');
+          final third = members.firstWhere((m) => m.userId == 'user-third');
           expect(third.role, equals(HouseholdRole.householdGuest));
         },
       );
 
-      test(
-        'cacheMember is user-agnostic (caches a row for a different user, '
-        'boundary gate prevents read leakage)',
-        () async {
-          // The repo is scoped to _kUserId, but the cache writers
-          // accept payloads the server has already auth-filtered.
-          // A member row for another user can legitimately land in
-          // the local cache (e.g., friend-graph queries) — the
-          // read-side boundary in _membersQuery is what prevents
-          // non-members from seeing it. This test pins both halves
-          // of that design: the write is accepted, the read is
-          // gated.
-          await _seedHousehold(db, id: 'h-1');
-          final now = DateTime.now().toUtc();
+      test('cacheMember is user-agnostic (caches a row for a different user, '
+          'boundary gate prevents read leakage)', () async {
+        // The repo is scoped to _kUserId, but the cache writers
+        // accept payloads the server has already auth-filtered.
+        // A member row for another user can legitimately land in
+        // the local cache (e.g., friend-graph queries) — the
+        // read-side boundary in _membersQuery is what prevents
+        // non-members from seeing it. This test pins both halves
+        // of that design: the write is accepted, the read is
+        // gated.
+        await _seedHousehold(db, id: 'h-1');
+        final now = DateTime.now().toUtc();
 
-          await repo.cacheMember(
-            HouseholdMember(
-              id: 'm-other',
-              userId: _kOtherUserId,
-              householdId: 'h-1',
-              role: HouseholdRole.householdOwner,
-              createdAt: now,
-              updatedAt: now,
-            ),
-          );
+        await repo.cacheMember(
+          HouseholdMember(
+            id: 'm-other',
+            userId: _kOtherUserId,
+            householdId: 'h-1',
+            role: HouseholdRole.householdOwner,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
 
-          // Boundary gate fires — no row for _kUserId means the
-          // roster is invisible through the public read API.
-          expect(await repo.getMembers('h-1'), isEmpty);
-          expect(await repo.getCurrentUserMember('h-1'), isNull);
+        // Boundary gate fires — no row for _kUserId means the
+        // roster is invisible through the public read API.
+        expect(await repo.getMembers('h-1'), isEmpty);
+        expect(await repo.getCurrentUserMember('h-1'), isNull);
 
-          // But the row IS present in the raw cache, ready to be
-          // unlocked when _kUserId joins.
-          final rawRows =
-              await db.select(db.householdMembersTable).get();
-          expect(rawRows, hasLength(1));
-          expect(rawRows.single.userId, equals(_kOtherUserId));
-          expect(rawRows.single.roleName, equals('HouseholdOwner'));
-        },
-      );
+        // But the row IS present in the raw cache, ready to be
+        // unlocked when _kUserId joins.
+        final rawRows = await db.select(db.householdMembersTable).get();
+        expect(rawRows, hasLength(1));
+        expect(rawRows.single.userId, equals(_kOtherUserId));
+        expect(rawRows.single.roleName, equals('HouseholdOwner'));
+      });
     });
 
     group('watchHouseholds()', () {
       test('emits only households the user is a member of', () async {
         await _seedHousehold(db, id: 'h-1');
         await _seedHousehold(db, id: 'h-2');
-        await _seedMember(
-          db,
-          id: 'm-1',
-          userId: _kUserId,
-          householdId: 'h-1',
-        );
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
         await _seedMember(
           db,
           id: 'm-2',
@@ -654,21 +588,13 @@ void main() {
           householdId: 'h-2',
         );
 
-        await expectLater(
-          repo.watchHouseholds().take(1),
-          emits(hasLength(1)),
-        );
+        await expectLater(repo.watchHouseholds().take(1), emits(hasLength(1)));
       });
 
       test('excludes tombstoned households', () async {
         final now = DateTime.now().toUtc();
         await _seedHousehold(db, id: 'h-1', deletedAt: now);
-        await _seedMember(
-          db,
-          id: 'm-1',
-          userId: _kUserId,
-          householdId: 'h-1',
-        );
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
 
         await expectLater(repo.watchHouseholds().take(1), emits(isEmpty));
       });
@@ -686,10 +612,7 @@ void main() {
             householdId: 'h-1',
           );
 
-          await expectLater(
-            repo.watchMembers('h-1').take(1),
-            emits(isEmpty),
-          );
+          await expectLater(repo.watchMembers('h-1').take(1), emits(isEmpty));
         },
       );
 
@@ -722,17 +645,8 @@ void main() {
       test(
         'emits an empty list for a tombstoned household even when the current user is a member',
         () async {
-          // Pass-6 Tier-1 fix: same as getMembers, the watch's join
-          // now includes householdsTable.deletedAt.isNull(). Pre-fix,
-          // the watch would still emit the roster of a tombstoned
-          // household to whoever held a stale member row.
           final now = DateTime.now().toUtc();
-          await _seedHousehold(
-            db,
-            id: 'h-1',
-            name: 'Removed',
-            deletedAt: now,
-          );
+          await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
           await _seedMember(
             db,
             id: 'm-1',
@@ -747,10 +661,7 @@ void main() {
             householdId: 'h-1',
           );
 
-          await expectLater(
-            repo.watchMembers('h-1').take(1),
-            emits(isEmpty),
-          );
+          await expectLater(repo.watchMembers('h-1').take(1), emits(isEmpty));
         },
       );
 
@@ -771,8 +682,7 @@ void main() {
             roleName: 'HouseholdOwner',
           );
 
-          final futureEmissions =
-              repo.watchMembers('h-1').take(2).toList();
+          final futureEmissions = repo.watchMembers('h-1').take(2).toList();
           await pumpEventQueue();
 
           await _seedMember(
@@ -783,8 +693,9 @@ void main() {
             roleName: 'HouseholdMember',
           );
 
-          final emissions =
-              await futureEmissions.timeout(const Duration(seconds: 5));
+          final emissions = await futureEmissions.timeout(
+            const Duration(seconds: 5),
+          );
           expect(emissions, hasLength(2));
           expect(emissions[0], isEmpty);
           expect(emissions[1], hasLength(2));
@@ -794,6 +705,6 @@ void main() {
           );
         },
       );
-  });
+    });
   });
 }

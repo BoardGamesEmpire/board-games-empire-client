@@ -219,8 +219,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   ///
   /// - One to [householdsTable] filtered by `deletedAt IS NULL`,
   ///   which fails the row if the household itself has been
-  ///   tombstoned. Pre-fix, a stale member row pointing at a
-  ///   tombstoned household would still leak the roster.
+  ///   tombstoned.
   /// - One to an alias `me` of [householdMembersTable] filtered by
   ///   the current user id, which fails the row if the current user
   ///   isn't a member. The
