@@ -19,6 +19,19 @@ final class AuthSignInRequested extends AuthEvent {
 
   @override
   List<Object?> get props => [email, password];
+
+  /// Redacted stringification.
+  ///
+  /// [password] stays in [props] for equality (tests rely on full
+  /// structural equality of events), but Equatable's default
+  /// [toString] honours `EquatableConfig.stringify` — if a host
+  /// app or test harness sets that flag, the password would leak
+  /// into Bloc transition logs, observer output, and test-failure
+  /// matcher diffs. Overriding [toString] here makes the leak
+  /// impossible regardless of EquatableConfig.
+  @override
+  String toString() =>
+      'AuthSignInRequested(email: $email, password: <redacted>)';
 }
 
 final class AuthRegisterRequested extends AuthEvent {
@@ -37,6 +50,16 @@ final class AuthRegisterRequested extends AuthEvent {
 
   @override
   List<Object?> get props => [email, password, username, firstName, lastName];
+
+  /// Redacted stringification — see [AuthSignInRequested.toString].
+  @override
+  String toString() =>
+      'AuthRegisterRequested('
+      'email: $email, '
+      'password: <redacted>, '
+      'username: $username, '
+      'firstName: $firstName, '
+      'lastName: $lastName)';
 }
 
 final class AuthSignOutRequested extends AuthEvent {
@@ -50,4 +73,17 @@ final class AuthRepositoryStateChanged extends AuthEvent {
 
   @override
   List<Object?> get props => [repoState];
+
+  /// Type-only stringification.
+  ///
+  /// [repoState] can be [AuthStateAuthenticated] and carry a
+  /// session token, refresh token, or user metadata; printing the
+  /// full state via Equatable's stringify path (or any default
+  /// `'$repoState'` interpolation) would leak credentials and PII
+  /// into Bloc logs and test-failure output. The runtime type is
+  /// the only part of this event worth surfacing in logs anyway —
+  /// it tells you which transition just fired, which is what a
+  /// reader of the trail actually needs.
+  @override
+  String toString() => 'AuthRepositoryStateChanged(${repoState.runtimeType})';
 }
