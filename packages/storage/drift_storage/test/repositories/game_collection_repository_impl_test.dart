@@ -9,7 +9,7 @@ import 'package:drift_storage/src/repositories/game_collection_repository_impl.d
 
 class MockSyncQueue extends Mock implements SyncQueueRepository {}
 
-// ── Fixtures ────────────────────────────────────────────────────────────────
+// ── Fixtures ─────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-abc';
 const _kPlatformGameId = 'pg-1';
@@ -45,7 +45,26 @@ Future<void> _seedPlatformGame(
       );
 }
 
-// ── Tests ───────────────────────────────────────────────────────────────────
+/// Default stubs for [MockSyncQueue]. Extracted so the post-`reset`
+/// re-stub paths can share the same baseline.
+void _stubMockSyncDefaults(MockSyncQueue mockSync) {
+  when(() => mockSync.enqueue(any())).thenAnswer(
+    (_) async => SyncQueueEntry(
+      id: 'sq-stub',
+      payload: '{}',
+      createdAt: DateTime.now().toUtc(),
+    ),
+  );
+  when(() => mockSync.markCompleted(any())).thenAnswer((_) async {});
+  when(
+    () => mockSync.remapCollectionId(
+      oldCollectionId: any(named: 'oldCollectionId'),
+      newCollectionId: any(named: 'newCollectionId'),
+    ),
+  ).thenAnswer((_) async => 0);
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
 
 void main() {
   setUpAll(() {
@@ -71,14 +90,7 @@ void main() {
     db = ServerDatabase.memory();
     mockSync = MockSyncQueue();
 
-    when(() => mockSync.enqueue(any())).thenAnswer(
-      (_) async => SyncQueueEntry(
-        id: 'sq-1',
-        payload: '{}',
-        createdAt: DateTime.now().toUtc(),
-      ),
-    );
-    when(() => mockSync.markCompleted(any())).thenAnswer((_) async {});
+    _stubMockSyncDefaults(mockSync);
 
     repo = GameCollectionRepositoryImpl(
       db: db,
@@ -373,7 +385,7 @@ void main() {
       );
     });
 
-    // ── Tier-2 quantity validation ───────────────────────────────────────────────
+    // ── Tier-2 quantity validation ──────────────────────────────────────────────
 
     group('quantity validation (Tier 2)', () {
       // The validation runs BEFORE the transaction opens, so all of
@@ -426,14 +438,7 @@ void main() {
           // Reset the mock so we can verify NO further enqueues fire
           // from the failed update.
           reset(mockSync);
-          when(() => mockSync.enqueue(any())).thenAnswer(
-            (_) async => SyncQueueEntry(
-              id: 'sq-2',
-              payload: '{}',
-              createdAt: DateTime.now().toUtc(),
-            ),
-          );
-          when(() => mockSync.markCompleted(any())).thenAnswer((_) async {});
+          _stubMockSyncDefaults(mockSync);
 
           await expectLater(
             () => repo.updateCollectionEntry(id: entry.id, quantity: 0),
@@ -456,14 +461,7 @@ void main() {
             quantity: 5,
           );
           reset(mockSync);
-          when(() => mockSync.enqueue(any())).thenAnswer(
-            (_) async => SyncQueueEntry(
-              id: 'sq-2',
-              payload: '{}',
-              createdAt: DateTime.now().toUtc(),
-            ),
-          );
-          when(() => mockSync.markCompleted(any())).thenAnswer((_) async {});
+          _stubMockSyncDefaults(mockSync);
 
           await expectLater(
             () => repo.updateCollectionEntry(id: entry.id, quantity: -2),
@@ -792,6 +790,370 @@ void main() {
           expect(live.isLocalOnly, isFalse);
         },
       );
+
+      // ── Pass-7: current-user boundary (Thread 2) ──────────────────────────────
+
+      group('current-user boundary (Pass-7 Thread 2)', () {
+        test(
+          'throws StateError when serverEntry.userId differs from the '
+          'repository scope',
+          () async {
+            final now = DateTime.now().toUtc();
+            final foreign = GameCollection(
+              id: 'foreign-id',
+              userId: 'someone-else',
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              isDirty: false,
+              isLocalOnly: false,
+              createdAt: now,
+              updatedAt: now,
+            );
+
+            await expectLater(
+              () => repo.reconcileFromServer(foreign),
+              throwsStateError,
+            );
+          },
+        );
+
+        test(
+          'does NOT write a row or touch the sync queue when boundary throws',
+          () async {
+            // The check is BEFORE the transaction opens, so a wrong-
+            // userId response leaves the local cache and the sync
+            // queue completely untouched.
+            final now = DateTime.now().toUtc();
+            final foreign = GameCollection(
+              id: 'foreign-id',
+              userId: 'someone-else',
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              isDirty: false,
+              isLocalOnly: false,
+              createdAt: now,
+              updatedAt: now,
+            );
+
+            try {
+              await repo.reconcileFromServer(
+                foreign,
+                completedSyncQueueId: 'sq-misrouted',
+              );
+            } catch (_) {
+              // expected
+            }
+
+            expect(await db.select(db.gameCollectionsTable).get(), isEmpty);
+            verifyNever(() => mockSync.markCompleted(any()));
+            verifyNever(
+              () => mockSync.remapCollectionId(
+                oldCollectionId: any(named: 'oldCollectionId'),
+                newCollectionId: any(named: 'newCollectionId'),
+              ),
+            );
+          },
+        );
+      });
+
+      // ── Pass-7: tombstone confirmation (Thread 4 impl side) ───────────────
+
+      group('tombstone confirmation (Pass-7 Thread 4)', () {
+        test(
+          'physically deletes the local row when serverEntry.deletedAt is set',
+          () async {
+            // Removal flow: user calls removeFromCollection →
+            // local row is tombstoned (deletedAt set) and a
+            // RemoveOp is queued. The worker syncs the op, the
+            // server confirms by sending back the entry with
+            // deletedAt non-null. reconcileFromServer must
+            // PHYSICALLY delete the local row at that point,
+            // not just store another tombstone.
+            final local = await repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            );
+            await repo.removeFromCollection(local.id);
+
+            // Tombstone exists locally.
+            expect(
+              await (db.select(db.gameCollectionsTable)
+                    ..where((t) => t.id.equals(local.id)))
+                  .getSingleOrNull(),
+              isNotNull,
+            );
+
+            final now = DateTime.now().toUtc();
+            final serverTombstone = local.copyWith(
+              isDirty: false,
+              isLocalOnly: false,
+              deletedAt: now,
+              updatedAt: now,
+            );
+
+            await repo.reconcileFromServer(
+              serverTombstone,
+              completedSyncQueueId: 'sq-remove-1',
+            );
+
+            // Local row gone (not just re-tombstoned).
+            expect(
+              await (db.select(db.gameCollectionsTable)
+                    ..where((t) => t.id.equals(local.id)))
+                  .getSingleOrNull(),
+              isNull,
+            );
+            // No live entry resurfaces.
+            expect(
+              await repo.getCollectionEntry(
+                platformGameId: _kPlatformGameId,
+                medium: _kMedium,
+              ),
+              isNull,
+            );
+            // Queue closure still happens.
+            verify(() => mockSync.markCompleted('sq-remove-1')).called(1);
+          },
+        );
+
+        test(
+          'deletes EVERY row for the triplet on tombstone confirmation',
+          () async {
+            // Multi-tombstone case: the partial unique index only
+            // constrains live rows, so a triplet can accumulate
+            // several tombstones over time. A server-confirmed
+            // removal should cleanly purge all of them so the
+            // cache doesn't keep growing with stale ghosts.
+            final now = DateTime.now().toUtc();
+            final older = now.subtract(const Duration(hours: 2));
+            final mid = now.subtract(const Duration(hours: 1));
+
+            await db
+                .into(db.gameCollectionsTable)
+                .insert(
+                  GameCollectionsTableCompanion.insert(
+                    id: 'old-tomb',
+                    userId: _kUserId,
+                    platformGameId: _kPlatformGameId,
+                    medium: 'Physical',
+                    quantity: const Value(1),
+                    deletedAt: Value(older),
+                    createdAt: older,
+                    updatedAt: older,
+                  ),
+                );
+            await db
+                .into(db.gameCollectionsTable)
+                .insert(
+                  GameCollectionsTableCompanion.insert(
+                    id: 'new-tomb',
+                    userId: _kUserId,
+                    platformGameId: _kPlatformGameId,
+                    medium: 'Physical',
+                    quantity: const Value(2),
+                    deletedAt: Value(mid),
+                    createdAt: mid,
+                    updatedAt: mid,
+                  ),
+                );
+
+            expect(
+              await db.select(db.gameCollectionsTable).get(),
+              hasLength(2),
+            );
+
+            final serverTombstone = GameCollection(
+              id: 'server-tomb-id',
+              userId: _kUserId,
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              isDirty: false,
+              isLocalOnly: false,
+              deletedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            );
+
+            await repo.reconcileFromServer(serverTombstone);
+
+            // Both tombstones gone.
+            expect(
+              await db.select(db.gameCollectionsTable).get(),
+              isEmpty,
+            );
+          },
+        );
+
+        test(
+          'does NOT upsert a tombstone row even when no local row exists',
+          () async {
+            // Server-driven tombstone confirmation for a triplet
+            // that the local cache never saw (e.g. another client
+            // added and removed before this device synced). The
+            // reconcile should still be a clean no-write — no
+            // upsert of a tombstoned row that just clutters the
+            // cache.
+            final now = DateTime.now().toUtc();
+            final serverTombstone = GameCollection(
+              id: 'server-tomb-id',
+              userId: _kUserId,
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              isDirty: false,
+              isLocalOnly: false,
+              deletedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            );
+
+            await repo.reconcileFromServer(serverTombstone);
+
+            expect(
+              await db.select(db.gameCollectionsTable).get(),
+              isEmpty,
+            );
+          },
+        );
+      });
+
+      // ── Pass-7: id reassignment + pending-op remap (Thread 1) ─────────────
+
+      group('id reassignment + pending-op remap (Pass-7 Thread 1)', () {
+        test(
+          'calls remapCollectionId(local.id, serverEntry.id) when ids differ',
+          () async {
+            // The integration shape: a local-only row exists with
+            // its UUID-v4 id. The server reassigns to a different
+            // canonical id. reconcileFromServer must rewrite any
+            // pending Update/Remove ops that referenced the old
+            // local id BEFORE dropping the row.
+            final local = await repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            );
+            // Clear earlier mock interactions from the addToCollection
+            // call so the verify below only inspects the reconcile path.
+            clearInteractions(mockSync);
+            _stubMockSyncDefaults(mockSync);
+
+            final serverEntry = local.copyWith(
+              id: 'server-canonical',
+              isDirty: false,
+              isLocalOnly: false,
+            );
+            await repo.reconcileFromServer(serverEntry);
+
+            verify(
+              () => mockSync.remapCollectionId(
+                oldCollectionId: local.id,
+                newCollectionId: 'server-canonical',
+              ),
+            ).called(1);
+          },
+        );
+
+        test('does NOT call remapCollectionId when ids match', () async {
+          // Optimistic case: the client-generated UUID round-tripped
+          // through the server unchanged. No remap needed; the
+          // method is skipped entirely (and importantly, no
+          // self-targeting rewrite is performed against the queue).
+          final local = await repo.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+          clearInteractions(mockSync);
+          _stubMockSyncDefaults(mockSync);
+
+          final serverEntry = local.copyWith(
+            isDirty: false,
+            isLocalOnly: false,
+          );
+          await repo.reconcileFromServer(serverEntry);
+
+          verifyNever(
+            () => mockSync.remapCollectionId(
+              oldCollectionId: any(named: 'oldCollectionId'),
+              newCollectionId: any(named: 'newCollectionId'),
+            ),
+          );
+        });
+
+        test(
+          'does NOT call remapCollectionId when no local row exists',
+          () async {
+            // Fresh server entry, never seen locally (e.g. another
+            // device added it). No queued ops can possibly reference
+            // this id, so the remap is a no-op skip.
+            final now = DateTime.now().toUtc();
+            final serverEntry = GameCollection(
+              id: 'server-only-id',
+              userId: _kUserId,
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+              quantity: 1,
+              isDirty: false,
+              isLocalOnly: false,
+              createdAt: now,
+              updatedAt: now,
+            );
+
+            await repo.reconcileFromServer(serverEntry);
+
+            verifyNever(
+              () => mockSync.remapCollectionId(
+                oldCollectionId: any(named: 'oldCollectionId'),
+                newCollectionId: any(named: 'newCollectionId'),
+              ),
+            );
+            // Row landed correctly.
+            final live = await repo.getCollectionEntry(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            );
+            expect(live, isNotNull);
+            expect(live!.id, equals('server-only-id'));
+          },
+        );
+
+        test(
+          'calls remapCollectionId on a tombstone reconciliation when '
+          'ids differ',
+          () async {
+            // Even on the tombstone branch, queued Update/Remove ops
+            // still reference the old local id and must be rewritten
+            // — the server may have ack'd the delete while the
+            // earlier queued ops were still in flight under the
+            // local-only id.
+            final local = await repo.addToCollection(
+              platformGameId: _kPlatformGameId,
+              medium: _kMedium,
+            );
+            clearInteractions(mockSync);
+            _stubMockSyncDefaults(mockSync);
+
+            final now = DateTime.now().toUtc();
+            final serverTombstone = local.copyWith(
+              id: 'server-tomb-id',
+              isDirty: false,
+              isLocalOnly: false,
+              deletedAt: now,
+              updatedAt: now,
+            );
+            await repo.reconcileFromServer(serverTombstone);
+
+            verify(
+              () => mockSync.remapCollectionId(
+                oldCollectionId: local.id,
+                newCollectionId: 'server-tomb-id',
+              ),
+            ).called(1);
+          },
+        );
+      });
     });
 
     group('getCollection()', () {
