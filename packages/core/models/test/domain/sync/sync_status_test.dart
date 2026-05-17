@@ -39,8 +39,16 @@ void main() {
     });
 
     test('SyncStatus.inProgress wire form is camelCase, not snake_case', () {
-      // Pre-schema-v2 storage used 'in_progress'. The new contract is
-      // the Dart enum name. Storage migration handled in Pass 2.
+      // Strict / no-legacy: pre-production this codebase has no
+      // released clients yet, so no v1-state databases exist out
+      // there and the storage layer doesn't accept the legacy
+      // snake_case 'in_progress' as an alias for 'inProgress'. The
+      // canonical wire form is the Dart enum `name`. This test
+      // pins that one direction (Dart → wire); the parse-side
+      // strictness is locked in by
+      // `sync_queue_repository_impl_test.dart`'s `_parseStatus`
+      // tests, which assert that 'in_progress' throws StateError
+      // rather than being silently coerced.
       expect(
         _entry(status: SyncStatus.inProgress).toJson()['status'],
         equals('inProgress'),

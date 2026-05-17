@@ -16,8 +16,17 @@ part 'server_database.g.dart';
 /// `<AppSupport>/app_secure_storage/<serverId>/game_empire.db`
 /// (relative path produced by [ServerConfig.databasePath]).
 ///
-/// Opened lazily when the [ServerContext] activates; closed when it
-/// transitions to [ServerContextState.monitoring].
+/// ## Intended lifecycle (Phase 2)
+///
+/// Opened lazily when the [ServerContext] activates, closed when it
+/// transitions to [ServerContextState.monitoring]. The activate /
+/// suspend hooks in [ServerContextImpl] currently carry
+/// `TODO(phase2)` markers for the actual open/close wiring; today
+/// the DB is constructed directly by whoever holds the reference
+/// and stays open for the lifetime of that reference. Phase 2 will
+/// move the construction and disposal under [ServerContext] so the
+/// DB file is opened/closed in lockstep with the context's state
+/// machine.
 ///
 /// ## Schema
 ///

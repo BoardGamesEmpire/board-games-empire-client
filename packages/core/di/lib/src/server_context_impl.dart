@@ -129,8 +129,22 @@ class ServerContextImpl implements ServerContext {
     _setState(ServerContextState.disposed);
     await _container.dispose();
     await _stateController.close();
-    // Drain remaining microtasks so any buffered stream events are delivered
-    // to subscribers before dispose() returns.
+    // Yield one event-loop turn so any buffered stream events queued
+    // via [_stateController.add] reach their subscribers before
+    // dispose() returns.
+    //
+    // The original comment said this drained microtasks, which was
+    // mechanically wrong: `await Future<void>(() {})` schedules the
+    // callback as an event-loop TASK (the back of the event queue),
+    // not a microtask. The effect is the same one the comment was
+    // grasping at — Dart drains the microtask queue before running
+    // the next event-loop task, so awaiting an event-task does
+    // implicitly wait for all currently-scheduled microtasks
+    // (including the broadcast controller's pending delivery
+    // callbacks) to finish. But describing it as "drains microtasks"
+    // suggests `scheduleMicrotask` or similar; the correct framing
+    // is "yield one event-loop turn, which gives the microtask
+    // queue a chance to drain as a side effect."
     await Future<void>(() {});
   }
 
