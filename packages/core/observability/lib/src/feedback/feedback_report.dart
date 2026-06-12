@@ -101,6 +101,25 @@ abstract class FeedbackReport with _$FeedbackReport {
   List<String> validate() {
     final violations = <String>[];
 
+    // The constructor asserts re-stated as runtime checks: asserts are
+    // stripped in release builds, so an invalid report — e.g. a
+    // corrupted offline-persisted draft rehydrated via [fromJson] —
+    // can exist there. Re-checking here lets submit() implementations
+    // reject it reliably in every build mode. (Under `dart test`
+    // asserts are active, so these branches are unreachable in the
+    // suite — the construction-time AssertionError specs cover the
+    // debug path.)
+    if (message.isEmpty) {
+      violations.add('message must not be empty');
+    }
+    if ((category == FeedbackCategory.crash ||
+            category == FeedbackCategory.bug) &&
+        severity == null) {
+      violations.add(
+        'severity is required when category is ${category.toWire()}',
+      );
+    }
+
     void cap(String field, String? value, int max) {
       if (value != null && value.length > max) {
         violations.add('$field exceeds $max characters (${value.length})');

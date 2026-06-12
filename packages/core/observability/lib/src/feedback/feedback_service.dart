@@ -67,5 +67,7 @@ class FeedbackSubmissionException implements Exception {
   final Object? cause;
 
   @override
-  String toString() => 'FeedbackSubmissionException: $message';
+  String toString() => cause == null
+      ? 'FeedbackSubmissionException: $message'
+      : 'FeedbackSubmissionException: $message (cause: $cause)';
 }

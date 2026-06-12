@@ -97,6 +97,20 @@ void main() {
     test('empty input stays empty', () {
       expect(Redaction.maskMiddle(''), '');
     });
+
+    test('negative keepStart throws ArgumentError', () {
+      expect(
+        () => Redaction.maskMiddle('abc', keepStart: -1),
+        throwsArgumentError,
+      );
+    });
+
+    test('negative keepEnd throws ArgumentError', () {
+      expect(
+        () => Redaction.maskMiddle('abc', keepEnd: -1),
+        throwsArgumentError,
+      );
+    });
   });
 
   group('Redaction.truncate', () {
@@ -121,6 +135,10 @@ void main() {
 
     test('empty ellipsis produces a plain cut', () {
       expect(Redaction.truncate('hello world', 5, ellipsis: ''), 'hello');
+    });
+
+    test('maxLength smaller than the ellipsis throws ArgumentError', () {
+      expect(() => Redaction.truncate('hello', 0), throwsArgumentError);
     });
   });
 

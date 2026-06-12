@@ -72,14 +72,24 @@ abstract final class Redaction {
   /// characters, masks the rest with [maskChar]. Inputs no longer than
   /// `keepStart + keepEnd` are fully masked — keeping both ends of a
   /// too-short value would reveal it entirely.
+  ///
+  /// Throws [ArgumentError] when [keepStart] or [keepEnd] is negative.
+  /// Runtime checks rather than asserts: this is a public redaction
+  /// utility, and in a release build (asserts stripped) a negative
+  /// value would otherwise surface as a cryptic substring [RangeError]
+  /// far from the bad call site.
   static String maskMiddle(
     String input, {
     int keepStart = 1,
     int keepEnd = 1,
     String maskChar = '*',
   }) {
-    assert(keepStart >= 0, 'keepStart must be >= 0');
-    assert(keepEnd >= 0, 'keepEnd must be >= 0');
+    if (keepStart < 0) {
+      throw ArgumentError.value(keepStart, 'keepStart', 'must be >= 0');
+    }
+    if (keepEnd < 0) {
+      throw ArgumentError.value(keepEnd, 'keepEnd', 'must be >= 0');
+    }
     if (input.length <= keepStart + keepEnd) {
       return maskChar * input.length;
     }
@@ -92,11 +102,18 @@ abstract final class Redaction {
   /// Caps [input] at [maxLength] total characters, replacing the overflow
   /// tail with [ellipsis]. Inputs within the cap are returned unchanged
   /// (same instance).
+  ///
+  /// Throws [ArgumentError] when [maxLength] can't fit [ellipsis] —
+  /// runtime check rather than assert, for the same release-build
+  /// rationale as [maskMiddle].
   static String truncate(String input, int maxLength, {String ellipsis = '…'}) {
-    assert(
-      maxLength >= ellipsis.length,
-      'maxLength must fit the ellipsis itself',
-    );
+    if (maxLength < ellipsis.length) {
+      throw ArgumentError.value(
+        maxLength,
+        'maxLength',
+        'must be >= the ellipsis length (${ellipsis.length})',
+      );
+    }
     if (input.length <= maxLength) return input;
     return '${input.substring(0, maxLength - ellipsis.length)}$ellipsis';
   }

@@ -84,18 +84,27 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
   /// phantom marker.
   Map<String, dynamic> displayJson() {
     final out = {...report.toJson()};
+    // Lazily cloned once on the first deviceInfo.<key> redaction, then
+    // mutated in place — re-spreading the map per redacted key would
+    // allocate a fresh copy for every path.
+    Map<String, dynamic>? device;
     for (final path in userRedactedFields) {
       if (path.startsWith(deviceInfoPrefix)) {
-        final device = out['deviceInfo'];
-        if (device is Map<String, dynamic>) {
-          final key = path.substring(deviceInfoPrefix.length);
-          if (device.containsKey(key)) {
-            out['deviceInfo'] = {...device, key: redactedMarker};
-          }
+        device ??= switch (out['deviceInfo']) {
+          final Map<String, dynamic> map => {...map},
+          _ => null,
+        };
+        if (device == null) continue;
+        final key = path.substring(deviceInfoPrefix.length);
+        if (device.containsKey(key)) {
+          device[key] = redactedMarker;
         }
       } else if (out[path] != null) {
         out[path] = redactedMarker;
       }
+    }
+    if (device != null) {
+      out['deviceInfo'] = device;
     }
     return out;
   }
