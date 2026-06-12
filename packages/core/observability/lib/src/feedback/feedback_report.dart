@@ -40,7 +40,11 @@ abstract class FeedbackReport with _$FeedbackReport {
         'category == FeedbackCategory.bug) || severity != null',
     'severity is required when category is crash or bug',
   )
-  @Assert('message.isNotEmpty', 'message must not be empty')
+  // `message != ""` rather than `message.isNotEmpty`: const constructor
+  // asserts only admit potentially-constant expressions, and property
+  // access on a parameter (`.isNotEmpty`) is not one — `==`/`!=` against
+  // a String literal is.
+  @Assert("message != ''", 'message must not be empty')
   const factory FeedbackReport({
     /// What kind of report this is.
     required FeedbackCategory category,
