@@ -22,6 +22,16 @@ part 'feedback_report_preview.freezed.dart';
 /// are already sanitised at capture; per-crumb redaction is a future
 /// UI-layer concern, not part of this model.
 ///
+/// ## Seeding from a persisted draft
+///
+/// The bare constructor's [userRedactedFields] defaults to the empty
+/// set, NOT the report's — it's an explicit-set entry point.
+/// [FeedbackReportPreview.fromReport] is the right call for the common
+/// case (previewing a draft whose own `userRedactedFields` already
+/// carries prior marks): it seeds the preview's set from the report so
+/// [unredactField] can toggle those off and [toSubmittableReport]
+/// reflects the final intent.
+///
 /// The preview is immutable: [redactField] / [unredactField] return new
 /// instances, so the consent screen can treat it as ordinary bloc state.
 @freezed
@@ -31,10 +41,25 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
     required FeedbackReport report,
 
     /// Field paths the user has redacted in this preview session.
-    /// Merged with any paths already on [FeedbackReport.userRedactedFields]
-    /// at submission time.
+    /// THIS is the authoritative final set used by
+    /// [toSubmittableReport]; the report's own `userRedactedFields`
+    /// is NOT unioned in at submit time. Seed via
+    /// [FeedbackReportPreview.fromReport] when previewing a draft
+    /// whose paths should be carried forward.
     @Default(<String>{}) Set<String> userRedactedFields,
   }) = _FeedbackReportPreview;
+
+  /// Creates a preview seeded with the redactions already on [report].
+  ///
+  /// Equivalent to passing `userRedactedFields: {...report.userRedactedFields}`
+  /// — the named factory exists so call sites that preview a persisted
+  /// draft read at a glance, and so callers can't accidentally drop
+  /// prior marks by forgetting to seed manually.
+  factory FeedbackReportPreview.fromReport(FeedbackReport report) =>
+      FeedbackReportPreview(
+        report: report,
+        userRedactedFields: {...report.userRedactedFields},
+      );
 
   const FeedbackReportPreview._();
 
@@ -111,14 +136,21 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
 
   /// Materialises the preview into the report that should actually be
   /// submitted: redacted values replaced with [redactedMarker], and the
-  /// redacted paths merged (sorted) into
+  /// preview's sorted [userRedactedFields] copied into
   /// [FeedbackReport.userRedactedFields] so the backend sets
-  /// `redactionApplied`.
+  /// `redactionApplied`. The report's own `userRedactedFields` is NOT
+  /// unioned in — see the "Seeding from a persisted draft" class doc.
   ///
-  /// With no preview-session redactions the underlying report is
-  /// returned as-is.
+  /// Returns [report] unchanged when both the preview's set and the
+  /// report's own `userRedactedFields` are empty.
   FeedbackReport toSubmittableReport() {
-    if (userRedactedFields.isEmpty) return report;
+    // Early-out only when the preview AND the report both carry no
+    // marks — otherwise the preview's set is the authoritative final
+    // intent (incl. an explicit "unredact everything" override), so
+    // we re-materialise even when our own set is empty.
+    if (userRedactedFields.isEmpty && report.userRedactedFields.isEmpty) {
+      return report;
+    }
 
     String? maskIf(String field, String? value) =>
         userRedactedFields.contains(field) && value != null
@@ -139,9 +171,10 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
       }
     }
 
-    final mergedPaths =
-        {...report.userRedactedFields, ...userRedactedFields}.toList()..sort();
-
+    // The preview's set IS the final intent — no union with
+    // `report.userRedactedFields`. Seeding (when desired) happens
+    // upfront via [FeedbackReportPreview.fromReport], which lets
+    // [unredactField] genuinely toggle a seeded path off.
     return report.copyWith(
       title: maskIf('title', report.title),
       message: userRedactedFields.contains('message')
@@ -151,7 +184,7 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
       platform: maskIf('platform', report.platform),
       locale: maskIf('locale', report.locale),
       deviceInfo: deviceInfo,
-      userRedactedFields: mergedPaths,
+      userRedactedFields: userRedactedFields.toList()..sort(),
     );
   }
 }

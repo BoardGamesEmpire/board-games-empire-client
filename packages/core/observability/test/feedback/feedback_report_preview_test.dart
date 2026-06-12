@@ -98,16 +98,43 @@ void main() {
       );
     });
 
-    test('merges with paths already on the underlying report', () {
+    test(
+      'fromReport seeds userRedactedFields so seeded paths survive submit',
+      () {
+        final report = _report().copyWith(userRedactedFields: ['title']);
+        final submittable = FeedbackReportPreview.fromReport(
+          report,
+        ).redactField('platform').toSubmittableReport();
+        expect(submittable.userRedactedFields.toSet(), {'title', 'platform'});
+        // Seeded path's value is also masked at submit time.
+        expect(submittable.title, FeedbackReportPreview.redactedMarker);
+      },
+    );
+
+    test('unredactField undoes a path seeded from the report', () {
       final report = _report().copyWith(userRedactedFields: ['title']);
-      final submittable = FeedbackReportPreview(
-        report: report,
-      ).redactField('platform').toSubmittableReport();
-      expect(
-        submittable.userRedactedFields.toSet(),
-        {'title', 'platform'},
-      );
+      final submittable = FeedbackReportPreview.fromReport(
+        report,
+      ).unredactField('title').toSubmittableReport();
+      expect(submittable.userRedactedFields, isEmpty);
+      // Value is preserved because no marker was applied.
+      expect(submittable.title, equals('Add crash'));
     });
+
+    test(
+      'bare constructor with a marked report overrides the report\'s marks',
+      () {
+        // The bare constructor is for explicit-set construction; a
+        // caller who passes a report with prior marks but does NOT
+        // seed via fromReport is saying "ignore the report's marks".
+        final report = _report().copyWith(userRedactedFields: ['title']);
+        final submittable = FeedbackReportPreview(
+          report: report,
+        ).toSubmittableReport();
+        expect(submittable.userRedactedFields, isEmpty);
+        expect(submittable.title, equals('Add crash'));
+      },
+    );
 
     test('no user redactions returns an equivalent report', () {
       final report = _report();
