@@ -1,0 +1,33 @@
+# Build configuration for `package:drift_storage`.
+#
+# `store_date_time_values_as_text: true` switches drift's DateTime
+# storage from the default unix-timestamp INTEGER to ISO-8601 TEXT.
+#
+# Why: the default mode discards the UTC flag — every read returns a
+# LOCAL DateTime, and Dart's `DateTime ==` compares `isUtc` alongside
+# the instant, so a stored `DateTime.utc(...)` never compares equal to
+# its round-tripped self. This broke
+# game_collection_repository_impl_test's resurrection spec on non-UTC
+# machines and forced defensive `.toUtc()` calls at two other read
+# sites. Text mode stores UTC values with the `Z` suffix and parses
+# them back as UTC, so the storage layer honours the codebase-wide
+# convention that all persisted timestamps are UTC instants (every
+# repository write is `DateTime.now().toUtc()`).
+#
+# SQL ordering note: ISO-8601 strings order correctly under SQLite's
+# lexicographic comparison *provided values share an offset*. All
+# writes in this package are UTC, so orderings (e.g.
+# notification_summary's receivedAt DESC) remain sound.
+#
+# Migration note: none shipped. Pre-production — no end-user databases
+# exist, and the client DB is a server-recoverable cache. Existing
+# LOCAL DEV DATABASES MUST BE DELETED after this change: old INTEGER
+# values fail to parse as ISO-8601 text. If a versioned migration is
+# ever needed, drift documents the recipe:
+# https://drift.simonbinder.eu/guides/datetime-migrations
+targets:
+  $default:
+    builders:
+      drift_dev:
+        options:
+          store_date_time_values_as_text: true
