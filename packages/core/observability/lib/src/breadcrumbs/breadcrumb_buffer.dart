@@ -104,9 +104,18 @@ class BreadcrumbBuffer {
   void clear() => _buffer.clear();
 
   Breadcrumb _toBreadcrumb(LogRecord record) {
+    // `Map<String, dynamic>` matches any covariant subtype of itself, so
+    // a `Map<String, String>` etc. from a BgeLogger call lands here.
+    // The raw-`Map` fallback covers a record logged directly through
+    // `Logger.root` with a non-String key type — uncommon, but cheap to
+    // defend against rather than silently drop. Same pattern as
+    // `Redaction._redactValue`.
     final context = switch (record.object) {
       ContextLogMessage(:final context) => context,
       final Map<String, dynamic> map => map,
+      final Map<dynamic, dynamic> map => map.map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
       _ => null,
     };
     return Breadcrumb(
