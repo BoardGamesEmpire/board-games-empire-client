@@ -167,6 +167,53 @@ void main() {
       });
     });
 
+    group('DateTime storage format', () {
+      // Regression guard for the UTC-flag loss that broke
+      // game_collection_repository_impl_test's resurrection spec on
+      // non-UTC machines: drift's default unix-timestamp DateTime
+      // storage always reads values back as LOCAL DateTimes, and Dart's
+      // `DateTime ==` compares the `isUtc` flag as well as the instant,
+      // so a stored `DateTime.utc(...)` never compares equal to its
+      // round-tripped self. `store_date_time_values_as_text: true`
+      // (build.yaml) switches to ISO-8601 text storage, which preserves
+      // the UTC marker. See
+      // https://drift.simonbinder.eu/guides/datetime-migrations.
+      test('UTC DateTime round-trips with isUtc preserved', () async {
+        await _seedPlatformGame(db);
+        final ts = DateTime.utc(2025, 6, 1);
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(_collection(id: 'col-1', deletedAt: ts));
+        final row = await db.select(db.gameCollectionsTable).getSingle();
+        expect(row.deletedAt!.isUtc, isTrue);
+        // Full equality — instant AND zone flag — with no defensive
+        // `.toUtc()` on the read side.
+        expect(row.deletedAt, equals(ts));
+      });
+
+      test('datetime columns are stored as ISO-8601 text', () async {
+        await _seedPlatformGame(db);
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              _collection(id: 'col-1', deletedAt: DateTime.utc(2025, 6, 1)),
+            );
+        final row = await db
+            .customSelect(
+              'SELECT typeof(deleted_at) AS t, deleted_at AS v '
+              'FROM game_collections',
+            )
+            .getSingle();
+        expect(row.read<String>('t'), equals('text'));
+        // Exact serialisation (millisecond rendering etc.) is drift's
+        // business; the contract worth pinning is ISO-8601 with the
+        // UTC marker.
+        final stored = row.read<String>('v');
+        expect(stored, startsWith('2025-06-01T00:00:00'));
+        expect(stored, endsWith('Z'));
+      });
+    });
+
     group('game_collections.deletedAt column', () {
       test('stores and reads back nullable DateTime', () async {
         await _seedPlatformGame(db);
