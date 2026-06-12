@@ -1,0 +1,6 @@
+# Static analysis configuration for `package:observability`.
+#
+# Mirrors the sibling core packages (`models`, `interfaces`): the
+# 'recommended' lint set from `package:lints`.
+
+include: package:lints/recommended.yaml
