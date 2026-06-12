@@ -78,6 +78,17 @@ void main() {
       expect(json['title'], 'Add crash');
       expect((json['deviceInfo'] as Map<String, dynamic>)['osVersion'], '16');
     });
+
+    test(
+      'userRedactedFields reflects the preview, not the underlying report',
+      () {
+        final report = _report().copyWith(userRedactedFields: ['title']);
+        final json = FeedbackReportPreview(report: report)
+            .redactField('platform')
+            .displayJson();
+        expect(json['userRedactedFields'], equals(['platform']));
+      },
+    );
   });
 
   group('toSubmittableReport', () {
@@ -117,16 +128,12 @@ void main() {
         report,
       ).unredactField('title').toSubmittableReport();
       expect(submittable.userRedactedFields, isEmpty);
-      // Value is preserved because no marker was applied.
       expect(submittable.title, equals('Add crash'));
     });
 
     test(
       'bare constructor with a marked report overrides the report\'s marks',
       () {
-        // The bare constructor is for explicit-set construction; a
-        // caller who passes a report with prior marks but does NOT
-        // seed via fromReport is saying "ignore the report's marks".
         final report = _report().copyWith(userRedactedFields: ['title']);
         final submittable = FeedbackReportPreview(
           report: report,

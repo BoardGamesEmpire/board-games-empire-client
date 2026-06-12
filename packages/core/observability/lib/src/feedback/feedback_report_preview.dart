@@ -131,6 +131,9 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
     if (device != null) {
       out['deviceInfo'] = device;
     }
+    // Preview's set is authoritative; the report's own list (carried in
+    // by report.toJson()) would otherwise diverge from toSubmittableReport().
+    out['userRedactedFields'] = userRedactedFields.toList()..sort();
     return out;
   }
 

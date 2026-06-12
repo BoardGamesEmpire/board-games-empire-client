@@ -103,26 +103,32 @@ class BreadcrumbBuffer {
   /// Drops all buffered crumbs without detaching.
   void clear() => _buffer.clear();
 
+  /// Substituted for [Breadcrumb.message] when a raw `Map` is the log
+  /// payload — `record.message` derives from `map.toString()`, which
+  /// only the email pattern masks. The structured map is still
+  /// captured (and redacted) in [Breadcrumb.sanitizedContext].
+  static const String rawMapMessagePlaceholder = '<context map>';
+
   Breadcrumb _toBreadcrumb(LogRecord record) {
-    // `Map<String, dynamic>` matches any covariant subtype of itself, so
-    // a `Map<String, String>` etc. from a BgeLogger call lands here.
-    // The raw-`Map` fallback covers a record logged directly through
-    // `Logger.root` with a non-String key type — uncommon, but cheap to
-    // defend against rather than silently drop. Same pattern as
-    // `Redaction._redactValue`.
-    final context = switch (record.object) {
-      ContextLogMessage(:final context) => context,
-      final Map<String, dynamic> map => map,
-      final Map<dynamic, dynamic> map => map.map(
-        (key, value) => MapEntry(key.toString(), value),
-      ),
-      _ => null,
-    };
+    final object = record.object;
+    Map<String, dynamic>? context;
+    var rawMapPayload = false;
+    if (object is ContextLogMessage) {
+      context = object.context;
+    } else if (object is Map<String, dynamic>) {
+      context = object;
+      rawMapPayload = true;
+    } else if (object is Map) {
+      context = object.map((key, value) => MapEntry(key.toString(), value));
+      rawMapPayload = true;
+    }
     return Breadcrumb(
       timestamp: record.time,
       level: BgeLogLevel.fromLevel(record.level),
       loggerName: record.loggerName,
-      message: Redaction.redactEmailsIn(record.message),
+      message: rawMapPayload
+          ? rawMapMessagePlaceholder
+          : Redaction.redactEmailsIn(record.message),
       sanitizedContext: context == null
           ? null
           : Redaction.redactJsonFields(context, _redactedContextFields),

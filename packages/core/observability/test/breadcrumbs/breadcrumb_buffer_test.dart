@@ -171,6 +171,30 @@ void main() {
       BgeLogger('bge.test.noctx').info('plain');
       expect(buffer.snapshot().single.sanitizedContext, isNull);
     });
+
+    test('raw Map payload uses a placeholder message, not toString()', () {
+      final buffer = BreadcrumbBuffer(capacity: 5)..attach();
+      addTearDown(buffer.detach);
+      Logger('bge.test.rawmap').log(
+        Level.INFO,
+        <String, dynamic>{'password': 'hunter2', 'note': 'visible'},
+      );
+      final crumb = buffer.snapshot().single;
+      expect(crumb.message, BreadcrumbBuffer.rawMapMessagePlaceholder);
+      expect(crumb.sanitizedContext, {
+        'password': '<redacted>',
+        'note': 'visible',
+      });
+    });
+
+    test('non-String-keyed Map payload is stringified and placeheld', () {
+      final buffer = BreadcrumbBuffer(capacity: 5)..attach();
+      addTearDown(buffer.detach);
+      Logger('bge.test.weirdkey').log(Level.INFO, <int, String>{1: 'a'});
+      final crumb = buffer.snapshot().single;
+      expect(crumb.message, BreadcrumbBuffer.rawMapMessagePlaceholder);
+      expect(crumb.sanitizedContext, {'1': 'a'});
+    });
   });
 
   group('Breadcrumb JSON', () {
