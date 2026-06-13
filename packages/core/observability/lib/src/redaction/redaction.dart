@@ -73,11 +73,12 @@ abstract final class Redaction {
   /// `keepStart + keepEnd` are fully masked — keeping both ends of a
   /// too-short value would reveal it entirely.
   ///
-  /// Throws [ArgumentError] when [keepStart] or [keepEnd] is negative.
-  /// Runtime checks rather than asserts: this is a public redaction
-  /// utility, and in a release build (asserts stripped) a negative
-  /// value would otherwise surface as a cryptic substring [RangeError]
-  /// far from the bad call site.
+  /// Throws [ArgumentError] when [keepStart] or [keepEnd] is negative,
+  /// or when [maskChar] is empty (an empty mask would leave the input
+  /// effectively unmasked). Runtime checks rather than asserts: this is
+  /// a public redaction utility, and in a release build (asserts
+  /// stripped) a bad argument would otherwise surface as a cryptic
+  /// downstream error — or, in the case of an empty mask, silently leak.
   static String maskMiddle(
     String input, {
     int keepStart = 1,
@@ -89,6 +90,9 @@ abstract final class Redaction {
     }
     if (keepEnd < 0) {
       throw ArgumentError.value(keepEnd, 'keepEnd', 'must be >= 0');
+    }
+    if (maskChar.isEmpty) {
+      throw ArgumentError.value(maskChar, 'maskChar', 'must not be empty');
     }
     if (input.length <= keepStart + keepEnd) {
       return maskChar * input.length;
