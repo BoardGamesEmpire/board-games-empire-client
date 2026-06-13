@@ -111,6 +111,15 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    test('empty maskChar throws ArgumentError', () {
+      // Empty mask would produce unmasked output via `'' * n`, defeating
+      // the redaction guarantee.
+      expect(
+        () => Redaction.maskMiddle('secret', maskChar: ''),
+        throwsArgumentError,
+      );
+    });
   });
 
   group('Redaction.truncate', () {
