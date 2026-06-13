@@ -89,6 +89,20 @@ void main() {
         expect(json['userRedactedFields'], equals(['platform']));
       },
     );
+
+    test('null deviceInfo key is not marked', () {
+      final report = FeedbackReport(
+        category: FeedbackCategory.featureRequest,
+        message: 'm',
+        deviceInfo: const {'model': null, 'osVersion': '16'},
+      );
+      final json = FeedbackReportPreview(report: report)
+          .redactField('deviceInfo.model')
+          .displayJson();
+      final device = json['deviceInfo'] as Map<String, dynamic>;
+      expect(device['model'], isNull);
+      expect(device['osVersion'], '16');
+    });
   });
 
   group('toSubmittableReport', () {
@@ -160,6 +174,19 @@ void main() {
         report: report,
       ).redactField('title').toSubmittableReport();
       expect(submittable.title, isNull);
+    });
+
+    test('redacting a null deviceInfo key leaves it null', () {
+      final report = FeedbackReport(
+        category: FeedbackCategory.featureRequest,
+        message: 'm',
+        deviceInfo: const {'model': null, 'osVersion': '16'},
+      );
+      final submittable = FeedbackReportPreview(report: report)
+          .redactField('deviceInfo.model')
+          .toSubmittableReport();
+      expect(submittable.deviceInfo!['model'], isNull);
+      expect(submittable.deviceInfo!['osVersion'], '16');
     });
   });
 }
