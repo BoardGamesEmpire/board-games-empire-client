@@ -1,0 +1,19 @@
+# Build configuration for `package:observability`.
+#
+# `explicit_to_json: true` tells json_serializable to recursively call
+# `.toJson()` on nested objects when serialising a containing class.
+# Without it, a Freezed/json_serializable class with another Freezed
+# class as a field passes the nested object through to the output map
+# *as a Dart instance* rather than a `Map<String, dynamic>`.
+#
+# Affected here: `FeedbackReport` nests a `List<Breadcrumb>`. Without
+# this option, `report.toJson()['breadcrumbs']` would contain
+# `_Breadcrumb` instances instead of maps, silently breaking offline
+# persistence and HTTP bodies. Same rationale (and same setting) as
+# `packages/core/models/build.yaml`.
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          explicit_to_json: true

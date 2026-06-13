@@ -17,6 +17,8 @@ dependencies:
     path: ../../core/interfaces
   models:
     path: ../../core/models
+  observability:
+    path: ../../core/observability
   ui:
     path: ../../ui
 
