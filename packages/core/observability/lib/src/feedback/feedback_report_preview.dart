@@ -105,8 +105,8 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
 
   /// The report's JSON with this preview's redactions visibly applied —
   /// what the consent screen renders. Only non-null values are marked;
-  /// a redacted-but-absent field stays absent rather than gaining a
-  /// phantom marker.
+  /// a redacted-but-absent (or null) field stays absent rather than
+  /// gaining a phantom marker.
   Map<String, dynamic> displayJson() {
     final out = {...report.toJson()};
     // Lazily cloned once on the first deviceInfo.<key> redaction, then
@@ -121,7 +121,7 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
         };
         if (device == null) continue;
         final key = path.substring(deviceInfoPrefix.length);
-        if (device.containsKey(key)) {
+        if (device[key] != null) {
           device[key] = redactedMarker;
         }
       } else if (out[path] != null) {
@@ -143,6 +143,10 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
   /// [FeedbackReport.userRedactedFields] so the backend sets
   /// `redactionApplied`. The report's own `userRedactedFields` is NOT
   /// unioned in — see the "Seeding from a persisted draft" class doc.
+  ///
+  /// Null values aren't marked (matches `displayJson`'s non-null rule):
+  /// a redacted-but-null field stays null rather than gaining a phantom
+  /// marker.
   ///
   /// Returns [report] unchanged when both the preview's set and the
   /// report's own `userRedactedFields` are empty.
@@ -168,7 +172,7 @@ abstract class FeedbackReportPreview with _$FeedbackReportPreview {
       deviceInfo = {...deviceInfo};
       for (final path in devicePaths) {
         final key = path.substring(deviceInfoPrefix.length);
-        if (deviceInfo.containsKey(key)) {
+        if (deviceInfo[key] != null) {
           deviceInfo[key] = redactedMarker;
         }
       }
