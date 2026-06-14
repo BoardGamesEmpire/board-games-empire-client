@@ -171,7 +171,8 @@ void main() {
           ),
           throwsA(isA<AuthRegistrationDisabledException>()),
         );
-        disabledRepo.onDispose();
+
+        addTearDown(disabledRepo.onDispose);
       });
 
       test('throws AuthEmailAlreadyExistsException on 409', () {
@@ -276,7 +277,8 @@ void main() {
           () => noStrategyRepo.signIn(email: 'a@b.com', password: 'p'),
           throwsA(isA<AuthServerException>()),
         );
-        noStrategyRepo.onDispose();
+
+        addTearDown(noStrategyRepo.onDispose);
       });
     });
   });

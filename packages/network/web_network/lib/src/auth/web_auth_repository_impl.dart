@@ -123,6 +123,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         _setState(const AuthStateUnauthenticated());
         return null;
       }
+
       throw _mapDioException(e);
     }
 
