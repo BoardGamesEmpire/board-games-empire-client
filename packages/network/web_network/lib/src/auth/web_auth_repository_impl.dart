@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
@@ -10,22 +10,26 @@ import 'package:http_status/http_status.dart';
 /// Web implementation of [AuthRepository].
 ///
 /// Relies entirely on httpOnly session cookies managed by the browser.
-/// The client never reads or stores the token — Dio's [withCredentials]
-/// flag ensures cookies are sent automatically on every cross-origin request.
+/// The client never reads or stores the token — Dio's `withCredentials`
+/// flag (configured on the injected [Dio] by `WebDioFactory`) ensures cookies
+/// are sent automatically on every cross-origin request.
 ///
 /// Differences from the mobile/desktop [AuthRepositoryImpl]:
-/// - No [TokenStorageService] — the browser keychain is the cookie jar
+/// - No `TokenStorageService` — the browser keychain is the cookie jar
 /// - No Authorization header interceptor
 /// - [getCachedSession] delegates to [getSession] since httpOnly cookies
 ///   are opaque to Dart code
 /// - Single server only — no orchestrator or context switching
-class WebAuthRepositoryImpl implements AuthRepository {
-  WebAuthRepositoryImpl({
-    required ServerIdentity identity,
-    @visibleForTesting Dio? dio,
-  }) : _identity = identity,
-       _dio = dio ?? _buildDio(),
-       _stateController = StreamController<AuthState>.broadcast(sync: true);
+///
+/// The [Dio] instance is built and owned by the per-server `WebDioFactory` and
+/// injected here. This repository does not close it: it is a shared per-server
+/// resource owned by the container. [onDispose] tears down only the auth-state
+/// stream.
+class WebAuthRepositoryImpl implements AuthRepository, Disposable {
+  WebAuthRepositoryImpl({required ServerIdentity identity, required Dio dio})
+    : _identity = identity,
+      _dio = dio,
+      _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   final ServerIdentity _identity;
   final Dio _dio;
@@ -119,6 +123,7 @@ class WebAuthRepositoryImpl implements AuthRepository {
         _setState(const AuthStateUnauthenticated());
         return null;
       }
+
       throw _mapDioException(e);
     }
 
@@ -235,6 +240,7 @@ class WebAuthRepositoryImpl implements AuthRepository {
         cause: e,
       );
     }
+
     return switch (e.type) {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.receiveTimeout ||
@@ -249,21 +255,10 @@ class WebAuthRepositoryImpl implements AuthRepository {
     };
   }
 
-  /// Builds a Dio instance with [withCredentials] set so the browser sends
-  /// the BetterAuth session cookie on cross-origin requests.
-  static Dio _buildDio() => Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-      headers: const {'Accept': 'application/json'},
-      validateStatus: (_) => true,
-      // Required for cross-origin cookie transmission in the browser.
-      extra: const {'withCredentials': true},
-    ),
-  );
-
-  Future<void> dispose() async {
+  /// Tears down auth-state streaming. Does not close the injected [Dio] — that
+  /// is a shared per-server resource owned and disposed by the container.
+  @override
+  Future<void> onDispose() async {
     await _stateController.close();
-    _dio.close();
   }
 }

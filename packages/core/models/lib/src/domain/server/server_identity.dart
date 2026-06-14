@@ -15,6 +15,18 @@ part 'server_identity.g.dart';
 /// changes. The client stores it in the root DB and uses it to detect
 /// "same server, new URL" scenarios — requiring user confirmation before
 /// updating the stored URL.
+///
+/// ## Endpoint paths are relative
+///
+/// Endpoint fields ([sessionEndpoint], [signOutEndpoint],
+/// [deviceAuthorizationEndpoint], and the per-strategy endpoints on
+/// [ServerAuthStrategy]) are **relative paths** (e.g. `/api/auth/get-session`).
+/// They are resolved against the user-supplied server base URL
+/// (`ServerConfig.serverUrl`) by the per-server `Dio` instance built by the
+/// `DioFactory`. The client already knows the base — the user typed it to reach
+/// well-known in the first place — so the document never needs to repeat an
+/// absolute origin. [discoveryUrl] on an [OidcStrategy] is the one exception:
+/// it points at an external identity provider and remains absolute.
 @freezed
 abstract class ServerIdentity with _$ServerIdentity {
   const ServerIdentity._();
@@ -25,24 +37,29 @@ abstract class ServerIdentity with _$ServerIdentity {
     @JsonKey(name: 'bge_server_id') required String serverId,
 
     /// Canonical base URL of this BGE server. Equivalent to `issuer` in
-    /// RFC 8414. Clients use this to confirm they are talking to the expected
-    /// server and to detect URL changes that require user confirmation.
+    /// RFC 8414. Informational only: used to confirm the client is talking to
+    /// the expected server and to detect URL changes that require user
+    /// confirmation. Request URLs are built from the user-supplied base
+    /// (`ServerConfig.serverUrl`), not from this field.
     required String issuer,
 
     /// Device authorization endpoint per RFC 8628.
+    /// Relative path resolved against the user-supplied server base URL.
     @JsonKey(name: 'device_authorization_endpoint')
     required String deviceAuthorizationEndpoint,
 
-    /// BetterAuth base URL. Used to construct any auth endpoint not listed
-    /// explicitly in this document.
+    /// BetterAuth base path (relative to the server base URL). Used to
+    /// construct any auth endpoint not listed explicitly in this document.
     @JsonKey(name: 'bge_auth_base_url') required String authBaseUrl,
 
     /// Endpoint to retrieve the current user session.
     /// GET — returns session data if authenticated, 401 if not.
+    /// Relative path resolved against the user-supplied server base URL.
     @JsonKey(name: 'bge_session_endpoint') required String sessionEndpoint,
 
     /// Endpoint to terminate the current session.
     /// POST — invalidates the session token.
+    /// Relative path resolved against the user-supplied server base URL.
     @JsonKey(name: 'bge_sign_out_endpoint') required String signOutEndpoint,
 
     /// Whether passkey (WebAuthn) authentication is supported.

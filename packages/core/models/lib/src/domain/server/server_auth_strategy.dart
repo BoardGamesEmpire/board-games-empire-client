@@ -34,6 +34,11 @@ abstract final class AuthStrategyType {
 /// authenticated. [ServerAuthStrategy] describes what the server currently
 /// offers for login/registration.
 ///
+/// Endpoint fields are relative paths resolved against the user-supplied server
+/// base URL (`ServerConfig.serverUrl`) by the per-server `Dio`. The exception
+/// is [OidcStrategy.discoveryUrl], which targets an external identity provider
+/// and is absolute.
+///
 /// Use a `switch` expression to exhaustively handle all variants:
 /// ```dart
 /// final label = switch (strategy) {
@@ -90,12 +95,12 @@ final class EmailAndPasswordStrategy extends ServerAuthStrategy {
   /// When true, only sign-in is available via this strategy.
   final bool signUpDisabled;
 
-  /// Absolute URL for email/password sign-in.
-  /// POST `{ email, password }` to this endpoint.
+  /// Relative path for email/password sign-in, resolved against the
+  /// user-supplied server base URL. POST `{ email, password }` to this path.
   final String signInEndpoint;
 
-  /// Absolute URL for email/password registration.
-  /// Null when [signUpDisabled] is true.
+  /// Relative path for email/password registration, resolved against the
+  /// user-supplied server base URL. Null when [signUpDisabled] is true.
   final String? signUpEndpoint;
 
   @override
@@ -133,12 +138,14 @@ final class OidcStrategy extends ServerAuthStrategy {
   /// Provider identifier passed to BetterAuth's oauth2 sign-in endpoint.
   final String providerId;
 
-  /// Public OIDC well-known discovery URL.
-  /// Clients may inspect this for scopes, PKCE requirements, etc.
+  /// Public OIDC well-known discovery URL. Absolute — this points at the
+  /// external identity provider, not the BGE server. Clients may inspect this
+  /// for scopes, PKCE requirements, etc.
   final String discoveryUrl;
 
-  /// Absolute endpoint to initiate the OAuth2/OIDC redirect flow.
-  /// POST `{ providerId, callbackURL }` to begin authentication.
+  /// Relative path to initiate the OAuth2/OIDC redirect flow, resolved against
+  /// the user-supplied server base URL. POST `{ providerId, callbackURL }` to
+  /// begin authentication.
   final String authorizationEndpoint;
 
   @override
