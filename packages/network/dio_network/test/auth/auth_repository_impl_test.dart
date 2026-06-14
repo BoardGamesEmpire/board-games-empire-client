@@ -11,7 +11,10 @@ class MockDio extends Mock implements Dio {}
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
-const _kAuthBase = 'https://api.example.com/api/auth';
+// Endpoints are relative paths resolved against the user-supplied base URL by
+// the per-server Dio (set via DioFactory). The repository passes them through
+// to Dio unchanged.
+const _kAuthBase = '/api/auth';
 
 ServerIdentity _identity() => ServerIdentity(
   serverId: 'server-uuid-1',
@@ -69,7 +72,6 @@ void main() {
   setUp(() {
     mockDio = MockDio();
     mockStorage = MockTokenStorage();
-    when(() => mockDio.interceptors).thenReturn(Interceptors());
     repo = AuthRepositoryImpl(
       identity: _identity(),
       tokenStorage: mockStorage,
@@ -77,7 +79,7 @@ void main() {
     );
   });
 
-  tearDown(() async => repo.dispose());
+  tearDown(() async => repo.onDispose());
 
   void stubStore() => when(
     () => mockStorage.store(
@@ -169,7 +171,7 @@ void main() {
           ),
           throwsA(isA<AuthRegistrationDisabledException>()),
         );
-        disabledRepo.dispose();
+        disabledRepo.onDispose();
       });
 
       test('throws AuthEmailAlreadyExistsException on 409', () {
@@ -274,7 +276,7 @@ void main() {
           () => noStrategyRepo.signIn(email: 'a@b.com', password: 'p'),
           throwsA(isA<AuthServerException>()),
         );
-        noStrategyRepo.dispose();
+        noStrategyRepo.onDispose();
       });
     });
   });

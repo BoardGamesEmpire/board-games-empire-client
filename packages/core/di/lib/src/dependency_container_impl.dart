@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get_it/get_it.dart';
 import 'package:interfaces/orchestration.dart';
 
@@ -13,15 +15,21 @@ class DependencyContainerImpl implements DependencyContainer {
   bool _disposed = false;
 
   @override
-  void registerSingleton<T extends Object>(T instance) {
+  void registerSingleton<T extends Object>(
+    T instance, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) {
     _assertNotDisposed();
-    _getIt.registerSingleton<T>(instance);
+    _getIt.registerSingleton<T>(instance, dispose: dispose);
   }
 
   @override
-  void registerLazySingleton<T extends Object>(T Function() factory) {
+  void registerLazySingleton<T extends Object>(
+    T Function() factory, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) {
     _assertNotDisposed();
-    _getIt.registerLazySingleton<T>(factory);
+    _getIt.registerLazySingleton<T>(factory, dispose: dispose);
   }
 
   @override
@@ -39,17 +47,16 @@ class DependencyContainerImpl implements DependencyContainer {
   @override
   bool isRegistered<T extends Object>() => _getIt.isRegistered<T>();
 
-  /// registered singletons need to be wrapped with GetIt's DisposableWhen mechanism or implement GetIt's own disposable interface
   @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
 
-    // TODO: iterate over registered singletons and call their dispose methods if they implement DisposableWhen
-    // or GetIt's disposable interface, then clear all registrations.
-
-    // GetIt.reset disposes all singletons that implement DisposableWhen/dispose
-    // and removes all registrations.
+    // GetIt.reset(dispose: true) invokes the dispose callback supplied at
+    // registration for every singleton (and every instantiated lazy
+    // singleton), then removes all registrations. Services should be
+    // registered with `dispose: (s) => s.onDispose()`; shared third-party
+    // resources (e.g. Dio) with their own teardown callback.
     await _getIt.reset(dispose: true);
   }
 

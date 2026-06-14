@@ -70,7 +70,7 @@ class WellKnownClientImpl implements WellKnownClient {
       throw WellKnownInvalidResponseException(
         serverUrl: serverUrl,
         message: 'Empty response body from $url',
-        statusCode: 200,
+        statusCode: HttpStatusCode.ok,
       );
     }
 
@@ -87,7 +87,7 @@ class WellKnownClientImpl implements WellKnownClient {
       throw WellKnownInvalidResponseException(
         serverUrl: serverUrl,
         message: 'Unexpected error parsing BGE identity document: $e',
-        statusCode: 200,
+        statusCode: HttpStatusCode.ok,
         cause: e,
       );
     }

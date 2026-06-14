@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
@@ -13,17 +13,25 @@ import 'token_storage_service.dart';
 /// Scoped to a single BGE server. Must be registered inside the server's
 /// [DependencyContainer] after the [ServerIdentity] has been fetched.
 /// Never shared across server contexts.
-class AuthRepositoryImpl implements AuthRepository {
+///
+/// The [Dio] instance is built and owned by the per-server [DioFactory] and
+/// injected here. Token attachment is handled by a [TokenInterceptor] in the
+/// factory's interceptor stack, not by this repository — so every repository
+/// sharing the same [Dio] inherits authentication regardless of construction
+/// order.
+///
+/// This repository does not close the injected [Dio]: it is a shared
+/// per-server resource owned by the container. [onDispose] tears down only the
+/// auth-state stream.
+class AuthRepositoryImpl implements AuthRepository, Disposable {
   AuthRepositoryImpl({
     required ServerIdentity identity,
     required TokenStorageService tokenStorage,
-    @visibleForTesting Dio? dio,
+    required Dio dio,
   }) : _identity = identity,
        _tokenStorage = tokenStorage,
-       _dio = dio ?? _buildDio(),
-       _stateController = StreamController<AuthState>.broadcast(sync: true) {
-    _addTokenInterceptor();
-  }
+       _dio = dio,
+       _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   final ServerIdentity _identity;
   final TokenStorageService _tokenStorage;
@@ -236,6 +244,7 @@ class AuthRepositoryImpl implements AuthRepository {
         cause: e,
       );
     }
+
     return switch (e.type) {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.receiveTimeout ||
@@ -250,31 +259,10 @@ class AuthRepositoryImpl implements AuthRepository {
     };
   }
 
-  void _addTokenInterceptor() {
-    _dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) async {
-          final stored = await _tokenStorage.retrieve();
-          if (stored != null && !stored.isExpired) {
-            options.headers['Authorization'] = 'Bearer ${stored.token}';
-          }
-          handler.next(options);
-        },
-      ),
-    );
-  }
-
-  static Dio _buildDio() => Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-      headers: const {'Accept': 'application/json'},
-      validateStatus: (_) => true,
-    ),
-  );
-
-  Future<void> dispose() async {
+  /// Tears down auth-state streaming. Does not close the injected [Dio] — that
+  /// is a shared per-server resource owned and disposed by the container.
+  @override
+  Future<void> onDispose() async {
     await _stateController.close();
-    _dio.close();
   }
 }

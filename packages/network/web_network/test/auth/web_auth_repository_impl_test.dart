@@ -8,7 +8,10 @@ import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 
 class MockDio extends Mock implements Dio {}
 
-const _kAuthBase = 'https://api.example.com/api/auth';
+// Endpoints are relative paths resolved against the browser origin by the
+// per-server Dio (set via WebDioFactory). The repository passes them through to
+// Dio unchanged.
+const _kAuthBase = '/api/auth';
 
 ServerIdentity _identity({bool signUpDisabled = false}) => ServerIdentity(
   serverId: 'server-uuid-1',
@@ -57,11 +60,10 @@ void main() {
 
   setUp(() {
     mockDio = MockDio();
-    when(() => mockDio.interceptors).thenReturn(Interceptors());
     repo = WebAuthRepositoryImpl(identity: _identity(), dio: mockDio);
   });
 
-  tearDown(() async => repo.dispose());
+  tearDown(() async => repo.onDispose());
 
   group('WebAuthRepositoryImpl', () {
     group('signIn()', () {
@@ -160,7 +162,7 @@ void main() {
             throwsA(isA<AuthRegistrationDisabledException>()),
           );
 
-          await disabledRepo.dispose();
+          await disabledRepo.onDispose();
         },
       );
 
@@ -294,7 +296,7 @@ void main() {
           throwsA(isA<AuthServerException>()),
         );
 
-        await noStrategyRepo.dispose();
+        await noStrategyRepo.onDispose();
       });
     });
   });
