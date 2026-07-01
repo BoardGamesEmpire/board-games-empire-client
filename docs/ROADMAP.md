@@ -1,13 +1,13 @@
 # Board Games Empire — Client Roadmap
 
 > Living document. Update as priorities shift, dependencies land, and the picture clarifies.
-> Last meaningful update: post-Pass-9 PR-6 merge, May 2026.
+> Last meaningful update: post-PR-22 (dio_network) merge, June 2026.
 
 This roadmap describes the path from the current foundation (offline-first
-infrastructure, network layer, auth bloc, models, storage) to a device-installable
-alpha and beyond. It complements the GitHub issue tracker — issues hold the
-detailed scopes, this doc holds the *order*, *dependencies*, and *deferred
-decisions*.
+infrastructure, network layer, auth bloc, models, storage, observability) to a
+device-installable alpha and beyond. It complements the GitHub issue tracker —
+issues hold the detailed scopes, this doc holds the *order*, *dependencies*, and
+*deferred decisions*. The per-phase epics live at #23–#30.
 
 ## Architectural ground truth
 
@@ -16,258 +16,210 @@ A short orientation for anyone (human or LLM) picking this up cold:
 - **Multi-server.** A user can connect to multiple BGE servers. Each `ServerContext`
   has its own per-server Drift DB, dependency container (GetIt scoped), auth
   repository, and (future) WebSocket connection. The orchestrator manages
-  active/backgrounded/monitoring/disposed lifecycle.
+  active/backgrounded/monitoring/disposed lifecycle. **Alpha ships single-server
+  UX, but the multi-server infrastructure stays in place** — it is hard to retrofit.
 - **Self-hosted philosophy.** No third-party data sharing by default. Bug
   reports, analytics, and similar flows route to sinks the server admin
   configures via `/.well-known/bge-identity`. Users opt in.
-- **Offline-first.** Mutations write locally + enqueue against a per-server
-  sync queue. Reconciliation runs against server responses with surgical
-  tombstone purges that defend against race conditions. The client DB is a
-  *temporary cache*; the server is source of truth.
+- **Offline-first infrastructure, online-first alpha UX.** Mutations write
+  locally + enqueue against a per-server sync queue; reconciliation runs against
+  server responses with surgical tombstone purges. The client DB is a *temporary
+  cache*; the server is source of truth. The **infrastructure** is in place and
+  exercised, but the polished **offline-first UX is deferred** — the alpha
+  assumes connectivity for mutations and guarantees cached reads.
 - **Three platforms in parallel from day one.** Android (primary alpha target),
   macOS desktop, browser. Storage and network are platform-split (drift_storage
   vs web_storage, dio_network vs web_network). No divergence.
-- **Server discovery via `.well-known/bge-identity`.** The user enters a URL;
-  the client fetches the identity document and learns the server's auth
-  strategy, capabilities, version requirements, and configured sinks.
+- **REST for alpha; WebSocket later.** The backend exposes REST for everything in
+  alpha scope (search/import are explicitly documented as the REST fallback for a
+  future WS flow). `socket_io_client` and the WS layer are a post-alpha enhancement.
+- **Server discovery via `.well-known/bge-identity`.** The user enters a URL; the
+  client fetches the identity document and learns the server's auth strategy,
+  capabilities, and (once backend #47 lands) version requirements + configured sinks.
 - **Privacy by default.** PII partial redaction in event logs, per-server
   encryption-at-rest, opt-in for any data leaving the device.
 
-## What's done as of the merge of PR #6
+## What's done (merged to master)
 
 - All Phase-1 models: Game, PlatformGame, GameCollection, Household,
-  HouseholdMember, SyncOperation hierarchy.
-- Drift schemas matching Prisma backend models, with partial unique indexes
-  and tombstone semantics.
-- Per-server `GameCollectionRepositoryImpl` with offline-first add/update/remove
-  + sync queue + surgical reconcileFromServer + resurrection preserving play
-  history.
-- Per-server `HouseholdRepositoryImpl` (read-cache + cache-writer, with
-  membership boundary gates). Mutations deferred to Phase 4.
+  HouseholdMember, SyncOperation hierarchy (PR #6).
+- Drift schemas matching Prisma backend models, with partial unique indexes and
+  tombstone semantics; UTC-preserving ISO-8601 datetime storage (PR #21).
+- Per-server `GameCollectionRepositoryImpl` — offline-first add/update/remove +
+  sync queue + surgical reconcileFromServer + resurrection preserving play history.
+- Per-server `HouseholdRepositoryImpl` (read-cache + cache-writer). Write methods
+  land in P4.
 - Per-server `GameRepositoryImpl` (read cache + cache writer, server-managed).
-- `SyncQueueRepositoryImpl` with cuid2 ids, idempotent remap, atomic increments,
+- `SyncQueueRepositoryImpl` — cuid2 ids, idempotent remap, atomic increments,
   exhausted-retry filtering, pending-count watch.
-- `ServerContextImpl` skeleton with state machine (initializing → active →
-  backgrounding → monitoring → disposed) and per-server GetIt container.
-  Activate/suspend hooks have TODO(phase2) markers for DB lifecycle.
+- `ServerContextImpl` skeleton with state machine and per-server GetIt container.
+  Activate/suspend still carry `TODO(phase2)` DB-lifecycle markers (closed in P3).
 - `WellKnownClient` (discovery via `/.well-known/bge-identity`).
-- `AuthRepositoryImpl` (dio_network, mobile/desktop bearer flow): signIn/signUp/
-  getSession/signOut/watchAuthState, full DioException → AuthException mapping.
-- `WebAuthRepositoryImpl` (web_network, cookie flow): equivalent shape.
-- `TokenStorageService` with `flutter_secure_storage` (per-server keyed).
-- `AuthBloc` with all event handlers and exception → user-message mapping.
-- `auth_screen.dart` + widgets + l10n directory (i18n infrastructure exists).
+- `AuthRepositoryImpl` (dio_network, bearer) + `WebAuthRepositoryImpl` (web_network,
+  cookie); `TokenStorageService` (`flutter_secure_storage`, per-server keyed);
+  `AuthBloc` with full event + exception→message mapping; `auth_screen.dart` + l10n.
 - `MetaDatabase` + `ServerRepository` for `ServerConfig` persistence.
-- Three Flutter apps scaffolded under `apps/{mobile,desktop,browser}/` (currently
-  unmodified counter-template main.dart).
+- **Observability foundation (PR #20, closes #8):** `BgeLogger`, `Redaction`,
+  `BreadcrumbBuffer`, `FeedbackReport`/`FeedbackService` domain.
+- **DioFactory / `dio_network` (PR #22, closes #14):** `DioFactory`,
+  `DefaultDioFactory`, `TokenInterceptor`, per-platform registration; refactored
+  auth repos.
+- Three Flutter apps scaffolded under `apps/{mobile,desktop,browser}/` — **still
+  the counter-template `main.dart`** (replaced in P0).
 
-## What's NOT yet done (alpha-critical, in order)
+## Alpha scope (confirmed)
 
-### Phase 1 — App shell + observability foundation (~1-2 weeks)
+A new user can: **add a server → sign in → create a household → (admin) add & connect
+gateways → search/browse games (in-system and external) → import an external game →
+add games to a personal collection → and it all persists across restarts.** Written
+against REST, single-server UX, multi-server + offline-write infrastructure in place.
+Events, play sessions, social, chat, media, and offline-first UX are **deferred**.
 
-**Goal**: replace counter-template main.dart in all three apps with a real
-bootstrap that wires DI, theme, router, logging, and the meta DB. Lay the
-prerequisite plumbing for everything after.
+## Path to alpha — phases (epics #23–#30)
 
-Tracked by:
-- #7 Schema migration convention for Drift (prereq for any post-alpha schema work)
-- #8 Observability foundation (logging + redaction + breadcrumb buffer + BugReport
-  model) — **prerequisite for all bug reporting and analytics work**
-- #14 Refactor AuthRepositoryImpl to accept injected Dio (DioFactory pattern)
+### P0 — App shell + cross-cutting foundation (#23)
 
-Phase-1 also lands the app-shell scaffolding itself:
-- `go_router` as new dep (confirmed)
-- Theme tokens (light/dark), accessibility baseline (semantics, focus indicators,
-  font scaling, contrast)
-- i18n setup at app level matching `features/auth/l10n` pattern
-- DI bootstrap via GetIt at app level
-- Per-app `main.dart` that hands off to a shared `core/app_shell` package
+Replace the counter-template `main.dart` ×3 with a real bootstrap; land the
+retrofit-hard infrastructure.
 
-Concerns to address during Phase 1:
-- Backend CORS configuration (`'*'` + credentials is invalid for browsers).
-  Tracked separately on backend side.
-- The current `FlutterError.onError` / `PlatformDispatcher.instance.onError`
-  paths must be wired to the observability layer once it lands.
+- #31 App shell package + `go_router` + DI bootstrap + `main.dart` ×3
+- #32 Theme tokens (light/dark) + accessibility baseline
+- #33 App-level i18n
+- #34 Global error handling → observability wiring
+- #35 `BuildInfo` service (client version)
+- #7 Schema migration convention (Drift) — **blocker**
+- #9 Connectivity awareness service — **blocker**
+- #10 Deep-link URL scheme + manifests — **interface/manifest-only**
+- #11 UserDataExporter interface — **interface-only**
+- #15 Push notification interface — **interface-only**
+- #17 Analytics interface — **interface-only**
 
-### Phase 2 — First-run + Server add flow (~1 week)
+### P1 — Server discovery & add flow (#24)
 
-**Goal**: a user opening the app for the first time can add a BGE server and
-proceed to auth.
+- #36 Server-add discovery flow (UI + `WellKnownClient` + persist + activate)
+- #13 Honor `minClientVersion` / `maxClientVersion` / `features` — **depends on
+  backend #47**; reconcile `ServerIdentity` to the real `BgeDiscoveryDto`
+  (`bge*` snake_case keys + `strategies[]`).
 
-Tracked by:
-- #13 Honor minClientVersion / maxClientVersion / features from well-known
-- (informally) Server-add UX: single URL field + optional alias. The well-known
-  discovery handles everything else.
+### P2 — Auth wired end-to-end (#25)
 
-UX:
-- MetaDB empty → "Add Server" screen.
-- User enters URL + optional alias → client calls `WellKnownClient.fetchIdentity`.
-- On success: persist `ServerConfig` to MetaDB, trigger `ServerOrchestrator`
-  to activate.
-- Version negotiation fires before persist; mismatch surfaces a friendly error.
-- Single-server alpha. No switcher UI. Data model supports many.
+- #37 Bind `AuthBloc` to the active server's `AuthRepository` + router gate.
+  Email/password only for alpha (passkey/2FA/anonymous advertised but out of scope).
 
-### Phase 3 — Auth wired end-to-end (~3-5 days)
+### P3 — ServerContext lifecycle + encryption (#26)
 
-**Goal**: existing `AuthBloc` bound to the active server's `AuthRepository`.
+- #38 Lifecycle completion: per-server DB open/close + container registration.
+- #16 Encryption-at-rest (SQLCipher, per-server key) — **blocker** (encrypted
+  from day one; hard to retrofit). Includes the delete+re-key+resync recovery path.
+- #12 Clock-skew correction — **interface-only / defer**.
 
-Tracked by:
-- (no separate issue — wiring work, not new feature)
+### P4 — Households (create) (#27) — parallelizable
 
-Steps:
-- Bind AuthBloc to the active ServerContext's AuthRepository.
-- Mount `auth_screen.dart` behind a router redirect when state is `Unauthenticated`.
-- Verify the bloc-test path works against live backend on each platform.
-- Account for #14 (DioFactory pattern) landing concurrently — the AuthBloc
-  doesn't change, but the construction path does.
+Collections are `userId`-scoped, so households are not a hard dependency for the
+collection path.
 
-### Phase 4 — ServerContext lifecycle completion + per-server resources (~3-5 days, parallel-isable with Phase 3)
+- #39 Household write methods + `CreateHousehold` sync operation
+- #40 Create-household UI
 
-**Goal**: resolve the `TODO(phase2)` markers in `ServerContextImpl.activate()`
-/ `suspend()`. Per-server Drift DB opens on activate, closes on suspend.
+Backend: `POST /households` exists. Membership/invites deferred.
 
-Tracked by:
-- #16 Encryption-at-rest for per-server Drift databases via SQLCipher
+### P5 — Gateways admin + game discovery (#28)
 
-Phase-4 lands:
-- Activate opens DB, registers `AuthRepository` + `TokenStorageService` + dio
-  client in the per-server `DependencyContainer`.
-- Suspend reverses: dispose dio, close DB, unregister.
-- DB open path uses SQLCipher with the per-server encryption key derived/loaded
-  from secure storage.
-- "Local DB unreadable" recovery path: delete + re-key + resync (the
-  "client-as-cache" recovery story from #16).
+- #41 Gateway admin UI (role-gated): list / add / connect / disconnect
+- #42 Game browse + search UI (in-system + external gateway results)
+- #43 Game import flow + completion handling (REST) — **depends on backend #115**
 
-### Phase 5 — Collection feature (~2 weeks)
+Backend: `game-gateways` CRUD + connect/disconnect, `GET /games/search`
+(local+external unified), `GET /games`, `POST /games/import` (async) all exist.
 
-**Goal**: game search → game detail → add-to-collection → collection list.
-The sync queue gets its first real exercise.
+### P6 — Collection feature (#29) — critical-path long pole
 
-Tracked by:
-- (no separate issue yet — to be filed as the feature begins. Likely 4-5
-  sub-issues: search screen, detail screen, collection list, add flow,
-  sync-status indicators.)
+**Backend-blocked on #114 (GameCollection REST CRUD — net-new server work).**
 
-Phase 5 lands:
-- Backend game search integration (already exists server-side).
-- Local search index for offline browsing of cached games.
-- Add to collection (sync queue exercise).
-- Reactive UI via existing `watch*` streams.
-- Sync-status indicators (`isDirty` / `isLocalOnly` become visible state).
-- First user of `UserDataExporter` (#11): `GameCollectionExporter`.
+- #44 Collection list (reactive read)
+- #45 Add-to-collection (`platformGameId` + `GameMedium` + quantity)
+- #46 Collection item detail / edit / remove (resurrection-aware)
+- #47 Sync-status indicators (`isDirty` / `isLocalOnly` / pending count)
+- #48 `GameCollectionExporter` (first `UserDataExporter` impl)
 
-### Phase 6 — Hardening + Android packaging (~1 week)
+Collections key on **`platformGameId` + `medium`** (not `gameId`); remove→re-add
+preserves play history.
 
-**Goal**: device-installable alpha.
+### P7 — Hardening + Android packaging (#30)
 
-- Empty/loading/error states across all screens.
-- Offline indicator (uses #9 connectivity service).
-- A11y audit pass.
-- Build configurations and signing for sideload-able Android APK.
-- macOS and web builds confirmed working in CI.
-- Documentation: per-platform dev-URL guide (LAN IP for Android device, `adb
-  reverse` workflow, k8s deployment story).
+- #49 Empty / loading / error states + offline indicator (#9)
+- #50 Accessibility audit pass (WCAG 2.1 AA)
+- #51 Android sideload packaging + signing + macOS/web CI + dev-URL docs
 
-## Cross-cutting Tier-1/2/3 work (lands throughout)
+## Critical path
 
-These don't define phases; they're concerns that thread through all phases:
+`P0 → P1 → P2 → P3 → P6`, with **backend #114 (collection CRUD) started
+immediately** so it is ready by the time P6 lands. P4 (households) and P5
+(gateways/search/import) run in parallel. The "anything hard to retrofit, even if
+it delays a functional alpha" rule pulls P3 encryption, P0 migrations, and the
+multi-server infra ahead of the first satisfying end-to-end demo — a deliberate
+tradeoff.
 
-- **#7 Schema migration convention** — established in Phase 1, used by every
-  schema change after.
-- **#8 Observability foundation** — Phase 1, used by everything after.
-- **#9 Connectivity awareness service** — Phase 1 dep, integrated in Phase 4-6.
-- **#10 Deep linking config + URL scheme** — Phase 1 manifest declarations,
-  even before any actual deep links resolve to UI. Required to install in
-  manifests pre-alpha.
-- **#11 UserDataExporter interface** — Phase 1 interface; first exporter in
-  Phase 5; more exporters per future feature.
-- **#12 Clock skew correction** — Phase 4 (network responses available),
-  integrated throughout post.
-- **#15 Push notification interface** — Phase 1 interface stub; concrete
-  implementations come post-alpha per platform.
-- **#16 Encryption-at-rest** — Phase 4.
-- **#17 Analytics interface** — Phase 1 interface (no implementations until
-  post-alpha); enables the multi-sink architecture.
+## Backend dependencies
+
+- **#114 — GameCollection REST CRUD** (new). Hard blocker for P6. No collection
+  controller exists server-side today (`games` is the admin catalog).
+- **#115 — REST import-status endpoint** (new). Import is async; the REST-only
+  alpha needs to observe completion (P5).
+- **#47 — well-known version/features/sinks** (existing). Client #13 (P1) consumes
+  it; degrades gracefully (open bounds) until it lands.
+- Already present and consumed as-is: auth (BetterAuth), households CRUD,
+  game-gateways CRUD + connect/disconnect, `games/search` (local + external),
+  `games/import`, `games` catalog, `.well-known/bge-identity`.
 
 ## What's deferred to post-alpha (v0.2+)
 
 In rough order:
 
-- **Household feature (CRUD + invites)**. Repository today is read-cache-only.
-  Household mutation Phase begins with adding write methods to the interface,
-  three new SyncOperation variants (CreateHousehold, AddMember, RemoveMember),
-  and the membership-cache-stale-window strategy. Backend household management
-  needs companion implementation.
-- **Play sessions**. Session models exist as a future model; sessions UI is
-  net-new. Timezone-aware datetimes become required here (`TZDateTime` from
-  the `timezone` package).
-- **Social** (friendship, events, RSVP). Largely new.
-- **Real-time chat**. First real use of WebSockets. The
-  `socket_io_client` package is already chosen. Repositories follow the
-  abstract REST datasource pattern.
-- **Push notification implementations** (per platform: FCM for Android, APNs
-  for macOS, web-push or skip for browser).
-- **Media handling** (profile images with crop/center, collection condition
-  photos, event/session images + video, household banners). Multi-issue topic
-  needing design before any issue can be filed. See "Design discussions
-  pending" below.
-- **Analytics implementations** + first event catalog rollout (#17 interface
-  lands earlier; activation comes when analytics-sinks-in-well-known is
-  wired and the catalog stabilizes).
-- **Account deletion flow UI** (companion to backend account-deletion work).
-- **Admin features** (audit log viewer, bug-report triage UI). These follow
-  the backend admin endpoints landing.
+- **Offline-first UX** (the polished experience on top of the existing infra).
+- **WebSocket layer** (search/import live updates, then real-time chat) via
+  `socket_io_client`; REST paths remain the documented fallback.
+- **Household membership + invitations** (AddMember/RemoveMember sync variants,
+  membership-cache-stale-window strategy). Create-only for alpha.
+- **Play sessions** (timezone-aware datetimes via the `timezone` package).
+- **Events / social** (friendship, events, RSVP).
+- **Push notification implementations** (FCM/APNs/web-push; interface stub only in P0).
+- **Media handling** (profile images, condition photos, event/session media,
+  banners). Still needs a focused design pass — see below.
+- **Analytics implementations** + event catalog rollout (interface only in P0).
+- **Account deletion flow UI**; **admin features** (audit log, feedback triage).
 
 ## Design discussions still pending (not yet issues)
 
-These topics have been decided as IN scope but the implementation shape needs
-a focused design discussion before any GitHub issue can usefully be filed.
-
-- **Media handling.** Multi-issue topic. Different rules for profile images
-  (crop/resize controls), collection condition photos (multiple per item),
-  event/session photos AND videos, household banners. Decisions to make:
-  - Content-addressing strategy (avoid duplicate uploads).
-  - Upload pipeline (resume on flaky connections, retry, sync-queue
-    integration).
-  - Image processing (crop, resize, EXIF stripping for privacy).
-  - Video specifics (transcoding? streaming? size limits?).
-  - Backend storage strategy (filesystem, S3-compatible, configurable).
-  - CDN strategy.
-  - Privacy posture (uploads stay on the user's server only; no central CDN).
-
-  Probably becomes 6+ issues across client + backend once designed.
+- **Media handling.** Multi-issue topic (client + backend). Decisions: content
+  addressing, resumable upload pipeline + sync-queue integration, image processing
+  (crop/resize/EXIF-strip), video specifics, backend storage strategy
+  (filesystem / S3-compatible / configurable), CDN, privacy posture. Note the
+  backend already has a `MediaModule` + `media` models; a design pass should
+  reconcile the client story against what exists server-side before filing.
 
 ## Decisions documented elsewhere
 
-For reference, these decisions are made but live in code/issue comments:
-
-- **cuid2 for client-generated IDs.** Not Prisma's default v1 cuid; the backend
-  uses cuid2 explicitly. Local row IDs round-trip through reconciliation; if
-  the server replaces them, `SyncQueueRepository.remapCollectionId` rewrites
-  pending ops.
-- **Resurrection preserves play history.** Removing a game from a collection
-  means "I don't own this anymore," not "I never played this." playCount /
-  lastPlayed / playAgain / favorite carry across remove-readd cycles.
-  rating/comment follow the live-row null-handling semantic (null = preserve).
-- **PII partial redaction in event logs.** Emails like `j**n.d*e@email.com`,
-  names like `J**n`. Deterministic so debug correlation works; documented
-  caveat that it's incidental-exposure mitigation, not strong anonymization.
-- **AuthState manual `==`/`hashCode`.** Sealed hierarchy without Equatable
-  dep; only `AuthStateAuthenticated` needs value equality (session-based);
-  const singletons handle the rest.
-- **Single URL + optional alias for server-add UX.** Path-prefix deployments
-  work because the full URL (scheme + host + optional port + optional path)
-  is one field. The well-known discovery handles everything else.
-- **Backend uses BetterAuth with bearer + email/password.** Opaque session
-  tokens (no JWT). Sign-in/sign-up/get-session/sign-out endpoints under
-  `/api/auth/...`. Other plugins installed (admin, anonymous, bearer,
-  deviceAuthorization, genericOAuth, lastLoginMethod, oneTap, oneTimeToken,
-  openAPI, twoFactor) but most not yet wired into client flow.
+- **cuid2 for client-generated IDs.** `SyncQueueRepository.remapCollectionId`
+  rewrites pending ops if the server replaces a local id.
+- **Resurrection preserves play history.** Remove = "no longer owned," not "never
+  played." playCount/lastPlayed/playAgain/favorite carry across remove-readd;
+  rating/comment follow null=preserve.
+- **PII partial redaction in event logs.** Deterministic incidental-exposure
+  mitigation, not strong anonymization.
+- **AuthState manual `==`/`hashCode`.** Sealed hierarchy, no Equatable dep.
+- **Single URL + optional alias for server-add.** The full URL is one field;
+  well-known discovery handles the rest.
+- **Backend uses BetterAuth** (bearer + email/password, opaque session tokens).
+  Passkey/2FA/anonymous advertised via `bge*Supported`; not wired into alpha UX.
+- **Collections key on `platformGameId` + `medium`.** A `PlatformGame` is a
+  platform incarnation of a `Game` ("Catan on Tabletop" vs "Catan on Steam");
+  search/import must resolve a `platformGameId` before add.
 
 ## Pointers
 
-- **Issue tracker**: open issues in this repo, see Phase mappings above.
-- **Backend roadmap**: `BoardGamesEmpire/board-games-empire-backend:docs/ROADMAP.md`.
-- **Backend issue tracker**: `BoardGamesEmpire/board-games-empire-backend` —
-  open issues #44-#49 cover backend Phase-1 prerequisites (bug-report stack,
-  well-known extensions, audit log, analytics-sink-in-well-known).
+- **Issue tracker**: epics #23–#30; sub-issues #31–#51; cross-cutting #7, #9–#13, #15–#17.
+- **Backend companions**: `BoardGamesEmpire/board-games-empire-backend#114`
+  (collection CRUD), `#115` (import status), `#47` (well-known extension).
+- **Backend roadmap**: `BoardGamesEmpire/board-games-empire-backend:docs/ROADMAP.md`
+  (not yet created — companion still TBD).
