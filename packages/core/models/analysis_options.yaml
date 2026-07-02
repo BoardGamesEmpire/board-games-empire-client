@@ -13,15 +13,18 @@
 
 include: package:lints/recommended.yaml
 
-# Uncomment the following section to specify additional rules.
-
-# linter:
-#   rules:
-#     - camel_case_types
-
-# analyzer:
-#   exclude:
-#     - path/to/excluded/files/**
+analyzer:
+  errors:
+    # Freezed models attach `@JsonKey(...)` to factory-constructor
+    # parameters so json_serializable can honour the mapping. The
+    # analyzer flags this as `invalid_annotation_target` because, at
+    # the source level, the annotation sits on a parameter rather than
+    # the generated field/getter it ultimately governs. The pattern is
+    # correct and is the json_serializable-documented way to configure
+    # Freezed serialization, so the diagnostic is downgraded to ignore
+    # for this package. See:
+    # https://github.com/google/json_serializable.dart/issues/958
+    invalid_annotation_target: ignore
 
 # For more information about the core and recommended set of lints, see
 # https://dart.dev/go/core-lints

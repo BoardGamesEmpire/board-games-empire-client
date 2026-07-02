@@ -21,7 +21,7 @@ dependencies:
   interfaces:
     path: ../../core/interfaces
   dio_network:
-    path: ../../dio_network
+    path: ../dio_network
 
   # Base networking (inherits from dio_network)
   dio: ^5.9.2

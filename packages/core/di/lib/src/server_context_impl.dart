@@ -48,6 +48,7 @@ class ServerContextImpl implements ServerContext {
   final String serverId;
 
   // Used in activate() (Phase 2: DB open) and suspend() (Phase 3: WS close).
+  // ignore: unused_field
   final ServerConfig _config;
 
   @override
