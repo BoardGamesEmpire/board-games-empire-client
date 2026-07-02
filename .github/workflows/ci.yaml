@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Codegen (fresh, once) + schema freshness ────────────────────
+  # Generated code (.g.dart / .freezed.dart / .config.dart) is
+  # gitignored, so every job that compiles or analyses Dart needs it
+  # produced first. Rather than regenerate in each job, this single
+  # job generates once, verifies it, and publishes the output as an
+  # artifact that `analyze` and `test` restore. That keeps generation
+  # fresh on every run with no committed/stale artifacts.
+  #
+  # The `generate` melos script fans out with `melos exec ...`, which
+  # melos shells out as a bare `melos` command — so `melos` must be on
+  # PATH (a top-level `dart run melos` satisfies the outer call but not
+  # the nested exec). We global-activate melos and append its install
+  # dir to PATH, since hosted runners don't add $HOME/.pub-cache/bin
+  # by default.
+  #
+  # Two gates:
+  #   1. Codegen must complete with no errors.
+  #   2. A fresh `schema dump` must byte-match the committed snapshots.
+  generate:
+    name: Codegen + schema freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable # TODO: pin to the team's Flutter version.
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Activate melos and put it on PATH
+        run: |
+          dart pub global activate melos ^7.0.0
+          echo "${PUB_CACHE:-$HOME/.pub-cache}/bin" >> "$GITHUB_PATH"
+      - name: Codegen must succeed
+        run: melos run generate
+      - name: Schema snapshots must be fresh
+        working-directory: packages/storage/drift_storage
+        run: |
+          set -uo pipefail
+          tmp=$(mktemp -d)
+          flutter pub run drift_dev schema dump lib/src/databases/server_database.dart "$tmp/server/"
+          flutter pub run drift_dev schema dump lib/src/databases/meta_database.dart   "$tmp/meta/"
+          fail=0
+          for db in server meta; do
+            for fresh in "$tmp/$db"/drift_schema_v*.json; do
+              name=$(basename "$fresh")
+              committed="drift_schemas/$db/$name"
+              if [ ! -f "$committed" ]; then
+                echo "::error::Missing committed snapshot: $committed"
+                fail=1
+                continue
+              fi
+              if ! diff -q "$committed" "$fresh" >/dev/null; then
+                echo "::error::Stale snapshot: $committed differs from a fresh dump. Run 'melos run schema:dump' and commit the result."
+                diff "$committed" "$fresh" || true
+                fail=1
+              fi
+            done
+          done
+          exit "$fail"
+      - name: Bundle generated sources
+        run: |
+          find . \( -name '*.g.dart' -o -name '*.freezed.dart' \
+                    -o -name '*.config.dart' -o -name '*.mocks.dart' \) \
+            -not -path '*/.dart_tool/*' -print0 \
+            | tar --null -czf "$RUNNER_TEMP/generated.tar.gz" -T -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generated-sources
+          path: ${{ runner.temp }}/generated.tar.gz
+          retention-days: 1
+
+  # ── Static analysis ─────────────────────────────────────────────
+  # One root `dart analyze .` walks every workspace member and honours
+  # each package's own analysis_options.yaml. Needs generated code, so
+  # it restores the artifact from `generate` first.
+  analyze:
+    name: Analyze
+    needs: generate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-sources
+          path: ${{ runner.temp }}
+      - name: Restore generated sources
+        run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Analyze whole workspace
+        run: dart analyze .
+
+  # ── Discover packages that have tests ───────────────────────────
+  # Builds the test matrix dynamically so new packages are picked up
+  # automatically — nothing to keep in sync by hand.
+  discover-tests:
+    name: Discover test packages
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.find.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          pkgs=$(find packages apps -type d -name test -not -path '*/.*/*' \
+            | sed 's:/test$::' \
+            | sort \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "packages=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "Discovered test packages: $pkgs"
+
+  # ── Tests (one job per package, in parallel) ────────────────────
+  # `flutter test` for every package — drift_storage's suites import
+  # flutter_test, so `dart test` can't run them, and `flutter test`
+  # runs pure-Dart suites cleanly too. Restores generated code first.
+  # fail-fast off so one red package doesn't cancel the rest.
+  test:
+    name: Test ${{ matrix.package }}
+    needs: [generate, discover-tests]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.discover-tests.outputs.packages) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-sources
+          path: ${{ runner.temp }}
+      - name: Restore generated sources
+        run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: flutter test
+        working-directory: ${{ matrix.package }}
+        run: flutter test --test-randomize-ordering-seed random

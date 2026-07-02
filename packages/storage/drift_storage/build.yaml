@@ -25,9 +25,27 @@
 # values fail to parse as ISO-8601 text. If a versioned migration is
 # ever needed, drift documents the recipe:
 # https://drift.simonbinder.eu/guides/datetime-migrations
+#
+# ── Schema migration tooling (issue #52, unblocks #7) ──────────────
+# `databases:` registers each @DriftDatabase class with drift_dev's
+# `schema` / `make-migrations` commands. It is read ONLY by those
+# CLI commands — the normal build_runner pass ignores it, so the
+# l10n → freezed → injectable ordering and per-package scoping are
+# unaffected.
+#
+# `schema_dir` / `test_dir` are single, global settings; drift nests
+# each database's artefacts under a subfolder named after its key
+# (`drift_schemas/server/`, `drift_schemas/meta/`, etc.). That keyed
+# nesting — not two separate schema_dir values — is how the two
+# schema histories are kept from cross-contaminating.
 targets:
   $default:
     builders:
       drift_dev:
         options:
           store_date_time_values_as_text: true
+          databases:
+            server: lib/src/databases/server_database.dart
+            meta: lib/src/databases/meta_database.dart
+          schema_dir: drift_schemas
+          test_dir: test/drift

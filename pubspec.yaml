@@ -38,8 +38,17 @@ melos:
 
   scripts:
     generate:
-      run: melos exec -c 1 --order-dependents --depends-on build_runner -- dart run build_runner build --delete-conflicting-outputs
+      run: melos exec -c 1 --order-dependents --depends-on build_runner -- flutter pub run build_runner build --delete-conflicting-outputs
       description: Run code generation for all packages
+
+    # ── Drift schema tooling (issues #52, #7) ──────────────────────
+    schema:dump:
+      run: melos exec -c 1 --scope="drift_storage" -- "flutter pub run drift_dev schema dump lib/src/databases/server_database.dart drift_schemas/server/ && flutter pub run drift_dev schema dump lib/src/databases/meta_database.dart drift_schemas/meta/"
+      description: Refresh committed Drift schema snapshots for both databases. Run after any schema change, then commit the JSON.
+
+    schema:migrations:
+      run: melos exec -c 1 --scope="drift_storage" -- "flutter pub run drift_dev make-migrations"
+      description: Generate step-by-step migration scaffolding + schema tests for all databases registered in build.yaml.
 
     # Analysis and testing
     analyze:
