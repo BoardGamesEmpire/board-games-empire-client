@@ -8,9 +8,26 @@ import 'package:flutter/foundation.dart';
 import '../tables/server_config_table.dart';
 import '../tables/device_preferences_table.dart';
 import '../tables/notification_summary_table.dart';
+import 'migration_policy.dart';
 
 part 'meta_database.g.dart';
 
+/// Device-global Drift database.
+///
+/// A single instance per device (not per server), stored at
+/// `<AppSupport>/meta/servers.db`. Holds cross-server metadata: the
+/// registry of known servers ([ServerConfigs]), device-wide preferences,
+/// and notification summaries.
+///
+/// ## Migrations
+///
+/// Shares the migration convention with [ServerDatabase] but keeps a
+/// completely separate schema history and snapshot directory
+/// (`drift_schemas/meta/`). `schemaVersion` is 1 with no forward migrations,
+/// so there is no generated `meta_database.steps.dart`. The [migration]
+/// strategy refuses schema *downgrades* by throwing a `SchemaDowngradeError`,
+/// and `beforeOpen` applies the standard PRAGMAs (FK enforcement + WAL). See
+/// `MIGRATIONS.md`.
 @DriftDatabase(
   tables: [ServerConfigs, DevicePreferencesTable, NotificationSummaries],
 )
@@ -30,12 +47,14 @@ class MetaDatabase extends _$MetaDatabase {
         await m.createAll();
       },
       onUpgrade: (Migrator m, int from, int to) async {
-        // Future migrations will be handled here
+        guardAgainstDowngrade(from, to);
+        // No forward migrations yet (schemaVersion == 1). When the schema
+        // first changes: bump schemaVersion, run `melos run schema:migrations`
+        // to generate `meta_database.steps.dart`, then dispatch the generated
+        // steps via `stepByStep(...)` here (keeping the downgrade guard
+        // first). See MIGRATIONS.md.
       },
-      beforeOpen: (details) async {
-        await customStatement('PRAGMA foreign_keys = ON');
-        await customStatement('PRAGMA journal_mode = WAL');
-      },
+      beforeOpen: (details) => applyStandardPragmas(),
     );
   }
 

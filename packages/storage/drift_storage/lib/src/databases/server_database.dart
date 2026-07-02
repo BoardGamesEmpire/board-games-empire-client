@@ -7,6 +7,7 @@ import '../tables/game_collection_table.dart';
 import '../tables/household_table.dart';
 import '../tables/household_members_table.dart';
 import '../tables/sync_queue_table.dart';
+import 'migration_policy.dart';
 
 part 'server_database.g.dart';
 
@@ -39,15 +40,14 @@ part 'server_database.g.dart';
 /// tombstones (`deleted_at IS NOT NULL`) exempt from the constraint so
 /// a user can resurrect a previously deleted entry.
 ///
-/// `PRAGMA foreign_keys = ON` is set on every open so `REFERENCES`
-/// constraints are actually enforced (SQLite defaults to OFF). WAL
-/// improves concurrent read/write performance.
+/// ## Migrations
 ///
-/// Pre-production: this codebase has no released clients yet, so
-/// schema changes are applied destructively in place rather than via
-/// versioned migrations. `schemaVersion` stays at 1; bump it (and add
-/// an `onUpgrade` handler in [migration]) once a versioned client
-/// ships.
+/// `schemaVersion` is 1 and there are no forward migrations yet, so there is
+/// no generated `server_database.steps.dart`. The [migration] strategy already
+/// refuses schema *downgrades* (opening a newer on-disk DB with an older
+/// client) by throwing a `SchemaDowngradeError`, and `beforeOpen` applies the
+/// standard PRAGMAs (FK enforcement + WAL) after any migration runs. Adding a
+/// versioned migration is a documented workflow — see `MIGRATIONS.md`.
 @DriftDatabase(
   tables: [
     GamesTable,
@@ -68,16 +68,20 @@ class ServerDatabase extends _$ServerDatabase {
   int get schemaVersion => 1;
 
   @override
-  MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (Migrator m) async {
-      await m.createAll();
-    },
-    beforeOpen: (details) async {
-      // FK enforcement: SQLite silently ignores REFERENCES constraints
-      // unless this is set. Matches MetaDatabase's behaviour.
-      await customStatement('PRAGMA foreign_keys = ON');
-      // WAL improves concurrent read/write performance.
-      await customStatement('PRAGMA journal_mode = WAL');
-    },
-  );
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        await m.createAll();
+      },
+      onUpgrade: (Migrator m, int from, int to) async {
+        guardAgainstDowngrade(from, to);
+        // No forward migrations yet (schemaVersion == 1). When the schema
+        // first changes: bump schemaVersion, run `melos run schema:migrations`
+        // to generate `server_database.steps.dart`, then dispatch the
+        // generated steps via `stepByStep(...)` here (keeping the downgrade
+        // guard first). See MIGRATIONS.md.
+      },
+      beforeOpen: (details) => applyStandardPragmas(),
+    );
+  }
 }
