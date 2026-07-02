@@ -1,8 +1,4 @@
-/// Support for doing something awesome.
-///
-/// More dartdocs go here.
+/// Storage abstractions and contracts shared across BGE storage backends.
 library;
 
-export 'src/storage_interface_base.dart';
-
-// TODO: Export any libraries intended for clients of this package.
+export 'src/errors/schema_downgrade_error.dart';

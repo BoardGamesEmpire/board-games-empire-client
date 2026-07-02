@@ -8,9 +8,26 @@ import 'package:flutter/foundation.dart';
 import '../tables/server_config_table.dart';
 import '../tables/device_preferences_table.dart';
 import '../tables/notification_summary_table.dart';
+import 'migration_policy.dart';
 
 part 'meta_database.g.dart';
 
+/// Device-global Drift database.
+///
+/// A single instance per device (not per server), stored at
+/// `<AppSupport>/meta/servers.db`. Holds cross-server metadata: the
+/// registry of known servers ([ServerConfigs]), device-wide preferences,
+/// and notification summaries.
+///
+/// ## Migrations
+///
+/// Shares the migration convention with [ServerDatabase] but keeps a
+/// completely separate schema history and snapshot directory
+/// (`drift_schemas/meta/`). `schemaVersion` is 1 with no forward migrations, so
+/// there is no generated `meta_database.steps.dart`. The [migration] strategy
+/// is built by `bgeMigrationStrategy()` (see `migration_policy.dart`), which
+/// refuses schema *downgrades* by throwing a `SchemaDowngradeError` and applies
+/// the standard PRAGMAs (FK enforcement + WAL). See `MIGRATIONS.md`.
 @DriftDatabase(
   tables: [ServerConfigs, DevicePreferencesTable, NotificationSummaries],
 )
@@ -24,20 +41,7 @@ class MetaDatabase extends _$MetaDatabase {
   int get schemaVersion => 1;
 
   @override
-  MigrationStrategy get migration {
-    return MigrationStrategy(
-      onCreate: (Migrator m) async {
-        await m.createAll();
-      },
-      onUpgrade: (Migrator m, int from, int to) async {
-        // Future migrations will be handled here
-      },
-      beforeOpen: (details) async {
-        await customStatement('PRAGMA foreign_keys = ON');
-        await customStatement('PRAGMA journal_mode = WAL');
-      },
-    );
-  }
+  MigrationStrategy get migration => bgeMigrationStrategy();
 
   static LazyDatabase _openConnection() {
     return LazyDatabase(() async {
