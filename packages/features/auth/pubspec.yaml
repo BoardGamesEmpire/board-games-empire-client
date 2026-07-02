@@ -24,7 +24,8 @@ dependencies:
 
   flutter_bloc: ^9.1.1
   equatable: ^2.0.6
-  reactive_forms: ^18.1.1
+  flutter_form_builder: ^10.3.0
+  form_builder_validators: ^11.3.0
   intl: ^0.20.2
 
 dev_dependencies:

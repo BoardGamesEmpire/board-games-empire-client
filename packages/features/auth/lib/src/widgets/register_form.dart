@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:reactive_forms/reactive_forms.dart';
+import 'package:flutter_form_builder/flutter_form_builder.dart';
+import 'package:form_builder_validators/form_builder_validators.dart';
 
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
@@ -24,55 +25,21 @@ class _RegisterFormState extends State<RegisterForm> {
   static const _kMinPasswordLength = 8;
   static const _kMinUsernameLength = 3;
 
-  late final FormGroup _form;
-
-  @override
-  void initState() {
-    super.initState();
-    _form = FormGroup({
-      'email': FormControl<String>(
-        value: '',
-        validators: [Validators.required, Validators.email],
-      ),
-      'username': FormControl<String>(
-        value: '',
-        validators: [
-          Validators.required,
-          Validators.minLength(_kMinUsernameLength),
-        ],
-      ),
-      'password': FormControl<String>(
-        value: '',
-        validators: [
-          Validators.required,
-          Validators.minLength(_kMinPasswordLength),
-        ],
-      ),
-      'firstName': FormControl<String>(value: ''),
-      'lastName': FormControl<String>(value: ''),
-    });
-  }
-
-  @override
-  void dispose() {
-    _form.dispose();
-    super.dispose();
-  }
+  final _formKey = GlobalKey<FormBuilderState>();
 
   void _submit(BuildContext context) {
-    if (_form.invalid) {
-      _form.markAllAsTouched();
-      return;
-    }
+    final isValid = _formKey.currentState?.saveAndValidate() ?? false;
+    if (!isValid) return;
 
-    final firstName = (_form.control('firstName').value as String).trim();
-    final lastName = (_form.control('lastName').value as String).trim();
+    final values = _formKey.currentState!.value;
+    final firstName = (values['firstName'] as String? ?? '').trim();
+    final lastName = (values['lastName'] as String? ?? '').trim();
 
     context.read<AuthBloc>().add(
       AuthRegisterRequested(
-        email: _form.control('email').value as String,
-        password: _form.control('password').value as String,
-        username: _form.control('username').value as String,
+        email: values['email'] as String,
+        password: values['password'] as String,
+        username: values['username'] as String,
         firstName: firstName.isEmpty ? null : firstName,
         lastName: lastName.isEmpty ? null : lastName,
       ),
@@ -87,15 +54,15 @@ class _RegisterFormState extends State<RegisterForm> {
       builder: (context, state) {
         final isLoading = state is AuthLoading;
 
-        return ReactiveForm(
-          formGroup: _form,
+        return FormBuilder(
+          key: _formKey,
           child: AutofillGroup(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
                 AuthTextField(
-                  formControlName: 'email',
+                  name: 'email',
                   label: 'Email',
                   hint: 'Enter your email address',
                   keyboardType: TextInputType.emailAddress,
@@ -103,27 +70,34 @@ class _RegisterFormState extends State<RegisterForm> {
                   textInputAction: TextInputAction.next,
                   enabled: !isLoading,
                   autofocus: true,
-                  validationMessages: {
-                    ValidationMessage.required: (_) => 'Email is required',
-                    ValidationMessage.email: (_) =>
-                        'Enter a valid email address',
-                  },
+                  validator: FormBuilderValidators.compose([
+                    FormBuilderValidators.required(
+                      errorText: 'Email is required',
+                    ),
+                    FormBuilderValidators.email(
+                      errorText: 'Enter a valid email address',
+                    ),
+                  ]),
                 ),
                 const SizedBox(height: 16),
                 AuthTextField(
-                  formControlName: 'username',
+                  name: 'username',
                   label: 'Username',
                   hint: 'Choose a username',
                   autofillHints: const [AutofillHints.username],
                   textInputAction: TextInputAction.next,
                   enabled: !isLoading,
-                  validationMessages: {
-                    ValidationMessage.required: (_) => 'Username is required',
-                    ValidationMessage.minLength: (e) {
-                      final min = (e as Map)['requiredLength'] as int;
-                      return 'Username must be at least $min characters';
-                    },
-                  },
+                  validator: FormBuilderValidators.compose([
+                    FormBuilderValidators.required(
+                      errorText: 'Username is required',
+                    ),
+                    FormBuilderValidators.minLength(
+                      _kMinUsernameLength,
+                      errorText:
+                          'Username must be at least '
+                          '$_kMinUsernameLength characters',
+                    ),
+                  ]),
                 ),
                 const SizedBox(height: 16),
                 // Optional name fields — side by side on wider screens
@@ -131,30 +105,28 @@ class _RegisterFormState extends State<RegisterForm> {
                   children: [
                     Expanded(
                       child: AuthTextField(
-                        formControlName: 'firstName',
+                        name: 'firstName',
                         label: 'First Name',
                         autofillHints: const [AutofillHints.givenName],
                         textInputAction: TextInputAction.next,
                         enabled: !isLoading,
-                        validationMessages: const {},
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: AuthTextField(
-                        formControlName: 'lastName',
+                        name: 'lastName',
                         label: 'Last Name',
                         autofillHints: const [AutofillHints.familyName],
                         textInputAction: TextInputAction.next,
                         enabled: !isLoading,
-                        validationMessages: const {},
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 AuthTextField(
-                  formControlName: 'password',
+                  name: 'password',
                   label: 'Password',
                   hint: 'Create a password',
                   isPassword: true,
@@ -162,13 +134,17 @@ class _RegisterFormState extends State<RegisterForm> {
                   textInputAction: TextInputAction.done,
                   enabled: !isLoading,
                   onSubmitted: () => _submit(context),
-                  validationMessages: {
-                    ValidationMessage.required: (_) => 'Password is required',
-                    ValidationMessage.minLength: (e) {
-                      final min = (e as Map)['requiredLength'] as int;
-                      return 'Password must be at least $min characters';
-                    },
-                  },
+                  validator: FormBuilderValidators.compose([
+                    FormBuilderValidators.required(
+                      errorText: 'Password is required',
+                    ),
+                    FormBuilderValidators.minLength(
+                      _kMinPasswordLength,
+                      errorText:
+                          'Password must be at least '
+                          '$_kMinPasswordLength characters',
+                    ),
+                  ]),
                 ),
                 const SizedBox(height: 24),
                 Semantics(

@@ -515,6 +515,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_form_builder:
+    dependency: transitive
+    description:
+      name: flutter_form_builder
+      sha256: "1233251b4bc1d5deb245745d2a89dcebf4cdd382e1ec3f21f1c6703b700e574f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.3.0+2"
   flutter_lints:
     dependency: transitive
     description:
@@ -682,6 +690,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  form_builder_validators:
+    dependency: transitive
+    description:
+      name: form_builder_validators
+      sha256: cd9a06b35abaed8bf050467c1239e3ee1c8795f42d4cb6568c08dbb8a4d6bd36
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.3.0"
   freezed:
     dependency: transitive
     description:
@@ -1308,30 +1324,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
-  reactive_forms:
-    dependency: transitive
-    description:
-      name: reactive_forms
-      sha256: "4c8fe71f21ac88996c01a56fe19ea5ec39b47292cb07f99a467e1bb977136a98"
-      url: "https://pub.dev"
-    source: hosted
-    version: "18.1.1"
-  reactive_forms_annotations:
-    dependency: transitive
-    description:
-      name: reactive_forms_annotations
-      sha256: da53d15516d02fef91c5bd4761118a814fbecb7e0ee3a6440f81fb5f4983e3d3
-      url: "https://pub.dev"
-    source: hosted
-    version: "8.0.1"
-  reactive_forms_generator:
-    dependency: transitive
-    description:
-      name: reactive_forms_generator
-      sha256: "1f275e78cae31b3dc9f28627a2e83536564090e72a74f1b019dfea9e520a7fea"
-      url: "https://pub.dev"
-    source: hosted
-    version: "8.4.0"
   recase:
     dependency: transitive
     description:
@@ -1874,4 +1866,4 @@ packages:
     version: "2.2.2"
 sdks:
   dart: ">=3.11.0 <4.0.0"
-  flutter: ">=3.35.0"
+  flutter: ">=3.38.0"

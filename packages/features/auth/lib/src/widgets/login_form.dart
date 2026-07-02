@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:reactive_forms/reactive_forms.dart';
+import 'package:flutter_form_builder/flutter_form_builder.dart';
+import 'package:form_builder_validators/form_builder_validators.dart';
 
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
@@ -25,41 +26,17 @@ class LoginForm extends StatefulWidget {
 class _LoginFormState extends State<LoginForm> {
   static const _kMinPasswordLength = 8;
 
-  late final FormGroup _form;
-
-  @override
-  void initState() {
-    super.initState();
-    _form = FormGroup({
-      'email': FormControl<String>(
-        value: '',
-        validators: [Validators.required, Validators.email],
-      ),
-      'password': FormControl<String>(
-        value: '',
-        validators: [
-          Validators.required,
-          Validators.minLength(_kMinPasswordLength),
-        ],
-      ),
-    });
-  }
-
-  @override
-  void dispose() {
-    _form.dispose();
-    super.dispose();
-  }
+  final _formKey = GlobalKey<FormBuilderState>();
 
   void _submit(BuildContext context) {
-    if (_form.invalid) {
-      _form.markAllAsTouched();
-      return;
-    }
+    final isValid = _formKey.currentState?.saveAndValidate() ?? false;
+    if (!isValid) return;
+
+    final values = _formKey.currentState!.value;
     context.read<AuthBloc>().add(
       AuthSignInRequested(
-        email: _form.control('email').value as String,
-        password: _form.control('password').value as String,
+        email: values['email'] as String,
+        password: values['password'] as String,
       ),
     );
   }
@@ -72,15 +49,15 @@ class _LoginFormState extends State<LoginForm> {
       builder: (context, state) {
         final isLoading = state is AuthLoading;
 
-        return ReactiveForm(
-          formGroup: _form,
+        return FormBuilder(
+          key: _formKey,
           child: AutofillGroup(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
                 AuthTextField(
-                  formControlName: 'email',
+                  name: 'email',
                   label: 'Email', // TODO: wire AuthLocalizations
                   hint: 'Enter your email address',
                   keyboardType: TextInputType.emailAddress,
@@ -88,15 +65,18 @@ class _LoginFormState extends State<LoginForm> {
                   textInputAction: TextInputAction.next,
                   enabled: !isLoading,
                   autofocus: true,
-                  validationMessages: {
-                    ValidationMessage.required: (_) => 'Email is required',
-                    ValidationMessage.email: (_) =>
-                        'Enter a valid email address',
-                  },
+                  validator: FormBuilderValidators.compose([
+                    FormBuilderValidators.required(
+                      errorText: 'Email is required',
+                    ),
+                    FormBuilderValidators.email(
+                      errorText: 'Enter a valid email address',
+                    ),
+                  ]),
                 ),
                 const SizedBox(height: 16),
                 AuthTextField(
-                  formControlName: 'password',
+                  name: 'password',
                   label: 'Password',
                   hint: 'Enter your password',
                   isPassword: true,
@@ -104,13 +84,17 @@ class _LoginFormState extends State<LoginForm> {
                   textInputAction: TextInputAction.done,
                   enabled: !isLoading,
                   onSubmitted: () => _submit(context),
-                  validationMessages: {
-                    ValidationMessage.required: (_) => 'Password is required',
-                    ValidationMessage.minLength: (e) {
-                      final min = (e as Map)['requiredLength'] as int;
-                      return 'Password must be at least $min characters';
-                    },
-                  },
+                  validator: FormBuilderValidators.compose([
+                    FormBuilderValidators.required(
+                      errorText: 'Password is required',
+                    ),
+                    FormBuilderValidators.minLength(
+                      _kMinPasswordLength,
+                      errorText:
+                          'Password must be at least '
+                          '$_kMinPasswordLength characters',
+                    ),
+                  ]),
                 ),
                 const SizedBox(height: 24),
                 Semantics(
