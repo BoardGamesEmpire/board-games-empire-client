@@ -23,11 +23,11 @@ part 'meta_database.g.dart';
 ///
 /// Shares the migration convention with [ServerDatabase] but keeps a
 /// completely separate schema history and snapshot directory
-/// (`drift_schemas/meta/`). `schemaVersion` is 1 with no forward migrations,
-/// so there is no generated `meta_database.steps.dart`. The [migration]
-/// strategy refuses schema *downgrades* by throwing a `SchemaDowngradeError`,
-/// and `beforeOpen` applies the standard PRAGMAs (FK enforcement + WAL). See
-/// `MIGRATIONS.md`.
+/// (`drift_schemas/meta/`). `schemaVersion` is 1 with no forward migrations, so
+/// there is no generated `meta_database.steps.dart`. The [migration] strategy
+/// is built by `bgeMigrationStrategy()` (see `migration_policy.dart`), which
+/// refuses schema *downgrades* by throwing a `SchemaDowngradeError` and applies
+/// the standard PRAGMAs (FK enforcement + WAL). See `MIGRATIONS.md`.
 @DriftDatabase(
   tables: [ServerConfigs, DevicePreferencesTable, NotificationSummaries],
 )
@@ -41,22 +41,7 @@ class MetaDatabase extends _$MetaDatabase {
   int get schemaVersion => 1;
 
   @override
-  MigrationStrategy get migration {
-    return MigrationStrategy(
-      onCreate: (Migrator m) async {
-        await m.createAll();
-      },
-      onUpgrade: (Migrator m, int from, int to) async {
-        guardAgainstDowngrade(from, to);
-        // No forward migrations yet (schemaVersion == 1). When the schema
-        // first changes: bump schemaVersion, run `melos run schema:migrations`
-        // to generate `meta_database.steps.dart`, then dispatch the generated
-        // steps via `stepByStep(...)` here (keeping the downgrade guard
-        // first). See MIGRATIONS.md.
-      },
-      beforeOpen: (details) => applyStandardPragmas(),
-    );
-  }
+  MigrationStrategy get migration => bgeMigrationStrategy();
 
   static LazyDatabase _openConnection() {
     return LazyDatabase(() async {

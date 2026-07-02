@@ -43,11 +43,12 @@ part 'server_database.g.dart';
 /// ## Migrations
 ///
 /// `schemaVersion` is 1 and there are no forward migrations yet, so there is
-/// no generated `server_database.steps.dart`. The [migration] strategy already
-/// refuses schema *downgrades* (opening a newer on-disk DB with an older
-/// client) by throwing a `SchemaDowngradeError`, and `beforeOpen` applies the
-/// standard PRAGMAs (FK enforcement + WAL) after any migration runs. Adding a
-/// versioned migration is a documented workflow — see `MIGRATIONS.md`.
+/// no generated `server_database.steps.dart`. The [migration] strategy is built
+/// by `bgeMigrationStrategy()` (see `migration_policy.dart`), which refuses
+/// schema *downgrades* by throwing a `SchemaDowngradeError` and applies the
+/// standard PRAGMAs (FK enforcement + WAL) after any migration. Once a schema
+/// version exists, pass the generated `stepByStep(...)` dispatcher via its
+/// `steps:` parameter — see `MIGRATIONS.md`.
 @DriftDatabase(
   tables: [
     GamesTable,
@@ -68,20 +69,5 @@ class ServerDatabase extends _$ServerDatabase {
   int get schemaVersion => 1;
 
   @override
-  MigrationStrategy get migration {
-    return MigrationStrategy(
-      onCreate: (Migrator m) async {
-        await m.createAll();
-      },
-      onUpgrade: (Migrator m, int from, int to) async {
-        guardAgainstDowngrade(from, to);
-        // No forward migrations yet (schemaVersion == 1). When the schema
-        // first changes: bump schemaVersion, run `melos run schema:migrations`
-        // to generate `server_database.steps.dart`, then dispatch the
-        // generated steps via `stepByStep(...)` here (keeping the downgrade
-        // guard first). See MIGRATIONS.md.
-      },
-      beforeOpen: (details) => applyStandardPragmas(),
-    );
-  }
+  MigrationStrategy get migration => bgeMigrationStrategy();
 }

@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable # TODO: pin to the team's Flutter version.
+          channel: stable # TODO: pin to Flutter version.
           cache: true
       # Restore build_runner's incremental state (asset graph + cached
       # outputs) so unchanged sources skip regeneration. The lockfile
@@ -46,7 +46,10 @@ jobs:
       - name: Restore build_runner cache
         uses: actions/cache@v4
         with:
-          path: "**/.dart_tool/build"
+          path: |
+            .dart_tool/build
+            packages/**/.dart_tool/build
+            apps/**/.dart_tool/build
           key: build-runner-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}-${{ github.sha }}
           restore-keys: |
             build-runner-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}-
