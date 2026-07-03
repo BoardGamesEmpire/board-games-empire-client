@@ -1,1 +1,1348 @@
-{"_meta":{"description":"This file contains a serialized version of schema entities for drift.","version":"1.2.0"},"options":{"store_date_time_values_as_text":true},"entities":[{"id":0,"references":[],"type":"table","data":{"name":"games","was_declared_in_moor":false,"columns":[{"name":"id","getter_name":"id","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"title","getter_name":"title","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"subtitle","getter_name":"subtitle","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"description","getter_name":"description","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"image","getter_name":"image","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"thumbnail","getter_name":"thumbnail","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"publish_year","getter_name":"publishYear","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_players","getter_name":"minPlayers","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"max_players","getter_name":"maxPlayers","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"playing_time","getter_name":"playingTime","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_play_time","getter_name":"minPlayTime","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_play_time_measure","getter_name":"minPlayTimeMeasure","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"max_play_time","getter_name":"maxPlayTime","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"max_play_time_measure","getter_name":"maxPlayTimeMeasure","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_age","getter_name":"minAge","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"complexity","getter_name":"complexity","moor_type":"double","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"content_type","getter_name":"contentType","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'BaseGame\\'')","default_client_dart":null,"dsl_features":[]},{"name":"total_play_count","getter_name":"totalPlayCount","moor_type":"int","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"average_rating","getter_name":"averageRating","moor_type":"double","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"bayes_rating","getter_name":"bayesRating","moor_type":"double","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"ratings_count","getter_name":"ratingsCount","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"owned_by_count","getter_name":"ownedByCount","moor_type":"int","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"categories_json","getter_name":"categoriesJson","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'[]\\'')","default_client_dart":null,"dsl_features":[]},{"name":"mechanics_json","getter_name":"mechanicsJson","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'[]\\'')","default_client_dart":null,"dsl_features":[]},{"name":"designers_json","getter_name":"designersJson","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'[]\\'')","default_client_dart":null,"dsl_features":[]},{"name":"publishers_json","getter_name":"publishersJson","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'[]\\'')","default_client_dart":null,"dsl_features":[]},{"name":"tags_json","getter_name":"tagsJson","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'[]\\'')","default_client_dart":null,"dsl_features":[]},{"name":"visibility","getter_name":"visibility","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'Public\\'')","default_client_dart":null,"dsl_features":[]},{"name":"created_by_id","getter_name":"createdById","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"deleted_at","getter_name":"deletedAt","moor_type":"dateTime","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"created_at","getter_name":"createdAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"updated_at","getter_name":"updatedAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]}],"is_virtual":false,"without_rowid":false,"constraints":[],"explicit_pk":["id"]}},{"id":1,"references":[0],"type":"table","data":{"name":"platform_games","was_declared_in_moor":false,"columns":[{"name":"id","getter_name":"id","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"game_id","getter_name":"gameId","moor_type":"string","nullable":false,"customConstraints":null,"defaultConstraints":"REFERENCES games (id)","dialectAwareDefaultConstraints":{"sqlite":"REFERENCES games (id)"},"default_dart":null,"default_client_dart":null,"dsl_features":[{"foreign_key":{"to":{"table":"games","column":"id"},"initially_deferred":false,"on_update":null,"on_delete":null}}]},{"name":"platform_id","getter_name":"platformId","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"platform_name","getter_name":"platformName","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_players","getter_name":"minPlayers","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"max_players","getter_name":"maxPlayers","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_play_time","getter_name":"minPlayTime","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"min_play_time_measure","getter_name":"minPlayTimeMeasure","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"max_play_time","getter_name":"maxPlayTime","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"max_play_time_measure","getter_name":"maxPlayTimeMeasure","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"image","getter_name":"image","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"thumbnail","getter_name":"thumbnail","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"supports_solo","getter_name":"supportsSolo","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"supports_solo\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"supports_solo\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"supports_local","getter_name":"supportsLocal","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"supports_local\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"supports_local\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"supports_online","getter_name":"supportsOnline","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"supports_online\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"supports_online\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"has_async_play","getter_name":"hasAsyncPlay","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"has_async_play\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"has_async_play\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"has_realtime","getter_name":"hasRealtime","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"has_realtime\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"has_realtime\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"has_tutorial","getter_name":"hasTutorial","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"has_tutorial\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"has_tutorial\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"created_at","getter_name":"createdAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"updated_at","getter_name":"updatedAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]}],"is_virtual":false,"without_rowid":false,"constraints":[],"explicit_pk":["id"]}},{"id":2,"references":[1],"type":"table","data":{"name":"game_collections","was_declared_in_moor":false,"columns":[{"name":"id","getter_name":"id","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"user_id","getter_name":"userId","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"platform_game_id","getter_name":"platformGameId","moor_type":"string","nullable":false,"customConstraints":null,"defaultConstraints":"REFERENCES platform_games (id)","dialectAwareDefaultConstraints":{"sqlite":"REFERENCES platform_games (id)"},"default_dart":null,"default_client_dart":null,"dsl_features":[{"foreign_key":{"to":{"table":"platform_games","column":"id"},"initially_deferred":false,"on_update":null,"on_delete":null}}]},{"name":"medium","getter_name":"medium","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"release_id","getter_name":"releaseId","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"quantity","getter_name":"quantity","moor_type":"int","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('1')","default_client_dart":null,"dsl_features":[]},{"name":"rating","getter_name":"rating","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"play_count","getter_name":"playCount","moor_type":"int","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"play_again","getter_name":"playAgain","moor_type":"bool","nullable":true,"customConstraints":null,"defaultConstraints":"CHECK (\"play_again\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"play_again\" IN (0, 1))"},"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"favorite","getter_name":"favorite","moor_type":"bool","nullable":true,"customConstraints":null,"defaultConstraints":"CHECK (\"favorite\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"favorite\" IN (0, 1))"},"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"comment","getter_name":"comment","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"last_played","getter_name":"lastPlayed","moor_type":"dateTime","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"last_updated","getter_name":"lastUpdated","moor_type":"dateTime","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"is_dirty","getter_name":"isDirty","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"is_dirty\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"is_dirty\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"is_local_only","getter_name":"isLocalOnly","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"is_local_only\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"is_local_only\" IN (0, 1))"},"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"deleted_at","getter_name":"deletedAt","moor_type":"dateTime","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"created_at","getter_name":"createdAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"updated_at","getter_name":"updatedAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]}],"is_virtual":false,"without_rowid":false,"constraints":[],"explicit_pk":["id"]}},{"id":3,"references":[],"type":"table","data":{"name":"households","was_declared_in_moor":false,"columns":[{"name":"id","getter_name":"id","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"name","getter_name":"name","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"description","getter_name":"description","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"image","getter_name":"image","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"deleted_at","getter_name":"deletedAt","moor_type":"dateTime","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"created_at","getter_name":"createdAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"updated_at","getter_name":"updatedAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]}],"is_virtual":false,"without_rowid":false,"constraints":[],"explicit_pk":["id"]}},{"id":4,"references":[3],"type":"table","data":{"name":"household_members","was_declared_in_moor":false,"columns":[{"name":"id","getter_name":"id","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"user_id","getter_name":"userId","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"household_id","getter_name":"householdId","moor_type":"string","nullable":false,"customConstraints":null,"defaultConstraints":"REFERENCES households (id)","dialectAwareDefaultConstraints":{"sqlite":"REFERENCES households (id)"},"default_dart":null,"default_client_dart":null,"dsl_features":[{"foreign_key":{"to":{"table":"households","column":"id"},"initially_deferred":false,"on_update":null,"on_delete":null}}]},{"name":"show_all_games","getter_name":"showAllGames","moor_type":"bool","nullable":false,"customConstraints":null,"defaultConstraints":"CHECK (\"show_all_games\" IN (0, 1))","dialectAwareDefaultConstraints":{"sqlite":"CHECK (\"show_all_games\" IN (0, 1))"},"default_dart":"const CustomExpression('1')","default_client_dart":null,"dsl_features":[]},{"name":"role_name","getter_name":"roleName","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"created_at","getter_name":"createdAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"updated_at","getter_name":"updatedAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]}],"is_virtual":false,"without_rowid":false,"constraints":[],"explicit_pk":["id"]}},{"id":5,"references":[],"type":"table","data":{"name":"sync_queue","was_declared_in_moor":false,"columns":[{"name":"id","getter_name":"id","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"payload","getter_name":"payload","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"status","getter_name":"status","moor_type":"string","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('\\'pending\\'')","default_client_dart":null,"dsl_features":[]},{"name":"retry_count","getter_name":"retryCount","moor_type":"int","nullable":false,"customConstraints":null,"default_dart":"const CustomExpression('0')","default_client_dart":null,"dsl_features":[]},{"name":"last_error","getter_name":"lastError","moor_type":"string","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"created_at","getter_name":"createdAt","moor_type":"dateTime","nullable":false,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]},{"name":"last_attempt_at","getter_name":"lastAttemptAt","moor_type":"dateTime","nullable":true,"customConstraints":null,"default_dart":null,"default_client_dart":null,"dsl_features":[]}],"is_virtual":false,"without_rowid":false,"constraints":[],"explicit_pk":["id"]}},{"id":6,"references":[1],"type":"index","data":{"on":1,"name":"platform_games_game_id_idx","sql":null,"unique":false,"columns":["game_id"]}},{"id":7,"references":[2],"type":"index","data":{"on":2,"name":"game_collections_user_idx","sql":null,"unique":false,"columns":["user_id"]}},{"id":8,"references":[2],"type":"index","data":{"on":2,"name":"game_collections_user_pgame_medium_unique_idx","sql":"CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx ON game_collections (user_id, platform_game_id, medium) WHERE deleted_at IS NULL","unique":true,"columns":[]}},{"id":9,"references":[4],"type":"index","data":{"on":4,"name":"household_members_user_idx","sql":null,"unique":false,"columns":["user_id"]}},{"id":10,"references":[4],"type":"index","data":{"on":4,"name":"household_members_household_user_unique_idx","sql":null,"unique":true,"columns":["household_id","user_id"]}},{"id":11,"references":[5],"type":"index","data":{"on":5,"name":"sync_queue_status_idx","sql":null,"unique":false,"columns":["status","created_at"]}}]}
+{
+  "_meta": {
+    "description": "This file contains a serialized version of schema entities for drift.",
+    "version": "1.3.0"
+  },
+  "options": {
+    "store_date_time_values_as_text": true
+  },
+  "entities": [
+    {
+      "id": 0,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "games",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "title",
+            "getter_name": "title",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "subtitle",
+            "getter_name": "subtitle",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "description",
+            "getter_name": "description",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "image",
+            "getter_name": "image",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "thumbnail",
+            "getter_name": "thumbnail",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "publish_year",
+            "getter_name": "publishYear",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_players",
+            "getter_name": "minPlayers",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_players",
+            "getter_name": "maxPlayers",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "playing_time",
+            "getter_name": "playingTime",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_play_time",
+            "getter_name": "minPlayTime",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_play_time_measure",
+            "getter_name": "minPlayTimeMeasure",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_play_time",
+            "getter_name": "maxPlayTime",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_play_time_measure",
+            "getter_name": "maxPlayTimeMeasure",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_age",
+            "getter_name": "minAge",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "complexity",
+            "getter_name": "complexity",
+            "moor_type": "double",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "content_type",
+            "getter_name": "contentType",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'BaseGame\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "total_play_count",
+            "getter_name": "totalPlayCount",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "average_rating",
+            "getter_name": "averageRating",
+            "moor_type": "double",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "bayes_rating",
+            "getter_name": "bayesRating",
+            "moor_type": "double",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "ratings_count",
+            "getter_name": "ratingsCount",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "owned_by_count",
+            "getter_name": "ownedByCount",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "categories_json",
+            "getter_name": "categoriesJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'[]\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "mechanics_json",
+            "getter_name": "mechanicsJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'[]\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "designers_json",
+            "getter_name": "designersJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'[]\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "publishers_json",
+            "getter_name": "publishersJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'[]\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "tags_json",
+            "getter_name": "tagsJson",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'[]\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "visibility",
+            "getter_name": "visibility",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'Public\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_by_id",
+            "getter_name": "createdById",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 1,
+      "references": [
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "platform_games",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "game_id",
+            "getter_name": "gameId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "REFERENCES games (id)",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "REFERENCES games (id)"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "games",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "platform_id",
+            "getter_name": "platformId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "platform_name",
+            "getter_name": "platformName",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_players",
+            "getter_name": "minPlayers",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_players",
+            "getter_name": "maxPlayers",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_play_time",
+            "getter_name": "minPlayTime",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "min_play_time_measure",
+            "getter_name": "minPlayTimeMeasure",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_play_time",
+            "getter_name": "maxPlayTime",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_play_time_measure",
+            "getter_name": "maxPlayTimeMeasure",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "image",
+            "getter_name": "image",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "thumbnail",
+            "getter_name": "thumbnail",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "supports_solo",
+            "getter_name": "supportsSolo",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"supports_solo\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"supports_solo\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "supports_local",
+            "getter_name": "supportsLocal",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"supports_local\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"supports_local\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "supports_online",
+            "getter_name": "supportsOnline",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"supports_online\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"supports_online\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "has_async_play",
+            "getter_name": "hasAsyncPlay",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"has_async_play\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"has_async_play\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "has_realtime",
+            "getter_name": "hasRealtime",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"has_realtime\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"has_realtime\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "has_tutorial",
+            "getter_name": "hasTutorial",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"has_tutorial\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"has_tutorial\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "references": [
+        1
+      ],
+      "type": "table",
+      "data": {
+        "name": "game_collections",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "user_id",
+            "getter_name": "userId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "platform_game_id",
+            "getter_name": "platformGameId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "REFERENCES platform_games (id)",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "REFERENCES platform_games (id)"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "platform_games",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "medium",
+            "getter_name": "medium",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "release_id",
+            "getter_name": "releaseId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "quantity",
+            "getter_name": "quantity",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('1')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "rating",
+            "getter_name": "rating",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "play_count",
+            "getter_name": "playCount",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "play_again",
+            "getter_name": "playAgain",
+            "moor_type": "bool",
+            "nullable": true,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"play_again\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"play_again\" IN (0, 1))"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "favorite",
+            "getter_name": "favorite",
+            "moor_type": "bool",
+            "nullable": true,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"favorite\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"favorite\" IN (0, 1))"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "comment",
+            "getter_name": "comment",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "last_played",
+            "getter_name": "lastPlayed",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "last_updated",
+            "getter_name": "lastUpdated",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "is_dirty",
+            "getter_name": "isDirty",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"is_dirty\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"is_dirty\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "is_local_only",
+            "getter_name": "isLocalOnly",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"is_local_only\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"is_local_only\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "households",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "description",
+            "getter_name": "description",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "image",
+            "getter_name": "image",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "references": [
+        3
+      ],
+      "type": "table",
+      "data": {
+        "name": "household_members",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "user_id",
+            "getter_name": "userId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "household_id",
+            "getter_name": "householdId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "REFERENCES households (id)",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "REFERENCES households (id)"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "households",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "show_all_games",
+            "getter_name": "showAllGames",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"show_all_games\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"show_all_games\" IN (0, 1))"
+            },
+            "default_dart": "const CustomExpression('1')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "role_name",
+            "getter_name": "roleName",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "sync_queue",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "payload",
+            "getter_name": "payload",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "status",
+            "getter_name": "status",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('\\'pending\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "retry_count",
+            "getter_name": "retryCount",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "last_error",
+            "getter_name": "lastError",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "dateTime",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "last_attempt_at",
+            "getter_name": "lastAttemptAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "references": [
+        1
+      ],
+      "type": "index",
+      "data": {
+        "on": 1,
+        "name": "platform_games_game_id_idx",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "game_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "references": [
+        2
+      ],
+      "type": "index",
+      "data": {
+        "on": 2,
+        "name": "game_collections_user_idx",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "user_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "references": [
+        2
+      ],
+      "type": "index",
+      "data": {
+        "on": 2,
+        "name": "game_collections_user_pgame_medium_unique_idx",
+        "sql": "CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx ON game_collections (user_id, platform_game_id, medium) WHERE deleted_at IS NULL",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 9,
+      "references": [
+        4
+      ],
+      "type": "index",
+      "data": {
+        "on": 4,
+        "name": "household_members_user_idx",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "user_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "references": [
+        4
+      ],
+      "type": "index",
+      "data": {
+        "on": 4,
+        "name": "household_members_household_user_unique_idx",
+        "sql": null,
+        "unique": true,
+        "columns": [
+          {
+            "column": "household_id",
+            "order_by": null
+          },
+          {
+            "column": "user_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "references": [
+        5
+      ],
+      "type": "index",
+      "data": {
+        "on": 5,
+        "name": "sync_queue_status_idx",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "status",
+            "order_by": null
+          },
+          {
+            "column": "created_at",
+            "order_by": null
+          }
+        ]
+      }
+    }
+  ],
+  "fixed_sql": [
+    {
+      "name": "games",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"games\" (\"id\" TEXT NOT NULL, \"title\" TEXT NOT NULL, \"subtitle\" TEXT NULL, \"description\" TEXT NULL, \"image\" TEXT NULL, \"thumbnail\" TEXT NULL, \"publish_year\" INTEGER NULL, \"min_players\" INTEGER NULL, \"max_players\" INTEGER NULL, \"playing_time\" INTEGER NULL, \"min_play_time\" INTEGER NULL, \"min_play_time_measure\" TEXT NULL, \"max_play_time\" INTEGER NULL, \"max_play_time_measure\" TEXT NULL, \"min_age\" INTEGER NULL, \"complexity\" REAL NULL, \"content_type\" TEXT NOT NULL DEFAULT 'BaseGame', \"total_play_count\" INTEGER NOT NULL DEFAULT 0, \"average_rating\" REAL NULL, \"bayes_rating\" REAL NULL, \"ratings_count\" INTEGER NULL, \"owned_by_count\" INTEGER NOT NULL DEFAULT 0, \"categories_json\" TEXT NOT NULL DEFAULT '[]', \"mechanics_json\" TEXT NOT NULL DEFAULT '[]', \"designers_json\" TEXT NOT NULL DEFAULT '[]', \"publishers_json\" TEXT NOT NULL DEFAULT '[]', \"tags_json\" TEXT NOT NULL DEFAULT '[]', \"visibility\" TEXT NOT NULL DEFAULT 'Public', \"created_by_id\" TEXT NULL, \"deleted_at\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
+        }
+      ]
+    },
+    {
+      "name": "platform_games",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"platform_games\" (\"id\" TEXT NOT NULL, \"game_id\" TEXT NOT NULL REFERENCES games (id), \"platform_id\" TEXT NOT NULL, \"platform_name\" TEXT NOT NULL, \"min_players\" INTEGER NULL, \"max_players\" INTEGER NULL, \"min_play_time\" INTEGER NULL, \"min_play_time_measure\" TEXT NULL, \"max_play_time\" INTEGER NULL, \"max_play_time_measure\" TEXT NULL, \"image\" TEXT NULL, \"thumbnail\" TEXT NULL, \"supports_solo\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_solo\" IN (0, 1)), \"supports_local\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_local\" IN (0, 1)), \"supports_online\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_online\" IN (0, 1)), \"has_async_play\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_async_play\" IN (0, 1)), \"has_realtime\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_realtime\" IN (0, 1)), \"has_tutorial\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_tutorial\" IN (0, 1)), \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
+        }
+      ]
+    },
+    {
+      "name": "game_collections",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"game_collections\" (\"id\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"platform_game_id\" TEXT NOT NULL REFERENCES platform_games (id), \"medium\" TEXT NOT NULL, \"release_id\" TEXT NULL, \"quantity\" INTEGER NOT NULL DEFAULT 1, \"rating\" INTEGER NULL, \"play_count\" INTEGER NULL, \"play_again\" INTEGER NULL CHECK (\"play_again\" IN (0, 1)), \"favorite\" INTEGER NULL CHECK (\"favorite\" IN (0, 1)), \"comment\" TEXT NULL, \"last_played\" TEXT NULL, \"last_updated\" TEXT NULL, \"is_dirty\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_dirty\" IN (0, 1)), \"is_local_only\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_local_only\" IN (0, 1)), \"deleted_at\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
+        }
+      ]
+    },
+    {
+      "name": "households",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"households\" (\"id\" TEXT NOT NULL, \"name\" TEXT NOT NULL, \"description\" TEXT NULL, \"image\" TEXT NULL, \"deleted_at\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
+        }
+      ]
+    },
+    {
+      "name": "household_members",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"household_members\" (\"id\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"household_id\" TEXT NOT NULL REFERENCES households (id), \"show_all_games\" INTEGER NOT NULL DEFAULT 1 CHECK (\"show_all_games\" IN (0, 1)), \"role_name\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
+        }
+      ]
+    },
+    {
+      "name": "sync_queue",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"sync_queue\" (\"id\" TEXT NOT NULL, \"payload\" TEXT NOT NULL, \"status\" TEXT NOT NULL DEFAULT 'pending', \"retry_count\" INTEGER NOT NULL DEFAULT 0, \"last_error\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"last_attempt_at\" TEXT NULL, PRIMARY KEY (\"id\"));"
+        }
+      ]
+    },
+    {
+      "name": "platform_games_game_id_idx",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)"
+        }
+      ]
+    },
+    {
+      "name": "game_collections_user_idx",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX game_collections_user_idx ON game_collections (user_id)"
+        }
+      ]
+    },
+    {
+      "name": "game_collections_user_pgame_medium_unique_idx",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx ON game_collections (user_id, platform_game_id, medium) WHERE deleted_at IS NULL"
+        }
+      ]
+    },
+    {
+      "name": "household_members_user_idx",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX household_members_user_idx ON household_members (user_id)"
+        }
+      ]
+    },
+    {
+      "name": "household_members_household_user_unique_idx",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX household_members_household_user_unique_idx ON household_members (household_id, user_id)"
+        }
+      ]
+    },
+    {
+      "name": "sync_queue_status_idx",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX sync_queue_status_idx ON sync_queue (status, created_at)"
+        }
+      ]
+    }
+  ]
+}
