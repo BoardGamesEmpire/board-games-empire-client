@@ -4,13 +4,13 @@ environment:
   sdk: ">=3.9.0 <4.0.0"
 
 dependency_overrides:
-  analyzer: 8.4.1
+  analyzer: 10.2.0
 
 dev_dependencies:
   melos: ^7.5.1
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
-  build_runner: 2.14.1
+  build_runner: ^2.14.1
 
 workspace:
   - apps/mobile
