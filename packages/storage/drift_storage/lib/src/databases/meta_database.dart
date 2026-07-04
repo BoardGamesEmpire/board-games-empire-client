@@ -1,8 +1,4 @@
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../tables/server_config_table.dart';
@@ -19,6 +15,14 @@ part 'meta_database.g.dart';
 /// registry of known servers ([ServerConfigs]), device-wide preferences,
 /// and notification summaries.
 ///
+/// ## Construction
+///
+/// The executor is injected, mirroring [ServerDatabase]. Production wiring
+/// obtains it from [EncryptedExecutorFactory.metaExecutor], which owns path
+/// resolution and encryption-at-rest (SQLite3MultipleCiphers, keyed with the
+/// device-global `encryption_key:meta` key). Constructing a `NativeDatabase`
+/// directly bypasses encryption and must not happen outside tests.
+///
 /// ## Migrations
 ///
 /// Shares the migration convention with [ServerDatabase] but keeps a
@@ -32,7 +36,7 @@ part 'meta_database.g.dart';
   tables: [ServerConfigs, DevicePreferencesTable, NotificationSummaries],
 )
 class MetaDatabase extends _$MetaDatabase {
-  MetaDatabase() : super(_openConnection());
+  MetaDatabase(super.executor);
 
   @visibleForTesting
   MetaDatabase.test(super.executor);
@@ -42,18 +46,4 @@ class MetaDatabase extends _$MetaDatabase {
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy();
-
-  static LazyDatabase _openConnection() {
-    return LazyDatabase(() async {
-      final appDir = await getApplicationSupportDirectory();
-      final metaDir = Directory(p.join(appDir.path, 'meta'));
-
-      if (!await metaDir.exists()) {
-        await metaDir.create(recursive: true);
-      }
-
-      final dbFile = File(p.join(metaDir.path, 'servers.db'));
-      return NativeDatabase(dbFile);
-    });
-  }
 }

@@ -1,5 +1,6 @@
 library;
 
+export 'src/databases/encrypted_executor_factory.dart';
 export 'src/databases/meta_database.dart';
 export 'src/databases/server_database.dart';
 
