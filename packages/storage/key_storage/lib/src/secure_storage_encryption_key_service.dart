@@ -18,7 +18,7 @@ import 'package:interfaces/services.dart';
 /// | meta database key (global)  | `encryption_key:meta`        |
 ///
 /// `meta` is reserved: a server whose id is literally `meta` would collide,
-/// which [getOrCreateServerKey] refues with an [ArgumentError]. Server ids
+/// which [getOrCreateServerKey] refuses with an [ArgumentError]. Server ids
 /// are cuid2 values in practice, so this cannot occur outside programmer
 /// error.
 ///
@@ -69,8 +69,20 @@ class SecureStorageEncryptionKeyService implements EncryptionKeyService {
       _getOrCreate('$_prefix$_metaIdentifier');
 
   @override
-  Future<void> deleteServerKey(String serverId) =>
-      _storage.delete(key: '$_prefix$serverId');
+  Future<void> deleteServerKey(String serverId) {
+    if (serverId.isEmpty) {
+      throw ArgumentError.value(serverId, 'serverId', 'must not be empty');
+    }
+    if (serverId == _metaIdentifier) {
+      throw ArgumentError.value(
+        serverId,
+        'serverId',
+        'is reserved for the meta database key',
+      );
+    }
+
+    return _storage.delete(key: '$_prefix$serverId');
+  }
 
   @override
   Future<void> deleteMetaKey() =>
