@@ -6,6 +6,16 @@ environment:
 dependency_overrides:
   analyzer: 10.2.0
 
+# Selects the SQLite3MultipleCiphers build of SQLite for the entire
+# workspace (apps *and* `flutter test` runs) via the sqlite3 3.x build hook.
+# This is what provides encryption-at-rest (#16): EncryptedExecutorFactory
+# applies `PRAGMA key` and verifies `PRAGMA cipher` support at every open.
+# With pub workspaces this must live in the root pubspec, not per-app.
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlite3mc
+
 dev_dependencies:
   melos: ^7.5.1
   mocktail: ^1.0.5
@@ -22,6 +32,7 @@ workspace:
   - packages/core/observability
   - packages/features/auth
   - packages/storage/drift_storage
+  - packages/storage/key_storage
   - packages/storage/storage_interface
   - packages/storage/memory_storage
   - packages/network/dio_network

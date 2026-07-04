@@ -1,0 +1,25 @@
+name: key_storage
+description: "Database encryption key management backed by the OS keychain"
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.0.0"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  interfaces:
+    path: ../../core/interfaces
+
+  flutter_secure_storage: ^10.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+  flutter_lints: ^6.0.0
+  very_good_analysis: ^10.2.0
