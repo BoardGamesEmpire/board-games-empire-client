@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
@@ -7,11 +8,43 @@ import 'dependency_container_impl.dart';
 
 /// Concrete [ServerContext] implementation.
 ///
-/// Manages the [ServerContextState] machine for a single BGE server.
-/// Resource lifecycle (WS connections, per-server DB) is stubbed for now
-/// and will be filled in during Phase 3 (network) and Phase 2 (storage).
+/// Manages the [ServerContextState] machine for a single BGE server and owns
+/// the per-server resource lifecycle. Concrete resources (per-server DB,
+/// HTTP client, repositories) are wired by the injected
+/// [ServerScopeInstaller]s — the seam that keeps this package free of
+/// storage/network dependencies. The platform app composes the installer
+/// list (`StorageScopeInstaller` from `drift_storage`,
+/// `NetworkScopeInstaller` from `dio_network`, …).
 ///
-/// State transitions are serialized through [_transitionLock] to prevent
+/// ## Scope lifecycle
+///
+/// - `activate()` from `initializing` or `monitoring` runs every installer,
+///   in order, against a fresh scope. Installers acquire real resources
+///   (open the encrypted DB, build the Dio) so failures surface here —
+///   on failure the scope is reset and [_transition] rolls the state back;
+///   the server stays unavailable but the app keeps running, and a later
+///   `activate()` retries from a clean container.
+/// - `activate()` from `backgrounding` re-runs **nothing**: backgrounding
+///   retains open resources by design.
+/// - `suspend()` disposes the current scope — every `dispose:` callback
+///   supplied at registration runs (DB close, Dio close, repository
+///   teardown) — and swaps in a fresh, empty container for the next
+///   activation. Per-server resources only; the app-global meta database is
+///   owned by the app bootstrap and is never touched here.
+/// - `dispose()` tears the scope down for good.
+///
+/// ## Stable container identity
+///
+/// [container] returns the same [DependencyContainer] object for the
+/// context's entire life — the documented "exactly one container per
+/// context" contract — while suspend/re-activate cycles swap the *inner*
+/// GetIt-backed container behind a delegating facade
+/// ([_SwappableContainer]). Holders of `context.container` never see a
+/// disposed object; between suspend and the next activate, `get<T>()`
+/// reports not-registered (fresh scope) rather than throwing
+/// disposed-container errors.
+///
+/// State transitions are serialized through [_transitioning] to prevent
 /// concurrent mutations. The [ServerOrchestrator] is the only intended
 /// caller of lifecycle methods — external code should only observe state
 /// via [watchState] and resolve services via [container].
@@ -37,23 +70,27 @@ import 'dependency_container_impl.dart';
 class ServerContextImpl implements ServerContext {
   ServerContextImpl({
     required ServerConfig config,
-    DependencyContainer? container,
+    List<ServerScopeInstaller> installers = const [],
+    DependencyContainer Function()? containerFactory,
   }) : serverId = config.id,
        _config = config,
-       _container = container ?? DependencyContainerImpl(),
+       _installers = installers,
+       _container = _SwappableContainer(
+         containerFactory ?? DependencyContainerImpl.new,
+       ),
        _state = ServerContextState.initializing,
        _stateController = StreamController<ServerContextState>.broadcast();
 
   @override
   final String serverId;
 
-  // Used in activate() (Phase 2: DB open) and suspend() (Phase 3: WS close).
-  // ignore: unused_field
   final ServerConfig _config;
+
+  final List<ServerScopeInstaller> _installers;
 
   @override
   DependencyContainer get container => _container;
-  final DependencyContainer _container;
+  final _SwappableContainer _container;
 
   @override
   ServerContextState get state => _state;
@@ -63,6 +100,10 @@ class ServerContextImpl implements ServerContext {
 
   /// Prevents concurrent state transitions.
   bool _transitioning = false;
+
+  /// The currently running transition, if any — awaited by [dispose] so
+  /// teardown never interleaves with an installer mid-flight.
+  Future<void>? _inFlightTransition;
 
   @override
   Future<void> activate() async {
@@ -79,9 +120,37 @@ class ServerContextImpl implements ServerContext {
       );
     }
 
+    // Backgrounding retained the open resources — only a cold start
+    // (initializing) or a suspended context (monitoring, scope torn down)
+    // installs. Captured before _transition sets state to `transitioning`.
+    final needsInstall = _state != ServerContextState.backgrounding;
+
     await _transition(() async {
-      // TODO(phase2): Open per-server Drift DB.
-      // TODO(phase3): Open WebSocket connection.
+      if (needsInstall) {
+        try {
+          for (final installer in _installers) {
+            await installer.install(_container, _config);
+          }
+        } catch (_) {
+          // Discard partial registrations so a retry starts from a clean
+          // scope; _transition's catch rolls the state back and rethrows.
+          // The reset is guarded so a throwing dispose callback (GetIt does
+          // not shield them) cannot mask the real installer error.
+          try {
+            await _container.replaceInner();
+          } catch (teardownError) {
+            assert(() {
+              debugPrint(
+                'ServerContext($serverId): scope reset after a failed '
+                'activation threw (suppressed in favor of the original '
+                'installer error): $teardownError',
+              );
+              return true;
+            }());
+          }
+          rethrow;
+        }
+      }
       _setState(ServerContextState.active);
     });
   }
@@ -116,8 +185,31 @@ class ServerContextImpl implements ServerContext {
     }
 
     await _transition(() async {
-      // TODO(phase2): Close per-server Drift DB.
-      // TODO(phase3): Close WebSocket connection.
+      // Dispose the scope: every dispose callback registered by the
+      // installers runs here (per-server DB close, Dio close, repository
+      // teardown), then a fresh container takes its place for the next
+      // activation. The app-global meta database is not a per-server
+      // resource and is untouched.
+      //
+      // A throwing dispose callback must not abort the transition: that
+      // would roll back to `backgrounding`, and on the orchestrator's
+      // timer-driven suspend path (where the error is only logged) the
+      // context would be stranded in backgrounding with its timer already
+      // fired — never suspending, leaking resources. Log and proceed to
+      // monitoring, matching dispose()'s guarded teardown. replaceInner
+      // still installs a fresh inner container even when the old one's
+      // disposal throws.
+      try {
+        await _container.replaceInner();
+      } catch (e) {
+        assert(() {
+          debugPrint(
+            'ServerContext($serverId): scope disposal threw during '
+            'suspend(): $e',
+          );
+          return true;
+        }());
+      }
       _setState(ServerContextState.monitoring);
     });
   }
@@ -126,8 +218,36 @@ class ServerContextImpl implements ServerContext {
   Future<void> dispose() async {
     if (_state == ServerContextState.disposed) return;
 
+    // Let any in-flight transition settle before tearing down — activate()
+    // now performs real async work (DB open, client construction), and
+    // disposing the container mid-install would rip resources out from
+    // under it. A failed transition is fine to proceed past.
+    final inFlight = _inFlightTransition;
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // The transition's own caller receives this error; disposal
+        // continues regardless.
+      }
+    }
+    if (_state == ServerContextState.disposed) return;
+
     _setState(ServerContextState.disposed);
-    await _container.dispose();
+    try {
+      await _container.dispose();
+    } catch (e) {
+      // A service's dispose callback threw. Log and continue — the state
+      // stream must still close so disposal is reliably idempotent and the
+      // orchestrator's teardown isn't left brittle.
+      assert(() {
+        debugPrint(
+          'ServerContext($serverId): container disposal threw during '
+          'dispose(): $e',
+        );
+        return true;
+      }());
+    }
     await _stateController.close();
     // Yield one event-loop turn so any buffered stream events queued
     // via [_stateController.add] reach their subscribers before
@@ -180,17 +300,30 @@ class ServerContextImpl implements ServerContext {
     }
 
     _transitioning = true;
+    final future = _runTransition(body);
+    _inFlightTransition = future;
+    try {
+      await future;
+    } finally {
+      _transitioning = false;
+      _inFlightTransition = null;
+    }
+  }
+
+  Future<void> _runTransition(Future<void> Function() body) async {
     final previousState = _state;
     _setState(ServerContextState.transitioning);
 
     try {
       await body();
     } catch (e) {
-      // Roll back to state before transition attempt.
-      _setState(previousState);
+      // Roll back to the state before the transition attempt — unless the
+      // context was disposed meanwhile, which must never be overwritten
+      // with a live state.
+      if (_state != ServerContextState.disposed) {
+        _setState(previousState);
+      }
       rethrow;
-    } finally {
-      _transitioning = false;
     }
   }
 
@@ -211,6 +344,76 @@ class ServerContextImpl implements ServerContext {
   String toString() => 'ServerContextImpl(serverId: $serverId, state: $_state)';
 }
 
+/// Stable-identity [DependencyContainer] facade over a swappable inner
+/// container.
+///
+/// The facade object *is* the container the context exposes for its whole
+/// life; suspend/re-activate cycles replace only the inner GetIt-backed
+/// instance via [replaceInner]. This preserves the "exactly one container
+/// per context" contract for external holders while still giving each
+/// activation a clean scope.
+class _SwappableContainer implements DependencyContainer {
+  _SwappableContainer(this._factory) : _inner = null;
+
+  final DependencyContainer Function() _factory;
+
+  /// Lazily created so the first activation and every post-suspend
+  /// activation follow the identical code path.
+  DependencyContainer? _inner;
+
+  bool _disposed = false;
+
+  DependencyContainer get _current {
+    if (_disposed) {
+      throw StateError(
+        'DependencyContainer has been disposed and cannot be used.',
+      );
+    }
+    return _inner ??= _factory();
+  }
+
+  /// Disposes the current inner container (running every registration's
+  /// dispose callback) and prepares a fresh one for subsequent use.
+  Future<void> replaceInner() async {
+    final old = _inner;
+    _inner = null;
+    if (old != null) await old.dispose();
+  }
+
+  @override
+  T get<T extends Object>() => _current.get<T>();
+
+  @override
+  void registerSingleton<T extends Object>(
+    T instance, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) => _current.registerSingleton<T>(instance, dispose: dispose);
+
+  @override
+  void registerLazySingleton<T extends Object>(
+    T Function() factory, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) => _current.registerLazySingleton<T>(factory, dispose: dispose);
+
+  @override
+  void registerFactory<T extends Object>(T Function() factory) =>
+      _current.registerFactory<T>(factory);
+
+  @override
+  bool isRegistered<T extends Object>() => _current.isRegistered<T>();
+
+  @override
+  Future<void> dispose() async {
+    // Terminal and idempotent. If no inner container was ever created there
+    // is nothing to dispose — and none is constructed just to be torn down.
+    if (_disposed) return;
+    _disposed = true;
+    final old = _inner;
+    _inner = null;
+    if (old != null) await old.dispose();
+  }
+}
+
 /// Factory function type for creating [ServerContext] instances.
 ///
 /// Injected into [ServerOrchestratorImpl] to allow test substitution
@@ -218,6 +421,10 @@ class ServerContextImpl implements ServerContext {
 typedef ServerContextFactory = ServerContext Function(ServerConfig config);
 
 /// Default production factory. Creates a [ServerContextImpl] with a fresh
-/// [DependencyContainerImpl] for each server config.
+/// [DependencyContainerImpl] for each server config — with **no installers**.
+///
+/// The platform app composes the real factory (storage + network installers)
+/// in its bootstrap (#31); this default remains for tests and for contexts
+/// that need no per-server resources.
 ServerContext defaultServerContextFactory(ServerConfig config) =>
     ServerContextImpl(config: config);
