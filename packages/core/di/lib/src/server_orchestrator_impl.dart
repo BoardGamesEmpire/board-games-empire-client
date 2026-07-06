@@ -14,8 +14,18 @@ import 'server_context_impl.dart';
 /// transitions. Enforces capacity from [DevicePreferences] and manages
 /// backgrounding timers per server.
 ///
-/// Thread-safety: all public methods serialize through [_operationLock] to
+/// Thread-safety: all public methods serialize through [_withLock] to
 /// prevent race conditions during concurrent server switches or connects.
+///
+/// ## Activation can fail
+///
+/// `ServerContext.activate()` performs real work (opens the encrypted
+/// per-server database, builds the network stack) and can throw. Every
+/// orchestrator path therefore follows the same discipline: **attempt the
+/// activation first, commit orchestrator state (`_activeServerId`,
+/// `_contexts`, repository connection states, stream emissions) only after
+/// it succeeds.** A failed activation leaves that server unavailable but
+/// the orchestrator consistent and the app running.
 ///
 /// ## Broadcast controllers — async delivery
 ///
@@ -62,6 +72,10 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   /// Serializes all mutating operations to prevent concurrent transitions.
   bool _operationInProgress = false;
 
+  /// The currently running locked operation — awaited by [dispose] so
+  /// teardown never interleaves with an in-flight connect/switch.
+  Future<void>? _inFlightOperation;
+
   @override
   int get maxMonitoringCapacity => _cachedPreferences?.maxMonitoredServers ?? 5;
 
@@ -95,20 +109,49 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
           .map((s) => s.id)
           .firstOrNull;
 
+      // One bad server (key recovery failed twice, unreachable resources,
+      // …) must not prevent the orchestrator from initializing: restore
+      // each context into monitoring independently, drop the ones that
+      // fail. A dropped context has its persisted connection state cleared
+      // so it isn't retried on every startup.
       for (final config in connected) {
         final context = _contextFactory(config);
-        _contexts[config.id] = context;
-
-        // All restored contexts start in monitoring (resources were released
-        // at last shutdown), then the previously-active one is promoted.
-        await context.activate(); // initializing → active (then demote below)
-        if (config.id != previouslyActive) {
+        try {
+          await context.activate(); // initializing → active
           await context.background(); // active → backgrounding
           await context.suspend(); // backgrounding → monitoring
+          _contexts[config.id] = context;
+        } catch (e, st) {
+          _logError('restore of server ${config.id} failed', e, st);
+          await _disposeQuietly(context);
+          await _updateStateQuietly(config.id, ConnectionState.disconnected);
         }
       }
 
-      _activeServerId = previouslyActive ?? connected.firstOrNull?.id;
+      // Choose the active server, then actually promote it to `active` so
+      // `_activeServerId` never points at a merely-monitoring context.
+      final chosenActive =
+          (previouslyActive != null && _contexts.containsKey(previouslyActive))
+          ? previouslyActive
+          : _contexts.keys.firstOrNull;
+
+      if (chosenActive != null) {
+        try {
+          await _ensureActive(_contexts[chosenActive]!);
+          await _commitActive(chosenActive);
+        } catch (e, st) {
+          // Promotion of the chosen active failed: drop it and leave the
+          // orchestrator with no active server rather than a non-active
+          // pointer. Remaining monitoring contexts stay connected.
+          _logError('activating restored server $chosenActive failed', e, st);
+          await _disposeQuietly(_contexts.remove(chosenActive)!);
+          await _updateStateQuietly(chosenActive, ConnectionState.disconnected);
+          _activeServerId = null;
+        }
+      } else {
+        _activeServerId = null;
+      }
+
       _isInitialized = true;
 
       _emitContextsChange();
@@ -138,18 +181,64 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       }
 
       final context = _contextFactory(config);
-      _contexts[serverId] = context;
-
       final shouldBeActive = makeActive || _activeServerId == null;
 
+      // Bring the context to its target state BEFORE registering it — a
+      // failed activation must not leave an orphaned entry in [_contexts]
+      // that permanently blocks reconnection.
+      try {
+        if (shouldBeActive) {
+          await _ensureActive(context);
+        } else {
+          // Connect directly into monitoring (no backgrounding timer needed
+          // — it was never active in this session).
+          await context.activate(); // initializing → active
+          await context.background(); // active → backgrounding
+          await context.suspend(); // backgrounding → monitoring
+        }
+      } catch (_) {
+        await _disposeQuietly(context);
+        rethrow;
+      }
+
+      _contexts[serverId] = context;
+
       if (shouldBeActive) {
-        await _activateContext(serverId, context);
+        // Demote the current active server (if a different one) before
+        // committing the newcomer, so the single-active invariant holds.
+        final previousId = _activeServerId;
+        if (previousId != null && previousId != serverId) {
+          final previous = _contexts[previousId];
+          if (previous != null && previous.state == ServerContextState.active) {
+            try {
+              await previous.background();
+              await _serverRepository.updateConnectionState(
+                serverId: previousId,
+                newState: ConnectionState.backgrounding,
+              );
+              _startBackgroundingTimer(previousId);
+            } catch (e, st) {
+              // Undo the newcomer's activation and drop it — the switch
+              // half-failed and must not leave two active contexts.
+              _logError('demoting $previousId on connect failed', e, st);
+              // Restore `previous` to active if it was already backgrounded,
+              // so _activeServerId keeps pointing at a genuinely active
+              // context.
+              _cancelBackgroundingTimer(previousId);
+              if (previous.state == ServerContextState.backgrounding) {
+                try {
+                  await previous.activate();
+                } catch (e2, st2) {
+                  _logError('restoring previous $previousId failed', e2, st2);
+                }
+              }
+              await _disposeQuietly(_contexts.remove(serverId)!);
+              rethrow;
+            }
+          }
+        }
+        await _commitActive(serverId);
       } else {
-        // Connect directly into monitoring (no backgrounding timer needed —
-        // it was never active in this session).
-        await context.activate(); // initializing → active
-        await context.background(); // active → backgrounding
-        await context.suspend(); // backgrounding → monitoring
         await _serverRepository.updateConnectionState(
           serverId: serverId,
           newState: ConnectionState.monitoring,
@@ -175,19 +264,39 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
       _cancelBackgroundingTimer(serverId);
 
-      // If disconnecting the active server, promote another.
+      // If disconnecting the active server, promote another — committing
+      // the new active id only if its activation succeeds. On failure the
+      // app continues with no active server rather than pointing at a
+      // context that is not actually active.
       if (_activeServerId == serverId) {
         final nextId = _contexts.keys.where((id) => id != serverId).firstOrNull;
 
-        _activeServerId = nextId;
-
+        String? promotedId;
         if (nextId != null) {
           final nextContext = _contexts[nextId]!;
+          final nextWasBackgrounding =
+              nextContext.state == ServerContextState.backgrounding;
           _cancelBackgroundingTimer(nextId);
-          await _activateContext(nextId, nextContext);
+          try {
+            await _ensureActive(nextContext);
+            promotedId = nextId;
+          } catch (e, st) {
+            _logError('promotion of server $nextId failed', e, st);
+            // Restore the timer we cancelled so a still-backgrounding
+            // context isn't stranded (never suspends → leaks resources).
+            if (nextWasBackgrounding &&
+                nextContext.state == ServerContextState.backgrounding) {
+              _startBackgroundingTimer(nextId);
+            }
+          }
         }
 
-        _emitActiveChange();
+        if (promotedId != null) {
+          await _commitActive(promotedId);
+        } else {
+          _activeServerId = null;
+          _emitActiveChange();
+        }
       }
 
       await context.dispose();
@@ -216,24 +325,75 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         );
       }
 
-      // Background the current active server and start its timer.
+      // Activate the target FIRST. If it fails, nothing has been mutated:
+      // the previous server is still active and still the active id. (The
+      // brief window where both contexts are `active` is the documented
+      // co-active window.)
+      final wasBackgrounding =
+          targetContext.state == ServerContextState.backgrounding;
+      _cancelBackgroundingTimer(targetServerId);
+      try {
+        await _ensureActive(targetContext);
+      } catch (_) {
+        // Restore the timer the failed target lost, if it was counting
+        // down toward suspension.
+        if (wasBackgrounding &&
+            targetContext.state == ServerContextState.backgrounding) {
+          _startBackgroundingTimer(targetServerId);
+        }
+        rethrow;
+      }
+
+      // Demote the previous active server and start its timer. If demotion
+      // fails, we must NOT commit the target — that would leave two active
+      // contexts. Roll the target back to backgrounding and rethrow so the
+      // switch fails atomically with the previous server still active.
       final previousId = _activeServerId;
       if (previousId != null) {
         final previous = _contexts[previousId];
         if (previous != null && previous.state == ServerContextState.active) {
-          await previous.background();
-          await _serverRepository.updateConnectionState(
-            serverId: previousId,
-            newState: ConnectionState.backgrounding,
-          );
-          _startBackgroundingTimer(previousId);
+          try {
+            await previous.background();
+            await _serverRepository.updateConnectionState(
+              serverId: previousId,
+              newState: ConnectionState.backgrounding,
+            );
+            _startBackgroundingTimer(previousId);
+          } catch (e, st) {
+            _logError('backgrounding of server $previousId failed', e, st);
+            // Restore `previous` to active if we already backgrounded it —
+            // it must remain the sole active server per the invariant.
+            _cancelBackgroundingTimer(previousId);
+            if (previous.state == ServerContextState.backgrounding) {
+              try {
+                await previous.activate();
+              } catch (e3, st3) {
+                _logError('restoring previous $previousId failed', e3, st3);
+              }
+            }
+            // Undo the target activation to preserve the single-active
+            // invariant, restoring its *pre-switch* state rather than
+            // over-suspending: a target that was backgrounding goes back to
+            // backgrounding (timer restored); one that was monitoring is
+            // fully suspended.
+            try {
+              if (targetContext.state == ServerContextState.active) {
+                await targetContext.background();
+                if (wasBackgrounding) {
+                  _startBackgroundingTimer(targetServerId);
+                } else {
+                  await targetContext.suspend();
+                }
+              }
+            } catch (e2, st2) {
+              _logError('rolling back target $targetServerId failed', e2, st2);
+            }
+            rethrow;
+          }
         }
       }
 
-      // Activate the target, cancelling its timer if it was backgrounding.
-      _cancelBackgroundingTimer(targetServerId);
-      await _activateContext(targetServerId, targetContext);
-
+      await _commitActive(targetServerId);
       _emitContextsChange();
     });
   }
@@ -258,6 +418,16 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     if (_disposed) return;
     _disposed = true;
 
+    // Let an in-flight operation settle before tearing its contexts down.
+    final inFlight = _inFlightOperation;
+    if (inFlight != null) {
+      try {
+        await inFlight;
+      } catch (_) {
+        // The operation's own caller receives this error.
+      }
+    }
+
     for (final timer in _backgroundingTimers.values) {
       timer.cancel();
     }
@@ -274,8 +444,11 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     _isInitialized = false;
   }
 
-  /// Brings [context] to [ServerContextState.active] from any connected state.
-  Future<void> _activateContext(String serverId, ServerContext context) async {
+  /// Brings [context] to [ServerContextState.active] from any connected
+  /// state. Performs the transition only — orchestrator state is committed
+  /// separately via [_commitActive] once the caller decides the activation
+  /// counts.
+  Future<void> _ensureActive(ServerContext context) async {
     final activateableStates = {
       ServerContextState.initializing,
       ServerContextState.backgrounding,
@@ -286,16 +459,61 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       await context.activate();
     }
     // already active — no-op
+  }
+
+  /// Commits [serverId] as the active server: repository connection state,
+  /// orchestrator pointer, and the active-context emission. Only called
+  /// after the context's activation has succeeded.
+  ///
+  /// The persisted-state writes are best-effort: a repository failure is
+  /// logged, not thrown. If they threw, callers would be left with the
+  /// context already activated (and the previous one already demoted) but
+  /// the switch only half-applied — the single-active invariant would be
+  /// violated with no clean rollback. Since persisted connection state is a
+  /// cache the orchestrator reconciles on the next `initialize`, the
+  /// in-memory pointer + emission are the authority and must always commit.
+  Future<void> _commitActive(String serverId) async {
+    await _updateStateQuietly(serverId, ConnectionState.active);
+    try {
+      await _serverRepository.updateLastActive(
+        serverId,
+        DateTime.now().toUtc(),
+      );
+    } catch (e, st) {
+      _logError('persisting lastActive for $serverId failed', e, st);
+    }
 
     _activeServerId = serverId;
-
-    await _serverRepository.updateConnectionState(
-      serverId: serverId,
-      newState: ConnectionState.active,
-    );
-    await _serverRepository.updateLastActive(serverId, DateTime.now().toUtc());
-
     _emitActiveChange();
+  }
+
+  Future<void> _disposeQuietly(ServerContext context) async {
+    try {
+      await context.dispose();
+    } catch (e, st) {
+      _logError('disposal of context ${context.serverId} failed', e, st);
+    }
+  }
+
+  /// Best-effort persisted-state update used on failure paths, where a
+  /// secondary repository error must not mask the primary failure.
+  Future<void> _updateStateQuietly(
+    String serverId,
+    ConnectionState state,
+  ) async {
+    try {
+      await _serverRepository.updateConnectionState(
+        serverId: serverId,
+        newState: state,
+      );
+    } catch (e, st) {
+      _logError('persisting $state for $serverId failed', e, st);
+    }
+  }
+
+  void _logError(String what, Object error, StackTrace stackTrace) {
+    // TODO: wire in a proper error reporting channel
+    debugPrint('[ServerOrchestrator] $what: $error\n$stackTrace');
   }
 
   void _startBackgroundingTimer(String serverId) {
@@ -336,10 +554,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         );
         _emitContextsChange();
       } catch (e, st) {
-        // TODO: wire in a proper error reporting channel
-        debugPrint(
-          '[ServerOrchestrator] Error suspending $serverId on timer: $e\n$st',
-        );
+        _logError('suspending $serverId on timer failed', e, st);
       }
     });
   }
@@ -352,10 +567,13 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       );
     }
     _operationInProgress = true;
+    final future = Future.sync(body);
+    _inFlightOperation = future;
     try {
-      await body();
+      await future;
     } finally {
       _operationInProgress = false;
+      _inFlightOperation = null;
     }
   }
 

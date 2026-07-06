@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:interfaces/services.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' show SqliteException, sqlite3;
 import 'package:storage_interface/storage_interface.dart';
 
 /// In-memory [EncryptionKeyService] with contract-compliant keys.
@@ -138,6 +139,40 @@ void main() {
       );
     });
 
+    test(
+      'transient lock errors pass through untranslated (no DatabaseKeyError)',
+      () async {
+        // Create the database, then hold an exclusive lock on the file from
+        // a separate raw connection so the probe's sqlite_master read hits
+        // SQLITE_BUSY — a transient condition that must NOT authorize the
+        // destructive key-recovery path.
+        final db = ServerDatabase(factory.serverExecutor('srv_1'));
+        await db.customSelect('SELECT 1').get();
+        await db.close();
+
+        final key = await keys.getOrCreateServerKey('srv_1');
+        final locker = sqlite3.open(serverDbFile('srv_1').path);
+        addTearDown(locker.close);
+        locker.execute("PRAGMA key = '$key';");
+        locker.execute('PRAGMA locking_mode = EXCLUSIVE;');
+        locker.execute('BEGIN EXCLUSIVE;');
+
+        final blocked = ServerDatabase(factory.serverExecutor('srv_1'));
+        addTearDown(() async {
+          try {
+            await blocked.close();
+          } catch (_) {}
+        });
+
+        await expectLater(
+          blocked.customSelect('SELECT 1').get(),
+          throwsA(
+            allOf(isA<SqliteException>(), isNot(isA<DatabaseKeyError>())),
+          ),
+        );
+      },
+    );
+
     test('databases of different servers use independent keys', () async {
       final a = ServerDatabase(factory.serverExecutor('srv_a'));
       final b = ServerDatabase(factory.serverExecutor('srv_b'));
@@ -209,6 +244,27 @@ void main() {
 
       final header = serverDbFile('srv_1').openSync().readSync(16);
       expect(String.fromCharCodes(header), startsWith('SQLite format 3'));
+    });
+  });
+
+  group('resolveDatabaseFile validation', () {
+    test('rejects absolute paths', () {
+      expect(
+        () => factory.resolveDatabaseFile('/etc/passwd'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('rejects upward traversal', () {
+      expect(
+        () => factory.resolveDatabaseFile('../../secrets.db'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('accepts a normal relative path', () async {
+      final file = await factory.resolveDatabaseFile('a/b/c.db');
+      expect(p.isWithin(tempDir.path, file.path), isTrue);
     });
   });
 

@@ -138,13 +138,61 @@ class EncryptedExecutorFactory {
     );
   }
 
+  /// Resolves [relativePath] against the same base directory the executors
+  /// use.
+  ///
+  /// Centralizes the `baseDir + p.join` resolution so the recovery flow and
+  /// the executor share one implementation. It resolves the base directory
+  /// on each call, so the returned path matches the executor's exactly as
+  /// long as [baseDirectoryProvider] is stable across calls (the production
+  /// provider, `getApplicationSupportDirectory`, is).
+  ///
+  /// [relativePath] must be a genuinely relative path that stays within the
+  /// base directory. Absolute paths and any `..` segment are rejected with
+  /// an [ArgumentError] — this matters because the resolved file (and its
+  /// companions) is deleted during key-loss recovery, so a traversing path
+  /// could delete data outside the app's storage tree.
+  Future<File> resolveDatabaseFile(String relativePath) async {
+    if (p.isAbsolute(relativePath)) {
+      throw ArgumentError.value(
+        relativePath,
+        'relativePath',
+        'must be relative, not absolute',
+      );
+    }
+    if (p.split(relativePath).contains('..')) {
+      throw ArgumentError.value(
+        relativePath,
+        'relativePath',
+        'must not contain upward-traversal (..) segments',
+      );
+    }
+
+    final baseDir = await _baseDirectoryProvider();
+    final resolved = p.normalize(p.join(baseDir.path, relativePath));
+    final base = p.normalize(baseDir.path);
+
+    if (!p.isWithin(base, resolved)) {
+      throw ArgumentError.value(
+        relativePath,
+        'relativePath',
+        'resolves outside the base storage directory',
+      );
+    }
+    return File(resolved);
+  }
+
+  /// SQLite primary result code for "file is not a database" — the
+  /// signature of decryption failure with sqlite3mc (wrong or lost key,
+  /// or a file that was never encrypted with this key).
+  static const _sqliteNotADb = 26;
+
   QueryExecutor _executor({
     required String relativePath,
     required Future<String> Function() obtainKey,
   }) {
     return LazyDatabase(() async {
-      final baseDir = await _baseDirectoryProvider();
-      final file = File(p.join(baseDir.path, relativePath));
+      final file = await resolveDatabaseFile(relativePath);
       await file.parent.create(recursive: true);
 
       if (!_encryptionEnabled) {
@@ -179,6 +227,13 @@ class EncryptedExecutorFactory {
   /// Opens [path] directly, applies [key], and reads `sqlite_master` so a
   /// wrong or lost key fails *here*, deterministically and typed, instead of
   /// as an untyped error from a background isolate at first query.
+  ///
+  /// Only `SQLITE_NOTADB` (26) — sqlite3mc's signature for "the ciphertext
+  /// does not decrypt with this key" — maps to [DatabaseKeyError], because
+  /// that error authorizes a **destructive** recovery (file + key deletion).
+  /// Everything else (`SQLITE_BUSY`, I/O errors, corruption of a correctly
+  /// keyed database, …) rethrows untranslated: those conditions are
+  /// transient or diagnosable and must never trigger data destruction.
   void _probe(String path, String key) {
     final db = sqlite.sqlite3.open(path);
     try {
@@ -186,7 +241,10 @@ class EncryptedExecutorFactory {
       try {
         db.select('SELECT COUNT(*) FROM sqlite_master;');
       } on sqlite.SqliteException catch (e) {
-        throw DatabaseKeyError(databasePath: path, cause: e);
+        if (e.resultCode == _sqliteNotADb) {
+          throw DatabaseKeyError(databasePath: path, cause: e);
+        }
+        rethrow;
       }
     } finally {
       db.close();
