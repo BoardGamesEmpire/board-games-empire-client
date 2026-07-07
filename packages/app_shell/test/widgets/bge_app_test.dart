@@ -23,7 +23,7 @@ class _ProbeDelegate extends LocalizationsDelegate<_ProbeLocalizations> {
       SynchronousFuture(_ProbeLocalizations());
 
   @override
-  bool shouldReload(covariant LocalizationsDelegate<Object?> old) => false;
+  bool shouldReload(covariant _ProbeDelegate old) => false;
 }
 
 void main() {

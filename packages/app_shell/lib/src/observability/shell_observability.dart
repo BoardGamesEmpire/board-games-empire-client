@@ -18,6 +18,7 @@ import 'package:observability/observability.dart';
 abstract final class ShellObservability {
   static BreadcrumbBuffer? _buffer;
   static StreamSubscription<LogRecord>? _debugConsoleSubscription;
+  static Level? _previousRootLevel;
 
   /// The process-wide breadcrumb ring buffer. Throws if [initialize] has
   /// not run yet — that ordering bug should fail fast, not report empty
@@ -44,6 +45,7 @@ abstract final class ShellObservability {
   /// developing.
   static void initialize({BreadcrumbBuffer? buffer}) {
     if (_buffer != null) return;
+    _previousRootLevel = Logger.root.level;
     Logger.root.level = Level.ALL;
     _buffer = (buffer ?? BreadcrumbBuffer())..attach();
     if (kDebugMode) {
@@ -56,12 +58,19 @@ abstract final class ShellObservability {
     }
   }
 
-  /// Detaches and clears all wiring so tests can re-initialize cleanly.
+  /// Detaches and clears all wiring so tests can re-initialize cleanly,
+  /// including restoring [Logger.root]'s level to whatever it was before
+  /// [initialize] raised it — otherwise the `Level.ALL` override would leak
+  /// across tests and into embedding apps.
   @visibleForTesting
   static Future<void> reset() async {
     await _buffer?.detach();
     _buffer = null;
     await _debugConsoleSubscription?.cancel();
     _debugConsoleSubscription = null;
+    if (_previousRootLevel != null) {
+      Logger.root.level = _previousRootLevel;
+      _previousRootLevel = null;
+    }
   }
 }

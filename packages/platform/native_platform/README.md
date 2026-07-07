@@ -1,39 +1,41 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# native_platform
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+The shared native (mobile + desktop) composition root for Board Games Empire.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+Implements the `PlatformBootstrap` contract from `app_shell` by composing the
+concrete storage and network packages that native platforms use.
+`mobile_platform` and `desktop_platform` are thin subclasses of
+`NativePlatformBootstrap`; they exist as hook points for platform-specific
+concerns (connectivity, window/tray management, deep-link registration) but
+share this bootstrap for the alpha scope.
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+## Responsibilities
 
-## Features
+- **`NativePlatformBootstrap`** — opens the encrypted meta database
+  (`EncryptedExecutorFactory` → `MetaDatabase`), builds the meta repositories,
+  composes the per-server `ServerContextFactory`, and constructs and
+  initializes the `ServerOrchestrator`. State is committed only on success;
+  a failed attempt rolls back without masking the original error, logging any
+  secondary disposal failure as a breadcrumb.
+- **`buildNativeServerContextFactory`** — wires each server context with the
+  storage installer (encrypted DB open + one-shot key recovery) followed by
+  the network installer.
+- **Reset** — the user-confirmed destructive recovery: deletes the meta
+  encryption key *before* the database file (and its `-wal`/`-shm`/`-journal`
+  companions), matching the storage layer's recovery ordering. Never invoked
+  automatically.
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+## Invariants
 
-## Getting started
+- If you inject an `executorFactory` you must also inject the `keyService` it
+  was built with: the meta executor and the per-server installers must share
+  one `EncryptionKeyService`, enforced by a constructor assertion.
+- Every collaborator is injectable with a production default, so the
+  composition is unit-testable without a real keychain or filesystem.
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
+## Entry point
 
-## Usage
+Consumed indirectly — apps depend on `mobile_platform` / `desktop_platform`,
+which subclass `NativePlatformBootstrap` and pass it to `runBgeApp`.
 
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
-
-```dart
-const like = 'sample';
-```
-
-## Additional information
-
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+Part of the Board Games Empire client monorepo; not published to pub.dev.

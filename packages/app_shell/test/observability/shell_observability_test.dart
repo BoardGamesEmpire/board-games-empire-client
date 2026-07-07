@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:observability/observability.dart';
 
 void main() {
@@ -51,6 +52,17 @@ void main() {
       ShellObservability.initialize();
 
       expect(ShellObservability.breadcrumbs, same(buffer));
+    });
+
+    test('reset() restores the prior Logger.root.level so the Level.ALL '
+        'override does not leak across tests or into embedding apps', () async {
+      Logger.root.level = Level.WARNING;
+
+      ShellObservability.initialize();
+      expect(Logger.root.level, Level.ALL);
+
+      await ShellObservability.reset();
+      expect(Logger.root.level, Level.WARNING);
     });
   });
 }

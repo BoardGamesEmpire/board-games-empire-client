@@ -1,39 +1,37 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# web_platform
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+The web composition root for Board Games Empire.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+Implements the `PlatformBootstrap` contract from `app_shell` for the browser,
+where the constraints differ fundamentally from native: the app can only talk
+to the origin in the address bar, so a server is present by construction,
+there is no meta database, no server switching, and no orchestration.
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+## Responsibilities
 
-## Features
+- **`WebPlatformBootstrap`** — returns a `BootstrapResult` with
+  `hasServer: true` and no orchestrator; auth is cookie-owned via
+  `web_network` and wired separately. Reset is unsupported (there is no
+  device-local meta database to delete) and `hydratedStorageDirectory`
+  resolves to the web backend.
+- **`configureWebUrlStrategy`** — installs path-based URLs (no `#` fragments)
+  so the reserved deep-link paths are real browser URLs. Call first in the
+  browser app's `main()`, before `runBgeApp`.
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+## Boundaries
 
-## Getting started
+- Storage-less for the alpha: the web data layer (drift/wasm via `web_storage`,
+  encryption posture, sync-queue role) is designed separately and re-adds its
+  dependency here when it lands.
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
-
-## Usage
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
+## Entry point
 
 ```dart
-const like = 'sample';
+// apps/browser/lib/main.dart
+Future<void> main() async {
+  configureWebUrlStrategy();
+  await runBgeApp(platformBootstrap: const WebPlatformBootstrap());
+}
 ```
 
-## Additional information
-
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+Part of the Board Games Empire client monorepo; not published to pub.dev.
