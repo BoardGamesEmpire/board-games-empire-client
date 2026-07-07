@@ -196,8 +196,22 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       File('${databaseFile.path}-journal'),
     ];
     for (final file in companions) {
-      if (file.existsSync()) {
-        await file.delete();
+      // Best-effort: the existsSync/delete window is a TOCTOU race (the
+      // file may vanish or lock between the two calls), and a companion
+      // that is already gone is success, not failure. Attempt the delete
+      // and swallow FileSystemException — a genuinely undeletable file is
+      // breadcrumbed rather than aborting the reset the user asked for.
+      try {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } on FileSystemException catch (error, stackTrace) {
+        _logger.warn(
+          'Best-effort delete of a meta database file failed during reset',
+          error: error,
+          stackTrace: stackTrace,
+          context: {'path': file.path},
+        );
       }
     }
     _logger.info('Device-local meta state reset complete');

@@ -48,17 +48,16 @@ const reservedDeepLinkPathPatterns = <String>[
 /// seam by emitting [AppBootstrapReady] / [AppBootstrapNeedsAuth].
 GoRouter buildAppRouter({
   required AppBootstrapCubit bootstrapCubit,
-  BootstrapStreamListenable? refreshListenable,
+  required BootstrapStreamListenable refreshListenable,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
-    // go_router only removes its listener on dispose; it never disposes
-    // the listenable. Callers that outlive a single router (BgeApp) pass
-    // their own and dispose it; the internal fallback is for direct
-    // callers (tests) whose streams complete, leaving the subscription
-    // inert.
-    refreshListenable:
-        refreshListenable ?? BootstrapStreamListenable(bootstrapCubit.stream),
+    // go_router removes its listener on dispose but never disposes the
+    // listenable itself. It is therefore a required parameter: the caller
+    // owns it and must dispose it (after the router). There is deliberately
+    // no internally-constructed fallback — that would be a subscription no
+    // caller could dispose.
+    refreshListenable: refreshListenable,
     redirect: (context, routerState) {
       final location = routerState.matchedLocation;
       return switch (bootstrapCubit.state) {

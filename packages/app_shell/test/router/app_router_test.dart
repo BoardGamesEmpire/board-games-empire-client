@@ -39,7 +39,17 @@ void main() {
       stream ?? const Stream<AppBootstrapState>.empty(),
       initialState: initialState,
     );
-    final router = buildAppRouter(bootstrapCubit: cubit);
+    final listenable = BootstrapStreamListenable(cubit.stream);
+    final router = buildAppRouter(
+      bootstrapCubit: cubit,
+      refreshListenable: listenable,
+    );
+    // go_router does not own the listenable; dispose the router first (it
+    // removes its listener during dispose) then the listenable.
+    addTearDown(() {
+      router.dispose();
+      listenable.dispose();
+    });
     await tester.pumpWidget(
       MaterialApp.router(
         routerConfig: router,

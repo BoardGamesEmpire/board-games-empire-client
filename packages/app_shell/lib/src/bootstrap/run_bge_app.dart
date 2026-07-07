@@ -41,10 +41,17 @@ Future<void> runBgeApp({
   // Uncaught errors are always breadcrumbed so they appear in feedback
   // reports; the optional [onUncaughtError] hook is chained on top. Full
   // zone-based reporting is #34's scope and replaces neither of these.
+  //
+  // We delegate to FlutterError.presentError (the framework's *default*
+  // handler, which is stable across the process) rather than to the
+  // current FlutterError.onError. If runBgeApp runs more than once in a
+  // process (hot restart, some test setups), reading the current handler
+  // would chain our own previous handler into the new one, growing the
+  // chain and duplicating reports on every restart. presentError is a
+  // fixed target, so re-installation is idempotent.
   final uncaughtLogger = BgeLogger('bge.shell.uncaught');
-  final previousOnError = FlutterError.onError;
   FlutterError.onError = (details) {
-    previousOnError?.call(details);
+    FlutterError.presentError(details);
     uncaughtLogger.error(
       'Uncaught framework error',
       error: details.exception,
