@@ -1,5 +1,4 @@
-/// A Calculator.
-class Calculator {
-  /// Returns [value] plus 1.
-  int addOne(int value) => value + 1;
-}
+/// Web composition root for Board Games Empire.
+library;
+
+export 'src/web_platform_bootstrap.dart';
