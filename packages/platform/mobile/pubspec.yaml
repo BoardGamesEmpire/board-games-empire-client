@@ -28,12 +28,7 @@ dependencies:
   package_info_plus: ^10.2.0
   device_info_plus: ^13.2.0
 
-  # DI (unused pending #61 — adopt annotations or remove)
-  get_it: ^9.2.1
-  injectable: ^2.4.2
-
 dev_dependencies:
-  injectable_generator: ^2.6.1
   flutter_test:
     sdk: flutter
   very_good_analysis: ^10.2.0

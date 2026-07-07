@@ -76,7 +76,7 @@ void main() {
       expect(find.text('Startup failed'), findsOneWidget);
       expect(
         tester.getSemantics(find.text('Startup failed')),
-        containsSemantics(isLiveRegion: true),
+        isSemantics(isLiveRegion: true),
       );
       semantics.dispose();
     });

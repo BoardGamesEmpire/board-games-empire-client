@@ -54,8 +54,9 @@ GoRouter buildAppRouter({
     initialLocation: AppRoutes.splash,
     // go_router only removes its listener on dispose; it never disposes
     // the listenable. Callers that outlive a single router (BgeApp) pass
-    // their own and dispose it; the internal fallback self-cancels when
-    // the cubit's stream completes.
+    // their own and dispose it; the internal fallback is for direct
+    // callers (tests) whose streams complete, leaving the subscription
+    // inert.
     refreshListenable:
         refreshListenable ?? BootstrapStreamListenable(bootstrapCubit.stream),
     redirect: (context, routerState) {
@@ -122,15 +123,13 @@ GoRouter buildAppRouter({
 ///
 /// Ownership: go_router never disposes its `refreshListenable`, so whoever
 /// creates this must [dispose] it — after disposing the router, which
-/// still removes its listener during its own dispose. As a safety net the
-/// subscription also cancels itself when the source stream completes
-/// (i.e. when the cubit is closed).
+/// still removes its listener during its own dispose. No `onDone` cleanup
+/// is needed or wanted: a completed subscription is inert (nothing left to
+/// cancel), and referencing the late subscription field from inside the
+/// `listen` call would race streams that complete synchronously.
 class BootstrapStreamListenable extends ChangeNotifier {
   BootstrapStreamListenable(Stream<Object?> stream) {
-    _subscription = stream.listen(
-      (_) => notifyListeners(),
-      onDone: () => unawaited(_subscription.cancel()),
-    );
+    _subscription = stream.listen((_) => notifyListeners());
   }
 
   late final StreamSubscription<Object?> _subscription;

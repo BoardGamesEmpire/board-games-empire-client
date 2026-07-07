@@ -236,18 +236,25 @@ void main() {
       await controller.close();
     });
 
-    test(
-      'self-cancels when the source stream completes (cubit closed)',
-      () async {
-        final controller = StreamController<int>();
-        final listenable = BootstrapStreamListenable(controller.stream);
-        addTearDown(listenable.dispose);
+    test('construction over a stream that completes synchronously does not '
+        'throw (regression: onDone must not touch the late subscription '
+        'field during listen)', () {
+      expect(
+        () => BootstrapStreamListenable(
+          Stream<Object?>.multi((controller) => controller.closeSync()),
+        ),
+        returnsNormally,
+      );
+    });
 
-        await controller.close();
-        await Future<void>.delayed(Duration.zero);
+    test('dispose() after the source stream has completed is safe', () async {
+      final controller = StreamController<int>();
+      final listenable = BootstrapStreamListenable(controller.stream);
 
-        expect(controller.hasListener, isFalse);
-      },
-    );
+      await controller.close();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(listenable.dispose, returnsNormally);
+    });
   });
 }
