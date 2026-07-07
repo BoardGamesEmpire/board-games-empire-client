@@ -1,0 +1,67 @@
+{
+  "@@locale": "en",
+  "shellAppTitle": "Board Games Empire",
+  "@shellAppTitle": {
+    "description": "Application title used by the OS task switcher and browser tab"
+  },
+  "shellSplashLoadingLabel": "Loading Board Games Empire",
+  "@shellSplashLoadingLabel": {
+    "description": "Semantics label announced by screen readers while the app bootstraps"
+  },
+  "shellBootstrapErrorTitle": "Startup failed",
+  "@shellBootstrapErrorTitle": {
+    "description": "Title of the bootstrap failure screen"
+  },
+  "shellBootstrapErrorBody": "Board Games Empire couldn't finish starting. Your data has not been changed.",
+  "@shellBootstrapErrorBody": {
+    "description": "Body of the bootstrap failure screen; reassures that no destructive action was taken"
+  },
+  "shellBootstrapErrorRetry": "Try again",
+  "@shellBootstrapErrorRetry": {
+    "description": "Label for the retry button on the bootstrap failure screen"
+  },
+  "shellBootstrapErrorReset": "Delete local data…",
+  "@shellBootstrapErrorReset": {
+    "description": "Label for the destructive recovery button, shown only after repeated startup failures; opens a confirmation dialog"
+  },
+  "shellBootstrapErrorResetConfirmTitle": "Delete local data?",
+  "@shellBootstrapErrorResetConfirmTitle": {
+    "description": "Title of the confirmation dialog before deleting the device-local database"
+  },
+  "shellBootstrapErrorResetConfirmBody": "This permanently deletes this device's local Board Games Empire data, including the list of servers you've added. Data on your servers is not affected. You'll need to add your server again.",
+  "@shellBootstrapErrorResetConfirmBody": {
+    "description": "Body of the delete-local-data confirmation dialog; explains exactly what is lost and what is safe"
+  },
+  "shellBootstrapErrorResetConfirmAction": "Delete and retry",
+  "@shellBootstrapErrorResetConfirmAction": {
+    "description": "Confirming action of the delete-local-data dialog"
+  },
+  "shellBootstrapErrorResetCancel": "Cancel",
+  "@shellBootstrapErrorResetCancel": {
+    "description": "Dismissing action of the delete-local-data dialog"
+  },
+  "shellNotYetAvailableTitle": "Not yet available",
+  "@shellNotYetAvailableTitle": {
+    "description": "Title shown when a reserved deep-link route has no UI behind it yet"
+  },
+  "shellNotYetAvailableBody": "This part of Board Games Empire isn't available yet. It's coming in a future update.",
+  "@shellNotYetAvailableBody": {
+    "description": "Body shown when a reserved deep-link route has no UI behind it yet"
+  },
+  "shellPlaceholderServerAddTitle": "Add a server",
+  "@shellPlaceholderServerAddTitle": {
+    "description": "Title of the server-add route placeholder (real UI lands with the server-add flow)"
+  },
+  "shellPlaceholderAuthTitle": "Sign in",
+  "@shellPlaceholderAuthTitle": {
+    "description": "Title of the auth route placeholder (real UI lands with auth wiring)"
+  },
+  "shellPlaceholderHomeTitle": "Home",
+  "@shellPlaceholderHomeTitle": {
+    "description": "Title of the home route placeholder"
+  },
+  "shellPlaceholderBody": "This screen is under construction and arrives with an upcoming update.",
+  "@shellPlaceholderBody": {
+    "description": "Shared body text for placeholder route screens"
+  }
+}

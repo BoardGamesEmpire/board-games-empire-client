@@ -1,0 +1,22 @@
+/// Shared application shell for Board Games Empire.
+///
+/// Owns the bootstrap sequence ([AppBootstrapCubit] over a platform-supplied
+/// [PlatformBootstrap]), the `go_router` route table (including reserved
+/// deep-link paths, #10), and the shell screens (splash, bootstrap failure,
+/// placeholders, not-yet-available).
+///
+/// Platform composition roots live in `packages/platform/*`; the apps under
+/// `apps/*` are thin `main.dart` wrappers that hand a [PlatformBootstrap]
+/// to [runBgeApp].
+library;
+
+export 'src/bootstrap/app_bootstrap_cubit.dart';
+export 'src/bootstrap/app_bootstrap_state.dart';
+export 'src/bootstrap/platform_bootstrap.dart';
+export 'src/bootstrap/run_bge_app.dart';
+export 'src/router/app_router.dart';
+export 'src/screens/bootstrap_error_screen.dart';
+export 'src/screens/not_yet_available_screen.dart';
+export 'src/screens/shell_placeholder_screen.dart';
+export 'src/screens/splash_screen.dart';
+export 'src/widgets/bge_app.dart';

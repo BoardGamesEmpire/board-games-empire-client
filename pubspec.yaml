@@ -22,10 +22,14 @@ dev_dependencies:
   very_good_analysis: ^10.2.0
   build_runner: ^2.14.1
 
+flutter:
+  uses-material-design: true
+
 workspace:
   - apps/mobile
   - apps/desktop
   - apps/browser
+  - packages/app_shell
   - packages/core/interfaces
   - packages/core/models
   - packages/core/di
@@ -35,11 +39,13 @@ workspace:
   - packages/storage/key_storage
   - packages/storage/storage_interface
   - packages/storage/memory_storage
+  - packages/storage/web_storage
   - packages/network/dio_network
   - packages/network/network_interface
   - packages/network/web_network
   - packages/platform/mobile
   - packages/platform/desktop
+  - packages/platform/native_platform
   - packages/platform/web
   - packages/ui
 

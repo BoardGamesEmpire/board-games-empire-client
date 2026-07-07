@@ -1,0 +1,38 @@
+name: app_shell
+description: "Shared application shell: bootstrap sequencing, routing, and shell screens"
+publish_to: none
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.0.0"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  interfaces:
+    path: ../core/interfaces
+
+  # State management
+  flutter_bloc: ^9.1.1
+  hydrated_bloc: ^11.0.0
+
+  # Navigation
+  go_router: ^17.3.0
+
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  bloc_test: ^10.0.0
+  mocktail: ^1.0.5
+  flutter_lints: ^6.0.0
+  very_good_analysis: ^10.2.0
+
+flutter:
+  generate: true
+  uses-material-design: true

@@ -92,7 +92,12 @@ class EncryptedExecutorFactory {
 
   static const _serverDatabaseFileName = 'game_empire.db';
   static const _serverDatabaseDirectory = 'app_secure_storage';
-  static const _metaDatabaseRelativePath = 'meta/servers.db';
+
+  /// Relative path of the meta database beneath the base storage directory.
+  ///
+  /// Public so the native platform bootstrap (#31) can resolve the same
+  /// file when performing the user-confirmed meta reset.
+  static const String metaDatabaseRelativePath = 'meta/servers.db';
 
   static final _hexKeyPattern = RegExp(r'^[0-9a-f]{64}$');
 
@@ -133,7 +138,7 @@ class EncryptedExecutorFactory {
   /// `<AppSupport>/meta/servers.db`, keyed with the global meta key.
   QueryExecutor metaExecutor() {
     return _executor(
-      relativePath: _metaDatabaseRelativePath,
+      relativePath: metaDatabaseRelativePath,
       obtainKey: _keyService.getOrCreateMetaKey,
     );
   }
