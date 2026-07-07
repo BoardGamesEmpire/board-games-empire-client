@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:app_shell/app_shell.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:drift_storage/drift_storage.dart';
@@ -111,6 +110,14 @@ void main() {
   group('NativePlatformBootstrap', () {
     test('supportsReset is true on native platforms', () {
       expect(buildBootstrap().supportsReset, isTrue);
+    });
+
+    test('rejects an injected executorFactory without a matching keyService, '
+        'guarding against divergent encryption-key services', () {
+      expect(
+        () => NativePlatformBootstrap(executorFactory: executorFactory),
+        throwsA(isA<AssertionError>()),
+      );
     });
 
     group('initialize()', () {

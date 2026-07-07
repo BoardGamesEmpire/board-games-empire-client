@@ -1,6 +1,6 @@
 name: native_platform
 description: "Shared native (mobile + desktop) composition root: MetaDB, orchestrator, installers"
-version: 1.0.0
+version: 0.0.1
 publish_to: none
 
 environment:

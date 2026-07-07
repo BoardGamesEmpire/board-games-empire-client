@@ -61,7 +61,14 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     NativeOrchestratorFactory? orchestratorFactory,
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
     void Function(DatabaseRecoveryEvent event)? onServerDatabaseRecovery,
-  }) : _keyService =
+  }) : assert(
+         executorFactory == null || keyService != null,
+         'When injecting executorFactory you must also inject the same '
+         'keyService it was built with: the MetaDB executor and the '
+         'per-server storage installers must share one EncryptionKeyService, '
+         'otherwise they key off different services and silently diverge.',
+       ),
+       _keyService =
            keyService ??
            SecureStorageEncryptionKeyService(
              storage: const FlutterSecureStorage(),
