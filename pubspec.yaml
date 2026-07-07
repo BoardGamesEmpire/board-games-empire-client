@@ -22,9 +22,6 @@ dev_dependencies:
   very_good_analysis: ^10.2.0
   build_runner: ^2.14.1
 
-flutter:
-  uses-material-design: true
-
 workspace:
   - apps/mobile
   - apps/desktop

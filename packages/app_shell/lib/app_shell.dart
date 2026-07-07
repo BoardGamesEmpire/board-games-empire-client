@@ -14,6 +14,7 @@ export 'src/bootstrap/app_bootstrap_cubit.dart';
 export 'src/bootstrap/app_bootstrap_state.dart';
 export 'src/bootstrap/platform_bootstrap.dart';
 export 'src/bootstrap/run_bge_app.dart';
+export 'src/observability/shell_observability.dart';
 export 'src/router/app_router.dart';
 export 'src/screens/bootstrap_error_screen.dart';
 export 'src/screens/not_yet_available_screen.dart';

@@ -1,6 +1,7 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -394,6 +395,37 @@ void main() {
           expect(cubit.state, stateBefore);
           expect(bootstrap.initializeCallCount, 1);
         },
+      );
+    });
+  });
+
+  group('logging', () {
+    test('a failed bootstrap attempt emits an error-level record for the '
+        'breadcrumb trail feedback reports rely on', () async {
+      final records = <LogRecord>[];
+      final previousLevel = Logger.root.level;
+      Logger.root.level = Level.ALL;
+      final subscription = Logger.root.onRecord.listen(records.add);
+      addTearDown(() async {
+        await subscription.cancel();
+        Logger.root.level = previousLevel;
+      });
+
+      final cubit = buildCubit(
+        bootstrap: FakePlatformBootstrap(outcomes: [bootFailure]),
+      );
+      addTearDown(cubit.close);
+
+      await cubit.initialize();
+
+      expect(
+        records.where(
+          (r) =>
+              r.loggerName == 'bge.shell.bootstrap' &&
+              r.level == Level.SEVERE &&
+              r.error == bootFailure,
+        ),
+        hasLength(1),
       );
     });
   });

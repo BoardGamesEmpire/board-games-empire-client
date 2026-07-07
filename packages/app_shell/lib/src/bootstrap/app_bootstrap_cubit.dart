@@ -1,5 +1,7 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:observability/observability.dart';
 
 import 'app_bootstrap_state.dart';
 import 'platform_bootstrap.dart';
@@ -20,13 +22,16 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     required PlatformBootstrap platformBootstrap,
     HydratedStorageInitializer? hydratedStorageInitializer,
     int resetOfferThreshold = 3,
+    BgeLogger? logger,
   }) : _platformBootstrap = platformBootstrap,
+       _logger = logger ?? BgeLogger('bge.shell.bootstrap'),
        _initializeHydratedStorage =
            hydratedStorageInitializer ?? _defaultHydratedStorageInitializer,
        _resetOfferThreshold = resetOfferThreshold,
        super(const AppBootstrapInitializing());
 
   final PlatformBootstrap _platformBootstrap;
+  final BgeLogger _logger;
   final HydratedStorageInitializer _initializeHydratedStorage;
   final int _resetOfferThreshold;
 
@@ -78,10 +83,19 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     final current = state;
     if (current is! AppBootstrapFailed || !current.canOfferReset) return;
     emit(const AppBootstrapInitializing());
+    _logger.warn(
+      'User-confirmed destructive reset of device-local meta state',
+      context: {'failedAttempts': _consecutiveFailures},
+    );
     try {
       await _platformBootstrap.reset();
-    } catch (error) {
+    } on Object catch (error, stackTrace) {
       _consecutiveFailures += 1;
+      _logger.error(
+        'Destructive reset failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       emit(_failedState(error));
       return;
     }
@@ -98,6 +112,10 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       final result = await _platformBootstrap.initialize();
       _orchestrator = result.orchestrator;
       _consecutiveFailures = 0;
+      _logger.info(
+        'Bootstrap succeeded',
+        context: {'hasServer': result.hasServer},
+      );
       // Never AppBootstrapReady from bootstrap: a registered server routes
       // to the auth leg unconditionally; the authenticated → home
       // transition is owned by the auth wiring issue (#37).
@@ -106,8 +124,14 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
             ? const AppBootstrapNeedsAuth()
             : const AppBootstrapNeedsServer(),
       );
-    } catch (error) {
+    } on Object catch (error, stackTrace) {
       _consecutiveFailures += 1;
+      _logger.error(
+        'Bootstrap attempt failed',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'attempt': _consecutiveFailures},
+      );
       emit(_failedState(error));
     }
   }

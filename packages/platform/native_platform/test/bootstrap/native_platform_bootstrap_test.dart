@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
@@ -200,6 +201,47 @@ void main() {
 
         expect(keyService.deleteMetaKeyCalls, 1);
         expect(metaFile.existsSync(), isFalse);
+      });
+    });
+
+    group('logging', () {
+      test('a disposal failure during rollback is breadcrumbed as a '
+          'warning while the original bootstrap error is rethrown '
+          'unmasked', () async {
+        final records = <LogRecord>[];
+        final previousLevel = Logger.root.level;
+        Logger.root.level = Level.ALL;
+        final subscription = Logger.root.onRecord.listen(records.add);
+        addTearDown(() async {
+          await subscription.cancel();
+          Logger.root.level = previousLevel;
+        });
+
+        final primaryError = StateError('orchestrator init failed');
+        final secondaryError = StateError('dispose also failed');
+        final failingOrchestrator = _MockServerOrchestrator();
+        when(() => failingOrchestrator.initialize()).thenThrow(primaryError);
+        when(() => failingOrchestrator.dispose()).thenThrow(secondaryError);
+        final bootstrap = buildBootstrap(
+          orchestratorFactory:
+              ({
+                required ServerRepository serverRepository,
+                required DevicePreferencesRepository preferencesRepository,
+                required contextFactory,
+              }) => failingOrchestrator,
+        );
+
+        await expectLater(bootstrap.initialize(), throwsA(same(primaryError)));
+
+        expect(
+          records.where(
+            (r) =>
+                r.loggerName == 'bge.platform.native_bootstrap' &&
+                r.level == Level.WARNING &&
+                r.error == secondaryError,
+          ),
+          hasLength(1),
+        );
       });
     });
   });

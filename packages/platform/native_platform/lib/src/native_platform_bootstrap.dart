@@ -12,6 +12,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:key_storage/key_storage.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 
@@ -61,7 +62,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     NativeOrchestratorFactory? orchestratorFactory,
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
     void Function(DatabaseRecoveryEvent event)? onServerDatabaseRecovery,
-  }) : assert(
+    BgeLogger? logger,
+  }) : _logger = logger ?? BgeLogger('bge.platform.native_bootstrap'),
+       assert(
          executorFactory == null || keyService != null,
          'When injecting executorFactory you must also inject the same '
          'keyService it was built with: the MetaDB executor and the '
@@ -87,6 +90,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         executorFactory ?? EncryptedExecutorFactory(keyService: _keyService);
   }
 
+  final BgeLogger _logger;
   final EncryptionKeyService _keyService;
   late final EncryptedExecutorFactory _executorFactory;
   final MetaDatabase Function(QueryExecutor executor) _metaDatabaseFactory;
@@ -142,16 +146,33 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         orchestrator: orchestrator,
       );
     } catch (_) {
-      // Roll back without masking the original error.
+      // Roll back without masking the original error: secondary disposal
+      // failures are logged as breadcrumbs for feedback reports, never
+      // thrown — the bootstrap failure being rethrown is the one the
+      // user (and the error screen) must see.
       if (orchestrator != null) {
         try {
           await orchestrator.dispose();
-        } catch (_) {}
+        } on Object catch (error, stackTrace) {
+          _logger.warn(
+            'Orchestrator disposal failed during bootstrap rollback; '
+            'original bootstrap error rethrown',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
       }
       if (meta != null) {
         try {
           await meta.close();
-        } catch (_) {}
+        } on Object catch (error, stackTrace) {
+          _logger.warn(
+            'Meta database close failed during bootstrap rollback; '
+            'original bootstrap error rethrown',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
       }
       rethrow;
     }
@@ -159,6 +180,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
 
   @override
   Future<void> reset() async {
+    _logger.warn('Resetting device-local meta state (user confirmed)');
     await dispose();
     // Key first, then file — the recovery ordering established in
     // StorageScopeInstaller: a crash in between must not leave an
@@ -178,6 +200,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         await file.delete();
       }
     }
+    _logger.info('Device-local meta state reset complete');
   }
 
   @override
@@ -194,12 +217,24 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     if (orchestrator != null) {
       try {
         await orchestrator.dispose();
-      } catch (_) {}
+      } on Object catch (error, stackTrace) {
+        _logger.warn(
+          'Orchestrator disposal failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     if (meta != null) {
       try {
         await meta.close();
-      } catch (_) {}
+      } on Object catch (error, stackTrace) {
+        _logger.warn(
+          'Meta database close failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
   }
 
