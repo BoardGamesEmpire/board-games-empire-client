@@ -196,7 +196,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       File('${databaseFile.path}-journal'),
     ];
     for (final file in companions) {
-      // Best-effort: the existsSync/delete window is a TOCTOU race (the
+      // Best-effort: the exists/delete window is a TOCTOU race (the
       // file may vanish or lock between the two calls), and a companion
       // that is already gone is success, not failure. Attempt the delete
       // and swallow FileSystemException — a genuinely undeletable file is
