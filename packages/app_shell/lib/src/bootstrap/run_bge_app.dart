@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../observability/global_error_hooks.dart';
 import '../observability/shell_observability.dart';
 import '../widgets/bge_app.dart';
+import '../widgets/build_error_view.dart';
 import 'app_bootstrap_cubit.dart';
 import 'platform_bootstrap.dart';
 
@@ -24,11 +25,12 @@ import 'platform_bootstrap.dart';
 /// supersedes `runZonedGuarded`. The pre-binding window here is a single
 /// pure-Dart call ([ShellObservability.initialize]) and needs no zone.
 ///
-/// `ErrorWidget.builder` (the in-build failure UI) is deliberately NOT
-/// replaced in this bootstrap — that is presentation, split to #66 so the
-/// capture wiring stays reviewable on its own. Until #66 lands, build
-/// failures show Flutter's default error widget while still being fully
-/// captured by the hooks above.
+/// Error presentation (issue #66) is [installBuildErrorView], replacing
+/// the default in-build failure UI with a localized, accessible view.
+/// Capture (#34) and presentation (#66) are deliberately separate units;
+/// both are installed here because they mutate process globals, which
+/// belongs in bootstrap, not in widget builds (see [installBuildErrorView]
+/// for the flutter_test invariant that forbids the in-widget placement).
 ///
 /// The splash route renders while bootstrap runs; hydrated-storage
 /// initialization happens inside the cubit so its failures surface on the
@@ -46,6 +48,7 @@ Future<void> runBgeApp({
   ShellObservability.initialize();
   WidgetsFlutterBinding.ensureInitialized();
   installGlobalErrorHooks(reporter: uncaughtErrorReporter);
+  installBuildErrorView();
 
   final bootstrapCubit = AppBootstrapCubit(
     platformBootstrap: platformBootstrap,

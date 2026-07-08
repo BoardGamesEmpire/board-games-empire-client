@@ -40,6 +40,10 @@
   "@shellBootstrapErrorResetCancel": {
     "description": "Dismissing action of the delete-local-data dialog"
   },
+  "shellBuildErrorBody": "Board Games Empire couldn't display this part of the screen. The app is still running — going back or restarting usually clears it.",
+  "@shellBuildErrorBody": {
+    "description": "Body of the in-build failure view that replaces Flutter's default ErrorWidget (#66); must stay reassuring and free of technical detail — the exception summary is appended separately in debug builds only"
+  },
   "shellNotYetAvailableTitle": "Not yet available",
   "@shellNotYetAvailableTitle": {
     "description": "Title shown when a reserved deep-link route has no UI behind it yet"

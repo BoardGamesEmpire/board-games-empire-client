@@ -41,6 +41,10 @@ class ShellLocalizationsEn extends ShellLocalizations {
   String get shellBootstrapErrorResetCancel => 'Cancel';
 
   @override
+  String get shellBuildErrorBody =>
+      'Board Games Empire couldn\'t display this part of the screen. The app is still running — going back or restarting usually clears it.';
+
+  @override
   String get shellNotYetAvailableTitle => 'Not yet available';
 
   @override

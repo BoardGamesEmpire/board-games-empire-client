@@ -205,14 +205,15 @@ void main() {
       expect(reporter.records, hasLength(1));
     });
 
-    test('presentError runs even for the platform path is not applicable — '
-        'the platform hook still captures with a no-op presenter', () {
+    test('the platform hook never invokes presentError — only the '
+        'framework path presents', () {
+      // A fail()-based tripwire is defused by the hooks' guarded()
+      // wrapper (the TestFailure would be swallowed as a warn); a counter
+      // cannot be.
+      var presenterCalls = 0;
       final reporter = _RecordingReporter();
       installGlobalErrorHooks(
-        presentError: (_) => fail(
-          'presentError must not run on the '
-          'platform path',
-        ),
+        presentError: (_) => presenterCalls++,
         reporter: reporter,
         recordError: (_) {},
       );
@@ -221,6 +222,8 @@ void main() {
         StateError('async boom'),
         StackTrace.current,
       );
+
+      expect(presenterCalls, 0);
       expect(reporter.records, hasLength(1));
     });
   });
