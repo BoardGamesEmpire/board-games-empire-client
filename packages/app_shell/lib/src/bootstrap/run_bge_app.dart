@@ -1,28 +1,35 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:observability/observability.dart';
 
+import '../observability/global_error_hooks.dart';
+import '../observability/shell_observability.dart';
 import '../widgets/bge_app.dart';
 import 'app_bootstrap_cubit.dart';
 import 'platform_bootstrap.dart';
-import '../observability/shell_observability.dart';
-
-/// Hook for uncaught framework/platform errors (seam for the global error
-/// wiring issue, #34, which will replace this with full zone + reporting
-/// integration).
-typedef UncaughtErrorHandler =
-    void Function(Object error, StackTrace stackTrace);
 
 /// Boots the application. This is the entire contract of each app's
 /// `main.dart`: perform platform-specific setup, then hand a
 /// [PlatformBootstrap] to this function.
 ///
-/// Sequencing: observability (breadcrumb capture) → binding init → error
-/// hooks → construct [AppBootstrapCubit] → start (not await) its
-/// bootstrap → `runApp`. Breadcrumbs attach first so every later step —
-/// including bootstrap failures — is already captured for feedback
-/// reports.
+/// Sequencing: observability (breadcrumb capture + last-error slot) →
+/// binding init → global error hooks → construct [AppBootstrapCubit] →
+/// start (not await) its bootstrap → `runApp`. Breadcrumbs attach first so
+/// every later step — including bootstrap failures — is already captured
+/// for feedback reports.
+///
+/// Error capture (issue #34) is [installGlobalErrorHooks]: the two
+/// catch-all surfaces the Flutter team recommends, with **no custom
+/// Zone** — per official guidance (3.3+), `PlatformDispatcher.onError`
+/// supersedes `runZonedGuarded`. The pre-binding window here is a single
+/// pure-Dart call ([ShellObservability.initialize]) and needs no zone.
+///
+/// `ErrorWidget.builder` (the in-build failure UI) is deliberately NOT
+/// replaced in this bootstrap — that is presentation, split to #66 so the
+/// capture wiring stays reviewable on its own. Until #66 lands, build
+/// failures show Flutter's default error widget while still being fully
+/// captured by the hooks above.
+///
 /// The splash route renders while bootstrap runs; hydrated-storage
 /// initialization happens inside the cubit so its failures surface on the
 /// retryable error screen instead of as a blank frame.
@@ -33,45 +40,12 @@ Future<void> runBgeApp({
   ThemeMode themeMode = ThemeMode.system,
   List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates =
       const [],
-  UncaughtErrorHandler? onUncaughtError,
+  UncaughtErrorReporter uncaughtErrorReporter =
+      const NoopUncaughtErrorReporter(),
 }) async {
   ShellObservability.initialize();
-  final binding = WidgetsFlutterBinding.ensureInitialized();
-
-  // Uncaught errors are always breadcrumbed so they appear in feedback
-  // reports; the optional [onUncaughtError] hook is chained on top. Full
-  // zone-based reporting is #34's scope and replaces neither of these.
-  //
-  // We delegate to FlutterError.presentError (the framework's *default*
-  // handler, which is stable across the process) rather than to the
-  // current FlutterError.onError. If runBgeApp runs more than once in a
-  // process (hot restart, some test setups), reading the current handler
-  // would chain our own previous handler into the new one, growing the
-  // chain and duplicating reports on every restart. presentError is a
-  // fixed target, so re-installation is idempotent.
-  final uncaughtLogger = BgeLogger('bge.shell.uncaught');
-  FlutterError.onError = (details) {
-    FlutterError.presentError(details);
-    uncaughtLogger.error(
-      'Uncaught framework error',
-      error: details.exception,
-      stackTrace: details.stack,
-      context: {if (details.library != null) 'library': details.library},
-    );
-    onUncaughtError?.call(
-      details.exception,
-      details.stack ?? StackTrace.current,
-    );
-  };
-  binding.platformDispatcher.onError = (error, stackTrace) {
-    uncaughtLogger.error(
-      'Uncaught platform error',
-      error: error,
-      stackTrace: stackTrace,
-    );
-    onUncaughtError?.call(error, stackTrace);
-    return onUncaughtError != null;
-  };
+  WidgetsFlutterBinding.ensureInitialized();
+  installGlobalErrorHooks(reporter: uncaughtErrorReporter);
 
   final bootstrapCubit = AppBootstrapCubit(
     platformBootstrap: platformBootstrap,
