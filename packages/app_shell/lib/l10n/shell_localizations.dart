@@ -154,6 +154,12 @@ abstract class ShellLocalizations {
   /// **'Cancel'**
   String get shellBootstrapErrorResetCancel;
 
+  /// Body of the in-build failure view that replaces Flutter's default ErrorWidget (#66); must stay reassuring and free of technical detail — the exception summary is appended separately in debug builds only
+  ///
+  /// In en, this message translates to:
+  /// **'Board Games Empire couldn\'t display this part of the screen. The app is still running — going back or restarting usually clears it.'**
+  String get shellBuildErrorBody;
+
   /// Title shown when a reserved deep-link route has no UI behind it yet
   ///
   /// In en, this message translates to:

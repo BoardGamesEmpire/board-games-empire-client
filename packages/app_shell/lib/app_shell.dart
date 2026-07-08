@@ -24,3 +24,4 @@ export 'src/screens/not_yet_available_screen.dart';
 export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';
 export 'src/widgets/bge_app.dart';
+export 'src/widgets/build_error_view.dart';

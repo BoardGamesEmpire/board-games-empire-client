@@ -14,6 +14,12 @@ import '../router/app_router.dart';
 /// - [theme] / [darkTheme] / [themeMode] — theme + a11y baseline (#32);
 /// - [additionalLocalizationsDelegates] — feature-package delegates
 ///   (e.g. auth's, wired by #33/#37) appended after the shell's own.
+///
+/// Deliberately free of process-global side effects: `ErrorWidget.builder`
+/// (#66) and the uncaught-error hooks (#34) are installed by `runBgeApp`,
+/// not here — flutter_test verifies per-test that widget builds leave
+/// those globals untouched, and `BuildErrorView` self-localizes so no
+/// captured context is needed (see `installBuildErrorView`).
 class BgeApp extends StatefulWidget {
   const BgeApp({
     required this.bootstrapCubit,
