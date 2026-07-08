@@ -2,6 +2,8 @@ import 'package:app_shell/app_shell.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 
+import 'spy_root_container.dart';
+
 /// Scriptable [PlatformBootstrap] for shell tests.
 ///
 /// [outcomes] is consumed in order by successive [initialize] calls; each
@@ -9,11 +11,22 @@ import 'package:interfaces/orchestration.dart';
 /// (thrown). The final entry repeats once the list is exhausted. With no
 /// outcomes configured, [initialize] succeeds with
 /// `BootstrapResult(hasServer: true, orchestrator: orchestrator)`.
+///
+/// [createRootContainer] (#72) is scripted via [rootContainerOutcome]: a
+/// [DependencyContainer] is returned as-is, any other object is thrown,
+/// and `null` (the default) builds a fresh [SpyRootContainer] — the real
+/// [DependencyContainerImpl] with dispose spying, so tests exercise
+/// production container semantics. [onCreateRootContainer] fires
+/// synchronously at the start of the call — the probe point sequencing
+/// tests use to observe process globals (e.g. "error hooks not installed
+/// yet") at container-build time.
 class FakePlatformBootstrap implements PlatformBootstrap {
   FakePlatformBootstrap({
     List<Object> outcomes = const [],
     this.supportsReset = true,
     ServerOrchestrator? orchestrator,
+    this.rootContainerOutcome,
+    this.onCreateRootContainer,
   }) : _outcomes = List.of(outcomes),
        _orchestrator = orchestrator;
 
@@ -23,11 +36,39 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   @override
   final bool supportsReset;
 
-  /// Ordered log of lifecycle calls: `'initialize'` and `'reset'`.
+  /// Scripts [createRootContainer]; see the class docs.
+  Object? rootContainerOutcome;
+
+  /// Invoked synchronously at the start of [createRootContainer].
+  void Function()? onCreateRootContainer;
+
+  /// The last container returned from [createRootContainer], if any.
+  DependencyContainer? lastRootContainer;
+
+  /// Ordered log of lifecycle calls: `'createRootContainer'`,
+  /// `'initialize'`, and `'reset'`.
   final List<String> calls = [];
 
   int get initializeCallCount => calls.where((c) => c == 'initialize').length;
   int get resetCallCount => calls.where((c) => c == 'reset').length;
+  int get createRootContainerCallCount =>
+      calls.where((c) => c == 'createRootContainer').length;
+
+  @override
+  Future<DependencyContainer> createRootContainer() async {
+    calls.add('createRootContainer');
+    onCreateRootContainer?.call();
+    final outcome = rootContainerOutcome;
+    if (outcome is DependencyContainer) {
+      return lastRootContainer = outcome;
+    }
+    if (outcome != null) {
+      // Anything that isn't a container is scripted to be thrown.
+      // ignore: only_throw_errors
+      throw outcome;
+    }
+    return lastRootContainer = SpyRootContainer();
+  }
 
   @override
   Future<BootstrapResult> initialize() async {

@@ -82,12 +82,12 @@ Events, play sessions, social, chat, media, and offline-first UX are **deferred*
 Replace the counter-template `main.dart` ×3 with a real bootstrap; land the
 retrofit-hard infrastructure.
 
-- #31 App shell package + `go_router` + DI bootstrap + `main.dart` ×3
+- #31 ~~App shell package + `go_router` + DI bootstrap + `main.dart` ×3~~
 - #32 Theme tokens (light/dark) + accessibility baseline
 - #33 App-level i18n
-- #34 Global error handling → observability wiring
+- #34 ~~Global error handling → observability wiring~~
 - #35 `BuildInfo` service (client version)
-- #7 Schema migration convention (Drift) — **blocker**
+- #7 ~~Schema migration convention (Drift) — **blocker**~~
 - #9 Connectivity awareness service — **blocker**
 - #10 Deep-link URL scheme + manifests — **interface/manifest-only**
 - #11 UserDataExporter interface — **interface-only**
@@ -109,8 +109,8 @@ retrofit-hard infrastructure.
 ### P3 — ServerContext lifecycle + encryption (#26)
 
 - #38 Lifecycle completion: per-server DB open/close + container registration.
-- #16 Encryption-at-rest (SQLCipher, per-server key) — **blocker** (encrypted
-  from day one; hard to retrofit). Includes the delete+re-key+resync recovery path.
+- #16 ~~Encryption-at-rest (SQLCipher, per-server key) — **blocker** (encrypted
+  from day one; hard to retrofit). Includes the delete+re-key+resync recovery path.~~
 - #12 Clock-skew correction — **interface-only / defer**.
 
 ### P4 — Households (create) (#27) — parallelizable
