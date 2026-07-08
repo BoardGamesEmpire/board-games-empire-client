@@ -27,15 +27,19 @@ abstract final class ShellObservability {
   /// The process-wide breadcrumb ring buffer. Throws if [initialize] has
   /// not run yet — that ordering bug should fail fast, not report empty
   /// breadcrumbs.
-  static BreadcrumbBuffer get breadcrumbs {
-    final buffer = _buffer;
-    if (buffer == null) {
+  static BreadcrumbBuffer get breadcrumbs =>
+      _require(_buffer, 'breadcrumbs are read');
+
+  /// Fail-fast accessor shared by [breadcrumbs] and the last-error slot so
+  /// the two "initialize() must run first" messages can't drift apart.
+  static T _require<T>(T? value, String usage) {
+    if (value == null) {
       throw StateError(
-        'ShellObservability.initialize() must run before breadcrumbs are '
-        'read; runBgeApp does this first.',
+        'ShellObservability.initialize() must run before $usage; '
+        'runBgeApp does this first.',
       );
     }
-    return buffer;
+    return value;
   }
 
   /// Single-slot, RAM-only record of the last uncaught error (issue #34).
@@ -52,16 +56,8 @@ abstract final class ShellObservability {
   static ValueListenable<UncaughtErrorRecord?> get lastUncaughtError =>
       _lastUncaughtErrorOrThrow;
 
-  static ValueNotifier<UncaughtErrorRecord?> get _lastUncaughtErrorOrThrow {
-    final notifier = _lastUncaughtError;
-    if (notifier == null) {
-      throw StateError(
-        'ShellObservability.initialize() must run before lastUncaughtError '
-        'is used; runBgeApp does this first.',
-      );
-    }
-    return notifier;
-  }
+  static ValueNotifier<UncaughtErrorRecord?> get _lastUncaughtErrorOrThrow =>
+      _require(_lastUncaughtError, 'lastUncaughtError is used');
 
   static bool get isInitialized => _buffer != null;
 

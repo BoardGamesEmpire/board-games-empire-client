@@ -39,6 +39,15 @@ class _ThrowingReporter implements UncaughtErrorReporter {
       throw StateError('reporter exploded');
 }
 
+/// A reporter that counts calls — used to prove the reporter still fires
+/// when the *other* side effect (recordError) throws.
+class _CountingReporter implements UncaughtErrorReporter {
+  int calls = 0;
+
+  @override
+  void report(UncaughtErrorRecord record) => calls++;
+}
+
 void main() {
   late FlutterExceptionHandler? savedFlutterOnError;
   late ErrorCallback? savedDispatcherOnError;
@@ -112,7 +121,9 @@ void main() {
     });
 
     test('a throwing reporter is swallowed — a crash inside crash '
-        'reporting must not propagate', () {
+        'reporting must not propagate — and the failure is logged at warn '
+        'so it never becomes silent', () {
+      ShellObservability.initialize();
       installGlobalErrorHooks(
         presentError: (_) {},
         reporter: _ThrowingReporter(),
@@ -120,6 +131,15 @@ void main() {
       );
 
       expect(() => FlutterError.onError!(frameworkDetails()), returnsNormally);
+
+      final warns = ShellObservability.breadcrumbs.snapshot().where(
+        (c) =>
+            c.level == BgeLogLevel.warn &&
+            c.message ==
+                'Uncaught-error '
+                    'report failed',
+      );
+      expect(warns, hasLength(1));
     });
   });
 
@@ -159,35 +179,43 @@ void main() {
     });
   });
 
-  group('installGlobalErrorHooks — idempotent re-installation', () {
-    test('installing twice does not chain handlers: one framework error '
-        'still presents and reports exactly once (hot-restart safety)', () {
-      final presented = <FlutterErrorDetails>[];
+  group('installGlobalErrorHooks — independent side-effect guards', () {
+    test('a throwing recordError does not starve the reporter — the '
+        'component that uploads crashes must still be notified', () {
+      final reporter = _CountingReporter();
+      installGlobalErrorHooks(
+        presentError: (_) {},
+        reporter: reporter,
+        recordError: (_) => throw StateError('slot not ready'),
+      );
+
+      expect(() => FlutterError.onError!(frameworkDetails()), returnsNormally);
+      expect(reporter.calls, 1);
+    });
+
+    test('a throwing presentError does not skip capture', () {
       final reporter = _RecordingReporter();
-      void install() => installGlobalErrorHooks(
-        presentError: presented.add,
+      installGlobalErrorHooks(
+        presentError: (_) => throw StateError('bad presenter'),
         reporter: reporter,
         recordError: (_) {},
       );
 
-      install();
-      install();
-
-      FlutterError.onError!(frameworkDetails());
-      expect(presented, hasLength(1));
+      expect(() => FlutterError.onError!(frameworkDetails()), returnsNormally);
       expect(reporter.records, hasLength(1));
     });
 
-    test('installing twice reports one dispatcher error exactly once', () {
+    test('presentError runs even for the platform path is not applicable — '
+        'the platform hook still captures with a no-op presenter', () {
       final reporter = _RecordingReporter();
-      void install() => installGlobalErrorHooks(
-        presentError: (_) {},
+      installGlobalErrorHooks(
+        presentError: (_) => fail(
+          'presentError must not run on the '
+          'platform path',
+        ),
         reporter: reporter,
         recordError: (_) {},
       );
-
-      install();
-      install();
 
       PlatformDispatcher.instance.onError!(
         StateError('async boom'),
@@ -195,6 +223,68 @@ void main() {
       );
       expect(reporter.records, hasLength(1));
     });
+  });
+
+  group('installGlobalErrorHooks — re-entrancy guard', () {
+    test('a last-error listener that throws does not cause an unbounded '
+        'capture storm; the nested error is logged and side effects are '
+        'skipped', () {
+      ShellObservability.initialize();
+      // A real listener on the slot that throws — exactly the shape a buggy
+      // FeedbackService listener would take. Its throw routes through
+      // ChangeNotifier.notifyListeners → FlutterError.reportError →
+      // FlutterError.onError, re-entering capture.
+      ShellObservability.lastUncaughtError.addListener(
+        () => throw StateError('listener exploded'),
+      );
+      installGlobalErrorHooks(presentError: (_) {});
+
+      // Without the guard this recurses to a StackOverflowError.
+      expect(() => FlutterError.onError!(frameworkDetails()), returnsNormally);
+
+      final reentrantWarns = ShellObservability.breadcrumbs.snapshot().where(
+        (c) =>
+            c.level == BgeLogLevel.warn &&
+            c.message.startsWith('Re-entrant uncaught error'),
+      );
+      expect(reentrantWarns, isNotEmpty);
+    });
+  });
+
+  test('installing twice does not chain handlers: one framework error '
+      'still presents and reports exactly once (hot-restart safety)', () {
+    final presented = <FlutterErrorDetails>[];
+    final reporter = _RecordingReporter();
+    void install() => installGlobalErrorHooks(
+      presentError: presented.add,
+      reporter: reporter,
+      recordError: (_) {},
+    );
+
+    install();
+    install();
+
+    FlutterError.onError!(frameworkDetails());
+    expect(presented, hasLength(1));
+    expect(reporter.records, hasLength(1));
+  });
+
+  test('installing twice reports one dispatcher error exactly once', () {
+    final reporter = _RecordingReporter();
+    void install() => installGlobalErrorHooks(
+      presentError: (_) {},
+      reporter: reporter,
+      recordError: (_) {},
+    );
+
+    install();
+    install();
+
+    PlatformDispatcher.instance.onError!(
+      StateError('async boom'),
+      StackTrace.current,
+    );
+    expect(reporter.records, hasLength(1));
   });
 
   group('installGlobalErrorHooks — observability integration (defaults)', () {
