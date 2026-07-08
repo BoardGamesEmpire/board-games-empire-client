@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/fake_platform_bootstrap.dart';
+import '../support/spy_root_container.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -146,6 +147,53 @@ void main() {
       await unmount(tester);
 
       expect(externalCubit.isClosed, isFalse);
+    });
+
+    // Root-container ownership (#72): mirrors the cubit ownership pattern
+    // above. runBgeApp passes disposeRootContainerOnDispose: true; tests
+    // and future embedders injecting their own container keep the default
+    // and dispose it themselves.
+    testWidgets('disposes an owned root container on unmount '
+        '(disposeRootContainerOnDispose: true)', (tester) async {
+      final container = SpyRootContainer();
+      final ownedCubit = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(),
+        hydratedStorageInitializer: (_) async {},
+      );
+
+      await tester.pumpWidget(
+        BgeApp(
+          bootstrapCubit: ownedCubit,
+          closeBootstrapCubitOnDispose: true,
+          rootContainer: container,
+          disposeRootContainerOnDispose: true,
+        ),
+      );
+      await tester.pump();
+      await unmount(tester);
+
+      expect(container.disposed, isTrue);
+    });
+
+    testWidgets('does not dispose an externally owned root container '
+        '(default)', (tester) async {
+      final container = SpyRootContainer();
+      // BgeApp must not dispose it (default flag), so the test owns
+      // teardown of the real underlying GetIt instance.
+      addTearDown(container.dispose);
+      final externalCubit = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(),
+        hydratedStorageInitializer: (_) async {},
+      );
+      addTearDown(externalCubit.close);
+
+      await tester.pumpWidget(
+        BgeApp(bootstrapCubit: externalCubit, rootContainer: container),
+      );
+      await tester.pump();
+      await unmount(tester);
+
+      expect(container.disposed, isFalse);
     });
   });
 }

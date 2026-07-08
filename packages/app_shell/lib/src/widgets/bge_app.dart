@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:interfaces/orchestration.dart';
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
@@ -24,6 +25,8 @@ class BgeApp extends StatefulWidget {
   const BgeApp({
     required this.bootstrapCubit,
     this.closeBootstrapCubitOnDispose = false,
+    this.rootContainer,
+    this.disposeRootContainerOnDispose = false,
     this.theme,
     this.darkTheme,
     this.themeMode = ThemeMode.system,
@@ -38,6 +41,24 @@ class BgeApp extends StatefulWidget {
   /// teardown point) passes true; tests injecting their own cubits keep
   /// the default and close it themselves.
   final bool closeBootstrapCubitOnDispose;
+
+  /// The app-scope, device-global root container (#72), built by the
+  /// platform composition root via
+  /// `PlatformBootstrap.createRootContainer` and handed in by
+  /// `runBgeApp`.
+  ///
+  /// Held here for lifecycle ownership only — widget-tree exposure is
+  /// deliberately deferred (#72 decision): nothing reads the container
+  /// from `BuildContext` yet, and the first widget consumer adds a thin
+  /// provider when it actually needs one.
+  final DependencyContainer? rootContainer;
+
+  /// Whether this widget owns [rootContainer]'s lifecycle and disposes it
+  /// on unmount — the same ownership pattern as
+  /// [closeBootstrapCubitOnDispose]. `runBgeApp` passes true; tests and
+  /// embedders injecting their own container keep the default and dispose
+  /// it themselves.
+  final bool disposeRootContainerOnDispose;
 
   final ThemeData? theme;
   final ThemeData? darkTheme;
@@ -72,6 +93,17 @@ class _BgeAppState extends State<BgeApp> {
     _refreshListenable.dispose();
     if (widget.closeBootstrapCubitOnDispose) {
       unawaited(widget.bootstrapCubit.close());
+    }
+    // These teardowns run concurrently — dispose() cannot await, so the
+    // order is NOT enforced. Safe while the root container is empty (#72
+    // shell): there is no container-held service the cubit's shutdown
+    // touches. Once #69 registers a cubit-touched service (e.g. a
+    // feedback/analytics flush), it must sequence the container's disposal
+    // after the cubit's close so the closing cubit cannot resolve an
+    // already-disposed service.
+    final rootContainer = widget.rootContainer;
+    if (widget.disposeRootContainerOnDispose && rootContainer != null) {
+      unawaited(rootContainer.dispose());
     }
     super.dispose();
   }

@@ -14,6 +14,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
+  di:
+    path: ../core/di
   interfaces:
     path: ../core/interfaces
   observability:

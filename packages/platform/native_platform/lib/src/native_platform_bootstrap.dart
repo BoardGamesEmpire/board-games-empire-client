@@ -16,6 +16,8 @@ import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 
+import 'native_root_module.dart';
+
 /// Builds the orchestrator; injectable so tests can substitute a fake.
 typedef NativeOrchestratorFactory =
     ServerOrchestrator Function({
@@ -107,6 +109,21 @@ class NativePlatformBootstrap implements PlatformBootstrap {
 
   @override
   bool get supportsReset => true;
+
+  /// Builds the native root container (#72): a fresh, isolated
+  /// [DependencyContainerImpl] populated by [registerNativeRootModule].
+  ///
+  /// Fresh per call, no shared global GetIt state — see the contract on
+  /// [PlatformBootstrap.createRootContainer], including the no-throw
+  /// requirement the root module honors. Touches no platform plugins;
+  /// mobile/desktop layers own their platform-specific concerns via their
+  /// bootstrap subclasses as those land.
+  @override
+  Future<DependencyContainer> createRootContainer() async {
+    final container = DependencyContainerImpl();
+    await registerNativeRootModule(container);
+    return container;
+  }
 
   @override
   Future<BootstrapResult> initialize() async {
