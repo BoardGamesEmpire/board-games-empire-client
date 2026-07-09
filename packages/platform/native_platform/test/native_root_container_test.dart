@@ -1,20 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
+import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
 
-/// Red-phase tests for the native `createRootContainer` leg (issue #72).
+/// Tests for the native `createRootContainer` leg (issues #72, #35).
 ///
 /// Contract pinned here:
 ///
 /// - Each call returns a **freshly built, functional** root container —
 ///   fresh-per-call keeps hot restart clean and proves there is no
 ///   hidden global GetIt state behind the seam.
-/// - Building the container touches **no platform plugins**: the key
-///   service is injected here only to keep the default
+/// - Building the container performs the root module's registrations —
+///   since #35, the defensive `BuildInfo` read. In the test VM the
+///   platform source is unavailable, so the reader's fail-closed
+///   contract registers [BuildInfo.unknown]; asserted below, proving the
+///   degraded path end-to-end through the real composition (no stub —
+///   `createRootContainer` deliberately has no module/reader injection
+///   until #69 adds that seam for the dispose-partial guard).
+/// - The key service is injected only to keep the default
 ///   `FlutterSecureStorage` composition out of the picture entirely —
-///   `createRootContainer` itself must never need it.
-/// - Registration content is owned by the per-platform root module
-///   (near-empty in the #72 shell; #35/#69 populate it).
+///   `createRootContainer` itself never touches it.
 class _FakeKeyService implements EncryptionKeyService {
   @override
   Future<String> getOrCreateServerKey(String serverId) async => 'a' * 64;
@@ -44,6 +49,15 @@ void main() {
       container.registerSingleton<_Marker>(marker);
 
       expect(container.get<_Marker>(), same(marker));
+    });
+
+    test('registers BuildInfo via the defensive read — BuildInfo.unknown '
+        'when the platform source is unavailable (test VM)', () async {
+      final container = await buildBootstrap().createRootContainer();
+      addTearDown(container.dispose);
+
+      expect(container.isRegistered<BuildInfo>(), isTrue);
+      expect(container.get<BuildInfo>(), BuildInfo.unknown);
     });
 
     test('each call returns a fresh, isolated container — hot-restart '

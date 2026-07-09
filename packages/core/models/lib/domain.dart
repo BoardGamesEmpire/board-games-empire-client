@@ -6,6 +6,7 @@ export 'src/domain/achievement/user_achievement.dart';
 
 export 'src/domain/common/visibility.dart';
 
+export 'src/domain/device/build_info.dart';
 export 'src/domain/device/device_preferences.dart';
 
 export 'src/domain/game/content_type.dart';
