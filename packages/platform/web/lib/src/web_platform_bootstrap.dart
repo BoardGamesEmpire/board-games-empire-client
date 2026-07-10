@@ -54,10 +54,12 @@ class WebPlatformBootstrap implements PlatformBootstrap {
       try {
         await container.dispose();
       } on Object {
-        // Never mask the module's own failure — the original error is
-        // the one runBgeApp must breadcrumb. (web_platform carries no
-        // observability dependency to log the secondary failure through;
-        // the primary error still surfaces.)
+        // Intentionally ignored: a failure while disposing the partial
+        // container must not mask the module's original error — that is
+        // the one runBgeApp breadcrumbs and the user must see, so only
+        // it is rethrown below. (Native additionally logs this secondary
+        // failure at warn via its bootstrap logger; web's bootstrap
+        // keeps no logger, so it is simply dropped.)
       }
       rethrow;
     }
