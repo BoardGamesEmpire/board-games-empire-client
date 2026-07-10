@@ -73,10 +73,12 @@ class FileFeedbackSink implements FeedbackSink {
     // Validate before constructing the path: the key is interpolated
     // into a file name, so a crafted `..`/separator key must not be able
     // to traverse out of the reports directory and delete an arbitrary
-    // file. Same guard persist() applies.
-    _requireSafeKey(correlationKey, source: 'correlationKey');
+    // file. Same guard persist() applies. Use the validated return so
+    // the path can't diverge from what was checked if the guard ever
+    // normalizes the key.
+    final key = _requireSafeKey(correlationKey, source: 'correlationKey');
     final dir = await _directoryProvider();
-    final file = File('${dir.path}/$correlationKey.json');
+    final file = File('${dir.path}/$key.json');
     if (await file.exists()) await file.delete();
   }
 

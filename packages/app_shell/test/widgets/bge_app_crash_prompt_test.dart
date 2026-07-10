@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
 
@@ -33,7 +34,8 @@ void main() {
     return (cubit, reporter);
   }
 
-  testWidgets('a pending crash draft surfaces the prompt', (tester) async {
+  testWidgets('a pending crash draft surfaces the prompt as a modal '
+      '(barrier blocks the app behind)', (tester) async {
     final (cubit, reporter) = buildDeps();
     addTearDown(cubit.close);
     await tester.pumpWidget(
@@ -41,11 +43,15 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(CrashReportPrompt), findsNothing);
+    expect(find.byType(ModalBarrier), findsNothing);
 
     reporter.report(record());
     await tester.pump();
 
     expect(find.byType(CrashReportPrompt), findsOneWidget);
+    // A modal barrier now sits behind the prompt (there are no modal
+    // routes in this test, so this is the prompt's own barrier).
+    expect(find.byType(ModalBarrier), findsOneWidget);
   });
 
   testWidgets('discard dismisses the prompt and clears both RAM slots', (

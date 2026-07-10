@@ -145,33 +145,49 @@ class _BgeAppState extends State<BgeApp> {
           final reporter = widget.feedbackReporter;
           final content = child ?? const SizedBox.shrink();
           if (reporter == null) return content;
-          return Stack(
-            children: [
-              content,
-              ValueListenableBuilder<FeedbackReport?>(
-                valueListenable: reporter.pendingCrashReport,
-                builder: (context, draft, _) {
-                  if (draft == null) return const SizedBox.shrink();
-                  return Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: CrashReportPrompt(
-                        report: draft,
-                        onSubmit: reporter.service.submit,
-                        onDiscard: () {
-                          // Decline (or dismiss an outcome): empty both
-                          // RAM slots — the draft and the #34 last-error
-                          // record ("clearUncaughtError on decline").
-                          reporter.clearPendingCrashReport();
-                          ShellObservability.clearUncaughtError();
-                        },
+          return ValueListenableBuilder<FeedbackReport?>(
+            valueListenable: reporter.pendingCrashReport,
+            builder: (context, draft, _) {
+              return Stack(
+                children: [
+                  content,
+                  if (draft != null) ...[
+                    // Modal while a draft is pending: the barrier absorbs
+                    // taps on the app behind and dims it, and
+                    // BlockSemantics drops the underlying content from the
+                    // semantics tree so assistive tech stays within the
+                    // prompt. Non-dismissible — declining is an explicit
+                    // choice via the prompt's Discard button, so an
+                    // accidental scrim tap can't silently drop the report.
+                    const BlockSemantics(
+                      child: ModalBarrier(
+                        dismissible: false,
+                        color: Colors.black54,
                       ),
                     ),
-                  );
-                },
-              ),
-            ],
+                    SafeArea(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: CrashReportPrompt(
+                            report: draft,
+                            onSubmit: reporter.service.submit,
+                            onDiscard: () {
+                              // Decline (or dismiss an outcome): empty both
+                              // RAM slots — the draft and the #34 last-error
+                              // record ("clearUncaughtError on decline").
+                              reporter.clearPendingCrashReport();
+                              ShellObservability.clearUncaughtError();
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
           );
         },
         localizationsDelegates: [
