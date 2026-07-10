@@ -2,9 +2,9 @@
 ///
 /// Owns the bootstrap sequence ([AppBootstrapCubit] over a platform-supplied
 /// [PlatformBootstrap]), the `go_router` route table (including reserved
-/// deep-link paths, #10), global uncaught-error capture (#34), and the
-/// shell screens (splash, bootstrap failure, placeholders,
-/// not-yet-available).
+/// deep-link paths, #10), global uncaught-error capture (#34) with the
+/// "ask each time" crash-report flow (#69), and the shell screens (splash,
+/// bootstrap failure, placeholders, not-yet-available).
 ///
 /// Platform composition roots live in `packages/platform/*`; the apps under
 /// `apps/*` are thin `main.dart` wrappers that hand a [PlatformBootstrap]
@@ -15,6 +15,7 @@ export 'src/bootstrap/app_bootstrap_cubit.dart';
 export 'src/bootstrap/app_bootstrap_state.dart';
 export 'src/bootstrap/platform_bootstrap.dart';
 export 'src/bootstrap/run_bge_app.dart';
+export 'src/observability/feedback_uncaught_error_reporter.dart';
 export 'src/observability/global_error_hooks.dart';
 export 'src/observability/shell_observability.dart';
 export 'src/observability/uncaught_error_record.dart';
@@ -25,3 +26,4 @@ export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';
 export 'src/widgets/bge_app.dart';
 export 'src/widgets/build_error_view.dart';
+export 'src/widgets/crash_report_prompt.dart';

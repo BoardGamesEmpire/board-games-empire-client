@@ -3,6 +3,8 @@ library;
 export 'src/auth/auth_repository_impl.dart';
 export 'src/auth/token_storage_service.dart';
 
+export 'src/feedback/feedback_dio_transport.dart';
+
 export 'src/network/dio_factory.dart';
 export 'src/network/network_scope_installer.dart';
 export 'src/network/register_server_network.dart';

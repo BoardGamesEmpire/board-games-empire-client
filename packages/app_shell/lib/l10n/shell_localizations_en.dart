@@ -63,4 +63,34 @@ class ShellLocalizationsEn extends ShellLocalizations {
   @override
   String get shellPlaceholderBody =>
       'This screen is under construction and arrives with an upcoming update.';
+
+  @override
+  String get crashReportPromptTitle => 'Something went wrong';
+
+  @override
+  String get crashReportPromptExplanation =>
+      'You can send this crash report to your server to help get it fixed. Nothing is sent without your approval.';
+
+  @override
+  String get crashReportPromptCommentLabel => 'What were you doing? (optional)';
+
+  @override
+  String get crashReportPromptSend => 'Send report';
+
+  @override
+  String get crashReportPromptDiscard => 'Don\'t send';
+
+  @override
+  String get crashReportPromptDismiss => 'Close';
+
+  @override
+  String get crashReportPromptSent => 'Report sent. Thank you!';
+
+  @override
+  String get crashReportPromptQueued =>
+      'Saved. It will be sent once you\'re connected and signed in.';
+
+  @override
+  String get crashReportPromptFailed =>
+      'The report couldn\'t be sent or saved.';
 }

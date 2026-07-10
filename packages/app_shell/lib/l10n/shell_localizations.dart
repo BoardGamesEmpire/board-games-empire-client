@@ -195,6 +195,60 @@ abstract class ShellLocalizations {
   /// In en, this message translates to:
   /// **'This screen is under construction and arrives with an upcoming update.'**
   String get shellPlaceholderBody;
+
+  /// Title of the ask-each-time crash report prompt (#69)
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong'**
+  String get crashReportPromptTitle;
+
+  /// Explanation line under the crash prompt title; states the privacy contract — nothing is sent without explicit approval
+  ///
+  /// In en, this message translates to:
+  /// **'You can send this crash report to your server to help get it fixed. Nothing is sent without your approval.'**
+  String get crashReportPromptExplanation;
+
+  /// Label of the optional comment field on the crash prompt; doubles as the field's screen-reader label
+  ///
+  /// In en, this message translates to:
+  /// **'What were you doing? (optional)'**
+  String get crashReportPromptCommentLabel;
+
+  /// Label of the crash prompt's send button
+  ///
+  /// In en, this message translates to:
+  /// **'Send report'**
+  String get crashReportPromptSend;
+
+  /// Label of the crash prompt's decline button; declining clears the crash draft without sending anything
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t send'**
+  String get crashReportPromptDiscard;
+
+  /// Label of the button that dismisses the crash prompt after a terminal outcome (sent, saved, or failed)
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get crashReportPromptDismiss;
+
+  /// Confirmation shown when the crash report reached the server
+  ///
+  /// In en, this message translates to:
+  /// **'Report sent. Thank you!'**
+  String get crashReportPromptSent;
+
+  /// Confirmation shown when the crash report was saved locally for a later send (offline, or not signed in); must stay honest — it was NOT sent yet
+  ///
+  /// In en, this message translates to:
+  /// **'Saved. It will be sent once you\'re connected and signed in.'**
+  String get crashReportPromptQueued;
+
+  /// Shown when both sending and local saving failed; the prompt can still be closed
+  ///
+  /// In en, this message translates to:
+  /// **'The report couldn\'t be sent or saved.'**
+  String get crashReportPromptFailed;
 }
 
 class _ShellLocalizationsDelegate

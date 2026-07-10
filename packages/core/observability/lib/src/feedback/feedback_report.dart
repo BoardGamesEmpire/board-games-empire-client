@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../breadcrumbs/breadcrumb.dart';
@@ -15,13 +17,17 @@ part 'feedback_report.g.dart';
 ///
 /// Field set mirrors `CreateFeedbackReportDto`
 /// (`libs/api/feedback/src/lib/dto/create-feedback-report.dto.ts` in
-/// `board-games-empire-backend`) with one client-side extension:
+/// `board-games-empire-backend`), including the dedicated diagnostic
+/// fields:
 ///
-/// - [breadcrumbs] has NO backend counterpart yet. It serialises here so
-///   offline-queued draft reports persist their context, but the
-///   transport mapping (dedicated DTO field vs embedding) is decided by
-///   the concrete FeedbackService implementations once the backend grows
-///   a breadcrumb field. Noted for backend follow-up.
+/// - [stackTrace] is its own field (backend #77), NOT woven into
+///   [message]. The service tail-truncates it to
+///   [FeedbackConstants.maxStackTraceLength]; the backend rejects
+///   anything past the cap.
+/// - [breadcrumbs] maps to the backend `breadcrumbs` array (backend #86)
+///   and is byte-capped at [FeedbackConstants.maxBreadcrumbsBytes] over
+///   the serialized JSON — the service trims the snapshot oldest-first
+///   at build time so an over-cap trail never reaches submission.
 ///
 /// Invariants enforced at construction (mirroring the DTO's ValidateIf
 /// and IsNotEmpty rules):
@@ -30,9 +36,9 @@ part 'feedback_report.g.dart';
 ///   or [FeedbackCategory.bug]; feature requests carry none.
 /// - [message] must be non-empty.
 ///
-/// Length caps are NOT construction-time asserts — a user typing past a
-/// cap is expected input, not a programming error. [validate] reports
-/// cap violations for the submission UI to surface.
+/// Length/size caps are NOT construction-time asserts — a user typing
+/// past a cap is expected input, not a programming error. [validate]
+/// reports cap violations for the submission UI to surface.
 @freezed
 abstract class FeedbackReport with _$FeedbackReport {
   @Assert(
@@ -63,6 +69,12 @@ abstract class FeedbackReport with _$FeedbackReport {
     /// Severity. Required for crash/bug categories (constructor assert).
     FeedbackSeverity? severity,
 
+    /// Diagnostic stack trace on its own field (backend #77), not woven
+    /// into [message]. Tail-truncated to
+    /// [FeedbackConstants.maxStackTraceLength] by the service. Null for
+    /// user-initiated (non-crash) reports.
+    String? stackTrace,
+
     /// Submitting client app version (e.g. `0.4.1`).
     String? appVersion,
 
@@ -84,8 +96,9 @@ abstract class FeedbackReport with _$FeedbackReport {
     /// `redactionApplied=true` server-side.
     @Default(<String>[]) List<String> userRedactedFields,
 
-    /// Sanitised log trail captured at build time. Client-side
-    /// extension — see class doc.
+    /// Sanitised log trail captured at build time; maps to the backend
+    /// `breadcrumbs` array (#86). Byte-capped — see [breadcrumbsByteSize]
+    /// and [validate].
     @Default(<Breadcrumb>[]) List<Breadcrumb> breadcrumbs,
   }) = _FeedbackReport;
 
@@ -93,6 +106,12 @@ abstract class FeedbackReport with _$FeedbackReport {
 
   factory FeedbackReport.fromJson(Map<String, dynamic> json) =>
       _$FeedbackReportFromJson(json);
+
+  /// Serialized (UTF-8) byte size of [crumbs], measured over the same
+  /// JSON the transport sends — so [validate] and the service's
+  /// build-time trimming agree with the backend's `@MaxJsonBytes` check.
+  static int breadcrumbsByteSize(List<Breadcrumb> crumbs) =>
+      utf8.encode(jsonEncode([for (final c in crumbs) c.toJson()])).length;
 
   /// Checks every backend protocol cap from [FeedbackConstants] and
   /// returns human-readable violations (empty when submittable). Each
@@ -127,6 +146,7 @@ abstract class FeedbackReport with _$FeedbackReport {
     }
 
     cap('message', message, FeedbackConstants.maxMessageLength);
+    cap('stackTrace', stackTrace, FeedbackConstants.maxStackTraceLength);
     cap('title', title, FeedbackConstants.maxTitleLength);
     cap('appVersion', appVersion, FeedbackConstants.maxAppVersionLength);
     cap('platform', platform, FeedbackConstants.maxPlatformLength);
@@ -142,6 +162,14 @@ abstract class FeedbackReport with _$FeedbackReport {
         'userRedactedFields exceeds '
         '${FeedbackConstants.maxRedactedFields} entries '
         '(${userRedactedFields.length})',
+      );
+    }
+
+    final breadcrumbBytes = breadcrumbsByteSize(breadcrumbs);
+    if (breadcrumbBytes > FeedbackConstants.maxBreadcrumbsBytes) {
+      violations.add(
+        'breadcrumbs exceeds ${FeedbackConstants.maxBreadcrumbsBytes} '
+        'bytes ($breadcrumbBytes)',
       );
     }
 

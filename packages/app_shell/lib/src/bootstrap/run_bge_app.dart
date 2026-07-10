@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:di/di.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
+import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/global_error_hooks.dart';
 import '../observability/shell_observability.dart';
 import '../widgets/bge_app.dart';
@@ -55,6 +58,12 @@ import 'platform_bootstrap.dart';
 /// injectable seam [AppBootstrapCubit] already exposes, here so shell
 /// tests can drive the real `runBgeApp` without touching real Hive IO;
 /// production callers leave it null for the cubit's real default.
+/// [uncaughtErrorReporter] is the crash-reporting override seam: when
+/// supplied, it owns reporting (the hooks use it verbatim) and no prompt
+/// machinery is wired. When null — the production default — the shell
+/// composes the device-global [FeedbackServiceImpl], registers it into
+/// the root container, and wires a [FeedbackUncaughtErrorReporter] into
+/// both the hooks and [BgeApp]'s "ask each time" prompt overlay (#69).
 Future<void> runBgeApp({
   required PlatformBootstrap platformBootstrap,
   ThemeData? theme,
@@ -62,8 +71,7 @@ Future<void> runBgeApp({
   ThemeMode themeMode = ThemeMode.system,
   List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates =
       const [],
-  UncaughtErrorReporter uncaughtErrorReporter =
-      const NoopUncaughtErrorReporter(),
+  UncaughtErrorReporter? uncaughtErrorReporter,
   HydratedStorageInitializer? hydratedStorageInitializer,
 }) async {
   ShellObservability.initialize();
@@ -98,7 +106,61 @@ Future<void> runBgeApp({
     rootContainer = DependencyContainerImpl();
   }
 
-  installGlobalErrorHooks(reporter: uncaughtErrorReporter);
+  // #69: compose the device-global FeedbackService and register it —
+  // on whichever container boot proceeds with, INCLUDING the empty
+  // fallback, so feedback works on a failed boot (that failure is
+  // exactly what the first report will be about). Resolve-or-default
+  // throughout, per the createRootContainer contract: BuildInfo degrades
+  // to unknown, a missing platform sink degrades to the RAM stand-in.
+  final buildInfo = rootContainer.isRegistered<BuildInfo>()
+      ? rootContainer.get<BuildInfo>()
+      : BuildInfo.unknown;
+  final feedbackService = FeedbackServiceImpl(
+    breadcrumbSource: () => ShellObservability.breadcrumbs.snapshot(),
+    environmentSource: () => FeedbackEnvironment(
+      appVersion: buildInfo.version,
+      platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
+      // Read per build (not captured once): the locale can change at
+      // runtime.
+      locale: WidgetsBinding.instance.platformDispatcher.locale.toLanguageTag(),
+      // Alpha-minimal, no plugin, and web-safe (this file compiles for
+      // web, so dart:io is off the table here). OS *version* enrichment
+      // can ride a platform-module-registered probe later.
+      deviceInfo: <String, dynamic>{
+        'operatingSystem': kIsWeb ? 'web' : defaultTargetPlatform.name,
+      },
+    ),
+    // No transport until a server context with an authenticated session
+    // exists — #37 wires the resolver (and the drainPending trigger)
+    // when auth lands. Until then every approved report goes to the
+    // durable sink.
+    transportResolver: () => null,
+    sink: rootContainer.isRegistered<FeedbackSink>()
+        ? rootContainer.get<FeedbackSink>()
+        : MemoryFeedbackSink(),
+  );
+  if (!rootContainer.isRegistered<FeedbackService>()) {
+    rootContainer.registerSingleton<FeedbackService>(feedbackService);
+  }
+  // Resolve the authoritative instance from the container — an injected
+  // root module / test seam may have registered its own FeedbackService,
+  // and the hooks and prompt must submit through the same instance that
+  // rootContainer.get<FeedbackService>() returns, not the one composed
+  // just above.
+  final registeredFeedbackService = rootContainer.get<FeedbackService>();
+
+  // Explicit override wins and owns reporting; otherwise the shell's
+  // feedback reporter feeds both the hooks and the prompt overlay.
+  final feedbackReporter = uncaughtErrorReporter == null
+      ? FeedbackUncaughtErrorReporter(service: registeredFeedbackService)
+      : null;
+
+  installGlobalErrorHooks(
+    reporter:
+        uncaughtErrorReporter ??
+        feedbackReporter ??
+        const NoopUncaughtErrorReporter(),
+  );
   installBuildErrorView();
 
   final bootstrapCubit = AppBootstrapCubit(
@@ -116,6 +178,7 @@ Future<void> runBgeApp({
       closeBootstrapCubitOnDispose: true,
       rootContainer: rootContainer,
       disposeRootContainerOnDispose: true,
+      feedbackReporter: feedbackReporter,
       theme: theme,
       darkTheme: darkTheme,
       themeMode: themeMode,
