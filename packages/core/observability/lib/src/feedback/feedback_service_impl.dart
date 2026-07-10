@@ -90,7 +90,7 @@ class FeedbackServiceImpl implements FeedbackService {
 
     final transport = _transportResolver();
     if (transport == null) {
-      return _queue(report, cause: null);
+      return _queue(report, transportCause: null);
     }
 
     try {
@@ -99,7 +99,7 @@ class FeedbackServiceImpl implements FeedbackService {
     } on Object catch (error) {
       // Transport failed — fall back to the durable sink so an approved
       // report is never lost to a transient network failure.
-      return _queue(report, cause: error);
+      return _queue(report, transportCause: error);
     }
   }
 
@@ -126,21 +126,25 @@ class FeedbackServiceImpl implements FeedbackService {
   }
 
   /// Persists [report] to the sink, returning [FeedbackSubmitResult.queued];
-  /// if the sink itself fails, surfaces [FeedbackSubmissionException]
-  /// (carrying the original transport [cause] when there was one).
+  /// if the sink itself fails, surfaces [FeedbackSubmissionException]. When
+  /// a prior transport failure ([transportCause]) also occurred, both
+  /// errors are preserved — the sink failure as the primary [cause] (it is
+  /// the reason queueing failed, and usually the more actionable root
+  /// cause), the transport failure carried alongside for telemetry.
   Future<FeedbackSubmitResult> _queue(
     FeedbackReport report, {
-    required Object? cause,
+    required Object? transportCause,
   }) async {
     try {
       await _sink.persist(report);
       return FeedbackSubmitResult.queued;
     } on Object catch (sinkError) {
       throw FeedbackSubmissionException(
-        cause == null
+        transportCause == null
             ? 'Feedback could not be queued'
-            : 'Feedback submission failed and could not be queued',
-        cause: cause ?? sinkError,
+            : 'Feedback submission failed and could not be queued '
+                  '(transport error: $transportCause)',
+        cause: sinkError,
       );
     }
   }

@@ -142,11 +142,17 @@ Future<void> runBgeApp({
   if (!rootContainer.isRegistered<FeedbackService>()) {
     rootContainer.registerSingleton<FeedbackService>(feedbackService);
   }
+  // Resolve the authoritative instance from the container — an injected
+  // root module / test seam may have registered its own FeedbackService,
+  // and the hooks and prompt must submit through the same instance that
+  // rootContainer.get<FeedbackService>() returns, not the one composed
+  // just above.
+  final registeredFeedbackService = rootContainer.get<FeedbackService>();
 
   // Explicit override wins and owns reporting; otherwise the shell's
   // feedback reporter feeds both the hooks and the prompt overlay.
   final feedbackReporter = uncaughtErrorReporter == null
-      ? FeedbackUncaughtErrorReporter(service: feedbackService)
+      ? FeedbackUncaughtErrorReporter(service: registeredFeedbackService)
       : null;
 
   installGlobalErrorHooks(

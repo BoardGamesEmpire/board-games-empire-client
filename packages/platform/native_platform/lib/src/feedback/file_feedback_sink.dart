@@ -31,7 +31,7 @@ class FileFeedbackSink implements FeedbackSink {
   Future<void> persist(FeedbackReport report) async {
     final key = _requireSafeKey(report);
     final dir = await _directoryProvider();
-    if (!dir.existsSync()) await dir.create(recursive: true);
+    if (!await dir.exists()) await dir.create(recursive: true);
     await File(
       '${dir.path}/$key.json',
     ).writeAsString(jsonEncode(report.toJson()));
@@ -40,15 +40,16 @@ class FileFeedbackSink implements FeedbackSink {
   @override
   Future<List<FeedbackReport>> pending() async {
     final dir = await _directoryProvider();
-    if (!dir.existsSync()) return const [];
+    if (!await dir.exists()) return const [];
 
-    final files =
-        dir
-            .listSync()
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.json'))
-            .toList()
-          ..sort((a, b) => a.path.compareTo(b.path));
+    // Async list + async reads so draining pending reports never blocks
+    // the UI isolate on disk I/O.
+    final files = await dir
+        .list()
+        .where((e) => e is File && e.path.endsWith('.json'))
+        .cast<File>()
+        .toList();
+    files.sort((a, b) => a.path.compareTo(b.path));
 
     final reports = <FeedbackReport>[];
     for (final file in files) {
@@ -68,7 +69,7 @@ class FileFeedbackSink implements FeedbackSink {
   Future<void> remove(String correlationKey) async {
     final dir = await _directoryProvider();
     final file = File('${dir.path}/$correlationKey.json');
-    if (file.existsSync()) await file.delete();
+    if (await file.exists()) await file.delete();
   }
 
   /// The correlationKey doubles as the file name, so it must exist and
