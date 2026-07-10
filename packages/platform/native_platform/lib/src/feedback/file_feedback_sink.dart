@@ -23,6 +23,13 @@ class FileFeedbackSink implements FeedbackSink {
 
   final Future<Directory> Function() _directoryProvider;
 
+  /// The resolved reports directory, memoized. `late final` keeps this
+  /// lazy — the provider (a `path_provider` plugin call by default) still
+  /// does not run at construction (the boot-hot-path guarantee), but once
+  /// a method resolves it, the result is reused rather than re-invoking
+  /// the plugin on every persist/pending/remove.
+  late final Future<Directory> _directory = _directoryProvider();
+
   static Future<Directory> _defaultDirectory() async => Directory(
     '${(await getApplicationSupportDirectory()).path}/feedback_reports',
   );
@@ -33,7 +40,7 @@ class FileFeedbackSink implements FeedbackSink {
       report.correlationKey,
       source: 'report.correlationKey',
     );
-    final dir = await _directoryProvider();
+    final dir = await _directory;
     if (!await dir.exists()) await dir.create(recursive: true);
     await File(
       '${dir.path}/$key.json',
@@ -42,7 +49,7 @@ class FileFeedbackSink implements FeedbackSink {
 
   @override
   Future<List<FeedbackReport>> pending() async {
-    final dir = await _directoryProvider();
+    final dir = await _directory;
     if (!await dir.exists()) return const [];
 
     // Async list + async reads so draining pending reports never blocks
@@ -77,7 +84,7 @@ class FileFeedbackSink implements FeedbackSink {
     // the path can't diverge from what was checked if the guard ever
     // normalizes the key.
     final key = _requireSafeKey(correlationKey, source: 'correlationKey');
-    final dir = await _directoryProvider();
+    final dir = await _directory;
     final file = File('${dir.path}/$key.json');
     if (await file.exists()) await file.delete();
   }

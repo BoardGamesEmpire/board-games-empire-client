@@ -43,15 +43,20 @@ void main() {
     );
     await tester.pump();
     expect(find.byType(CrashReportPrompt), findsNothing);
-    expect(find.byType(ModalBarrier), findsNothing);
+    // MaterialApp's own route already keeps a ModalBarrier in the tree,
+    // so assert the prompt adds exactly one MORE barrier rather than
+    // assuming a zero baseline.
+    final baselineBarriers = find.byType(ModalBarrier).evaluate().length;
 
     reporter.report(record());
     await tester.pump();
 
     expect(find.byType(CrashReportPrompt), findsOneWidget);
-    // A modal barrier now sits behind the prompt (there are no modal
-    // routes in this test, so this is the prompt's own barrier).
-    expect(find.byType(ModalBarrier), findsOneWidget);
+    expect(
+      find.byType(ModalBarrier).evaluate().length,
+      baselineBarriers + 1,
+      reason: 'the pending prompt adds its own modal barrier over the app',
+    );
   });
 
   testWidgets('discard dismisses the prompt and clears both RAM slots', (

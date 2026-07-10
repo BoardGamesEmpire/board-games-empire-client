@@ -165,22 +165,23 @@ class _BgeAppState extends State<BgeApp> {
                         color: Colors.black54,
                       ),
                     ),
-                    SafeArea(
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: CrashReportPrompt(
-                            report: draft,
-                            onSubmit: reporter.service.submit,
-                            onDiscard: () {
-                              // Decline (or dismiss an outcome): empty both
-                              // RAM slots — the draft and the #34 last-error
-                              // record ("clearUncaughtError on decline").
-                              reporter.clearPendingCrashReport();
-                              ShellObservability.clearUncaughtError();
-                            },
-                          ),
+                    // CrashReportPrompt applies its own SafeArea, so the
+                    // overlay only positions it — no second SafeArea here
+                    // (that would double-apply insets).
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: CrashReportPrompt(
+                          report: draft,
+                          onSubmit: reporter.service.submit,
+                          onDiscard: () {
+                            // Decline (or dismiss an outcome): empty both
+                            // RAM slots — the draft and the #34 last-error
+                            // record ("clearUncaughtError on decline").
+                            reporter.clearPendingCrashReport();
+                            ShellObservability.clearUncaughtError();
+                          },
                         ),
                       ),
                     ),

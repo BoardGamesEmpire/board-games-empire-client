@@ -99,6 +99,17 @@ class FeedbackServiceImpl implements FeedbackService {
     } on Object catch (error) {
       // Transport failed — fall back to the durable sink so an approved
       // report is never lost to a transient network failure.
+      //
+      // INTERIM (#37): this queues on *any* transport failure. That is
+      // correct for alpha, where transportResolver always returns null
+      // (no auth) so this branch is unreachable and everything queues by
+      // design. Once #37 wires the real per-server transport, permanent
+      // rejections — 403 (feedback-banned), 400 (validation) — must NOT
+      // queue (they would mislead the user with "will send later" and
+      // build an un-drainable backlog); only retryable failures
+      // (offline / timeout / 5xx / 429) should fall back to the sink.
+      // That taxonomy is a backend-contract detail and is tracked on #37
+      // alongside the drain trigger.
       return _queue(report, transportCause: error);
     }
   }
