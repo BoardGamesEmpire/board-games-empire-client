@@ -59,6 +59,30 @@ void main() {
     );
   });
 
+  testWidgets('while a draft is pending the underlying app is removed '
+      'from the semantics tree (modal for assistive tech)', (tester) async {
+    final (cubit, reporter) = buildDeps();
+    addTearDown(cubit.close);
+    await tester.pumpWidget(
+      BgeApp(bootstrapCubit: cubit, feedbackReporter: reporter),
+    );
+    await tester.pump();
+
+    final blocker = find.byKey(BgeApp.contentSemanticsBlockerKey);
+    BlockSemantics blockSemantics() => tester.widget<BlockSemantics>(blocker);
+
+    // The content wrapper is present but not blocking before a crash.
+    expect(blockSemantics().blocking, isFalse);
+
+    reporter.report(record());
+    await tester.pump();
+
+    // Once the modal prompt is up, the wrapper blocks — dropping the
+    // underlying app (painted before it) from the semantics tree.
+    expect(blockSemantics().blocking, isTrue);
+    expect(find.byType(CrashReportPrompt), findsOneWidget);
+  });
+
   testWidgets('discard dismisses the prompt and clears both RAM slots', (
     tester,
   ) async {

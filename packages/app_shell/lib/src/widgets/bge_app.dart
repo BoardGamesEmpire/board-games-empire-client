@@ -41,6 +41,13 @@ class BgeApp extends StatefulWidget {
 
   final AppBootstrapCubit bootstrapCubit;
 
+  /// Key on the [BlockSemantics] that wraps the app content while a crash
+  /// draft is pending, so tests can target it without colliding with the
+  /// framework's own `BlockSemantics` widgets in the tree.
+  static const Key contentSemanticsBlockerKey = Key(
+    'bge_app.crash_prompt.content_semantics_blocker',
+  );
+
   /// Whether this widget owns [bootstrapCubit]'s lifecycle and closes it
   /// on unmount. `runBgeApp` (which creates the cubit and has no later
   /// teardown point) passes true; tests injecting their own cubits keep
@@ -148,22 +155,30 @@ class _BgeAppState extends State<BgeApp> {
           return ValueListenableBuilder<FeedbackReport?>(
             valueListenable: reporter.pendingCrashReport,
             builder: (context, draft, _) {
+              final pending = draft != null;
               return Stack(
                 children: [
-                  content,
-                  if (draft != null) ...[
-                    // Modal while a draft is pending: the barrier absorbs
-                    // taps on the app behind and dims it, and
-                    // BlockSemantics drops the underlying content from the
-                    // semantics tree so assistive tech stays within the
-                    // prompt. Non-dismissible — declining is an explicit
-                    // choice via the prompt's Discard button, so an
-                    // accidental scrim tap can't silently drop the report.
-                    const BlockSemantics(
-                      child: ModalBarrier(
-                        dismissible: false,
-                        color: Colors.black54,
-                      ),
+                  // While a draft is pending, drop the underlying app from
+                  // the semantics tree so assistive tech can't navigate
+                  // background UI behind the modal prompt. BlockSemantics
+                  // must wrap the CONTENT it blocks (it drops the
+                  // semantics of widgets painted before it in the same
+                  // container) — wrapping the barrier instead would leave
+                  // the app fully reachable.
+                  BlockSemantics(
+                    key: BgeApp.contentSemanticsBlockerKey,
+                    blocking: pending,
+                    child: content,
+                  ),
+                  if (pending) ...[
+                    // Plain tap-blocker: absorbs taps on the app behind
+                    // and dims it. Non-dismissible — declining is an
+                    // explicit choice via the prompt's Discard button, so
+                    // an accidental scrim tap can't silently drop the
+                    // report.
+                    const ModalBarrier(
+                      dismissible: false,
+                      color: Colors.black54,
                     ),
                     // CrashReportPrompt applies its own SafeArea, so the
                     // overlay only positions it — no second SafeArea here
