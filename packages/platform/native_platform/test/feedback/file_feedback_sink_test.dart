@@ -148,5 +148,42 @@ void main() {
 
       await expectLater(sink.persist(keyless), throwsArgumentError);
     });
+
+    test('persist rejects a correlationKey containing path segments — no '
+        'traversal out of the reports directory', () async {
+      final sink = buildSink();
+      for (final key in <String>['../evil', 'a/b', r'a\b', '..']) {
+        final report = FeedbackReport(
+          category: FeedbackCategory.bug,
+          severity: FeedbackSeverity.low,
+          message: 'pending',
+          correlationKey: key,
+        );
+        await expectLater(
+          sink.persist(report),
+          throwsArgumentError,
+          reason: 'key "$key" must be rejected',
+        );
+      }
+    });
+
+    test('remove rejects a correlationKey containing path segments — a '
+        'crafted key cannot delete an arbitrary file', () async {
+      final sink = buildSink();
+      // A sibling file outside the "key" namespace that a traversal key
+      // must not be able to reach.
+      final bystander = File('${tempDir.path}/keep.json')
+        ..writeAsStringSync('{}');
+
+      for (final key in <String>['../keep', 'a/b', r'a\b', '..']) {
+        await expectLater(
+          sink.remove(key),
+          throwsArgumentError,
+          reason: 'key "$key" must be rejected',
+        );
+      }
+
+      expect(bystander.existsSync(), isTrue);
+    });
   });
 }

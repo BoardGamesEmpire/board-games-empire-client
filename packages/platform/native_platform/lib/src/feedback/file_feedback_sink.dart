@@ -29,7 +29,10 @@ class FileFeedbackSink implements FeedbackSink {
 
   @override
   Future<void> persist(FeedbackReport report) async {
-    final key = _requireSafeKey(report);
+    final key = _requireSafeKey(
+      report.correlationKey,
+      source: 'report.correlationKey',
+    );
     final dir = await _directoryProvider();
     if (!await dir.exists()) await dir.create(recursive: true);
     await File(
@@ -67,26 +70,33 @@ class FileFeedbackSink implements FeedbackSink {
 
   @override
   Future<void> remove(String correlationKey) async {
+    // Validate before constructing the path: the key is interpolated
+    // into a file name, so a crafted `..`/separator key must not be able
+    // to traverse out of the reports directory and delete an arbitrary
+    // file. Same guard persist() applies.
+    _requireSafeKey(correlationKey, source: 'correlationKey');
     final dir = await _directoryProvider();
     final file = File('${dir.path}/$correlationKey.json');
     if (await file.exists()) await file.delete();
   }
 
-  /// The correlationKey doubles as the file name, so it must exist and
-  /// must not smuggle path segments.
-  String _requireSafeKey(FeedbackReport report) {
-    final key = report.correlationKey;
+  /// Validates that [key] is present and safe to use as a file name — it
+  /// doubles as the report's file name, so it must exist and must not
+  /// smuggle path segments that could traverse out of the reports
+  /// directory. Shared by [persist] (the report's correlationKey) and
+  /// [remove] (a caller-supplied key).
+  String _requireSafeKey(String? key, {required String source}) {
     if (key == null || key.isEmpty) {
       throw ArgumentError.value(
         key,
-        'report.correlationKey',
+        source,
         'FileFeedbackSink requires a correlationKey',
       );
     }
     if (key.contains('/') || key.contains(r'\') || key.contains('..')) {
       throw ArgumentError.value(
         key,
-        'report.correlationKey',
+        source,
         'correlationKey must not contain path segments',
       );
     }

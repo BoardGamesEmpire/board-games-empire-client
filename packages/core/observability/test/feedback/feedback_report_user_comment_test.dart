@@ -56,5 +56,42 @@ void main() {
       expect(result.message, startsWith('StateError: bad state'));
       expect(result.validate(), isNot(contains(contains('message'))));
     });
+
+    test('leaves the message untouched when not even one comment '
+        'character fits after the separator', () {
+      // Message two under the cap: the separator alone (\n\n) would fill
+      // the remaining budget, leaving no room for comment text. The
+      // report must come back byte-identical rather than gaining a bare
+      // separator.
+      final full = FeedbackReport(
+        category: FeedbackCategory.crash,
+        severity: FeedbackSeverity.critical,
+        message: 'm' * (FeedbackConstants.maxMessageLength - 2),
+        correlationKey: 'key-1',
+      );
+
+      final result = full.withUserComment('would not fit');
+
+      expect(result, full);
+      expect(result.message.length, FeedbackConstants.maxMessageLength - 2);
+    });
+
+    test('appends exactly the comment characters that fit the remaining '
+        'budget', () {
+      // One character of headroom for the comment after the separator.
+      final nearFull = FeedbackReport(
+        category: FeedbackCategory.crash,
+        severity: FeedbackSeverity.critical,
+        message: 'm' * (FeedbackConstants.maxMessageLength - 3),
+        correlationKey: 'key-1',
+      );
+
+      final result = nearFull.withUserComment('AB');
+
+      expect(result.message.length, FeedbackConstants.maxMessageLength);
+      expect(result.message, endsWith('\n\nA'));
+      expect(result.message, isNot(contains('B')));
+      expect(result.validate(), isNot(contains(contains('message'))));
+    });
   });
 }
