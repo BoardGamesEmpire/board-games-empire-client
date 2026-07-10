@@ -1,0 +1,19 @@
+// Code signing for the Runner target.
+//
+// This is an open-source project: anyone can clone, build, and modify it, so
+// no Apple Developer team or signing identity is committed here. Automatic
+// signing (set in project.pbxproj) selects the identity per configuration —
+// a development cert for Debug/Profile, and a distribution / Developer ID cert
+// when archiving Release — so builds work for contributors and forks without
+// editing tracked files.
+//
+// Provide your team in ONE of these ways:
+//   * Xcode: select your team under Signing & Capabilities (writes to your
+//     local, untracked project state), or
+//   * create a git-ignored Signing.local.xcconfig next to this file:
+//         DEVELOPMENT_TEAM = ABCDE12345
+//   * CI / official release builds: pass DEVELOPMENT_TEAM to the build
+//     (env var or `xcodebuild DEVELOPMENT_TEAM=...`), which overrides this file.
+//
+// Entitlements live in the Runner/*.entitlements files.
+#include? "Signing.local.xcconfig"
