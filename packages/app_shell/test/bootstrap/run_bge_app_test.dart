@@ -207,4 +207,96 @@ void main() {
       expect(crumbs, hasLength(1));
     });
   });
+
+  group('runBgeApp — FeedbackService + reporter wiring (#69)', () {
+    testWidgets('constructs and registers a FeedbackService into the '
+        'root container', (tester) async {
+      final bootstrap = FakePlatformBootstrap();
+
+      await boot(tester, bootstrap);
+
+      final container = bootstrap.lastRootContainer!;
+      expect(container.isRegistered<FeedbackService>(), isTrue);
+      expect(container.get<FeedbackService>(), isA<FeedbackService>());
+    });
+
+    testWidgets('the service is available even on the empty fallback '
+        'container — resolve-or-default, feedback works on a failed '
+        'boot', (tester) async {
+      final bootstrap = FakePlatformBootstrap(
+        rootContainerOutcome: StateError('root container build exploded'),
+      );
+
+      await boot(tester, bootstrap);
+
+      final fallback = tester
+          .widget<BgeApp>(find.byType(BgeApp))
+          .rootContainer!;
+      expect(fallback.isRegistered<FeedbackService>(), isTrue);
+    });
+
+    testWidgets('an uncaught platform error flows through the hooks into '
+        'a pending crash draft on the app-held reporter', (tester) async {
+      final bootstrap = FakePlatformBootstrap();
+      await boot(tester, bootstrap);
+      final reporter = tester
+          .widget<BgeApp>(find.byType(BgeApp))
+          .feedbackReporter;
+      expect(reporter, isA<FeedbackUncaughtErrorReporter>());
+      expect(reporter!.pendingCrashReport.value, isNull);
+
+      final handled = PlatformDispatcher.instance.onError!(
+        StateError('uncaught async boom'),
+        StackTrace.fromString('#0 somewhere (file.dart:1)'),
+      );
+
+      expect(handled, isTrue);
+      final draft = reporter.pendingCrashReport.value;
+      expect(draft, isNotNull);
+      expect(draft!.category, FeedbackCategory.crash);
+      expect(draft.message, contains('uncaught async boom'));
+      expect(draft.stackTrace, contains('#0 somewhere (file.dart:1)'));
+      expect(
+        draft.breadcrumbs,
+        isNotEmpty,
+        reason:
+            'the draft snapshots the shell breadcrumb ring at '
+            'capture time — boot activity is already in it',
+      );
+    });
+
+    testWidgets('an explicit uncaughtErrorReporter override wins — the '
+        'hooks use it and no prompt machinery is wired', (tester) async {
+      final override = _SpyReporter();
+      final bootstrap = FakePlatformBootstrap();
+      await runBgeApp(
+        platformBootstrap: bootstrap,
+        hydratedStorageInitializer: (_) async {},
+        uncaughtErrorReporter: override,
+      );
+      await tester.pump();
+      await tester.pump();
+
+      PlatformDispatcher.instance.onError!(
+        StateError('boom'),
+        StackTrace.fromString('#0 somewhere (file.dart:1)'),
+      );
+
+      expect(override.reported, hasLength(1));
+      expect(
+        tester.widget<BgeApp>(find.byType(BgeApp)).feedbackReporter,
+        isNull,
+        reason:
+            'the override owns reporting; runBgeApp wires no prompt '
+            'reporter of its own',
+      );
+    });
+  });
+}
+
+class _SpyReporter implements UncaughtErrorReporter {
+  final List<UncaughtErrorRecord> reported = [];
+
+  @override
+  void report(UncaughtErrorRecord record) => reported.add(record);
 }

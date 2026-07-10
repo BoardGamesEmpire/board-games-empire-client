@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
+import 'package:observability/observability.dart';
 
 /// Red-phase test for `registerNativeRootModule` gaining its first
 /// registration (issue #35): the resolved `BuildInfo`.
@@ -37,5 +38,28 @@ void main() {
     );
 
     expect(container.get<BuildInfo>(), info);
+  });
+
+  test('registers the durable FeedbackSink (#69) — lazily, no plugin '
+      'call at registration', () async {
+    final container = DependencyContainerImpl();
+    addTearDown(container.dispose);
+
+    await registerNativeRootModule(
+      container,
+      buildInfoReader: const _StubBuildInfoReader(
+        BuildInfo(
+          version: '1.2.3',
+          buildNumber: '42',
+          appName: 'Board Games Empire',
+          packageName: 'com.boardgamesempire.app',
+        ),
+      ),
+    );
+
+    // Registration succeeds in the plugin-less test VM because
+    // FileFeedbackSink resolves its directory lazily at first persist.
+    expect(container.isRegistered<FeedbackSink>(), isTrue);
+    expect(container.get<FeedbackSink>(), isA<FileFeedbackSink>());
   });
 }

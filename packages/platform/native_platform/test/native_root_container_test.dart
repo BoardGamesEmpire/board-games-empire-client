@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
@@ -71,6 +72,49 @@ void main() {
       first.registerSingleton<_Marker>(_Marker());
 
       expect(second.isRegistered<_Marker>(), isFalse);
+    });
+  });
+
+  group('NativePlatformBootstrap.createRootContainer — injectable module '
+      'seam (#69)', () {
+    test('an injected module replaces the default registrations', () async {
+      final marker = _Marker();
+      final bootstrap = NativePlatformBootstrap(
+        keyService: _FakeKeyService(),
+        rootModule: (container) async {
+          container.registerSingleton<_Marker>(marker);
+        },
+      );
+
+      final container = await bootstrap.createRootContainer();
+      addTearDown(container.dispose);
+
+      expect(container.get<_Marker>(), same(marker));
+      expect(
+        container.isRegistered<BuildInfo>(),
+        isFalse,
+        reason: 'the injected module ran instead of the default one',
+      );
+    });
+
+    test('a throwing module rethrows AND the partially-built container '
+        'is disposed first — no leaked partials (dispose-partial guard, '
+        'deferred from #74)', () async {
+      DependencyContainer? captured;
+      final bootstrap = NativePlatformBootstrap(
+        keyService: _FakeKeyService(),
+        rootModule: (container) async {
+          captured = container..registerSingleton<_Marker>(_Marker());
+          throw StateError('module bug — contract violation');
+        },
+      );
+
+      await expectLater(bootstrap.createRootContainer(), throwsStateError);
+
+      expect(captured, isNotNull);
+      // The partial container was disposed before the exception
+      // propagated: the disposed guard rejects further use.
+      expect(() => captured!.get<_Marker>(), throwsStateError);
     });
   });
 }

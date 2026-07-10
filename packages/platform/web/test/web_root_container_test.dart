@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 import 'package:web_platform/web.dart';
 
@@ -47,6 +48,40 @@ void main() {
       first.registerSingleton<_Marker>(_Marker());
 
       expect(second.isRegistered<_Marker>(), isFalse);
+    });
+  });
+
+  group('WebPlatformBootstrap.createRootContainer — injectable module '
+      'seam (#69)', () {
+    test('an injected module replaces the default registrations', () async {
+      final marker = _Marker();
+      final bootstrap = WebPlatformBootstrap(
+        rootModule: (container) async {
+          container.registerSingleton<_Marker>(marker);
+        },
+      );
+
+      final container = await bootstrap.createRootContainer();
+      addTearDown(container.dispose);
+
+      expect(container.get<_Marker>(), same(marker));
+      expect(container.isRegistered<BuildInfo>(), isFalse);
+    });
+
+    test('a throwing module rethrows AND the partially-built container '
+        'is disposed first — no leaked partials', () async {
+      DependencyContainer? captured;
+      final bootstrap = WebPlatformBootstrap(
+        rootModule: (container) async {
+          captured = container..registerSingleton<_Marker>(_Marker());
+          throw StateError('module bug — contract violation');
+        },
+      );
+
+      await expectLater(bootstrap.createRootContainer(), throwsStateError);
+
+      expect(captured, isNotNull);
+      expect(() => captured!.get<_Marker>(), throwsStateError);
     });
   });
 }

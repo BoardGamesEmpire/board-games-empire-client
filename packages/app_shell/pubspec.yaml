@@ -18,6 +18,8 @@ dependencies:
     path: ../core/di
   interfaces:
     path: ../core/interfaces
+  models:
+    path: ../core/models
   observability:
     path: ../core/observability
 

@@ -21,6 +21,8 @@ dependencies:
     path: ../../core/models
   di:
     path: ../../core/di
+  observability:
+    path: ../../core/observability
 
   # Web-specific
   url_strategy: ^0.3.0

@@ -64,6 +64,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     NativeOrchestratorFactory? orchestratorFactory,
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
     void Function(DatabaseRecoveryEvent event)? onServerDatabaseRecovery,
+    Future<void> Function(DependencyContainer container)? rootModule,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.platform.native_bootstrap'),
        assert(
@@ -87,7 +88,8 @@ class NativePlatformBootstrap implements PlatformBootstrap {
        _orchestratorFactory = orchestratorFactory ?? _defaultOrchestrator,
        _hydratedDirectoryProvider =
            hydratedDirectoryProvider ?? _defaultHydratedDirectory,
-       _onServerDatabaseRecovery = onServerDatabaseRecovery {
+       _onServerDatabaseRecovery = onServerDatabaseRecovery,
+       _rootModule = rootModule ?? registerNativeRootModule {
     _executorFactory =
         executorFactory ?? EncryptedExecutorFactory(keyService: _keyService);
   }
@@ -103,6 +105,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   final NativeOrchestratorFactory _orchestratorFactory;
   final Future<HydratedStorageDirectory> Function() _hydratedDirectoryProvider;
   final void Function(DatabaseRecoveryEvent event)? _onServerDatabaseRecovery;
+  final Future<void> Function(DependencyContainer container) _rootModule;
 
   MetaDatabase? _metaDatabase;
   ServerOrchestrator? _orchestrator;
@@ -111,17 +114,41 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   bool get supportsReset => true;
 
   /// Builds the native root container (#72): a fresh, isolated
-  /// [DependencyContainerImpl] populated by [registerNativeRootModule].
+  /// [DependencyContainerImpl] populated by the injected root module
+  /// (production default: [registerNativeRootModule] — [BuildInfo] via a
+  /// defensive, time-bounded plugin read, plus the durable
+  /// [FeedbackSink]; #35, #69).
   ///
   /// Fresh per call, no shared global GetIt state — see the contract on
   /// [PlatformBootstrap.createRootContainer], including the no-throw
-  /// requirement the root module honors. Touches no platform plugins;
-  /// mobile/desktop layers own their platform-specific concerns via their
-  /// bootstrap subclasses as those land.
+  /// requirement the default module honors per-registration.
+  ///
+  /// **Dispose-partial guard** (deferred from #74's review, landed with
+  /// #69): a module that throws mid-population — a contract violation —
+  /// would otherwise leak whatever it registered before the throw, since
+  /// `runBgeApp` discards the container for its empty fallback. The
+  /// partial container is disposed here first, then the violation
+  /// propagates unchanged.
   @override
   Future<DependencyContainer> createRootContainer() async {
     final container = DependencyContainerImpl();
-    await registerNativeRootModule(container);
+    try {
+      await _rootModule(container);
+    } on Object {
+      try {
+        await container.dispose();
+      } on Object catch (error, stackTrace) {
+        // Never mask the module's own failure — the original error is
+        // the one runBgeApp must breadcrumb.
+        _logger.warn(
+          'Partial root container disposal failed after a module throw; '
+          'original module error rethrown',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      rethrow;
+    }
     return container;
   }
 

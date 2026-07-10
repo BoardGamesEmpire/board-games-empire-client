@@ -2,6 +2,7 @@ import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart';
 import 'package:web_platform/web.dart';
 
 /// Red-phase test for `registerWebRootModule` gaining its first
@@ -33,5 +34,26 @@ void main() {
     );
 
     expect(container.get<BuildInfo>(), info);
+  });
+
+  test('registers the in-memory FeedbackSink stand-in (#69) — durable '
+      'replacement tracked on #63', () async {
+    final container = DependencyContainerImpl();
+    addTearDown(container.dispose);
+
+    await registerWebRootModule(
+      container,
+      buildInfoReader: const _StubBuildInfoReader(
+        BuildInfo(
+          version: '1.2.3',
+          buildNumber: '42',
+          appName: 'Board Games Empire',
+          packageName: 'com.boardgamesempire.app',
+        ),
+      ),
+    );
+
+    expect(container.isRegistered<FeedbackSink>(), isTrue);
+    expect(container.get<FeedbackSink>(), isA<MemoryFeedbackSink>());
   });
 }

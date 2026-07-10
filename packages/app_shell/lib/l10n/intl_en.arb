@@ -67,5 +67,41 @@
   "shellPlaceholderBody": "This screen is under construction and arrives with an upcoming update.",
   "@shellPlaceholderBody": {
     "description": "Shared body text for placeholder route screens"
+  },
+  "crashReportPromptTitle": "Something went wrong",
+  "@crashReportPromptTitle": {
+    "description": "Title of the ask-each-time crash report prompt (#69)"
+  },
+  "crashReportPromptExplanation": "You can send this crash report to your server to help get it fixed. Nothing is sent without your approval.",
+  "@crashReportPromptExplanation": {
+    "description": "Explanation line under the crash prompt title; states the privacy contract — nothing is sent without explicit approval"
+  },
+  "crashReportPromptCommentLabel": "What were you doing? (optional)",
+  "@crashReportPromptCommentLabel": {
+    "description": "Label of the optional comment field on the crash prompt; doubles as the field's screen-reader label"
+  },
+  "crashReportPromptSend": "Send report",
+  "@crashReportPromptSend": {
+    "description": "Label of the crash prompt's send button"
+  },
+  "crashReportPromptDiscard": "Don't send",
+  "@crashReportPromptDiscard": {
+    "description": "Label of the crash prompt's decline button; declining clears the crash draft without sending anything"
+  },
+  "crashReportPromptDismiss": "Close",
+  "@crashReportPromptDismiss": {
+    "description": "Label of the button that dismisses the crash prompt after a terminal outcome (sent, saved, or failed)"
+  },
+  "crashReportPromptSent": "Report sent. Thank you!",
+  "@crashReportPromptSent": {
+    "description": "Confirmation shown when the crash report reached the server"
+  },
+  "crashReportPromptQueued": "Saved. It will be sent once you're connected and signed in.",
+  "@crashReportPromptQueued": {
+    "description": "Confirmation shown when the crash report was saved locally for a later send (offline, or not signed in); must stay honest — it was NOT sent yet"
+  },
+  "crashReportPromptFailed": "The report couldn't be sent or saved.",
+  "@crashReportPromptFailed": {
+    "description": "Shown when both sending and local saving failed; the prompt can still be closed"
   }
 }
