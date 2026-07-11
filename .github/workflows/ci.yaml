@@ -9,6 +9,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Pin Flutter once for the whole workflow. Bump here to move every job.
+# Pinning (rather than tracking `stable`) keeps codegen, analysis, and
+# tests deterministic across runs. Goldens (#32) run local-only (see the
+# `test` job), so on a bump also regenerate them locally
+# (`melos run goldens:update`) and commit the refreshed `goldens/ci/`
+# PNGs in the same PR.
+env:
+  FLUTTER_VERSION: 3.44.4
+
 jobs:
   # ── Codegen (fresh, once) + schema freshness ────────────────────
   # Generated code (.g.dart / .freezed.dart / .config.dart) is
@@ -33,7 +42,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable # TODO: pin to Flutter version.
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
           cache: true
       # Restore build_runner's incremental state (asset graph + cached
       # outputs) so unchanged sources skip regeneration. The lockfile
@@ -109,6 +119,7 @@ jobs:
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Resolve workspace
@@ -140,6 +151,14 @@ jobs:
   # flutter_test, so `dart test` can't run them, and `flutter test`
   # runs pure-Dart suites cleanly too. Restores generated code first.
   # fail-fast off so one red package doesn't cancel the rest.
+  #
+  # Goldens (#32) are EXCLUDED here (`--exclude-tags golden`) and run
+  # local-only. Alchemist's CI goldens obscure text but still rasterize
+  # shapes/anti-aliasing per-platform, so a macOS-generated baseline
+  # won't match a Linux runner — the version pin removes engine skew but
+  # not OS skew. Restoring CI coverage means generating the committed
+  # `goldens/ci/` baselines on Linux (e.g. a Docker/CI --update-goldens
+  # job) and disabling the CI-golden variant locally; deferred for now.
   test:
     name: Test ${{ matrix.package }}
     needs: [generate, discover-tests]
@@ -158,10 +177,11 @@ jobs:
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Resolve workspace
         run: flutter pub get
       - name: flutter test
         working-directory: ${{ matrix.package }}
-        run: flutter test --test-randomize-ordering-seed random
+        run: flutter test --exclude-tags golden --test-randomize-ordering-seed random

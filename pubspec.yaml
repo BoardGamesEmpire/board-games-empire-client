@@ -44,7 +44,8 @@ workspace:
   - packages/platform/desktop
   - packages/platform/native_platform
   - packages/platform/web
-  - packages/ui
+  - packages/ui/tokens
+  - packages/ui/widgets
 
 melos:
   command:
@@ -93,6 +94,19 @@ melos:
     test:storage:
       run: melos exec -c 1 --scope="packages/storage/*" -- "dart test"
       description: Test all storage packages
+      packageFilters:
+        dirExists: test
+
+    # ── Golden baselines (#32) ─────────────────────────────────────
+    # Regenerate committed golden baselines after an *intended* visual
+    # change. Runs only golden-tagged tests, in every package with a
+    # test dir; packages without goldens match zero tests and no-op
+    # (exit 0). Writes test/**/goldens/ci/ (committed, Ahem-rendered)
+    # plus test/**/goldens/<platform>/ (gitignored) — commit only the
+    # ci/ PNGs. CI never runs this; CI only compares.
+    goldens:update:
+      run: melos exec -c 1 -- "flutter test --update-goldens --tags golden"
+      description: Regenerate golden baselines across the workspace. Commit only test/**/goldens/ci/.
       packageFilters:
         dirExists: test
 

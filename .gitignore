@@ -50,3 +50,13 @@ app.*.map.json
 *.freezed.dart
 *.g.dart
 *.reflectable.dart
+
+# Alchemist golden hygiene: only renderer-stable CI goldens
+# (test/**/goldens/ci/) are committed. Platform goldens are human-review
+# artifacts that differ per host renderer; failure diffs are transient.
+# Leading **/ so these match nested package test dirs
+# (packages/**/test/...), not just a root-level test/.
+**/test/**/failures/
+**/test/**/goldens/macos/
+**/test/**/goldens/linux/
+**/test/**/goldens/windows/

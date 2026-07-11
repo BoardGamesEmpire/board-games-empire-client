@@ -51,6 +51,13 @@ import 'platform_bootstrap.dart';
 /// belongs in bootstrap, not in widget builds (see [installBuildErrorView]
 /// for the flutter_test invariant that forbids the in-widget placement).
 ///
+/// Theming (#32): the four theme slots ([theme], [darkTheme],
+/// [highContrastTheme], [highContrastDarkTheme]) are pure passthrough
+/// override seams — production `main.dart`s leave them null and [BgeApp]
+/// defaults them from `BgeTheme`, keeping the apps thin. [themeMode]
+/// stays [ThemeMode.system]; the user-facing selection + persistence is
+/// #78.
+///
 /// The splash route renders while bootstrap runs; hydrated-storage
 /// initialization happens inside the cubit so its failures surface on the
 /// retryable error screen instead of as a blank frame.
@@ -68,6 +75,8 @@ Future<void> runBgeApp({
   required PlatformBootstrap platformBootstrap,
   ThemeData? theme,
   ThemeData? darkTheme,
+  ThemeData? highContrastTheme,
+  ThemeData? highContrastDarkTheme,
   ThemeMode themeMode = ThemeMode.system,
   List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates =
       const [],
@@ -181,6 +190,8 @@ Future<void> runBgeApp({
       feedbackReporter: feedbackReporter,
       theme: theme,
       darkTheme: darkTheme,
+      highContrastTheme: highContrastTheme,
+      highContrastDarkTheme: highContrastDarkTheme,
       themeMode: themeMode,
       additionalLocalizationsDelegates: additionalLocalizationsDelegates,
     ),

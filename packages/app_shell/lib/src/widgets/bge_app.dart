@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
@@ -15,8 +16,16 @@ import 'crash_report_prompt.dart';
 
 /// The shared application widget.
 ///
+/// Theming (#32): the shell owns the theme defaults so per-app
+/// `main.dart` stays thin — [theme]/[darkTheme] and the high-contrast
+/// pair default to the corresponding [BgeTheme] factories when null, and
+/// the OS "increase contrast" accessibility setting selects the
+/// high-contrast variants automatically via `MaterialApp`. OS text
+/// scaling is honored up to [BgeTextScale.maxScaleFactor] (WCAG 1.4.4:
+/// 200%) via a `MediaQuery` clamp in the app builder. [themeMode] stays
+/// [ThemeMode.system]; the user-facing selection + persistence is #78.
+///
 /// Seams left deliberately open for sibling P0 issues:
-/// - [theme] / [darkTheme] / [themeMode] — theme + a11y baseline (#32);
 /// - [additionalLocalizationsDelegates] — feature-package delegates
 ///   (e.g. auth's, wired by #33/#37) appended after the shell's own.
 ///
@@ -34,6 +43,8 @@ class BgeApp extends StatefulWidget {
     this.feedbackReporter,
     this.theme,
     this.darkTheme,
+    this.highContrastTheme,
+    this.highContrastDarkTheme,
     this.themeMode = ThemeMode.system,
     this.additionalLocalizationsDelegates = const [],
     super.key,
@@ -82,8 +93,13 @@ class BgeApp extends StatefulWidget {
   /// construction, which therefore behaves exactly as before.
   final FeedbackUncaughtErrorReporter? feedbackReporter;
 
+  /// The four theme slots (#32). Each defaults to its [BgeTheme] factory
+  /// when null; explicit values are embedder/test overrides and win.
   final ThemeData? theme;
   final ThemeData? darkTheme;
+  final ThemeData? highContrastTheme;
+  final ThemeData? highContrastDarkTheme;
+
   final ThemeMode themeMode;
   final List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates;
 
@@ -139,8 +155,15 @@ class _BgeAppState extends State<BgeApp> {
       child: MaterialApp.router(
         onGenerateTitle: (context) =>
             ShellLocalizations.of(context).shellAppTitle,
-        theme: widget.theme,
-        darkTheme: widget.darkTheme,
+        theme: widget.theme ?? BgeTheme.light(),
+        darkTheme: widget.darkTheme ?? BgeTheme.dark(),
+        // Selected automatically when the OS "increase contrast"
+        // accessibility setting is on (MediaQuery.highContrast) — no user
+        // toggle needed (#32).
+        highContrastTheme:
+            widget.highContrastTheme ?? BgeTheme.highContrastLight(),
+        highContrastDarkTheme:
+            widget.highContrastDarkTheme ?? BgeTheme.highContrastDark(),
         themeMode: widget.themeMode,
         routerConfig: _router,
         // The crash prompt overlays ABOVE the navigator (a crash draft
@@ -149,61 +172,73 @@ class _BgeAppState extends State<BgeApp> {
         // Localizations/Theme, so the prompt self-localizes; it carries
         // its own Material since no Scaffold exists at this altitude.
         builder: (context, child) {
-          final reporter = widget.feedbackReporter;
           final content = child ?? const SizedBox.shrink();
-          if (reporter == null) return content;
-          return ValueListenableBuilder<FeedbackReport?>(
-            valueListenable: reporter.pendingCrashReport,
-            builder: (context, draft, _) {
-              final pending = draft != null;
-              return Stack(
-                children: [
-                  // While a draft is pending, drop the underlying app from
-                  // the semantics tree so assistive tech can't navigate
-                  // background UI behind the modal prompt. BlockSemantics
-                  // must wrap the CONTENT it blocks (it drops the
-                  // semantics of widgets painted before it in the same
-                  // container) — wrapping the barrier instead would leave
-                  // the app fully reachable.
-                  BlockSemantics(
-                    key: BgeApp.contentSemanticsBlockerKey,
-                    blocking: pending,
-                    child: content,
-                  ),
-                  if (pending) ...[
-                    // Plain tap-blocker: absorbs taps on the app behind
-                    // and dims it. Non-dismissible — declining is an
-                    // explicit choice via the prompt's Discard button, so
-                    // an accidental scrim tap can't silently drop the
-                    // report.
-                    const ModalBarrier(
-                      dismissible: false,
-                      color: Colors.black54,
-                    ),
-                    // CrashReportPrompt applies its own SafeArea, so the
-                    // overlay only positions it — no second SafeArea here
-                    // (that would double-apply insets).
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: CrashReportPrompt(
-                          report: draft,
-                          onSubmit: reporter.service.submit,
-                          onDiscard: () {
-                            // Decline (or dismiss an outcome): empty both
-                            // RAM slots — the draft and the #34 last-error
-                            // record ("clearUncaughtError on decline").
-                            reporter.clearPendingCrashReport();
-                            ShellObservability.clearUncaughtError();
-                          },
+          final reporter = widget.feedbackReporter;
+          final Widget body = reporter == null
+              ? content
+              : ValueListenableBuilder<FeedbackReport?>(
+                  valueListenable: reporter.pendingCrashReport,
+                  builder: (context, draft, _) {
+                    final pending = draft != null;
+                    return Stack(
+                      children: [
+                        // While a draft is pending, drop the underlying
+                        // app from the semantics tree so assistive tech
+                        // can't navigate background UI behind the modal
+                        // prompt. BlockSemantics must wrap the CONTENT it
+                        // blocks (it drops the semantics of widgets
+                        // painted before it in the same container) —
+                        // wrapping the barrier instead would leave the
+                        // app fully reachable.
+                        BlockSemantics(
+                          key: BgeApp.contentSemanticsBlockerKey,
+                          blocking: pending,
+                          child: content,
                         ),
-                      ),
-                    ),
-                  ],
-                ],
-              );
-            },
+                        if (pending) ...[
+                          // Plain tap-blocker: absorbs taps on the app
+                          // behind and dims it. Non-dismissible —
+                          // declining is an explicit choice via the
+                          // prompt's Discard button, so an accidental
+                          // scrim tap can't silently drop the report.
+                          const ModalBarrier(
+                            dismissible: false,
+                            color: Colors.black54,
+                          ),
+                          // CrashReportPrompt applies its own SafeArea, so
+                          // the overlay only positions it — no second
+                          // SafeArea here (that would double-apply
+                          // insets).
+                          Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: CrashReportPrompt(
+                                report: draft,
+                                onSubmit: reporter.service.submit,
+                                onDiscard: () {
+                                  // Decline (or dismiss an outcome): empty
+                                  // both RAM slots — the draft and the #34
+                                  // last-error record ("clearUncaughtError
+                                  // on decline").
+                                  reporter.clearPendingCrashReport();
+                                  ShellObservability.clearUncaughtError();
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                );
+          // #32 / WCAG 1.4.4: honor OS text scaling up to 200%, clamped
+          // app-wide (crash prompt included) so unbounded scale factors
+          // can't break layouts while the full required range is
+          // guaranteed.
+          return MediaQuery.withClampedTextScaling(
+            maxScaleFactor: BgeTextScale.maxScaleFactor,
+            child: body,
           );
         },
         localizationsDelegates: [

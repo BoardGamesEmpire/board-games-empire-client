@@ -20,7 +20,7 @@ dependencies:
   observability:
     path: ../../core/observability
   ui:
-    path: ../../ui
+    path: ../../ui/widgets
 
   flutter_bloc: ^9.1.1
   equatable: ^2.0.6

@@ -1,0 +1,6 @@
+# Declares the `golden` tag alchemist puts on golden tests, so
+# flutter_test stops warning about an unknown tag and the
+# --tags/--exclude-tags selectors work reliably (CI, local).
+tags:
+  golden:
+    description: Golden (visual regression) tests. Skip with --exclude-tags golden.

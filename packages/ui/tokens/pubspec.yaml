@@ -1,0 +1,28 @@
+name: ui_tokens
+description: "Design tokens: WCAG-verified color schemes (light/dark/high-contrast), typography scale, spacing/density tokens, and the theme-level accessibility baseline (#32)"
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.35.0"
+resolution: workspace
+
+# Deliberately minimal: this package is the dependency-cheap token leaf that
+# app_shell (and transitively every app) pulls in. Widget-level dependencies
+# belong in `ui` (packages/ui/widgets), never here.
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  alchemist: ^0.14.0
+  flutter_lints: ^6.0.0
+
+  flutter_test:
+    sdk: flutter
+
+  very_good_analysis: ^10.2.0
+
+flutter:
+  uses-material-design: true
