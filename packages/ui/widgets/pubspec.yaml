@@ -1,5 +1,5 @@
 name: ui
-description: "Reusable UI components and themes"
+description: "Reusable UI components (widget layer; tokens live in ui_tokens)"
 version: 1.0.0
 publish_to: none
 
@@ -15,11 +15,17 @@ dependencies:
     sdk: flutter
 
   interfaces:
-    path: ../core/interfaces
+    path: ../../core/interfaces
   models:
-    path: ../core/models
+    path: ../../core/models
   di:
-    path: ../core/di
+    path: ../../core/di
+
+  # Design tokens (#32) — the dependency-cheap leaf; widgets consume the
+  # theme through it, feature packages depend on `ui`, the shell depends
+  # only on `ui_tokens`.
+  ui_tokens:
+    path: ../tokens
 
   # Forms
   reactive_forms: ^18.1.1
@@ -81,10 +87,10 @@ dev_dependencies:
   reactive_forms_generator: 8.5.0-beta10
   flutter_lints: ^6.0.0
 
-  # Testing
+  # Testing — alchemist replaces the discontinued golden_toolkit (#32).
   flutter_test:
     sdk: flutter
-  golden_toolkit: ^0.15.0
+  alchemist: ^0.14.0
   very_good_analysis: ^10.2.0
 
 flutter:

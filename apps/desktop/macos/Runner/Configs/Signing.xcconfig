@@ -1,11 +1,18 @@
 // Code signing for the Runner target.
 //
 // This is an open-source project: anyone can clone, build, and modify it, so
-// no Apple Developer team or signing identity is committed here. Automatic
-// signing (set in project.pbxproj) selects the identity per configuration —
-// a development cert for Debug/Profile, and a distribution / Developer ID cert
-// when archiving Release — so builds work for contributors and forks without
-// editing tracked files.
+// no specific Apple Developer team or pinned certificate is committed here.
+// The generic "Apple Development" identity below is safe to track: with
+// automatic signing it resolves to whichever development cert the contributor
+// has for their team, so builds work for contributors and forks without
+// editing tracked files. A real identity (not ad-hoc "-") is required because
+// the Runner entitlements include keychain-access-groups, which can only be
+// provisioned with a development certificate.
+//
+// Distribution/archive builds (Developer ID / Apple Distribution) override this
+// from CI, e.g. `xcodebuild CODE_SIGN_IDENTITY="Developer ID Application" ...`.
+//
+CODE_SIGN_IDENTITY = Apple Development
 //
 // Provide your team in ONE of these ways:
 //   * Xcode: select your team under Signing & Capabilities (writes to your
