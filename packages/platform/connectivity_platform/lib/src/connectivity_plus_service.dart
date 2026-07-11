@@ -8,7 +8,7 @@ import 'package:rxdart/rxdart.dart';
 /// `connectivity_plus`-backed [ConnectivityService] (#9).
 ///
 /// Contract (tests are the spec; see
-/// `test/src/connectivity_plus_service_test.dart`):
+/// `test/connectivity_plus_service_test.dart`):
 ///
 /// - **Optimistic seed.** [current] is [ConnectivityState.online]
 ///   immediately at construction.
@@ -40,8 +40,14 @@ class ConnectivityPlusService implements ConnectivityService, Disposable {
     Stream<List<ConnectivityResult>>? connectivityChanges,
     Future<List<ConnectivityResult>> Function()? connectivityCheck,
   }) {
-    final changes = connectivityChanges ?? Connectivity().onConnectivityChanged;
-    final check = connectivityCheck ?? Connectivity().checkConnectivity;
+    // One instance backs both seams when defaults are used, avoiding
+    // redundant platform channel wiring.
+    final connectivity =
+        (connectivityChanges == null || connectivityCheck == null)
+        ? Connectivity()
+        : null;
+    final changes = connectivityChanges ?? connectivity!.onConnectivityChanged;
+    final check = connectivityCheck ?? connectivity!.checkConnectivity;
 
     _subscription = changes.listen(_onEvent);
     unawaited(_eagerCheck(check));
