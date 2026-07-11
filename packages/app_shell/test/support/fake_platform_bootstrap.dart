@@ -20,6 +20,10 @@ import 'spy_root_container.dart';
 /// synchronously at the start of the call — the probe point sequencing
 /// tests use to observe process globals (e.g. "error hooks not installed
 /// yet") at container-build time.
+///
+/// [createDeepLinkSource] (#10) returns [deepLinkSource] as-is — null by
+/// default, matching the platform with no out-of-band channel (web).
+/// Wiring tests script a fake source here.
 class FakePlatformBootstrap implements PlatformBootstrap {
   FakePlatformBootstrap({
     List<Object> outcomes = const [],
@@ -27,6 +31,7 @@ class FakePlatformBootstrap implements PlatformBootstrap {
     ServerOrchestrator? orchestrator,
     this.rootContainerOutcome,
     this.onCreateRootContainer,
+    this.deepLinkSource,
   }) : _outcomes = List.of(outcomes),
        _orchestrator = orchestrator;
 
@@ -42,17 +47,22 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   /// Invoked synchronously at the start of [createRootContainer].
   void Function()? onCreateRootContainer;
 
+  /// Scripts [createDeepLinkSource] (#10); null = no out-of-band channel.
+  DeepLinkSource? deepLinkSource;
+
   /// The last container returned from [createRootContainer], if any.
   DependencyContainer? lastRootContainer;
 
   /// Ordered log of lifecycle calls: `'createRootContainer'`,
-  /// `'initialize'`, and `'reset'`.
+  /// `'createDeepLinkSource'`, `'initialize'`, and `'reset'`.
   final List<String> calls = [];
 
   int get initializeCallCount => calls.where((c) => c == 'initialize').length;
   int get resetCallCount => calls.where((c) => c == 'reset').length;
   int get createRootContainerCallCount =>
       calls.where((c) => c == 'createRootContainer').length;
+  int get createDeepLinkSourceCallCount =>
+      calls.where((c) => c == 'createDeepLinkSource').length;
 
   @override
   Future<DependencyContainer> createRootContainer() async {
@@ -68,6 +78,12 @@ class FakePlatformBootstrap implements PlatformBootstrap {
       throw outcome;
     }
     return lastRootContainer = SpyRootContainer();
+  }
+
+  @override
+  DeepLinkSource? createDeepLinkSource() {
+    calls.add('createDeepLinkSource');
+    return deepLinkSource;
   }
 
   @override

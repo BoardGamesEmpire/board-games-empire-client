@@ -1,9 +1,6 @@
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-/// Red-phase tests for `MemoryFeedbackSink` (issue #69) — the pure-Dart
-/// RAM implementation of `FeedbackSink`.
-///
 /// Two jobs: the **web stand-in** (no storage layer until #63 — an
 /// approved-but-unsendable report survives within the session and is
 /// lost on reload, and the user is told so), and `runBgeApp`'s

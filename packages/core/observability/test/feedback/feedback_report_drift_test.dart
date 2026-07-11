@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-/// Red-phase tests for the `FeedbackReport` model drift fixes (issue
-/// #69).
-///
 /// The backend `CreateFeedbackReportDto` carries a **dedicated
 /// `stackTrace` field** (backend #77; cap 32,768 — "client truncates
 /// tail-preserving, the backend rejects anything past it") and a

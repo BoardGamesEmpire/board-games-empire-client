@@ -22,8 +22,32 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<!-- Deep links (#10): register the bge:// custom URL scheme so iOS
+	     delivers bge://server/{serverId}/... URLs to app_links. Custom
+	     schemes need no entitlement (that's universal links only, which are
+	     deferred — a self-hosted product can't reliably publish per-server
+	     association files). App is scene-based (FlutterSceneDelegate);
+	     app_links 7.x propagates scene URL events automatically, so no
+	     custom SceneDelegate is required. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>bge</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- Deep links (#10): disable Flutter's built-in deep linking (default-on
+	     since Flutter 3.24) so it doesn't push raw bge:// URLs into the
+	     Navigator, bypassing our normalization/validation pipeline. The
+	     iOS analog of the Android flutter_deeplinking_enabled=false meta-data. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

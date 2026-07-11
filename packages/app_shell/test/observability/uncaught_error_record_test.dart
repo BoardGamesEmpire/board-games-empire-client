@@ -1,8 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Red-phase tests for [UncaughtErrorRecord] (issue #34).
-///
 /// The record is the RAM-only payload held in ShellObservability's
 /// single-slot last-error notifier and handed to UncaughtErrorReporter
 /// implementations. Sanitisation happens at construction — matching the

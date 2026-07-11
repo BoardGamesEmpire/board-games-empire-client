@@ -107,8 +107,6 @@ void main() {
       });
     });
 
-    /// Red-phase tests for the external-GetIt constructor (issue #72).
-    ///
     /// Design decisions pinned here (see #72 / #61 for rationale):
     ///
     /// - **injectable-ready seam.** injectable's generated `init` is an

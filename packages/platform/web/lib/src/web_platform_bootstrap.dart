@@ -66,6 +66,16 @@ class WebPlatformBootstrap implements PlatformBootstrap {
     return container;
   }
 
+  /// Web has no out-of-band deep-link channel (#10 decision): the browser
+  /// can only navigate within its origin, the address-bar URL *is* the
+  /// link, and the path URL strategy installed by
+  /// [configureWebUrlStrategy] already hands it to `go_router` directly.
+  /// The `/server/:serverId/...` segment in web URLs is carried for
+  /// scheme parity with native but neither validated nor used for
+  /// switching — single-origin means there is only one place to connect.
+  @override
+  DeepLinkSource? createDeepLinkSource() => null;
+
   @override
   Future<BootstrapResult> initialize() async =>
       const BootstrapResult(hasServer: true);

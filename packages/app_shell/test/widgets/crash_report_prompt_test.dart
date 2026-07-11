@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
 
-/// Red-phase tests for `CrashReportPrompt` (issue #69) — the minimal
+/// `CrashReportPrompt` (issue #69) — the minimal
 /// accessible "ask each time" crash prompt. The full review/redaction
 /// surface is #76; this widget is deliberately small: crash summary,
 /// optional comment, send/discard, and an **honest outcome** — "sent"
@@ -14,8 +14,7 @@ import 'package:observability/observability.dart';
 /// The widget is dumb: it takes the pre-built draft (capture-time
 /// breadcrumbs — see the reporter tests) and callbacks; shell wiring
 /// owns clearing the slots. Strings come from `ShellLocalizations`
-/// (compile-red until the ARB additions land in green); tests find by
-/// stable [Key]s so they hold across locales.
+/// tests find by stable [Key]s so they hold across locales.
 void main() {
   const draft = FeedbackReport(
     category: FeedbackCategory.crash,

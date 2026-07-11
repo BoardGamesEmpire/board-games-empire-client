@@ -5,9 +5,6 @@ import 'package:observability/observability.dart';
 
 import '../support/fake_platform_bootstrap.dart';
 
-/// Red-phase integration tests for the crash-prompt wiring inside
-/// `BgeApp` (issue #69).
-///
 /// Pinned: `BgeApp` gains an optional `feedbackReporter`. When supplied,
 /// the app listens to `pendingCrashReport` and overlays
 /// [CrashReportPrompt] when a draft lands; discard clears **both** RAM

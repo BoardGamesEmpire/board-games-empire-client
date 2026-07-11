@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
-/// Red-phase tests for the `BuildInfo` value (issue #35).
-///
 /// `BuildInfo` is an immutable, JSON-serializable value (not a service):
 /// it's read once at startup and consumed synchronously by version
 /// negotiation (#13), and serialized into feedback reports (#69) and the

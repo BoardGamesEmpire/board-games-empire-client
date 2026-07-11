@@ -4,9 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:observability/observability.dart';
 
-/// Red-phase tests for `FeedbackDioTransport` (issue #69) — the concrete
-/// `FeedbackTransport` posting through a **per-server** Dio instance.
-///
 /// Wire contract (resolved from backend source): `POST /feedback/reports`
 /// → 201. The path is relative — the per-server Dio carries the base URL
 /// (path-prefix deployments included), and the existing per-server auth

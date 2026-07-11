@@ -1,6 +1,8 @@
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 
+import '../deep_links/deep_link_source.dart';
+
 /// Initializes `HydratedBloc.storage`. Injectable so cubit tests can supply
 /// a no-op or counting fake; production wiring builds the real
 /// [HydratedStorage] from [PlatformBootstrap.hydratedStorageDirectory].
@@ -78,6 +80,22 @@ abstract interface class PlatformBootstrap {
   /// container implicitly — root services reach them by explicit
   /// constructor injection at context construction (#38 isolation).
   Future<DependencyContainer> createRootContainer();
+
+  /// Creates this platform's out-of-band deep-link source (#10), or
+  /// returns null when the platform has no such channel.
+  ///
+  /// Native (mobile, desktop) returns an `app_links`-backed source that
+  /// delivers `bge://` URLs — the launch link included. Web returns
+  /// **null**: the browser can only navigate within the origin, the
+  /// address-bar URL *is* the link, and `go_router`'s path URL strategy
+  /// already consumes it directly; there is no second channel to adapt.
+  ///
+  /// Called at most once per boot by `runBgeApp`, before [initialize] —
+  /// the underlying plugin must be instantiated early to capture the
+  /// cold-start launch link. Callers own the resulting subscription
+  /// lifecycle (via `DeepLinkHandler`); a null return simply means no
+  /// handler is constructed.
+  DeepLinkSource? createDeepLinkSource();
 
   /// Acquires the platform's app-global resources.
   ///

@@ -2,9 +2,6 @@ import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
 
-/// Red-phase tests for `FeedbackUncaughtErrorReporter` (issue #69) — the
-/// `UncaughtErrorReporter` backing the alpha "ask each time" flow.
-///
 /// Semantics pinned:
 ///
 /// - **Draft at capture, not at approval.** `report()` builds the crash

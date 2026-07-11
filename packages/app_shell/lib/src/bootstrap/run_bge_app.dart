@@ -7,6 +7,8 @@ import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
+import '../deep_links/deep_link_handler.dart';
+import '../deep_links/pending_deep_link_holder.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/global_error_hooks.dart';
 import '../observability/shell_observability.dart';
@@ -20,10 +22,11 @@ import 'platform_bootstrap.dart';
 /// [PlatformBootstrap] to this function.
 ///
 /// Sequencing: observability (breadcrumb capture + last-error slot) →
-/// binding init → **root container** → global error hooks → construct
-/// [AppBootstrapCubit] → start (not await) its bootstrap → `runApp`.
-/// Breadcrumbs attach first so every later step — including bootstrap
-/// failures — is already captured for feedback reports.
+/// binding init → **root container** → global error hooks → deep-link
+/// reception (#10) → construct [AppBootstrapCubit] → start (not await)
+/// its bootstrap → `runApp`. Breadcrumbs attach first so every later
+/// step — including bootstrap failures — is already captured for
+/// feedback reports.
 ///
 /// The root container (issue #72) is the app-scope, device-global
 /// [DependencyContainer], built by the platform composition root via
@@ -37,6 +40,18 @@ import 'platform_bootstrap.dart';
 /// widget owns the container's lifecycle
 /// ([BgeApp.disposeRootContainerOnDispose]), since this function has no
 /// teardown point of its own.
+///
+/// Deep-link reception (issue #10): the platform's out-of-band source is
+/// created via [PlatformBootstrap.createDeepLinkSource] *after* the error
+/// hooks (so handler faults are captured) and *before* the cubit's
+/// [PlatformBootstrap.initialize] — the underlying plugin must be
+/// instantiated early to buffer the cold-start launch link. When a source
+/// exists (native), a [DeepLinkHandler] normalizes each link into the
+/// [PendingDeepLinkHolder]; the holder is created on **every** platform,
+/// web included, because #83's auth-gate stashes redirect-bounced
+/// locations into the same slot. Draining the slot is #82/#83 scope. The
+/// app widget owns the handler's lifecycle
+/// ([BgeApp.disposeDeepLinkHandlerOnDispose]), mirroring the container.
 ///
 /// Error capture (issue #34) is [installGlobalErrorHooks]: the two
 /// catch-all surfaces the Flutter team recommends, with **no custom
@@ -172,6 +187,22 @@ Future<void> runBgeApp({
   );
   installBuildErrorView();
 
+  // #10: deep-link reception. Source before the cubit's initialize (the
+  // plugin buffers the cold-start launch link only if instantiated
+  // early), after the hooks (handler faults are captured). The holder
+  // exists on every platform — web's null source just means no handler
+  // feeds it from out-of-band links; #83's auth-gate feeds it from the
+  // router redirect instead.
+  final pendingDeepLinkHolder = PendingDeepLinkHolder();
+  final deepLinkSource = platformBootstrap.createDeepLinkSource();
+  DeepLinkHandler? deepLinkHandler;
+  if (deepLinkSource != null) {
+    deepLinkHandler = DeepLinkHandler(
+      source: deepLinkSource,
+      holder: pendingDeepLinkHolder,
+    )..start();
+  }
+
   final bootstrapCubit = AppBootstrapCubit(
     platformBootstrap: platformBootstrap,
     hydratedStorageInitializer: hydratedStorageInitializer,
@@ -182,12 +213,15 @@ Future<void> runBgeApp({
     BgeApp(
       bootstrapCubit: bootstrapCubit,
       // runBgeApp has no teardown point of its own, so the app widget
-      // owns the cubit's and the root container's lifecycles (relevant
-      // to hot restart and tests).
+      // owns the cubit's, the root container's, and the deep-link
+      // handler's lifecycles (relevant to hot restart and tests).
       closeBootstrapCubitOnDispose: true,
       rootContainer: rootContainer,
       disposeRootContainerOnDispose: true,
       feedbackReporter: feedbackReporter,
+      pendingDeepLinkHolder: pendingDeepLinkHolder,
+      deepLinkHandler: deepLinkHandler,
+      disposeDeepLinkHandlerOnDispose: true,
       theme: theme,
       darkTheme: darkTheme,
       highContrastTheme: highContrastTheme,

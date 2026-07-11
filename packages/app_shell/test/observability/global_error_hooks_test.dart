@@ -5,8 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
 
-/// Red-phase tests for `installGlobalErrorHooks` (issue #34).
-///
 /// Design decisions pinned here (see #34 for rationale):
 ///
 /// - **No custom Zone.** Per official Flutter guidance (3.3+),
