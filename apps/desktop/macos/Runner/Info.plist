@@ -18,6 +18,23 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
+	<!-- Deep links (#10): register the bge:// custom URL scheme so macOS
+	     delivers bge://server/{serverId}/... URLs to this app; app_links
+	     receives them (Apple Events) with no extra entitlement and no
+	     AppDelegate changes — those are only needed for universal links,
+	     which are deferred (self-hosted product cannot reliably publish
+	     the per-server association files; #10 decision). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>bge</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSMinimumSystemVersion</key>

@@ -5,9 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:native_platform/native_platform.dart';
 import 'package:observability/observability.dart';
 
-/// Red-phase tests for `FileFeedbackSink` (issue #69) — the durable
-/// native `FeedbackSink`.
-///
 /// Contract pinned:
 ///
 /// - **Only user-approved reports reach this sink** (the #34 privacy

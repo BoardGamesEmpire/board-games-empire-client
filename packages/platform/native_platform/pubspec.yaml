@@ -33,6 +33,7 @@ dependencies:
   connectivity_platform:
     path: ../connectivity_platform
 
+  app_links: ^7.2.1
   drift: ^2.28.2
   flutter_secure_storage: ^10.3.1
   hydrated_bloc: ^11.0.0

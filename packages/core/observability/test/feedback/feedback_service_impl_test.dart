@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-/// Red-phase tests for the concrete `FeedbackServiceImpl` (issue #69) —
-/// the device-global service registered in the root container.
-///
 /// API pinned here (all collaborators injected as providers so the
 /// package stays pure Dart and the service stays testable without any
 /// platform machinery):

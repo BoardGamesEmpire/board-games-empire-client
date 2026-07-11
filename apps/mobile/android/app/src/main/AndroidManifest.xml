@@ -29,9 +29,30 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Deep links (#10): Flutter's built-in deep linking (default-on
+                 since Flutter 3.24) would push raw bge:// URLs straight into
+                 the Navigator, bypassing our normalization/validation
+                 pipeline and double-handling links alongside app_links.
+                 Explicitly disabled per the app_links setup docs. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Deep links (#10): receive bge://server/{serverId}/... custom-
+                 scheme URLs, delivered to app_links via onNewIntent
+                 (singleTop) or the launch intent (cold start). autoVerify is
+                 deliberately absent — verified App Links require a per-server
+                 .well-known/assetlinks.json a self-hosted product cannot
+                 reliably publish; custom scheme only (#10 decision). The
+                 host filter narrows delivery to our published authority. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="bge" android:host="server"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

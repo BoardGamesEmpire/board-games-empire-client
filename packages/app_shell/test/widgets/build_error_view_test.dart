@@ -3,8 +3,6 @@ import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Red-phase tests for [BuildErrorView] (issue #66).
-///
 /// The view replaces Flutter's default in-build failure UI (debug red
 /// screen / release grey box) via `ErrorWidget.builder`. Design pinned
 /// here:

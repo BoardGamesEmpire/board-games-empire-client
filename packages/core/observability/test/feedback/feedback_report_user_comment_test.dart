@@ -1,9 +1,6 @@
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-/// Red-phase tests for the `withUserComment` extension on
-/// `FeedbackReport` (issue #69).
-///
 /// The crash draft is built at **capture** time (fresh breadcrumbs); the
 /// user's comment arrives at **approval** time. Rebuilding via
 /// `buildReport` would re-snapshot post-crash breadcrumb noise, so the

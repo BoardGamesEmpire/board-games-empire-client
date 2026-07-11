@@ -9,6 +9,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
+import '../deep_links/deep_link_handler.dart';
+import '../deep_links/pending_deep_link_holder.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
@@ -28,6 +30,9 @@ import 'crash_report_prompt.dart';
 /// Seams left deliberately open for sibling P0 issues:
 /// - [additionalLocalizationsDelegates] — feature-package delegates
 ///   (e.g. auth's, wired by #33/#37) appended after the shell's own.
+/// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
+///   #83 (auth-gate drain) can reach the pending slot from the widget
+///   layer; nothing in the shell reads it yet.
 ///
 /// Deliberately free of process-global side effects: `ErrorWidget.builder`
 /// (#66) and the uncaught-error hooks (#34) are installed by `runBgeApp`,
@@ -41,6 +46,9 @@ class BgeApp extends StatefulWidget {
     this.rootContainer,
     this.disposeRootContainerOnDispose = false,
     this.feedbackReporter,
+    this.pendingDeepLinkHolder,
+    this.deepLinkHandler,
+    this.disposeDeepLinkHandlerOnDispose = false,
     this.theme,
     this.darkTheme,
     this.highContrastTheme,
@@ -93,6 +101,28 @@ class BgeApp extends StatefulWidget {
   /// construction, which therefore behaves exactly as before.
   final FeedbackUncaughtErrorReporter? feedbackReporter;
 
+  /// The single pending deep-link slot (#10), created by `runBgeApp` on
+  /// every platform and fed by [deepLinkHandler] where one exists.
+  ///
+  /// Held here for future consumption — #82 drains it for navigation and
+  /// server switching, #83's auth-gate both stashes redirect-bounced
+  /// locations into it and drains it after sign-in. Nothing in the shell
+  /// reads it yet.
+  final PendingDeepLinkHolder? pendingDeepLinkHolder;
+
+  /// The deep-link reception pipeline (#10), when the platform has an
+  /// out-of-band channel (native). Null on web, where the browser URL is
+  /// the link and `go_router` consumes it directly. Held for lifecycle
+  /// ownership, like [rootContainer].
+  final DeepLinkHandler? deepLinkHandler;
+
+  /// Whether this widget owns [deepLinkHandler]'s lifecycle and disposes
+  /// it on unmount — the same ownership pattern as
+  /// [disposeRootContainerOnDispose]. `runBgeApp` passes true; tests
+  /// injecting their own handler keep the default and dispose it
+  /// themselves.
+  final bool disposeDeepLinkHandlerOnDispose;
+
   /// The four theme slots (#32). Each defaults to its [BgeTheme] factory
   /// when null; explicit values are embedder/test overrides and win.
   final ThemeData? theme;
@@ -131,6 +161,13 @@ class _BgeAppState extends State<BgeApp> {
     _refreshListenable.dispose();
     if (widget.closeBootstrapCubitOnDispose) {
       unawaited(widget.bootstrapCubit.close());
+    }
+    // #10: cancel deep-link reception with the widget. The cancel itself
+    // is issued synchronously inside dispose() (the await only covers
+    // its completion), so links emitted after unmount are ignored.
+    final deepLinkHandler = widget.deepLinkHandler;
+    if (widget.disposeDeepLinkHandlerOnDispose && deepLinkHandler != null) {
+      unawaited(deepLinkHandler.dispose());
     }
     // These teardowns run concurrently — dispose() cannot await, so the
     // order is NOT enforced. Assessed for #69 (per the deferral recorded

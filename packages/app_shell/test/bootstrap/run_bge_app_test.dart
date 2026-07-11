@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:app_shell/app_shell.dart';
@@ -9,8 +10,6 @@ import 'package:observability/observability.dart';
 import '../support/fake_platform_bootstrap.dart';
 import '../support/spy_root_container.dart';
 
-/// Red-phase tests for `runBgeApp`'s root-container leg (issue #72).
-///
 /// Design decisions pinned here (see #72 for rationale):
 ///
 /// - **The root container** (device-global `DependencyContainer`) is
@@ -37,6 +36,12 @@ import '../support/spy_root_container.dart';
 ///   an injectable initializer to the cubit (production default: the
 ///   cubit's real one) purely so these tests stay off real Hive IO —
 ///   the same seam `AppBootstrapCubit` already exposes.
+///
+/// The deep-link reception group (#10) pins the wiring decisions from
+/// that issue: source created once, before the failure-prone
+/// `initialize()`; a handler only where a source exists; the pending
+/// holder on every platform; the app widget owning the handler's
+/// lifecycle (`disposeDeepLinkHandlerOnDispose: true`).
 ///
 /// `runBgeApp` mutates process globals (`FlutterError.onError`,
 /// `PlatformDispatcher.onError`, `ErrorWidget.builder`), so every test
@@ -292,6 +297,90 @@ void main() {
       );
     });
   });
+
+  group('runBgeApp — deep-link reception wiring (#10)', () {
+    testWidgets('creates the deep-link source exactly once, before the '
+        'failure-prone platform initialize', (tester) async {
+      final bootstrap = FakePlatformBootstrap();
+
+      await boot(tester, bootstrap);
+
+      expect(bootstrap.createDeepLinkSourceCallCount, 1);
+      expect(
+        bootstrap.calls.indexOf('createDeepLinkSource'),
+        lessThan(bootstrap.calls.indexOf('initialize')),
+        reason:
+            'the underlying plugin must be instantiated early so the '
+            'cold-start launch link is captured before bootstrap runs',
+      );
+    });
+
+    testWidgets('without a source (web-shaped platform) no handler is '
+        'wired, but the holder still exists for redirect-side use '
+        '(#83)', (tester) async {
+      // FakePlatformBootstrap's deepLinkSource defaults to null — the
+      // same shape WebPlatformBootstrap returns.
+      await boot(tester, FakePlatformBootstrap());
+
+      final app = tester.widget<BgeApp>(find.byType(BgeApp));
+      expect(app.deepLinkHandler, isNull);
+      expect(app.pendingDeepLinkHolder, isNotNull);
+    });
+
+    testWidgets('a bge:// link lands normalized in the app-held holder, '
+        'and the app widget owns the handler', (tester) async {
+      final controller = StreamController<Uri>();
+      addTearDown(controller.close);
+      final bootstrap = FakePlatformBootstrap(
+        deepLinkSource: _FakeDeepLinkSource(controller.stream),
+      );
+
+      await boot(tester, bootstrap);
+      controller.add(Uri.parse('bge://server/s1/game/42'));
+      await tester.pump();
+
+      final app = tester.widget<BgeApp>(find.byType(BgeApp));
+      expect(app.deepLinkHandler, isNotNull);
+      expect(
+        app.disposeDeepLinkHandlerOnDispose,
+        isTrue,
+        reason:
+            'runBgeApp has no teardown point of its own — the app widget '
+            'owns the handler lifecycle, mirroring the root container',
+      );
+      expect(
+        app.pendingDeepLinkHolder!.peek,
+        const NormalizedDeepLink(
+          serverId: 's1',
+          location: '/server/s1/game/42',
+        ),
+      );
+    });
+
+    testWidgets('the handler stops receiving when the app unmounts', (
+      tester,
+    ) async {
+      final controller = StreamController<Uri>();
+      addTearDown(controller.close);
+      final bootstrap = FakePlatformBootstrap(
+        deepLinkSource: _FakeDeepLinkSource(controller.stream),
+      );
+      await boot(tester, bootstrap);
+      final holder = tester
+          .widget<BgeApp>(find.byType(BgeApp))
+          .pendingDeepLinkHolder!;
+
+      await unmount(tester);
+      controller.add(Uri.parse('bge://server/s1/game/42'));
+      await tester.pump();
+
+      expect(
+        holder.peek,
+        isNull,
+        reason: 'disposal must cancel the subscription with the widget',
+      );
+    });
+  });
 }
 
 class _SpyReporter implements UncaughtErrorReporter {
@@ -299,4 +388,11 @@ class _SpyReporter implements UncaughtErrorReporter {
 
   @override
   void report(UncaughtErrorRecord record) => reported.add(record);
+}
+
+class _FakeDeepLinkSource implements DeepLinkSource {
+  _FakeDeepLinkSource(this.uris);
+
+  @override
+  final Stream<Uri> uris;
 }

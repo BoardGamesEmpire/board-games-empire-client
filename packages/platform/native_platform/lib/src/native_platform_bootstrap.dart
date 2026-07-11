@@ -16,6 +16,7 @@ import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 
+import 'deep_links/app_links_deep_link_source.dart';
 import 'native_root_module.dart';
 
 /// Builds the orchestrator; injectable so tests can substitute a fake.
@@ -65,6 +66,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
     void Function(DatabaseRecoveryEvent event)? onServerDatabaseRecovery,
     Future<void> Function(DependencyContainer container)? rootModule,
+    DeepLinkSource Function()? deepLinkSourceFactory,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.platform.native_bootstrap'),
        assert(
@@ -89,7 +91,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
        _hydratedDirectoryProvider =
            hydratedDirectoryProvider ?? _defaultHydratedDirectory,
        _onServerDatabaseRecovery = onServerDatabaseRecovery,
-       _rootModule = rootModule ?? registerNativeRootModule {
+       _rootModule = rootModule ?? registerNativeRootModule,
+       _deepLinkSourceFactory =
+           deepLinkSourceFactory ?? AppLinksDeepLinkSource.new {
     _executorFactory =
         executorFactory ?? EncryptedExecutorFactory(keyService: _keyService);
   }
@@ -106,6 +110,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   final Future<HydratedStorageDirectory> Function() _hydratedDirectoryProvider;
   final void Function(DatabaseRecoveryEvent event)? _onServerDatabaseRecovery;
   final Future<void> Function(DependencyContainer container) _rootModule;
+  final DeepLinkSource Function() _deepLinkSourceFactory;
 
   MetaDatabase? _metaDatabase;
   ServerOrchestrator? _orchestrator;
@@ -151,6 +156,12 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     }
     return container;
   }
+
+  /// Native out-of-band deep-link channel (#10): the `app_links`-backed
+  /// source delivering `bge://` URLs, launch link included. The factory is
+  /// injectable so shell wiring tests never touch a real platform channel.
+  @override
+  DeepLinkSource? createDeepLinkSource() => _deepLinkSourceFactory();
 
   @override
   Future<BootstrapResult> initialize() async {

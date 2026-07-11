@@ -16,7 +16,8 @@ import 'package:rxdart/rxdart.dart';
 ///   its result corrects the seed — unless a change event has already
 ///   arrived, in which case the (older) check result is discarded.
 /// - **Never throws.** A failing check is swallowed; the seed stands
-///   until the first change event.
+///   until the first change event. A source-stream error is likewise
+///   swallowed (see [_onSourceError]).
 /// - **Coarse mapping.** A list containing any non-`none` transport →
 ///   [ConnectivityState.online]; `[ConnectivityResult.none]`-only or
 ///   empty → [ConnectivityState.offline]. [ConnectivityState.unknown]
@@ -49,7 +50,7 @@ class ConnectivityPlusService implements ConnectivityService, Disposable {
     final changes = connectivityChanges ?? connectivity!.onConnectivityChanged;
     final check = connectivityCheck ?? connectivity!.checkConnectivity;
 
-    _subscription = changes.listen(_onEvent);
+    _subscription = changes.listen(_onEvent, onError: _onSourceError);
     unawaited(_eagerCheck(check));
   }
 
@@ -91,6 +92,16 @@ class ConnectivityPlusService implements ConnectivityService, Disposable {
     _eventSeen = true;
     _emit(_map(results));
   }
+
+  /// Swallowed by the same contract as [_eagerCheck]: `onConnectivityChanged`
+  /// can emit errors on some platforms. Without a handler here the error
+  /// escapes as an unhandled async error and — via `installGlobalErrorHooks`
+  /// (#34) — surfaces a crash-report prompt for a transient connectivity
+  /// blip. The last-known coarse state stands and attempts fail honestly.
+  /// No logger is wired into this platform package yet (adding an
+  /// observability dependency here is deferred to #67/#70); revisit if one
+  /// lands, to breadcrumb the error at debug level.
+  void _onSourceError(Object error, StackTrace stackTrace) {}
 
   Future<void> _eagerCheck(
     Future<List<ConnectivityResult>> Function() check,

@@ -2,7 +2,8 @@
 ///
 /// Owns the bootstrap sequence ([AppBootstrapCubit] over a platform-supplied
 /// [PlatformBootstrap]), the `go_router` route table (including reserved
-/// deep-link paths, #10), global uncaught-error capture (#34) with the
+/// deep-link paths, #10), deep-link reception/normalization and the
+/// pending-link slot (#10), global uncaught-error capture (#34) with the
 /// "ask each time" crash-report flow (#69), and the shell screens (splash,
 /// bootstrap failure, placeholders, not-yet-available).
 ///
@@ -15,6 +16,12 @@ export 'src/bootstrap/app_bootstrap_cubit.dart';
 export 'src/bootstrap/app_bootstrap_state.dart';
 export 'src/bootstrap/platform_bootstrap.dart';
 export 'src/bootstrap/run_bge_app.dart';
+export 'src/deep_links/deep_link_handler.dart';
+export 'src/deep_links/deep_link_normalizer.dart';
+export 'src/deep_links/deep_link_redaction.dart';
+export 'src/deep_links/deep_link_source.dart';
+export 'src/deep_links/known_server_lookup.dart';
+export 'src/deep_links/pending_deep_link_holder.dart';
 export 'src/observability/feedback_uncaught_error_reporter.dart';
 export 'src/observability/global_error_hooks.dart';
 export 'src/observability/shell_observability.dart';

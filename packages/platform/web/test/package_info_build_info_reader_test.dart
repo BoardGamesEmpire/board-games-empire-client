@@ -6,8 +6,6 @@ import 'package:models/domain.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:web_platform/web.dart';
 
-/// Red-phase tests for the web `BuildInfoReader` (issue #35).
-///
 /// Same contract as the native reader — on web, `package_info_plus` reads
 /// Flutter's generated `version.json` under the hood, but the injectable
 /// source seam and the `PackageInfo` → `BuildInfo` mapping are identical,

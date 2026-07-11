@@ -6,8 +6,6 @@ import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// Red-phase tests for the native `BuildInfoReader` (issue #35).
-///
 /// The reader maps `package_info_plus`'s `PackageInfo` onto `BuildInfo`,
 /// with the plugin source injected for tests — the same constructor-
 /// injection seam `SecureStorageEncryptionKeyService` uses for
