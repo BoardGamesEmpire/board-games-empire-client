@@ -101,7 +101,7 @@ class ConnectivityPlusService implements ConnectivityService, Disposable {
   /// No logger is wired into this platform package yet (adding an
   /// observability dependency here is deferred to #67/#70); revisit if one
   /// lands, to breadcrumb the error at debug level.
-  void _onSourceError(Object error, StackTrace stackTrace) {}
+  void _onSourceError(Object _, StackTrace _) {}
 
   Future<void> _eagerCheck(
     Future<List<ConnectivityResult>> Function() check,

@@ -76,8 +76,25 @@ static void my_application_activate(GApplication* application) {
 // Implements GApplication::local_command_line.
 static gboolean my_application_local_command_line(GApplication* application, gchar*** arguments, int* exit_status) {
   MyApplication* self = MY_APPLICATION(application);
-  // Strip out the first argument as it is the binary name.
-  self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
+  // Strip out the first argument (the binary name), AND any bge:// deep-link
+  // URL (#10). GApplication (HANDLES_OPEN) already routes the URL to
+  // app_links via the open signal; forwarding it again through Dart's
+  // main(List<String> args) would double-handle it and leak raw invite/RSVP
+  // tokens into the process arguments. Case-insensitive: the scheme is
+  // case-insensitive and some launchers preserve casing.
+  gchar** argv = *arguments;
+  GPtrArray* filtered = g_ptr_array_new();
+  for (int i = 1; argv[i] != nullptr; i++) {
+    if (g_ascii_strncasecmp(argv[i], "bge://", 6) == 0) {
+      continue;
+    }
+    g_ptr_array_add(filtered, g_strdup(argv[i]));
+  }
+  g_ptr_array_add(filtered, nullptr);
+  // Free the container but keep the (null-terminated) buffer; g_strfreev in
+  // dispose owns it thereafter.
+  self->dart_entrypoint_arguments =
+      static_cast<gchar**>(g_ptr_array_free(filtered, FALSE));
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
