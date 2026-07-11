@@ -43,6 +43,7 @@ workspace:
   - packages/platform/mobile
   - packages/platform/desktop
   - packages/platform/native_platform
+  - packages/platform/connectivity_platform
   - packages/platform/web
   - packages/ui/tokens
   - packages/ui/widgets
