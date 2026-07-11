@@ -10,12 +10,11 @@ concurrency:
   cancel-in-progress: true
 
 # Pin Flutter once for the whole workflow. Bump here to move every job.
-# Pinning (rather than tracking `stable`) is load-bearing for the golden
-# tests (#32): goldens are rendered against a specific engine, so an
-# unpinned `stable` rolling forward would fail unrelated PRs on a
-# sub-pixel raster shift. When bumping, regenerate goldens locally
-# (`melos run goldens:update`) and commit the refreshed ci/ PNGs in the
-# same PR.
+# Pinning (rather than tracking `stable`) keeps codegen, analysis, and
+# tests deterministic across runs. Goldens (#32) run local-only (see the
+# `test` job), so on a bump also regenerate them locally
+# (`melos run goldens:update`) and commit the refreshed `goldens/ci/`
+# PNGs in the same PR.
 env:
   FLUTTER_VERSION: 3.44.4
 
@@ -153,11 +152,13 @@ jobs:
   # runs pure-Dart suites cleanly too. Restores generated code first.
   # fail-fast off so one red package doesn't cancel the rest.
   #
-  # Goldens (#32): runners are ubuntu, so alchemist compares only its
-  # CI variant against the committed test/**/goldens/ci/ PNGs
-  # (Ahem-rendered, renderer-stable); the gitignored platform goldens
-  # are skipped. CI compares only — never regenerates (see
-  # `melos run goldens:update`).
+  # Goldens (#32) are EXCLUDED here (`--exclude-tags golden`) and run
+  # local-only. Alchemist's CI goldens obscure text but still rasterize
+  # shapes/anti-aliasing per-platform, so a macOS-generated baseline
+  # won't match a Linux runner — the version pin removes engine skew but
+  # not OS skew. Restoring CI coverage means generating the committed
+  # `goldens/ci/` baselines on Linux (e.g. a Docker/CI --update-goldens
+  # job) and disabling the CI-golden variant locally; deferred for now.
   test:
     name: Test ${{ matrix.package }}
     needs: [generate, discover-tests]
@@ -183,4 +184,4 @@ jobs:
         run: flutter pub get
       - name: flutter test
         working-directory: ${{ matrix.package }}
-        run: flutter test --test-randomize-ordering-seed random
+        run: flutter test --exclude-tags golden --test-randomize-ordering-seed random

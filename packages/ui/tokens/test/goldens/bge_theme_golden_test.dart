@@ -1,37 +1,47 @@
+import 'dart:async';
+
 import 'package:alchemist/alchemist.dart';
 import 'package:flutter/material.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// Visual regression coverage for the four themes (#32).
 ///
-/// Regenerate with `flutter test --update-goldens`. Only the CI variant
-/// (`goldens/ci/`, Ahem-rendered, renderer-stable) is committed; platform
-/// goldens are gitignored human-review artifacts. Tagged `golden` by
-/// alchemist — `flutter test --exclude-tags golden` skips.
+/// Local check only — see the `test` job in `.github/workflows/ci.yaml`
+/// for why goldens are excluded from CI (`--exclude-tags golden`):
+/// Alchemist's CI goldens obscure text but still rasterize shapes and
+/// anti-aliased edges per-platform, so a macOS-generated baseline does
+/// not match a Linux CI render. Regenerate with
+/// `flutter test --update-goldens` (or `melos run goldens:update`). Only
+/// the CI variant (`goldens/ci/`) is committed; platform goldens are
+/// gitignored. Tagged `golden` by alchemist.
 void main() {
-  goldenTest(
-    'BgeTheme renders the token showcase in all four themes',
-    fileName: 'bge_theme_showcase',
-    builder: () => GoldenTestGroup(
-      scenarioConstraints: const BoxConstraints(maxWidth: 420),
-      children: [
-        GoldenTestScenario(
-          name: 'light',
-          child: _TokenShowcase(theme: BgeTheme.light()),
-        ),
-        GoldenTestScenario(
-          name: 'dark',
-          child: _TokenShowcase(theme: BgeTheme.dark()),
-        ),
-        GoldenTestScenario(
-          name: 'high contrast light',
-          child: _TokenShowcase(theme: BgeTheme.highContrastLight()),
-        ),
-        GoldenTestScenario(
-          name: 'high contrast dark',
-          child: _TokenShowcase(theme: BgeTheme.highContrastDark()),
-        ),
-      ],
+  // goldenTest returns Future<void>; the test framework tracks the
+  // registration itself, so we intentionally don't await it here.
+  unawaited(
+    goldenTest(
+      'BgeTheme renders the token showcase in all four themes',
+      fileName: 'bge_theme_showcase',
+      builder: () => GoldenTestGroup(
+        scenarioConstraints: const BoxConstraints(maxWidth: 420),
+        children: [
+          GoldenTestScenario(
+            name: 'light',
+            child: _TokenShowcase(theme: BgeTheme.light()),
+          ),
+          GoldenTestScenario(
+            name: 'dark',
+            child: _TokenShowcase(theme: BgeTheme.dark()),
+          ),
+          GoldenTestScenario(
+            name: 'high contrast light',
+            child: _TokenShowcase(theme: BgeTheme.highContrastLight()),
+          ),
+          GoldenTestScenario(
+            name: 'high contrast dark',
+            child: _TokenShowcase(theme: BgeTheme.highContrastDark()),
+          ),
+        ],
+      ),
     ),
   );
 }
