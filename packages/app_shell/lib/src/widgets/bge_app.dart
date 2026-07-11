@@ -11,6 +11,7 @@ import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
 import '../deep_links/deep_link_handler.dart';
 import '../deep_links/pending_deep_link_holder.dart';
+import '../i18n/active_locale.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
@@ -27,9 +28,25 @@ import 'crash_report_prompt.dart';
 /// 200%) via a `MediaQuery` clamp in the app builder. [themeMode] stays
 /// [ThemeMode.system]; the user-facing selection + persistence is #78.
 ///
+/// i18n (#33): the shell owns the localization composition. Its own
+/// delegates ([ShellLocalizations.localizationsDelegates], which bundle
+/// the three `Global*` delegates) come first;
+/// [additionalLocalizationsDelegates] appends **single feature
+/// delegates** (e.g. `AuthLocalizations.delegate`, wired by #37) — never
+/// a feature's bundled `localizationsDelegates` list, which would
+/// re-include the `Global*` delegates. [supportedLocales] stays
+/// [ShellLocalizations.supportedLocales] with `en` first: Flutter's
+/// default resolution (exact match → languageCode match → **first**
+/// supported locale) then provides the `en` fallback with no custom
+/// resolution callback; #78's user-selected override is the first thing
+/// that would need one. [activeLocaleController], when supplied, is kept
+/// in sync with the negotiated locale via [ActiveLocaleCapture] in the
+/// app builder, so non-widget consumers (gateway hints, feedback
+/// environment) read the locale the UI actually renders in.
+///
 /// Seams left deliberately open for sibling P0 issues:
 /// - [additionalLocalizationsDelegates] — feature-package delegates
-///   (e.g. auth's, wired by #33/#37) appended after the shell's own.
+///   (auth's wired by #37) appended after the shell's own.
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
 ///   #83 (auth-gate drain) can reach the pending slot from the widget
 ///   layer; nothing in the shell reads it yet.
@@ -49,6 +66,8 @@ class BgeApp extends StatefulWidget {
     this.pendingDeepLinkHolder,
     this.deepLinkHandler,
     this.disposeDeepLinkHandlerOnDispose = false,
+    this.activeLocaleController,
+    this.disposeActiveLocaleControllerOnDispose = false,
     this.theme,
     this.darkTheme,
     this.highContrastTheme,
@@ -123,6 +142,19 @@ class BgeApp extends StatefulWidget {
   /// themselves.
   final bool disposeDeepLinkHandlerOnDispose;
 
+  /// The active-locale slot (#33), created and container-registered by
+  /// `runBgeApp`. When non-null, [ActiveLocaleCapture] in the app builder
+  /// mirrors the negotiated locale into it on every locale change; null
+  /// (test/embedder default) wires no capture.
+  final ActiveLocaleController? activeLocaleController;
+
+  /// Whether this widget owns [activeLocaleController]'s lifecycle and
+  /// disposes it on unmount — the same ownership pattern as
+  /// [disposeRootContainerOnDispose]. `runBgeApp` passes true; tests
+  /// injecting their own controller keep the default and dispose it
+  /// themselves.
+  final bool disposeActiveLocaleControllerOnDispose;
+
   /// The four theme slots (#32). Each defaults to its [BgeTheme] factory
   /// when null; explicit values are embedder/test overrides and win.
   final ThemeData? theme;
@@ -169,11 +201,19 @@ class _BgeAppState extends State<BgeApp> {
     if (widget.disposeDeepLinkHandlerOnDispose && deepLinkHandler != null) {
       unawaited(deepLinkHandler.dispose());
     }
+    // #33: the controller is a plain ValueNotifier — synchronous dispose,
+    // no ordering concerns with the async teardowns around it.
+    final activeLocaleController = widget.activeLocaleController;
+    if (widget.disposeActiveLocaleControllerOnDispose &&
+        activeLocaleController != null) {
+      activeLocaleController.dispose();
+    }
     // These teardowns run concurrently — dispose() cannot await, so the
     // order is NOT enforced. Assessed for #69 (per the deferral recorded
     // there): the container now holds BuildInfo (a value), a FeedbackSink,
-    // and the FeedbackService — none is touched by the cubit's shutdown
-    // and none needs a flush (sink writes are awaited at submit time), so
+    // the FeedbackService, and the ActiveLocaleReader (#33, a plain
+    // value holder) — none is touched by the cubit's shutdown and none
+    // needs a flush (sink writes are awaited at submit time), so
     // concurrent teardown remains safe. The enforcement (chain the
     // container's disposal after the cubit's close via whenComplete)
     // becomes necessary only when a genuinely cubit-touched service
@@ -211,7 +251,7 @@ class _BgeAppState extends State<BgeApp> {
         builder: (context, child) {
           final content = child ?? const SizedBox.shrink();
           final reporter = widget.feedbackReporter;
-          final Widget body = reporter == null
+          Widget body = reporter == null
               ? content
               : ValueListenableBuilder<FeedbackReport?>(
                   valueListenable: reporter.pendingCrashReport,
@@ -269,6 +309,16 @@ class _BgeAppState extends State<BgeApp> {
                     );
                   },
                 );
+          // #33: mirror the negotiated locale (this context sits below
+          // the app's Localizations widget) into the app-scope slot so
+          // non-widget consumers read what the UI actually renders in.
+          final activeLocaleController = widget.activeLocaleController;
+          if (activeLocaleController != null) {
+            body = ActiveLocaleCapture(
+              controller: activeLocaleController,
+              child: body,
+            );
+          }
           // #32 / WCAG 1.4.4: honor OS text scaling up to 200%, clamped
           // app-wide (crash prompt included) so unbounded scale factors
           // can't break layouts while the full required range is

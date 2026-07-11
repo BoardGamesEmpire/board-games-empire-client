@@ -31,24 +31,24 @@ class BootstrapErrorScreen extends StatelessWidget {
   final VoidCallback onReset;
 
   Future<void> _confirmReset(BuildContext context) async {
-    final l10n = ShellLocalizations.of(context);
+    final i18n = ShellLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.shellBootstrapErrorResetConfirmTitle),
-        content: Text(l10n.shellBootstrapErrorResetConfirmBody),
+        title: Text(i18n.shellBootstrapErrorResetConfirmTitle),
+        content: Text(i18n.shellBootstrapErrorResetConfirmBody),
         actions: [
           TextButton(
             key: resetCancelButtonKey,
             style: TextButton.styleFrom(minimumSize: _minTapTarget),
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.shellBootstrapErrorResetCancel),
+            child: Text(i18n.shellBootstrapErrorResetCancel),
           ),
           FilledButton(
             key: resetConfirmButtonKey,
             style: FilledButton.styleFrom(minimumSize: _minTapTarget),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.shellBootstrapErrorResetConfirmAction),
+            child: Text(i18n.shellBootstrapErrorResetConfirmAction),
           ),
         ],
       ),
@@ -58,7 +58,7 @@ class BootstrapErrorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ShellLocalizations.of(context);
+    final i18n = ShellLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: Center(
@@ -83,20 +83,20 @@ class BootstrapErrorScreen extends StatelessWidget {
                   child: Semantics(
                     liveRegion: true,
                     child: Text(
-                      l10n.shellBootstrapErrorTitle,
+                      i18n.shellBootstrapErrorTitle,
                       style: Theme.of(context).textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(l10n.shellBootstrapErrorBody, textAlign: TextAlign.center),
+                Text(i18n.shellBootstrapErrorBody, textAlign: TextAlign.center),
                 const SizedBox(height: 24),
                 FilledButton(
                   key: retryButtonKey,
                   style: FilledButton.styleFrom(minimumSize: _minTapTarget),
                   onPressed: onRetry,
-                  child: Text(l10n.shellBootstrapErrorRetry),
+                  child: Text(i18n.shellBootstrapErrorRetry),
                 ),
                 if (canOfferReset) ...[
                   const SizedBox(height: 12),
@@ -107,7 +107,7 @@ class BootstrapErrorScreen extends StatelessWidget {
                       foregroundColor: colorScheme.error,
                     ),
                     onPressed: () => _confirmReset(context),
-                    child: Text(l10n.shellBootstrapErrorReset),
+                    child: Text(i18n.shellBootstrapErrorReset),
                   ),
                 ],
               ],

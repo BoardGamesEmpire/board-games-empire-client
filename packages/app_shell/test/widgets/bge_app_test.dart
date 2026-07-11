@@ -1,5 +1,4 @@
 import 'package:app_shell/app_shell.dart';
-import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

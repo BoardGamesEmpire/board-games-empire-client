@@ -45,6 +45,7 @@ workspace:
   - packages/platform/native_platform
   - packages/platform/connectivity_platform
   - packages/platform/web
+  - packages/testing/l10n
   - packages/ui/tokens
   - packages/ui/widgets
 
@@ -54,7 +55,22 @@ melos:
       usePubspecOverrides: true
 
   scripts:
+    # ── Staged generation (#33) ────────────────────────────────────
+    # l10n FIRST: generated localizations are gitignored (regenerated,
+    # never committed — no drift), and they must exist before the
+    # build_runner pass per the established build ordering. A fresh
+    # checkout must run `melos run generate` once before analyze/test.
     generate:
+      run: melos run generate:i18n && melos run generate:build
+      description: Full staged codegen — gen-l10n across i18n packages, then one workspace-wide build_runner pass.
+
+    generate:i18n:
+      run: melos exec -- flutter gen-l10n
+      description: Generate localizations in every package that owns an l10n.yaml.
+      packageFilters:
+        fileExists: l10n.yaml
+
+    generate:build:
       run: dart run build_runner build --workspace --delete-conflicting-outputs
       description: Run build_runner once across the entire workspace (single builder compile, parallel across packages).
 
@@ -121,8 +137,10 @@ melos:
         find . -name "*.g.dart" -not -path "*/.dart_tool/*" -delete
         find . -name "*.freezed.dart" -not -path "*/.dart_tool/*" -delete
         find . -name "*.config.dart" -not -path "*/.dart_tool/*" -delete
+        find . -path "*/lib/l10n/*_localizations*.dart" -not -path "*/.dart_tool/*" -delete
+        find . -path "*/lib/l10n/untranslated.txt" -not -path "*/.dart_tool/*" -delete
         echo "Deleted all generated files."
-      description: Delete all generated .g.dart / .freezed.dart / .config.dart files
+      description: Delete all generated .g.dart / .freezed.dart / .config.dart files and generated localizations
 
     # Individual app runners
     web:

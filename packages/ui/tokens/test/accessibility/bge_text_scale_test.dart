@@ -28,7 +28,7 @@ void main() {
     });
 
     testWidgets('clampedOf caps scaling above the ceiling', (tester) async {
-      final context = await pumpWithScale(tester, 3.0);
+      final context = await pumpWithScale(tester, 3);
       expect(BgeTextScale.clampedOf(context).scale(10), 20);
     });
 
@@ -40,7 +40,7 @@ void main() {
     });
 
     testWidgets('clampedOf is identity at 1.0', (tester) async {
-      final context = await pumpWithScale(tester, 1.0);
+      final context = await pumpWithScale(tester, 1);
       expect(BgeTextScale.clampedOf(context).scale(10), 10);
     });
   });

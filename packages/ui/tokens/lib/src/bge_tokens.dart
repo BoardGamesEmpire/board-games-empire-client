@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 /// themes.
 @immutable
 class BgeTokens extends ThemeExtension<BgeTokens> {
+  /// Creates a token set. Prefer [standard]; this exists for tests and the
+  /// future SDUI layer (#19).
   const BgeTokens({
     required this.spaceXs,
     required this.spaceSm,
@@ -52,16 +54,34 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   );
 
   // ── Spacing scale (logical px) ─────────────────────────────────────
+
+  /// Extra-small spacing step (logical px).
   final double spaceXs;
+
+  /// Small spacing step (logical px).
   final double spaceSm;
+
+  /// Medium spacing step (logical px).
   final double spaceMd;
+
+  /// Large spacing step (logical px).
   final double spaceLg;
+
+  /// Extra-large spacing step (logical px).
   final double spaceXl;
+
+  /// Double-extra-large spacing step (logical px).
   final double spaceXxl;
 
   // ── Corner radii ───────────────────────────────────────────────────
+
+  /// Small corner radius (logical px).
   final double radiusSm;
+
+  /// Medium corner radius (logical px).
   final double radiusMd;
+
+  /// Large corner radius (logical px).
   final double radiusLg;
 
   // ── Accessibility dimensions ───────────────────────────────────────
@@ -77,8 +97,14 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   // ── Motion durations ───────────────────────────────────────────────
   // Resolve through `BgeMotion.durationOf` so OS reduced-motion collapses
   // them to zero.
+
+  /// Short motion duration (e.g. small state changes).
   final Duration motionShort;
+
+  /// Medium motion duration (e.g. transitions).
   final Duration motionMedium;
+
+  /// Long motion duration (e.g. large or emphasized transitions).
   final Duration motionLong;
 
   @override

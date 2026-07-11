@@ -1,4 +1,3 @@
-import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -169,22 +168,22 @@ void main() {
 
       expect(
         tester.getSemantics(find.byKey(CrashReportPrompt.sendButtonKey)),
-        containsSemantics(isButton: true),
+        isSemantics(isButton: true),
       );
       expect(
         tester.getSemantics(find.byKey(CrashReportPrompt.discardButtonKey)),
-        containsSemantics(isButton: true),
+        isSemantics(isButton: true),
       );
 
       // InputDecoration.labelText is the Material accessible-label
       // mechanism, but WHERE Flutter hangs it in the semantics tree
       // (merged onto the text field's node vs the decorator's own label
       // node) varies by version — so assert the label's *presence* in
-      // the tree, not its placement on one node. Loaded via the l10n
+      // the tree, not its placement on one node. Loaded via the i18n
       // delegate so the assertion stays locale-agnostic.
-      final l10n = await ShellLocalizations.delegate.load(const Locale('en'));
+      final i18n = await ShellLocalizations.delegate.load(const Locale('en'));
       expect(
-        find.bySemanticsLabel(l10n.crashReportPromptCommentLabel),
+        find.bySemanticsLabel(i18n.crashReportPromptCommentLabel),
         findsWidgets,
       );
     });
