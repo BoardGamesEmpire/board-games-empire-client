@@ -23,6 +23,8 @@ dependencies:
     path: ../../core/di
   observability:
     path: ../../core/observability
+  connectivity_platform:
+    path: ../connectivity_platform
 
   # Web-specific
   url_strategy: ^0.3.0

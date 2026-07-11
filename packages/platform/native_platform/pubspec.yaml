@@ -30,6 +30,8 @@ dependencies:
     path: ../../storage/key_storage
   dio_network:
     path: ../../network/dio_network
+  connectivity_platform:
+    path: ../connectivity_platform
 
   drift: ^2.28.2
   flutter_secure_storage: ^10.3.1
