@@ -97,19 +97,29 @@ static gboolean my_application_local_command_line(GApplication* application, gch
       static_cast<gchar**>(g_ptr_array_free(filtered, FALSE));
 
   g_autoptr(GError) error = nullptr;
+  // Registration must precede the manual activate below
+  // (g_application_activate asserts the app is registered). A genuine
+  // registration failure is the one path we fully handle locally: set the
+  // status and return TRUE so no further processing runs.
   if (!g_application_register(application, nullptr, &error)) {
-     g_warning("Failed to register: %s", error->message);
-     *exit_status = 1;
-     return TRUE;
+    g_warning("Failed to register: %s", error->message);
+    *exit_status = 1;
+    return TRUE;
   }
 
+  // Guarantee a window even on a cold start opened via a bge:// URL (#10):
+  // with HANDLES_OPEN that path emits `open` (where app_links captures the
+  // link), not `activate`, and we don't implement an open-based window
+  // builder. The gtk_application_get_windows guard in
+  // my_application_activate keeps this idempotent with the activation
+  // GApplication performs on the FALSE path below (no duplicate window).
   g_application_activate(application);
-  *exit_status = 0;
 
-  // Deep links (#10): return FALSE so GApplication continues its default
-  // command-line/open handling (the incoming bge:// URL) rather than
-  // consuming it here. Required alongside the HANDLES_COMMAND_LINE | OPEN
-  // flags below.
+  // Return FALSE so GApplication drives its default handling: forward the
+  // command line / bge:// URL to the primary instance (single-instance) and
+  // emit `open` so app_links receives the link. Deliberately do NOT set
+  // *exit_status here — on the FALSE path GApplication computes it after the
+  // default processing, so any value set here is dead.
   return FALSE;
 }
 
