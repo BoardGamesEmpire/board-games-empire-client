@@ -13,11 +13,11 @@ abstract final class Wcag {
   static const double aaNormalText = 4.5;
 
   /// SC 1.4.3 — minimum for large text and SC 1.4.11 non-text (AA).
-  static const double aaLargeText = 3.0;
+  static const double aaLargeText = 3;
 
   /// SC 1.4.6 — minimum for normal text (AAA); the bar the
   /// high-contrast schemes are held to.
-  static const double aaaNormalText = 7.0;
+  static const double aaaNormalText = 7;
 
   /// The WCAG contrast ratio between [a] and [b], in `1.0..21.0`.
   /// Symmetric — argument order does not matter.

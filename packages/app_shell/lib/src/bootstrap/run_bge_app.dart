@@ -4,11 +4,13 @@ import 'package:di/di.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
 import '../deep_links/deep_link_handler.dart';
 import '../deep_links/pending_deep_link_holder.dart';
+import '../i18n/active_locale.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/global_error_hooks.dart';
 import '../observability/shell_observability.dart';
@@ -22,11 +24,11 @@ import 'platform_bootstrap.dart';
 /// [PlatformBootstrap] to this function.
 ///
 /// Sequencing: observability (breadcrumb capture + last-error slot) →
-/// binding init → **root container** → global error hooks → deep-link
-/// reception (#10) → construct [AppBootstrapCubit] → start (not await)
-/// its bootstrap → `runApp`. Breadcrumbs attach first so every later
-/// step — including bootstrap failures — is already captured for
-/// feedback reports.
+/// binding init → **root container** → active-locale slot (#33) →
+/// global error hooks → deep-link reception (#10) → construct
+/// [AppBootstrapCubit] → start (not await) its bootstrap → `runApp`.
+/// Breadcrumbs attach first so every later step — including bootstrap
+/// failures — is already captured for feedback reports.
 ///
 /// The root container (issue #72) is the app-scope, device-global
 /// [DependencyContainer], built by the platform composition root via
@@ -40,6 +42,24 @@ import 'platform_bootstrap.dart';
 /// widget owns the container's lifecycle
 /// ([BgeApp.disposeRootContainerOnDispose]), since this function has no
 /// teardown point of its own.
+///
+/// The active-locale slot (issue #33) is an [ActiveLocaleController]
+/// seeded with the raw OS locale — the best available value before the
+/// first frame. It is created, registered as [ActiveLocaleReader], and
+/// handed to [BgeApp] for capture as a single unit, and only when no
+/// reader is already registered. A platform module or test seam that
+/// pre-registers its own reader stays authoritative for consumers AND
+/// owns its own locale updates — [runBgeApp] then wires no capture (the
+/// controller is null), so it can never leave the registered reader on
+/// its seed while a detached controller tracks the real locale. When
+/// [runBgeApp] does own the slot, [BgeApp]'s `ActiveLocaleCapture`
+/// corrects it to the **negotiated** locale at the first frame and
+/// tracks OS locale changes thereafter, so consumers (the feedback
+/// environment below; gateway `locale` hints later) read the locale the
+/// UI actually renders in, not a language the app may have no
+/// translations for. The app widget owns the controller's lifecycle
+/// ([BgeApp.disposeActiveLocaleControllerOnDispose]) when it owns the
+/// controller.
 ///
 /// Deep-link reception (issue #10): the platform's out-of-band source is
 /// created via [PlatformBootstrap.createDeepLinkSource] *after* the error
@@ -130,6 +150,30 @@ Future<void> runBgeApp({
     rootContainer = DependencyContainerImpl();
   }
 
+  // #33: the active-locale slot, seeded with the raw OS locale (the best
+  // available value pre-frame; BgeApp's capture corrects it to the
+  // negotiated locale at the first frame).
+  //
+  // Create, register, AND wire capture as a single unit — only when no
+  // reader is already registered. If a platform module or test seam has
+  // pre-registered one, it stays authoritative for consumers AND owns
+  // its own locale updates: we must not overwrite it, and — critically —
+  // must not wire BgeApp's capture to a fresh controller no consumer
+  // reads (that would leave the pre-registered reader stuck on its seed
+  // while a detached controller silently tracks the negotiated locale).
+  // So a foreign reader means `activeLocaleController` stays null and
+  // BgeApp wires no capture.
+  final ActiveLocaleController? activeLocaleController =
+      rootContainer.isRegistered<ActiveLocaleReader>()
+      ? null
+      : ActiveLocaleController(
+          WidgetsBinding.instance.platformDispatcher.locale,
+        );
+  if (activeLocaleController != null) {
+    rootContainer.registerSingleton<ActiveLocaleReader>(activeLocaleController);
+  }
+  final registeredLocaleReader = rootContainer.get<ActiveLocaleReader>();
+
   // #69: compose the device-global FeedbackService and register it —
   // on whichever container boot proceeds with, INCLUDING the empty
   // fallback, so feedback works on a failed boot (that failure is
@@ -144,9 +188,11 @@ Future<void> runBgeApp({
     environmentSource: () => FeedbackEnvironment(
       appVersion: buildInfo.version,
       platform: kIsWeb ? 'web' : defaultTargetPlatform.name,
-      // Read per build (not captured once): the locale can change at
-      // runtime.
-      locale: WidgetsBinding.instance.platformDispatcher.locale.toLanguageTag(),
+      // #33: the ACTIVE (negotiated) locale, read per report (the
+      // closure is evaluated lazily, so runtime locale changes are
+      // reflected) from the authoritative registered reader — the
+      // locale the UI renders in, not the raw OS preference.
+      locale: registeredLocaleReader.languageTag,
       // Alpha-minimal, no plugin, and web-safe (this file compiles for
       // web, so dart:io is off the table here). OS *version* enrichment
       // can ride a platform-module-registered probe later.
@@ -213,8 +259,9 @@ Future<void> runBgeApp({
     BgeApp(
       bootstrapCubit: bootstrapCubit,
       // runBgeApp has no teardown point of its own, so the app widget
-      // owns the cubit's, the root container's, and the deep-link
-      // handler's lifecycles (relevant to hot restart and tests).
+      // owns the cubit's, the root container's, the deep-link handler's,
+      // and the active-locale controller's lifecycles (relevant to hot
+      // restart and tests).
       closeBootstrapCubitOnDispose: true,
       rootContainer: rootContainer,
       disposeRootContainerOnDispose: true,
@@ -222,6 +269,8 @@ Future<void> runBgeApp({
       pendingDeepLinkHolder: pendingDeepLinkHolder,
       deepLinkHandler: deepLinkHandler,
       disposeDeepLinkHandlerOnDispose: true,
+      activeLocaleController: activeLocaleController,
+      disposeActiveLocaleControllerOnDispose: activeLocaleController != null,
       theme: theme,
       darkTheme: darkTheme,
       highContrastTheme: highContrastTheme,

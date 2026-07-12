@@ -3,3 +3,7 @@ template-arb-file: intl_en.arb
 output-localization-file: auth_localizations.dart
 output-class: AuthLocalizations
 nullable-getter: false
+# #33: written by gen-l10n when non-template locales are missing keys.
+# Gitignored — visibility only; partial coverage is allowed (missing
+# messages inherit from the template).
+untranslated-messages-file: lib/l10n/untranslated.txt

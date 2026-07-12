@@ -29,3 +29,9 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+
+# Generated localizations (#33): gitignored + regenerated. Run
+# `melos run generate` (the gen-l10n stage) locally; CI regenerates in
+# its `generate` job. Do not commit these.
+lib/l10n/*_localizations*.dart
+lib/l10n/untranslated.txt

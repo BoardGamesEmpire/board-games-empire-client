@@ -8,11 +8,11 @@ class SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ShellLocalizations.of(context);
+    final i18n = ShellLocalizations.of(context);
     return Scaffold(
       body: Center(
         child: CircularProgressIndicator(
-          semanticsLabel: l10n.shellSplashLoadingLabel,
+          semanticsLabel: i18n.shellSplashLoadingLabel,
         ),
       ),
     );

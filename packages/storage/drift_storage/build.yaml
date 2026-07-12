@@ -30,7 +30,7 @@
 # `databases:` registers each @DriftDatabase class with drift_dev's
 # `schema` / `make-migrations` commands. It is read ONLY by those
 # CLI commands — the normal build_runner pass ignores it, so the
-# l10n → freezed → injectable ordering and per-package scoping are
+# i18n → freezed → injectable ordering and per-package scoping are
 # unaffected.
 #
 # `schema_dir` / `test_dir` are single, global settings; drift nests

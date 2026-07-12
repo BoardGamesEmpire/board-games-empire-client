@@ -5,6 +5,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/services.dart';
 import 'package:observability/observability.dart';
 
 import '../support/fake_platform_bootstrap.dart';
@@ -42,6 +43,13 @@ import '../support/spy_root_container.dart';
 /// `initialize()`; a handler only where a source exists; the pending
 /// holder on every platform; the app widget owning the handler's
 /// lifecycle (`disposeDeepLinkHandlerOnDispose: true`).
+///
+/// The active-locale group (#33) pins that wiring's decisions: an
+/// `ActiveLocaleController` registered as `ActiveLocaleReader` on
+/// whichever container boot proceeds with (resolve-or-default — a
+/// pre-registered reader stays authoritative, mirroring
+/// `FeedbackService`), handed to `BgeApp` with ownership, and holding
+/// the **negotiated** locale once the first frame has rendered.
 ///
 /// `runBgeApp` mutates process globals (`FlutterError.onError`,
 /// `PlatformDispatcher.onError`, `ErrorWidget.builder`), so every test
@@ -298,6 +306,83 @@ void main() {
     });
   });
 
+  group('runBgeApp — active locale exposure (#33)', () {
+    testWidgets('registers an ActiveLocaleReader into the root container '
+        'holding the negotiated locale after the first frame', (tester) async {
+      final bootstrap = FakePlatformBootstrap();
+
+      await boot(tester, bootstrap);
+
+      final container = bootstrap.lastRootContainer!;
+      expect(container.isRegistered<ActiveLocaleReader>(), isTrue);
+      expect(
+        container.get<ActiveLocaleReader>().languageTag,
+        'en',
+        reason:
+            'the seed is the raw OS locale, but by the first frame the '
+            'capture has corrected the slot to the negotiated locale',
+      );
+    });
+
+    testWidgets('the reader is available even on the empty fallback '
+        'container — resolve-or-default, mirroring FeedbackService', (
+      tester,
+    ) async {
+      final bootstrap = FakePlatformBootstrap(
+        rootContainerOutcome: StateError('root container build exploded'),
+      );
+
+      await boot(tester, bootstrap);
+
+      final fallback = tester
+          .widget<BgeApp>(find.byType(BgeApp))
+          .rootContainer!;
+      expect(fallback.isRegistered<ActiveLocaleReader>(), isTrue);
+    });
+
+    testWidgets('a pre-registered ActiveLocaleReader stays authoritative '
+        'and no capture is wired (the reader owns its own updates)', (
+      tester,
+    ) async {
+      final container = SpyRootContainer();
+      final preRegistered = _FixedLocaleReader('xx');
+      container.registerSingleton<ActiveLocaleReader>(preRegistered);
+      final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
+
+      await boot(tester, bootstrap);
+
+      expect(
+        container.get<ActiveLocaleReader>(),
+        same(preRegistered),
+        reason: 'resolve-or-default: runBgeApp must not overwrite it',
+      );
+      expect(
+        tester.widget<BgeApp>(find.byType(BgeApp)).activeLocaleController,
+        isNull,
+        reason:
+            'wiring capture to a fresh controller no consumer reads '
+            'would strand the pre-registered reader on its seed',
+      );
+    });
+
+    testWidgets('hands the controller to BgeApp and grants it '
+        'ownership', (tester) async {
+      final bootstrap = FakePlatformBootstrap();
+
+      await boot(tester, bootstrap);
+
+      final app = tester.widget<BgeApp>(find.byType(BgeApp));
+      expect(app.activeLocaleController, isNotNull);
+      expect(
+        app.disposeActiveLocaleControllerOnDispose,
+        isTrue,
+        reason:
+            'runBgeApp has no teardown point of its own — the app widget '
+            'owns the controller lifecycle, mirroring the root container',
+      );
+    });
+  });
+
   group('runBgeApp — deep-link reception wiring (#10)', () {
     testWidgets('creates the deep-link source exactly once, before the '
         'failure-prone platform initialize', (tester) async {
@@ -395,4 +480,11 @@ class _FakeDeepLinkSource implements DeepLinkSource {
 
   @override
   final Stream<Uri> uris;
+}
+
+class _FixedLocaleReader implements ActiveLocaleReader {
+  const _FixedLocaleReader(this.languageTag);
+
+  @override
+  final String languageTag;
 }

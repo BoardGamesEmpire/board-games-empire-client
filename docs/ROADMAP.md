@@ -57,7 +57,7 @@ A short orientation for anyone (human or LLM) picking this up cold:
 - `WellKnownClient` (discovery via `/.well-known/bge-identity`).
 - `AuthRepositoryImpl` (dio_network, bearer) + `WebAuthRepositoryImpl` (web_network,
   cookie); `TokenStorageService` (`flutter_secure_storage`, per-server keyed);
-  `AuthBloc` with full event + exception→message mapping; `auth_screen.dart` + l10n.
+  `AuthBloc` with full event + exception→message mapping; `auth_screen.dart` + i18n.
 - `MetaDatabase` + `ServerRepository` for `ServerConfig` persistence.
 - **Observability foundation (PR #20, closes #8):** `BgeLogger`, `Redaction`,
   `BreadcrumbBuffer`, `FeedbackReport`/`FeedbackService` domain.

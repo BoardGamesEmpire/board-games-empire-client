@@ -82,7 +82,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ShellLocalizations.of(context);
+    final i18n = ShellLocalizations.of(context);
     final theme = Theme.of(context);
 
     return SafeArea(
@@ -96,24 +96,24 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
             constraints: const BoxConstraints(maxWidth: 480),
             child: switch (_phase) {
               _PromptPhase.composing ||
-              _PromptPhase.sending => _composing(l10n),
+              _PromptPhase.sending => _composing(i18n),
               _PromptPhase.sent => _outcome(
-                l10n,
+                i18n,
                 key: CrashReportPrompt.sentConfirmationKey,
                 icon: Icons.check_circle_outline,
-                text: l10n.crashReportPromptSent,
+                text: i18n.crashReportPromptSent,
               ),
               _PromptPhase.queued => _outcome(
-                l10n,
+                i18n,
                 key: CrashReportPrompt.queuedConfirmationKey,
                 icon: Icons.schedule_send_outlined,
-                text: l10n.crashReportPromptQueued,
+                text: i18n.crashReportPromptQueued,
               ),
               _PromptPhase.failed => _outcome(
-                l10n,
+                i18n,
                 key: CrashReportPrompt.submissionFailedKey,
                 icon: Icons.error_outline,
-                text: l10n.crashReportPromptFailed,
+                text: i18n.crashReportPromptFailed,
               ),
             },
           ),
@@ -122,7 +122,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
     );
   }
 
-  Widget _composing(ShellLocalizations l10n) {
+  Widget _composing(ShellLocalizations i18n) {
     final sending = _phase == _PromptPhase.sending;
     final title = widget.report.title;
     return Column(
@@ -130,11 +130,11 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          l10n.crashReportPromptTitle,
+          i18n.crashReportPromptTitle,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
-        Text(l10n.crashReportPromptExplanation),
+        Text(i18n.crashReportPromptExplanation),
         const SizedBox(height: 12),
         if (title != null && title.isNotEmpty)
           Text(title, style: Theme.of(context).textTheme.labelLarge),
@@ -151,7 +151,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
           maxLines: 3,
           minLines: 1,
           decoration: InputDecoration(
-            labelText: l10n.crashReportPromptCommentLabel,
+            labelText: i18n.crashReportPromptCommentLabel,
             border: const OutlineInputBorder(),
           ),
         ),
@@ -163,12 +163,12 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
             TextButton(
               key: CrashReportPrompt.discardButtonKey,
               onPressed: sending ? null : widget.onDiscard,
-              child: Text(l10n.crashReportPromptDiscard),
+              child: Text(i18n.crashReportPromptDiscard),
             ),
             FilledButton(
               key: CrashReportPrompt.sendButtonKey,
               onPressed: sending ? null : _send,
-              child: Text(l10n.crashReportPromptSend),
+              child: Text(i18n.crashReportPromptSend),
             ),
           ],
         ),
@@ -181,7 +181,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
   /// deliberately — in every phase, that key is "the button that closes
   /// the prompt without (further) sending".
   Widget _outcome(
-    ShellLocalizations l10n, {
+    ShellLocalizations i18n, {
     required Key key,
     required IconData icon,
     required String text,
@@ -207,7 +207,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
           child: TextButton(
             key: CrashReportPrompt.discardButtonKey,
             onPressed: widget.onDiscard,
-            child: Text(l10n.crashReportPromptDismiss),
+            child: Text(i18n.crashReportPromptDismiss),
           ),
         ),
       ],

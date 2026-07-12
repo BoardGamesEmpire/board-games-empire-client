@@ -22,15 +22,15 @@ class ShellPlaceholderScreen extends StatelessWidget {
 
   final ShellPlaceholderKind kind;
 
-  String _title(ShellLocalizations l10n) => switch (kind) {
-    ShellPlaceholderKind.serverAdd => l10n.shellPlaceholderServerAddTitle,
-    ShellPlaceholderKind.auth => l10n.shellPlaceholderAuthTitle,
-    ShellPlaceholderKind.home => l10n.shellPlaceholderHomeTitle,
+  String _title(ShellLocalizations i18n) => switch (kind) {
+    ShellPlaceholderKind.serverAdd => i18n.shellPlaceholderServerAddTitle,
+    ShellPlaceholderKind.auth => i18n.shellPlaceholderAuthTitle,
+    ShellPlaceholderKind.home => i18n.shellPlaceholderHomeTitle,
   };
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ShellLocalizations.of(context);
+    final i18n = ShellLocalizations.of(context);
     return Scaffold(
       body: Center(
         child: Padding(
@@ -41,12 +41,12 @@ class ShellPlaceholderScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _title(l10n),
+                  _title(i18n),
                   style: Theme.of(context).textTheme.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                Text(l10n.shellPlaceholderBody, textAlign: TextAlign.center),
+                Text(i18n.shellPlaceholderBody, textAlign: TextAlign.center),
               ],
             ),
           ),

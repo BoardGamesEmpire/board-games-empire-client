@@ -10,7 +10,7 @@ import 'package:flutter/widgets.dart';
 /// builder via `MediaQuery.withClampedTextScaling`.
 abstract final class BgeTextScale {
   /// Maximum honored text scale factor (WCAG 1.4.4: 200%).
-  static const double maxScaleFactor = 2.0;
+  static const double maxScaleFactor = 2;
 
   /// The ambient [TextScaler], clamped to [maxScaleFactor].
   ///

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'bge_color_schemes.dart';
-import 'bge_tokens.dart';
+import 'package:ui_tokens/src/bge_color_schemes.dart';
+import 'package:ui_tokens/src/bge_tokens.dart';
 
 /// The four application themes (#32), built on [BgeColorSchemes] with the
 /// theme-level accessibility baseline applied uniformly.
@@ -33,12 +33,17 @@ abstract final class BgeTheme {
   // (`widget.theme ?? BgeTheme.light()`); a fresh ThemeData per build
   // would hand MaterialApp a new theme identity each time and spuriously
   // repropagate Theme to the whole subtree.
+  /// The default light theme.
   static ThemeData light() => _light;
 
+  /// The default dark theme.
   static ThemeData dark() => _dark;
 
+  /// The high-contrast light theme, wired to `MaterialApp.highContrastTheme`.
   static ThemeData highContrastLight() => _highContrastLight;
 
+  /// The high-contrast dark theme, wired to
+  /// `MaterialApp.highContrastDarkTheme`.
   static ThemeData highContrastDark() => _highContrastDark;
 
   static final ThemeData _light = _build(BgeColorSchemes.light);

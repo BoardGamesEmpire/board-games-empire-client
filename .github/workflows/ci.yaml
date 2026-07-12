@@ -20,14 +20,21 @@ env:
 
 jobs:
   # ── Codegen (fresh, once) + schema freshness ────────────────────
-  # Generated code (.g.dart / .freezed.dart / .config.dart) is
-  # gitignored, so every job that compiles or analyses Dart needs it
-  # produced first. Rather than regenerate in each job, this single
-  # job generates once, verifies it, and publishes the output as an
-  # artifact that `analyze` and `test` restore. That keeps generation
-  # fresh on every run with no committed/stale artifacts.
+  # Generated code (.g.dart / .freezed.dart / .config.dart, and the
+  # gen-l10n localizations per #33) is gitignored, so every job that
+  # compiles or analyses Dart needs it produced first. Rather than
+  # regenerate in each job, this single job generates once, verifies it,
+  # and publishes the output as an artifact that `analyze` and `test`
+  # restore. That keeps generation fresh on every run with no
+  # committed/stale artifacts.
   #
-  # Codegen runs as a single workspace-wide build_runner pass at the
+  # Staging (#33): gen-l10n runs FIRST — the generated localizations must
+  # exist before the build_runner pass, mirroring the local
+  # `melos run generate` pipeline (generate:i18n → generate:build). Each
+  # package that owns an l10n.yaml gets its own `flutter gen-l10n` run
+  # (the synthetic package is gone; output is real source per package).
+  #
+  # Codegen then runs as a single workspace-wide build_runner pass at the
   # repo root (--workspace): the builder is AOT-compiled once instead
   # of once per package, packages build in parallel internally, and the
   # build cache lands in a single root .dart_tool/build. No melos here.
@@ -62,6 +69,18 @@ jobs:
             build-runner-${{ runner.os }}-
       - name: Resolve workspace
         run: flutter pub get
+      - name: Generate localizations (gen-l10n stage, before build_runner)
+        run: |
+          set -euo pipefail
+          # Null-delimited so paths with spaces are safe, and the find
+          # runs OUTSIDE the loop's command substitution so a failure
+          # (e.g. a missing dir) actually aborts the step instead of
+          # silently yielding an empty list.
+          while IFS= read -r -d '' f; do
+            pkg=$(dirname "$f")
+            echo "gen-l10n: $pkg"
+            (cd "$pkg" && flutter gen-l10n)
+          done < <(find packages apps -name l10n.yaml -not -path '*/.dart_tool/*' -print0)
       - name: Codegen must succeed (single workspace pass)
         run: flutter pub run build_runner build --workspace --delete-conflicting-outputs
       - name: Schema snapshots must be fresh
@@ -92,7 +111,8 @@ jobs:
       - name: Bundle generated sources
         run: |
           find . \( -name '*.g.dart' -o -name '*.freezed.dart' \
-                    -o -name '*.config.dart' -o -name '*.mocks.dart' \) \
+                    -o -name '*.config.dart' -o -name '*.mocks.dart' \
+                    -o -name '*_localizations*.dart' \) \
             -not -path '*/.dart_tool/*' -print0 \
             | tar --null -czf "$RUNNER_TEMP/generated.tar.gz" -T -
       - uses: actions/upload-artifact@v4

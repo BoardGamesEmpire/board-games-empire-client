@@ -9,7 +9,7 @@ class NotYetAvailableScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ShellLocalizations.of(context);
+    final i18n = ShellLocalizations.of(context);
     return Scaffold(
       body: Center(
         child: Padding(
@@ -20,13 +20,13 @@ class NotYetAvailableScreen extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  l10n.shellNotYetAvailableTitle,
+                  i18n.shellNotYetAvailableTitle,
                   style: Theme.of(context).textTheme.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  l10n.shellNotYetAvailableBody,
+                  i18n.shellNotYetAvailableBody,
                   textAlign: TextAlign.center,
                 ),
               ],
