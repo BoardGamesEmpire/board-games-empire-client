@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -37,6 +37,14 @@ const reservedDeepLinkPathPatterns = <String>[
   '/server/:serverId/collection/:userId',
 ];
 
+/// Builds the real server-add screen subtree (#36) for the
+/// [AppRoutes.serverAdd] route. Supplied by [BgeApp] when the root
+/// container carries the onboarding services (native); when null the
+/// pre-#36 placeholder is kept — which is also the correct web behavior,
+/// where the route is unreachable ([AppBootstrapNeedsServer] never
+/// occurs on web) and no `WellKnownClient` implementation exists.
+typedef ServerAddScreenBuilder = Widget Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -49,6 +57,7 @@ const reservedDeepLinkPathPatterns = <String>[
 GoRouter buildAppRouter({
   required AppBootstrapCubit bootstrapCubit,
   required BootstrapStreamListenable refreshListenable,
+  ServerAddScreenBuilder? serverAddBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -79,8 +88,10 @@ GoRouter buildAppRouter({
       GoRoute(path: AppRoutes.splash, builder: (_, _) => const SplashScreen()),
       GoRoute(
         path: AppRoutes.serverAdd,
-        // Real server-add UI lands with #36 and replaces this builder.
-        builder: (_, _) =>
+        // Real server-add UI (#36) when the shell supplied a builder;
+        // the placeholder otherwise (tests, web).
+        builder: (context, _) =>
+            serverAddBuilder?.call(context) ??
             const ShellPlaceholderScreen(kind: ShellPlaceholderKind.serverAdd),
       ),
       GoRoute(

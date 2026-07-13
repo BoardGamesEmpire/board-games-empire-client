@@ -32,6 +32,7 @@ workspace:
   - packages/core/di
   - packages/core/observability
   - packages/features/auth
+  - packages/features/server_onboarding
   - packages/storage/drift_storage
   - packages/storage/key_storage
   - packages/storage/storage_interface

@@ -155,6 +155,50 @@ void main() {
       });
     });
 
+    group('onServerRegistered()', () {
+      blocTest<AppBootstrapCubit, AppBootstrapState>(
+        'advances NeedsServer → NeedsAuth after onboarding succeeds (#36)',
+        build: () => buildCubit(
+          bootstrap: FakePlatformBootstrap(
+            outcomes: const [BootstrapResult(hasServer: false)],
+          ),
+        ),
+        act: (cubit) async {
+          await cubit.initialize();
+          cubit.onServerRegistered();
+        },
+        expect: () => const [
+          AppBootstrapNeedsServer(),
+          AppBootstrapNeedsAuth(),
+        ],
+      );
+
+      blocTest<AppBootstrapCubit, AppBootstrapState>(
+        'is a no-op outside NeedsServer (duplicate/late success signals '
+        'must not throw or re-emit)',
+        build: () => buildCubit(
+          bootstrap: FakePlatformBootstrap(
+            orchestrator: _MockServerOrchestrator(),
+          ),
+        ),
+        act: (cubit) async {
+          await cubit.initialize(); // → NeedsAuth
+          cubit.onServerRegistered(); // already past server-add
+          cubit.onServerRegistered();
+        },
+        expect: () => const [AppBootstrapNeedsAuth()],
+      );
+
+      test('is a no-op before initialize() (Initializing state)', () {
+        final cubit = buildCubit(bootstrap: FakePlatformBootstrap());
+        addTearDown(cubit.close);
+
+        cubit.onServerRegistered();
+
+        expect(cubit.state, const AppBootstrapInitializing());
+      });
+    });
+
     group('retry()', () {
       blocTest<AppBootstrapCubit, AppBootstrapState>(
         're-emits Initializing, then the outcome; attemptCount accumulates '

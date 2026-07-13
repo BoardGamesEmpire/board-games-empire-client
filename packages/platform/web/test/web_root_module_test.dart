@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:web_platform/web.dart';
 
@@ -132,6 +133,33 @@ void main() {
       await container.dispose();
 
       expect(constructions, 0);
+    });
+
+    test('registers VersionNegotiator (pure; needed for #87 refresh-time '
+        're-check on web)', () async {
+      final container = DependencyContainerImpl();
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        connectivityFactory: _FakeConnectivityService.new,
+      );
+
+      expect(container.isRegistered<VersionNegotiator>(), isTrue);
+      expect(container.get<VersionNegotiator>(), isA<VersionNegotiatorImpl>());
+    });
+
+    test('does not register WellKnownClient — web is same-origin, '
+        '/server-add is unreachable, and no web impl exists', () async {
+      final container = DependencyContainerImpl();
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        connectivityFactory: _FakeConnectivityService.new,
+      );
+
+      expect(container.isRegistered<WellKnownClient>(), isFalse);
     });
   });
 }

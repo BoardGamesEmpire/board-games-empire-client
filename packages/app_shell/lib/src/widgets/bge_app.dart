@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/services.dart';
+import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
+import 'package:server_onboarding/server_onboarding.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
@@ -182,6 +186,39 @@ class _BgeAppState extends State<BgeApp> {
     _router = buildAppRouter(
       bootstrapCubit: widget.bootstrapCubit,
       refreshListenable: _refreshListenable,
+      serverAddBuilder: _buildServerAddBuilder(),
+    );
+  }
+
+  /// The #36 server-add wiring — the first widget-layer consumer of the
+  /// root container (#72's "thin provider when actually needed").
+  ///
+  /// Returns null (→ router placeholder) when the container is absent
+  /// (tests/embedders) or carries no [WellKnownClient] (web, where the
+  /// route is unreachable anyway). Dependency resolution happens inside
+  /// the route builder, at navigation time: `bootstrapCubit.orchestrator`
+  /// is null while the router is constructed in [initState], but is
+  /// guaranteed non-null once [AppBootstrapNeedsServer] can route here —
+  /// that state is only ever emitted by a successful native bootstrap,
+  /// which populates the orchestrator first.
+  ServerAddScreenBuilder? _buildServerAddBuilder() {
+    final container = widget.rootContainer;
+    if (container == null || !container.isRegistered<WellKnownClient>()) {
+      return null;
+    }
+    return (context) => BlocProvider<ServerOnboardingBloc>(
+      create: (_) => ServerOnboardingBloc(
+        wellKnownClient: container.get<WellKnownClient>(),
+        versionNegotiator: container.get<VersionNegotiator>(),
+        connectivityService: container.get<ConnectivityService>(),
+        buildInfo: container.get<BuildInfo>(),
+        orchestrator: widget.bootstrapCubit.orchestrator!,
+      ),
+      child: BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
+        listenWhen: (_, current) => current is ServerOnboardingSucceeded,
+        listener: (_, _) => widget.bootstrapCubit.onServerRegistered(),
+        child: const ServerAddScreen(),
+      ),
     );
   }
 
@@ -330,6 +367,10 @@ class _BgeAppState extends State<BgeApp> {
         },
         localizationsDelegates: [
           ...ShellLocalizations.localizationsDelegates,
+          // #36: app_shell owns the server-add route wiring, so it also
+          // owns registering the feature's delegate — app entry points
+          // stay thin.
+          ServerOnboardingLocalizations.delegate,
           ...widget.additionalLocalizationsDelegates,
         ],
         supportedLocales: ShellLocalizations.supportedLocales,

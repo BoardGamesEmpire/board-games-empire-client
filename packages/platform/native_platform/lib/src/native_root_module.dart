@@ -1,7 +1,10 @@
 import 'package:connectivity_platform/connectivity_platform.dart';
+import 'package:di/di.dart';
+import 'package:dio_network/dio_network.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 import 'build_info/package_info_build_info_reader.dart';
@@ -32,12 +35,16 @@ import 'feedback/file_feedback_sink.dart';
 /// `runBgeApp`'s belt-and-braces fallback.
 ///
 /// Registrations: [BuildInfo] (resolved read, #35), the durable
-/// [FeedbackSink] (#69), and the device-global [ConnectivityService]
+/// [FeedbackSink] (#69), the device-global [ConnectivityService]
 /// (#9) — disposed via its [Disposable] conformance when the root
-/// container tears down. The [FeedbackService] itself is composed and
-/// registered by `runBgeApp` — it needs shell-side collaborators
-/// (breadcrumb ring, locale, the transport resolver) that don't exist at
-/// this altitude.
+/// container tears down — and the #36 server-onboarding pair:
+/// [WellKnownClient] (lazy; its dedicated unauthenticated [Dio] is not
+/// built until discovery actually runs) and [VersionNegotiator]
+/// (stateless, const). Both are **root**-scope by necessity: server-add
+/// runs before any [ServerContext] exists. The [FeedbackService] itself
+/// is composed and registered by `runBgeApp` — it needs shell-side
+/// collaborators (breadcrumb ring, locale, the transport resolver) that
+/// don't exist at this altitude.
 ///
 /// [buildInfoReader] and [connectivityFactory] are injectable for tests;
 /// production uses the concrete [PackageInfoBuildInfoReader] and
@@ -58,5 +65,10 @@ Future<void> registerNativeRootModule(
           await disposable.onDispose();
         }
       },
-    );
+    )
+    // #36 server onboarding. Lazy: WellKnownClientImpl constructs its
+    // dedicated unauthenticated Dio, which should not exist until
+    // discovery actually runs.
+    ..registerLazySingleton<WellKnownClient>(WellKnownClientImpl.new)
+    ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new);
 }

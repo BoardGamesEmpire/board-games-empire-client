@@ -37,6 +37,8 @@ dependencies:
   package_info_plus: ^10.2.0
 
 dev_dependencies:
+  network_interface:
+    path: ../../network/network_interface
   flutter_test:
     sdk: flutter
   very_good_analysis: ^10.2.0
