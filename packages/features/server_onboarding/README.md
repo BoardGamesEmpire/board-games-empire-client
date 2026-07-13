@@ -1,39 +1,38 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# server_onboarding
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+First-run server-add feature (#36): discover a Board Games Empire server,
+negotiate client/server version compatibility, then persist and activate it.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+## Flow
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+`ServerOnboardingBloc` drives:
 
-## Features
+1. normalize + validate the entered URL (local; never touches the network);
+2. connectivity fast-fail (#9) — surfaced before any fetch;
+3. `WellKnownClient.fetchIdentity` discovery;
+4. `VersionNegotiator.negotiate` (#13) — a mismatch **never** persists;
+5. `ServerOrchestrator.addAndActivateServer` — persist + activate.
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+Failures are sealed *kinds* (with payloads where a message needs
+interpolation); localization happens in the widget layer, keeping the bloc
+locale-free (#33).
 
-## Getting started
+## URL rules
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
+Input is trimmed; `https://` is assumed when no scheme is given. Plain `http`
+is allowed only for loopback and RFC 1918 hosts (self-hosting / LAN); `https`
+is required otherwise. Path prefixes are preserved (reverse-proxy
+deployments); query/fragment and a trailing slash are dropped.
 
-## Usage
+## Wiring
 
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
+`app_shell` owns construction: it supplies the screen to the `/server-add`
+route, provides the bloc from the root container, and advances bootstrap via
+`AppBootstrapCubit.onServerRegistered()` on success. The route is native-only
+in practice — web is same-origin and never reaches it.
 
-```dart
-const like = 'sample';
-```
+## Accessibility
 
-## Additional information
-
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+Labeled fields (never hint-only), failure and in-flight state in `liveRegion`
+semantics, submit disabled (not hidden) while in flight, full keyboard
+operability.

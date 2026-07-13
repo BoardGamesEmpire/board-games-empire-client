@@ -1,3 +1,4 @@
 ## 0.0.1
 
-* TODO: Describe initial release.
+* Initial release (#36): server discovery → version negotiation → persist
+  and activate, with reactive_forms UI, full l10n, and accessibility.
