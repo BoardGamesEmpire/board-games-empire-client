@@ -102,6 +102,23 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     await _attempt();
   }
 
+  /// Advances the app past the server-add leg after the onboarding flow
+  /// (#36) has persisted and activated the first server.
+  ///
+  /// Emits [AppBootstrapNeedsAuth]; the router redirect moves the app to
+  /// `/auth` (a registered server routes to the auth leg unconditionally
+  /// — the authenticated → home transition is #37's).
+  ///
+  /// Only meaningful from [AppBootstrapNeedsServer]; a no-op otherwise,
+  /// for the same fire-and-forget reason as [retry] — it is invoked from
+  /// a BlocListener reacting to the onboarding bloc's success state, and
+  /// a duplicate or late signal must not throw into an unawaited future.
+  void onServerRegistered() {
+    if (state is! AppBootstrapNeedsServer) return;
+    _logger.info('First server registered; advancing to auth');
+    emit(const AppBootstrapNeedsAuth());
+  }
+
   Future<void> _attempt() async {
     try {
       if (!_hydratedStorageReady) {

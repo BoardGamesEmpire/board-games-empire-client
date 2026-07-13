@@ -236,6 +236,178 @@ void main() {
       });
     });
 
+    group('addAndActivateServer()', () {
+      final identity = _config(id: 'new').cachedIdentity;
+
+      void stubAddServer({Object? error}) {
+        final stub = when(
+          () => mockRepo.addServer(
+            displayName: any(named: 'displayName'),
+            serverUrl: any(named: 'serverUrl'),
+            bgeServerId: any(named: 'bgeServerId'),
+            identity: any(named: 'identity'),
+          ),
+        );
+        if (error != null) {
+          stub.thenThrow(error);
+        } else {
+          stub.thenAnswer((_) async => _config(id: 'new'));
+        }
+      }
+
+      void stubRemoveServer({Object? error}) {
+        final stub = when(() => mockRepo.removeServer(any()));
+        if (error != null) {
+          stub.thenThrow(error);
+        } else {
+          stub.thenAnswer((_) async {});
+        }
+      }
+
+      setUp(() async {
+        registerFallbackValue(identity);
+        await orchestrator.initialize();
+        stubUpdateConnectionState();
+        stubUpdateLastActive();
+        stubGetServer('new');
+        stubAddServer();
+        stubRemoveServer();
+      });
+
+      test('persists, connects, and makes the server active', () async {
+        final id = await orchestrator.addAndActivateServer(
+          displayName: 'My Server',
+          serverUrl: 'https://bge.example.com',
+          bgeServerId: 'bge-new',
+          identity: identity,
+        );
+
+        expect(id, 'new');
+        expect(orchestrator.activeServerId, 'new');
+        expect(orchestrator.currentConnectedCount, 1);
+        verify(
+          () => mockRepo.addServer(
+            displayName: 'My Server',
+            serverUrl: 'https://bge.example.com',
+            bgeServerId: 'bge-new',
+            identity: identity,
+          ),
+        ).called(1);
+        verify(() => mockContexts['new']!.activate()).called(greaterThan(0));
+        verifyNever(() => mockRepo.removeServer(any()));
+      });
+
+      test('rethrows DuplicateServerException without rollback (nothing '
+          'was persisted by this call)', () async {
+        stubAddServer(
+          error: const DuplicateServerException('https://bge.example.com'),
+        );
+
+        await expectLater(
+          orchestrator.addAndActivateServer(
+            displayName: 'My Server',
+            serverUrl: 'https://bge.example.com',
+            bgeServerId: 'bge-new',
+            identity: identity,
+          ),
+          throwsA(isA<DuplicateServerException>()),
+        );
+        expect(orchestrator.currentConnectedCount, 0);
+        verifyNever(() => mockRepo.removeServer(any()));
+      });
+
+      test('rolls the persisted row back when activation fails', () async {
+        // The context created for 'new' throws on activate.
+        stubGetServer('new');
+        // Arrange the factory-produced context to fail: intercept after
+        // creation by making activate throw for this id.
+        orchestrator = ServerOrchestratorImpl(
+          serverRepository: mockRepo,
+          preferencesRepository: mockPrefsRepo,
+          contextFactory: (config) {
+            final ctx = _mockContext(config.id);
+            when(() => ctx.activate()).thenThrow(StateError('boom'));
+            mockContexts[config.id] = ctx;
+            return ctx;
+          },
+          isDesktopOverride: true,
+        );
+        await orchestrator.initialize();
+
+        await expectLater(
+          orchestrator.addAndActivateServer(
+            displayName: 'My Server',
+            serverUrl: 'https://bge.example.com',
+            bgeServerId: 'bge-new',
+            identity: identity,
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(orchestrator.currentConnectedCount, 0);
+        expect(orchestrator.activeServerId, isNull);
+        verify(() => mockRepo.removeServer('new')).called(1);
+      });
+
+      test('rolls back and rethrows ServerCapacityExceededException at '
+          'capacity', () async {
+        when(() => mockPrefsRepo.get()).thenAnswer(
+          (_) async => const DevicePreferences(maxMonitoredServers: 1),
+        );
+        stubGetServer('existing');
+        await orchestrator.connectServer('existing');
+
+        await expectLater(
+          orchestrator.addAndActivateServer(
+            displayName: 'My Server',
+            serverUrl: 'https://bge.example.com',
+            bgeServerId: 'bge-new',
+            identity: identity,
+          ),
+          throwsA(isA<ServerCapacityExceededException>()),
+        );
+        expect(orchestrator.currentConnectedCount, 1);
+        verify(() => mockRepo.removeServer('new')).called(1);
+      });
+
+      test('a failing rollback does not mask the original failure', () async {
+        when(() => mockPrefsRepo.get()).thenAnswer(
+          (_) async => const DevicePreferences(maxMonitoredServers: 1),
+        );
+        stubGetServer('existing');
+        await orchestrator.connectServer('existing');
+        stubRemoveServer(error: StateError('rollback failed'));
+
+        await expectLater(
+          orchestrator.addAndActivateServer(
+            displayName: 'My Server',
+            serverUrl: 'https://bge.example.com',
+            bgeServerId: 'bge-new',
+            identity: identity,
+          ),
+          throwsA(isA<ServerCapacityExceededException>()),
+        );
+      });
+
+      test('demotes the previously active server (single-active '
+          'invariant)', () async {
+        stubGetServer('existing');
+        await orchestrator.connectServer('existing');
+        expect(orchestrator.activeServerId, 'existing');
+
+        await orchestrator.addAndActivateServer(
+          displayName: 'My Server',
+          serverUrl: 'https://bge.example.com',
+          bgeServerId: 'bge-new',
+          identity: identity,
+        );
+
+        expect(orchestrator.activeServerId, 'new');
+        verify(
+          () => mockContexts['existing']!.background(),
+        ).called(greaterThan(0));
+      });
+    });
+
     group('disconnectServer()', () {
       setUp(() async {
         await orchestrator.initialize();

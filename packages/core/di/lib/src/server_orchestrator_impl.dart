@@ -160,6 +160,55 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   }
 
   @override
+  Future<String> addAndActivateServer({
+    required String displayName,
+    required String serverUrl,
+    required String bgeServerId,
+    required ServerIdentity identity,
+  }) async {
+    _assertReady();
+
+    // Persist first. The repository enforces uniqueness
+    // (DuplicateServerException) atomically on its own; orchestrator
+    // state is untouched until connectServer below, which serializes
+    // through the standard lock. connectServer cannot be invoked inside
+    // _withLock (the re-entrancy guard would trip), so this composes the
+    // two steps instead — the window between them is harmless: the row
+    // exists in ConnectionState.disconnected, exactly like any other
+    // registered-but-unconnected server.
+    final config = await _serverRepository.addServer(
+      displayName: displayName,
+      serverUrl: serverUrl,
+      bgeServerId: bgeServerId,
+      identity: identity,
+    );
+
+    // Connect through the standard path: capacity enforcement, demotion
+    // of any current active server, and the activate-before-commit
+    // discipline all apply unchanged. On any failure the just-persisted
+    // row is removed again so a failed onboarding never leaves a zombie
+    // config behind (#36).
+    try {
+      await connectServer(config.id, makeActive: true);
+    } catch (_) {
+      try {
+        await _serverRepository.removeServer(config.id);
+      } catch (e, st) {
+        // Rollback is best-effort: the original failure is the one the
+        // caller needs to see.
+        _logError(
+          'rollback of ${config.id} after failed onboarding activation',
+          e,
+          st,
+        );
+      }
+      rethrow;
+    }
+
+    return config.id;
+  }
+
+  @override
   Future<void> connectServer(String serverId, {bool makeActive = false}) async {
     _assertReady();
 

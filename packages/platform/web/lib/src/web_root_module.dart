@@ -1,4 +1,5 @@
 import 'package:connectivity_platform/connectivity_platform.dart';
+import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
@@ -61,5 +62,11 @@ Future<void> registerWebRootModule(
           await disposable.onDispose();
         }
       },
-    );
+    )
+    // #36/#87: pure, stateless. Web registers no WellKnownClient —
+    // same-origin means a server always exists, /server-add is
+    // unreachable, and no web implementation exists; the negotiator is
+    // registered anyway because the refresh-time re-check (#87) applies
+    // to web's identity fetch during auth (#37).
+    ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new);
 }

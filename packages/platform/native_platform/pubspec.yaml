@@ -28,6 +28,8 @@ dependencies:
     path: ../../storage/drift_storage
   key_storage:
     path: ../../storage/key_storage
+  network_interface:
+    path: ../../network/network_interface
   dio_network:
     path: ../../network/dio_network
   connectivity_platform:

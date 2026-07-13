@@ -20,8 +20,12 @@ dependencies:
     path: ../core/interfaces
   models:
     path: ../core/models
+  network_interface:
+    path: ../network/network_interface
   observability:
     path: ../core/observability
+  server_onboarding:
+    path: ../features/server_onboarding
   ui_tokens:
     path: ../ui/tokens
 

@@ -1,0 +1,115 @@
+{
+  "@@locale": "en",
+  "serverAddTitle": "Add a Server",
+  "@serverAddTitle": {
+    "description": "Screen title for the first-run add-server flow"
+  },
+  "serverAddIntro": "Enter the address of your Board Games Empire server to get started.",
+  "@serverAddIntro": {
+    "description": "Introductory sentence above the add-server form"
+  },
+  "serverAddUrlLabel": "Server address",
+  "@serverAddUrlLabel": {
+    "description": "Label for the server URL field"
+  },
+  "serverAddUrlHint": "bge.example.com",
+  "@serverAddUrlHint": {
+    "description": "Hint (example value) shown inside the server URL field"
+  },
+  "serverAddUrlHelper": "https is assumed when no scheme is given.",
+  "@serverAddUrlHelper": {
+    "description": "Helper text under the URL field explaining scheme handling"
+  },
+  "serverAddAliasLabel": "Nickname (optional)",
+  "@serverAddAliasLabel": {
+    "description": "Label for the optional server alias field"
+  },
+  "serverAddAliasHint": "Home server",
+  "@serverAddAliasHint": {
+    "description": "Hint (example value) shown inside the alias field"
+  },
+  "serverAddSubmit": "Connect",
+  "@serverAddSubmit": {
+    "description": "Submit button label for the add-server form"
+  },
+  "serverAddInProgress": "Contacting server…",
+  "@serverAddInProgress": {
+    "description": "Progress label announced and shown while discovery runs"
+  },
+  "serverAddErrorTitle": "Couldn't add server",
+  "@serverAddErrorTitle": {
+    "description": "Heading shown above any add-server failure message"
+  },
+  "serverAddErrorUrlMalformed": "That doesn't look like a valid server address. Check it and try again.",
+  "@serverAddErrorUrlMalformed": {
+    "description": "Error for blank or unparseable URL input"
+  },
+  "serverAddErrorUrlScheme": "Only http and https addresses are supported.",
+  "@serverAddErrorUrlScheme": {
+    "description": "Error for an unsupported URL scheme such as ftp"
+  },
+  "serverAddErrorUrlInsecure": "Plain http is only allowed for local and private network addresses. Use https for this server.",
+  "@serverAddErrorUrlInsecure": {
+    "description": "Error when http is used toward a public host"
+  },
+  "serverAddErrorOffline": "You're offline. Connect to a network and try again.",
+  "@serverAddErrorOffline": {
+    "description": "Error shown when the device has no connectivity"
+  },
+  "serverAddErrorUnreachable": "Couldn't reach the server. Check the address and your connection.",
+  "@serverAddErrorUnreachable": {
+    "description": "Error for a network failure or timeout during discovery"
+  },
+  "serverAddErrorNotBge": "No Board Games Empire server was found at that address.",
+  "@serverAddErrorNotBge": {
+    "description": "Error when the well-known document returns 404"
+  },
+  "serverAddErrorInvalidResponse": "The server sent an unexpected response. It may be misconfigured or an incompatible version.",
+  "@serverAddErrorInvalidResponse": {
+    "description": "Error for a non-200 response or unparseable identity document"
+  },
+  "serverAddErrorClientTooOld": "This server requires app version {requiredMinimum} or newer (you have {clientVersion}). Please update the app.",
+  "@serverAddErrorClientTooOld": {
+    "description": "Version negotiation failure: client older than the server's minimum",
+    "placeholders": {
+      "requiredMinimum": {
+        "type": "String",
+        "example": "1.2.0"
+      },
+      "clientVersion": {
+        "type": "String",
+        "example": "1.0.0"
+      }
+    }
+  },
+  "serverAddErrorClientTooNew": "This server supports app versions up to {supportedMaximum} (you have {clientVersion}). The server needs to be updated.",
+  "@serverAddErrorClientTooNew": {
+    "description": "Version negotiation failure: client newer than the server's maximum",
+    "placeholders": {
+      "supportedMaximum": {
+        "type": "String",
+        "example": "2.0.0"
+      },
+      "clientVersion": {
+        "type": "String",
+        "example": "2.1.0"
+      }
+    }
+  },
+  "serverAddErrorSchemaTooNew": "This server speaks a newer protocol than this app understands. Please update the app.",
+  "@serverAddErrorSchemaTooNew": {
+    "description": "Version negotiation failure: discovery document schema too new"
+  },
+  "serverAddErrorDuplicate": "That server is already registered on this device.",
+  "@serverAddErrorDuplicate": {
+    "description": "Error when the server URL or id already exists locally"
+  },
+  "serverAddErrorCapacity": "You've reached the maximum number of connected servers on this device.",
+  "@serverAddErrorCapacity": {
+    "description": "Error when the device is at its connected-server capacity"
+  },
+  "serverAddErrorUnexpected": "Something went wrong while adding the server. Please try again.",
+  "@serverAddErrorUnexpected": {
+    "description": "Fallback error for unanticipated failures"
+  }
+}

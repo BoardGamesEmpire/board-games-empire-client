@@ -1,9 +1,11 @@
 import 'package:di/di.dart';
+import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 /// Tests for `registerNativeRootModule`'s registrations: the resolved
@@ -141,6 +143,37 @@ void main() {
       await container.dispose();
 
       expect(constructions, 0);
+    });
+
+    test('registers WellKnownClient lazily for server onboarding '
+        '(#36)', () async {
+      final container = DependencyContainerImpl();
+
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        connectivityFactory: _FakeConnectivityService.new,
+      );
+
+      expect(container.isRegistered<WellKnownClient>(), isTrue);
+      expect(container.get<WellKnownClient>(), isA<WellKnownClientImpl>());
+      expect(
+        container.get<WellKnownClient>(),
+        same(container.get<WellKnownClient>()),
+      );
+    });
+
+    test('registers VersionNegotiator for server onboarding (#36)', () async {
+      final container = DependencyContainerImpl();
+
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        connectivityFactory: _FakeConnectivityService.new,
+      );
+
+      expect(container.isRegistered<VersionNegotiator>(), isTrue);
+      expect(container.get<VersionNegotiator>(), isA<VersionNegotiatorImpl>());
     });
   });
 }

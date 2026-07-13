@@ -1,3 +1,5 @@
+import 'package:models/domain.dart';
+
 import 'server_context.dart';
 
 /// Coordinates lifecycle and atomic state transitions across all server
@@ -30,6 +32,30 @@ abstract class ServerOrchestrator {
   ///
   /// Throws [StateError] if called more than once without disposal.
   Future<void> initialize();
+
+  /// Persists a newly discovered server and connects it as the active
+  /// foreground server, atomically from the caller's perspective (#36).
+  ///
+  /// The caller (the server-add flow) has already fetched and vetted
+  /// [identity] — well-known discovery and version negotiation (#13)
+  /// happen *before* this call; the orchestrator applies no policy of
+  /// its own beyond its usual capacity rules.
+  ///
+  /// On any failure after the repository add (capacity, activation), the
+  /// persisted config is removed again so a failed onboarding never
+  /// leaves a zombie entry behind.
+  ///
+  /// Returns the persisted [ServerConfig]'s local id.
+  ///
+  /// Throws [DuplicateServerException] if [serverUrl] or [bgeServerId]
+  /// is already registered.
+  /// Throws [ServerCapacityExceededException] if at capacity.
+  Future<String> addAndActivateServer({
+    required String displayName,
+    required String serverUrl,
+    required String bgeServerId,
+    required ServerIdentity identity,
+  });
 
   /// Creates a context for a disconnected server and connects it.
   ///
