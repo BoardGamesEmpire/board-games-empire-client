@@ -13,10 +13,14 @@ const _kServerId = '550e8400-e29b-41d4-a716-446655440000';
 const _kServerUrl = 'https://api.example.com';
 
 Map<String, dynamic> _validIdentityJson({String? serverId}) => {
+  'well_known_schema_version': 1,
   'bge_server_id': serverId ?? _kServerId,
+  'name': 'Board Games Empire',
+  'bge_min_client_version': null,
+  'bge_max_client_version': null,
   'issuer': _kServerUrl,
   'device_authorization_endpoint': '$_kServerUrl/api/auth/device',
-  'bge_auth_base_url': '$_kServerUrl/api/auth',
+  'bge_auth_base_path': '$_kServerUrl/api/auth',
   'bge_session_endpoint': '$_kServerUrl/api/auth/get-session',
   'bge_sign_out_endpoint': '$_kServerUrl/api/auth/sign-out',
   'bge_passkey_supported': true,
@@ -98,6 +102,29 @@ void main() {
         expect(identity, isA<ServerIdentity>());
         expect(identity.serverId, _kServerId);
         expect(identity.issuer, _kServerUrl);
+      });
+
+      test('parses schema version, name, and open version bounds', () async {
+        final identity = await client.fetchIdentity(_kServerUrl);
+
+        expect(identity.wellKnownSchemaVersion, 1);
+        expect(identity.name, 'Board Games Empire');
+        expect(identity.minClientVersion, isNull);
+        expect(identity.maxClientVersion, isNull);
+      });
+
+      test('parses populated version bounds', () async {
+        final json = _validIdentityJson();
+        json['bge_min_client_version'] = '0.1.0';
+        json['bge_max_client_version'] = '3.0.0';
+        when(
+          () => mockDio.get<Map<String, dynamic>>(any()),
+        ).thenAnswer((_) async => _makeResponse(json));
+
+        final identity = await client.fetchIdentity(_kServerUrl);
+
+        expect(identity.minClientVersion, '0.1.0');
+        expect(identity.maxClientVersion, '3.0.0');
       });
 
       test('parses capability flags', () async {

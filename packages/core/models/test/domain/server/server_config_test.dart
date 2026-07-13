@@ -10,8 +10,10 @@ ServerIdentity _makeIdentity({
 }) => ServerIdentity(
   serverId: serverId,
   issuer: issuer,
+  wellKnownSchemaVersion: 1,
+  name: 'Test BGE Server',
   deviceAuthorizationEndpoint: '$issuer/api/auth/device',
-  authBaseUrl: '$issuer/api/auth',
+  authBasePath: '$issuer/api/auth',
   sessionEndpoint: '$issuer/api/auth/get-session',
   signOutEndpoint: '$issuer/api/auth/sign-out',
   passkeySupported: true,
@@ -67,11 +69,15 @@ void main() {
         'connectionState': 'Active',
         'bgeServerId': _kBgeServerId,
         'cachedIdentity': {
+          'well_known_schema_version': 1,
           'bge_server_id': _kBgeServerId,
+          'name': 'Staging BGE',
+          'bge_min_client_version': null,
+          'bge_max_client_version': null,
           'issuer': 'https://staging.example.com',
           'device_authorization_endpoint':
               'https://staging.example.com/api/auth/device',
-          'bge_auth_base_url': 'https://staging.example.com/api/auth',
+          'bge_auth_base_path': 'https://staging.example.com/api/auth',
           'bge_session_endpoint':
               'https://staging.example.com/api/auth/get-session',
           'bge_sign_out_endpoint':

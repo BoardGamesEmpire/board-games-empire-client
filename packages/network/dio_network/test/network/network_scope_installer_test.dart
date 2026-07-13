@@ -14,8 +14,10 @@ ServerConfig _makeConfig() => ServerConfig(
   cachedIdentity: ServerIdentity(
     serverId: '550e8400-e29b-41d4-a716-446655440000',
     issuer: 'https://api.example.com',
+    wellKnownSchemaVersion: 1,
+    name: 'Test BGE Server',
     deviceAuthorizationEndpoint: 'https://api.example.com/api/auth/device',
-    authBaseUrl: 'https://api.example.com/api/auth',
+    authBasePath: 'https://api.example.com/api/auth',
     sessionEndpoint: 'https://api.example.com/api/auth/get-session',
     signOutEndpoint: 'https://api.example.com/api/auth/sign-out',
     passkeySupported: true,

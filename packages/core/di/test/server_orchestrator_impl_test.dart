@@ -32,8 +32,10 @@ ServerConfig _config({
   cachedIdentity: ServerIdentity(
     serverId: 'bge-$id',
     issuer: 'https://$id.example.com',
+    wellKnownSchemaVersion: 1,
+    name: 'Test BGE Server',
     deviceAuthorizationEndpoint: 'https://$id.example.com/api/auth/device',
-    authBaseUrl: 'https://$id.example.com/api/auth',
+    authBasePath: 'https://$id.example.com/api/auth',
     sessionEndpoint: 'https://$id.example.com/api/auth/get-session',
     signOutEndpoint: 'https://$id.example.com/api/auth/sign-out',
     passkeySupported: true,

@@ -4,17 +4,25 @@ import 'package:models/domain.dart';
 // Canonical fixture matching the /.well-known/bge-identity wire format.
 // Keys are snake_case per SnakeCaseInterceptor on the NestJS backend.
 Map<String, dynamic> _fullIdentityJson({
+  int wellKnownSchemaVersion = 1,
   String serverId = '550e8400-e29b-41d4-a716-446655440000',
+  String name = 'Board Games Empire',
+  String? minClientVersion,
+  String? maxClientVersion,
   String issuer = 'https://api.example.com',
   bool passkeySupported = true,
   bool twoFactorSupported = true,
   bool anonymousAuthSupported = true,
   List<Map<String, dynamic>>? strategies,
 }) => {
+  'well_known_schema_version': wellKnownSchemaVersion,
   'bge_server_id': serverId,
+  'name': name,
+  'bge_min_client_version': minClientVersion,
+  'bge_max_client_version': maxClientVersion,
   'issuer': issuer,
   'device_authorization_endpoint': 'https://api.example.com/api/auth/device',
-  'bge_auth_base_url': 'https://api.example.com/api/auth',
+  'bge_auth_base_path': 'https://api.example.com/api/auth',
   'bge_session_endpoint': 'https://api.example.com/api/auth/get-session',
   'bge_sign_out_endpoint': 'https://api.example.com/api/auth/sign-out',
   'bge_passkey_supported': passkeySupported,
@@ -29,13 +37,15 @@ void main() {
       test('deserializes all required fields from snake_case wire format', () {
         final identity = ServerIdentity.fromJson(_fullIdentityJson());
 
+        expect(identity.wellKnownSchemaVersion, 1);
         expect(identity.serverId, '550e8400-e29b-41d4-a716-446655440000');
+        expect(identity.name, 'Board Games Empire');
         expect(identity.issuer, 'https://api.example.com');
         expect(
           identity.deviceAuthorizationEndpoint,
           'https://api.example.com/api/auth/device',
         );
-        expect(identity.authBaseUrl, 'https://api.example.com/api/auth');
+        expect(identity.authBasePath, 'https://api.example.com/api/auth');
         expect(
           identity.sessionEndpoint,
           'https://api.example.com/api/auth/get-session',
@@ -105,20 +115,55 @@ void main() {
         expect(identity.twoFactorSupported, isFalse);
         expect(identity.anonymousAuthSupported, isFalse);
       });
+
+      test('deserializes version compatibility bounds when present', () {
+        final json = _fullIdentityJson(
+          minClientVersion: '0.1.0',
+          maxClientVersion: '2.0.0',
+        );
+
+        final identity = ServerIdentity.fromJson(json);
+
+        expect(identity.minClientVersion, '0.1.0');
+        expect(identity.maxClientVersion, '2.0.0');
+      });
+
+      test('version bounds deserialize as null when wire value is null', () {
+        // The backend emits explicit nulls for open bounds (see
+        // BgeDiscoveryDto): null = no minimum / no maximum.
+        final identity = ServerIdentity.fromJson(_fullIdentityJson());
+
+        expect(identity.minClientVersion, isNull);
+        expect(identity.maxClientVersion, isNull);
+      });
+
+      test('deserializes a non-default schema version', () {
+        final identity = ServerIdentity.fromJson(
+          _fullIdentityJson(wellKnownSchemaVersion: 2),
+        );
+
+        expect(identity.wellKnownSchemaVersion, 2);
+      });
     });
 
     group('toJson', () {
       test('serializes back to snake_case wire format', () {
-        final identity = ServerIdentity.fromJson(_fullIdentityJson());
+        final identity = ServerIdentity.fromJson(
+          _fullIdentityJson(minClientVersion: '0.1.0'),
+        );
         final json = identity.toJson();
 
+        expect(json['well_known_schema_version'], 1);
         expect(json['bge_server_id'], '550e8400-e29b-41d4-a716-446655440000');
+        expect(json['name'], 'Board Games Empire');
+        expect(json['bge_min_client_version'], '0.1.0');
+        expect(json['bge_max_client_version'], isNull);
         expect(json['issuer'], 'https://api.example.com');
         expect(
           json['device_authorization_endpoint'],
           'https://api.example.com/api/auth/device',
         );
-        expect(json['bge_auth_base_url'], 'https://api.example.com/api/auth');
+        expect(json['bge_auth_base_path'], 'https://api.example.com/api/auth');
         expect(
           json['bge_session_endpoint'],
           'https://api.example.com/api/auth/get-session',
@@ -134,6 +179,7 @@ void main() {
 
       test('round-trips fromJson → toJson → fromJson with strategies', () {
         final originalJson = _fullIdentityJson(
+          minClientVersion: '0.2.0',
           strategies: [
             {
               'type': 'email_and_password',
@@ -148,6 +194,9 @@ void main() {
         final second = ServerIdentity.fromJson(first.toJson());
 
         expect(second.serverId, first.serverId);
+        expect(second.name, first.name);
+        expect(second.minClientVersion, '0.2.0');
+        expect(second.maxClientVersion, isNull);
         expect(second.strategies, hasLength(1));
         expect(second.strategies[0], isA<EmailAndPasswordStrategy>());
 
@@ -189,6 +238,15 @@ void main() {
         final b = ServerIdentity.fromJson(
           _fullIdentityJson(serverId: 'uuid-two'),
         );
+
+        expect(a, isNot(equals(b)));
+      });
+
+      test('identities with different version bounds are not equal', () {
+        final a = ServerIdentity.fromJson(
+          _fullIdentityJson(minClientVersion: '0.1.0'),
+        );
+        final b = ServerIdentity.fromJson(_fullIdentityJson());
 
         expect(a, isNot(equals(b)));
       });

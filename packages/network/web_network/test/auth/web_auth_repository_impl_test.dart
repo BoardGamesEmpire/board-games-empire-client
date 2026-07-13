@@ -16,8 +16,10 @@ const _kAuthBase = '/api/auth';
 ServerIdentity _identity({bool signUpDisabled = false}) => ServerIdentity(
   serverId: 'server-uuid-1',
   issuer: 'https://api.example.com',
+  wellKnownSchemaVersion: 1,
+  name: 'Test BGE Server',
   deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBaseUrl: _kAuthBase,
+  authBasePath: _kAuthBase,
   sessionEndpoint: '$_kAuthBase/get-session',
   signOutEndpoint: '$_kAuthBase/sign-out',
   passkeySupported: true,

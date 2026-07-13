@@ -32,9 +32,29 @@ abstract class ServerIdentity with _$ServerIdentity {
   const ServerIdentity._();
 
   const factory ServerIdentity({
+    /// Schema version of the discovery document. Bumped only on a breaking
+    /// shape change; the client refuses documents newer than it understands
+    /// (enforced by the version negotiator, #13).
+    @JsonKey(name: 'well_known_schema_version')
+    required int wellKnownSchemaVersion,
+
     /// Stable UUID identifying this BGE server instance.
     /// Corresponds to the `bge_server_id` field in [BgeDiscoveryDto].
     @JsonKey(name: 'bge_server_id') required String serverId,
+
+    /// Human-readable server display name, shown when choosing which server
+    /// to add. Also the default alias suggestion in the server-add flow
+    /// (#36).
+    required String name,
+
+    /// Minimum semver client version this server accepts. Clients older
+    /// than this refuse to proceed past server-add. Null = no minimum.
+    /// Compared against [BuildInfo.version] by the version negotiator (#13).
+    @JsonKey(name: 'bge_min_client_version') String? minClientVersion,
+
+    /// Maximum semver client version this server accepts. Clients newer
+    /// than this refuse to proceed. Null = no maximum.
+    @JsonKey(name: 'bge_max_client_version') String? maxClientVersion,
 
     /// Canonical base URL of this BGE server. Equivalent to `issuer` in
     /// RFC 8414. Informational only: used to confirm the client is talking to
@@ -50,7 +70,9 @@ abstract class ServerIdentity with _$ServerIdentity {
 
     /// BetterAuth base path (relative to the server base URL). Used to
     /// construct any auth endpoint not listed explicitly in this document.
-    @JsonKey(name: 'bge_auth_base_url') required String authBaseUrl,
+    /// Renamed from `bge_auth_base_url` on the wire to make the relative
+    /// semantics explicit.
+    @JsonKey(name: 'bge_auth_base_path') required String authBasePath,
 
     /// Endpoint to retrieve the current user session.
     /// GET — returns session data if authenticated, 401 if not.

@@ -25,8 +25,10 @@ ServerIdentity _identity({
 }) => ServerIdentity(
   serverId: 'server-1',
   issuer: 'https://api.example.com',
+  wellKnownSchemaVersion: 1,
+  name: 'Test BGE Server',
   deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBaseUrl: _kAuthBase,
+  authBasePath: _kAuthBase,
   sessionEndpoint: '$_kAuthBase/get-session',
   signOutEndpoint: '$_kAuthBase/sign-out',
   passkeySupported: false,

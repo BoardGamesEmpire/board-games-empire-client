@@ -245,9 +245,21 @@ class ServerRepositoryImpl implements ServerRepository {
   }
 
   ServerConfig _mapToModel(ServerConfigData data) {
-    ServerIdentity identity = ServerIdentity.fromJson(
-      jsonDecode(data.cachedIdentityJson) as Map<String, dynamic>,
-    );
+    final ServerIdentity identity;
+    try {
+      identity = ServerIdentity.fromJson(
+        jsonDecode(data.cachedIdentityJson) as Map<String, dynamic>,
+      );
+    } catch (e) {
+      // The identity document's shape can change between app versions
+      // (new required fields, renamed wire keys); a row written by an
+      // older build may throw anything from a FormatException (bad
+      // JSON) to a TypeError (missing required field deserialized as
+      // null). Catch broadly and rethrow as a typed, actionable
+      // exception rather than letting a raw TypeError escape through
+      // watchServers()/getServer() and break the caller.
+      throw CorruptedServerIdentityException(data.id, e);
+    }
 
     return ServerConfig(
       id: data.id,

@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/src/databases/meta_database.dart';
@@ -14,8 +17,10 @@ ServerIdentity _makeIdentity({
 }) => ServerIdentity(
   serverId: serverId,
   issuer: issuer,
+  wellKnownSchemaVersion: 1,
+  name: 'Test BGE Server',
   deviceAuthorizationEndpoint: '$issuer/api/auth/device',
-  authBaseUrl: '$issuer/api/auth',
+  authBasePath: '$issuer/api/auth',
   sessionEndpoint: '$issuer/api/auth/get-session',
   signOutEndpoint: '$issuer/api/auth/sign-out',
   passkeySupported: true,
@@ -35,6 +40,42 @@ Future<ServerConfig> _addServer(
   bgeServerId: bgeServerId,
   identity: identity ?? _makeIdentity(serverId: bgeServerId),
 );
+
+/// Persists a server row whose `cachedIdentityJson` is [rawIdentityJson]
+/// — a hand-built blob rather than one produced by
+/// [ServerIdentity.toJson]. Simulates a row written by a prior app
+/// version whose identity document shape has since changed (new
+/// required fields, renamed wire keys); [ServerRepository.addServer]
+/// can't produce such a row itself since it always encodes the current
+/// shape.
+///
+/// Creates the row through [ServerRepository.addServer] (so every column
+/// — including the internally-serialized connection state — is written
+/// exactly as production would) and then overwrites only the cached
+/// identity blob via a direct column update. This avoids duplicating the
+/// companion's field list or the repository's private connection-state
+/// serialization into the test.
+Future<String> _insertRawServerRow(
+  MetaDatabase database,
+  ServerRepository repository, {
+  required String rawIdentityJson,
+  String bgeServerId = _kBgeServerId,
+  String serverUrl = _kServerUrl,
+}) async {
+  final created = await _addServer(
+    repository,
+    serverUrl: serverUrl,
+    bgeServerId: bgeServerId,
+  );
+
+  await (database.update(
+    database.serverConfigs,
+  )..where((t) => t.id.equals(created.id))).write(
+    ServerConfigsCompanion(cachedIdentityJson: Value(rawIdentityJson)),
+  );
+
+  return created.id;
+}
 
 void main() {
   late MetaDatabase database;
@@ -256,6 +297,52 @@ void main() {
       test('returns null for unknown id', () async {
         expect(await repository.getServer('ghost'), isNull);
       });
+
+      test('throws CorruptedServerIdentityException for a row whose cached '
+          'identity predates required fields added in #13/#47 '
+          '(well_known_schema_version, name)', () async {
+        final id = await _insertRawServerRow(
+          database,
+          repository,
+          rawIdentityJson: jsonEncode({
+            // Pre-#47 shape: no well_known_schema_version, no name,
+            // and the old bge_auth_base_url key rather than
+            // bge_auth_base_path.
+            'bge_server_id': _kBgeServerId,
+            'issuer': _kServerUrl,
+            'device_authorization_endpoint': '$_kServerUrl/api/auth/device',
+            'bge_auth_base_url': '$_kServerUrl/api/auth',
+            'bge_session_endpoint': '$_kServerUrl/api/auth/get-session',
+            'bge_sign_out_endpoint': '$_kServerUrl/api/auth/sign-out',
+            'bge_passkey_supported': true,
+            'bge_two_factor_supported': true,
+            'bge_anonymous_auth_supported': true,
+            'strategies': <Map<String, dynamic>>[],
+          }),
+        );
+
+        expect(
+          () => repository.getServer(id),
+          throwsA(isA<CorruptedServerIdentityException>()),
+        );
+      });
+
+      test('CorruptedServerIdentityException identifies the offending server '
+          'and carries the underlying parse error as its cause', () async {
+        final id = await _insertRawServerRow(
+          database,
+          repository,
+          rawIdentityJson: jsonEncode({'not': 'a valid identity'}),
+        );
+
+        try {
+          await repository.getServer(id);
+          fail('expected CorruptedServerIdentityException');
+        } on CorruptedServerIdentityException catch (e) {
+          expect(e.serverId, id);
+          expect(e.cause, isNotNull);
+        }
+      });
     });
 
     group('getServerByBgeId', () {
@@ -385,6 +472,20 @@ void main() {
     });
 
     group('watchServers', () {
+      test('emits an error through the stream for a corrupted row rather '
+          'than silently dropping it or crashing uncaught', () async {
+        await _insertRawServerRow(
+          database,
+          repository,
+          rawIdentityJson: jsonEncode({'not': 'a valid identity'}),
+        );
+
+        await expectLater(
+          repository.watchServers(),
+          emitsError(isA<CorruptedServerIdentityException>()),
+        );
+      });
+
       test('emits current list immediately', () async {
         await _addServer(repository);
 
@@ -394,30 +495,27 @@ void main() {
         );
       });
 
-      test(
-        're-emits when a server is added after subscribe',
-        () async {
-          // Subscribe-then-mutate: take(2).toList() listens synchronously
-          // so both the initial emission and the post-mutation emission
-          // are captured.
-          final futureEmissions =
-              repository.watchServers().take(2).toList();
+      test('re-emits when a server is added after subscribe', () async {
+        // Subscribe-then-mutate: take(2).toList() listens synchronously
+        // so both the initial emission and the post-mutation emission
+        // are captured.
+        final futureEmissions = repository.watchServers().take(2).toList();
 
-          await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-          await _addServer(
-            repository,
-            serverUrl: 'https://a.example.com',
-            bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-          );
+        await _addServer(
+          repository,
+          serverUrl: 'https://a.example.com',
+          bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        );
 
-          final emissions =
-              await futureEmissions.timeout(const Duration(seconds: 5));
-          expect(emissions, hasLength(2));
-          expect(emissions[0], isEmpty);
-          expect(emissions[1], hasLength(1));
-        },
-      );
+        final emissions = await futureEmissions.timeout(
+          const Duration(seconds: 5),
+        );
+        expect(emissions, hasLength(2));
+        expect(emissions[0], isEmpty);
+        expect(emissions[1], hasLength(1));
+      });
     });
 
     group('watchConnectedCount', () {
@@ -425,26 +523,25 @@ void main() {
         await expectLater(repository.watchConnectedCount().take(1), emits(0));
       });
 
-      test(
-        're-emits when connection state changes after subscribe',
-        () async {
-          final server = await _addServer(repository);
-          final futureEmissions =
-              repository.watchConnectedCount().take(2).toList();
+      test('re-emits when connection state changes after subscribe', () async {
+        final server = await _addServer(repository);
+        final futureEmissions = repository
+            .watchConnectedCount()
+            .take(2)
+            .toList();
 
-          await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-          await repository.updateConnectionState(
-            serverId: server.id,
-            newState: ConnectionState.active,
-          );
+        await repository.updateConnectionState(
+          serverId: server.id,
+          newState: ConnectionState.active,
+        );
 
-          expect(
-            await futureEmissions.timeout(const Duration(seconds: 5)),
-            equals([0, 1]),
-          );
-        },
-      );
+        expect(
+          await futureEmissions.timeout(const Duration(seconds: 5)),
+          equals([0, 1]),
+        );
+      });
     });
   });
 }
