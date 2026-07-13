@@ -21,11 +21,12 @@ import '../url/server_url_input.dart';
 ///   advances to the alias field, and the alias field submits on the
 ///   keyboard's done action, in addition to the submit button.
 ///
-/// The `FormGroup` is owned and disposed by [ReactiveFormBuilder]; the
-/// widget is deliberately *not* `const` so a rebuild re-runs the builder
-/// against the retained group rather than a discarded inline one.
+/// The `FormGroup` is owned and disposed by [ReactiveFormBuilder], which
+/// builds it once from the `form` factory and retains it across rebuilds
+/// — so the widget can stay `const` without risking a per-build group
+/// that discards typed input.
 class ServerAddForm extends StatelessWidget {
-  ServerAddForm({super.key});
+  const ServerAddForm({super.key});
 
   static const urlControlName = 'url';
   static const aliasControlName = 'alias';

@@ -1,6 +1,5 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -108,10 +107,19 @@ void main() {
         findsOneWidget,
       );
 
-      // The banner is announced: its subtree sits under a liveRegion
-      // Semantics node.
-      final semantics = tester.getSemantics(find.text("Couldn't add server"));
-      expect(_hasLiveRegionAncestor(semantics), isTrue);
+      // The banner is announced: it sits under a Semantics widget with
+      // liveRegion enabled. Asserted at the widget-tree level to stay
+      // independent of SemanticsNode flag-API changes across Flutter
+      // versions.
+      expect(
+        find.ancestor(
+          of: find.text("Couldn't add server"),
+          matching: find.byWidgetPredicate(
+            (w) => w is Semantics && (w.properties.liveRegion ?? false),
+          ),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('interpolates version-negotiation payloads', (tester) async {
@@ -129,13 +137,4 @@ void main() {
       expect(find.textContaining('1.0.0'), findsOneWidget);
     });
   });
-}
-
-bool _hasLiveRegionAncestor(SemanticsNode node) {
-  SemanticsNode? current = node;
-  while (current != null) {
-    if (current.flagsCollection.isLiveRegion) return true;
-    current = current.parent;
-  }
-  return false;
 }
