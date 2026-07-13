@@ -104,6 +104,7 @@ ServerUrlResult normalizeServerUrl(String input) {
       if (!_isLoopbackOrPrivateHost(uri.host)) {
         return const ServerUrlInvalid(ServerUrlError.insecureHttp);
       }
+      break;
     default:
       return const ServerUrlInvalid(ServerUrlError.unsupportedScheme);
   }

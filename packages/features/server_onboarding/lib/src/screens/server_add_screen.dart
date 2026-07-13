@@ -37,7 +37,7 @@ class ServerAddScreen extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 24),
-                  const ServerAddForm(),
+                  ServerAddForm(),
                 ],
               ),
             ),

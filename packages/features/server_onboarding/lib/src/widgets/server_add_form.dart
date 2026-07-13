@@ -25,7 +25,7 @@ import '../url/server_url_input.dart';
 /// widget is deliberately *not* `const` so a rebuild re-runs the builder
 /// against the retained group rather than a discarded inline one.
 class ServerAddForm extends StatelessWidget {
-  const ServerAddForm({super.key});
+  ServerAddForm({super.key});
 
   static const urlControlName = 'url';
   static const aliasControlName = 'alias';
