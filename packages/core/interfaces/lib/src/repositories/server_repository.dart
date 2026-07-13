@@ -5,6 +5,10 @@ import 'package:models/domain.dart';
 /// Capacity enforcement (max monitored servers) is NOT the responsibility of
 /// this repository — it belongs in [ServerOrchestrator], which has access to
 /// [DevicePreferences]. This repository stores and retrieves state faithfully.
+///
+/// Any method that maps a stored row into a [ServerConfig] can throw
+/// [CorruptedServerIdentityException] if that row's cached identity no
+/// longer deserializes (see the exception's doc for why).
 abstract class ServerRepository {
   /// Adds a new server in [ConnectionState.disconnected].
   ///
@@ -89,4 +93,24 @@ class ActiveServerException implements Exception {
   String toString() =>
       'ActiveServerException: Cannot remove active server $serverId. '
       'Switch to another server first.';
+}
+
+/// Thrown when a persisted server's `cachedIdentity` blob fails to
+/// deserialize into a [ServerIdentity].
+///
+/// The identity document's shape can change between app versions (new
+/// required fields, renamed wire keys); a row written by an older build
+/// may no longer parse. This is distinct from [ServerNotFoundException]:
+/// the row exists but its cached identity is unreadable. Recovery is
+/// removing and re-adding the server, which re-fetches a fresh,
+/// current-shape identity document.
+class CorruptedServerIdentityException implements Exception {
+  final String serverId;
+  final Object cause;
+  const CorruptedServerIdentityException(this.serverId, this.cause);
+  @override
+  String toString() =>
+      'CorruptedServerIdentityException: Cached identity for server '
+      '$serverId could not be parsed ($cause). Remove and re-add this '
+      'server.';
 }
