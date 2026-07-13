@@ -16,7 +16,7 @@ import 'package:auth/src/widgets/oidc_strategy_button.dart';
 class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
     implements AuthBloc {}
 
-const _kAuthBase = 'https://api.example.com/api/auth';
+const _kAuthBase = '/api/auth';
 
 ServerIdentity _identity({
   bool hasEmailPassword = true,

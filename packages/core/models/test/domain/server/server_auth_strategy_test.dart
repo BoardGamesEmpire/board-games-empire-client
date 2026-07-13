@@ -9,10 +9,8 @@ void main() {
           final json = {
             'type': 'email_and_password',
             'sign_up_disabled': false,
-            'sign_in_endpoint':
-                'https://api.example.com/api/auth/sign-in/email',
-            'sign_up_endpoint':
-                'https://api.example.com/api/auth/sign-up/email',
+            'sign_in_endpoint': '/api/auth/sign-in/email',
+            'sign_up_endpoint': '/api/auth/sign-up/email',
           };
 
           final strategy = ServerAuthStrategy.fromJson(json);
@@ -20,14 +18,8 @@ void main() {
           expect(strategy, isA<EmailAndPasswordStrategy>());
           final ep = strategy as EmailAndPasswordStrategy;
           expect(ep.signUpDisabled, isFalse);
-          expect(
-            ep.signInEndpoint,
-            'https://api.example.com/api/auth/sign-in/email',
-          );
-          expect(
-            ep.signUpEndpoint,
-            'https://api.example.com/api/auth/sign-up/email',
-          );
+          expect(ep.signInEndpoint, '/api/auth/sign-in/email');
+          expect(ep.signUpEndpoint, '/api/auth/sign-up/email');
         });
 
         test(
@@ -36,8 +28,7 @@ void main() {
             final json = {
               'type': 'email_and_password',
               'sign_up_disabled': true,
-              'sign_in_endpoint':
-                  'https://api.example.com/api/auth/sign-in/email',
+              'sign_in_endpoint': '/api/auth/sign-in/email',
             };
 
             final strategy = ServerAuthStrategy.fromJson(json);
@@ -56,8 +47,7 @@ void main() {
             'provider_id': 'acme-sso',
             'discovery_url':
                 'https://auth.acme.com/.well-known/openid-configuration',
-            'authorization_endpoint':
-                'https://api.example.com/api/auth/sign-in/oauth2',
+            'authorization_endpoint': '/api/auth/sign-in/oauth2',
           };
 
           final strategy = ServerAuthStrategy.fromJson(json);
@@ -69,10 +59,7 @@ void main() {
             oidc.discoveryUrl,
             'https://auth.acme.com/.well-known/openid-configuration',
           );
-          expect(
-            oidc.authorizationEndpoint,
-            'https://api.example.com/api/auth/sign-in/oauth2',
-          );
+          expect(oidc.authorizationEndpoint, '/api/auth/sign-in/oauth2');
         });
       });
 
@@ -105,28 +92,22 @@ void main() {
       test('EmailAndPasswordStrategy round-trips with sign-up open', () {
         const strategy = EmailAndPasswordStrategy(
           signUpDisabled: false,
-          signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
-          signUpEndpoint: 'https://api.example.com/api/auth/sign-up/email',
+          signInEndpoint: '/api/auth/sign-in/email',
+          signUpEndpoint: '/api/auth/sign-up/email',
         );
 
         final json = strategy.toJson();
 
         expect(json['type'], AuthStrategyType.emailAndPassword);
         expect(json['sign_up_disabled'], isFalse);
-        expect(
-          json['sign_in_endpoint'],
-          'https://api.example.com/api/auth/sign-in/email',
-        );
-        expect(
-          json['sign_up_endpoint'],
-          'https://api.example.com/api/auth/sign-up/email',
-        );
+        expect(json['sign_in_endpoint'], '/api/auth/sign-in/email');
+        expect(json['sign_up_endpoint'], '/api/auth/sign-up/email');
       });
 
       test('EmailAndPasswordStrategy omits sign_up_endpoint when null', () {
         const strategy = EmailAndPasswordStrategy(
           signUpDisabled: true,
-          signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
+          signInEndpoint: '/api/auth/sign-in/email',
         );
 
         final json = strategy.toJson();
@@ -139,8 +120,7 @@ void main() {
           providerId: 'acme-sso',
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
-          authorizationEndpoint:
-              'https://api.example.com/api/auth/sign-in/oauth2',
+          authorizationEndpoint: '/api/auth/sign-in/oauth2',
         );
 
         final json = strategy.toJson();
@@ -151,10 +131,7 @@ void main() {
           json['discovery_url'],
           'https://auth.acme.com/.well-known/openid-configuration',
         );
-        expect(
-          json['authorization_endpoint'],
-          'https://api.example.com/api/auth/sign-in/oauth2',
-        );
+        expect(json['authorization_endpoint'], '/api/auth/sign-in/oauth2');
       });
     });
 
@@ -162,13 +139,13 @@ void main() {
       test('two EmailAndPasswordStrategy with same fields are equal', () {
         const a = EmailAndPasswordStrategy(
           signUpDisabled: false,
-          signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
-          signUpEndpoint: 'https://api.example.com/api/auth/sign-up/email',
+          signInEndpoint: '/api/auth/sign-in/email',
+          signUpEndpoint: '/api/auth/sign-up/email',
         );
         const b = EmailAndPasswordStrategy(
           signUpDisabled: false,
-          signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
-          signUpEndpoint: 'https://api.example.com/api/auth/sign-up/email',
+          signInEndpoint: '/api/auth/sign-in/email',
+          signUpEndpoint: '/api/auth/sign-up/email',
         );
 
         expect(a, equals(b));
@@ -180,11 +157,11 @@ void main() {
         () {
           const a = EmailAndPasswordStrategy(
             signUpDisabled: false,
-            signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
+            signInEndpoint: '/api/auth/sign-in/email',
           );
           const b = EmailAndPasswordStrategy(
             signUpDisabled: true,
-            signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
+            signInEndpoint: '/api/auth/sign-in/email',
           );
 
           expect(a, isNot(equals(b)));
@@ -196,15 +173,13 @@ void main() {
           providerId: 'acme',
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
-          authorizationEndpoint:
-              'https://api.example.com/api/auth/sign-in/oauth2',
+          authorizationEndpoint: '/api/auth/sign-in/oauth2',
         );
         const b = OidcStrategy(
           providerId: 'acme',
           discoveryUrl:
               'https://auth.acme.com/.well-known/openid-configuration',
-          authorizationEndpoint:
-              'https://api.example.com/api/auth/sign-in/oauth2',
+          authorizationEndpoint: '/api/auth/sign-in/oauth2',
         );
 
         expect(a, equals(b));
@@ -216,14 +191,13 @@ void main() {
         final List<ServerAuthStrategy> strategies = [
           const EmailAndPasswordStrategy(
             signUpDisabled: false,
-            signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
+            signInEndpoint: '/api/auth/sign-in/email',
           ),
           const OidcStrategy(
             providerId: 'test',
             discoveryUrl:
                 'https://auth.test.com/.well-known/openid-configuration',
-            authorizationEndpoint:
-                'https://api.example.com/api/auth/sign-in/oauth2',
+            authorizationEndpoint: '/api/auth/sign-in/oauth2',
           ),
         ];
 
@@ -246,18 +220,15 @@ void main() {
           {
             'type': 'email_and_password',
             'sign_up_disabled': false,
-            'sign_in_endpoint':
-                'https://api.example.com/api/auth/sign-in/email',
-            'sign_up_endpoint':
-                'https://api.example.com/api/auth/sign-up/email',
+            'sign_in_endpoint': '/api/auth/sign-in/email',
+            'sign_up_endpoint': '/api/auth/sign-up/email',
           },
           {
             'type': 'oidc',
             'provider_id': 'acme-sso',
             'discovery_url':
                 'https://auth.acme.com/.well-known/openid-configuration',
-            'authorization_endpoint':
-                'https://api.example.com/api/auth/sign-in/oauth2',
+            'authorization_endpoint': '/api/auth/sign-in/oauth2',
           },
         ];
 
@@ -276,7 +247,7 @@ void main() {
         const strategies = [
           EmailAndPasswordStrategy(
             signUpDisabled: false,
-            signInEndpoint: 'https://api.example.com/api/auth/sign-in/email',
+            signInEndpoint: '/api/auth/sign-in/email',
           ),
         ];
 

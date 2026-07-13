@@ -19,10 +19,10 @@ Map<String, dynamic> _validIdentityJson({String? serverId}) => {
   'bge_min_client_version': null,
   'bge_max_client_version': null,
   'issuer': _kServerUrl,
-  'device_authorization_endpoint': '$_kServerUrl/api/auth/device',
-  'bge_auth_base_path': '$_kServerUrl/api/auth',
-  'bge_session_endpoint': '$_kServerUrl/api/auth/get-session',
-  'bge_sign_out_endpoint': '$_kServerUrl/api/auth/sign-out',
+  'device_authorization_endpoint': '/api/auth/device',
+  'bge_auth_base_path': '/api/auth',
+  'bge_session_endpoint': '/api/auth/get-session',
+  'bge_sign_out_endpoint': '/api/auth/sign-out',
   'bge_passkey_supported': true,
   'bge_two_factor_supported': true,
   'bge_anonymous_auth_supported': true,
@@ -147,8 +147,8 @@ void main() {
           {
             'type': 'email_and_password',
             'sign_up_disabled': false,
-            'sign_in_endpoint': '$_kServerUrl/api/auth/sign-in/email',
-            'sign_up_endpoint': '$_kServerUrl/api/auth/sign-up/email',
+            'sign_in_endpoint': '/api/auth/sign-in/email',
+            'sign_up_endpoint': '/api/auth/sign-up/email',
           },
         ];
         when(

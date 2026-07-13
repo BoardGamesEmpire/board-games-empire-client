@@ -21,10 +21,10 @@ Map<String, dynamic> _fullIdentityJson({
   'bge_min_client_version': minClientVersion,
   'bge_max_client_version': maxClientVersion,
   'issuer': issuer,
-  'device_authorization_endpoint': 'https://api.example.com/api/auth/device',
-  'bge_auth_base_path': 'https://api.example.com/api/auth',
-  'bge_session_endpoint': 'https://api.example.com/api/auth/get-session',
-  'bge_sign_out_endpoint': 'https://api.example.com/api/auth/sign-out',
+  'device_authorization_endpoint': '/api/auth/device',
+  'bge_auth_base_path': '/api/auth',
+  'bge_session_endpoint': '/api/auth/get-session',
+  'bge_sign_out_endpoint': '/api/auth/sign-out',
   'bge_passkey_supported': passkeySupported,
   'bge_two_factor_supported': twoFactorSupported,
   'bge_anonymous_auth_supported': anonymousAuthSupported,
@@ -41,19 +41,10 @@ void main() {
         expect(identity.serverId, '550e8400-e29b-41d4-a716-446655440000');
         expect(identity.name, 'Board Games Empire');
         expect(identity.issuer, 'https://api.example.com');
-        expect(
-          identity.deviceAuthorizationEndpoint,
-          'https://api.example.com/api/auth/device',
-        );
-        expect(identity.authBasePath, 'https://api.example.com/api/auth');
-        expect(
-          identity.sessionEndpoint,
-          'https://api.example.com/api/auth/get-session',
-        );
-        expect(
-          identity.signOutEndpoint,
-          'https://api.example.com/api/auth/sign-out',
-        );
+        expect(identity.deviceAuthorizationEndpoint, '/api/auth/device');
+        expect(identity.authBasePath, '/api/auth');
+        expect(identity.sessionEndpoint, '/api/auth/get-session');
+        expect(identity.signOutEndpoint, '/api/auth/sign-out');
         expect(identity.passkeySupported, isTrue);
         expect(identity.twoFactorSupported, isTrue);
         expect(identity.anonymousAuthSupported, isTrue);
@@ -70,18 +61,15 @@ void main() {
             {
               'type': 'email_and_password',
               'sign_up_disabled': false,
-              'sign_in_endpoint':
-                  'https://api.example.com/api/auth/sign-in/email',
-              'sign_up_endpoint':
-                  'https://api.example.com/api/auth/sign-up/email',
+              'sign_in_endpoint': '/api/auth/sign-in/email',
+              'sign_up_endpoint': '/api/auth/sign-up/email',
             },
             {
               'type': 'oidc',
               'provider_id': 'acme-sso',
               'discovery_url':
                   'https://auth.acme.com/.well-known/openid-configuration',
-              'authorization_endpoint':
-                  'https://api.example.com/api/auth/sign-in/oauth2',
+              'authorization_endpoint': '/api/auth/sign-in/oauth2',
             },
           ],
         );
@@ -159,19 +147,10 @@ void main() {
         expect(json['bge_min_client_version'], '0.1.0');
         expect(json['bge_max_client_version'], isNull);
         expect(json['issuer'], 'https://api.example.com');
-        expect(
-          json['device_authorization_endpoint'],
-          'https://api.example.com/api/auth/device',
-        );
-        expect(json['bge_auth_base_path'], 'https://api.example.com/api/auth');
-        expect(
-          json['bge_session_endpoint'],
-          'https://api.example.com/api/auth/get-session',
-        );
-        expect(
-          json['bge_sign_out_endpoint'],
-          'https://api.example.com/api/auth/sign-out',
-        );
+        expect(json['device_authorization_endpoint'], '/api/auth/device');
+        expect(json['bge_auth_base_path'], '/api/auth');
+        expect(json['bge_session_endpoint'], '/api/auth/get-session');
+        expect(json['bge_sign_out_endpoint'], '/api/auth/sign-out');
         expect(json['bge_passkey_supported'], isTrue);
         expect(json['bge_two_factor_supported'], isTrue);
         expect(json['bge_anonymous_auth_supported'], isTrue);
@@ -184,8 +163,7 @@ void main() {
             {
               'type': 'email_and_password',
               'sign_up_disabled': true,
-              'sign_in_endpoint':
-                  'https://api.example.com/api/auth/sign-in/email',
+              'sign_in_endpoint': '/api/auth/sign-in/email',
             },
           ],
         );
@@ -259,8 +237,7 @@ void main() {
             {
               'type': 'email_and_password',
               'sign_up_disabled': false,
-              'sign_in_endpoint':
-                  'https://api.example.com/api/auth/sign-in/email',
+              'sign_in_endpoint': '/api/auth/sign-in/email',
             },
           ],
         );
@@ -278,8 +255,7 @@ void main() {
               'provider_id': 'acme-sso',
               'discovery_url':
                   'https://auth.acme.com/.well-known/openid-configuration',
-              'authorization_endpoint':
-                  'https://api.example.com/api/auth/sign-in/oauth2',
+              'authorization_endpoint': '/api/auth/sign-in/oauth2',
             },
           ],
         );
