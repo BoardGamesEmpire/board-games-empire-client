@@ -209,6 +209,24 @@ void main() {
         expect(result, isA<ClientTooOld>());
       });
 
+      test('reports the verbatim client version, not the 0.0.0 comparison '
+          'sentinel, when the version is unparseable', () {
+        // The 0.0.0 fallback is a comparison-only mechanism; the payload
+        // must surface the real (broken) version string for diagnostics.
+        final result = negotiator.negotiate(
+          buildInfo: _buildInfo('not-a-version'),
+          identity: _identity(minClientVersion: '0.1.0'),
+        );
+
+        expect(
+          result,
+          const ClientTooOld(
+            clientVersion: 'not-a-version',
+            requiredMinimum: '0.1.0',
+          ),
+        );
+      });
+
       test('unparseable client version is compatible with open bounds', () {
         final result = negotiator.negotiate(
           buildInfo: _buildInfo('not-a-version'),

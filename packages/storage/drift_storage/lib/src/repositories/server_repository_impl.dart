@@ -250,7 +250,7 @@ class ServerRepositoryImpl implements ServerRepository {
       identity = ServerIdentity.fromJson(
         jsonDecode(data.cachedIdentityJson) as Map<String, dynamic>,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       // The identity document's shape can change between app versions
       // (new required fields, renamed wire keys); a row written by an
       // older build may throw anything from a FormatException (bad
@@ -258,7 +258,14 @@ class ServerRepositoryImpl implements ServerRepository {
       // null). Catch broadly and rethrow as a typed, actionable
       // exception rather than letting a raw TypeError escape through
       // watchServers()/getServer() and break the caller.
-      throw CorruptedServerIdentityException(data.id, e);
+      //
+      // Rethrow with the *original* stack trace so logs still point at
+      // the actual parse/type failure inside fromJson rather than at
+      // this catch site.
+      Error.throwWithStackTrace(
+        CorruptedServerIdentityException(data.id, e),
+        stackTrace,
+      );
     }
 
     return ServerConfig(

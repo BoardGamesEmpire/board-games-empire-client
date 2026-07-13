@@ -33,11 +33,16 @@ abstract interface class VersionNegotiator {
   ///
   /// Failure policy (established with `BuildInfo.unknown`, #35): an
   /// unparseable **client** version is treated as `0.0.0` — oldest
-  /// possible — so negotiation fails *closed* against a server that
-  /// declares a minimum. An unparseable **server** bound is ignored
-  /// (treated as an open bound): a server operator's typo must not brick
-  /// every client, and tolerant parsing of server-sent data is the
-  /// established well-known posture.
+  /// possible — *for comparison only*, so negotiation fails *closed*
+  /// against a server that declares a minimum. The value carried back on
+  /// [ClientTooOld] / [ClientTooNew] is the client's **verbatim**
+  /// version string (e.g. `not-a-version`), not the `0.0.0` sentinel:
+  /// the payload is a diagnostic meant to surface the real client state
+  /// in error UI and bug reports, and reporting `0.0.0` there would mask
+  /// a broken version string or failed platform read. An unparseable
+  /// **server** bound is ignored (treated as an open bound): a server
+  /// operator's typo must not brick every client, and tolerant parsing
+  /// of server-sent data is the established well-known posture.
   VersionNegotiationResult negotiate({
     required BuildInfo buildInfo,
     required ServerIdentity identity,
