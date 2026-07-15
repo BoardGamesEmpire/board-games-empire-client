@@ -7,6 +7,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
+import '../network/token_interceptor.dart';
 import 'token_storage_service.dart';
 
 /// Dio-based [AuthRepository] for mobile and desktop.
@@ -169,13 +170,76 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   @override
   Future<void> signOut() async {
+    // Capture the token BEFORE latching. clear() below sets the sign-out
+    // latch synchronously, ahead of TokenInterceptor's async retrieve() — so
+    // if the best-effort POST relied on the interceptor it would be sent
+    // WITHOUT an Authorization header, and the server could not revoke the
+    // session. Passing the token explicitly keeps the request authenticated
+    // regardless of latch timing (PR #99 review).
+    //
+    // Best-effort: a keychain read failure must not abort sign-out, whose
+    // unauthenticated transition is unconditional (see AuthRepository.signOut
+    // contract). On failure the POST simply goes out unauthenticated.
+    String? token;
     try {
-      await _dio.post<void>(_identity.signOutEndpoint);
-    } catch (_) {
-      // best-effort
-    } finally {
+      token = (await _tokenStorage.retrieve())?.token;
+    } on Object {
+      token = null;
+    }
+
+    // Best-effort server call, fire-and-forget: its result is discarded,
+    // so we must not block the local sign-out on it — awaiting would make
+    // the user watch a spinner for the full Dio timeout on an unreachable
+    // server (#37 review #9). The helper is Future<void> and swallows both
+    // synchronous throws and async rejections.
+    unawaited(_bestEffortSignOutPost(token));
+
+    try {
       await _tokenStorage.clear();
+    } on Object catch (error, stackTrace) {
+      // The persisted token could not be cleared. Rethrow as the typed,
+      // contract-covered exception (stack preserved). The `finally` runs
+      // before it propagates, so callers and the state stream observe the
+      // unauthenticated transition FIRST. TokenStorageService.clear() sets
+      // its sign-out latch BEFORE the failing delete, so retrieve() — and
+      // therefore the TokenInterceptor's Authorization header and any
+      // same-process getSession() — already report no token: a surviving
+      // token can be resurrected neither at the HTTP layer nor in state
+      // within this process (PR #99 review). The latch is in-memory only, so
+      // the residual risk is the surviving token restoring a session on the
+      // next cold start, where sign-out can be repeated (see the
+      // AuthRepository.signOut contract).
+      Error.throwWithStackTrace(
+        AuthSignOutPersistenceException(cause: error),
+        stackTrace,
+      );
+    } finally {
       _setState(const AuthStateUnauthenticated());
+    }
+  }
+
+  /// Fire-and-forget sign-out POST. Never throws: a synchronous throw or
+  /// an async rejection is swallowed (best-effort by design). Typed
+  /// `Future<void>` so it satisfies [unawaited].
+  ///
+  /// Carries [token] as an explicit `Authorization` header and opts out of
+  /// [TokenInterceptor]-managed auth: the sign-out latch set by clear() wins
+  /// the race against the interceptor's async token read, so relying on the
+  /// interceptor would send this request unauthenticated (PR #99 review).
+  /// A null [token] (already signed out / nothing stored) posts without auth.
+  Future<void> _bestEffortSignOutPost(String? token) async {
+    try {
+      await _dio.post<void>(
+        _identity.signOutEndpoint,
+        options: token == null
+            ? null
+            : Options(
+                headers: {'Authorization': 'Bearer $token'},
+                extra: {TokenInterceptor.skipAuthKey: true},
+              ),
+      );
+    } on Object {
+      // discarded
     }
   }
 

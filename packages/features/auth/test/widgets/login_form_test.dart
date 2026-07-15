@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:auth/l10n/auth_localizations.dart';
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
@@ -12,7 +13,12 @@ import 'package:auth/src/widgets/login_form.dart';
 class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
     implements AuthBloc {}
 
+// #37 i18n: the form resolves all copy from AuthLocalizations, so the
+// harness must provide the delegates; assertions keep matching the
+// English template values.
 Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
+  localizationsDelegates: AuthLocalizations.localizationsDelegates,
+  supportedLocales: AuthLocalizations.supportedLocales,
   home: Scaffold(
     body: BlocProvider<AuthBloc>.value(value: bloc, child: child),
   ),

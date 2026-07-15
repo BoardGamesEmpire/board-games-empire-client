@@ -39,7 +39,15 @@ abstract class AuthRepository {
 
   /// Signs out and clears the local session.
   ///
-  /// Best-effort server call — local state is always cleared.
+  /// Best-effort server call. The repository's in-memory auth state
+  /// ALWAYS transitions to [AuthStateUnauthenticated] — unconditionally,
+  /// even when clearing the persisted session material fails. In that
+  /// case an [AuthSignOutPersistenceException] is thrown, but only after
+  /// the state transition has been observed by [watchAuthState], so the
+  /// stream can never re-assert a session the user just ended (#37). The
+  /// residual risk of a failed persisted clear is the surviving token
+  /// restoring a session on the next cold start, where sign-out can be
+  /// repeated.
   Future<void> signOut();
 
   /// Returns the locally cached session without a network call.
@@ -154,4 +162,21 @@ final class AuthServerException extends AuthException {
     super.cause,
   });
   final int? statusCode;
+}
+
+/// Sign-out could not clear the locally persisted session material (#37).
+///
+/// Thrown by [AuthRepository.signOut] only AFTER the repository's
+/// in-memory auth state has transitioned to [AuthStateUnauthenticated] —
+/// the sign-out is effective for this process regardless, and
+/// [AuthRepository.watchAuthState] can never re-assert the ended session.
+/// The residual risk is the persisted token surviving until the next cold
+/// start, where the restored session can be signed out again. [cause]
+/// carries the underlying storage fault.
+final class AuthSignOutPersistenceException extends AuthException {
+  const AuthSignOutPersistenceException({
+    super.message =
+        'Signed out, but the stored session material could not be cleared.',
+    super.cause,
+  });
 }

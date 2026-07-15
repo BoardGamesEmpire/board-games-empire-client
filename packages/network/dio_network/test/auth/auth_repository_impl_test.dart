@@ -246,6 +246,9 @@ void main() {
     group('signOut()', () {
       test('clears token regardless of server response', () async {
         stubClear();
+        // signOut() reads the token to authenticate the best-effort POST
+        // before latching; none stored here.
+        when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
         when(() => mockDio.post<void>(any())).thenThrow(
           DioException(
             type: DioExceptionType.connectionError,

@@ -84,6 +84,8 @@ class ServerContextImpl implements ServerContext {
   @override
   final String serverId;
 
+  @override
+  ServerConfig get config => _config;
   final ServerConfig _config;
 
   final List<ServerScopeInstaller> _installers;

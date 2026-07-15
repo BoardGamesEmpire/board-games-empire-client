@@ -1,87 +1,184 @@
 {
   "@@locale": "en",
-
   "authSignInTitle": "Sign In",
-  "@authSignInTitle": { "description": "Title for the sign-in form" },
-
+  "@authSignInTitle": {
+    "description": "Title for the sign-in form"
+  },
   "authRegisterTitle": "Create Account",
-  "@authRegisterTitle": { "description": "Title for the registration form" },
-
+  "@authRegisterTitle": {
+    "description": "Title for the registration form"
+  },
   "authSwitchToRegister": "Don't have an account? Register",
-  "@authSwitchToRegister": { "description": "Link to switch to registration form" },
-
+  "@authSwitchToRegister": {
+    "description": "Link to switch to registration form"
+  },
   "authSwitchToSignIn": "Already have an account? Sign in",
-  "@authSwitchToSignIn": { "description": "Link to switch to sign-in form" },
-
+  "@authSwitchToSignIn": {
+    "description": "Link to switch to sign-in form"
+  },
   "authEmailLabel": "Email",
-  "@authEmailLabel": { "description": "Email field label" },
-
+  "@authEmailLabel": {
+    "description": "Email field label"
+  },
   "authEmailHint": "Enter your email address",
-  "@authEmailHint": { "description": "Email field hint text" },
-
+  "@authEmailHint": {
+    "description": "Email field hint text"
+  },
   "authPasswordLabel": "Password",
-  "@authPasswordLabel": { "description": "Password field label" },
-
+  "@authPasswordLabel": {
+    "description": "Password field label"
+  },
   "authPasswordHint": "Enter your password",
-  "@authPasswordHint": { "description": "Password field hint text" },
-
+  "@authPasswordHint": {
+    "description": "Password field hint text"
+  },
+  "authPasswordCreateHint": "Create a password",
+  "@authPasswordCreateHint": {
+    "description": "Password field hint text on the registration form"
+  },
   "authUsernameLabel": "Username",
-  "@authUsernameLabel": { "description": "Username field label" },
-
+  "@authUsernameLabel": {
+    "description": "Username field label"
+  },
   "authUsernameHint": "Choose a username",
-  "@authUsernameHint": { "description": "Username field hint text" },
-
+  "@authUsernameHint": {
+    "description": "Username field hint text"
+  },
   "authFirstNameLabel": "First Name",
-  "@authFirstNameLabel": { "description": "First name field label" },
-
+  "@authFirstNameLabel": {
+    "description": "First name field label"
+  },
   "authLastNameLabel": "Last Name",
-  "@authLastNameLabel": { "description": "Last name field label" },
-
+  "@authLastNameLabel": {
+    "description": "Last name field label"
+  },
   "authSignInButton": "Sign In",
-  "@authSignInButton": { "description": "Sign-in submit button label" },
-
+  "@authSignInButton": {
+    "description": "Sign-in submit button label"
+  },
   "authRegisterButton": "Create Account",
-  "@authRegisterButton": { "description": "Registration submit button label" },
-
+  "@authRegisterButton": {
+    "description": "Registration submit button label"
+  },
   "authLoadingLabel": "Signing in, please wait",
-  "@authLoadingLabel": { "description": "Semantic label for loading indicator" },
-
+  "@authLoadingLabel": {
+    "description": "Semantic label for the sign-in loading indicator"
+  },
+  "authRegisterLoadingLabel": "Creating account, please wait",
+  "@authRegisterLoadingLabel": {
+    "description": "Semantic label for the registration loading indicator"
+  },
   "authOrDivider": "or",
-  "@authOrDivider": { "description": "Divider between email/password and OIDC options" },
-
+  "@authOrDivider": {
+    "description": "Divider between email/password and OIDC options"
+  },
   "authContinueWith": "Continue with {provider}",
   "@authContinueWith": {
     "description": "OIDC button label",
-    "placeholders": { "provider": { "type": "String" } }
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
   },
-
+  "authOidcComingSoon": "OIDC sign-in with {provider} — coming soon",
+  "@authOidcComingSoon": {
+    "description": "Placeholder shown when an OIDC button is tapped before the flow exists",
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
   "authErrorRequired": "This field is required",
-  "@authErrorRequired": { "description": "Validation error for empty required field" },
-
+  "@authErrorRequired": {
+    "description": "Validation error for empty required field"
+  },
   "authErrorInvalidEmail": "Enter a valid email address",
-  "@authErrorInvalidEmail": { "description": "Validation error for bad email format" },
-
+  "@authErrorInvalidEmail": {
+    "description": "Validation error for bad email format"
+  },
   "authErrorPasswordTooShort": "Password must be at least {minLength} characters",
   "@authErrorPasswordTooShort": {
     "description": "Validation error for short password",
-    "placeholders": { "minLength": { "type": "int" } }
+    "placeholders": {
+      "minLength": {
+        "type": "int"
+      }
+    }
   },
-
   "authErrorUsernameTooShort": "Username must be at least {minLength} characters",
   "@authErrorUsernameTooShort": {
     "description": "Validation error for short username",
-    "placeholders": { "minLength": { "type": "int" } }
+    "placeholders": {
+      "minLength": {
+        "type": "int"
+      }
+    }
   },
-
+  "authErrorInvalidCredentials": "Incorrect email or password.",
+  "@authErrorInvalidCredentials": {
+    "description": "Submission error: sign-in rejected (401/403)"
+  },
+  "authErrorEmailExists": "An account with this email already exists.",
+  "@authErrorEmailExists": {
+    "description": "Submission error: registration email already taken"
+  },
+  "authErrorNetwork": "Could not reach the server. Check your connection.",
+  "@authErrorNetwork": {
+    "description": "Submission error: connectivity failure or timeout"
+  },
+  "authErrorServer": "Something went wrong on the server. Please try again.",
+  "@authErrorServer": {
+    "description": "Submission error: unexpected server failure"
+  },
   "authPasswordVisibilityShow": "Show password",
-  "@authPasswordVisibilityShow": { "description": "Semantic label to show password" },
-
+  "@authPasswordVisibilityShow": {
+    "description": "Semantic label to show password"
+  },
   "authPasswordVisibilityHide": "Hide password",
-  "@authPasswordVisibilityHide": { "description": "Semantic label to hide password" },
-
+  "@authPasswordVisibilityHide": {
+    "description": "Semantic label to hide password"
+  },
   "authServerLabel": "Server",
-  "@authServerLabel": { "description": "Label showing which server the user is signing into" },
-
+  "@authServerLabel": {
+    "description": "Label showing which server the user is signing into"
+  },
   "authRegistrationDisabled": "Registration is currently disabled on this server.",
-  "@authRegistrationDisabled": { "description": "Error when server disables sign-up" }
+  "@authRegistrationDisabled": {
+    "description": "Error when server disables sign-up"
+  },
+  "authNoStrategiesMessage": "This server has no authentication methods configured. Please contact the server administrator.",
+  "@authNoStrategiesMessage": {
+    "description": "Shown when the server advertises no usable auth strategies"
+  },
+  "authSwitchedToSignInAnnouncement": "Switched to sign in form",
+  "@authSwitchedToSignInAnnouncement": {
+    "description": "Screen-reader announcement on switching to the sign-in form"
+  },
+  "authSwitchedToRegisterAnnouncement": "Switched to create account form",
+  "@authSwitchedToRegisterAnnouncement": {
+    "description": "Screen-reader announcement on switching to the registration form"
+  },
+  "authSessionUnreachableTitle": "Can't reach {serverName}",
+  "@authSessionUnreachableTitle": {
+    "description": "Title of the session-restore failure view (#37): the stored session could not be verified because the server is unreachable",
+    "placeholders": {
+      "serverName": {
+        "type": "String"
+      }
+    }
+  },
+  "authSessionUnreachableBody": "Your session could not be verified. Check your connection and try again.",
+  "@authSessionUnreachableBody": {
+    "description": "Body of the session-restore failure view (#37)"
+  },
+  "authRetryButton": "Try Again",
+  "@authRetryButton": {
+    "description": "Retry button on the session-restore failure view"
+  },
+  "authSignOutButton": "Sign Out",
+  "@authSignOutButton": {
+    "description": "Sign-out control label (#37)"
+  }
 }

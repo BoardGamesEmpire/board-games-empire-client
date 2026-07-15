@@ -3,9 +3,6 @@ import 'package:test/test.dart';
 
 void main() {
   group('Redaction.redactName', () {
-    // Behaviour pinned to the original helpers promoted out of
-    // packages/features/auth/lib/src/bloc/auth_event.dart. Any change
-    // here is a behavioural change for auth event logging too.
     test('empty string stays empty', () {
       expect(Redaction.redactName(''), '');
     });
@@ -89,7 +86,12 @@ void main() {
 
     test('custom keep counts and mask char', () {
       expect(
-        Redaction.maskMiddle('1234567890', keepStart: 2, keepEnd: 3, maskChar: '#'),
+        Redaction.maskMiddle(
+          '1234567890',
+          keepStart: 2,
+          keepEnd: 3,
+          maskChar: '#',
+        ),
         '12#####890',
       );
     });

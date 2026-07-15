@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 
+import 'package:auth/l10n/auth_localizations.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_bloc.dart';
@@ -50,7 +51,12 @@ ServerIdentity _identity({
   ],
 );
 
+// #37 i18n: AuthScreen resolves all copy from AuthLocalizations, so the
+// harness must provide the delegates; assertions keep matching the
+// English template values.
 Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
+  localizationsDelegates: AuthLocalizations.localizationsDelegates,
+  supportedLocales: AuthLocalizations.supportedLocales,
   home: BlocProvider<AuthBloc>.value(value: bloc, child: child),
 );
 
@@ -185,12 +191,14 @@ void main() {
     });
 
     group('error handling', () {
-      testWidgets('shows SnackBar on AuthFailure', (tester) async {
+      testWidgets('shows SnackBar on an operation failure kind', (
+        tester,
+      ) async {
         whenListen(
           mockBloc,
           Stream.fromIterable([
             const AuthInitial(),
-            const AuthFailure(message: 'Incorrect email or password.'),
+            const AuthFailureInvalidCredentials(),
           ]),
           initialState: const AuthInitial(),
         );
@@ -200,6 +208,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // The screen maps the kind to the localized message.
         expect(find.text('Incorrect email or password.'), findsOneWidget);
       });
     });

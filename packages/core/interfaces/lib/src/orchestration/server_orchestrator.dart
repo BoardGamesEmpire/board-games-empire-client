@@ -21,6 +21,21 @@ abstract class ServerOrchestrator {
   /// Null only before [initialize] completes.
   String? get activeServerId;
 
+  /// The [ServerConfig] of the currently active server; null when no
+  /// server is active (#37).
+  ///
+  /// A read-only snapshot taken when the server was connected. Commits
+  /// together with [activeServerId] and the [watchActiveContext]
+  /// emission, so a listener delivered an active-context event reads a
+  /// config consistent with that event. Backed by parallel config
+  /// bookkeeping in the implementation (a snapshot map keyed by
+  /// [activeServerId]), kept in lockstep with the live contexts.
+  ///
+  /// Note the native `ActiveServerScope` adapter does not read this getter:
+  /// it builds its `ActiveServer` value from the active [ServerContext]'s
+  /// own `config`. Both are connect-time snapshots of the same config.
+  ServerConfig? get activeConfig;
+
   /// Whether [initialize] has completed successfully.
   bool get isInitialized;
 

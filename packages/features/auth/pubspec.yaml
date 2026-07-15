@@ -1,3 +1,4 @@
+# packages/features/auth/pubspec.yaml
 name: auth
 description: "Authentication feature — Bloc, states, and events"
 publish_to: none
@@ -23,6 +24,7 @@ dependencies:
     path: ../../ui/widgets
 
   flutter_bloc: ^9.1.1
+  bloc_concurrency: ^0.3.0
   equatable: ^2.0.6
   reactive_forms: ^18.1.1
   intl: ^0.20.2

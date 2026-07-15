@@ -16,6 +16,14 @@ import 'platform_bootstrap.dart';
 ///   supports it, and executing it still requires explicit user
 ///   confirmation in the UI — the shell never deletes the meta database
 ///   on its own.
+///
+/// Auth transitions (#37): bootstrap itself never emits
+/// [AppBootstrapReady] — a registered server routes to the auth leg
+/// unconditionally, and the authenticated ↔ auth transitions are driven
+/// by the auth wiring through [onAuthenticated] / [onSignedOut], the
+/// same presentation-layer-coordination pattern as [onServerRegistered]
+/// (a BlocListener over the auth bloc invokes them; blocs never depend
+/// on blocs).
 class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   AppBootstrapCubit({
     required PlatformBootstrap platformBootstrap,
@@ -107,7 +115,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   ///
   /// Emits [AppBootstrapNeedsAuth]; the router redirect moves the app to
   /// `/auth` (a registered server routes to the auth leg unconditionally
-  /// — the authenticated → home transition is #37's).
+  /// — the authenticated → home transition is [onAuthenticated]'s, #37).
   ///
   /// Only meaningful from [AppBootstrapNeedsServer]; a no-op otherwise,
   /// for the same fire-and-forget reason as [retry] — it is invoked from
@@ -116,6 +124,43 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   void onServerRegistered() {
     if (state is! AppBootstrapNeedsServer) return;
     _logger.info('First server registered; advancing to auth');
+    emit(const AppBootstrapNeedsAuth());
+  }
+
+  /// Advances the app past the auth leg once the auth wiring (#37)
+  /// reports an authenticated session — sign-in, sign-up, or a
+  /// successful startup restore all arrive here identically.
+  ///
+  /// Emits [AppBootstrapReady]; the router redirect moves the app to
+  /// `/home`.
+  ///
+  /// Only meaningful from [AppBootstrapNeedsAuth]; a no-op otherwise,
+  /// for the same fire-and-forget reason as [retry] — it is invoked from
+  /// a BlocListener reacting to the auth bloc's authenticated state, and
+  /// a duplicate or late signal (including the repository's state
+  /// mirroring re-confirming an already-ready session) must not throw
+  /// into an unawaited future.
+  void onAuthenticated() {
+    if (state is! AppBootstrapNeedsAuth) return;
+    _logger.info('Authenticated; advancing to home');
+    emit(const AppBootstrapReady());
+  }
+
+  /// Returns the app to the auth leg after the authenticated session
+  /// ends (#37) — explicit sign-out, or a mid-session authentication
+  /// loss surfaced by the repository's auth-state stream (e.g. token
+  /// expiry detected by the interceptor).
+  ///
+  /// Emits [AppBootstrapNeedsAuth]; the router redirect moves the app to
+  /// `/auth`.
+  ///
+  /// Only meaningful from [AppBootstrapReady]; a no-op otherwise, for
+  /// the same fire-and-forget reason as [retry] — unauthenticated
+  /// signals also fire during the pre-home auth leg (a restore finding
+  /// no session), where the app is already exactly where it belongs.
+  void onSignedOut() {
+    if (state is! AppBootstrapReady) return;
+    _logger.info('Signed out; returning to auth');
     emit(const AppBootstrapNeedsAuth());
   }
 
@@ -134,7 +179,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       );
       // Never AppBootstrapReady from bootstrap: a registered server routes
       // to the auth leg unconditionally; the authenticated → home
-      // transition is owned by the auth wiring issue (#37).
+      // transition is owned by the auth wiring (#37, [onAuthenticated]).
       emit(
         result.hasServer
             ? const AppBootstrapNeedsAuth()
