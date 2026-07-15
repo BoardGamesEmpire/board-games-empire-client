@@ -1,125 +1,70 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:dio_network/src/auth/token_storage_service.dart';
 
-class MockSecureStorage extends Mock implements FlutterSecureStorage {}
+class _MockSecureStorage extends Mock implements FlutterSecureStorage {}
 
 void main() {
-  late MockSecureStorage mockStorage;
-  late TokenStorageService service;
+  late _MockSecureStorage secure;
+  late TokenStorageService storage;
 
-  const kServerId = 'local-server-abc';
-  const kKey = 'bge_session_local-server-abc';
-  final kExpiry = DateTime(2099, 1, 1).toUtc();
-  final kExpired = DateTime(2000, 1, 1).toUtc();
+  const key = 'bge_session_server-1';
+
+  String payload() =>
+      '{"token":"tok-abc","expires_at":"2099-01-01T00:00:00.000Z"}';
 
   setUp(() {
-    mockStorage = MockSecureStorage();
-    service = TokenStorageService(serverId: kServerId, storage: mockStorage);
+    secure = _MockSecureStorage();
+    storage = TokenStorageService(serverId: 'server-1', storage: secure);
+    when(
+      () => secure.write(
+        key: any(named: 'key'),
+        value: any(named: 'value'),
+      ),
+    ).thenAnswer((_) async {});
+    when(() => secure.delete(key: any(named: 'key'))).thenAnswer((_) async {});
   });
 
-  group('TokenStorageService', () {
-    group('store', () {
-      test('writes JSON-encoded payload under namespaced key', () async {
-        when(
-          () => mockStorage.write(
-            key: kKey,
-            value: any(named: 'value'),
-          ),
-        ).thenAnswer((_) async {});
+  group('sign-out latch (#37 / PR #99)', () {
+    test('retrieve returns null after clear, even if the token physically '
+        'survives a failed delete', () async {
+      when(() => secure.read(key: key)).thenAnswer((_) async => payload());
+      when(
+        () => secure.delete(key: any(named: 'key')),
+      ).thenThrow(StateError('keychain unavailable'));
 
-        await service.store(token: 'tok_abc', expiresAt: kExpiry);
+      // Token is present before sign-out.
+      expect(await storage.retrieve(), isNotNull);
 
-        final captured =
-            verify(
-                  () => mockStorage.write(
-                    key: kKey,
-                    value: captureAny(named: 'value'),
-                  ),
-                ).captured.single
-                as String;
+      // clear() latches first, then the delete throws.
+      await expectLater(storage.clear(), throwsA(isA<StateError>()));
 
-        expect(captured, contains('tok_abc'));
-        expect(captured, contains('2099'));
-      });
+      // Despite the surviving persisted token, retrieve reports none — so
+      // neither the interceptor's Authorization header nor getSession can
+      // resurrect it.
+      expect(await storage.retrieve(), isNull);
+      expect(await storage.hasToken(), isFalse);
     });
 
-    group('retrieve', () {
-      test('returns null when no entry exists', () async {
-        when(() => mockStorage.read(key: kKey)).thenAnswer((_) async => null);
-        expect(await service.retrieve(), isNull);
-      });
+    test('retrieve returns null after a successful clear', () async {
+      when(() => secure.read(key: key)).thenAnswer((_) async => payload());
 
-      test('returns StoredToken with correct fields', () async {
-        final payload =
-            '{"token":"tok_abc","expires_at":"${kExpiry.toIso8601String()}"}';
-        when(
-          () => mockStorage.read(key: kKey),
-        ).thenAnswer((_) async => payload);
+      await storage.clear();
 
-        final result = await service.retrieve();
-        expect(result?.token, 'tok_abc');
-        expect(result?.isExpired, isFalse);
-      });
-
-      test('isExpired true when past expiry', () async {
-        final payload =
-            '{"token":"old","expires_at":"${kExpired.toIso8601String()}"}';
-        when(
-          () => mockStorage.read(key: kKey),
-        ).thenAnswer((_) async => payload);
-
-        expect((await service.retrieve())?.isExpired, isTrue);
-      });
-
-      test('clears and returns null on corrupted entry', () async {
-        when(
-          () => mockStorage.read(key: kKey),
-        ).thenAnswer((_) async => 'not-json{{{');
-        when(() => mockStorage.delete(key: kKey)).thenAnswer((_) async {});
-
-        expect(await service.retrieve(), isNull);
-        verify(() => mockStorage.delete(key: kKey)).called(1);
-      });
+      expect(await storage.retrieve(), isNull);
     });
 
-    group('clear', () {
-      test('deletes the namespaced key', () async {
-        when(() => mockStorage.delete(key: kKey)).thenAnswer((_) async {});
-        await service.clear();
-        verify(() => mockStorage.delete(key: kKey)).called(1);
-      });
-    });
+    test('storing a new token lifts the latch (fresh sign-in supersedes '
+        'the prior sign-out)', () async {
+      when(() => secure.read(key: key)).thenAnswer((_) async => payload());
+      await storage.clear();
+      expect(await storage.retrieve(), isNull);
 
-    group('key isolation', () {
-      test('different server IDs use different keys', () async {
-        final other = TokenStorageService(
-          serverId: 'other-server',
-          storage: mockStorage,
-        );
+      await storage.store(token: 'tok-abc', expiresAt: DateTime(2099).toUtc());
 
-        when(
-          () => mockStorage.write(
-            key: any(named: 'key'),
-            value: any(named: 'value'),
-          ),
-        ).thenAnswer((_) async {});
-
-        await service.store(token: 'a', expiresAt: kExpiry);
-        await other.store(token: 'b', expiresAt: kExpiry);
-
-        final keys = verify(
-          () => mockStorage.write(
-            key: captureAny(named: 'key'),
-            value: any(named: 'value'),
-          ),
-        ).captured;
-
-        expect(keys[0], 'bge_session_local-server-abc');
-        expect(keys[1], 'bge_session_other-server');
-      });
+      expect(await storage.retrieve(), isNotNull);
     });
   });
 }

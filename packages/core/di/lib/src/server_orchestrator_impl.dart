@@ -41,6 +41,17 @@ import 'server_context_impl.dart';
 /// "Concurrent orchestrator operation attempted" error. With async
 /// delivery the listener runs after the originating method returns
 /// and the lock has been released.
+///
+/// ## Config bookkeeping (#37)
+///
+/// [_configs] mirrors [_contexts] key-for-key: every path that registers
+/// a context registers its [ServerConfig], and every path that removes a
+/// context removes its config. [activeConfig] reads through
+/// [_activeServerId], so it commits together with the active pointer and
+/// the active-context emission — by the time a listener is delivered an
+/// event (async delivery, above), the config it reads is consistent with
+/// that event. The stored config is a connect-time snapshot; that is
+/// sufficient while no rename-server flow exists.
 class ServerOrchestratorImpl implements ServerOrchestrator {
   ServerOrchestratorImpl({
     required ServerRepository serverRepository,
@@ -58,6 +69,11 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   final bool _isDesktop;
 
   final Map<String, ServerContext> _contexts = {};
+
+  /// Connect-time [ServerConfig] snapshots, keyed like [_contexts] and
+  /// mutated in lockstep with it (see class docs, "Config bookkeeping").
+  final Map<String, ServerConfig> _configs = {};
+
   final Map<String, Timer> _backgroundingTimers = {};
 
   final StreamController<ServerContext?> _activeContextController =
@@ -84,6 +100,12 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
   @override
   String? get activeServerId => _activeServerId;
+
+  @override
+  ServerConfig? get activeConfig {
+    final id = _activeServerId;
+    return id == null ? null : _configs[id];
+  }
 
   @override
   bool get isInitialized => _isInitialized;
@@ -121,6 +143,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
           await context.background(); // active → backgrounding
           await context.suspend(); // backgrounding → monitoring
           _contexts[config.id] = context;
+          _configs[config.id] = config;
         } catch (e, st) {
           _logError('restore of server ${config.id} failed', e, st);
           await _disposeQuietly(context);
@@ -145,6 +168,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
           // pointer. Remaining monitoring contexts stay connected.
           _logError('activating restored server $chosenActive failed', e, st);
           await _disposeQuietly(_contexts.remove(chosenActive)!);
+          _configs.remove(chosenActive);
           await _updateStateQuietly(chosenActive, ConnectionState.disconnected);
           _activeServerId = null;
         }
@@ -251,6 +275,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       }
 
       _contexts[serverId] = context;
+      _configs[serverId] = config;
 
       if (shouldBeActive) {
         // Demote the current active server (if a different one) before
@@ -282,6 +307,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
                 }
               }
               await _disposeQuietly(_contexts.remove(serverId)!);
+              _configs.remove(serverId);
               rethrow;
             }
           }
@@ -350,6 +376,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
 
       await context.dispose();
       _contexts.remove(serverId);
+      _configs.remove(serverId);
 
       await _serverRepository.updateConnectionState(
         serverId: serverId,
@@ -486,6 +513,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       await context.dispose();
     }
     _contexts.clear();
+    _configs.clear();
 
     await _activeContextController.close();
     await _contextsController.close();

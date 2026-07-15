@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:flutter/semantics.dart';
 
+import '../../l10n/auth_localizations.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_bloc_state.dart';
 import '../widgets/login_form.dart';
@@ -20,6 +21,11 @@ import '../widgets/oidc_strategy_button.dart';
 /// - Focus is managed between sign-in/register mode switches
 /// - Server name displayed so screen readers can identify which server
 ///   the user is authenticating against
+///
+/// i18n (#37): all copy comes from [AuthLocalizations]; the bloc emits
+/// semantic failure kinds ([AuthOperationFailure]) which
+/// [_localizedFailure] maps to localized messages here — never in the
+/// bloc.
 ///
 /// Callers are responsible for navigating away when the bloc emits
 /// [AuthAuthenticated] — typically via a [BlocListener] in the router.
@@ -90,12 +96,13 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildHeader(BuildContext context, ColorScheme colorScheme) {
+    final l10n = AuthLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Server attribution — important when user manages multiple servers
         Semantics(
-          label: 'Server: ${widget.serverDisplayName}',
+          label: '${l10n.authServerLabel}: ${widget.serverDisplayName}',
           child: Row(
             children: [
               Icon(
@@ -118,7 +125,7 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         const SizedBox(height: 12),
         Text(
-          _isSignIn ? 'Sign In' : 'Create Account',
+          _isSignIn ? l10n.authSignInTitle : l10n.authRegisterTitle,
           style: Theme.of(
             context,
           ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -170,7 +177,7 @@ class _AuthScreenState extends State<AuthScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            'or',
+            AuthLocalizations.of(context).authOrDivider,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -187,8 +194,7 @@ class _AuthScreenState extends State<AuthScreen> {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Text(
-          'This server has no authentication methods configured. '
-          'Please contact the server administrator.',
+          AuthLocalizations.of(context).authNoStrategiesMessage,
           style: Theme.of(context).textTheme.bodyMedium,
           textAlign: TextAlign.center,
         ),
@@ -197,12 +203,13 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   void _handleStateChange(BuildContext context, AuthBlocState state) {
-    if (state is AuthFailure) {
+    if (state is AuthOperationFailure) {
+      final message = _localizedFailure(AuthLocalizations.of(context), state);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(
-            content: Semantics(liveRegion: true, child: Text(state.message)),
+            content: Semantics(liveRegion: true, child: Text(message)),
             backgroundColor: Theme.of(context).colorScheme.error,
             behavior: SnackBarBehavior.floating,
           ),
@@ -210,13 +217,28 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// The single place the sealed failure kinds become user-facing copy.
+  /// Exhaustive: a new kind fails compilation here until it gets a
+  /// localized message.
+  String _localizedFailure(AuthLocalizations l10n, AuthOperationFailure f) =>
+      switch (f) {
+        AuthFailureInvalidCredentials() => l10n.authErrorInvalidCredentials,
+        AuthFailureEmailAlreadyExists() => l10n.authErrorEmailExists,
+        AuthFailureRegistrationDisabled() => l10n.authRegistrationDisabled,
+        AuthFailureNetwork() => l10n.authErrorNetwork,
+        AuthFailureServer() => l10n.authErrorServer,
+      };
+
   void _switchMode({required bool signIn}) {
+    final l10n = AuthLocalizations.of(context);
     setState(() => _isSignIn = signIn);
     // Announce mode change to screen readers
     SemanticsService.sendAnnouncement(
       View.of(context),
-      signIn ? 'Switched to sign in form' : 'Switched to create account form',
-      TextDirection.ltr,
+      signIn
+          ? l10n.authSwitchedToSignInAnnouncement
+          : l10n.authSwitchedToRegisterAnnouncement,
+      Directionality.of(context),
     );
   }
 
@@ -225,7 +247,9 @@ class _AuthScreenState extends State<AuthScreen> {
     // browser integration. For now this is a placeholder.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('OIDC sign-in with ${strategy.providerId} — coming soon'),
+        content: Text(
+          AuthLocalizations.of(context).authOidcComingSoon(strategy.providerId),
+        ),
       ),
     );
   }

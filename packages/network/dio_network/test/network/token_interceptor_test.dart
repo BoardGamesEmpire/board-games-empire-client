@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -9,6 +10,8 @@ import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
 
 class _MockTokenStorage extends Mock implements TokenStorageService {}
+
+class _MockSecureStorage extends Mock implements FlutterSecureStorage {}
 
 /// Captures the outgoing [RequestOptions] without hitting the network.
 class _CapturingAdapter implements HttpClientAdapter {
@@ -102,6 +105,63 @@ void main() {
       await dio.get<dynamic>('/protected');
 
       expect(adapter.captured?.headers.containsKey('Authorization'), isFalse);
+    });
+  });
+
+  // Closes the original PR #99 gap: the interceptor authenticated purely off
+  // TokenStorageService.retrieve(), so a token surviving a failed clear() kept
+  // being attached after sign-out. With the latch inside the shared store, the
+  // interceptor stops attaching it the moment clear() is called — even when the
+  // persisted delete throws and the token physically survives on disk.
+  group('TokenInterceptor honors the shared sign-out latch (PR #99)', () {
+    late _MockSecureStorage secure;
+    late TokenStorageService realStorage;
+    late _CapturingAdapter latchAdapter;
+    late Dio latchDio;
+
+    const validPayload =
+        '{"token":"survivor","expires_at":"2099-01-01T00:00:00.000Z"}';
+
+    setUp(() {
+      secure = _MockSecureStorage();
+      realStorage = TokenStorageService(serverId: 'server-1', storage: secure);
+      latchAdapter = _CapturingAdapter();
+      latchDio =
+          Dio(
+              BaseOptions(
+                baseUrl: 'https://api.example.com',
+                validateStatus: (_) => true,
+              ),
+            )
+            ..httpClientAdapter = latchAdapter
+            ..interceptors.add(TokenInterceptor(tokenStorage: realStorage));
+
+      when(
+        () => secure.read(key: any(named: 'key')),
+      ).thenAnswer((_) async => validPayload);
+    });
+
+    test('stops attaching a surviving token after a failed clear', () async {
+      // The persisted delete fails, so the token physically survives on disk.
+      when(
+        () => secure.delete(key: any(named: 'key')),
+      ).thenThrow(StateError('keychain unavailable'));
+
+      // Sanity: before sign-out the interceptor attaches the bearer token.
+      await latchDio.get<dynamic>('/protected');
+      expect(latchAdapter.captured?.headers['Authorization'], 'Bearer survivor');
+
+      // Sign-out clears the store; the delete throws but the latch is set.
+      await expectLater(realStorage.clear(), throwsA(isA<StateError>()));
+
+      // Even though the token still reads from the keychain, the latched store
+      // reports none — so no Authorization header is attached.
+      latchAdapter.captured = null;
+      await latchDio.get<dynamic>('/protected');
+      expect(
+        latchAdapter.captured?.headers.containsKey('Authorization'),
+        isFalse,
+      );
     });
   });
 }

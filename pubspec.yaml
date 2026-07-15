@@ -98,7 +98,7 @@ melos:
         flutter: false
 
     test:
-      run: melos exec -c 1 -- "flutter test --coverage --test-randomize-ordering-seed random"
+      run: melos exec -c 4 -- "flutter test --coverage --test-randomize-ordering-seed random"
       description: Run all Flutter tests in workspace
       packageFilters:
         dirExists: test

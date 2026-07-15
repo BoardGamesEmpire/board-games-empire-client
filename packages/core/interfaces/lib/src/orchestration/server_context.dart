@@ -1,3 +1,5 @@
+import 'package:models/domain.dart';
+
 import 'dependency_container.dart';
 import 'server_context_state.dart';
 
@@ -9,6 +11,20 @@ import 'server_context_state.dart';
 abstract class ServerContext {
   /// Local server id matching the [ServerConfig.id] this context represents.
   String get serverId;
+
+  /// The [ServerConfig] this context was created for.
+  ///
+  /// A connect-time snapshot, retained for the context's whole life. The
+  /// authoritative source of the active server's identity/display name for
+  /// the native `ActiveServerScope` adapter, which reads it straight off the
+  /// live active context (`getActiveContext().config`) — so its snapshot
+  /// cannot drift from the context it came from (#37).
+  ///
+  /// ([ServerOrchestrator.activeConfig] is a separate getter backed by its
+  /// own snapshot map; the implementation keeps that map in lockstep with
+  /// the contexts.) Sufficient while no rename-server flow exists; a stale
+  /// [ServerConfig.connectionState] here is not read off this path.
+  ServerConfig get config;
 
   /// Current lifecycle state.
   ServerContextState get state;

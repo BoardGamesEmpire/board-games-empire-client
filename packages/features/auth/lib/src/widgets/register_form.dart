@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 
+import '../../l10n/auth_localizations.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_bloc_state.dart';
@@ -11,6 +12,9 @@ import 'auth_text_field.dart';
 ///
 /// Only rendered when the server's [EmailAndPasswordStrategy.signUpDisabled]
 /// is false. Submits [AuthRegisterRequested] to the ancestor [AuthBloc].
+///
+/// i18n (#37): all copy — labels, hints, validation messages, button and
+/// loading semantics — comes from [AuthLocalizations].
 class RegisterForm extends StatefulWidget {
   const RegisterForm({super.key, this.onSwitchToSignIn});
 
@@ -82,6 +86,7 @@ class _RegisterFormState extends State<RegisterForm> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = AuthLocalizations.of(context);
 
     return BlocBuilder<AuthBloc, AuthBlocState>(
       builder: (context, state) {
@@ -96,33 +101,32 @@ class _RegisterFormState extends State<RegisterForm> {
               children: [
                 AuthTextField(
                   formControlName: 'email',
-                  label: 'Email',
-                  hint: 'Enter your email address',
+                  label: l10n.authEmailLabel,
+                  hint: l10n.authEmailHint,
                   keyboardType: TextInputType.emailAddress,
                   autofillHints: const [AutofillHints.email],
                   textInputAction: TextInputAction.next,
                   enabled: !isLoading,
                   autofocus: true,
                   validationMessages: {
-                    ValidationMessage.required: (_) => 'Email is required',
-                    ValidationMessage.email: (_) =>
-                        'Enter a valid email address',
+                    ValidationMessage.required: (_) => l10n.authErrorRequired,
+                    ValidationMessage.email: (_) => l10n.authErrorInvalidEmail,
                   },
                 ),
                 const SizedBox(height: 16),
                 AuthTextField(
                   formControlName: 'username',
-                  label: 'Username',
-                  hint: 'Choose a username',
+                  label: l10n.authUsernameLabel,
+                  hint: l10n.authUsernameHint,
                   autofillHints: const [AutofillHints.username],
                   textInputAction: TextInputAction.next,
                   enabled: !isLoading,
                   validationMessages: {
-                    ValidationMessage.required: (_) => 'Username is required',
-                    ValidationMessage.minLength: (e) {
-                      final min = (e as Map)['requiredLength'] as int;
-                      return 'Username must be at least $min characters';
-                    },
+                    ValidationMessage.required: (_) => l10n.authErrorRequired,
+                    ValidationMessage.minLength: (e) =>
+                        l10n.authErrorUsernameTooShort(
+                          (e as Map)['requiredLength'] as int,
+                        ),
                   },
                 ),
                 const SizedBox(height: 16),
@@ -132,7 +136,7 @@ class _RegisterFormState extends State<RegisterForm> {
                     Expanded(
                       child: AuthTextField(
                         formControlName: 'firstName',
-                        label: 'First Name',
+                        label: l10n.authFirstNameLabel,
                         autofillHints: const [AutofillHints.givenName],
                         textInputAction: TextInputAction.next,
                         enabled: !isLoading,
@@ -143,7 +147,7 @@ class _RegisterFormState extends State<RegisterForm> {
                     Expanded(
                       child: AuthTextField(
                         formControlName: 'lastName',
-                        label: 'Last Name',
+                        label: l10n.authLastNameLabel,
                         autofillHints: const [AutofillHints.familyName],
                         textInputAction: TextInputAction.next,
                         enabled: !isLoading,
@@ -155,19 +159,19 @@ class _RegisterFormState extends State<RegisterForm> {
                 const SizedBox(height: 16),
                 AuthTextField(
                   formControlName: 'password',
-                  label: 'Password',
-                  hint: 'Create a password',
+                  label: l10n.authPasswordLabel,
+                  hint: l10n.authPasswordCreateHint,
                   isPassword: true,
                   autofillHints: const [AutofillHints.newPassword],
                   textInputAction: TextInputAction.done,
                   enabled: !isLoading,
                   onSubmitted: () => _submit(context),
                   validationMessages: {
-                    ValidationMessage.required: (_) => 'Password is required',
-                    ValidationMessage.minLength: (e) {
-                      final min = (e as Map)['requiredLength'] as int;
-                      return 'Password must be at least $min characters';
-                    },
+                    ValidationMessage.required: (_) => l10n.authErrorRequired,
+                    ValidationMessage.minLength: (e) =>
+                        l10n.authErrorPasswordTooShort(
+                          (e as Map)['requiredLength'] as int,
+                        ),
                   },
                 ),
                 const SizedBox(height: 24),
@@ -175,8 +179,8 @@ class _RegisterFormState extends State<RegisterForm> {
                   button: true,
                   enabled: !isLoading,
                   label: isLoading
-                      ? 'Creating account, please wait'
-                      : 'Create Account',
+                      ? l10n.authRegisterLoadingLabel
+                      : l10n.authRegisterButton,
                   child: FilledButton(
                     onPressed: isLoading ? null : () => _submit(context),
                     child: isLoading
@@ -187,14 +191,14 @@ class _RegisterFormState extends State<RegisterForm> {
                               color: theme.colorScheme.onPrimary,
                             ),
                           )
-                        : const Text('Create Account'),
+                        : Text(l10n.authRegisterButton),
                   ),
                 ),
                 if (widget.onSwitchToSignIn != null) ...[
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: isLoading ? null : widget.onSwitchToSignIn,
-                    child: const Text('Already have an account? Sign in'),
+                    child: Text(l10n.authSwitchToSignIn),
                   ),
                 ],
               ],
