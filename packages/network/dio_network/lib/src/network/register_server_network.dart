@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -6,6 +7,7 @@ import 'package:models/domain.dart';
 
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
+import 'dev_log_interceptor.dart';
 import 'dio_factory.dart';
 import 'token_interceptor.dart';
 
@@ -40,7 +42,17 @@ void registerServerNetwork({
 
   final dio = factory.buildForServer(
     baseUrl: config.serverUrl,
-    interceptors: [TokenInterceptor(tokenStorage: tokenStorage)],
+    interceptors: [
+      // TEMP (#101, removed by #100): first in the stack so it observes
+      // every outgoing request and its resolution. Redaction-safe — logs
+      // method + resolved URI + status/error type only. Gated to non-release
+      // (debug/profile) builds: even redacted, a per-request diagnostic adds
+      // noise and residual risk in a product build, and it only earns its
+      // keep while the pre-wire connection issue is being chased (PR #103
+      // review).
+      if (!kReleaseMode) DevLogInterceptor(),
+      TokenInterceptor(tokenStorage: tokenStorage),
+    ],
   );
   container.registerSingleton<Dio>(dio, dispose: (_) => dio.close());
 

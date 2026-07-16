@@ -11,7 +11,11 @@ typedef HydratedStorageInitializer =
 
 /// Outcome of a successful [PlatformBootstrap.initialize] run.
 class BootstrapResult {
-  const BootstrapResult({required this.hasServer, this.orchestrator});
+  const BootstrapResult({
+    required this.hasServer,
+    this.orchestrator,
+    this.activeServerScope,
+  });
 
   /// Whether at least one BGE server is known to this device.
   ///
@@ -27,6 +31,15 @@ class BootstrapResult {
   /// [ServerOrchestrator.initialize] it inside
   /// [PlatformBootstrap.initialize].
   final ServerOrchestrator? orchestrator;
+
+  /// The platform-neutral "which server is active" seam (#37) the shell
+  /// provisions the auth bloc (and later per-server services) from.
+  ///
+  /// Native supplies `OrchestratorActiveServerScope` over [orchestrator].
+  /// Web's single-origin implementation lands with #96; until then web
+  /// returns `null` and the shell renders no auth subtree (the auth leg is
+  /// not yet reachable on web).
+  final ActiveServerScope? activeServerScope;
 }
 
 /// Per-platform composition root consumed by the shared shell.
@@ -101,10 +114,12 @@ abstract interface class PlatformBootstrap {
   ///
   /// Native: open the encrypted MetaDB, build the meta repositories,
   /// compose the real `ServerContextFactory` (storage + network installers),
-  /// construct and initialize the [ServerOrchestrator].
+  /// construct and initialize the [ServerOrchestrator], and wrap it in an
+  /// `OrchestratorActiveServerScope` for the [BootstrapResult].
   ///
   /// Web: nothing to open — return
-  /// `BootstrapResult(hasServer: true, orchestrator: null)`.
+  /// `BootstrapResult(hasServer: true, orchestrator: null,
+  /// activeServerScope: null)` until #96 supplies the single-origin scope.
   ///
   /// May throw (e.g. `DatabaseKeyError` when the meta key is lost). The
   /// shell surfaces failures as a retryable error state; it never reacts

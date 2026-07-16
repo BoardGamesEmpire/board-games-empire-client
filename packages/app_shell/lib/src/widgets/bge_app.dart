@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:auth/auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -19,6 +21,8 @@ import '../i18n/active_locale.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
+import '../screens/home_placeholder_screen.dart';
+import '../screens/splash_screen.dart';
 import 'crash_report_prompt.dart';
 
 /// The shared application widget.
@@ -34,32 +38,36 @@ import 'crash_report_prompt.dart';
 ///
 /// i18n (#33): the shell owns the localization composition. Its own
 /// delegates ([ShellLocalizations.localizationsDelegates], which bundle
-/// the three `Global*` delegates) come first;
-/// [additionalLocalizationsDelegates] appends **single feature
-/// delegates** (e.g. `AuthLocalizations.delegate`, wired by #37) — never
-/// a feature's bundled `localizationsDelegates` list, which would
-/// re-include the `Global*` delegates. [supportedLocales] stays
-/// [ShellLocalizations.supportedLocales] with `en` first: Flutter's
-/// default resolution (exact match → languageCode match → **first**
-/// supported locale) then provides the `en` fallback with no custom
-/// resolution callback; #78's user-selected override is the first thing
-/// that would need one. [activeLocaleController], when supplied, is kept
-/// in sync with the negotiated locale via [ActiveLocaleCapture] in the
-/// app builder, so non-widget consumers (gateway hints, feedback
-/// environment) read the locale the UI actually renders in.
+/// the three `Global*` delegates) come first; the feature single
+/// delegates ([ServerOnboardingLocalizations.delegate] for #36,
+/// [AuthLocalizations.delegate] for #37) are appended next, then any
+/// [additionalLocalizationsDelegates] — never a feature's bundled
+/// `localizationsDelegates` list, which would re-include the `Global*`
+/// delegates. [supportedLocales] stays [ShellLocalizations.supportedLocales]
+/// with `en` first.
 ///
-/// Seams left deliberately open for sibling P0 issues:
-/// - [additionalLocalizationsDelegates] — feature-package delegates
-///   (auth's wired by #37) appended after the shell's own.
+/// Auth wiring (#37): when the bootstrap cubit exposes an
+/// [ActiveServerScope] with an active server, the router subtree is
+/// wrapped in a [BlocProvider] of an [AuthBloc] bound to that server's
+/// [AuthRepository], keyed on `ActiveServer.serverId` so a server switch
+/// disposes the old bloc and builds a fresh one. A top-level
+/// [BlocListener] translates the bloc's terminal auth states into
+/// [AppBootstrapCubit.onAuthenticated] / [onSignedOut] — the presentation-
+/// layer coordination that drives the router gate (blocs never depend on
+/// blocs). The `/auth` route renders [AuthGate] and `/home` the temporary
+/// [HomePlaceholderScreen]; both resolve the same provided bloc. When no
+/// scope/active server is available (tests without a scope; web until
+/// #96) the router renders its placeholders and no auth subtree is
+/// mounted.
+///
+/// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
 ///   #83 (auth-gate drain) can reach the pending slot from the widget
 ///   layer; nothing in the shell reads it yet.
 ///
 /// Deliberately free of process-global side effects: `ErrorWidget.builder`
 /// (#66) and the uncaught-error hooks (#34) are installed by `runBgeApp`,
-/// not here — flutter_test verifies per-test that widget builds leave
-/// those globals untouched, and `BuildErrorView` self-localizes so no
-/// captured context is needed (see `installBuildErrorView`).
+/// not here.
 class BgeApp extends StatefulWidget {
   const BgeApp({
     required this.bootstrapCubit,
@@ -100,63 +108,33 @@ class BgeApp extends StatefulWidget {
   /// platform composition root via
   /// `PlatformBootstrap.createRootContainer` and handed in by
   /// `runBgeApp`.
-  ///
-  /// Held here for lifecycle ownership only — widget-tree exposure is
-  /// deliberately deferred (#72 decision): nothing reads the container
-  /// from `BuildContext` yet, and the first widget consumer adds a thin
-  /// provider when it actually needs one.
   final DependencyContainer? rootContainer;
 
   /// Whether this widget owns [rootContainer]'s lifecycle and disposes it
-  /// on unmount — the same ownership pattern as
-  /// [closeBootstrapCubitOnDispose]. `runBgeApp` passes true; tests and
-  /// embedders injecting their own container keep the default and dispose
-  /// it themselves.
+  /// on unmount.
   final bool disposeRootContainerOnDispose;
 
-  /// The crash-draft reporter (#69), when `runBgeApp` created one. Drives
-  /// the "ask each time" prompt overlay: a pending crash draft surfaces
-  /// [CrashReportPrompt] above the router; approval submits via the
-  /// reporter's service, decline clears both RAM slots (the draft and
-  /// `ShellObservability.lastUncaughtError`). Null when the embedder
-  /// supplied its own `UncaughtErrorReporter` (the override owns
-  /// reporting; no prompt machinery is wired) — and in every pre-#69
-  /// construction, which therefore behaves exactly as before.
+  /// The crash-draft reporter (#69), when `runBgeApp` created one.
   final FeedbackUncaughtErrorReporter? feedbackReporter;
 
   /// The single pending deep-link slot (#10), created by `runBgeApp` on
   /// every platform and fed by [deepLinkHandler] where one exists.
-  ///
-  /// Held here for future consumption — #82 drains it for navigation and
-  /// server switching, #83's auth-gate both stashes redirect-bounced
-  /// locations into it and drains it after sign-in. Nothing in the shell
-  /// reads it yet.
   final PendingDeepLinkHolder? pendingDeepLinkHolder;
 
   /// The deep-link reception pipeline (#10), when the platform has an
-  /// out-of-band channel (native). Null on web, where the browser URL is
-  /// the link and `go_router` consumes it directly. Held for lifecycle
-  /// ownership, like [rootContainer].
+  /// out-of-band channel (native). Null on web.
   final DeepLinkHandler? deepLinkHandler;
 
   /// Whether this widget owns [deepLinkHandler]'s lifecycle and disposes
-  /// it on unmount — the same ownership pattern as
-  /// [disposeRootContainerOnDispose]. `runBgeApp` passes true; tests
-  /// injecting their own handler keep the default and dispose it
-  /// themselves.
+  /// it on unmount.
   final bool disposeDeepLinkHandlerOnDispose;
 
   /// The active-locale slot (#33), created and container-registered by
-  /// `runBgeApp`. When non-null, [ActiveLocaleCapture] in the app builder
-  /// mirrors the negotiated locale into it on every locale change; null
-  /// (test/embedder default) wires no capture.
+  /// `runBgeApp`.
   final ActiveLocaleController? activeLocaleController;
 
   /// Whether this widget owns [activeLocaleController]'s lifecycle and
-  /// disposes it on unmount — the same ownership pattern as
-  /// [disposeRootContainerOnDispose]. `runBgeApp` passes true; tests
-  /// injecting their own controller keep the default and dispose it
-  /// themselves.
+  /// disposes it on unmount.
   final bool disposeActiveLocaleControllerOnDispose;
 
   /// The four theme slots (#32). Each defaults to its [BgeTheme] factory
@@ -187,20 +165,52 @@ class _BgeAppState extends State<BgeApp> {
       bootstrapCubit: widget.bootstrapCubit,
       refreshListenable: _refreshListenable,
       serverAddBuilder: _buildServerAddBuilder(),
+      // Always supplied: the router is built in initState, before
+      // bootstrap yields a scope, so gating these on availability *now*
+      // would capture null forever. They resolve the scope at navigation
+      // time instead — by then bootstrap has committed the active server
+      // (a registered server routes to /auth only after that). When no
+      // scope exists at all (web until #96), the builders fall back to the
+      // placeholders, matching the pre-#37 behavior.
+      authBuilder: _buildAuthRoute,
+      homeBuilder: _buildHomeRoute,
+      authScopeBuilder: _buildAuthScope,
     );
   }
 
-  /// The #36 server-add wiring — the first widget-layer consumer of the
-  /// root container (#72's "thin provider when actually needed").
-  ///
-  /// Returns null (→ router placeholder) when the container is absent
-  /// (tests/embedders) or carries no [WellKnownClient] (web, where the
-  /// route is unreachable anyway). Dependency resolution happens inside
-  /// the route builder, at navigation time: `bootstrapCubit.orchestrator`
-  /// is null while the router is constructed in [initState], but is
-  /// guaranteed non-null once [AppBootstrapNeedsServer] can route here —
-  /// that state is only ever emitted by a successful native bootstrap,
-  /// which populates the orchestrator first.
+  /// Wraps the auth+home shell child with the active server's [AuthBloc]
+  /// provider + gate listener (#37) — inside the router subtree, so the
+  /// route widgets can resolve the bloc (a provider placed above
+  /// `MaterialApp.router` is not reachable from go_router's Navigator).
+  Widget _buildAuthScope(BuildContext context, Widget child) => _AuthScope(
+    scope: widget.bootstrapCubit.activeServerScope,
+    onAuthenticated: widget.bootstrapCubit.onAuthenticated,
+    onSignedOut: widget.bootstrapCubit.onSignedOut,
+    child: child,
+  );
+
+  /// Renders the auth route at navigation time. Falls back to the router's
+  /// placeholder when no active server is resolvable (no scope, or none
+  /// active yet) — the redirect only routes here once a server is active,
+  /// so the fallback is transient/defensive.
+  Widget? _buildAuthRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+    return AuthGate(
+      identity: active.identity,
+      serverDisplayName: active.displayName,
+      splash: const SplashScreen(),
+    );
+  }
+
+  /// Renders the home route at navigation time. Null (→ placeholder) when
+  /// no active server backs the auth bloc the home screen needs.
+  Widget? _buildHomeRoute(BuildContext context) {
+    if (widget.bootstrapCubit.activeServerScope?.active == null) return null;
+    return const HomePlaceholderScreen();
+  }
+
+  /// The #36 server-add wiring.
   ServerAddScreenBuilder? _buildServerAddBuilder() {
     final container = widget.rootContainer;
     if (container == null || !container.isRegistered<WellKnownClient>()) {
@@ -224,37 +234,20 @@ class _BgeAppState extends State<BgeApp> {
 
   @override
   void dispose() {
-    // Order matters: the router removes its listener from the listenable
-    // during its own dispose, so the listenable must still be alive then.
     _router.dispose();
     _refreshListenable.dispose();
     if (widget.closeBootstrapCubitOnDispose) {
       unawaited(widget.bootstrapCubit.close());
     }
-    // #10: cancel deep-link reception with the widget. The cancel itself
-    // is issued synchronously inside dispose() (the await only covers
-    // its completion), so links emitted after unmount are ignored.
     final deepLinkHandler = widget.deepLinkHandler;
     if (widget.disposeDeepLinkHandlerOnDispose && deepLinkHandler != null) {
       unawaited(deepLinkHandler.dispose());
     }
-    // #33: the controller is a plain ValueNotifier — synchronous dispose,
-    // no ordering concerns with the async teardowns around it.
     final activeLocaleController = widget.activeLocaleController;
     if (widget.disposeActiveLocaleControllerOnDispose &&
         activeLocaleController != null) {
       activeLocaleController.dispose();
     }
-    // These teardowns run concurrently — dispose() cannot await, so the
-    // order is NOT enforced. Assessed for #69 (per the deferral recorded
-    // there): the container now holds BuildInfo (a value), a FeedbackSink,
-    // the FeedbackService, and the ActiveLocaleReader (#33, a plain
-    // value holder) — none is touched by the cubit's shutdown and none
-    // needs a flush (sink writes are awaited at submit time), so
-    // concurrent teardown remains safe. The enforcement (chain the
-    // container's disposal after the cubit's close via whenComplete)
-    // becomes necessary only when a genuinely cubit-touched service
-    // lands; re-assess per registration.
     final rootContainer = widget.rootContainer;
     if (widget.disposeRootContainerOnDispose && rootContainer != null) {
       unawaited(rootContainer.dispose());
@@ -266,64 +259,54 @@ class _BgeAppState extends State<BgeApp> {
   Widget build(BuildContext context) {
     return BlocProvider.value(
       value: widget.bootstrapCubit,
-      child: MaterialApp.router(
-        onGenerateTitle: (context) =>
-            ShellLocalizations.of(context).shellAppTitle,
-        theme: widget.theme ?? BgeTheme.light(),
-        darkTheme: widget.darkTheme ?? BgeTheme.dark(),
-        // Selected automatically when the OS "increase contrast"
-        // accessibility setting is on (MediaQuery.highContrast) — no user
-        // toggle needed (#32).
-        highContrastTheme:
-            widget.highContrastTheme ?? BgeTheme.highContrastLight(),
-        highContrastDarkTheme:
-            widget.highContrastDarkTheme ?? BgeTheme.highContrastDark(),
-        themeMode: widget.themeMode,
-        routerConfig: _router,
-        // The crash prompt overlays ABOVE the navigator (a crash draft
-        // must surface regardless of the current route, including the
-        // bootstrap-failure screen). The builder context sits below
-        // Localizations/Theme, so the prompt self-localizes; it carries
-        // its own Material since no Scaffold exists at this altitude.
-        builder: (context, child) {
-          final content = child ?? const SizedBox.shrink();
-          final reporter = widget.feedbackReporter;
-          Widget body = reporter == null
-              ? content
-              : ValueListenableBuilder<FeedbackReport?>(
-                  valueListenable: reporter.pendingCrashReport,
-                  builder: (context, draft, _) {
-                    final pending = draft != null;
-                    return Stack(
-                      children: [
-                        // While a draft is pending, drop the underlying
-                        // app from the semantics tree so assistive tech
-                        // can't navigate background UI behind the modal
-                        // prompt. BlockSemantics must wrap the CONTENT it
-                        // blocks (it drops the semantics of widgets
-                        // painted before it in the same container) —
-                        // wrapping the barrier instead would leave the
-                        // app fully reachable.
-                        BlockSemantics(
-                          key: BgeApp.contentSemanticsBlockerKey,
-                          blocking: pending,
-                          child: content,
+      child: _buildMaterialApp(),
+    );
+  }
+
+  Widget _buildMaterialApp() {
+    return MaterialApp.router(
+      onGenerateTitle: (context) =>
+          ShellLocalizations.of(context).shellAppTitle,
+      theme: widget.theme ?? BgeTheme.light(),
+      darkTheme: widget.darkTheme ?? BgeTheme.dark(),
+      highContrastTheme:
+          widget.highContrastTheme ?? BgeTheme.highContrastLight(),
+      highContrastDarkTheme:
+          widget.highContrastDarkTheme ?? BgeTheme.highContrastDark(),
+      themeMode: widget.themeMode,
+      routerConfig: _router,
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        final reporter = widget.feedbackReporter;
+        Widget body = reporter == null
+            ? content
+            : ValueListenableBuilder<FeedbackReport?>(
+                valueListenable: reporter.pendingCrashReport,
+                builder: (context, draft, _) {
+                  final pending = draft != null;
+                  return Stack(
+                    children: [
+                      BlockSemantics(
+                        key: BgeApp.contentSemanticsBlockerKey,
+                        blocking: pending,
+                        child: content,
+                      ),
+                      if (pending) ...[
+                        const ModalBarrier(
+                          dismissible: false,
+                          color: Colors.black54,
                         ),
-                        if (pending) ...[
-                          // Plain tap-blocker: absorbs taps on the app
-                          // behind and dims it. Non-dismissible —
-                          // declining is an explicit choice via the
-                          // prompt's Discard button, so an accidental
-                          // scrim tap can't silently drop the report.
-                          const ModalBarrier(
-                            dismissible: false,
-                            color: Colors.black54,
-                          ),
-                          // CrashReportPrompt applies its own SafeArea, so
-                          // the overlay only positions it — no second
-                          // SafeArea here (that would double-apply
-                          // insets).
-                          Align(
+                        // The builder slot sits ABOVE the router's
+                        // Navigator, so the Navigator's Overlay is not an
+                        // ancestor here — but the prompt's comment
+                        // TextField requires one (EditableText hosts its
+                        // selection handles/toolbar in an Overlay).
+                        // Without this, focusing the field throws, the
+                        // hooks capture the throw, and the refilled draft
+                        // slot re-summons the prompt — making it
+                        // undismissable.
+                        Overlay.wrap(
+                          child: Align(
                             alignment: Alignment.bottomCenter,
                             child: Padding(
                               padding: const EdgeInsets.all(16),
@@ -331,50 +314,101 @@ class _BgeAppState extends State<BgeApp> {
                                 report: draft,
                                 onSubmit: reporter.service.submit,
                                 onDiscard: () {
-                                  // Decline (or dismiss an outcome): empty
-                                  // both RAM slots — the draft and the #34
-                                  // last-error record ("clearUncaughtError
-                                  // on decline").
                                   reporter.clearPendingCrashReport();
                                   ShellObservability.clearUncaughtError();
                                 },
                               ),
                             ),
                           ),
-                        ],
+                        ),
                       ],
-                    );
-                  },
-                );
-          // #33: mirror the negotiated locale (this context sits below
-          // the app's Localizations widget) into the app-scope slot so
-          // non-widget consumers read what the UI actually renders in.
-          final activeLocaleController = widget.activeLocaleController;
-          if (activeLocaleController != null) {
-            body = ActiveLocaleCapture(
-              controller: activeLocaleController,
-              child: body,
-            );
-          }
-          // #32 / WCAG 1.4.4: honor OS text scaling up to 200%, clamped
-          // app-wide (crash prompt included) so unbounded scale factors
-          // can't break layouts while the full required range is
-          // guaranteed.
-          return MediaQuery.withClampedTextScaling(
-            maxScaleFactor: BgeTextScale.maxScaleFactor,
+                    ],
+                  );
+                },
+              );
+        final activeLocaleController = widget.activeLocaleController;
+        if (activeLocaleController != null) {
+          body = ActiveLocaleCapture(
+            controller: activeLocaleController,
             child: body,
           );
-        },
-        localizationsDelegates: [
-          ...ShellLocalizations.localizationsDelegates,
-          // #36: app_shell owns the server-add route wiring, so it also
-          // owns registering the feature's delegate — app entry points
-          // stay thin.
-          ServerOnboardingLocalizations.delegate,
-          ...widget.additionalLocalizationsDelegates,
-        ],
-        supportedLocales: ShellLocalizations.supportedLocales,
-      ),
+        }
+        return MediaQuery.withClampedTextScaling(
+          maxScaleFactor: BgeTextScale.maxScaleFactor,
+          child: body,
+        );
+      },
+      localizationsDelegates: [
+        ...ShellLocalizations.localizationsDelegates,
+        // #36 / #37: app_shell owns the feature route wiring, so it also
+        // registers the feature single delegates — app entry points stay
+        // thin.
+        ServerOnboardingLocalizations.delegate,
+        AuthLocalizations.delegate,
+        ...widget.additionalLocalizationsDelegates,
+      ],
+      supportedLocales: ShellLocalizations.supportedLocales,
+    );
+  }
+}
+
+/// Provides the active server's [AuthBloc] above the router and drives the
+/// bootstrap gate from its state (#37).
+///
+/// Rebuilds on each [ActiveServer] emission; the [BlocProvider] is keyed
+/// on `serverId` so a server switch tears down the old bloc and builds a
+/// new one bound to the new server's repository. When [scope] is null (no
+/// orchestration — web until #96) or has no active server, the child
+/// renders without an auth bloc; the router's placeholder builders then
+/// apply, and `onAuthenticated`/`onSignedOut` are simply never invoked.
+class _AuthScope extends StatelessWidget {
+  const _AuthScope({
+    required this.scope,
+    required this.onAuthenticated,
+    required this.onSignedOut,
+    required this.child,
+  });
+
+  final ActiveServerScope? scope;
+  final VoidCallback onAuthenticated;
+  final VoidCallback onSignedOut;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = this.scope;
+    if (scope == null) return child;
+
+    return StreamBuilder<ActiveServer?>(
+      stream: scope.watchActive(),
+      initialData: scope.active,
+      builder: (context, snapshot) {
+        final active = snapshot.data;
+        if (active == null) return child;
+
+        return BlocProvider<AuthBloc>(
+          // Keyed on serverId: a switch disposes the old bloc (and its
+          // repository subscription) and builds a fresh one. The startup
+          // session check is dispatched on creation so every freshly-keyed
+          // bloc restores its own server's session.
+          key: ValueKey('auth_bloc_${active.serverId}'),
+          create: (_) =>
+              AuthBloc(authRepository: active.container.get<AuthRepository>())
+                ..add(const AuthSessionCheckRequested()),
+          child: BlocListener<AuthBloc, AuthBlocState>(
+            listenWhen: (previous, current) =>
+                current is AuthAuthenticated || current is AuthUnauthenticated,
+            listener: (context, state) {
+              if (state is AuthAuthenticated) {
+                onAuthenticated();
+              } else if (state is AuthUnauthenticated) {
+                onSignedOut();
+              }
+            },
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

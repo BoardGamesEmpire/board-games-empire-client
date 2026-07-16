@@ -45,6 +45,13 @@ const reservedDeepLinkPathPatterns = <String>[
 /// occurs on web) and no `WellKnownClient` implementation exists.
 typedef ServerAddScreenBuilder = Widget Function(BuildContext context);
 
+/// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
+/// route — the `AuthGate` rendered against the active server's bloc.
+/// Always supplied by [BgeApp]; returns null at navigation time when no
+/// active server is resolvable (web until #96, or a transient pre-active
+/// state), in which case the route falls back to the placeholder.
+typedef AuthScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -58,6 +65,9 @@ GoRouter buildAppRouter({
   required AppBootstrapCubit bootstrapCubit,
   required BootstrapStreamListenable refreshListenable,
   ServerAddScreenBuilder? serverAddBuilder,
+  AuthScreenBuilder? authBuilder,
+  HomeScreenBuilder? homeBuilder,
+  AuthScopeBuilder? authScopeBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -94,16 +104,33 @@ GoRouter buildAppRouter({
             serverAddBuilder?.call(context) ??
             const ShellPlaceholderScreen(kind: ShellPlaceholderKind.serverAdd),
       ),
-      GoRoute(
-        path: AppRoutes.auth,
-        // Real auth wiring (AuthScreen + AuthBloc) lands with #37.
-        builder: (_, _) =>
-            const ShellPlaceholderScreen(kind: ShellPlaceholderKind.auth),
-      ),
-      GoRoute(
-        path: AppRoutes.home,
-        builder: (_, _) =>
-            const ShellPlaceholderScreen(kind: ShellPlaceholderKind.home),
+      // #37: the auth and home routes share ONE AuthBloc, provided by
+      // [authScopeBuilder] inside the router subtree — go_router builds
+      // route widgets under its own Navigator, which does not inherit
+      // providers placed above the router's widget, so the provider must
+      // live here (a ShellRoute), not app-level. The shell's scope builder
+      // creates the keyed provider + drives the bootstrap gate from the
+      // bloc's terminal auth states; a single instance survives the
+      // auth → home transition. When no scope builder is supplied (tests
+      // without a scope, web until #96) the child renders bare and the
+      // route builders fall back to their placeholders.
+      ShellRoute(
+        builder: (context, state, child) =>
+            authScopeBuilder?.call(context, child) ?? child,
+        routes: [
+          GoRoute(
+            path: AppRoutes.auth,
+            builder: (context, _) =>
+                authBuilder?.call(context) ??
+                const ShellPlaceholderScreen(kind: ShellPlaceholderKind.auth),
+          ),
+          GoRoute(
+            path: AppRoutes.home,
+            builder: (context, _) =>
+                homeBuilder?.call(context) ??
+                const ShellPlaceholderScreen(kind: ShellPlaceholderKind.home),
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.error,
@@ -127,6 +154,23 @@ GoRouter buildAppRouter({
     ],
   );
 }
+
+/// Builds the real home screen subtree for the [AppRoutes.home] route.
+/// Always supplied by [BgeApp] so the temporary sign-out control (#37) can
+/// reach the active server's auth bloc; returns null at navigation time
+/// when no active server backs the bloc, falling back to the placeholder.
+typedef HomeScreenBuilder = Widget? Function(BuildContext context);
+
+/// Wraps the auth+home [ShellRoute] child with the active server's
+/// `AuthBloc` provider and the bootstrap-gate listener (#37). Supplied by
+/// [BgeApp]; when null the child renders bare (tests without a scope, web
+/// until #96) and the route builders fall back to placeholders.
+///
+/// Lives at the router layer because go_router builds route widgets under
+/// its own Navigator, which does not inherit providers placed above the
+/// router — so the provider must be inside the route subtree, not
+/// app-level.
+typedef AuthScopeBuilder = Widget Function(BuildContext context, Widget child);
 
 /// Adapts the cubit's state stream to the [Listenable] that go_router uses
 /// to re-evaluate redirects.

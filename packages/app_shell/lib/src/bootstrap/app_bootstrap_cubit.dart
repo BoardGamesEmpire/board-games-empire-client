@@ -46,11 +46,18 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   bool _hydratedStorageReady = false;
   int _consecutiveFailures = 0;
   ServerOrchestrator? _orchestrator;
+  ActiveServerScope? _activeServerScope;
 
   /// The platform's [ServerOrchestrator] once bootstrap has succeeded;
   /// `null` before that and always `null` on web (single-server by
   /// construction, no orchestration).
   ServerOrchestrator? get orchestrator => _orchestrator;
+
+  /// The platform's [ActiveServerScope] once bootstrap has succeeded (#37)
+  /// — the seam the shell provisions the auth bloc from. `null` before
+  /// bootstrap, and `null` on web until #96 supplies the single-origin
+  /// scope.
+  ActiveServerScope? get activeServerScope => _activeServerScope;
 
   /// Runs the bootstrap sequence. Call exactly once, immediately after
   /// construction; subsequent recovery goes through [retry] /
@@ -172,6 +179,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       }
       final result = await _platformBootstrap.initialize();
       _orchestrator = result.orchestrator;
+      _activeServerScope = result.activeServerScope;
       _consecutiveFailures = 0;
       _logger.info(
         'Bootstrap succeeded',

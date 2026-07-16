@@ -33,9 +33,16 @@ const _buildInfo = BuildInfo(
   packageName: 'com.example.bge',
 );
 
-const _session = AuthResponse(
+final _session = AuthResponse(
   token: 'session-token',
-  user: User(id: 'user-1', username: 'alice'),
+  user: AuthUser(
+    id: 'user-1',
+    username: 'alice',
+    email: 'alice@example.com',
+    emailVerified: true,
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
+  ),
 );
 
 ServerIdentity _identity() => const ServerIdentity(

@@ -37,19 +37,30 @@ ServerIdentity _identity() => ServerIdentity(
   ],
 );
 
+// BetterAuth wire shape: the display name is under `name` (mapped to
+// AuthUser.username), and all fields are camelCase.
+Map<String, dynamic> _wireUser() => {
+  'id': 'user-1',
+  'name': 'testuser',
+  'email': 'test@example.com',
+  'emailVerified': true,
+  'createdAt': '2024-01-01T00:00:00.000Z',
+  'updatedAt': '2024-01-01T00:00:00.000Z',
+};
+
 Map<String, dynamic> _signInJson() => {
   'token': 'session-tok-abc',
-  'user': {'id': 'user-1', 'username': 'testuser'},
+  'user': _wireUser(),
 };
 
 Map<String, dynamic> _sessionJson() => {
   'session': {
     'id': 'sess-1',
     'token': 'session-tok-abc',
-    'expires_at': '2099-01-01T00:00:00.000Z',
-    'user_id': 'user-1',
+    'expiresAt': '2099-01-01T00:00:00.000Z',
+    'userId': 'user-1',
   },
-  'user': {'id': 'user-1', 'username': 'testuser'},
+  'user': _wireUser(),
 };
 
 Response<Map<String, dynamic>> _ok(Map<String, dynamic> data) => Response(
@@ -58,11 +69,12 @@ Response<Map<String, dynamic>> _ok(Map<String, dynamic> data) => Response(
   requestOptions: RequestOptions(path: ''),
 );
 
-Response<Map<String, dynamic>> _status(int code) => Response(
-  data: null,
-  statusCode: code,
-  requestOptions: RequestOptions(path: ''),
-);
+Response<Map<String, dynamic>> _status(int code, [Map<String, dynamic>? data]) =>
+    Response(
+      data: data,
+      statusCode: code,
+      requestOptions: RequestOptions(path: ''),
+    );
 
 void main() {
   late MockDio mockDio;
@@ -73,6 +85,11 @@ void main() {
 
   setUp(() {
     mockDio = MockDio();
+    // The repository's TEMP #101 diagnostics read options.baseUrl on
+    // failure paths.
+    when(
+      () => mockDio.options,
+    ).thenReturn(BaseOptions(baseUrl: 'https://api.example.com'));
     mockStorage = MockTokenStorage();
     repo = AuthRepositoryImpl(
       identity: _identity(),
@@ -190,6 +207,65 @@ void main() {
           throwsA(isA<AuthEmailAlreadyExistsException>()),
         );
       });
+
+      test('throws AuthEmailAlreadyExistsException on BetterAuth 422 with '
+          'body code USER_ALREADY_EXISTS (BetterAuth never uses 409)', () {
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            any(),
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer(
+          (_) async => _status(422, {
+            'code': 'USER_ALREADY_EXISTS',
+            'message': 'User already exists',
+          }),
+        );
+
+        expect(
+          () => repo.signUp(email: 'dup@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthEmailAlreadyExistsException>()),
+        );
+      });
+
+      test('throws AuthEmailAlreadyExistsException on the versioned code '
+          'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL (verbatim body observed '
+          'from the BGE dev server)', () {
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            any(),
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer(
+          (_) async => _status(422, {
+            'message': 'User already exists. Use another email.',
+            'code': 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+          }),
+        );
+
+        expect(
+          () => repo.signUp(email: 'dup@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthEmailAlreadyExistsException>()),
+        );
+      });
+
+      test('a 422 WITHOUT the USER_ALREADY_EXISTS code stays a generic '
+          'AuthServerException (no over-mapping of validation failures)', () {
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            any(),
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer(
+          (_) async =>
+              _status(422, {'code': 'OTHER', 'message': 'Invalid input'}),
+        );
+
+        expect(
+          () => repo.signUp(email: 'a@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthServerException>()),
+        );
+      });
     });
 
     group('getSession()', () {
@@ -249,7 +325,9 @@ void main() {
         // signOut() reads the token to authenticate the best-effort POST
         // before latching; none stored here.
         when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
-        when(() => mockDio.post<void>(any())).thenThrow(
+        when(
+          () => mockDio.post<void>(any(), options: any(named: 'options')),
+        ).thenThrow(
           DioException(
             type: DioExceptionType.connectionError,
             requestOptions: RequestOptions(path: ''),

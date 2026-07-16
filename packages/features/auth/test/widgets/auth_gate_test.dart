@@ -42,7 +42,14 @@ ServerIdentity _identity() => ServerIdentity(
 
 AuthResponse _session() => AuthResponse(
   token: 'tok-abc',
-  user: User(id: 'u1', username: 'testuser'),
+  user: AuthUser(
+    id: 'u1',
+    username: 'testuser',
+    email: 'u1@example.com',
+    emailVerified: true,
+    createdAt: DateTime(2099),
+    updatedAt: DateTime(2099),
+  ),
   expiresAt: DateTime(2099).toUtc(),
 );
 
