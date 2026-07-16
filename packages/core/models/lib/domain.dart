@@ -41,4 +41,5 @@ export 'src/domain/user/user_external_identity.dart';
 export 'src/domain/user/user_login_history.dart';
 export 'src/domain/user/user_preferences.dart';
 export 'src/domain/user/user_session.dart';
+export 'src/domain/user/user_base.dart';
 export 'src/domain/user/user.dart';

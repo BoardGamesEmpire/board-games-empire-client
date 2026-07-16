@@ -19,6 +19,7 @@ class UserProfile extends Equatable {
     this.friendships = const [],
   });
 
+  // TODO: make configurable: allow user to choose which name to display (username, first+last, first only, last only, etc.)
   String get displayName {
     if (user.firstName != null || user.lastName != null) {
       return '${user.firstName ?? ''} ${user.lastName ?? ''}'.trim();
@@ -35,9 +36,9 @@ class UserProfile extends Equatable {
     return user.username.substring(0, 2).toUpperCase();
   }
 
-  bool get hasAvatar => user.avatar != null || user.profileImage != null;
+  bool get hasAvatar => user.image != null;
 
-  String? get avatarUrl => user.profileImage ?? user.avatar;
+  String? get avatarUrl => user.image;
 
   int get friendCount =>
       friendships.where((f) => f.status == FriendshipStatus.accepted).length;

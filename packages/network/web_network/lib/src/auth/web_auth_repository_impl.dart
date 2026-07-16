@@ -90,9 +90,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         data: {
           'email': email,
           'password': password,
-          'username': username,
-          'first_name': ?firstName,
-          'last_name': ?lastName,
+          // BetterAuth's email-register validator requires `name`. The
+          // server maps name → username at the model layer, but that
+          // mapping does not rewrite the inbound validator, so the wire
+          // key must be `name`. This is purely the HTTP boundary — the
+          // field is "username" everywhere user-facing (UI label, form,
+          // AuthRegisterRequested.username).
+          'name': username,
+          'firstName': ?firstName,
+          'lastName': ?lastName,
         },
       );
     } on DioException catch (e) {
@@ -208,7 +214,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw const AuthInvalidCredentialsException();
     }
 
-    if (status == HttpStatusCode.conflict) {
+    if (_isEmailAlreadyExists(status, response.data)) {
       throw const AuthEmailAlreadyExistsException();
     }
 
@@ -222,6 +228,24 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
+  /// Whether a rejected auth response means "this email is already
+  /// registered".
+  ///
+  /// BetterAuth signals a duplicate sign-up as **422 Unprocessable Entity**
+  /// with a `USER_ALREADY_EXISTS*` body code — it never uses 409. The exact
+  /// code varies by version (`USER_ALREADY_EXISTS` per the docs;
+  /// `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` observed live on the BGE dev
+  /// server), so match the stable prefix rather than one literal. The 409
+  /// Conflict mapping is kept for BGE's own route conventions. Deliberately
+  /// NOT a bare status-422 match: other validation failures could share the
+  /// status, and showing "account already exists" for those would be worse
+  /// than the generic server-error copy.
+  bool _isEmailAlreadyExists(int? status, Object? body) {
+    if (status == HttpStatusCode.conflict) return true;
+    final code = body is Map ? body['code'] : null;
+    return code is String && code.startsWith('USER_ALREADY_EXISTS');
+  }
+
   AuthException _mapDioException(DioException e) {
     final status = e.response?.statusCode;
     if (status == HttpStatusCode.unauthorized ||
@@ -229,7 +253,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       return const AuthInvalidCredentialsException();
     }
 
-    if (status == HttpStatusCode.conflict) {
+    if (_isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
     }
 

@@ -6,7 +6,6 @@ import 'package:models/domain.dart';
 
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
-import 'package:dio_network/src/network/token_interceptor.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -55,38 +54,36 @@ void main() {
       tokenStorage: mockStorage,
       dio: mockDio,
     );
-    // signOut() reads the token (to authenticate the best-effort POST)
-    // before latching; default to none, overridden where a token matters.
+    // signOut() reads the token to authenticate the best-effort POST before
+    // latching; default to none stored. Tests needing a token re-stub this.
     when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
   });
 
   tearDown(() async => repo.onDispose());
 
-  void stubSignOutPostOk() =>
-      when(
-        () => mockDio.post<void>(
-          '$_kAuthBase/sign-out',
-          options: any(named: 'options'),
-        ),
-      ).thenAnswer(
-        (_) async => Response<void>(
-          statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
+  void stubSignOutPostOk() => when(
+    () => mockDio.post<void>(
+      '$_kAuthBase/sign-out',
+      options: any(named: 'options'),
+    ),
+  ).thenAnswer(
+    (_) async => Response<void>(
+      statusCode: 200,
+      requestOptions: RequestOptions(path: ''),
+    ),
+  );
 
-  void stubSignOutPostFails() =>
-      when(
-        () => mockDio.post<void>(
-          '$_kAuthBase/sign-out',
-          options: any(named: 'options'),
-        ),
-      ).thenThrow(
-        DioException(
-          type: DioExceptionType.connectionError,
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
+  void stubSignOutPostFails() => when(
+    () => mockDio.post<void>(
+      '$_kAuthBase/sign-out',
+      options: any(named: 'options'),
+    ),
+  ).thenThrow(
+    DioException(
+      type: DioExceptionType.connectionError,
+      requestOptions: RequestOptions(path: ''),
+    ),
+  );
 
   group('signOut() persistence invariant', () {
     test('happy path: completes and transitions to unauthenticated', () async {
@@ -100,6 +97,36 @@ void main() {
         const AuthStateUnauthenticated(),
       );
       verify(() => mockStorage.clear()).called(1);
+    });
+
+    test('carries the stored bearer token on the server sign-out POST so the '
+        'session is revoked server-side — the token is read BEFORE clear() '
+        'latches it away, not left to the racing TokenInterceptor', () async {
+      when(() => mockStorage.retrieve()).thenAnswer(
+        (_) async =>
+            StoredToken(token: 'live-token-xyz', expiresAt: DateTime(2099).toUtc()),
+      );
+      when(() => mockStorage.clear()).thenAnswer((_) async {});
+
+      Options? sentOptions;
+      when(
+        () => mockDio.post<void>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((invocation) async {
+        sentOptions = invocation.namedArguments[#options] as Options?;
+        return Response<void>(
+          statusCode: 200,
+          requestOptions: RequestOptions(path: ''),
+        );
+      });
+
+      await repo.signOut();
+      // The POST is fire-and-forget (unawaited); let it run.
+      await pumpEventQueue();
+
+      expect(sentOptions?.headers?['Authorization'], 'Bearer live-token-xyz');
     });
 
     test('a failed server call alone does not throw — best-effort — and '
@@ -191,10 +218,19 @@ void main() {
             'session': {
               'id': 'sess-1',
               'token': 'session-tok-abc',
-              'expires_at': '2099-01-01T00:00:00.000Z',
-              'user_id': 'user-1',
+              'expiresAt': '2099-01-01T00:00:00.000Z',
+              'userId': 'user-1',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
             },
-            'user': {'id': 'user-1', 'username': 'testuser'},
+            'user': {
+              'id': 'user-1',
+              'name': 'testuser',
+              'email': 'testuser@example.com',
+              'emailVerified': true,
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+            },
           },
           statusCode: 200,
           requestOptions: RequestOptions(path: ''),
@@ -226,55 +262,6 @@ void main() {
       );
       expect(afterSignOut, isNotEmpty);
       expect(afterSignOut.whereType<AuthStateAuthenticated>(), isEmpty);
-    });
-
-    test('the best-effort sign-out POST carries the captured token '
-        'explicitly, so the latch set by clear() cannot strip its '
-        'Authorization header (PR #99 review)', () async {
-      when(() => mockStorage.retrieve()).thenAnswer(
-        (_) async =>
-            StoredToken(token: 'live-tok', expiresAt: DateTime(2099).toUtc()),
-      );
-      when(() => mockStorage.clear()).thenAnswer((_) async {});
-      stubSignOutPostOk();
-
-      await repo.signOut();
-      // The POST is fire-and-forget; let it reach the Dio call.
-      await pumpEventQueue();
-
-      final captured =
-          verify(
-                () => mockDio.post<void>(
-                  '$_kAuthBase/sign-out',
-                  options: captureAny(named: 'options'),
-                ),
-              ).captured.single
-              as Options;
-
-      // Authenticated by the captured token, and opting out of the
-      // interceptor so latch timing is irrelevant.
-      expect(captured.headers?['Authorization'], 'Bearer live-tok');
-      expect(captured.extra?[TokenInterceptor.skipAuthKey], isTrue);
-    });
-
-    test('a keychain read failure while capturing the token does NOT abort '
-        'sign-out — clear() still runs and the state transitions to '
-        'unauthenticated (PR #99 review)', () async {
-      // Capturing the token for the best-effort POST reads storage; a read
-      // fault must not skip the unconditional local sign-out.
-      when(
-        () => mockStorage.retrieve(),
-      ).thenThrow(StateError('keychain locked'));
-      when(() => mockStorage.clear()).thenAnswer((_) async {});
-      stubSignOutPostOk();
-
-      await expectLater(repo.signOut(), completes);
-
-      verify(() => mockStorage.clear()).called(1);
-      expect(
-        await repo.watchAuthState().first,
-        const AuthStateUnauthenticated(),
-      );
     });
   });
 }

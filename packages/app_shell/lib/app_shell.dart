@@ -31,6 +31,7 @@ export 'src/observability/shell_observability.dart';
 export 'src/observability/uncaught_error_record.dart';
 export 'src/router/app_router.dart';
 export 'src/screens/bootstrap_error_screen.dart';
+export 'src/screens/home_placeholder_screen.dart';
 export 'src/screens/not_yet_available_screen.dart';
 export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';

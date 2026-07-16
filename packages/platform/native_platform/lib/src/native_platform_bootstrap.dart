@@ -199,6 +199,12 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       return BootstrapResult(
         hasServer: servers.isNotEmpty,
         orchestrator: orchestrator,
+        // #37: the platform-neutral auth seam the shell provisions the
+        // auth bloc from. A thin read-only adapter over the orchestrator;
+        // owns no resources, so it needs no separate teardown.
+        activeServerScope: OrchestratorActiveServerScope(
+          orchestrator: orchestrator,
+        ),
       );
     } catch (_) {
       // Roll back without masking the original error: secondary disposal

@@ -29,14 +29,17 @@ class FakePlatformBootstrap implements PlatformBootstrap {
     List<Object> outcomes = const [],
     this.supportsReset = true,
     ServerOrchestrator? orchestrator,
+    ActiveServerScope? activeServerScope,
     this.rootContainerOutcome,
     this.onCreateRootContainer,
     this.deepLinkSource,
   }) : _outcomes = List.of(outcomes),
-       _orchestrator = orchestrator;
+       _orchestrator = orchestrator,
+       _activeServerScope = activeServerScope;
 
   final List<Object> _outcomes;
   final ServerOrchestrator? _orchestrator;
+  final ActiveServerScope? _activeServerScope;
 
   @override
   final bool supportsReset;
@@ -90,7 +93,11 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   Future<BootstrapResult> initialize() async {
     calls.add('initialize');
     if (_outcomes.isEmpty) {
-      return BootstrapResult(hasServer: true, orchestrator: _orchestrator);
+      return BootstrapResult(
+        hasServer: true,
+        orchestrator: _orchestrator,
+        activeServerScope: _activeServerScope,
+      );
     }
     final outcome = _outcomes.length == 1
         ? _outcomes.first

@@ -2,68 +2,65 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/value_objects.dart';
 import 'package:models/domain.dart';
 
+/// Builds a [User] with the now-required identity fields filled in, so each
+/// test only specifies the fields it actually exercises.
+User buildUser({
+  String id = 'user123',
+  String username = 'johndoe',
+  String? firstName,
+  String? lastName,
+  String? image,
+}) => User(
+  id: id,
+  username: username,
+  firstName: firstName,
+  lastName: lastName,
+  image: image,
+  email: 'test@example.com',
+  emailVerified: true,
+  createdAt: DateTime.utc(2024, 1, 1),
+  updatedAt: DateTime.utc(2024, 1, 2),
+);
+
 void main() {
   group('UserProfile Value Object', () {
     test('calculates display name correctly', () {
-      final userWithFullName = User(
-        id: 'user123',
-        firstName: 'John',
-        lastName: 'Doe',
-        username: 'johndoe',
-      );
+      final userWithFullName = buildUser(firstName: 'John', lastName: 'Doe');
 
       final profile = UserProfile(user: userWithFullName);
       expect(profile.displayName, 'John Doe');
 
-      final userWithFirstOnly = User(
-        id: 'user123',
-        firstName: 'John',
-        username: 'johndoe',
-      );
+      final userWithFirstOnly = buildUser(firstName: 'John');
 
       final profile2 = UserProfile(user: userWithFirstOnly);
       expect(profile2.displayName, 'John');
 
-      final userWithUsernameOnly = User(id: 'user123', username: 'johndoe');
+      final userWithUsernameOnly = buildUser();
 
       final profile3 = UserProfile(user: userWithUsernameOnly);
       expect(profile3.displayName, 'johndoe');
     });
 
     test('generates initials correctly', () {
-      final userWithFullName = User(
-        id: 'user123',
-        firstName: 'John',
-        lastName: 'Doe',
-        username: 'johndoe',
-      );
+      final userWithFullName = buildUser(firstName: 'John', lastName: 'Doe');
 
       final profile = UserProfile(user: userWithFullName);
       expect(profile.initials, 'JD');
 
-      final userWithFirstOnly = User(
-        id: 'user123',
-        firstName: 'John',
-        username: 'johndoe',
-      );
+      final userWithFirstOnly = buildUser(firstName: 'John');
 
       final profile2 = UserProfile(user: userWithFirstOnly);
       expect(profile2.initials, 'JO');
     });
 
     test('detects avatar presence', () {
-      final userWithProfileImage = User(
-        id: 'user123',
-        username: 'johndoe',
-        avatar: 'avatar.jpg',
-        profileImage: 'profile.jpg',
-      );
+      final userWithImage = buildUser(image: 'profile.jpg');
 
-      final profile = UserProfile(user: userWithProfileImage);
+      final profile = UserProfile(user: userWithImage);
       expect(profile.hasAvatar, isTrue);
-      expect(profile.avatarUrl, 'profile.jpg'); // Prefers profileImage
+      expect(profile.avatarUrl, 'profile.jpg');
 
-      final userWithoutAvatar = User(id: 'user456', username: 'janedoe');
+      final userWithoutAvatar = buildUser(id: 'user456', username: 'janedoe');
 
       final profile2 = UserProfile(user: userWithoutAvatar);
       expect(profile2.hasAvatar, isFalse);
@@ -71,7 +68,7 @@ void main() {
     });
 
     test('counts accepted friends', () {
-      final user = User(id: 'user123', username: 'johndoe');
+      final user = buildUser();
       final friendships = [
         Friendship(
           id: 'f1',
@@ -98,7 +95,7 @@ void main() {
     });
 
     test('maintains equality', () {
-      final user = User(id: 'user123', username: 'johndoe');
+      final user = buildUser();
       final preferences = UserPreferences(id: 'pref123', userId: 'user123');
 
       final profile1 = UserProfile(user: user, preferences: preferences);

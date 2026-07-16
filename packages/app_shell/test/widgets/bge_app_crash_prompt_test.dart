@@ -106,6 +106,47 @@ void main() {
     );
   });
 
+  testWidgets('the comment field is editable in the real wiring and the '
+      'outcome window closes after submission', (tester) async {
+    // Regression: the prompt mounts in MaterialApp.builder — ABOVE the
+    // Navigator, so the Navigator's Overlay is not an ancestor. Without
+    // an Overlay of its own, focusing the comment field crashes
+    // EditableText ("No Overlay widget found"), and the crash cascade
+    // (captured by the hooks → reporter.report → slot refilled)
+    // re-summons the prompt, so the outcome window's close button
+    // appears dead.
+    final (cubit, reporter) = buildDeps();
+    addTearDown(cubit.close);
+    await tester.pumpWidget(
+      BgeApp(bootstrapCubit: cubit, feedbackReporter: reporter),
+    );
+    await tester.pump();
+    reporter.report(record());
+    await tester.pump();
+
+    // Focus + type — requires an Overlay ancestor for the selection
+    // handles/toolbar.
+    await tester.tap(find.byKey(CrashReportPrompt.commentFieldKey));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(CrashReportPrompt.commentFieldKey),
+      'happened right after account creation',
+    );
+    await tester.tap(find.byKey(CrashReportPrompt.sendButtonKey));
+    // Plain pumps — the app behind the prompt animates indefinitely
+    // (splash spinner), so pumpAndSettle would never settle.
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(CrashReportPrompt.sentConfirmationKey), findsOneWidget);
+
+    // Close on the outcome window dismisses for good — no re-summon.
+    await tester.tap(find.byKey(CrashReportPrompt.discardButtonKey));
+    await tester.pump();
+    expect(find.byType(CrashReportPrompt), findsNothing);
+    expect(reporter.pendingCrashReport.value, isNull);
+  });
+
   testWidgets('no reporter, no prompt machinery — pre-#69 constructions '
       'are untouched', (tester) async {
     final (cubit, _) = buildDeps();

@@ -1,3 +1,4 @@
+// packages/network/dio_network/lib/src/auth/auth_repository_impl.dart
 import 'dart:async';
 import 'package:http_status/http_status.dart';
 import 'package:dio/dio.dart';
@@ -6,8 +7,9 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
+import 'package:observability/observability.dart';
 
-import '../network/token_interceptor.dart';
+import '../network/redact_uri.dart';
 import 'token_storage_service.dart';
 
 /// Dio-based [AuthRepository] for mobile and desktop.
@@ -41,6 +43,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   final StreamController<AuthState> _stateController;
 
   AuthState _currentState = const AuthStateUnknown();
+
+  /// TEMP (#101, removed by #100): diagnostic logger for the auth seams.
+  final BgeLogger _log = BgeLogger('bge.auth.repository');
 
   @override
   Future<AuthResponse> signIn({
@@ -94,9 +99,15 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         data: {
           'email': email,
           'password': password,
-          'username': username,
-          'first_name': ?firstName,
-          'last_name': ?lastName,
+          // BetterAuth's email-register validator requires `name`. The
+          // server maps name → username at the model layer, but that
+          // mapping does not rewrite the inbound validator, so the wire
+          // key must be `name`. This is purely the HTTP boundary — the
+          // field is "username" everywhere user-facing (UI label, form,
+          // AuthRegisterRequested.username).
+          'name': username,
+          'firstName': ?firstName,
+          'lastName': ?lastName,
         },
       );
     } on DioException catch (e) {
@@ -170,22 +181,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   @override
   Future<void> signOut() async {
-    // Capture the token BEFORE latching. clear() below sets the sign-out
-    // latch synchronously, ahead of TokenInterceptor's async retrieve() — so
-    // if the best-effort POST relied on the interceptor it would be sent
-    // WITHOUT an Authorization header, and the server could not revoke the
-    // session. Passing the token explicitly keeps the request authenticated
-    // regardless of latch timing (PR #99 review).
-    //
-    // Best-effort: a keychain read failure must not abort sign-out, whose
-    // unauthenticated transition is unconditional (see AuthRepository.signOut
-    // contract). On failure the POST simply goes out unauthenticated.
-    String? token;
-    try {
-      token = (await _tokenStorage.retrieve())?.token;
-    } on Object {
-      token = null;
-    }
+    // Capture the bearer token BEFORE clearing. TokenStorageService.clear()
+    // sets its sign-out latch synchronously, after which retrieve() — and so
+    // the TokenInterceptor — reports no token; a POST left to the interceptor
+    // would race that latch and go out with no Authorization header, leaving
+    // the session un-revoked server-side. Reading it here lets the POST carry
+    // the token explicitly (PR #103 review).
+    final token = await _readSignOutToken();
 
     // Best-effort server call, fire-and-forget: its result is discarded,
     // so we must not block the local sign-out on it — awaiting would make
@@ -205,10 +207,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // therefore the TokenInterceptor's Authorization header and any
       // same-process getSession() — already report no token: a surviving
       // token can be resurrected neither at the HTTP layer nor in state
-      // within this process (PR #99 review). The latch is in-memory only, so
-      // the residual risk is the surviving token restoring a session on the
-      // next cold start, where sign-out can be repeated (see the
-      // AuthRepository.signOut contract).
+      // (PR #99 review). It is cleared for good on the next cold start.
       Error.throwWithStackTrace(
         AuthSignOutPersistenceException(cause: error),
         stackTrace,
@@ -218,28 +217,32 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  /// Fire-and-forget sign-out POST. Never throws: a synchronous throw or
-  /// an async rejection is swallowed (best-effort by design). Typed
-  /// `Future<void>` so it satisfies [unawaited].
-  ///
-  /// Carries [token] as an explicit `Authorization` header and opts out of
-  /// [TokenInterceptor]-managed auth: the sign-out latch set by clear() wins
-  /// the race against the interceptor's async token read, so relying on the
-  /// interceptor would send this request unauthenticated (PR #99 review).
-  /// A null [token] (already signed out / nothing stored) posts without auth.
+  /// Fire-and-forget sign-out POST carrying [token] as an explicit bearer
+  /// credential (the [TokenInterceptor] cannot be relied on here — see
+  /// [signOut]). Never throws: a synchronous throw or an async rejection is
+  /// swallowed (best-effort by design). Typed `Future<void>` so it satisfies
+  /// [unawaited].
   Future<void> _bestEffortSignOutPost(String? token) async {
     try {
       await _dio.post<void>(
         _identity.signOutEndpoint,
-        options: token == null
-            ? null
-            : Options(
-                headers: {'Authorization': 'Bearer $token'},
-                extra: {TokenInterceptor.skipAuthKey: true},
-              ),
+        options: Options(
+          headers: {if (token != null) 'Authorization': 'Bearer $token'},
+        ),
       );
     } on Object {
       // discarded
+    }
+  }
+
+  /// Best-effort read of the current bearer token for the sign-out POST.
+  /// Never throws — a storage read failure must not block local sign-out.
+  Future<String?> _readSignOutToken() async {
+    try {
+      final stored = await _tokenStorage.retrieve();
+      return stored?.token;
+    } on Object {
+      return null;
     }
   }
 
@@ -281,6 +284,17 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   EmailAndPasswordStrategy _requireEmailPasswordStrategy() {
     final strategy = _identity.emailAndPasswordStrategy;
     if (strategy == null) {
+      // TEMP (#101): strategy resolution is a pre-wire failure origin.
+      _log.error(
+        'Email/password strategy missing on cached identity',
+        context: {
+          // Redacted (userInfo/query/fragment stripped) — the auth
+          // diagnostics never log raw URLs (PR #103 review).
+          'base_url': redactUri(Uri.tryParse(_dio.options.baseUrl) ?? Uri()),
+          'has_strategies': _identity.strategies.isNotEmpty,
+          'strategy_count': _identity.strategies.length,
+        },
+      );
       throw const AuthServerException(
         message: 'This server does not support email/password authentication.',
       );
@@ -294,12 +308,24 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required String context,
   }) {
     final status = response.statusCode;
+    // TEMP (#101): a response reached us — record how it resolved.
+    _log.debug(
+      'Auth response received',
+      context: {
+        'context': context,
+        'status': status,
+        // Redacted: uri.toString() would carry query/fragment/userInfo, which
+        // must never be logged on auth endpoints (PR #103 review).
+        'uri': redactUri(response.requestOptions.uri),
+        'has_body': response.data != null,
+      },
+    );
     if (status == HttpStatusCode.unauthorized ||
         status == HttpStatusCode.forbidden) {
       throw const AuthInvalidCredentialsException();
     }
 
-    if (status == HttpStatusCode.conflict) {
+    if (_isEmailAlreadyExists(status, response.data)) {
       throw const AuthEmailAlreadyExistsException();
     }
 
@@ -320,14 +346,49 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
+  /// Whether a rejected auth response means "this email is already
+  /// registered".
+  ///
+  /// BetterAuth signals a duplicate sign-up as **422 Unprocessable Entity**
+  /// with a `USER_ALREADY_EXISTS*` body code — it never uses 409. The exact
+  /// code varies by version (`USER_ALREADY_EXISTS` per the docs;
+  /// `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` observed live on the BGE dev
+  /// server), so match the stable prefix rather than one literal. The 409
+  /// Conflict mapping is kept for BGE's own route conventions. Deliberately
+  /// NOT a bare status-422 match: other validation failures could share the
+  /// status, and showing "account already exists" for those would be worse
+  /// than the generic server-error copy.
+  bool _isEmailAlreadyExists(int? status, Object? body) {
+    if (status == HttpStatusCode.conflict) return true;
+    final code = body is Map ? body['code'] : null;
+    return code is String && code.startsWith('USER_ALREADY_EXISTS');
+  }
+
   AuthException _mapDioException(DioException e) {
     final status = e.response?.statusCode;
+    // TEMP (#101): a Dio-level failure — the "no connection" vs "rejected"
+    // discriminator. dio_error_type=connectionError with no status ⇒ the
+    // request never reached the server.
+    _log.error(
+      'Auth Dio exception',
+      // Log the underlying transport error, NOT the DioException: the latter
+      // carries RequestOptions (headers incl. the bearer token, and body) that
+      // a verbose formatter/sink could serialise. Failure kind is in
+      // dio_error_type; the redacted uri gives the endpoint (PR #103 review).
+      error: e.error,
+      stackTrace: e.stackTrace,
+      context: {
+        'uri': redactUri(e.requestOptions.uri),
+        'dio_error_type': e.type.name,
+        'status': status,
+      },
+    );
     if (status == HttpStatusCode.unauthorized ||
         status == HttpStatusCode.forbidden) {
       return const AuthInvalidCredentialsException();
     }
 
-    if (status == HttpStatusCode.conflict) {
+    if (_isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
     }
 

@@ -2,7 +2,6 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
 import 'package:auth/src/bloc/auth_bloc.dart';
@@ -13,7 +12,14 @@ class MockAuthRepository extends Mock implements AuthRepository {}
 
 AuthResponse _session() => AuthResponse(
   token: 'tok-abc',
-  user: User(id: 'u1', username: 'testuser'),
+  user: AuthUser(
+    id: 'u1',
+    username: 'testuser',
+    email: 'u1@example.com',
+    emailVerified: true,
+    createdAt: DateTime(2099),
+    updatedAt: DateTime(2099),
+  ),
   expiresAt: DateTime(2099).toUtc(),
 );
 
