@@ -58,28 +58,33 @@ class DeveloperLogSink implements LogSink {
 
   @override
   void emit(LogRecord record) {
-    final context = LogRecordFormatter.contextOf(record);
-    final hasContext = context != null && context.isNotEmpty;
-    final hasError = record.error != null;
-    final encoded = LogRecordFormatter.encodeContext(context);
+    try {
+      final context = LogRecordFormatter.contextOf(record);
+      final hasContext = context != null && context.isNotEmpty;
+      final hasError = record.error != null;
+      final encoded = LogRecordFormatter.encodeContext(context);
 
-    final message = (hasError && encoded != null)
-        ? '${record.message} $encoded'
-        : record.message;
-    // Error slot: a real exception wins it; otherwise the raw context map
-    // rides there so DevTools can render it structurally.
-    final Object? errorArg = hasError
-        ? record.error
-        : (hasContext ? context : null);
+      final message = (hasError && encoded != null)
+          ? '${record.message} $encoded'
+          : record.message;
+      // Error slot: a real exception wins it; otherwise the raw context map
+      // rides there so DevTools can render it structurally.
+      final Object? errorArg = hasError
+          ? record.error
+          : (hasContext ? context : null);
 
-    _log(
-      message,
-      time: record.time,
-      level: record.level.value,
-      name: record.loggerName,
-      error: errorArg,
-      stackTrace: record.stackTrace,
-    );
+      _log(
+        message,
+        time: record.time,
+        level: record.level.value,
+        name: record.loggerName,
+        error: errorArg,
+        stackTrace: record.stackTrace,
+      );
+    } on Object {
+      // LogSink.emit must not throw: a misbehaving formatter, context
+      // encode, or logFn must not crash the caller (best-effort logging).
+    }
   }
 
   @override

@@ -28,7 +28,14 @@ class PrintLogSink implements LogSink {
   }
 
   @override
-  void emit(LogRecord record) => _out(_formatter.formatLine(record));
+  void emit(LogRecord record) {
+    try {
+      _out(_formatter.formatLine(record));
+    } on Object {
+      // LogSink.emit must not throw: a misbehaving formatter or out
+      // callback must not crash the caller (best-effort logging).
+    }
+  }
 
   @override
   Future<void> close() async {

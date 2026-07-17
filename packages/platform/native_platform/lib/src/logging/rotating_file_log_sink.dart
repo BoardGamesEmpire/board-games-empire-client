@@ -55,12 +55,18 @@ class RotatingFileLogSink implements LogSink {
   @override
   void emit(LogRecord record) {
     if (_closed) return;
-    _pending.add(_formatter.formatLine(record));
-    // Bound the pre-open buffer: drop oldest until the file is open.
-    while (_sink == null && _pending.length > _preOpenBufferLimit) {
-      _pending.removeFirst();
+    try {
+      _pending.add(_formatter.formatLine(record));
+      // Bound the pre-open buffer: drop oldest until the file is open.
+      while (_sink == null && _pending.length > _preOpenBufferLimit) {
+        _pending.removeFirst();
+      }
+      _scheduleDrain();
+    } on Object {
+      // LogSink.emit must not throw. The async drain is already guarded;
+      // this guards the synchronous format/enqueue path (e.g. a throwing
+      // custom formatter) so a bad record cannot crash the caller.
     }
-    _scheduleDrain();
   }
 
   void _scheduleDrain() {
@@ -88,14 +94,23 @@ class RotatingFileLogSink implements LogSink {
   Future<void> _ensureOpen() async {
     if (_sink != null) return;
     _openFuture ??= _open();
-    await _openFuture;
+    try {
+      await _openFuture;
+    } on Object {
+      // A failed open (transient path_provider/filesystem error) must not
+      // leave the sink permanently inert: clear the memoised future so a
+      // later emit retries. Pending lines stay buffered for that retry; the
+      // rethrow is swallowed by _scheduleDrain's catchError.
+      _openFuture = null;
+      rethrow;
+    }
   }
 
   Future<void> _open() async {
     final dir = await _directoryProvider();
     final file = File('${dir.path}${Platform.pathSeparator}$baseName.log');
     _file = file;
-    _currentBytes = file.existsSync() ? await file.length() : 0;
+    _currentBytes = await file.exists() ? await file.length() : 0;
     _sink = file.openWrite(mode: FileMode.append);
   }
 
@@ -109,14 +124,17 @@ class RotatingFileLogSink implements LogSink {
     final dir = await _directoryProvider();
     final base = '${dir.path}${Platform.pathSeparator}$baseName';
 
+    // Async filesystem APIs: _rotate runs on the main isolate (inside the
+    // serialised drain), so the sync *Sync variants would block frames on
+    // slow or networked home directories.
     final oldest = File('$base.$maxFiles.log');
-    if (oldest.existsSync()) oldest.deleteSync();
+    if (await oldest.exists()) await oldest.delete();
     for (var i = maxFiles - 1; i >= 1; i--) {
       final from = File('$base.$i.log');
-      if (from.existsSync()) from.renameSync('$base.${i + 1}.log');
+      if (await from.exists()) await from.rename('$base.${i + 1}.log');
     }
     final current = _file ?? File('$base.log');
-    if (current.existsSync()) current.renameSync('$base.1.log');
+    if (await current.exists()) await current.rename('$base.1.log');
 
     final fresh = File('$base.log');
     _file = fresh;
