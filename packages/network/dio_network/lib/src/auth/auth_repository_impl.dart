@@ -1,4 +1,3 @@
-// packages/network/dio_network/lib/src/auth/auth_repository_impl.dart
 import 'dart:async';
 import 'package:http_status/http_status.dart';
 import 'package:dio/dio.dart';
@@ -44,7 +43,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   AuthState _currentState = const AuthStateUnknown();
 
-  /// TEMP (#101, removed by #100): diagnostic logger for the auth seams.
+  /// Logs the auth seams the network interceptor and bloc cannot see with
+  /// the right context (#100): the pre-wire strategy-missing contract
+  /// failure (error), and stored-session rejection on the 401-clear paths
+  /// (warn — the bloc only ever sees the resulting `Unauthenticated`, so
+  /// "why was the user logged out" would otherwise be silent). Wire-level
+  /// transport failures are `NetworkLogInterceptor`'s job; semantic
+  /// operation outcomes are `AuthBloc`'s.
   final BgeLogger _log = BgeLogger('bge.auth.repository');
 
   @override
@@ -142,17 +147,22 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         _identity.sessionEndpoint,
       );
     } on DioException catch (e) {
-      if (e.response?.statusCode == HttpStatusCode.unauthorized) {
-        await _tokenStorage.clear();
-
-        _setState(const AuthStateUnauthenticated());
-        return null;
-      }
-
+      // A rejected session (401) arrives as a Response, not a thrown
+      // DioException — the per-server Dio sets validateStatus:(_)=>true, so
+      // any HTTP status resolves normally and is handled on the response
+      // path below. Reaching here means a transport-level failure (no/failed
+      // connection, timeout); NetworkLogInterceptor logs it — map it.
       throw _mapDioException(e);
     }
 
     if (response.statusCode == HttpStatusCode.unauthorized) {
+      _log.warn(
+        'Stored session rejected (401); clearing token',
+        context: {
+          'uri': redactUri(response.requestOptions.uri),
+          'status': response.statusCode,
+        },
+      );
       await _tokenStorage.clear();
 
       _setState(const AuthStateUnauthenticated());
@@ -284,7 +294,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   EmailAndPasswordStrategy _requireEmailPasswordStrategy() {
     final strategy = _identity.emailAndPasswordStrategy;
     if (strategy == null) {
-      // TEMP (#101): strategy resolution is a pre-wire failure origin.
+      // A cached ServerIdentity lacking an email/password strategy is a
+      // server-side contract problem (its well-known advertised no such
+      // strategy), surfaced BEFORE any HTTP call — so neither the network
+      // interceptor nor the bloc has the context to log it. Log here.
       _log.error(
         'Email/password strategy missing on cached identity',
         context: {
@@ -308,18 +321,6 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required String context,
   }) {
     final status = response.statusCode;
-    // TEMP (#101): a response reached us — record how it resolved.
-    _log.debug(
-      'Auth response received',
-      context: {
-        'context': context,
-        'status': status,
-        // Redacted: uri.toString() would carry query/fragment/userInfo, which
-        // must never be logged on auth endpoints (PR #103 review).
-        'uri': redactUri(response.requestOptions.uri),
-        'has_body': response.data != null,
-      },
-    );
     if (status == HttpStatusCode.unauthorized ||
         status == HttpStatusCode.forbidden) {
       throw const AuthInvalidCredentialsException();
@@ -365,24 +366,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   }
 
   AuthException _mapDioException(DioException e) {
+    // The wire-level failure itself is logged by NetworkLogInterceptor
+    // (redacted URI + dio_error_type + status); here we only map it to the
+    // domain exception the bloc will categorise (#100 layering).
     final status = e.response?.statusCode;
-    // TEMP (#101): a Dio-level failure — the "no connection" vs "rejected"
-    // discriminator. dio_error_type=connectionError with no status ⇒ the
-    // request never reached the server.
-    _log.error(
-      'Auth Dio exception',
-      // Log the underlying transport error, NOT the DioException: the latter
-      // carries RequestOptions (headers incl. the bearer token, and body) that
-      // a verbose formatter/sink could serialise. Failure kind is in
-      // dio_error_type; the redacted uri gives the endpoint (PR #103 review).
-      error: e.error,
-      stackTrace: e.stackTrace,
-      context: {
-        'uri': redactUri(e.requestOptions.uri),
-        'dio_error_type': e.type.name,
-        'status': status,
-      },
-    );
     if (status == HttpStatusCode.unauthorized ||
         status == HttpStatusCode.forbidden) {
       return const AuthInvalidCredentialsException();

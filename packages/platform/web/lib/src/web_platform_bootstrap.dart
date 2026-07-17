@@ -2,6 +2,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:di/di.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:observability/observability.dart';
 import 'package:url_strategy/url_strategy.dart';
 
 import 'web_root_module.dart';
@@ -75,6 +76,14 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// switching — single-origin means there is only one place to connect.
   @override
   DeepLinkSource? createDeepLinkSource() => null;
+
+  /// Web's process-wide log sink (#100): a [PrintLogSink] → the browser
+  /// console. `dart:developer`'s DevTools bridge is unavailable in a
+  /// deployed release web build (no attached VM service), so plain `print`
+  /// is the dependable path. Level filtering is applied upstream by
+  /// `ShellObservability`.
+  @override
+  LogSink createLogSink() => PrintLogSink();
 
   @override
   Future<BootstrapResult> initialize() async =>
