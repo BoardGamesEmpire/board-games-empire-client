@@ -4,9 +4,10 @@
 /// [PlatformBootstrap]), the `go_router` route table (including reserved
 /// deep-link paths, #10), deep-link reception/normalization and the
 /// pending-link slot (#10), global uncaught-error capture (#34) with the
-/// "ask each time" crash-report flow (#69), app-level i18n — the generated
-/// [ShellLocalizations] plus the active-locale seam (#33) — and the shell
-/// screens (splash, bootstrap failure, placeholders, not-yet-available).
+/// "ask each time" crash-report flow (#69) and the full review/redaction
+/// surface (#76), app-level i18n — the generated [ShellLocalizations] plus
+/// the active-locale seam (#33) — and the shell screens (splash, bootstrap
+/// failure, placeholders, not-yet-available).
 ///
 /// Platform composition roots live in `packages/platform/*`; the apps under
 /// `apps/*` are thin `main.dart` wrappers that hand a [PlatformBootstrap]
@@ -38,3 +39,4 @@ export 'src/screens/splash_screen.dart';
 export 'src/widgets/bge_app.dart';
 export 'src/widgets/build_error_view.dart';
 export 'src/widgets/crash_report_prompt.dart';
+export 'src/widgets/feedback_review_screen.dart';

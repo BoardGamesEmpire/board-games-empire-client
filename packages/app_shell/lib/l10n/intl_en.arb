@@ -88,6 +88,10 @@
   "@crashReportPromptDiscard": {
     "description": "Label of the crash prompt's decline button; declining clears the crash draft without sending anything"
   },
+  "crashReportPromptReview": "Review details",
+  "@crashReportPromptReview": {
+    "description": "Label of the crash prompt's button that opens the full review & redaction surface (#76); carries the typed comment into the review"
+  },
   "crashReportPromptDismiss": "Close",
   "@crashReportPromptDismiss": {
     "description": "Label of the button that dismisses the crash prompt after a terminal outcome (sent, saved, or failed)"
@@ -103,5 +107,85 @@
   "crashReportPromptFailed": "The report couldn't be sent or saved.",
   "@crashReportPromptFailed": {
     "description": "Shown when both sending and local saving failed; the prompt can still be closed"
+  },
+  "feedbackReviewTitle": "Review your report",
+  "@feedbackReviewTitle": {
+    "description": "Title of the full feedback report review & redaction screen (#76)"
+  },
+  "feedbackReviewExplanation": "Check what will be sent. Turn on the switch next to anything you'd rather not share — it will be replaced with a redaction marker. Nothing is sent until you tap send.",
+  "@feedbackReviewExplanation": {
+    "description": "Explanation at the top of the review screen; restates the privacy contract and how redaction works"
+  },
+  "feedbackReviewSectionReport": "Report",
+  "@feedbackReviewSectionReport": {
+    "description": "Section header for the report body fields (category, severity, message, title)"
+  },
+  "feedbackReviewSectionEnvironment": "App environment",
+  "@feedbackReviewSectionEnvironment": {
+    "description": "Section header for app environment fields (app version, platform, language)"
+  },
+  "feedbackReviewSectionDevice": "Device details",
+  "@feedbackReviewSectionDevice": {
+    "description": "Section header for the redactable deviceInfo entries"
+  },
+  "feedbackReviewSectionDiagnostics": "Diagnostics",
+  "@feedbackReviewSectionDiagnostics": {
+    "description": "Section header for the view-only diagnostics (stack trace, breadcrumb trail)"
+  },
+  "feedbackReviewFieldMessage": "Message",
+  "@feedbackReviewFieldMessage": {
+    "description": "Label for the report message field on the review screen"
+  },
+  "feedbackReviewFieldTitle": "Title",
+  "@feedbackReviewFieldTitle": {
+    "description": "Label for the report title field on the review screen"
+  },
+  "feedbackReviewFieldAppVersion": "App version",
+  "@feedbackReviewFieldAppVersion": {
+    "description": "Label for the app version field on the review screen"
+  },
+  "feedbackReviewFieldPlatform": "Platform",
+  "@feedbackReviewFieldPlatform": {
+    "description": "Label for the platform field on the review screen"
+  },
+  "feedbackReviewFieldLocale": "Language",
+  "@feedbackReviewFieldLocale": {
+    "description": "Label for the locale/language field on the review screen"
+  },
+  "feedbackReviewFieldCategory": "Type",
+  "@feedbackReviewFieldCategory": {
+    "description": "Label for the report category/type field (view-only) on the review screen"
+  },
+  "feedbackReviewFieldSeverity": "Severity",
+  "@feedbackReviewFieldSeverity": {
+    "description": "Label for the report severity field (view-only) on the review screen"
+  },
+  "feedbackReviewStackTrace": "Technical error details",
+  "@feedbackReviewStackTrace": {
+    "description": "Header for the collapsible, view-only stack trace section on the review screen"
+  },
+  "feedbackReviewBreadcrumbs": "Recent activity",
+  "@feedbackReviewBreadcrumbs": {
+    "description": "Header for the collapsible, view-only breadcrumb-trail section on the review screen"
+  },
+  "feedbackReviewSend": "Send report",
+  "@feedbackReviewSend": {
+    "description": "Label of the review screen's send button"
+  },
+  "feedbackReviewSent": "Report sent. Thank you!",
+  "@feedbackReviewSent": {
+    "description": "Confirmation shown when the reviewed report reached the server"
+  },
+  "feedbackReviewQueued": "Saved. It will be sent once you're connected and signed in.",
+  "@feedbackReviewQueued": {
+    "description": "Confirmation shown when the reviewed report was saved locally for a later send; must stay honest — it was NOT sent yet"
+  },
+  "feedbackReviewFailed": "The report couldn't be sent or saved.",
+  "@feedbackReviewFailed": {
+    "description": "Shown when both sending and local saving of the reviewed report failed"
+  },
+  "feedbackReviewClose": "Close",
+  "@feedbackReviewClose": {
+    "description": "Label of the button that dismisses the review screen after a terminal outcome"
   }
 }

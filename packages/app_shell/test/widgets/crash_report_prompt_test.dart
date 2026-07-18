@@ -10,6 +10,10 @@ import 'package:observability/observability.dart';
 /// vs "saved to send later" (`FeedbackSubmitResult`), because on web
 /// "saved" only lasts until reload.
 ///
+/// #76 adds one seam: an optional `onReviewDetails` callback that, when
+/// supplied, surfaces a "Review details" affordance and hands the
+/// currently-typed comment up. The prompt still owns no review UI.
+///
 /// The widget is dumb: it takes the pre-built draft (capture-time
 /// breadcrumbs — see the reporter tests) and callbacks; shell wiring
 /// owns clearing the slots. Strings come from `ShellLocalizations`
@@ -28,6 +32,7 @@ void main() {
     WidgetTester tester, {
     Future<FeedbackSubmitResult> Function(FeedbackReport)? onSubmit,
     VoidCallback? onDiscard,
+    void Function(String comment)? onReviewDetails,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -38,6 +43,7 @@ void main() {
             report: draft,
             onSubmit: onSubmit ?? (_) async => FeedbackSubmitResult.sent,
             onDiscard: onDiscard ?? () {},
+            onReviewDetails: onReviewDetails,
           ),
         ),
       ),
@@ -157,6 +163,37 @@ void main() {
       await tester.pump();
 
       expect(discarded, isTrue);
+      expect(submitCalls, 0);
+    });
+
+    testWidgets('the review affordance is hidden when no review handler '
+        'is wired — #69-only behavior is unchanged', (tester) async {
+      await pumpPrompt(tester);
+
+      expect(find.byKey(CrashReportPrompt.reviewButtonKey), findsNothing);
+    });
+
+    testWidgets('review details hands the typed comment up without '
+        'submitting (#76 seam)', (tester) async {
+      String? handedUp;
+      var submitCalls = 0;
+      await pumpPrompt(
+        tester,
+        onSubmit: (_) async {
+          submitCalls++;
+          return FeedbackSubmitResult.sent;
+        },
+        onReviewDetails: (comment) => handedUp = comment,
+      );
+
+      await tester.enterText(
+        find.byKey(CrashReportPrompt.commentFieldKey),
+        'crashed on the settings screen',
+      );
+      await tester.tap(find.byKey(CrashReportPrompt.reviewButtonKey));
+      await tester.pump();
+
+      expect(handedUp, 'crashed on the settings screen');
       expect(submitCalls, 0);
     });
 
