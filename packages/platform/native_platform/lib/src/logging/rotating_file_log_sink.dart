@@ -62,10 +62,16 @@ class RotatingFileLogSink implements LogSink {
       while (_sink == null && _pending.length > _preOpenBufferLimit) {
         _pending.removeFirst();
       }
-      // Coalesce drains: only kick one on the empty->non-empty transition.
-      // A drain already in flight re-checks _pending as it runs, so a burst
-      // of emits no longer builds a chain of no-op flushPending/flush calls.
-      if (wasEmpty && _pending.isNotEmpty) {
+      // Coalesce drains: normally kick one only on the empty->non-empty
+      // transition (a drain in flight re-checks _pending as it runs, so a
+      // burst no longer chains no-op flushes). ALSO kick when the file is
+      // not open and no open is in flight (_sink == null && _openFuture ==
+      // null) — the "before first open OR after a failed open" state, where
+      // a prior drain reset _openFuture and left _pending non-empty. Without
+      // this, coalescing would strand the buffered logs until close(),
+      // which production may never reach.
+      if (_pending.isNotEmpty &&
+          (wasEmpty || (_sink == null && _openFuture == null))) {
         _scheduleDrain();
       }
     } on Object {

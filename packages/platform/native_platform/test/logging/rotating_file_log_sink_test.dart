@@ -63,4 +63,30 @@ void main() {
     // Only the active file plus maxFiles rotations survive.
     expect(File(path('bge.3.log')).existsSync(), isFalse);
   });
+
+  test(
+    'recovers after a failed first open: a later emit reschedules a drain '
+    'and both records eventually flush',
+    () async {
+      var attempts = 0;
+      Future<Directory> flakyProvider() async {
+        attempts++;
+        if (attempts == 1) {
+          throw const FileSystemException('binding not ready');
+        }
+        return dir;
+      }
+
+      final sink = RotatingFileLogSink(directoryProvider: flakyProvider)
+        ..emit(rec('first')); // schedules a drain; open attempt #1 fails
+      await pumpEventQueue(); // let the failed drain settle
+      sink.emit(rec('second')); // must reschedule despite wasEmpty == false
+      await sink.close();
+
+      expect(attempts, greaterThanOrEqualTo(2));
+      final contents = File(path('bge.log')).readAsStringSync();
+      expect(contents, contains('first'));
+      expect(contents, contains('second'));
+    },
+  );
 }
