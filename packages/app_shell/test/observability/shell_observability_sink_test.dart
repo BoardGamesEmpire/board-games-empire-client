@@ -15,6 +15,15 @@ class _RecordingSink implements LogSink {
   Future<void> close() async => closed = true;
 }
 
+/// A sink whose close() throws — models a misbehaving file sink at teardown.
+class _ThrowingCloseSink implements LogSink {
+  @override
+  void emit(LogRecord record) {}
+
+  @override
+  Future<void> close() async => throw StateError('close boom');
+}
+
 void main() {
   tearDown(ShellObservability.reset);
 
@@ -85,6 +94,21 @@ void main() {
         await ShellObservability.reset();
 
         expect(sink.closed, isTrue);
+      },
+    );
+
+    test(
+      'reset survives a sink whose close() throws and still restores the '
+      'root level (test hygiene must not cascade)',
+      () async {
+        final rootLevelBeforeInit = Logger.root.level;
+        ShellObservability.initialize(sink: _ThrowingCloseSink());
+        expect(Logger.root.level, Level.ALL); // initialize raised it
+
+        await expectLater(ShellObservability.reset(), completes);
+
+        expect(Logger.root.level, rootLevelBeforeInit);
+        expect(ShellObservability.isInitialized, isFalse);
       },
     );
   });

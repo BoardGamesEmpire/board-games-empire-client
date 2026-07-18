@@ -56,12 +56,18 @@ class RotatingFileLogSink implements LogSink {
   void emit(LogRecord record) {
     if (_closed) return;
     try {
+      final wasEmpty = _pending.isEmpty;
       _pending.add(_formatter.formatLine(record));
       // Bound the pre-open buffer: drop oldest until the file is open.
       while (_sink == null && _pending.length > _preOpenBufferLimit) {
         _pending.removeFirst();
       }
-      _scheduleDrain();
+      // Coalesce drains: only kick one on the empty->non-empty transition.
+      // A drain already in flight re-checks _pending as it runs, so a burst
+      // of emits no longer builds a chain of no-op flushPending/flush calls.
+      if (wasEmpty && _pending.isNotEmpty) {
+        _scheduleDrain();
+      }
     } on Object {
       // LogSink.emit must not throw. The async drain is already guarded;
       // this guards the synchronous format/enqueue path (e.g. a throwing

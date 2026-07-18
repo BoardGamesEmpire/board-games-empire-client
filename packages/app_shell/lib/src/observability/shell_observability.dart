@@ -143,8 +143,19 @@ abstract final class ShellObservability {
     _lastUncaughtError = null;
     await _sinkSubscription?.cancel();
     _sinkSubscription = null;
-    await _sink?.close();
+    // Null the sink first, then close best-effort: reset is test hygiene,
+    // so a misbehaving sink's close() (or an unexpected IO error) must not
+    // fail reset — that would leave the root level unrestored and cascade
+    // into unrelated tests.
+    final sink = _sink;
     _sink = null;
+    if (sink != null) {
+      try {
+        await sink.close();
+      } on Object {
+        // Swallowed by design — see above.
+      }
+    }
     if (_previousRootLevel != null) {
       Logger.root.level = _previousRootLevel;
       _previousRootLevel = null;
