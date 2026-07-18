@@ -66,10 +66,10 @@ class RotatingFileLogSink implements LogSink {
       // transition (a drain in flight re-checks _pending as it runs, so a
       // burst no longer chains no-op flushes). ALSO kick when the file is
       // not open and no open is in flight (_sink == null && _openFuture ==
-      // null) — the "before first open OR after a failed open" state, where
-      // a prior drain reset _openFuture and left _pending non-empty. Without
-      // this, coalescing would strand the buffered logs until close(),
-      // which production may never reach.
+      // null) — the "before first open OR after a failed open/write" state,
+      // where a prior drain reset the sink and left _pending non-empty.
+      // Without this, coalescing would strand the buffered logs until
+      // close(), which production may never reach.
       if (_pending.isNotEmpty &&
           (wasEmpty || (_sink == null && _openFuture == null))) {
         _scheduleDrain();
@@ -88,19 +88,34 @@ class RotatingFileLogSink implements LogSink {
   Future<void> _flushPending() async {
     await _ensureOpen();
     if (_sink == null) return;
-    while (_pending.isNotEmpty) {
-      final line = _pending.removeFirst();
-      final bytes = utf8.encode(line).length + 1;
-      if (_currentBytes > 0 && _currentBytes + bytes > maxBytes) {
-        await _rotate();
+    try {
+      while (_pending.isNotEmpty) {
+        // Peek, don't remove yet: drop a line only once it is safely
+        // written, so a rotation/write failure leaves it at the head of the
+        // queue for the next drain instead of losing it.
+        final line = _pending.first;
+        final bytes = utf8.encode(line).length + 1;
+        if (_currentBytes > 0 && _currentBytes + bytes > maxBytes) {
+          await _rotate();
+        }
+        final sink = _sink;
+        if (sink == null) return;
+        sink.writeln(line);
+        _currentBytes += bytes;
+        _pending.removeFirst();
       }
-      // Re-read after a possible rotation: _rotate swaps in a fresh sink.
-      final sink = _sink;
-      if (sink == null) return;
-      sink.writeln(line);
-      _currentBytes += bytes;
+      await _sink?.flush();
+    } on Object {
+      // Rotation/write/flush failure. _rotate nulls _sink before its
+      // filesystem work, so the sink can be left closed with a stale
+      // (non-null) _openFuture that would block _ensureOpen from reopening,
+      // stranding the buffer. Reset so the next drain reopens; a pre-write
+      // failure kept its line queued (a post-write flush failure does not
+      // re-queue, to avoid duplicates). Rethrow is swallowed by
+      // _scheduleDrain's catchError; the next emit reschedules a drain.
+      await _resetSink();
+      rethrow;
     }
-    await _sink?.flush();
   }
 
   Future<void> _ensureOpen() async {
@@ -124,6 +139,23 @@ class RotatingFileLogSink implements LogSink {
     _file = file;
     _currentBytes = await file.exists() ? await file.length() : 0;
     _sink = file.openWrite(mode: FileMode.append);
+  }
+
+  /// Closes and clears the sink after a write/rotation failure so a later
+  /// drain re-runs [_open]. Clearing [_openFuture] is the crucial bit —
+  /// [_ensureOpen] short-circuits on a non-null future, so leaving a stale
+  /// one set would keep the sink permanently unable to reopen.
+  Future<void> _resetSink() async {
+    final sink = _sink;
+    _sink = null;
+    _openFuture = null;
+    if (sink != null) {
+      try {
+        await sink.close();
+      } on Object {
+        // Best-effort.
+      }
+    }
   }
 
   Future<void> _rotate() async {

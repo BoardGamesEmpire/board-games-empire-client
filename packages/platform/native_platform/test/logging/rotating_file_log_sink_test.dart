@@ -89,4 +89,43 @@ void main() {
       expect(contents, contains('second'));
     },
   );
+
+  test(
+    'a rotation failure preserves the un-written line and lets the sink '
+    'reopen so later logs still write',
+    () async {
+      var failProvider = false;
+      Future<Directory> flakyProvider() async {
+        if (failProvider) throw const FileSystemException('rotate boom');
+        return dir;
+      }
+
+      // Padded so every line comfortably exceeds maxBytes regardless of the
+      // timestamp width, forcing a rotation on each write after the first.
+      const pad = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+      final sink = RotatingFileLogSink(
+        directoryProvider: flakyProvider,
+        maxBytes: 50,
+        maxFiles: 2,
+      )..emit(rec('one-$pad'));
+      await pumpEventQueue(); // first line written; file now over maxBytes
+
+      failProvider = true;
+      sink.emit(rec('two-$pad')); // triggers rotation -> provider throws
+      await pumpEventQueue();
+
+      failProvider = false;
+      sink.emit(rec('three-$pad')); // sink must reopen and drain the backlog
+      await sink.close();
+
+      final written = [
+        File(path('bge.log')),
+        File(path('bge.1.log')),
+        File(path('bge.2.log')),
+      ].where((f) => f.existsSync()).map((f) => f.readAsStringSync()).join();
+      // The line whose rotation failed is not lost, and recovery wrote too.
+      expect(written, contains('two-'));
+      expect(written, contains('three-'));
+    },
+  );
 }
