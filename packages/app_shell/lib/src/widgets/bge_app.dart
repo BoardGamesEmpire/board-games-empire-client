@@ -24,6 +24,7 @@ import '../router/app_router.dart';
 import '../screens/home_placeholder_screen.dart';
 import '../screens/splash_screen.dart';
 import 'crash_report_prompt.dart';
+import 'feedback_review_screen.dart';
 
 /// The shared application widget.
 ///
@@ -59,6 +60,17 @@ import 'crash_report_prompt.dart';
 /// scope/active server is available (tests without a scope; web until
 /// #96) the router renders its placeholders and no auth subtree is
 /// mounted.
+///
+/// Crash reporting (#69, #76): when a [feedbackReporter] is supplied, the
+/// app builder overlays the crash flow above the router's Navigator. A
+/// pending draft first surfaces the compact [CrashReportPrompt] (#69);
+/// tapping its "Review details" affordance seeds [_reviewPreview] (from
+/// the draft plus the typed comment) and the overlay swaps to the
+/// full-screen [FeedbackReviewScreen] (#76) in place — a route would
+/// render *under* the crash barrier, so the review surface lives in the
+/// same overlay. Both the prompt and the review surface submit through the
+/// reporter's device-global service; discard/close clear the crash-draft
+/// RAM slots.
 ///
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
@@ -155,6 +167,26 @@ class _BgeAppState extends State<BgeApp> {
   late final BootstrapStreamListenable _refreshListenable;
   late final GoRouter _router;
 
+  /// The #76 review slot: non-null while the user is on the full review &
+  /// redaction surface for the pending crash draft. Held at the widget
+  /// layer (not on the reporter) because it is seeded from the typed
+  /// comment and is purely presentational. The pending-crash listener
+  /// ([_handlePendingCrashChanged]) nulls it whenever the draft clears, so
+  /// a stale preview can never outlive its draft.
+  ///
+  /// Known limitation (accepted for alpha): this slot is seeded once when
+  /// the user opens review and is not re-derived if a *second* crash
+  /// overwrites [FeedbackUncaughtErrorReporter.pendingCrashReport] while
+  /// the review surface is open. In that rare case — a second uncaught
+  /// error firing mid-review, with the app blocked behind the barrier —
+  /// the user reviews and sends the first draft and the second is dropped,
+  /// diverging from the compact prompt's newest-wins (which reads the live
+  /// draft each build). The cost is one dropped telemetry event with no
+  /// corruption; graceful newest-wins here (bounce back to the prompt when
+  /// the pending draft changes identity) is tracked in #105.
+  final ValueNotifier<FeedbackReportPreview?> _reviewPreview =
+      ValueNotifier<FeedbackReportPreview?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -176,6 +208,20 @@ class _BgeAppState extends State<BgeApp> {
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
     );
+    // #76: reset the review slot whenever the crash draft empties.
+    final reporter = widget.feedbackReporter;
+    if (reporter != null) {
+      reporter.pendingCrashReport.addListener(_handlePendingCrashChanged);
+    }
+  }
+
+  /// Nulls the #76 review slot when the crash draft is cleared (discarded,
+  /// submitted, or replaced-then-cleared), so a stale preview never
+  /// outlives the draft it was built from.
+  void _handlePendingCrashChanged() {
+    if (widget.feedbackReporter?.pendingCrashReport.value == null) {
+      _reviewPreview.value = null;
+    }
   }
 
   /// Wraps the auth+home shell child with the active server's [AuthBloc]
@@ -236,6 +282,11 @@ class _BgeAppState extends State<BgeApp> {
   void dispose() {
     _router.dispose();
     _refreshListenable.dispose();
+    final reporter = widget.feedbackReporter;
+    if (reporter != null) {
+      reporter.pendingCrashReport.removeListener(_handlePendingCrashChanged);
+    }
+    _reviewPreview.dispose();
     if (widget.closeBootstrapCubitOnDispose) {
       unawaited(widget.bootstrapCubit.close());
     }
@@ -283,46 +334,83 @@ class _BgeAppState extends State<BgeApp> {
             : ValueListenableBuilder<FeedbackReport?>(
                 valueListenable: reporter.pendingCrashReport,
                 builder: (context, draft, _) {
-                  final pending = draft != null;
-                  return Stack(
-                    children: [
-                      BlockSemantics(
-                        key: BgeApp.contentSemanticsBlockerKey,
-                        blocking: pending,
-                        child: content,
-                      ),
-                      if (pending) ...[
-                        const ModalBarrier(
-                          dismissible: false,
-                          color: Colors.black54,
-                        ),
-                        // The builder slot sits ABOVE the router's
-                        // Navigator, so the Navigator's Overlay is not an
-                        // ancestor here — but the prompt's comment
-                        // TextField requires one (EditableText hosts its
-                        // selection handles/toolbar in an Overlay).
-                        // Without this, focusing the field throws, the
-                        // hooks capture the throw, and the refilled draft
-                        // slot re-summons the prompt — making it
-                        // undismissable.
-                        Overlay.wrap(
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: CrashReportPrompt(
-                                report: draft,
-                                onSubmit: reporter.service.submit,
-                                onDiscard: () {
-                                  reporter.clearPendingCrashReport();
-                                  ShellObservability.clearUncaughtError();
-                                },
-                              ),
-                            ),
+                  return ValueListenableBuilder<FeedbackReportPreview?>(
+                    valueListenable: _reviewPreview,
+                    builder: (context, reviewPreview, _) {
+                      return Stack(
+                        children: [
+                          BlockSemantics(
+                            key: BgeApp.contentSemanticsBlockerKey,
+                            blocking: draft != null,
+                            child: content,
                           ),
-                        ),
-                      ],
-                    ],
+                          if (draft != null) ...[
+                            const ModalBarrier(
+                              dismissible: false,
+                              color: Colors.black54,
+                            ),
+                            // The builder slot sits ABOVE the router's
+                            // Navigator, so the Navigator's Overlay is not
+                            // an ancestor here — but both the compact
+                            // prompt's comment field and the review
+                            // surface's selectable trace require one
+                            // (EditableText/SelectableText host their
+                            // selection handles/toolbar in an Overlay).
+                            // Without it, focusing throws, the hooks
+                            // capture the throw, and the refilled draft
+                            // slot re-summons the flow — making it
+                            // undismissable.
+                            if (reviewPreview == null)
+                              // #69 compact "ask each time" prompt.
+                              Overlay.wrap(
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: CrashReportPrompt(
+                                      report: draft,
+                                      onSubmit: reporter.service.submit,
+                                      // #76: seed the review slot from the
+                                      // draft plus the typed comment; the
+                                      // overlay then swaps to the full
+                                      // surface below.
+                                      onReviewDetails: (comment) =>
+                                          _reviewPreview.value =
+                                              FeedbackReportPreview.fromReport(
+                                                draft.withUserComment(comment),
+                                              ),
+                                      onDiscard: () {
+                                        reporter.clearPendingCrashReport();
+                                        ShellObservability.clearUncaughtError();
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else
+                              // #76 full review & redaction surface,
+                              // filling the overlay above the barrier.
+                              Positioned.fill(
+                                child: Overlay.wrap(
+                                  child: FeedbackReviewScreen(
+                                    preview: reviewPreview,
+                                    onSubmit: reporter.service.submit,
+                                    // Back out of review → compact prompt.
+                                    onCancel: () => _reviewPreview.value = null,
+                                    // Dismiss after a terminal outcome →
+                                    // clear every slot.
+                                    onClose: () {
+                                      _reviewPreview.value = null;
+                                      reporter.clearPendingCrashReport();
+                                      ShellObservability.clearUncaughtError();
+                                    },
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ],
+                      );
+                    },
                   );
                 },
               );

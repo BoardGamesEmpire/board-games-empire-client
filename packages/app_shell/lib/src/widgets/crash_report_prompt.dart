@@ -8,8 +8,14 @@ import '../../l10n/shell_localizations.dart';
 /// Deliberately small — crash summary, optional comment, send/discard —
 /// with an **honest outcome**: "sent" vs "saved to send later"
 /// ([FeedbackSubmitResult]), because on web "saved" only lasts until
-/// reload. The full review/redaction surface
-/// (`FeedbackReportPreview`-driven) is #76.
+/// reload.
+///
+/// The full review/redaction surface ([FeedbackReportPreview]-driven) is
+/// #76: when [onReviewDetails] is supplied, a "Review details" affordance
+/// appears alongside send/discard and hands the currently-typed comment up
+/// so the host can build the review preview from
+/// `draft.withUserComment(comment)`. The prompt itself stays dumb — it
+/// owns no review UI, only the callback.
 ///
 /// Dumb by design: takes the pre-built draft (capture-time breadcrumbs —
 /// see `FeedbackUncaughtErrorReporter`) and callbacks; the shell wiring
@@ -24,6 +30,7 @@ class CrashReportPrompt extends StatefulWidget {
     required this.report,
     required this.onSubmit,
     required this.onDiscard,
+    this.onReviewDetails,
     super.key,
   });
 
@@ -38,10 +45,18 @@ class CrashReportPrompt extends StatefulWidget {
   /// clears the RAM slots.
   final VoidCallback onDiscard;
 
+  /// Opens the full review & redaction surface (#76), carrying the
+  /// currently-typed comment so the host can weave it into the message
+  /// before building the preview. Optional: when null (e.g. #69-only
+  /// tests) the "Review details" affordance is not shown and the prompt
+  /// behaves exactly as it did before #76.
+  final void Function(String comment)? onReviewDetails;
+
   /// Stable finder keys — tests use these so they hold across locales.
   static const Key commentFieldKey = Key('crash_report_prompt.comment');
   static const Key sendButtonKey = Key('crash_report_prompt.send');
   static const Key discardButtonKey = Key('crash_report_prompt.discard');
+  static const Key reviewButtonKey = Key('crash_report_prompt.review');
   static const Key sentConfirmationKey = Key('crash_report_prompt.sent');
   static const Key queuedConfirmationKey = Key('crash_report_prompt.queued');
   static const Key submissionFailedKey = Key('crash_report_prompt.failed');
@@ -165,6 +180,17 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
               onPressed: sending ? null : widget.onDiscard,
               child: Text(i18n.crashReportPromptDiscard),
             ),
+            // #76: only when the host wired a review handler. Passes the
+            // current comment so it is woven into the message the review
+            // surface shows (and ultimately submits).
+            if (widget.onReviewDetails != null)
+              TextButton(
+                key: CrashReportPrompt.reviewButtonKey,
+                onPressed: sending
+                    ? null
+                    : () => widget.onReviewDetails!(_comment.text),
+                child: Text(i18n.crashReportPromptReview),
+              ),
             FilledButton(
               key: CrashReportPrompt.sendButtonKey,
               onPressed: sending ? null : _send,
