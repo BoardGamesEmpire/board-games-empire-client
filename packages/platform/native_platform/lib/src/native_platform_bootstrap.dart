@@ -17,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 
 import 'deep_links/app_links_deep_link_source.dart';
+import 'logging/rotating_file_log_sink.dart';
 import 'native_root_module.dart';
 
 /// Builds the orchestrator; injectable so tests can substitute a fake.
@@ -162,6 +163,31 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   /// injectable so shell wiring tests never touch a real platform channel.
   @override
   DeepLinkSource? createDeepLinkSource() => _deepLinkSourceFactory();
+
+  /// Whether this platform also persists logs to a rotating file, on top
+  /// of the `developer.log` console/Logcat sink (issue #100). Base is
+  /// `false` — mobile keeps Logcat only. [DesktopPlatformBootstrap]
+  /// overrides this to `true`.
+  bool get enableFileLog => false;
+
+  /// This platform's process-wide log sink (issue #100): the
+  /// `developer.log`-backed [DeveloperLogSink] always (DevTools console +
+  /// Logcat), plus a [RotatingFileLogSink] when [enableFileLog].
+  ///
+  /// Synchronous and safe to call *before*
+  /// `WidgetsFlutterBinding.ensureInitialized()`: construction is pure and
+  /// the file sink defers its directory lookup to first write. Level
+  /// filtering is applied upstream by `ShellObservability`; the sinks
+  /// themselves never drop records.
+  @override
+  LogSink createLogSink() {
+    final console = DeveloperLogSink();
+    if (!enableFileLog) return console;
+    return CompositeLogSink([
+      console,
+      RotatingFileLogSink(directoryProvider: _resolveLogDirectory),
+    ]);
+  }
 
   @override
   Future<BootstrapResult> initialize() async {
@@ -325,4 +351,14 @@ class NativePlatformBootstrap implements PlatformBootstrap {
 
   static Future<HydratedStorageDirectory> _defaultHydratedDirectory() async =>
       HydratedStorageDirectory((await getApplicationSupportDirectory()).path);
+
+  /// Resolves (creating if needed) `<application-support>/logs` for the
+  /// rotating file sink (#100). Runs on the first log write — after the
+  /// binding is up — so it can safely use `path_provider`.
+  static Future<Directory> _resolveLogDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    final logDir = Directory('${support.path}${Platform.pathSeparator}logs');
+    await logDir.create(recursive: true);
+    return logDir;
+  }
 }

@@ -1,5 +1,6 @@
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:observability/observability.dart';
 
 import '../deep_links/deep_link_source.dart';
 
@@ -109,6 +110,23 @@ abstract interface class PlatformBootstrap {
   /// lifecycle (via `DeepLinkHandler`); a null return simply means no
   /// handler is constructed.
   DeepLinkSource? createDeepLinkSource();
+
+  /// Creates this platform's process-wide log sink (#100), attached to
+  /// `Logger.root` by `ShellObservability` before anything else logs.
+  ///
+  /// The sink is deliberately "dumb": it renders and writes; the shell
+  /// applies the build-mode console threshold upstream, so the sink never
+  /// decides what to drop. Platform split: native returns a
+  /// `developer.log` sink (DevTools + Logcat), desktop additionally a
+  /// rotating file sink; web returns a `print` sink (a deployed web build
+  /// has no DevTools channel). The concrete `dart:io` file rotation lives
+  /// in `native_platform`, never in a web-compiled package.
+  ///
+  /// Called once per boot, synchronously, and safe *before*
+  /// `WidgetsFlutterBinding.ensureInitialized()`: constructing the sink is
+  /// pure; a file sink defers the directory lookup that needs the binding
+  /// to its first write.
+  LogSink createLogSink();
 
   /// Acquires the platform's app-global resources.
   ///

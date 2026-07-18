@@ -1,4 +1,3 @@
-// packages/core/models/lib/src/dto/auth/auth_user.dart
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../domain/user/user_base.dart';

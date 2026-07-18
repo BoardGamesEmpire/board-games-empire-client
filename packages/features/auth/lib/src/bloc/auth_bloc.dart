@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:observability/observability.dart';
 
 import 'auth_event.dart';
 import 'auth_bloc_state.dart';
@@ -47,6 +48,19 @@ import 'auth_bloc_state.dart';
 ///
 /// This bloc emits no display strings — failures are semantic kinds and
 /// the widget layer owns localization (`AuthLocalizations`).
+///
+/// ## Observability (#100)
+///
+/// Failure logging is centralised in [onTransition] and [onError] rather
+/// than scattered through the handlers. The handlers *catch* their
+/// [AuthException]s and *emit* failure states (they do not rethrow), so
+/// [onError] alone would see almost nothing; [onTransition] categorises the
+/// emitted failure states by the #100 severity buckets — warn for the
+/// modelled, recoverable outcomes (invalid credentials, network, email
+/// taken, registration disabled), error for [AuthFailureServer] and for an
+/// [AuthSessionCheckFailed] whose cause is an unexpected non-auth fault.
+/// [onError] is the backstop for the genuinely unexpected: sign-out's
+/// `addError`, or any future uncaught throw in a handler.
 class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   AuthBloc({required AuthRepository authRepository})
     : _authRepository = authRepository,
@@ -67,6 +81,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   final AuthRepository _authRepository;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
+  /// Diagnostic logger for the auth bloc's failure seams (#100).
+  final BgeLogger _log = BgeLogger('bge.auth.bloc');
+
   Future<void> _onSessionCheck(
     AuthSessionCheckRequested event,
     Emitter<AuthBlocState> emit,
@@ -85,15 +102,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // this type). The session is gone — go to the sign-in form, not the
       // retry-forever unreachable view.
       emit(const AuthUnauthenticated());
-    } on AuthException catch (e) {
+    } on AuthException catch (e, s) {
       // Indeterminate (network, timeout, 5xx). Offer retry.
-      emit(AuthSessionCheckFailed(e));
-    } on Object catch (e) {
+      emit(AuthSessionCheckFailed(e, s));
+    } on Object catch (e, s) {
       // Unexpected non-auth fault — e.g. a PlatformException from a locked
       // keychain during token retrieval. Still indeterminate (we couldn't
       // verify), so surface the retryable view rather than stranding the
-      // gate on an endless splash.
-      emit(AuthSessionCheckFailed(e));
+      // gate on an endless splash. The stack rides along for the error log.
+      emit(AuthSessionCheckFailed(e, s));
     }
   }
 
@@ -187,6 +204,68 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthStateUnknown():
         break;
     }
+  }
+
+  /// Centralised failure logging (#100). Runs on every state change; only
+  /// failure states are logged, categorised by the #100 severity buckets.
+  /// Success and progress states are intentionally silent here (per-request
+  /// activity, when wanted, is the network interceptor's debug trail).
+  @override
+  void onTransition(Transition<AuthEvent, AuthBlocState> transition) {
+    super.onTransition(transition);
+    final next = transition.nextState;
+    final event = transition.event.runtimeType.toString();
+    switch (next) {
+      // Recoverable, expected outcomes → warn.
+      case AuthFailureInvalidCredentials():
+      case AuthFailureEmailAlreadyExists():
+      case AuthFailureRegistrationDisabled():
+      case AuthFailureNetwork():
+        _log.warn(
+          'Auth operation failed',
+          context: {'event': event, 'failure': next.runtimeType.toString()},
+        );
+      // Anything unanticipated (unexpected status, malformed body, …) → error.
+      case AuthFailureServer(:final cause):
+        _log.error(
+          'Auth operation failed unexpectedly',
+          error: cause,
+          context: {'event': event, 'failure': 'AuthFailureServer'},
+        );
+      // Indeterminate restore: severity keys off the CAUSE, not the state —
+      // a modelled AuthException (network/timeout/5xx) is expected (warn); a
+      // non-auth fault (e.g. locked keychain) is a system problem (error).
+      case AuthSessionCheckFailed(:final cause, :final stackTrace):
+        if (cause is AuthException) {
+          _log.warn(
+            'Session check could not complete',
+            context: {'event': event, 'cause': cause.runtimeType.toString()},
+          );
+        } else {
+          _log.error(
+            'Session check failed with an unexpected fault',
+            error: cause,
+            stackTrace: stackTrace,
+            context: {'event': event},
+          );
+        }
+      case _:
+        break;
+    }
+  }
+
+  /// Backstop for the genuinely unexpected (#100): sign-out's `addError`,
+  /// or any uncaught throw in a handler that is not modelled as a failure
+  /// state. Modelled failures are logged in [onTransition]; this catches
+  /// what would otherwise vanish into the error sink.
+  @override
+  void onError(Object error, StackTrace stackTrace) {
+    _log.error(
+      'Uncaught error in AuthBloc',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    super.onError(error, stackTrace);
   }
 
   @override

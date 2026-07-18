@@ -1,6 +1,8 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:logging/logging.dart';
+import 'package:observability/observability.dart';
 
 import 'spy_root_container.dart';
 
@@ -24,6 +26,12 @@ import 'spy_root_container.dart';
 /// [createDeepLinkSource] (#10) returns [deepLinkSource] as-is — null by
 /// default, matching the platform with no out-of-band channel (web).
 /// Wiring tests script a fake source here.
+///
+/// [createLogSink] (#100) returns a silent no-op sink so `runBgeApp` can
+/// attach a sink without producing console/file noise in tests. It is
+/// deliberately NOT recorded in [calls]: `runBgeApp` invokes it first, and
+/// the sequencing assertions key off `calls` starting at
+/// `createRootContainer`.
 class FakePlatformBootstrap implements PlatformBootstrap {
   FakePlatformBootstrap({
     List<Object> outcomes = const [],
@@ -90,6 +98,9 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   }
 
   @override
+  LogSink createLogSink() => _NoopLogSink();
+
+  @override
   Future<BootstrapResult> initialize() async {
     calls.add('initialize');
     if (_outcomes.isEmpty) {
@@ -119,4 +130,13 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   @override
   Future<HydratedStorageDirectory> hydratedStorageDirectory() async =>
       HydratedStorageDirectory('unused-in-tests');
+}
+
+/// Silent [LogSink] for tests — drops every record, flushes nothing.
+class _NoopLogSink implements LogSink {
+  @override
+  void emit(LogRecord record) {}
+
+  @override
+  Future<void> close() async {}
 }

@@ -23,12 +23,21 @@ import 'platform_bootstrap.dart';
 /// `main.dart`: perform platform-specific setup, then hand a
 /// [PlatformBootstrap] to this function.
 ///
-/// Sequencing: observability (breadcrumb capture + last-error slot) →
-/// binding init → **root container** → active-locale slot (#33) →
-/// global error hooks → deep-link reception (#10) → construct
+/// Sequencing: observability (breadcrumb capture + last-error slot +
+/// platform log sink) → binding init → **root container** → active-locale
+/// slot (#33) → global error hooks → deep-link reception (#10) → construct
 /// [AppBootstrapCubit] → start (not await) its bootstrap → `runApp`.
 /// Breadcrumbs attach first so every later step — including bootstrap
 /// failures — is already captured for feedback reports.
+///
+/// Observability wiring (#8, #100): [ShellObservability.initialize] pins
+/// the root logger to [Level.ALL] (breadcrumbs keep full fidelity) and
+/// attaches the platform [LogSink] from
+/// [PlatformBootstrap.createLogSink], gated on the sink path by the
+/// build-mode console threshold — `BgeLogLevel.warn` in release (never
+/// below warn), everything in debug/profile. The sink is constructed
+/// synchronously and is safe here, before binding init: a file sink
+/// defers its directory lookup to first write.
 ///
 /// The root container (issue #72) is the app-scope, device-global
 /// [DependencyContainer], built by the platform composition root via
@@ -118,7 +127,15 @@ Future<void> runBgeApp({
   UncaughtErrorReporter? uncaughtErrorReporter,
   HydratedStorageInitializer? hydratedStorageInitializer,
 }) async {
-  ShellObservability.initialize();
+  // #8/#100: breadcrumb capture + the platform log sink, before anything
+  // logs. Root stays at Level.ALL (breadcrumbs keep everything); the
+  // build-mode gate is applied on the sink path — warn+ in release, all
+  // in debug/profile. createLogSink() is synchronous and safe pre-binding
+  // (a file sink defers its directory lookup to first write).
+  ShellObservability.initialize(
+    sink: platformBootstrap.createLogSink(),
+    consoleThreshold: kReleaseMode ? BgeLogLevel.warn : BgeLogLevel.verbose,
+  );
   WidgetsFlutterBinding.ensureInitialized();
 
   // Root container before the hooks: #69 resolves the crash reporter from

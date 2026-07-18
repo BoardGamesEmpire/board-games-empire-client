@@ -59,12 +59,19 @@ final class AuthUnauthenticated extends AuthBlocState {
 /// offline-first restore (enter on a cached session, revalidate on
 /// reconnect) is #98.
 final class AuthSessionCheckFailed extends AuthBlocState {
-  const AuthSessionCheckFailed([this.cause]);
+  const AuthSessionCheckFailed([this.cause, this.stackTrace]);
 
-  /// The underlying `AuthException` — retained for the feedback pipeline
+  /// The underlying error — retained for the feedback pipeline
   /// (logging/reporting), excluded from equality so tests can match on
   /// the state alone. Never for display.
   final Object? cause;
+
+  /// The stack trace captured at the catch site (#100). Threaded through so
+  /// the centralised error log in `AuthBloc.onTransition` has a trace for
+  /// the bucket that needs it most — an unexpected non-auth fault (e.g. a
+  /// locked keychain). Excluded from equality (diagnostic, not identity),
+  /// same as [cause].
+  final StackTrace? stackTrace;
 }
 
 /// Why an interactive auth operation (sign-in / register) failed. Each

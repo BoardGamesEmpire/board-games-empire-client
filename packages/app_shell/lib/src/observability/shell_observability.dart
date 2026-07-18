@@ -18,10 +18,23 @@ import 'uncaught_error_record.dart';
 /// [lastUncaughtError] via `FeedbackService` when that wiring lands;
 /// `installGlobalErrorHooks` (issue #34) feeds [lastUncaughtError] through
 /// [recordUncaughtError].
+///
+/// ## Log sink + level filtering (issue #100)
+///
+/// [initialize] accepts a platform [LogSink] (see
+/// `PlatformBootstrap.createLogSink`) and a [BgeLogLevel] `consoleThreshold`.
+/// The root logger stays pinned to [Level.ALL] so the breadcrumb ring sees
+/// every record — its bounded capacity, NOT the root level, is the
+/// retention policy. The build-mode gate lives on the **sink path** here
+/// instead: a record is forwarded to the sink only when it meets the
+/// threshold (`warn+` in release, everything in debug/profile). So a
+/// release build shows warnings/errors on the console yet still carries a
+/// full-fidelity breadcrumb trail into any feedback report.
 abstract final class ShellObservability {
   static BreadcrumbBuffer? _buffer;
   static ValueNotifier<UncaughtErrorRecord?>? _lastUncaughtError;
-  static StreamSubscription<LogRecord>? _debugConsoleSubscription;
+  static StreamSubscription<LogRecord>? _sinkSubscription;
+  static LogSink? _sink;
   static Level? _previousRootLevel;
 
   /// The process-wide breadcrumb ring buffer. Throws if [initialize] has
@@ -84,25 +97,34 @@ abstract final class ShellObservability {
     _lastUncaughtError?.value = null;
   }
 
-  /// Attaches breadcrumb capture. Idempotent.
+  /// Attaches breadcrumb capture and, when a [sink] is supplied, the
+  /// process console/file sink. Idempotent.
   ///
   /// Opens [Logger.root] to [Level.ALL] so verbose/debug records reach the
   /// ring buffer (its bounded capacity is the retention policy; the root
-  /// level must not silently drop diagnostics before capture). In debug
-  /// builds a console sink is added so the same records are visible while
-  /// developing.
-  static void initialize({BreadcrumbBuffer? buffer}) {
+  /// level must not silently drop diagnostics before capture). The
+  /// build-mode gate is applied on the sink path, not the root level: a
+  /// record reaches [sink] only when it meets [consoleThreshold]
+  /// (`BgeLogLevel.warn` in release, `BgeLogLevel.verbose` in
+  /// debug/profile — see `runBgeApp`). With no [sink] (most unit tests)
+  /// only breadcrumb capture is wired.
+  static void initialize({
+    BreadcrumbBuffer? buffer,
+    LogSink? sink,
+    BgeLogLevel consoleThreshold = BgeLogLevel.verbose,
+  }) {
     if (_buffer != null) return;
     _previousRootLevel = Logger.root.level;
     Logger.root.level = Level.ALL;
     _buffer = (buffer ?? BreadcrumbBuffer())..attach();
     _lastUncaughtError = ValueNotifier<UncaughtErrorRecord?>(null);
-    if (kDebugMode) {
-      _debugConsoleSubscription = Logger.root.onRecord.listen((record) {
-        debugPrint(
-          '[${record.level.name}] ${record.loggerName}: ${record.message}'
-          '${record.error == null ? '' : ' | ${record.error}'}',
-        );
+    if (sink != null) {
+      _sink = sink;
+      final threshold = consoleThreshold.level;
+      _sinkSubscription = Logger.root.onRecord.listen((record) {
+        if (record.level >= threshold) {
+          sink.emit(record);
+        }
       });
     }
   }
@@ -110,16 +132,30 @@ abstract final class ShellObservability {
   /// Detaches and clears all wiring so tests can re-initialize cleanly,
   /// including restoring [Logger.root]'s level to whatever it was before
   /// [initialize] raised it — otherwise the `Level.ALL` override would leak
-  /// across tests and into embedding apps. Disposes the last-error
-  /// notifier so recorded crash state cannot leak either.
+  /// across tests and into embedding apps. Cancels the sink subscription
+  /// and closes the sink (flushing a file sink), and disposes the
+  /// last-error notifier so recorded crash state cannot leak either.
   @visibleForTesting
   static Future<void> reset() async {
     await _buffer?.detach();
     _buffer = null;
     _lastUncaughtError?.dispose();
     _lastUncaughtError = null;
-    await _debugConsoleSubscription?.cancel();
-    _debugConsoleSubscription = null;
+    await _sinkSubscription?.cancel();
+    _sinkSubscription = null;
+    // Null the sink first, then close best-effort: reset is test hygiene,
+    // so a misbehaving sink's close() (or an unexpected IO error) must not
+    // fail reset — that would leave the root level unrestored and cascade
+    // into unrelated tests.
+    final sink = _sink;
+    _sink = null;
+    if (sink != null) {
+      try {
+        await sink.close();
+      } on Object {
+        // Swallowed by design — see above.
+      }
+    }
     if (_previousRootLevel != null) {
       Logger.root.level = _previousRootLevel;
       _previousRootLevel = null;
