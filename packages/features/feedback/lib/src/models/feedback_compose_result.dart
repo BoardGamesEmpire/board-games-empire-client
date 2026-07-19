@@ -11,10 +11,12 @@ import 'package:observability/observability.dart';
 ///
 /// Invariants mirror `FeedbackReport`'s constructor asserts so an invalid
 /// combination fails at the seam it was produced, not two layers later:
-/// [severity] is required for [FeedbackCategory.bug] and must be absent
-/// for [FeedbackCategory.featureRequest] ([FeedbackCategory.crash] never
-/// originates here — that is the #69 reporter's category); [message] must
-/// be non-empty.
+/// [category] must never be [FeedbackCategory.crash] — crash reports
+/// originate exclusively from the #69 uncaught-error reporter, never from
+/// the compose flow (PR #110 review: forbidden outright rather than left
+/// as a documented assumption); [severity] is required for
+/// [FeedbackCategory.bug] and must be absent for
+/// [FeedbackCategory.featureRequest]; [message] must be non-empty.
 @immutable
 class FeedbackComposeResult {
   const FeedbackComposeResult({
@@ -23,6 +25,11 @@ class FeedbackComposeResult {
     this.severity,
     this.title,
   }) : assert(
+         category != FeedbackCategory.crash,
+         'crash reports originate from the uncaught-error reporter, '
+         'never from the compose flow',
+       ),
+       assert(
          category != FeedbackCategory.bug || severity != null,
          'severity is required when category is bug',
        ),
