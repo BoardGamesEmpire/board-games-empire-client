@@ -29,10 +29,11 @@ const BACKEND_PORT = Number(process.env.BGE_BACKEND_PORT ?? 33_333); // bge back
 // sub-path of it, so '/apifoo' does NOT match '/api'.
 const BACKEND_PREFIXES = ['/api', '/.well-known'];
 
+// Callers normalize req.url once (see the handlers), so this takes a definite
+// string.
 function upstreamPortFor(url) {
-  const path = url ?? '/';
   const matchesBackend = BACKEND_PREFIXES.some(
-    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+    (prefix) => url === prefix || url.startsWith(`${prefix}/`),
   );
   return matchesBackend ? BACKEND_PORT : WEB_PORT;
 }
@@ -41,20 +42,23 @@ function upstreamPortFor(url) {
 // forwarded verbatim so BetterAuth's origin checks and the cookie domain stay
 // consistent with what the browser actually sees.
 const server = http.createServer((req, res) => {
-  const port = upstreamPortFor(req.url);
+  // Node types req.url as string | undefined; normalize once and use the
+  // normalized value for routing, logging, and the upstream request path.
+  const url = req.url ?? '/';
+  const port = upstreamPortFor(url);
 
   // Suppress the .js asset noise, but match on the path only — asset URLs
   // routinely carry a query (main.dart.js?v=…), which endsWith('.js') misses.
-  const pathOnly = req.url.split('?')[0];
+  const pathOnly = url.split('?')[0];
   if (!pathOnly.endsWith('.js')) {
-    process.stdout.write(`[bge dev proxy] ${req.method} ${req.url} -> :${port}\n`);
+    process.stdout.write(`[bge dev proxy] ${req.method} ${url} -> :${port}\n`);
   }
   const upstream = http.request(
     {
       host: 'localhost',
       port,
       method: req.method,
-      path: req.url,
+      path: url,
       headers: req.headers,
     },
     (upstreamRes) => {
@@ -88,9 +92,10 @@ const server = http.createServer((req, res) => {
 // Upgrade/Connection headers are forwarded untouched (req.headers verbatim),
 // which is what makes the switch succeed.
 server.on('upgrade', (req, clientSocket, head) => {
-  const port = upstreamPortFor(req.url);
+  const url = req.url ?? '/';
+  const port = upstreamPortFor(url);
   const upstream = net.connect(port, 'localhost', () => {
-    const requestLine = `${req.method} ${req.url} HTTP/1.1\r\n`;
+    const requestLine = `${req.method ?? 'GET'} ${url} HTTP/1.1\r\n`;
     const headerLines = Object.entries(req.headers)
       .map(([key, value]) => `${key}: ${value}`)
       .join('\r\n');
