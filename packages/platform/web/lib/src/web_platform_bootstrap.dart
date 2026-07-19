@@ -4,6 +4,7 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
 import 'package:url_strategy/url_strategy.dart';
+import 'package:web_network/web_network.dart';
 
 import 'web_root_module.dart';
 
@@ -17,18 +18,28 @@ void configureWebUrlStrategy() => setPathUrlStrategy();
 /// The browser can only talk to the origin in the address bar: a server is
 /// present by construction, there is no MetaDB, no server switching, and no
 /// orchestration (confirmed #31 design). Auth is cookie-owned via
-/// `web_network`; #37 wires it, fetching the origin's [ServerIdentity]
-/// from its well-known document. A local data layer for web (drift/wasm
-/// via `web_storage`) is designed separately in #63.
+/// `web_network`; [initialize] fetches the origin's [ServerIdentity] from
+/// its well-known document and assembles the single-origin scope (#96). A
+/// local data layer for web (drift/wasm via `web_storage`) is designed
+/// separately in #63.
 class WebPlatformBootstrap implements PlatformBootstrap {
   const WebPlatformBootstrap({
     Future<void> Function(DependencyContainer container)? rootModule,
-  }) : _rootModule = rootModule;
+    Future<ActiveServerScope> Function()? serverScopeBuilder,
+  }) : _rootModule = rootModule,
+       _serverScopeBuilder = serverScopeBuilder;
 
   /// Injectable root-module seam (#69); null → [registerWebRootModule].
   /// Nullable field rather than a defaulted one so the constructor stays
   /// const for production callers.
   final Future<void> Function(DependencyContainer container)? _rootModule;
+
+  /// Injectable web-server-scope seam (#96); null → [bootstrapWebServerScope].
+  /// Nullable rather than defaulted so the constructor stays const for
+  /// production callers, and so bootstrap/cubit tests can supply a fake scope
+  /// without the live same-origin well-known fetch (`Uri.base` has no origin
+  /// on the VM).
+  final Future<ActiveServerScope> Function()? _serverScopeBuilder;
 
   /// Builds the web root container (#72): a fresh, isolated
   /// [DependencyContainerImpl] populated by the injected root module
@@ -85,9 +96,25 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   @override
   LogSink createLogSink() => PrintLogSink();
 
+  /// Fetches the serving origin's identity and assembles the single-origin
+  /// server scope (#96), returning it in the [BootstrapResult].
+  ///
+  /// Web has exactly one server — the origin in the address bar — so there
+  /// is no MetaDB to open and no orchestrator to construct: [hasServer] is
+  /// always `true` and `orchestrator` is always `null`. The scope comes from
+  /// [_serverScopeBuilder] (production: [bootstrapWebServerScope], which
+  /// fetches `/.well-known/bge-identity` from the origin and wires the
+  /// cookie-based network stack).
+  ///
+  /// A well-known fetch failure propagates unchanged;
+  /// `runBgeApp`/`AppBootstrapCubit` surface it as the shared retryable
+  /// bootstrap-failure state. Web never routes to a "needs server" state — a
+  /// server exists by construction, and `/server-add` is unreachable.
   @override
-  Future<BootstrapResult> initialize() async =>
-      const BootstrapResult(hasServer: true);
+  Future<BootstrapResult> initialize() async {
+    final scope = await (_serverScopeBuilder ?? bootstrapWebServerScope)();
+    return BootstrapResult(hasServer: true, activeServerScope: scope);
+  }
 
   @override
   bool get supportsReset => false;

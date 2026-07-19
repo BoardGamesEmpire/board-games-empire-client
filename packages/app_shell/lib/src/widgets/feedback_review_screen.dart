@@ -1,4 +1,3 @@
-// packages/app_shell/lib/src/widgets/feedback_review_screen.dart
 import 'package:flutter/material.dart';
 import 'package:observability/observability.dart';
 

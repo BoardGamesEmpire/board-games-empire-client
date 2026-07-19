@@ -145,10 +145,16 @@ melos:
 
     # Individual app runners
     web:
-      run: melos exec -c 1 -- flutter run -d chrome
-      description: Run the browser application
-      packageFilters:
-        scope: "browser"
+      run: melos exec -c 1 --scope="browser" -- "flutter run -d web-server --web-hostname=localhost --web-port=${BGE_WEB_PORT:-5000} --no-dds"
+      description: "Serve the web app on a fixed port for the dev proxy (override with BGE_WEB_PORT; open the proxy origin, not this port)."
+
+    web:proxy:
+      run: node tool/dev_proxy/dev_proxy.mjs
+      description: "Run the zero-dep dev reverse proxy (open http://localhost:8080). Ports: BGE_PROXY_PORT/BGE_WEB_PORT/BGE_BACKEND_PORT."
+
+    web:server:
+      run: 'node tool/dev_proxy/dev_proxy.mjs & PROXY_PID=$!; trap "kill $PROXY_PID 2>/dev/null" EXIT INT TERM; melos run web'
+      description: "Run the proxy and web dev server together in one terminal (Ctrl-C stops both). Use the separate `web` + `web:proxy` scripts if you want independent logs."
 
     mobile:
       run: melos exec -c 1 -- flutter run
