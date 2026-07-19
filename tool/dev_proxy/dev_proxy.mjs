@@ -71,10 +71,11 @@ const server = http.createServer((req, res) => {
   );
 
   upstream.on('error', (error) => {
-    // Only synthesize a 502 while the response is still unstarted; once
-    // headers are sent, writeHead() would throw ERR_HTTP_HEADERS_SENT and
-    // crash the proxy, so destroy the socket instead.
-    if (res.headersSent) {
+    // Only synthesize a 502 while the response is still live and unstarted;
+    // once headers are sent writeHead() throws ERR_HTTP_HEADERS_SENT, and if
+    // the client already went away there is nothing to answer — destroy the
+    // socket instead. (Aborting the upstream below also lands here.)
+    if (res.headersSent || res.destroyed) {
       res.destroy();
       return;
     }
@@ -83,23 +84,35 @@ const server = http.createServer((req, res) => {
     res.end(`[bge dev proxy] ${target} (:${port}) unreachable: ${error.message}\n`);
   });
 
+  // Client went away (tab close / navigation) before the response finished:
+  // don't leave the upstream request hanging (accumulates sockets and noise).
+  res.on('close', () => {
+    if (!res.writableFinished) upstream.destroy();
+  });
+
   req.pipe(upstream);
 });
 
 // WebSocket upgrades (Flutter's hot-restart / DWDS channel). Node routes
 // upgrade requests here instead of the normal handler, so we open a raw TCP
 // socket to the chosen upstream, replay the handshake, and pipe both ways. The
-// Upgrade/Connection headers are forwarded untouched (req.headers verbatim),
-// which is what makes the switch succeed.
+// Upgrade/Connection headers are forwarded untouched, which is what makes the
+// switch succeed.
 server.on('upgrade', (req, clientSocket, head) => {
   const url = req.url ?? '/';
   const port = upstreamPortFor(url);
   const upstream = net.connect(port, 'localhost', () => {
     const requestLine = `${req.method ?? 'GET'} ${url} HTTP/1.1\r\n`;
-    const headerLines = Object.entries(req.headers)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('\r\n');
-    upstream.write(`${requestLine}${headerLines}\r\n\r\n`);
+    // Forward the exact header lines Node received. rawHeaders is a flat
+    // [k, v, k, v, …] list, so it preserves duplicated headers (e.g. multiple
+    // sec-websocket-protocol) and never string-joins array values or emits
+    // "undefined", unlike Object.entries(req.headers).
+    const raw = req.rawHeaders;
+    let headerLines = '';
+    for (let i = 0; i < raw.length; i += 2) {
+      headerLines += `${raw[i]}: ${raw[i + 1]}\r\n`;
+    }
+    upstream.write(`${requestLine}${headerLines}\r\n`);
     if (head && head.length) upstream.write(head);
     upstream.pipe(clientSocket);
     clientSocket.pipe(upstream);

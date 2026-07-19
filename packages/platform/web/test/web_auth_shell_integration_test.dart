@@ -100,6 +100,10 @@ class _FakeAuthRepository implements AuthRepository {
     _currentState = next;
     if (!_controller.isClosed) _controller.add(next);
   }
+
+  /// Closes the broadcast controller so tests can tear the fake down without
+  /// leaking the sink across cases.
+  Future<void> dispose() => _controller.close();
 }
 
 const _kAuthBase = '/api/auth';
@@ -166,6 +170,7 @@ void main() {
   testWidgets('the real web bootstrap + WebActiveServerScope drive the shell '
       'to the home placeholder when a session is restored', (tester) async {
     final repo = _FakeAuthRepository(initialSession: _sampleSession());
+    addTearDown(repo.dispose);
     final cubit = buildCubit(repo);
     addTearDown(cubit.close);
 
@@ -181,6 +186,7 @@ void main() {
     tester,
   ) async {
     final repo = _FakeAuthRepository(); // no session
+    addTearDown(repo.dispose);
     final cubit = buildCubit(repo);
     addTearDown(cubit.close);
 
