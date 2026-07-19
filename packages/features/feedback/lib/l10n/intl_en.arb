@@ -1,0 +1,63 @@
+{
+  "@@locale": "en",
+  "feedbackComposeTitle": "Send feedback",
+  "@feedbackComposeTitle": {
+    "description": "Title of the user-initiated feedback compose screen (#107); also the label of the temporary launcher on the home placeholder"
+  },
+  "feedbackComposeExplanation": "Tell us what went wrong or what you'd like to see. You'll review exactly what will be sent before anything leaves this device.",
+  "@feedbackComposeExplanation": {
+    "description": "Explanation at the top of the compose screen; restates the #34 privacy contract — the flow terminates in the review surface and nothing is sent from here"
+  },
+  "feedbackComposeCategoryLabel": "Type",
+  "@feedbackComposeCategoryLabel": {
+    "description": "Label of the report category selector (bug vs feature request)"
+  },
+  "feedbackComposeCategoryBug": "Bug",
+  "@feedbackComposeCategoryBug": {
+    "description": "Category option: something is broken"
+  },
+  "feedbackComposeCategoryFeatureRequest": "Feature request",
+  "@feedbackComposeCategoryFeatureRequest": {
+    "description": "Category option: a suggestion for new or changed behavior"
+  },
+  "feedbackComposeSeverityLabel": "Severity",
+  "@feedbackComposeSeverityLabel": {
+    "description": "Label of the severity selector; shown and required only when the category is bug"
+  },
+  "feedbackComposeSeverityLow": "Low",
+  "@feedbackComposeSeverityLow": {
+    "description": "Severity option: minor annoyance, easy workaround"
+  },
+  "feedbackComposeSeverityMedium": "Medium",
+  "@feedbackComposeSeverityMedium": {
+    "description": "Severity option: noticeable problem with a workaround"
+  },
+  "feedbackComposeSeverityHigh": "High",
+  "@feedbackComposeSeverityHigh": {
+    "description": "Severity option: major problem, hard to work around"
+  },
+  "feedbackComposeSeverityCritical": "Critical",
+  "@feedbackComposeSeverityCritical": {
+    "description": "Severity option: blocks use of the app or risks data"
+  },
+  "feedbackComposeMessageLabel": "Message",
+  "@feedbackComposeMessageLabel": {
+    "description": "Label of the required free-form report body field"
+  },
+  "feedbackComposeMessageHint": "Describe the bug or your idea",
+  "@feedbackComposeMessageHint": {
+    "description": "Hint inside the message field; must read sensibly for both categories"
+  },
+  "feedbackComposeTitleLabel": "Title (optional)",
+  "@feedbackComposeTitleLabel": {
+    "description": "Label of the optional short-title field; surfaced as the issue title when a backend sink forwards the report"
+  },
+  "feedbackComposeErrorRequired": "This field is required.",
+  "@feedbackComposeErrorRequired": {
+    "description": "Validation message for any required compose field left empty"
+  },
+  "feedbackComposeReviewButton": "Review report",
+  "@feedbackComposeReviewButton": {
+    "description": "Label of the compose screen's submit affordance; deliberately not 'Send' — it opens the review & redaction surface (#76) and nothing is sent from the compose step (#34 contract)"
+  }
+}
