@@ -90,6 +90,20 @@ void main() {
       setMessage('it broke');
       expect(model.validateForSubmit(), isTrue);
     });
+
+    test('whitespace-only message is invalid (required-after-trim, '
+        'PR #110 review)', () {
+      setSeverity(FeedbackSeverity.low);
+      setMessage('   ');
+      expect(
+        model.validateForSubmit(),
+        isFalse,
+        reason:
+            'validity must match the trimmed hand-off value — a '
+            'whitespace-only message would trim to the empty string the '
+            'result type asserts against',
+      );
+    });
   });
 
   group('buildResult', () {

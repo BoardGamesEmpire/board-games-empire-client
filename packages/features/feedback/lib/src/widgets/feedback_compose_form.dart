@@ -125,6 +125,7 @@ class FeedbackComposeForm extends StatelessWidget {
                 child: ReactiveDropdownField<FeedbackSeverity>(
                   key: FeedbackComposeForm.severityFieldKey,
                   formControlName: FeedbackComposeFormModel.severityControlName,
+                  readOnly: !enabled,
                   decoration: InputDecoration(
                     labelText: l10n.feedbackComposeSeverityLabel,
                     border: const OutlineInputBorder(),

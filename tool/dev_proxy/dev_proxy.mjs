@@ -49,8 +49,10 @@ const server = http.createServer((req, res) => {
   const url = req.url ?? '/';
   const port = upstreamPortFor(url);
 
-  // Suppress the .js asset noise, but match on the path only — asset URLs
-  // routinely carry a query (main.dart.js?v=…), which endsWith('.js') misses.
+  // Suppress asset noise for every extension in ignoredAssetExtensions
+  // (.js bundles and their .map source maps), matching on the path only —
+  // asset URLs routinely carry a query (main.dart.js?v=…), which
+  // endsWith('.js') misses.
   const pathOnly = url.split('?')[0];
   if (!ignoredAssetExtensions.some(ext => pathOnly.endsWith(ext))) {
     process.stdout.write(`[bge dev proxy] ${req.method} ${url} -> :${port}\n`);
