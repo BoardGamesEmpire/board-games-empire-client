@@ -25,20 +25,19 @@ dependencies:
     path: ../../core/observability
   connectivity_platform:
     path: ../connectivity_platform
+  web_network:
+    path: ../../network/web_network
 
   # Web-specific
   url_strategy: ^0.3.0
   hydrated_bloc: ^11.0.0
-
-  # Client version (BuildInfo, #35). package_info_plus is wasm-safe
-  # (js_interop) and reads Flutter's generated version.json on web,
-  # which derives from the app pubspec `version:` — the same source of
-  # truth as the native manifests.
   package_info_plus: ^10.2.0
 
 dev_dependencies:
   network_interface:
     path: ../../network/network_interface
+  auth:
+    path: ../../features/auth
   flutter_test:
     sdk: flutter
   very_good_analysis: ^10.2.0
