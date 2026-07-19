@@ -17,6 +17,13 @@ import '../../l10n/shell_localizations.dart';
 /// `draft.withUserComment(comment)`. The prompt itself stays dumb — it
 /// owns no review UI, only the callback.
 ///
+/// System back (#106): the prompt owns no back handling either — the host
+/// intercepts back at the router's dispatcher and flips [showDismissHint]
+/// after a first intercepted press. The prompt merely renders the
+/// localized hint in a live region (announced by assistive tech, visible
+/// to sighted users) so the "press back again to dismiss" affordance is
+/// discoverable by both audiences.
+///
 /// Dumb by design: takes the pre-built draft (capture-time breadcrumbs —
 /// see `FeedbackUncaughtErrorReporter`) and callbacks; the shell wiring
 /// in `BgeApp` owns clearing the RAM slots. Self-contained in a
@@ -31,6 +38,7 @@ class CrashReportPrompt extends StatefulWidget {
     required this.onSubmit,
     required this.onDiscard,
     this.onReviewDetails,
+    this.showDismissHint = false,
     super.key,
   });
 
@@ -52,11 +60,21 @@ class CrashReportPrompt extends StatefulWidget {
   /// behaves exactly as it did before #76.
   final void Function(String comment)? onReviewDetails;
 
+  /// Whether to render the back-dismiss hint (#106): the host sets this
+  /// after intercepting a first system back, while a second back within
+  /// its window would discard. Rendered in a live region so the
+  /// affordance is announced non-visually. Default false — hosts without
+  /// back interception (and pre-#106 tests) are unchanged.
+  final bool showDismissHint;
+
   /// Stable finder keys — tests use these so they hold across locales.
   static const Key commentFieldKey = Key('crash_report_prompt.comment');
   static const Key sendButtonKey = Key('crash_report_prompt.send');
   static const Key discardButtonKey = Key('crash_report_prompt.discard');
   static const Key reviewButtonKey = Key('crash_report_prompt.review');
+  static const Key dismissHintKey = Key(
+    'crash_report_prompt.back_dismiss_hint',
+  );
   static const Key sentConfirmationKey = Key('crash_report_prompt.sent');
   static const Key queuedConfirmationKey = Key('crash_report_prompt.queued');
   static const Key submissionFailedKey = Key('crash_report_prompt.failed');
@@ -170,6 +188,19 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
             border: const OutlineInputBorder(),
           ),
         ),
+        // #106: the back-dismiss hint, host-driven. A live region so the
+        // "press back again" affordance is announced when it appears.
+        if (widget.showDismissHint) ...[
+          const SizedBox(height: 8),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              i18n.crashReportPromptBackDismissHint,
+              key: CrashReportPrompt.dismissHintKey,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         OverflowBar(
           alignment: MainAxisAlignment.end,

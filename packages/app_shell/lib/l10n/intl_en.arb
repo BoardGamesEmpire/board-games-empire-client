@@ -108,6 +108,10 @@
   "@crashReportPromptFailed": {
     "description": "Shown when both sending and local saving failed; the prompt can still be closed"
   },
+  "crashReportPromptBackDismissHint": "Press back again to dismiss this report.",
+  "@crashReportPromptBackDismissHint": {
+    "description": "Hint shown on the crash prompt after a first system back press is intercepted (#106); rendered in a live region so screen readers announce that a second back press within the window dismisses the report"
+  },
   "feedbackReviewTitle": "Review your report",
   "@feedbackReviewTitle": {
     "description": "Title of the full feedback report review & redaction screen (#76)"

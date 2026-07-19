@@ -17,6 +17,7 @@ abstract final class AppRoutes {
   static const serverAdd = '/server-add';
   static const auth = '/auth';
   static const home = '/home';
+  static const feedback = '/feedback';
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
@@ -52,6 +53,21 @@ typedef ServerAddScreenBuilder = Widget Function(BuildContext context);
 /// state), in which case the route falls back to the placeholder.
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the user-initiated feedback flow (#107) for the
+/// [AppRoutes.feedback] route. Supplied by [BgeApp]; returns null at
+/// navigation time when the root container carries no `FeedbackService`
+/// (tests without a container; a platform composition that skipped
+/// feedback wiring), in which case the route falls back to
+/// [NotYetAvailableScreen].
+///
+/// The route sits **outside** the auth [ShellRoute]: the flow needs no
+/// `AuthBloc` — submission goes through the device-global service, which
+/// owns the send-or-queue decision. Reachability is still post-auth by
+/// design (multi-server: a report must be attributable to a target
+/// server): the redirect table only admits non-bootstrap locations once
+/// [AppBootstrapReady].
+typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -68,6 +84,7 @@ GoRouter buildAppRouter({
   AuthScreenBuilder? authBuilder,
   HomeScreenBuilder? homeBuilder,
   AuthScopeBuilder? authScopeBuilder,
+  FeedbackScreenBuilder? feedbackBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -131,6 +148,14 @@ GoRouter buildAppRouter({
                 const ShellPlaceholderScreen(kind: ShellPlaceholderKind.home),
           ),
         ],
+      ),
+      // #107: user-initiated feedback. Outside the auth ShellRoute (no
+      // AuthBloc needed — see [FeedbackScreenBuilder]); reachable only
+      // when [AppBootstrapReady] admits non-bootstrap locations.
+      GoRoute(
+        path: AppRoutes.feedback,
+        builder: (context, _) =>
+            feedbackBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
       GoRoute(
         path: AppRoutes.error,

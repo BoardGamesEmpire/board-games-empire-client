@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:auth/auth.dart';
+import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -21,10 +22,12 @@ import '../i18n/active_locale.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
+import '../screens/feedback_flow_screen.dart';
 import '../screens/home_placeholder_screen.dart';
 import '../screens/splash_screen.dart';
 import 'crash_report_prompt.dart';
 import 'feedback_review_screen.dart';
+import 'router_back_interceptor.dart';
 
 /// The shared application widget.
 ///
@@ -41,7 +44,8 @@ import 'feedback_review_screen.dart';
 /// delegates ([ShellLocalizations.localizationsDelegates], which bundle
 /// the three `Global*` delegates) come first; the feature single
 /// delegates ([ServerOnboardingLocalizations.delegate] for #36,
-/// [AuthLocalizations.delegate] for #37) are appended next, then any
+/// [AuthLocalizations.delegate] for #37, [FeedbackLocalizations.delegate]
+/// for #107) are appended next, then any
 /// [additionalLocalizationsDelegates] — never a feature's bundled
 /// `localizationsDelegates` list, which would re-include the `Global*`
 /// delegates. [supportedLocales] stays [ShellLocalizations.supportedLocales]
@@ -71,6 +75,30 @@ import 'feedback_review_screen.dart';
 /// same overlay. Both the prompt and the review surface submit through the
 /// reporter's device-global service; discard/close clear the crash-draft
 /// RAM slots.
+///
+/// Newest crash wins, even mid-review (#105): the review slot remembers
+/// the draft **instance** it was opened for; when the pending draft
+/// changes identity while the review surface is open, the slot is cleared
+/// and the flow bounces back to the compact prompt — which reads the live
+/// draft each build, so the newer crash is what the user sees. (Comparing
+/// `correlationKey` would be equivalent today; `identical()` was chosen as
+/// the smaller primitive. Revisit with `correlationKey` if the reporter
+/// ever starts rebuilding equal drafts as new instances.)
+///
+/// System back (#106): while the crash flow is up, a
+/// [RouterBackInterceptor] takes priority on the router's own
+/// [BackButtonDispatcher] — the overlay has no route, so `PopScope`,
+/// `BackButtonListener`, and a late `WidgetsBindingObserver` all fail here
+/// (see the interceptor's doc for why). Back on the review surface bounces
+/// to the compact prompt, matching its visible `BackButton`; back on the
+/// prompt is intercepted-and-ignored the first time (arming a localized,
+/// live-region dismiss hint) and discards the draft on a second press
+/// within [crashPromptBackDismissWindow]. Any draft transition disarms the
+/// hint. Known, accepted divergence: the host cannot see the review
+/// surface's internal phase, so system back during its sending/terminal
+/// phases also bounces to the prompt even though the visible `BackButton`
+/// is disabled/hidden then — a re-send from the prompt is deduplicated
+/// server-side by the report's `correlationKey`.
 ///
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
@@ -109,6 +137,12 @@ class BgeApp extends StatefulWidget {
   static const Key contentSemanticsBlockerKey = Key(
     'bge_app.crash_prompt.content_semantics_blocker',
   );
+
+  /// How long a first intercepted system back on the compact crash prompt
+  /// stays "armed" (#106): a second back within this window discards the
+  /// draft; after it elapses the prompt returns to intercept-and-ignore.
+  /// Two seconds is the Android "press back again to exit" convention.
+  static const Duration crashPromptBackDismissWindow = Duration(seconds: 2);
 
   /// Whether this widget owns [bootstrapCubit]'s lifecycle and closes it
   /// on unmount. `runBgeApp` (which creates the cubit and has no later
@@ -171,21 +205,26 @@ class _BgeAppState extends State<BgeApp> {
   /// redaction surface for the pending crash draft. Held at the widget
   /// layer (not on the reporter) because it is seeded from the typed
   /// comment and is purely presentational. The pending-crash listener
-  /// ([_handlePendingCrashChanged]) nulls it whenever the draft clears, so
-  /// a stale preview can never outlive its draft.
-  ///
-  /// Known limitation (accepted for alpha): this slot is seeded once when
-  /// the user opens review and is not re-derived if a *second* crash
-  /// overwrites [FeedbackUncaughtErrorReporter.pendingCrashReport] while
-  /// the review surface is open. In that rare case — a second uncaught
-  /// error firing mid-review, with the app blocked behind the barrier —
-  /// the user reviews and sends the first draft and the second is dropped,
-  /// diverging from the compact prompt's newest-wins (which reads the live
-  /// draft each build). The cost is one dropped telemetry event with no
-  /// corruption; graceful newest-wins here (bounce back to the prompt when
-  /// the pending draft changes identity) is tracked in #105.
+  /// ([_handlePendingCrashChanged]) clears it whenever the draft empties
+  /// **or changes identity** (#105 — see [_reviewOpenedFor]), so a stale
+  /// preview can never outlive, or shadow, its draft.
   final ValueNotifier<FeedbackReportPreview?> _reviewPreview =
       ValueNotifier<FeedbackReportPreview?>(null);
+
+  /// The draft **instance** the open review surface was seeded from
+  /// (#105). When [FeedbackUncaughtErrorReporter.pendingCrashReport] holds
+  /// a different instance while [_reviewPreview] is set — a second crash
+  /// overwrote the slot mid-review — the review is closed, bouncing back
+  /// to the compact prompt, which reads the live draft each build
+  /// (graceful newest-wins). Null whenever the review surface is closed.
+  FeedbackReport? _reviewOpenedFor;
+
+  /// Whether a first intercepted system back has "armed" prompt dismissal
+  /// (#106). While true the compact prompt shows its localized dismiss
+  /// hint and a second back discards the draft; [_promptDismissDisarmTimer]
+  /// resets it after [BgeApp.crashPromptBackDismissWindow].
+  final ValueNotifier<bool> _promptDismissArmed = ValueNotifier<bool>(false);
+  Timer? _promptDismissDisarmTimer;
 
   @override
   void initState() {
@@ -207,21 +246,95 @@ class _BgeAppState extends State<BgeApp> {
       authBuilder: _buildAuthRoute,
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
+      feedbackBuilder: _buildFeedbackRoute,
     );
-    // #76: reset the review slot whenever the crash draft empties.
+    // #76/#105: keep the review slot honest whenever the crash draft
+    // empties or changes identity.
     final reporter = widget.feedbackReporter;
     if (reporter != null) {
       reporter.pendingCrashReport.addListener(_handlePendingCrashChanged);
     }
   }
 
-  /// Nulls the #76 review slot when the crash draft is cleared (discarded,
-  /// submitted, or replaced-then-cleared), so a stale preview never
-  /// outlives the draft it was built from.
+  /// Keeps the crash-flow presentation state consistent with the draft
+  /// slot: any transition disarms the back-dismiss (#106 — the armed
+  /// window belongs to the draft it was armed on); an emptied draft closes
+  /// the review surface (#76); a draft that changed **identity** while the
+  /// review surface is open closes it too, bouncing back to the compact
+  /// prompt showing the newer crash (#105 newest-wins).
   void _handlePendingCrashChanged() {
-    if (widget.feedbackReporter?.pendingCrashReport.value == null) {
-      _reviewPreview.value = null;
+    _disarmPromptDismiss();
+    final draft = widget.feedbackReporter?.pendingCrashReport.value;
+    if (draft == null) {
+      _closeReview();
+      return;
     }
+    if (_reviewPreview.value != null && !identical(draft, _reviewOpenedFor)) {
+      _closeReview();
+    }
+  }
+
+  /// Seeds the #76 review surface from [draft] plus the comment typed on
+  /// the compact prompt, remembering the draft identity for #105.
+  void _openReview(FeedbackReport draft, String comment) {
+    _reviewOpenedFor = draft;
+    _reviewPreview.value = FeedbackReportPreview.fromReport(
+      draft.withUserComment(comment),
+    );
+  }
+
+  /// Closes the review surface (back to the compact prompt while a draft
+  /// is still pending) and forgets the remembered draft identity.
+  void _closeReview() {
+    _reviewOpenedFor = null;
+    _reviewPreview.value = null;
+  }
+
+  /// The single terminal exit of the crash flow: clears every
+  /// presentation and RAM slot — review state, armed back-dismiss, the
+  /// reporter's draft, and `ShellObservability`'s last-error record (#34
+  /// contract).
+  void _discardCrashDraft(FeedbackUncaughtErrorReporter reporter) {
+    _disarmPromptDismiss();
+    _closeReview();
+    reporter.clearPendingCrashReport();
+    ShellObservability.clearUncaughtError();
+  }
+
+  void _armPromptDismiss() {
+    _promptDismissDisarmTimer?.cancel();
+    _promptDismissArmed.value = true;
+    _promptDismissDisarmTimer = Timer(
+      BgeApp.crashPromptBackDismissWindow,
+      _disarmPromptDismiss,
+    );
+  }
+
+  void _disarmPromptDismiss() {
+    _promptDismissDisarmTimer?.cancel();
+    _promptDismissDisarmTimer = null;
+    if (_promptDismissArmed.value) {
+      _promptDismissArmed.value = false;
+    }
+  }
+
+  /// Routes an intercepted system back press (#106). Always consumes —
+  /// while the crash flow is up, back must never reach the router hidden
+  /// under the barrier.
+  Future<bool> _handleCrashBack(FeedbackUncaughtErrorReporter reporter) async {
+    if (_reviewPreview.value != null) {
+      // Review surface → compact prompt, matching its visible BackButton.
+      _closeReview();
+      return true;
+    }
+    if (_promptDismissArmed.value) {
+      // Second back within the window → discard.
+      _discardCrashDraft(reporter);
+      return true;
+    }
+    // First back → intercept-and-ignore, arming the dismiss hint.
+    _armPromptDismiss();
+    return true;
   }
 
   /// Wraps the auth+home shell child with the active server's [AuthBloc]
@@ -256,6 +369,23 @@ class _BgeAppState extends State<BgeApp> {
     return const HomePlaceholderScreen();
   }
 
+  /// The #107 user-initiated feedback wiring: resolves the device-global
+  /// [FeedbackService] from the root container (#72) — decoupled from
+  /// [BgeApp.feedbackReporter], which may legitimately be absent — and
+  /// hosts the compose → review flow. Null (→ [NotYetAvailableScreen])
+  /// when no container or no registered service exists (tests; a platform
+  /// composition without feedback wiring), matching the
+  /// [_buildServerAddBuilder] guard pattern.
+  Widget? _buildFeedbackRoute(BuildContext context) {
+    final container = widget.rootContainer;
+    if (container == null || !container.isRegistered<FeedbackService>()) {
+      return null;
+    }
+    return FeedbackFlowScreen(
+      feedbackService: container.get<FeedbackService>(),
+    );
+  }
+
   /// The #36 server-add wiring.
   ServerAddScreenBuilder? _buildServerAddBuilder() {
     final container = widget.rootContainer;
@@ -286,6 +416,8 @@ class _BgeAppState extends State<BgeApp> {
     if (reporter != null) {
       reporter.pendingCrashReport.removeListener(_handlePendingCrashChanged);
     }
+    _promptDismissDisarmTimer?.cancel();
+    _promptDismissArmed.dispose();
     _reviewPreview.dispose();
     if (widget.closeBootstrapCubitOnDispose) {
       unawaited(widget.bootstrapCubit.close());
@@ -345,6 +477,15 @@ class _BgeAppState extends State<BgeApp> {
                             child: content,
                           ),
                           if (draft != null) ...[
+                            // #106: while the crash flow is up, take
+                            // priority on the router's back dispatcher so
+                            // system back never pops the hidden route
+                            // under the barrier. Unmounts (and detaches)
+                            // with the overlay.
+                            RouterBackInterceptor(
+                              dispatcher: _router.backButtonDispatcher,
+                              onBack: () => _handleCrashBack(reporter),
+                            ),
                             const ModalBarrier(
                               dismissible: false,
                               color: Colors.black54,
@@ -367,21 +508,25 @@ class _BgeAppState extends State<BgeApp> {
                                   alignment: Alignment.bottomCenter,
                                   child: Padding(
                                     padding: const EdgeInsets.all(16),
-                                    child: CrashReportPrompt(
-                                      report: draft,
-                                      onSubmit: reporter.service.submit,
-                                      // #76: seed the review slot from the
-                                      // draft plus the typed comment; the
-                                      // overlay then swaps to the full
-                                      // surface below.
-                                      onReviewDetails: (comment) =>
-                                          _reviewPreview.value =
-                                              FeedbackReportPreview.fromReport(
-                                                draft.withUserComment(comment),
-                                              ),
-                                      onDiscard: () {
-                                        reporter.clearPendingCrashReport();
-                                        ShellObservability.clearUncaughtError();
+                                    child: ValueListenableBuilder<bool>(
+                                      valueListenable: _promptDismissArmed,
+                                      builder: (context, dismissArmed, _) {
+                                        return CrashReportPrompt(
+                                          report: draft,
+                                          // #106: after a first intercepted
+                                          // back, surface the localized
+                                          // live-region dismiss hint.
+                                          showDismissHint: dismissArmed,
+                                          onSubmit: reporter.service.submit,
+                                          // #76: seed the review slot from
+                                          // the draft plus the typed
+                                          // comment; the overlay then swaps
+                                          // to the full surface below.
+                                          onReviewDetails: (comment) =>
+                                              _openReview(draft, comment),
+                                          onDiscard: () =>
+                                              _discardCrashDraft(reporter),
+                                        );
                                       },
                                     ),
                                   ),
@@ -396,14 +541,10 @@ class _BgeAppState extends State<BgeApp> {
                                     preview: reviewPreview,
                                     onSubmit: reporter.service.submit,
                                     // Back out of review → compact prompt.
-                                    onCancel: () => _reviewPreview.value = null,
+                                    onCancel: _closeReview,
                                     // Dismiss after a terminal outcome →
                                     // clear every slot.
-                                    onClose: () {
-                                      _reviewPreview.value = null;
-                                      reporter.clearPendingCrashReport();
-                                      ShellObservability.clearUncaughtError();
-                                    },
+                                    onClose: () => _discardCrashDraft(reporter),
                                   ),
                                 ),
                               ),
@@ -428,11 +569,12 @@ class _BgeAppState extends State<BgeApp> {
       },
       localizationsDelegates: [
         ...ShellLocalizations.localizationsDelegates,
-        // #36 / #37: app_shell owns the feature route wiring, so it also
-        // registers the feature single delegates — app entry points stay
-        // thin.
+        // #36 / #37 / #107: app_shell owns the feature route wiring, so it
+        // also registers the feature single delegates — app entry points
+        // stay thin.
         ServerOnboardingLocalizations.delegate,
         AuthLocalizations.delegate,
+        FeedbackLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],
       supportedLocales: ShellLocalizations.supportedLocales,

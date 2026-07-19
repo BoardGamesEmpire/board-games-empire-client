@@ -18,6 +18,8 @@ dependencies:
     path: ../features/auth
   di:
     path: ../core/di
+  feedback:
+    path: ../features/feedback
   interfaces:
     path: ../core/interfaces
   models:
