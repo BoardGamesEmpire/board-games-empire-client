@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart';
@@ -28,9 +30,11 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   AppBootstrapCubit({
     required PlatformBootstrap platformBootstrap,
     HydratedStorageInitializer? hydratedStorageInitializer,
+    FeedbackService? feedbackService,
     int resetOfferThreshold = 3,
     BgeLogger? logger,
   }) : _platformBootstrap = platformBootstrap,
+       _feedbackService = feedbackService,
        _logger = logger ?? BgeLogger('bge.shell.bootstrap'),
        _initializeHydratedStorage =
            hydratedStorageInitializer ?? _defaultHydratedStorageInitializer,
@@ -38,6 +42,12 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
        super(const AppBootstrapInitializing());
 
   final PlatformBootstrap _platformBootstrap;
+
+  /// The device-global feedback service whose queue is drained on every
+  /// authenticated signal (#97). Optional: shell tests and hosts without
+  /// feedback wiring pass null and no drain fires.
+  final FeedbackService? _feedbackService;
+
   final BgeLogger _logger;
   final HydratedStorageInitializer _initializeHydratedStorage;
   final int _resetOfferThreshold;
@@ -147,10 +157,45 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// a duplicate or late signal (including the repository's state
   /// mirroring re-confirming an already-ready session) must not throw
   /// into an unawaited future.
+  ///
+  /// The queued-feedback drain (#97) fires on **every** invocation,
+  /// deliberately before the state guard: sign-in and startup session
+  /// restore arrive here from [AppBootstrapNeedsAuth], but a server
+  /// switch re-authenticates while the cubit is already
+  /// [AppBootstrapReady] — that signal must still drain the new server's
+  /// queue even though the state transition is a no-op. Fire-and-forget:
+  /// the drain never blocks or fails navigation.
   void onAuthenticated() {
+    _drainPendingFeedback();
     if (state is! AppBootstrapNeedsAuth) return;
     _logger.info('Authenticated; advancing to home');
     emit(const AppBootstrapReady());
+  }
+
+  void _drainPendingFeedback() {
+    final service = _feedbackService;
+    if (service == null) return;
+    unawaited(
+      service
+          .drainPending()
+          .then((sent) {
+            if (sent > 0) {
+              _logger.info(
+                'Drained queued feedback reports',
+                context: {'sent': sent},
+              );
+            }
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            // Best-effort by contract: a drain fault must never surface
+            // into the auth transition it piggybacks on.
+            _logger.warn(
+              'Queued-feedback drain failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+          }),
+    );
   }
 
   /// Returns the app to the auth leg after the authenticated session

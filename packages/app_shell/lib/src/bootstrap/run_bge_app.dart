@@ -11,6 +11,7 @@ import 'package:observability/observability.dart';
 import '../deep_links/deep_link_handler.dart';
 import '../deep_links/pending_deep_link_holder.dart';
 import '../i18n/active_locale.dart';
+import '../observability/active_server_feedback_target_resolver.dart';
 import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/global_error_hooks.dart';
 import '../observability/shell_observability.dart';
@@ -200,6 +201,28 @@ Future<void> runBgeApp({
   final buildInfo = rootContainer.isRegistered<BuildInfo>()
       ? rootContainer.get<BuildInfo>()
       : BuildInfo.unknown;
+  // #97: the feedback target resolver. The production adapter reads the
+  // ActiveServerScope *through the cubit at resolve time* — the scope is
+  // replaced on every bootstrap retry, so nothing may capture a scope
+  // instance at composition time. The cubit is constructed further down
+  // (it needs this very feedback service for its drain trigger), so the
+  // closure reads a ref assigned right after construction; it stays null
+  // only during this function's remaining synchronous body, where no
+  // submit/drain can run (both are user- or auth-driven, post-runApp),
+  // and a null read simply means "no active server" — the untagged-queue
+  // path. Resolve-or-default: a platform module / test seam that
+  // pre-registered a resolver stays authoritative.
+  AppBootstrapCubit? bootstrapCubitRef;
+  final FeedbackTargetResolver targetResolver;
+  if (rootContainer.isRegistered<FeedbackTargetResolver>()) {
+    targetResolver = rootContainer.get<FeedbackTargetResolver>();
+  } else {
+    targetResolver = ActiveServerFeedbackTargetResolver(
+      scopeSource: () => bootstrapCubitRef?.activeServerScope,
+    );
+    rootContainer.registerSingleton<FeedbackTargetResolver>(targetResolver);
+  }
+
   final feedbackService = FeedbackServiceImpl(
     breadcrumbSource: () => ShellObservability.breadcrumbs.snapshot(),
     environmentSource: () => FeedbackEnvironment(
@@ -217,11 +240,10 @@ Future<void> runBgeApp({
         'operatingSystem': kIsWeb ? 'web' : defaultTargetPlatform.name,
       },
     ),
-    // No transport until a server context with an authenticated session
-    // exists — #37 wires the resolver (and the drainPending trigger)
-    // when auth lands. Until then every approved report goes to the
-    // durable sink.
-    transportResolver: () => null,
+    // #97: resolved fresh per submit/drain — the active server's
+    // bgeServerId always, its transport only when authenticated. Every
+    // approved report that can't send goes to the durable sink, tagged.
+    targetResolver: targetResolver,
     sink: rootContainer.isRegistered<FeedbackSink>()
         ? rootContainer.get<FeedbackSink>()
         : MemoryFeedbackSink(),
@@ -269,7 +291,12 @@ Future<void> runBgeApp({
   final bootstrapCubit = AppBootstrapCubit(
     platformBootstrap: platformBootstrap,
     hydratedStorageInitializer: hydratedStorageInitializer,
+    // #97: the auth-success drain trigger — every authenticated signal
+    // (sign-in, session restore, server-switch re-auth) drains the
+    // queued feedback for the then-active server, fire-and-forget.
+    feedbackService: registeredFeedbackService,
   );
+  bootstrapCubitRef = bootstrapCubit;
   unawaited(bootstrapCubit.initialize());
 
   runApp(

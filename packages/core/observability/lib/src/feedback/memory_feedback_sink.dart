@@ -1,7 +1,7 @@
-import 'feedback_report.dart';
 import 'feedback_sink.dart';
+import 'queued_feedback_report.dart';
 
-/// RAM implementation of [FeedbackSink] (#69).
+/// RAM implementation of [FeedbackSink] (#69, #97).
 ///
 /// Two jobs: the **web stand-in** until #63 gives web a durable store
 /// (an approved-but-unsent report survives within the session and is
@@ -12,25 +12,25 @@ import 'feedback_sink.dart';
 ///
 /// Insertion order is preserved so [pending] drains oldest-first.
 class MemoryFeedbackSink implements FeedbackSink {
-  final Map<String, FeedbackReport> _byKey = {};
+  final Map<String, QueuedFeedbackReport> _byKey = {};
   final List<String> _order = [];
 
   @override
-  Future<void> persist(FeedbackReport report) async {
-    final key = report.correlationKey;
+  Future<void> persist(QueuedFeedbackReport record) async {
+    final key = record.correlationKey;
     if (key == null || key.isEmpty) {
       throw ArgumentError.value(
-        report.correlationKey,
-        'report.correlationKey',
+        record.correlationKey,
+        'record.report.correlationKey',
         'MemoryFeedbackSink requires a correlationKey',
       );
     }
     if (!_byKey.containsKey(key)) _order.add(key);
-    _byKey[key] = report;
+    _byKey[key] = record;
   }
 
   @override
-  Future<List<FeedbackReport>> pending() async => [
+  Future<List<QueuedFeedbackReport>> pending() async => [
     for (final key in _order) _byKey[key]!,
   ];
 

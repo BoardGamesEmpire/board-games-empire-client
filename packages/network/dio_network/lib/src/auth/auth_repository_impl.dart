@@ -43,6 +43,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   AuthState _currentState = const AuthStateUnknown();
 
+  @override
+  AuthState get currentAuthState => _currentState;
+
   /// Logs the auth seams the network interceptor and bloc cannot see with
   /// the right context (#100): the pre-wire strategy-missing contract
   /// failure (error), and stored-session rejection on the 401-clear paths

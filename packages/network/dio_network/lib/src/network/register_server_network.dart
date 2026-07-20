@@ -3,9 +3,11 @@ import 'package:dio/dio.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
+import '../feedback/feedback_dio_transport.dart';
 import 'dio_factory.dart';
 import 'network_log_interceptor.dart';
 import 'token_interceptor.dart';
@@ -63,4 +65,12 @@ void registerServerNetwork({
     authRepository,
     dispose: (_) => authRepository.onDispose(),
   );
+
+  // #97: the per-server feedback transport. Registered here — not in its
+  // own installer — per the registration convention: services sharing a
+  // per-server resource register in that resource's installer, and this
+  // shares the per-server Dio (which carries the base URL and the
+  // BetterAuth session the feedback endpoint requires). Const and
+  // stateless; nothing to dispose (the container owns the Dio).
+  container.registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio));
 }

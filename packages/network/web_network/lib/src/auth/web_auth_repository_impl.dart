@@ -38,6 +38,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   AuthState _currentState = const AuthStateUnknown();
 
   @override
+  AuthState get currentAuthState => _currentState;
+
+  @override
   Future<AuthResponse> signIn({
     required String email,
     required String password,

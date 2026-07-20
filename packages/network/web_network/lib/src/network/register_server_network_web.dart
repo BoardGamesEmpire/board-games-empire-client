@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
-import 'package:dio_network/dio_network.dart' show DioFactory;
+import 'package:dio_network/dio_network.dart'
+    show DioFactory, FeedbackDioTransport;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/web_auth_repository_impl.dart';
 import 'web_dio_factory.dart';
@@ -37,4 +39,10 @@ void registerServerNetworkWeb({
     authRepository,
     dispose: (_) => authRepository.onDispose(),
   );
+
+  // #97: the per-server feedback transport, sharing this origin's Dio —
+  // the browser attaches the httpOnly session cookie the feedback
+  // endpoint requires, so `FeedbackDioTransport` needs nothing
+  // web-specific. Same installer-placement rationale as the native leg.
+  container.registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio));
 }

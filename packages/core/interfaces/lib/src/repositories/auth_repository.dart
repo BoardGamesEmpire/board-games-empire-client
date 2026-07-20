@@ -57,6 +57,17 @@ abstract class AuthRepository {
 
   /// Stream of auth state changes. Replays current state on subscribe.
   Stream<AuthState> watchAuthState();
+
+  /// Synchronous snapshot of the repository's in-memory auth state (#97)
+  /// — the same value [watchAuthState] replays on subscribe.
+  ///
+  /// Exists for synchronous consumers that cannot await a stream, e.g.
+  /// the feedback target resolver deciding per `submit`/`drain` whether
+  /// the active server's transport is usable (the feedback endpoint
+  /// requires an authenticated session). Belt-and-braces: a session can
+  /// still expire between this read and the request, which is why a 401
+  /// classifies as retryable rather than permanent.
+  AuthState get currentAuthState;
 }
 
 /// Sealed hierarchy of authentication states.

@@ -73,6 +73,7 @@ class FeedbackReviewScreen extends StatefulWidget {
   static const Key sentConfirmationKey = Key('feedback_review.sent');
   static const Key queuedConfirmationKey = Key('feedback_review.queued');
   static const Key submissionFailedKey = Key('feedback_review.failed');
+  static const Key submissionRejectedKey = Key('feedback_review.rejected');
   static const Key stackTraceSectionKey = Key('feedback_review.stack_trace');
   static const Key breadcrumbsSectionKey = Key('feedback_review.breadcrumbs');
 
@@ -85,7 +86,7 @@ class FeedbackReviewScreen extends StatefulWidget {
   State<FeedbackReviewScreen> createState() => _FeedbackReviewScreenState();
 }
 
-enum _ReviewPhase { reviewing, sending, sent, queued, failed }
+enum _ReviewPhase { reviewing, sending, sent, queued, rejected, failed }
 
 class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   /// The working preview. Intentionally seeded once and then owned as
@@ -119,6 +120,19 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
             ? _ReviewPhase.sent
             : _ReviewPhase.queued,
       );
+    } on FeedbackPermanentSubmissionException catch (error) {
+      // #97: permanent rejection — deliberately not queued, so the
+      // outcome copy must not promise a later send. The rejected copy
+      // attributes the decision to the server, so it only renders for a
+      // wire rejection (statusCode != null); a client-side validation
+      // failure (null statusCode) falls to the generic failed copy,
+      // which stays honest — not sent, not saved.
+      if (!mounted) return;
+      setState(
+        () => _phase = error.statusCode != null
+            ? _ReviewPhase.rejected
+            : _ReviewPhase.failed,
+      );
     } on Object {
       if (!mounted) return;
       setState(() => _phase = _ReviewPhase.failed);
@@ -128,6 +142,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   bool get _terminal =>
       _phase == _ReviewPhase.sent ||
       _phase == _ReviewPhase.queued ||
+      _phase == _ReviewPhase.rejected ||
       _phase == _ReviewPhase.failed;
 
   @override
@@ -159,6 +174,12 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
           key: FeedbackReviewScreen.queuedConfirmationKey,
           icon: Icons.schedule_send_outlined,
           text: i18n.feedbackReviewQueued,
+        ),
+        _ReviewPhase.rejected => _outcome(
+          i18n,
+          key: FeedbackReviewScreen.submissionRejectedKey,
+          icon: Icons.block_outlined,
+          text: i18n.feedbackReviewRejected,
         ),
         _ReviewPhase.failed => _outcome(
           i18n,
