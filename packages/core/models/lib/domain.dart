@@ -20,6 +20,11 @@ export 'src/domain/household/household.dart';
 export 'src/domain/household/household_member.dart';
 export 'src/domain/household/household_role.dart';
 
+export 'src/domain/push/push_notification.dart';
+export 'src/domain/push/push_permission_status.dart';
+export 'src/domain/push/push_platform.dart';
+export 'src/domain/push/push_registration.dart';
+
 export 'src/domain/server/connection_state.dart';
 export 'src/domain/server/notification_summary.dart';
 export 'src/domain/server/server_auth_strategy.dart';

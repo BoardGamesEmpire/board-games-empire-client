@@ -7,7 +7,7 @@
          cloud backup; dataExtractionRules additionally opts out of
          Android 12+ cloud backup and device-to-device transfer. -->
     <application
-        android:label="mobile"
+        android:label="Board Games Empire"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

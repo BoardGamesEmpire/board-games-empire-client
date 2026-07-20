@@ -9,8 +9,9 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 /// Tests for `registerNativeRootModule`'s registrations: the resolved
-/// `BuildInfo` (#35), the durable `FeedbackSink` (#69), and the lazy
-/// device-global `ConnectivityService` (#9).
+/// `BuildInfo` (#35), the durable `FeedbackSink` (#69), the lazy
+/// device-global `ConnectivityService` (#9), and the
+/// `PushNotificationService` null object (#15).
 ///
 /// The module takes an injectable `BuildInfoReader` (defaulting to the
 /// concrete `PackageInfoBuildInfoReader`) so this test drives it with a
@@ -175,5 +176,23 @@ void main() {
       expect(container.isRegistered<VersionNegotiator>(), isTrue);
       expect(container.get<VersionNegotiator>(), isA<VersionNegotiatorImpl>());
     });
+  });
+
+  test('registers the PushNotificationService null object (#15) — '
+      'replaced per platform by #111/#112', () async {
+    final container = DependencyContainerImpl();
+    addTearDown(container.dispose);
+
+    await registerNativeRootModule(
+      container,
+      buildInfoReader: const _StubBuildInfoReader(_info),
+      connectivityFactory: _FakeConnectivityService.new,
+    );
+
+    expect(container.isRegistered<PushNotificationService>(), isTrue);
+
+    final service = container.get<PushNotificationService>();
+    expect(service, isA<UnsupportedPushNotificationService>());
+    expect(service.isPlatformSupported, isFalse);
   });
 }

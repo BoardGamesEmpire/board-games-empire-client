@@ -37,7 +37,10 @@ import 'feedback/file_feedback_sink.dart';
 /// Registrations: [BuildInfo] (resolved read, #35), the durable
 /// [FeedbackSink] (#69), the device-global [ConnectivityService]
 /// (#9) — disposed via its [Disposable] conformance when the root
-/// container tears down — and the #36 server-onboarding pair:
+/// container tears down — the #15 [PushNotificationService] null object
+/// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free —
+/// per-platform implementations replace this registration in #111/#112),
+/// and the #36 server-onboarding pair:
 /// [WellKnownClient] (lazy; its dedicated unauthenticated [Dio] is not
 /// built until discovery actually runs) and [VersionNegotiator]
 /// (stateless, const). Both are **root**-scope by necessity: server-add
@@ -65,6 +68,10 @@ Future<void> registerNativeRootModule(
           await disposable.onDispose();
         }
       },
+    )
+    // #15 push interface stub. Replaced per platform by #111/#112.
+    ..registerSingleton<PushNotificationService>(
+      const UnsupportedPushNotificationService(),
     )
     // #36 server onboarding. Lazy: WellKnownClientImpl constructs its
     // dedicated unauthenticated Dio, which should not exist until

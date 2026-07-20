@@ -38,10 +38,14 @@ import 'build_info/package_info_build_info_reader.dart';
 /// Registrations: [BuildInfo] (read from Flutter's generated
 /// `version.json`, #35), the **in-memory stand-in** [FeedbackSink] —
 /// web has no durable storage layer until #63 (an approved-but-unsent
-/// report is lost on reload; the prompt tells the user so) — and the
+/// report is lost on reload; the prompt tells the user so) — the
 /// device-global [ConnectivityService] (#9), disposed via its
-/// [Disposable] conformance when the root container tears down. The
-/// [FeedbackService] itself is composed and registered by `runBgeApp`.
+/// [Disposable] conformance when the root container tears down, and the
+/// #15 [PushNotificationService] null object
+/// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free).
+/// On web the stub may be permanent — browser push is a go/no-go
+/// investigation (#113). The [FeedbackService] itself is composed and
+/// registered by `runBgeApp`.
 ///
 /// [buildInfoReader] and [connectivityFactory] are injectable for tests;
 /// production uses the concrete [PackageInfoBuildInfoReader] and
@@ -62,6 +66,10 @@ Future<void> registerWebRootModule(
           await disposable.onDispose();
         }
       },
+    )
+    // #15 push interface stub. Possibly permanent on web (#113 decides).
+    ..registerSingleton<PushNotificationService>(
+      const UnsupportedPushNotificationService(),
     )
     // #36/#87: pure, stateless. Web registers no WellKnownClient —
     // same-origin means a server always exists, /server-add is

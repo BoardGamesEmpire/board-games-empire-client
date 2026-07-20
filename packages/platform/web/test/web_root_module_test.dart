@@ -9,9 +9,10 @@ import 'package:web_platform/web.dart';
 
 /// Tests for `registerWebRootModule`'s registrations: the resolved
 /// `BuildInfo` read on web from Flutter's generated `version.json`
-/// (#35), the in-memory `FeedbackSink` stand-in (#69/#63), and the lazy
-/// device-global `ConnectivityService` (#9) — same injected-seam shapes
-/// as the native module.
+/// (#35), the in-memory `FeedbackSink` stand-in (#69/#63), the lazy
+/// device-global `ConnectivityService` (#9), and the
+/// `PushNotificationService` null object (#15) — same injected-seam
+/// shapes as the native module.
 class _StubBuildInfoReader implements BuildInfoReader {
   const _StubBuildInfoReader(this._info);
   final BuildInfo _info;
@@ -161,5 +162,23 @@ void main() {
 
       expect(container.isRegistered<WellKnownClient>(), isFalse);
     });
+  });
+
+  test('registers the PushNotificationService null object (#15) — '
+      'possibly permanent on web (#113 decides)', () async {
+    final container = DependencyContainerImpl();
+    addTearDown(container.dispose);
+
+    await registerWebRootModule(
+      container,
+      buildInfoReader: const _StubBuildInfoReader(_info),
+      connectivityFactory: _FakeConnectivityService.new,
+    );
+
+    expect(container.isRegistered<PushNotificationService>(), isTrue);
+
+    final service = container.get<PushNotificationService>();
+    expect(service, isA<UnsupportedPushNotificationService>());
+    expect(service.isPlatformSupported, isFalse);
   });
 }
