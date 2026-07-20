@@ -1,17 +1,19 @@
 import 'package:cuid2/cuid2.dart';
 
 import '../breadcrumbs/breadcrumb.dart';
+import '../logging/bge_logger.dart';
 import 'feedback_category.dart';
 import 'feedback_constants.dart';
 import 'feedback_environment.dart';
 import 'feedback_report.dart';
 import 'feedback_service.dart';
-import 'feedback_sink.dart';
-import 'feedback_transport.dart';
 import 'feedback_severity.dart';
+import 'feedback_sink.dart';
+import 'feedback_target.dart';
+import 'queued_feedback_report.dart';
 
 /// Device-global [FeedbackService] registered in the app-scope root
-/// container (#72, #69).
+/// container (#72, #69, #97).
 ///
 /// All collaborators are injected as providers so this stays pure Dart
 /// and unit-testable without platform machinery:
@@ -20,31 +22,36 @@ import 'feedback_severity.dart';
 ///   build time (wired to `ShellObservability.breadcrumbs.snapshot`).
 /// - [environmentSource] — the [FeedbackEnvironment] assembled at the
 ///   composition root (BuildInfo/platform/locale live there).
-/// - [transportResolver] — yields the active server's [FeedbackTransport]
-///   or null. Late-bound because capture is device-global and pre-auth
-///   while the network leg is per-server and post-auth; the resolver is
-///   re-read on every [submit]/[drainPending].
-/// - [sink] — the durable store for user-approved-but-unsent reports.
+/// - [targetResolver] — yields the active server's [FeedbackTarget]
+///   (its `bgeServerId`, plus its transport when authenticated) or null.
+///   Late-bound because capture is device-global and pre-auth while the
+///   network leg is per-server and post-auth; re-read on every
+///   [submit]/[drainPending] (#97).
+/// - [sink] — the durable store for user-approved-but-unsent reports,
+///   as [QueuedFeedbackReport] records tagged with their server.
 /// - [correlationKeyGenerator] — defaults to cuid2 ([cuid]), the repo's
 ///   id convention.
 class FeedbackServiceImpl implements FeedbackService {
   FeedbackServiceImpl({
     required List<Breadcrumb> Function() breadcrumbSource,
     required FeedbackEnvironment Function() environmentSource,
-    required FeedbackTransport? Function() transportResolver,
+    required FeedbackTargetResolver targetResolver,
     required FeedbackSink sink,
     String Function()? correlationKeyGenerator,
+    BgeLogger? logger,
   }) : _breadcrumbSource = breadcrumbSource,
        _environmentSource = environmentSource,
-       _transportResolver = transportResolver,
+       _targetResolver = targetResolver,
        _sink = sink,
-       _correlationKeyGenerator = correlationKeyGenerator ?? cuid;
+       _correlationKeyGenerator = correlationKeyGenerator ?? cuid,
+       _logger = logger ?? BgeLogger('bge.observability.feedback');
 
   final List<Breadcrumb> Function() _breadcrumbSource;
   final FeedbackEnvironment Function() _environmentSource;
-  final FeedbackTransport? Function() _transportResolver;
+  final FeedbackTargetResolver _targetResolver;
   final FeedbackSink _sink;
   final String Function() _correlationKeyGenerator;
+  final BgeLogger _logger;
 
   @override
   FeedbackReport buildReport({
@@ -83,79 +90,174 @@ class FeedbackServiceImpl implements FeedbackService {
   Future<FeedbackSubmitResult> submit(FeedbackReport report) async {
     final violations = report.validate();
     if (violations.isNotEmpty) {
-      throw FeedbackSubmissionException(
+      // A cap-violating report is permanently unsubmittable — retrying
+      // the identical payload can never succeed (#97 taxonomy).
+      throw FeedbackPermanentSubmissionException(
         'Invalid feedback report: ${violations.join('; ')}',
       );
     }
+    final correlationKey = report.correlationKey;
+    if (correlationKey == null || correlationKey.isEmpty) {
+      // Also a client-side contract violation, caught before any I/O:
+      // the sink is keyed by the correlationKey, so a keyless report
+      // would otherwise fail *at queue time* and masquerade as a
+      // FeedbackPersistenceException — a sink fault it isn't.
+      // [buildReport] always supplies a key; only hand-built reports
+      // can land here.
+      throw const FeedbackPermanentSubmissionException(
+        'Invalid feedback report: a correlationKey is required '
+        '(buildReport generates one)',
+      );
+    }
+    if (correlationKey.contains('/') ||
+        correlationKey.contains(r'\') ||
+        correlationKey.contains('..')) {
+      // Same misclassification hazard as the keyless case: the key is a
+      // plain storage/idempotency token (cuid2 from [buildReport]), and
+      // durable sinks legitimately reject path segments in it
+      // (FileFeedbackSink interpolates the key into a file name).
+      // Rejecting the shape here, permanently and before any I/O, keeps
+      // that from surfacing as a phantom persistence failure.
+      throw const FeedbackPermanentSubmissionException(
+        'Invalid feedback report: correlationKey must not contain '
+        'path segments',
+      );
+    }
 
-    final transport = _transportResolver();
-    if (transport == null) {
-      return _queue(report, transportCause: null);
+    final target = _targetResolver.resolve();
+    final transport = target?.transport;
+    if (target == null || transport == null) {
+      // No active server, or active but unauthenticated. Queue, tagged
+      // with the server when one exists (#97: the tag exists even
+      // without a transport, so the record can never drain into the
+      // wrong server later).
+      return _queue(report, serverId: target?.serverId, transportCause: null);
     }
 
     try {
       await transport.send(report);
       return FeedbackSubmitResult.sent;
+    } on FeedbackPermanentSubmissionException {
+      // 400 / 403 / other 4xx: retrying can never succeed. Queueing
+      // would mislead the user ("will be sent later") and build an
+      // un-drainable backlog — surface it instead; the prompt renders
+      // the rejected state (#97).
+      rethrow;
     } on Object catch (error) {
-      // Transport failed — fall back to the durable sink so an approved
-      // report is never lost to a transient network failure.
-      //
-      // INTERIM (#37): this queues on *any* transport failure. That is
-      // correct for alpha, where transportResolver always returns null
-      // (no auth) so this branch is unreachable and everything queues by
-      // design. Once #37 wires the real per-server transport, permanent
-      // rejections — 403 (feedback-banned), 400 (validation) — must NOT
-      // queue (they would mislead the user with "will send later" and
-      // build an un-drainable backlog); only retryable failures
-      // (offline / timeout / 5xx / 429) should fall back to the sink.
-      // That taxonomy is a backend-contract detail and is tracked on #37
-      // alongside the drain trigger.
-      return _queue(report, transportCause: error);
+      // Transient (offline / timeout / 401 / 408 / 429 / 5xx) — and,
+      // defensively, anything unclassified a transport leaked in breach
+      // of its contract: fall back to the durable sink so an approved
+      // report is never lost to a recoverable failure.
+      return _queue(report, serverId: target.serverId, transportCause: error);
     }
   }
 
+  /// The in-flight drain, when one is running. Overlapping calls (the
+  /// trigger fires on every authenticated signal, and duplicates are
+  /// documented) coalesce into it instead of racing: two concurrent
+  /// runs would both read the same [FeedbackSink.pending] snapshot
+  /// before either removes anything and re-POST every record — harmless
+  /// server-side (correlationKey idempotency) but redundant network
+  /// work and double-counted results. A signal arriving mid-drain gets
+  /// the in-flight run's count; the next signal after completion starts
+  /// a fresh one.
+  Future<int>? _activeDrain;
+
   @override
-  Future<int> drainPending() async {
-    final transport = _transportResolver();
-    if (transport == null) return 0;
+  Future<int> drainPending() =>
+      _activeDrain ??= _drainPending().whenComplete(() => _activeDrain = null);
+
+  Future<int> _drainPending() async {
+    final target = _targetResolver.resolve();
+    final transport = target?.transport;
+    if (target == null || transport == null) return 0;
 
     final pending = await _sink.pending();
     var sent = 0;
-    for (final report in pending) {
+    for (final record in pending) {
+      // #97 per-server drain safety: a record tagged for a different
+      // server is never touched. Untagged records (approved with no
+      // active server — device-global diagnostics) drain here.
+      final recordServerId = record.serverId;
+      if (recordServerId != null && recordServerId != target.serverId) {
+        continue;
+      }
+
       try {
-        await transport.send(report);
+        await transport.send(record.report);
+      } on FeedbackPermanentSubmissionException catch (error) {
+        // Permanently rejected: drop it — keeping it is exactly the
+        // un-drainable backlog #97 exists to prevent — breadcrumb the
+        // drop (warn survives the release sink threshold), continue.
+        _logger.warn(
+          'Dropping permanently rejected queued feedback report',
+          error: error,
+          context: {
+            'correlationKey': record.correlationKey,
+            'statusCode': error.statusCode,
+          },
+        );
+        await _removeRecord(record);
+        continue;
       } on Object {
-        // Best-effort: stop at the first failure, leaving this report
-        // and the rest persisted for the next drain.
+        // Transient (including 429 — respect the backend throttle) or
+        // unexpected: stop, leaving this record and the rest persisted
+        // for the next drain.
         break;
       }
-      final key = report.correlationKey;
-      if (key != null) await _sink.remove(key);
+      await _removeRecord(record);
       sent++;
     }
     return sent;
   }
 
-  /// Persists [report] to the sink, returning [FeedbackSubmitResult.queued];
-  /// if the sink itself fails, surfaces [FeedbackSubmissionException]. When
-  /// a prior transport failure ([transportCause]) also occurred, both
-  /// errors are preserved — the sink failure as the primary [cause] (it is
-  /// the reason queueing failed, and usually the more actionable root
-  /// cause), the transport failure carried alongside for telemetry.
+  /// Removes a drained record, best-effort. A keyless record has no
+  /// address (durable sinks filter these out of pending()); any other
+  /// removal fault — an unusable key reaching a strict sink, a
+  /// transient I/O error — is logged and swallowed rather than allowed
+  /// to abort the drain: the record simply re-sends on the next drain,
+  /// and correlationKey idempotency dedupes it server-side.
+  Future<void> _removeRecord(QueuedFeedbackReport record) async {
+    final key = record.correlationKey;
+    if (key == null || key.isEmpty) return;
+    try {
+      await _sink.remove(key);
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Failed to remove drained feedback report',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'correlationKey': key},
+      );
+    }
+  }
+
+  /// Persists [report] to the sink as a [QueuedFeedbackReport] tagged
+  /// with [serverId], returning [FeedbackSubmitResult.queued]; if the
+  /// sink itself fails, surfaces [FeedbackPersistenceException] — the
+  /// third failure mode ("couldn't even persist"), distinct from any
+  /// server rejection (#97). The sink failure is the primary `cause` (it
+  /// is the reason queueing failed, and usually the more actionable root
+  /// cause); a prior transport failure ([transportCause]) is carried
+  /// alongside for telemetry.
   Future<FeedbackSubmitResult> _queue(
     FeedbackReport report, {
+    required String? serverId,
     required Object? transportCause,
   }) async {
     try {
-      await _sink.persist(report);
+      await _sink.persist(
+        QueuedFeedbackReport(report: report, serverId: serverId),
+      );
       return FeedbackSubmitResult.queued;
     } on Object catch (sinkError) {
-      throw FeedbackSubmissionException(
+      throw FeedbackPersistenceException(
         transportCause == null
             ? 'Feedback could not be queued'
             : 'Feedback submission failed and could not be queued '
                   '(transport error: $transportCause)',
         cause: sinkError,
+        transportCause: transportCause,
       );
     }
   }

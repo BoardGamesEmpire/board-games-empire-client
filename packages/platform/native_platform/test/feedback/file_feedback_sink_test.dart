@@ -9,13 +9,17 @@ import 'package:observability/observability.dart';
 ///
 /// - **Only user-approved reports reach this sink** (the #34 privacy
 ///   contract is upheld by the approval gate upstream); one JSON file
-///   per report, named `<correlationKey>.json`.
+///   per record, named `<correlationKey>.json`.
+/// - On-disk shape is the [QueuedFeedbackReport] envelope (#97): report
+///   plus the `bgeServerId` it was approved for. Legacy #69 files hold a
+///   bare [FeedbackReport] and decode as **untagged** records — they
+///   drain instead of being stranded.
 /// - **Lazy directory resolution**: the injected `directoryProvider`
 ///   (production default: a `path_provider`-backed subdirectory) is not
 ///   invoked at construction, so registering the sink in the root
 ///   module puts no plugin call on the boot hot path.
 /// - Defensive reads: a corrupted file is skipped, not fatal — one bad
-///   report must not hide the rest.
+///   record must not hide the rest.
 void main() {
   late Directory tempDir;
 
@@ -38,6 +42,15 @@ void main() {
         correlationKey: key,
       );
 
+  QueuedFeedbackReport record(
+    String key, {
+    String? serverId,
+    String message = 'pending',
+  }) => QueuedFeedbackReport(
+    report: report(key, message: message),
+    serverId: serverId,
+  );
+
   group('FileFeedbackSink', () {
     test('is a FeedbackSink', () {
       expect(buildSink(), isA<FeedbackSink>());
@@ -51,17 +64,20 @@ void main() {
       );
     });
 
-    test('persist writes one JSON file per report, named by '
+    test('persist writes one JSON envelope file per record, named by '
         'correlationKey', () async {
       final sink = buildSink();
 
-      await sink.persist(report('key-a'));
+      await sink.persist(record('key-a', serverId: 'srv-1'));
 
       final file = File('${tempDir.path}/key-a.json');
       expect(file.existsSync(), isTrue);
       final decoded =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      expect(FeedbackReport.fromJson(decoded), report('key-a'));
+      expect(
+        QueuedFeedbackReport.fromJson(decoded),
+        record('key-a', serverId: 'srv-1'),
+      );
     });
 
     test(
@@ -71,25 +87,100 @@ void main() {
         expect(nested.existsSync(), isFalse);
         final sink = buildSink(provider: () async => nested);
 
-        await sink.persist(report('key-a'));
+        await sink.persist(record('key-a'));
 
         expect(nested.existsSync(), isTrue);
         expect(await sink.pending(), hasLength(1));
       },
     );
 
-    test('pending round-trips persisted reports', () async {
+    test('pending round-trips persisted records with their serverId '
+        'tags', () async {
       final sink = buildSink();
-      await sink.persist(report('key-a', message: 'first'));
-      await sink.persist(report('key-b', message: 'second'));
+      await sink.persist(record('key-a', serverId: 'srv-1', message: 'first'));
+      await sink.persist(record('key-b', message: 'second'));
 
       final pending = await sink.pending();
 
-      expect(
-        pending.map((r) => r.correlationKey),
-        containsAll(<String>['key-a', 'key-b']),
-      );
       expect(pending, hasLength(2));
+      final byKey = {for (final r in pending) r.correlationKey: r};
+      expect(byKey.keys, containsAll(<String>['key-a', 'key-b']));
+      expect(byKey['key-a']!.serverId, 'srv-1');
+      expect(byKey['key-b']!.serverId, isNull);
+    });
+
+    test('pending decodes a legacy #69 bare-report file as an untagged '
+        'record — pre-#97 queued reports drain instead of being '
+        'stranded', () async {
+      final sink = buildSink();
+      // A file exactly as #69's persist wrote it: the report JSON, bare.
+      await File(
+        '${tempDir.path}/legacy.json',
+      ).writeAsString(jsonEncode(report('legacy').toJson()));
+
+      final pending = await sink.pending();
+
+      expect(pending, hasLength(1));
+      expect(pending.single.correlationKey, 'legacy');
+      expect(pending.single.serverId, isNull);
+      expect(pending.single.report, report('legacy'));
+    });
+
+    test('pending drains oldest-first by write time, not by cuid2-'
+        'lexical filename — a throttle-stopped drain sends the oldest '
+        'records', () async {
+      final sink = buildSink();
+      // Keys chosen so lexical order ('aaa' first) contradicts write
+      // order; mtimes are set explicitly so the test is immune to
+      // filesystem timestamp resolution.
+      await sink.persist(record('zzz-oldest'));
+      await sink.persist(record('aaa-newest'));
+      await File(
+        '${tempDir.path}/zzz-oldest.json',
+      ).setLastModified(DateTime(2026, 1, 1));
+      await File(
+        '${tempDir.path}/aaa-newest.json',
+      ).setLastModified(DateTime(2026, 1, 2));
+
+      final pending = await sink.pending();
+
+      expect(pending.map((r) => r.correlationKey), [
+        'zzz-oldest',
+        'aaa-newest',
+      ]);
+    });
+
+    test('pending skips a decoded record with no correlationKey — it '
+        'could never be removed after a send (poison record), so the '
+        'rest of the queue still drains', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a'));
+      // A legacy #69 bare-report file whose report carries no key —
+      // decodes to a valid but un-removable record.
+      const keyless = FeedbackReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        message: 'no key',
+      );
+      await File(
+        '${tempDir.path}/orphan.json',
+      ).writeAsString(jsonEncode(keyless.toJson()));
+
+      final pending = await sink.pending();
+
+      expect(pending.map((r) => r.correlationKey), ['key-a']);
+    });
+
+    test('pending skips a record whose inner correlationKey disagrees '
+        'with its file name — remove() targets <key>.json, not this '
+        'file, so it would be un-removable', () async {
+      final sink = buildSink();
+      // File named mismatch.json but the envelope inside is keyed 'other'.
+      await File(
+        '${tempDir.path}/mismatch.json',
+      ).writeAsString(jsonEncode(record('other').toJson()));
+
+      expect(await sink.pending(), isEmpty);
     });
 
     test('pending is empty when nothing was ever persisted (directory '
@@ -104,20 +195,24 @@ void main() {
     test('pending skips a corrupted file instead of failing the whole '
         'read', () async {
       final sink = buildSink();
-      await sink.persist(report('key-a'));
+      await sink.persist(record('key-a'));
       await File(
         '${tempDir.path}/corrupt.json',
       ).writeAsString('not json at all');
+      // Valid JSON that is neither an envelope nor a legacy report.
+      await File(
+        '${tempDir.path}/wrong_shape.json',
+      ).writeAsString('{"neither": true}');
 
       final pending = await sink.pending();
 
       expect(pending.map((r) => r.correlationKey), ['key-a']);
     });
 
-    test('remove deletes the report file', () async {
+    test('remove deletes the record file', () async {
       final sink = buildSink();
-      await sink.persist(report('key-a'));
-      await sink.persist(report('key-b'));
+      await sink.persist(record('key-a'));
+      await sink.persist(record('key-b'));
 
       await sink.remove('key-a');
 
@@ -127,20 +222,22 @@ void main() {
 
     test('remove of an unknown key is a harmless no-op', () async {
       final sink = buildSink();
-      await sink.persist(report('key-a'));
+      await sink.persist(record('key-a'));
 
       await sink.remove('nope');
 
       expect(await sink.pending(), hasLength(1));
     });
 
-    test('rejects a report without a correlationKey — files are keyed '
+    test('rejects a record without a correlationKey — files are keyed '
         'by it', () async {
       final sink = buildSink();
-      const keyless = FeedbackReport(
-        category: FeedbackCategory.bug,
-        severity: FeedbackSeverity.low,
-        message: 'pending',
+      const keyless = QueuedFeedbackReport(
+        report: FeedbackReport(
+          category: FeedbackCategory.bug,
+          severity: FeedbackSeverity.low,
+          message: 'pending',
+        ),
       );
 
       await expectLater(sink.persist(keyless), throwsArgumentError);
@@ -150,14 +247,9 @@ void main() {
         'traversal out of the reports directory', () async {
       final sink = buildSink();
       for (final key in <String>['../evil', 'a/b', r'a\b', '..']) {
-        final report = FeedbackReport(
-          category: FeedbackCategory.bug,
-          severity: FeedbackSeverity.low,
-          message: 'pending',
-          correlationKey: key,
-        );
+        final invalid = QueuedFeedbackReport(report: report(key));
         await expectLater(
-          sink.persist(report),
+          sink.persist(invalid),
           throwsArgumentError,
           reason: 'key "$key" must be rejected',
         );

@@ -137,7 +137,7 @@ void main() {
       await pumpPrompt(
         tester,
         onSubmit: (_) async =>
-            throw const FeedbackSubmissionException('everything failed'),
+            throw const FeedbackPersistenceException('everything failed'),
       );
 
       await tester.tap(find.byKey(CrashReportPrompt.sendButtonKey));

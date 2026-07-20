@@ -78,12 +78,13 @@ class CrashReportPrompt extends StatefulWidget {
   static const Key sentConfirmationKey = Key('crash_report_prompt.sent');
   static const Key queuedConfirmationKey = Key('crash_report_prompt.queued');
   static const Key submissionFailedKey = Key('crash_report_prompt.failed');
+  static const Key submissionRejectedKey = Key('crash_report_prompt.rejected');
 
   @override
   State<CrashReportPrompt> createState() => _CrashReportPromptState();
 }
 
-enum _PromptPhase { composing, sending, sent, queued, failed }
+enum _PromptPhase { composing, sending, sent, queued, rejected, failed }
 
 class _CrashReportPromptState extends State<CrashReportPrompt> {
   final TextEditingController _comment = TextEditingController();
@@ -106,6 +107,20 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
         () => _phase = result == FeedbackSubmitResult.sent
             ? _PromptPhase.sent
             : _PromptPhase.queued,
+      );
+    } on FeedbackPermanentSubmissionException catch (error) {
+      // #97: permanent rejection — deliberately NOT queued ("saved for
+      // later" would be a lie). The rejected copy attributes the
+      // decision to the server, so it may only render when the server
+      // actually made one: a null statusCode means the rejection never
+      // left the client (submit's validation gate), and the generic
+      // failed copy — "couldn't be sent or saved", both true — is the
+      // honest one there.
+      if (!mounted) return;
+      setState(
+        () => _phase = error.statusCode != null
+            ? _PromptPhase.rejected
+            : _PromptPhase.failed,
       );
     } on Object {
       if (!mounted) return;
@@ -141,6 +156,12 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
                 key: CrashReportPrompt.queuedConfirmationKey,
                 icon: Icons.schedule_send_outlined,
                 text: i18n.crashReportPromptQueued,
+              ),
+              _PromptPhase.rejected => _outcome(
+                i18n,
+                key: CrashReportPrompt.submissionRejectedKey,
+                icon: Icons.block_outlined,
+                text: i18n.crashReportPromptRejected,
               ),
               _PromptPhase.failed => _outcome(
                 i18n,

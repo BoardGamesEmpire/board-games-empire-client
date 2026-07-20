@@ -250,7 +250,7 @@ void main() {
       await pumpReview(
         tester,
         onSubmit: (_) async =>
-            throw const FeedbackSubmissionException('everything failed'),
+            throw const FeedbackPersistenceException('everything failed'),
       );
 
       await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));

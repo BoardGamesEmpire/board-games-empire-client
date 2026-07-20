@@ -1,37 +1,35 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
-/// API pinned here (all collaborators injected as providers so the
-/// package stays pure Dart and the service stays testable without any
-/// platform machinery):
+/// API pinned here (all collaborators injected so the package stays pure
+/// Dart and the service stays testable without any platform machinery):
 ///
 /// ```dart
 /// FeedbackServiceImpl({
 ///   required List<Breadcrumb> Function() breadcrumbSource,
 ///   required FeedbackEnvironment Function() environmentSource,
-///   required FeedbackTransport? Function() transportResolver,
+///   required FeedbackTargetResolver targetResolver,   // #97
 ///   required FeedbackSink sink,
 ///   String Function()? correlationKeyGenerator, // default: cuid2
+///   BgeLogger? logger,
 /// })
 /// ```
 ///
-/// - `FeedbackEnvironment` — value of `{appVersion, platform, locale,
-///   deviceInfo}` assembled at the composition root (BuildInfo comes
-///   from the root container there; observability has no models dep).
-/// - `FeedbackTransport` — `Future<void> send(FeedbackReport)`; the
-///   resolver returns the active server's transport or null (no active
-///   authenticated server). Concrete Dio transport lives in
-///   dio_network (stage-2 red).
-/// - `FeedbackSink` — `persist` / `pending` / `remove(correlationKey)`;
-///   durable local store for user-approved reports that couldn't be
-///   sent. Platform concretes are stage-2 red.
-/// - `submit` returns `FeedbackSubmitResult.sent` or `.queued` so the
-///   prompt can tell the user the truth ("sent" vs "saved, will send
-///   later") — a deliberate interface evolution alongside the
-///   stackTrace drift fix.
-/// - `drainPending()` returns the number sent; the trigger is #37's.
+/// #97 semantics pinned:
+///
+/// - `submit` resolves the target fresh per call. No target / no
+///   transport → queue as a [QueuedFeedbackReport] tagged with the
+///   target's serverId (null when no server is active). A **transient**
+///   transport failure queues, tagged; a **permanent** rejection
+///   surfaces un-queued; a sink fault surfaces as
+///   [FeedbackPersistenceException] carrying both causes.
+/// - `drainPending` gates per record: tagged-for-another-server records
+///   are never touched; untagged records drain into the active server.
+///   Transient failure (incl. 429) stops the drain; permanent rejection
+///   drops the record and continues. Returns the number **sent**.
 void main() {
   const environment = FeedbackEnvironment(
     appVersion: '1.2.3',
@@ -52,13 +50,13 @@ void main() {
 
   FeedbackServiceImpl buildService({
     List<Breadcrumb> Function()? breadcrumbSource,
-    FeedbackTransport? Function()? transportResolver,
+    FeedbackTargetResolver? targetResolver,
     FeedbackSink? sink,
     String Function()? correlationKeyGenerator,
   }) => FeedbackServiceImpl(
     breadcrumbSource: breadcrumbSource ?? () => const [],
     environmentSource: () => environment,
-    transportResolver: transportResolver ?? () => null,
+    targetResolver: targetResolver ?? _StaticTargetResolver(null),
     sink: sink ?? _RecordingSink(),
     correlationKeyGenerator: correlationKeyGenerator,
   );
@@ -248,7 +246,9 @@ void main() {
       final transport = _RecordingTransport();
       final sink = _RecordingSink();
       final service = buildService(
-        transportResolver: () => transport,
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
         sink: sink,
       );
       final r = report(service);
@@ -260,26 +260,13 @@ void main() {
       expect(sink.persisted, isEmpty);
     });
 
-    test('persists to the sink and reports queued when no transport is '
-        'available', () async {
-      final sink = _RecordingSink();
-      final service = buildService(sink: sink);
-      final r = report(service);
-
-      final result = await service.submit(r);
-
-      expect(result, FeedbackSubmitResult.queued);
-      expect(sink.persisted, [r]);
-    });
-
-    test('falls back to the sink when the transport fails (offline '
-        'case) and reports queued', () async {
-      final transport = _RecordingTransport(
-        error: const FeedbackSubmissionException('network down'),
-      );
+    test('queues tagged with the active serverId when the target has no '
+        'transport (active but unauthenticated)', () async {
       final sink = _RecordingSink();
       final service = buildService(
-        transportResolver: () => transport,
+        targetResolver: _StaticTargetResolver(
+          const FeedbackTarget(serverId: 'srv-1'),
+        ),
         sink: sink,
       );
       final r = report(service);
@@ -287,15 +274,112 @@ void main() {
       final result = await service.submit(r);
 
       expect(result, FeedbackSubmitResult.queued);
-      expect(sink.persisted, [r]);
+      expect(sink.persisted.single.report, r);
+      expect(sink.persisted.single.serverId, 'srv-1');
     });
 
-    test('validates before any I/O — a cap-violating report throws and '
-        'never reaches transport or sink', () async {
+    test('queues untagged when no server is active at all', () async {
+      final sink = _RecordingSink();
+      final service = buildService(sink: sink);
+      final r = report(service);
+
+      final result = await service.submit(r);
+
+      expect(result, FeedbackSubmitResult.queued);
+      expect(sink.persisted.single.serverId, isNull);
+    });
+
+    test('re-resolves the target on every call — a transport appearing '
+        'after a queued submit is used by the next one', () async {
+      final transport = _RecordingTransport();
+      final resolver = _StaticTargetResolver(
+        const FeedbackTarget(serverId: 'srv-1'),
+      );
+      final sink = _RecordingSink();
+      final service = buildService(targetResolver: resolver, sink: sink);
+      final r = report(service);
+
+      expect(await service.submit(r), FeedbackSubmitResult.queued);
+
+      resolver.target = FeedbackTarget(serverId: 'srv-1', transport: transport);
+      expect(await service.submit(r), FeedbackSubmitResult.sent);
+      expect(transport.sent, [r]);
+    });
+
+    test('falls back to the sink on a transient transport failure '
+        '(offline case), tagged with the serverId', () async {
+      final transport = _RecordingTransport(
+        error: const FeedbackTransientSubmissionException('network down'),
+      );
+      final sink = _RecordingSink();
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+      final r = report(service);
+
+      final result = await service.submit(r);
+
+      expect(result, FeedbackSubmitResult.queued);
+      expect(sink.persisted.single.report, r);
+      expect(sink.persisted.single.serverId, 'srv-1');
+    });
+
+    test('queues defensively when a transport leaks an unclassified '
+        'error in breach of its contract', () async {
+      final transport = _RecordingTransport(error: StateError('leak'));
+      final sink = _RecordingSink();
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      final result = await service.submit(report(service));
+
+      expect(result, FeedbackSubmitResult.queued);
+    });
+
+    test('surfaces a permanent rejection to the caller WITHOUT queueing '
+        '— retrying can never succeed', () async {
+      final transport = _RecordingTransport(
+        error: const FeedbackPermanentSubmissionException(
+          'rejected',
+          statusCode: 403,
+        ),
+      );
+      final sink = _RecordingSink();
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      await expectLater(
+        service.submit(report(service)),
+        throwsA(
+          isA<FeedbackPermanentSubmissionException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+      expect(sink.persisted, isEmpty);
+    });
+
+    test('validates before any I/O — a cap-violating report throws '
+        'permanent and never reaches transport or sink', () async {
       final transport = _RecordingTransport();
       final sink = _RecordingSink();
       final service = buildService(
-        transportResolver: () => transport,
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
         sink: sink,
       );
       final invalid = FeedbackReport(
@@ -306,44 +390,150 @@ void main() {
 
       await expectLater(
         service.submit(invalid),
-        throwsA(isA<FeedbackSubmissionException>()),
+        throwsA(
+          // statusCode stays null: the rejection never left the client,
+          // and the prompts gate their server-attribution copy on it.
+          isA<FeedbackPermanentSubmissionException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            isNull,
+          ),
+        ),
       );
       expect(transport.sent, isEmpty);
       expect(sink.persisted, isEmpty);
     });
 
-    test('surfaces FeedbackSubmissionException when both transport and '
-        'sink fail', () async {
-      final service = buildService(
-        transportResolver: () =>
-            _RecordingTransport(error: StateError('network down')),
-        sink: _RecordingSink(persistError: StateError('disk full')),
+    test('rejects a report without a correlationKey as permanent before '
+        'any I/O — never misclassified as a persistence failure at '
+        'queue time', () async {
+      final transport = _RecordingTransport();
+      final sink = _RecordingSink();
+      // No transport resolved, so a keyless report would previously hit
+      // the sink, throw ArgumentError there, and surface as a
+      // persistence failure.
+      final service = buildService(sink: sink);
+      const keyless = FeedbackReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        message: 'It misbehaved',
       );
-      final r = report(service);
 
       await expectLater(
-        service.submit(r),
-        throwsA(isA<FeedbackSubmissionException>()),
+        service.submit(keyless),
+        throwsA(
+          isA<FeedbackPermanentSubmissionException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            isNull,
+          ),
+        ),
+      );
+      expect(transport.sent, isEmpty);
+      expect(sink.persisted, isEmpty);
+    });
+
+    test('rejects a path-unsafe correlationKey as permanent before any '
+        'I/O — a durable sink would throw on it at queue time and '
+        'masquerade as a persistence failure', () async {
+      final sink = _RecordingSink();
+      final service = buildService(sink: sink);
+
+      for (final key in <String>['../evil', 'a/b', r'a\b', '..']) {
+        final report = FeedbackReport(
+          category: FeedbackCategory.bug,
+          severity: FeedbackSeverity.low,
+          message: 'It misbehaved',
+          correlationKey: key,
+        );
+
+        await expectLater(
+          service.submit(report),
+          throwsA(
+            isA<FeedbackPermanentSubmissionException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              isNull,
+            ),
+          ),
+          reason: 'key "$key" must be rejected',
+        );
+      }
+      expect(sink.persisted, isEmpty);
+    });
+
+    test('surfaces FeedbackPersistenceException carrying both the sink '
+        'fault and the transport cause when both fail', () async {
+      final transportError = StateError('network down');
+      final sinkError = StateError('disk full');
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(
+            serverId: 'srv-1',
+            transport: _RecordingTransport(error: transportError),
+          ),
+        ),
+        sink: _RecordingSink(persistError: sinkError),
+      );
+
+      await expectLater(
+        service.submit(report(buildService())),
+        throwsA(
+          isA<FeedbackPersistenceException>()
+              .having((e) => e.cause, 'cause', same(sinkError))
+              .having(
+                (e) => e.transportCause,
+                'transportCause',
+                same(transportError),
+              ),
+        ),
+      );
+    });
+
+    test('surfaces FeedbackPersistenceException with a null '
+        'transportCause when queueing was the first resort', () async {
+      final service = buildService(
+        sink: _RecordingSink(persistError: StateError('disk full')),
+      );
+
+      await expectLater(
+        service.submit(report(buildService())),
+        throwsA(
+          isA<FeedbackPersistenceException>().having(
+            (e) => e.transportCause,
+            'transportCause',
+            isNull,
+          ),
+        ),
       );
     });
   });
 
   group('drainPending', () {
-    FeedbackReport pendingReport(String key) => FeedbackReport(
-      category: FeedbackCategory.bug,
-      severity: FeedbackSeverity.low,
-      message: 'pending',
-      correlationKey: key,
-    );
+    QueuedFeedbackReport pendingRecord(String key, {String? serverId}) =>
+        QueuedFeedbackReport(
+          report: FeedbackReport(
+            category: FeedbackCategory.bug,
+            severity: FeedbackSeverity.low,
+            message: 'pending',
+            correlationKey: key,
+          ),
+          serverId: serverId,
+        );
 
-    test('sends all pending reports in order, removing each on success, '
-        'and returns the count', () async {
+    test('sends the active server\'s records and untagged records in '
+        'order, removing each on success, and returns the count', () async {
       final transport = _RecordingTransport();
       final sink = _RecordingSink(
-        pendingList: [pendingReport('a'), pendingReport('b')],
+        pendingList: [
+          pendingRecord('a', serverId: 'srv-1'),
+          pendingRecord('b'), // untagged — device-global, drains here
+        ],
       );
       final service = buildService(
-        transportResolver: () => transport,
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
         sink: sink,
       );
 
@@ -354,18 +544,48 @@ void main() {
       expect(sink.removed, ['a', 'b']);
     });
 
-    test('stops at the first failure, leaving that report and the rest '
-        'persisted', () async {
-      final transport = _RecordingTransport(failOnCall: 2);
+    test('never touches a record tagged for a different server', () async {
+      final transport = _RecordingTransport();
       final sink = _RecordingSink(
         pendingList: [
-          pendingReport('a'),
-          pendingReport('b'),
-          pendingReport('c'),
+          pendingRecord('other', serverId: 'srv-2'),
+          pendingRecord('mine', serverId: 'srv-1'),
         ],
       );
       final service = buildService(
-        transportResolver: () => transport,
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      final sent = await service.drainPending();
+
+      expect(sent, 1);
+      expect(transport.sent.map((r) => r.correlationKey), ['mine']);
+      expect(sink.removed, ['mine']);
+    });
+
+    test('stops at the first transient failure (the 429 throttle case), '
+        'leaving that record and the rest persisted', () async {
+      final transport = _RecordingTransport(
+        failOnCall: 2,
+        error: const FeedbackTransientSubmissionException(
+          'throttled',
+          statusCode: 429,
+        ),
+      );
+      final sink = _RecordingSink(
+        pendingList: [
+          pendingRecord('a', serverId: 'srv-1'),
+          pendingRecord('b', serverId: 'srv-1'),
+          pendingRecord('c', serverId: 'srv-1'),
+        ],
+      );
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
         sink: sink,
       );
 
@@ -376,63 +596,237 @@ void main() {
       expect(transport.sent.map((r) => r.correlationKey), ['a', 'b']);
     });
 
-    test('is a no-op without a transport', () async {
-      final sink = _RecordingSink(pendingList: [pendingReport('a')]);
-      final service = buildService(sink: sink);
+    test('drops a permanently rejected record and continues — no '
+        'un-drainable backlog, and the drop is not counted as '
+        'sent', () async {
+      final transport = _RecordingTransport(
+        failOnCall: 1,
+        failOnCallOnly: true,
+        error: const FeedbackPermanentSubmissionException(
+          'rejected',
+          statusCode: 400,
+        ),
+      );
+      final sink = _RecordingSink(
+        pendingList: [
+          pendingRecord('bad', serverId: 'srv-1'),
+          pendingRecord('good', serverId: 'srv-1'),
+        ],
+      );
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      final sent = await service.drainPending();
+
+      expect(sent, 1);
+      // Both removed: 'bad' as a permanent drop, 'good' as sent.
+      expect(sink.removed, ['bad', 'good']);
+      expect(transport.sent.map((r) => r.correlationKey), ['bad', 'good']);
+    });
+
+    test('a keyless record mid-queue is not removed and does not abort '
+        'the drain — belt-and-braces for a sink that did not filter '
+        'it', () async {
+      final transport = _RecordingTransport();
+      final sink = _RecordingSink(
+        pendingList: [
+          QueuedFeedbackReport(
+            report: const FeedbackReport(
+              category: FeedbackCategory.bug,
+              severity: FeedbackSeverity.low,
+              message: 'no key',
+            ),
+            serverId: 'srv-1',
+          ),
+          pendingRecord('good', serverId: 'srv-1'),
+        ],
+      );
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      final sent = await service.drainPending();
+
+      // Both sent; only the keyed one is removed (the keyless one has
+      // no address, but it must not throw the drain to a halt).
+      expect(sent, 2);
+      expect(sink.removed, ['good']);
+      expect(transport.sent.map((r) => r.correlationKey), [null, 'good']);
+    });
+
+    test('a removal fault after a successful send is swallowed — the '
+        'drain stays best-effort and finishes the queue', () async {
+      final transport = _RecordingTransport();
+      final sink = _RecordingSink(
+        removeError: ArgumentError('unusable key'),
+        pendingList: [
+          pendingRecord('a', serverId: 'srv-1'),
+          pendingRecord('b', serverId: 'srv-1'),
+        ],
+      );
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      final sent = await service.drainPending();
+
+      expect(sent, 2);
+      expect(transport.sent.map((r) => r.correlationKey), ['a', 'b']);
+      expect(sink.removed, isEmpty);
+    });
+
+    test('is a no-op without a transport (unauthenticated)', () async {
+      final sink = _RecordingSink(
+        pendingList: [pendingRecord('a', serverId: 'srv-1')],
+      );
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          const FeedbackTarget(serverId: 'srv-1'),
+        ),
+        sink: sink,
+      );
 
       final sent = await service.drainPending();
 
       expect(sent, 0);
       expect(sink.removed, isEmpty);
     });
+
+    test('is a no-op without an active server', () async {
+      final sink = _RecordingSink(pendingList: [pendingRecord('a')]);
+      final service = buildService(sink: sink);
+
+      expect(await service.drainPending(), 0);
+    });
+
+    test('overlapping calls coalesce into the in-flight run — no '
+        're-POSTs, no double count — and a later call starts '
+        'fresh', () async {
+      final transport = _GatedTransport();
+      final sink = _RecordingSink(
+        pendingList: [pendingRecord('a', serverId: 'srv-1')],
+      );
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+
+      final first = service.drainPending();
+      final second = service.drainPending();
+      transport.release();
+
+      expect(await first, 1);
+      expect(await second, 1);
+      // One snapshot, one send — not two racing over the same record.
+      expect(transport.sent, hasLength(1));
+
+      // After completion the guard resets: a fresh drain runs (and
+      // finds nothing left).
+      expect(await service.drainPending(), 0);
+    });
   });
 }
 
-class _RecordingTransport implements FeedbackTransport {
-  _RecordingTransport({this.error, this.failOnCall});
+/// Fixed-target resolver; mutate [target] to simulate auth/server
+/// transitions between calls.
+class _StaticTargetResolver implements FeedbackTargetResolver {
+  _StaticTargetResolver(this.target);
 
-  /// Thrown on every call when set.
+  FeedbackTarget? target;
+
+  @override
+  FeedbackTarget? resolve() => target;
+}
+
+class _RecordingTransport implements FeedbackTransport {
+  _RecordingTransport({
+    this.error,
+    this.failOnCall,
+    this.failOnCallOnly = false,
+  });
+
+  /// Thrown per [failOnCall] semantics when set.
   final Object? error;
 
-  /// 1-indexed call number to fail on (subsequent calls also fail).
+  /// 1-indexed call number to start failing on; null with [error] set
+  /// means every call fails.
   final int? failOnCall;
 
+  /// When true, only the [failOnCall]-th call fails (later calls
+  /// succeed) — models a single permanently rejected record mid-drain.
+  final bool failOnCallOnly;
+
   final List<FeedbackReport> sent = [];
-  int _calls = 0;
+  var _calls = 0;
 
   @override
   Future<void> send(FeedbackReport report) async {
     _calls++;
     sent.add(report);
-    if (error != null) throw error!;
-    final failFrom = failOnCall;
-    if (failFrom != null && _calls >= failFrom) {
-      throw const FeedbackSubmissionException('scripted failure');
-    }
+    if (error == null) return;
+    final threshold = failOnCall;
+    final fails = threshold == null
+        ? true
+        : failOnCallOnly
+        ? _calls == threshold
+        : _calls >= threshold;
+    if (fails) throw error!;
+  }
+}
+
+/// Holds every send until [release], so a test can overlap two drains.
+class _GatedTransport implements FeedbackTransport {
+  final _gate = Completer<void>();
+  final List<FeedbackReport> sent = [];
+
+  void release() => _gate.complete();
+
+  @override
+  Future<void> send(FeedbackReport report) async {
+    sent.add(report);
+    await _gate.future;
   }
 }
 
 class _RecordingSink implements FeedbackSink {
-  _RecordingSink({List<FeedbackReport>? pendingList, this.persistError})
-    : _pending = List.of(pendingList ?? const []);
+  _RecordingSink({
+    this.persistError,
+    this.removeError,
+    List<QueuedFeedbackReport>? pendingList,
+  }) : _pending = List.of(pendingList ?? const []);
 
   final Object? persistError;
-  final List<FeedbackReport> _pending;
-  final List<FeedbackReport> persisted = [];
+  final Object? removeError;
+  final List<QueuedFeedbackReport> _pending;
+
+  final List<QueuedFeedbackReport> persisted = [];
   final List<String> removed = [];
 
   @override
-  Future<void> persist(FeedbackReport report) async {
+  Future<void> persist(QueuedFeedbackReport record) async {
     if (persistError != null) throw persistError!;
-    persisted.add(report);
-    _pending.add(report);
+    persisted.add(record);
+    _pending.add(record);
   }
 
   @override
-  Future<List<FeedbackReport>> pending() async => List.of(_pending);
+  Future<List<QueuedFeedbackReport>> pending() async => List.of(_pending);
 
   @override
   Future<void> remove(String correlationKey) async {
+    if (removeError != null) throw removeError!;
     removed.add(correlationKey);
     _pending.removeWhere((r) => r.correlationKey == correlationKey);
   }

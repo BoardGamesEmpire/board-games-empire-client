@@ -108,6 +108,10 @@
   "@crashReportPromptFailed": {
     "description": "Shown when both sending and local saving failed; the prompt can still be closed"
   },
+  "crashReportPromptRejected": "Your server declined this report, so it won't be sent or retried.",
+  "@crashReportPromptRejected": {
+    "description": "Shown when the server permanently rejected the crash report (validation failure, or feedback disabled for this account); must stay honest — the report was NOT saved and will NOT be retried"
+  },
   "crashReportPromptBackDismissHint": "Press back again to dismiss this report.",
   "@crashReportPromptBackDismissHint": {
     "description": "Hint shown on the crash prompt after a first system back press is intercepted (#106); rendered in a live region so screen readers announce that a second back press within the window dismisses the report"
@@ -187,6 +191,10 @@
   "feedbackReviewFailed": "The report couldn't be sent or saved.",
   "@feedbackReviewFailed": {
     "description": "Shown when both sending and local saving of the reviewed report failed"
+  },
+  "feedbackReviewRejected": "Your server declined this report, so it won't be sent or retried.",
+  "@feedbackReviewRejected": {
+    "description": "Shown when the server permanently rejected the reviewed report (validation failure, or feedback disabled for this account); must stay honest — the report was NOT saved and will NOT be retried"
   },
   "feedbackReviewClose": "Close",
   "@feedbackReviewClose": {

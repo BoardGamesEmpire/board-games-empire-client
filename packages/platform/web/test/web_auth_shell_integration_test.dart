@@ -49,6 +49,9 @@ class _FakeAuthRepository implements AuthRepository {
   final _controller = StreamController<AuthState>.broadcast();
 
   @override
+  AuthState get currentAuthState => _currentState;
+
+  @override
   Future<AuthResponse?> getSession() async => _session;
 
   @override
