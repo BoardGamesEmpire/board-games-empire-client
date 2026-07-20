@@ -7,7 +7,7 @@
 #include "Signing.xcconfig"
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = desktop
+PRODUCT_NAME = Board Games Empire
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.boardgamesempire.desktop.desktop
