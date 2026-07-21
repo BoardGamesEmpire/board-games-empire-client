@@ -1,6 +1,7 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
@@ -157,13 +158,25 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     required ServerDatabase db,
     required SyncQueueRepository syncQueue,
     required String currentUserId,
+    required ClockService clock,
   }) : _db = db,
        _syncQueue = syncQueue,
-       _userId = currentUserId;
+       _userId = currentUserId,
+       _clock = clock;
 
   final ServerDatabase _db;
   final SyncQueueRepository _syncQueue;
   final String _userId;
+
+  /// Server-corrected time source (#12). Every consensus-relevant
+  /// timestamp this repository produces — tombstone [deletedAt],
+  /// [updatedAt] (including resurrection), fresh-insert [createdAt] —
+  /// comes from [ClockService.nowUtc], never `DateTime.now()`, so a
+  /// device with a skewed wall clock cannot win (or lose) cross-device
+  /// tombstone tiebreaks by virtue of the skew. UI-display timestamps
+  /// carried on the model (`lastPlayed`, `lastUpdated`) are caller- or
+  /// server-supplied and are not produced here.
+  final ClockService _clock;
 
   // ── Reads ──────────────────────────────────────────────────────────────────────
 
@@ -217,7 +230,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     }
 
     return _db.transaction(() async {
-      final now = DateTime.now().toUtc();
+      final now = _clock.nowUtc();
       final wireMedium = medium.toWire();
 
       final existing = await _findCanonicalRow(
@@ -369,7 +382,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     }
 
     return _db.transaction(() async {
-      final now = DateTime.now().toUtc();
+      final now = _clock.nowUtc();
 
       // Preflight: the row must exist, belong to the current user,
       // AND be live (not tombstoned). A tombstoned row is treated as
@@ -435,7 +448,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   @override
   Future<void> removeFromCollection(String id) async {
     return _db.transaction(() async {
-      final now = DateTime.now().toUtc();
+      final now = _clock.nowUtc();
 
       final existing =
           await (_db.select(_db.gameCollectionsTable)
@@ -654,10 +667,12 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
             // the most recently touched row.
             (t) => OrderingTerm.desc(t.updatedAt),
             // Deterministic tiebreaker when multiple rows share the
-            // same updatedAt. DateTime.now().toUtc() resolves to
+            // same updatedAt. ClockService.nowUtc() resolves to
             // microseconds, so two tombstones produced by a fast
             // addToCollection → removeFromCollection burst on a
-            // quick machine can land on the same microsecond — in
+            // quick machine can land on the same microsecond (the
+            // skew clock's monotonic guard can even pin successive
+            // calls to an identical instant) — in
             // which case the prior `(deletedAt IS NULL) DESC,
             // updatedAt DESC` ordering would let SQLite pick either
             // row implementation-definedly, so the resurrection path

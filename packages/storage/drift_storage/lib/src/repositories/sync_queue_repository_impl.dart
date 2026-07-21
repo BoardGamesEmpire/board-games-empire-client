@@ -1,14 +1,21 @@
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 
 class SyncQueueRepositoryImpl implements SyncQueueRepository {
-  const SyncQueueRepositoryImpl(this._db);
+  const SyncQueueRepositoryImpl(this._db, this._clock);
 
   final ServerDatabase _db;
+
+  /// Server-corrected time source (#12). Queue timestamps (createdAt,
+  /// lastAttemptAt) use [ClockService.nowUtc] so bookkeeping stays
+  /// consistent with the tombstone/updatedAt timestamps produced by
+  /// the collection repository against the same server.
+  final ClockService _clock;
 
   @override
   Future<SyncQueueEntry> enqueue(SyncOperation operation) async {
@@ -20,7 +27,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     // both queue entries and their target rows sees one id format
     // throughout.
     final id = cuid();
-    final now = DateTime.now().toUtc();
+    final now = _clock.nowUtc();
 
     await _db
         .into(_db.syncQueueTable)
@@ -44,9 +51,11 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   Future<List<SyncQueueEntry>> getPendingEntries() async {
     // Ordering: primary by createdAt (ASC, FIFO), tiebroken by SQLite
     // rowid (ASC, monotonic insertion order). The tiebreaker is
-    // necessary because [DateTime.now()] resolves to microseconds and
-    // two back-to-back enqueues on a fast machine can land on the
-    // same microsecond — in which case createdAt-only ordering is
+    // necessary because [ClockService.nowUtc] resolves to microseconds
+    // and two back-to-back enqueues on a fast machine can land on the
+    // same microsecond (the skew clock's monotonic guard can even pin
+    // successive calls to an identical instant) — in which case
+    // createdAt-only ordering is
     // not deterministic and dependent ops (add → update → remove)
     // could be processed out of order. SQLite assigns rowids in
     // insertion order on tables that aren't `WITHOUT ROWID`, so it
@@ -82,7 +91,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     await (_db.update(_db.syncQueueTable)..where((t) => t.id.equals(id))).write(
       SyncQueueTableCompanion(
         status: const Value('inProgress'),
-        lastAttemptAt: Value(DateTime.now().toUtc()),
+        lastAttemptAt: Value(_clock.nowUtc()),
       ),
     );
   }
@@ -118,7 +127,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
       variables: [
         Variable.withString('failed'),
         Variable.withString(error),
-        Variable.withDateTime(DateTime.now().toUtc()),
+        Variable.withDateTime(_clock.nowUtc()),
         Variable.withString(id),
       ],
       updates: {_db.syncQueueTable},

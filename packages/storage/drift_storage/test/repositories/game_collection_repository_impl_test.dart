@@ -7,6 +7,9 @@ import 'package:models/domain.dart';
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 
+import '../support/fixed_clock.dart';
+import '../support/system_clock.dart';
+
 class MockSyncQueue extends Mock implements SyncQueueRepository {}
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -92,10 +95,14 @@ void main() {
 
     _stubMockSyncDefaults(mockSync);
 
+    // Real wall clock via the pass-through test double: these tests
+    // predate #12 and exercise collection semantics, not timestamp
+    // origin (the 'clock injection' group below covers that).
     repo = GameCollectionRepositoryImpl(
       db: db,
       syncQueue: mockSync,
       currentUserId: _kUserId,
+      clock: const SystemClockService(),
     );
 
     await _seedPlatformGame(db);
@@ -1363,6 +1370,7 @@ void main() {
           db: db,
           syncQueue: mockSync,
           currentUserId: 'other-user',
+          clock: const SystemClockService(),
         );
         await otherRepo.addToCollection(
           platformGameId: 'pg-other',
@@ -1447,6 +1455,80 @@ void main() {
         expect(emissions[0]!.id, equals(entry.id));
         expect(emissions[0]!.deletedAt, isNull);
         expect(emissions[1], isNull);
+      });
+    });
+
+    group('clock injection (#12)', () {
+      final t1 = DateTime.utc(2026, 7, 21, 12);
+
+      GameCollectionRepositoryImpl clockRepo(FixedClockService clock) =>
+          GameCollectionRepositoryImpl(
+            db: db,
+            syncQueue: mockSync,
+            currentUserId: _kUserId,
+            clock: clock,
+          );
+
+      Future<GameCollectionsTableData> rawRow(String id) => (db.select(
+        db.gameCollectionsTable,
+      )..where((t) => t.id.equals(id))).getSingle();
+
+      test(
+        'fresh insert createdAt/updatedAt come from the injected clock',
+        () async {
+          final entry = await clockRepo(
+            FixedClockService(t1),
+          ).addToCollection(platformGameId: _kPlatformGameId, medium: _kMedium);
+
+          final row = await rawRow(entry.id);
+          expect(row.createdAt, t1);
+          expect(row.updatedAt, t1);
+        },
+      );
+
+      test(
+        'tombstone deletedAt/updatedAt come from the injected clock',
+        () async {
+          final clock = FixedClockService(t1);
+          final repoWithClock = clockRepo(clock);
+          final entry = await repoWithClock.addToCollection(
+            platformGameId: _kPlatformGameId,
+            medium: _kMedium,
+          );
+
+          final t2 = t1.add(const Duration(minutes: 5));
+          clock.current = t2;
+          await repoWithClock.removeFromCollection(entry.id);
+
+          final row = await rawRow(entry.id);
+          expect(row.deletedAt, t2);
+          expect(row.updatedAt, t2);
+          expect(row.createdAt, t1, reason: 'creation instant preserved');
+        },
+      );
+
+      test('resurrection updatedAt comes from the injected clock', () async {
+        final clock = FixedClockService(t1);
+        final repoWithClock = clockRepo(clock);
+        final entry = await repoWithClock.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+        clock.current = t1.add(const Duration(minutes: 5));
+        await repoWithClock.removeFromCollection(entry.id);
+
+        final t3 = t1.add(const Duration(minutes: 10));
+        clock.current = t3;
+        final revived = await repoWithClock.addToCollection(
+          platformGameId: _kPlatformGameId,
+          medium: _kMedium,
+        );
+
+        expect(revived.id, entry.id, reason: 'tombstone resurrected in place');
+        final row = await rawRow(entry.id);
+        expect(row.deletedAt, isNull);
+        expect(row.updatedAt, t3);
+        expect(row.createdAt, t1, reason: 'creation instant preserved');
       });
     });
   });
