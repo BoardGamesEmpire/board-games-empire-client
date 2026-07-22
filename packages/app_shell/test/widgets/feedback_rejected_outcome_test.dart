@@ -1,4 +1,3 @@
-// packages/app_shell/test/widgets/feedback_rejected_outcome_test.dart
 import 'package:app_shell/l10n/shell_localizations.dart';
 import 'package:app_shell/src/widgets/crash_report_prompt.dart';
 import 'package:app_shell/src/widgets/feedback_review_screen.dart';

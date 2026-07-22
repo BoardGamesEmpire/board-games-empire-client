@@ -1,13 +1,16 @@
+import 'package:di/di.dart' show ServerSkewClockService;
 import 'package:dio/dio.dart';
 
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
 import '../feedback/feedback_dio_transport.dart';
+import 'clock_skew_interceptor.dart';
 import 'dio_factory.dart';
 import 'network_log_interceptor.dart';
 import 'token_interceptor.dart';
@@ -41,6 +44,19 @@ void registerServerNetwork({
   const factory = DefaultDioFactory();
   container.registerSingleton<DioFactory>(factory);
 
+  // #12: per-server skew-corrected clock. Registered here — not in its
+  // own installer — per the registration convention: it is fed by this
+  // stack's Dio responses (via ClockSkewInterceptor below). Registered
+  // under the read interface only; the feed surface (ClockSkewRecorder)
+  // is a private wiring detail between this composition root and the
+  // interceptor. Each server has its own clock, so estimates never leak
+  // across scopes.
+  final clock = ServerSkewClockService();
+  container.registerSingleton<ClockService>(
+    clock,
+    dispose: (_) => clock.dispose(),
+  );
+
   final dio = factory.buildForServer(
     baseUrl: config.serverUrl,
     interceptors: [
@@ -52,6 +68,12 @@ void registerServerNetwork({
       // transport failure logs at error always.
       NetworkLogInterceptor(),
       TokenInterceptor(tokenStorage: tokenStorage),
+      // #12: feeds server Date headers to the skew estimator. Every
+      // response through this Dio is a free calibration sample. LAST in
+      // the stack, after TokenInterceptor: its send stamp is taken after
+      // the async token-storage read — the only non-trivial latency in
+      // the chain — so the measured round trip excludes it.
+      ClockSkewInterceptor(recorder: clock),
     ],
   );
   container.registerSingleton<Dio>(dio, dispose: (_) => dio.close());

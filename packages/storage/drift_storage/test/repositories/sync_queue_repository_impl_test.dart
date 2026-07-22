@@ -5,6 +5,9 @@ import 'package:models/domain.dart';
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 
+import '../support/fixed_clock.dart';
+import '../support/system_clock.dart';
+
 const _kOperation = AddToCollectionOperation(
   localId: 'local-1',
   platformGameId: 'pg-1',
@@ -18,7 +21,10 @@ void main() {
 
   setUp(() {
     db = ServerDatabase.memory();
-    repo = SyncQueueRepositoryImpl(db);
+    // Real wall clock via the pass-through test double: these tests
+    // predate #12 and exercise queue semantics, not timestamp origin
+    // (the 'clock injection' group below covers that).
+    repo = SyncQueueRepositoryImpl(db, const SystemClockService());
   });
 
   tearDown(() async => db.close());
@@ -838,6 +844,45 @@ void main() {
           await expectLater(repo.getAllEntries(), throwsA(isA<StateError>()));
         },
       );
+    });
+
+    group('clock injection (#12)', () {
+      final fixed = DateTime.utc(2026, 7, 21, 12);
+
+      test('enqueue createdAt comes from the injected clock', () async {
+        final clockRepo = SyncQueueRepositoryImpl(db, FixedClockService(fixed));
+
+        final entry = await clockRepo.enqueue(_kOperation);
+
+        expect(entry.createdAt, fixed);
+      });
+
+      test(
+        'markInProgress lastAttemptAt comes from the injected clock',
+        () async {
+          final clock = FixedClockService(fixed);
+          final clockRepo = SyncQueueRepositoryImpl(db, clock);
+          final entry = await clockRepo.enqueue(_kOperation);
+
+          clock.current = fixed.add(const Duration(minutes: 1));
+          await clockRepo.markInProgress(entry.id);
+
+          final updated = (await clockRepo.getAllEntries()).single;
+          expect(updated.lastAttemptAt, fixed.add(const Duration(minutes: 1)));
+        },
+      );
+
+      test('markFailed lastAttemptAt comes from the injected clock', () async {
+        final clock = FixedClockService(fixed);
+        final clockRepo = SyncQueueRepositoryImpl(db, clock);
+        final entry = await clockRepo.enqueue(_kOperation);
+
+        clock.current = fixed.add(const Duration(minutes: 2));
+        await clockRepo.markFailed(entry.id, error: 'boom');
+
+        final updated = (await clockRepo.getAllEntries()).single;
+        expect(updated.lastAttemptAt, fixed.add(const Duration(minutes: 2)));
+      });
     });
   });
 }

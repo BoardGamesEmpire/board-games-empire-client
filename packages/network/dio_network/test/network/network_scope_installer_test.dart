@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 ServerConfig _makeConfig() => ServerConfig(
@@ -40,8 +41,18 @@ void main() {
 
       expect(container.isRegistered<TokenStorageService>(), isTrue);
       expect(container.isRegistered<DioFactory>(), isTrue);
+      expect(container.isRegistered<ClockService>(), isTrue);
       expect(container.isRegistered<Dio>(), isTrue);
       expect(container.isRegistered<AuthRepository>(), isTrue);
+    });
+
+    test('registered ClockService is the skew-corrected estimator', () async {
+      await const NetworkScopeInstaller().install(container, _makeConfig());
+
+      // The native stack must register the estimator (fed by the Dio
+      // interceptor), not the pass-through null object — the null object
+      // is the web stack's fallback until #118.
+      expect(container.get<ClockService>(), isA<ServerSkewClockService>());
     });
 
     test('shared Dio uses the config server URL as base', () async {
@@ -67,6 +78,10 @@ void main() {
         direct.isRegistered<DioFactory>(),
       );
       expect(container.isRegistered<Dio>(), direct.isRegistered<Dio>());
+      expect(
+        container.isRegistered<ClockService>(),
+        direct.isRegistered<ClockService>(),
+      );
       expect(
         container.isRegistered<AuthRepository>(),
         direct.isRegistered<AuthRepository>(),
