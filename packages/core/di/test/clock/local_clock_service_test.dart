@@ -27,5 +27,17 @@ void main() {
 
       expect(await clock.watchSkew().toList(), [null]);
     });
+
+    test('the same returned stream supports multiple listeners', () async {
+      const clock = LocalClockService();
+      final stream = clock.watchSkew();
+
+      expect(await stream.toList(), [null]);
+      expect(
+        await stream.toList(),
+        [null],
+        reason: 'must be re-listenable like ServerSkewClockService (LSP)',
+      );
+    });
   });
 }

@@ -246,6 +246,16 @@ void main() {
     });
 
     group('watchSkew()', () {
+      test('the same returned stream supports multiple listeners', () async {
+        final clock = ServerSkewClockService(localNowUtc: () => t0);
+        sample(clock, const Duration(minutes: 5));
+        sample(clock, const Duration(minutes: 5));
+
+        final stream = clock.watchSkew();
+        expect(await stream.first, const Duration(minutes: 5));
+        expect(await stream.first, const Duration(minutes: 5));
+      });
+
       test('replays the current estimate to a new subscriber', () async {
         final clock = ServerSkewClockService(localNowUtc: () => t0);
 

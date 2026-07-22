@@ -30,7 +30,14 @@ class LocalClockService implements ClockService {
 
   @override
   Stream<Duration?> watchSkew() =>
-      // Replays the (permanently null) current estimate, then completes:
-      // there will never be an update to wait for.
-      Stream<Duration?>.value(null);
+      // Replays the (permanently null) current estimate to every
+      // listener, then completes: there will never be an update to wait
+      // for. Stream.multi rather than Stream.value so the returned
+      // stream is re-listenable, matching ServerSkewClockService's
+      // semantics — a null object must be substitutable (LSP).
+      Stream<Duration?>.multi((controller) {
+        controller
+          ..add(null)
+          ..close();
+      });
 }

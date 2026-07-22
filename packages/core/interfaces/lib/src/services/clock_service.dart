@@ -54,7 +54,9 @@ abstract interface class ClockService {
   ///
   /// Replays the current [skewEstimate] to every new subscriber, then
   /// emits whenever the estimate changes value. Consecutive duplicates
-  /// are not re-emitted.
+  /// are not re-emitted. The returned stream may itself be listened to
+  /// more than once; every listener independently receives the
+  /// replay-then-updates sequence.
   Stream<Duration?> watchSkew();
 }
 

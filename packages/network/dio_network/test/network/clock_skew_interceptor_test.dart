@@ -135,5 +135,23 @@ void main() {
       expect(recorder.samples, isEmpty);
       expect(response.statusCode, 200);
     });
+
+    test(
+      'skips silently when the Date header uses an obsolete format',
+      () async {
+        // RFC 850 form: valid HTTP historically, outside tryParseHttpDate's
+        // deliberate IMF-fixdate-only scope. One lost sample, no error.
+        final adapter = _StubAdapter(
+          responseHeaders: {
+            HttpHeaders.dateHeader: ['Sunday, 06-Nov-94 08:49:37 GMT'],
+          },
+        );
+
+        final response = await buildDio(adapter).get<dynamic>('/anything');
+
+        expect(recorder.samples, isEmpty);
+        expect(response.statusCode, 200);
+      },
+    );
   });
 }

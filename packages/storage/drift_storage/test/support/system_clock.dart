@@ -20,5 +20,9 @@ class SystemClockService implements ClockService {
   Duration? get skewEstimate => null;
 
   @override
-  Stream<Duration?> watchSkew() => Stream<Duration?>.value(null);
+  Stream<Duration?> watchSkew() => Stream<Duration?>.multi((controller) {
+    controller
+      ..add(null)
+      ..close();
+  });
 }

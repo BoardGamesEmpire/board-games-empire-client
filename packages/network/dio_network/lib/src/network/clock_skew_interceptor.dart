@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:dio/dio.dart';
 import 'package:interfaces/services.dart';
+import 'package:network_interface/network_interface.dart';
 
 /// Feeds server `Date` headers to the per-server [ClockSkewRecorder]
 /// (#12).
@@ -40,8 +39,13 @@ import 'package:interfaces/services.dart';
 /// 4xx/5xx — arrives through [onResponse]; only transport failures
 /// (which carry no headers) reach the error path.
 ///
-/// Native-only (`dart:io` [HttpDate]); the web stack gets its own feeder
-/// (#118).
+/// Web-safe: `Date` parsing uses the pure-Dart [tryParseHttpDate]
+/// (IMF-fixdate only) rather than `dart:io`'s `HttpDate`, because this
+/// library is transitively compiled into web builds — the `dio_network`
+/// barrel exports `register_server_network.dart`, which imports this
+/// file, and `web_network` imports that barrel. The web stack still
+/// does not *install* this interceptor; its feeder (and the CORS
+/// `Access-Control-Expose-Headers: Date` prerequisite) is #118.
 class ClockSkewInterceptor extends Interceptor {
   /// Creates the interceptor.
   ///
@@ -60,6 +64,9 @@ class ClockSkewInterceptor extends Interceptor {
 
   /// [RequestOptions.extra] key carrying the raw local UTC send stamp.
   static const String sentAtKey = 'bge_clock_skew_sent_at';
+
+  /// Dio normalizes response header names to lowercase.
+  static const String _dateHeader = 'date';
 
   final ClockSkewRecorder _recorder;
   final DateTime Function() _nowUtc;
@@ -82,21 +89,16 @@ class ClockSkewInterceptor extends Interceptor {
   }
 
   void _record(Response<dynamic> response) {
-    final header = response.headers.value(HttpHeaders.dateHeader);
+    final header = response.headers.value(_dateHeader);
     if (header == null) return;
 
     final sentAt = response.requestOptions.extra[sentAtKey];
     if (sentAt is! DateTime) return;
 
-    final DateTime serverDate;
-    try {
-      serverDate = HttpDate.parse(header);
-    } on Exception {
-      // Malformed Date header: skip the sample. HttpDate.parse throws
-      // HttpException; the broader catch also covers FormatException
-      // should the implementation change.
-      return;
-    }
+    // Malformed or obsolete-format Date headers yield null: skip the
+    // sample without any exception handling.
+    final serverDate = tryParseHttpDate(header);
+    if (serverDate == null) return;
 
     _recorder.recordSample(
       serverDate: serverDate,
