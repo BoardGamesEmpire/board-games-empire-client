@@ -3,9 +3,15 @@ import 'package:models/domain.dart';
 
 DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');
 
-Household _make({DateTime? deletedAt}) => Household(
+Household _make({
+  DateTime? deletedAt,
+  bool isDirty = false,
+  bool isLocalOnly = false,
+}) => Household(
   id: 'hh_1',
   name: 'Test Household',
+  isDirty: isDirty,
+  isLocalOnly: isLocalOnly,
   deletedAt: deletedAt,
   createdAt: _now,
   updatedAt: _now,
@@ -43,6 +49,53 @@ void main() {
         updatedAt: tombstoned.updatedAt,
       );
       expect(restored.isDeleted, isFalse);
+    });
+
+    group('sync-state flags', () {
+      test('default to false', () {
+        final h = _make();
+        expect(h.isDirty, isFalse);
+        expect(h.isLocalOnly, isFalse);
+      });
+
+      test('copyWith toggles isDirty and isLocalOnly independently', () {
+        final h = _make();
+        expect(h.copyWith(isLocalOnly: true).isLocalOnly, isTrue);
+        expect(h.copyWith(isLocalOnly: true).isDirty, isFalse);
+        expect(h.copyWith(isDirty: true).isDirty, isTrue);
+        expect(h.copyWith(isDirty: true).isLocalOnly, isFalse);
+      });
+    });
+
+    test('JSON round-trip preserves fields and sync flags', () {
+      final h = Household(
+        id: 'hh_1',
+        name: 'Test Household',
+        description: 'A place to play',
+        image: 'https://example.test/hh.png',
+        isDirty: true,
+        isLocalOnly: true,
+        createdAt: _now,
+        updatedAt: _now,
+      );
+
+      final round = Household.fromJson(h.toJson());
+      expect(round, equals(h));
+      expect(round.isDirty, isTrue);
+      expect(round.isLocalOnly, isTrue);
+    });
+
+    test('fromJson defaults sync flags when the server omits them', () {
+      // Server payloads never carry the client-only sync flags; the
+      // model must default them rather than throw.
+      final round = Household.fromJson(const {
+        'id': 'hh_1',
+        'name': 'Server Household',
+        'createdAt': '2024-01-15T10:30:00.000Z',
+        'updatedAt': '2024-01-15T10:30:00.000Z',
+      });
+      expect(round.isDirty, isFalse);
+      expect(round.isLocalOnly, isFalse);
     });
   });
 }

@@ -32,7 +32,7 @@ import 'web_active_server_scope.dart';
 ///
 /// The fetch runs before the container is created, so a failure leaks nothing.
 /// Well-known failures (`WellKnownException` subtypes) propagate unchanged: the
-/// web bootstrap (slice 2) lets them surface as the shared retryable
+/// web bootstrap lets them surface as the shared retryable
 /// bootstrap-failure state rather than a "needs server" state — web always has
 /// exactly one server by construction.
 ///

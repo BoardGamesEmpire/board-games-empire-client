@@ -42,13 +42,26 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is 1 and there are no forward migrations yet, so there is
-/// no generated `server_database.steps.dart`. The [migration] strategy is built
-/// by `bgeMigrationStrategy()` (see `migration_policy.dart`), which refuses
-/// schema *downgrades* by throwing a `SchemaDowngradeError` and applies the
-/// standard PRAGMAs (FK enforcement + WAL) after any migration. Once a schema
-/// version exists, pass the generated `stepByStep(...)` dispatcher via its
-/// `steps:` parameter — see `MIGRATIONS.md`.
+/// `schemaVersion` is **2**.
+///
+/// - **v1 → v2 (#39):** adds `households.is_dirty` and
+///   `households.is_local_only`, the optimistic-write flags the household
+///   create path needs. Both are additive `BOOLEAN NOT NULL DEFAULT 0`
+///   columns, so the step is a pair of `addColumn` calls that back-fill
+///   existing rows with `false` — no data transform, no table rebuild.
+///
+/// The [migration] strategy is built by `bgeMigrationStrategy()` (see
+/// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
+/// `SchemaDowngradeError`, runs the `steps` dispatcher on upgrade, and applies
+/// the standard PRAGMAs (FK enforcement + WAL) after any migration.
+///
+/// The v1 → v2 step is a hand-written [OnUpgrade] using the live table
+/// definitions — sufficient and safe for a purely additive change. If/when
+/// the generated step-by-step harness is activated (#54), swap the closure
+/// below for the generated `stepByStep(...)` dispatcher. Either way, the
+/// committed schema snapshot must be refreshed: `melos run schema:dump`
+/// writes `drift_schemas/server/drift_schema_v2.json`, which the CI schema
+/// freshness job byte-compares against a fresh dump.
 @DriftDatabase(
   tables: [
     GamesTable,
@@ -66,8 +79,17 @@ class ServerDatabase extends _$ServerDatabase {
   ServerDatabase.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
-  MigrationStrategy get migration => bgeMigrationStrategy();
+  MigrationStrategy get migration => bgeMigrationStrategy(
+    steps: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        // v1 → v2 (#39): additive optimistic-write flags on households.
+        // withDefault(false) back-fills existing rows.
+        await m.addColumn(householdsTable, householdsTable.isDirty);
+        await m.addColumn(householdsTable, householdsTable.isLocalOnly);
+      }
+    },
+  );
 }

@@ -1,29 +1,28 @@
 import 'package:models/domain.dart';
 
-/// Read cache + cache-writer repository for [Household] data.
+/// Read cache + cache-writer + create repository for [Household] data.
 ///
-/// ## Scope today: read-cache + cache-writer
+/// ## Scope: create + read-cache + cache-writer
 ///
-/// This repository does not currently expose any user-initiated
-/// mutation methods (no leave, kick, transfer-ownership, delete, or
-/// invite). The cache writers ([cacheHousehold], [cacheMember],
-/// [cacheMembers]) are server-driven cache populators that accept
-/// payloads the server already auth-filtered, not user-facing
-/// mutations. User-initiated mutations land in Phase 4 alongside
-/// invites, role changes, and the household-settings UI; this
-/// interface will grow accordingly at that point (and a sync queue
-/// will start participating, hence the deliberate "cache-writer"
-/// framing rather than "queued-write").
+/// [create] is the first user-initiated mutation (P4, #39): a signed-in
+/// user creating a household they own. The remaining household mutations
+/// (leave, kick, transfer-ownership, delete, invite, role changes) are
+/// still deferred — they land with the membership work (#122), at which
+/// point membership-mutation sync ops join the queue.
+///
+/// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers])
+/// are server-driven cache populators that accept payloads the server
+/// already auth-filtered, not user-facing mutations.
 ///
 /// **TODO(household-mutations-phase-4)**: a known gap exists between
-/// now and Phase 4. If a user leaves a household on another device
-/// (or the web UI), this device's cache won't know until a full
-/// resync arrives, and the read-side membership gate below trusts
+/// now and the membership work (#122). If a user leaves a household on
+/// another device (or the web UI), this device's cache won't know until
+/// a full resync arrives, and the read-side membership gate below trusts
 /// the cache — so a stale local member row will keep the household
 /// visible to a user who has actually been removed. The mitigation
 /// today is the read-cache nature of the repo: every server
 /// response refreshes the membership, so the stale window closes
-/// on the next sync tick. Phase 4 will close it deterministically
+/// on the next sync tick. #122 will close it deterministically
 /// by introducing membership-mutation sync ops that update the
 /// local member rows in the same transaction they enqueue against
 /// the sync queue.
@@ -103,6 +102,59 @@ abstract class HouseholdRepository {
   /// member row in a recently-tombstoned household still gets it back.
   /// This is a self-introspection method, not a content-reveal method.
   Future<HouseholdMember?> getCurrentUserMember(String householdId);
+
+  // ── Mutations (P4, #39) ──────────────────────────────────────────
+
+  /// Creates a household owned by the current user.
+  ///
+  /// Optimistically writes the household locally with `isLocalOnly = true`
+  /// and synthesizes the current user's `HouseholdOwner` member row — so
+  /// the household appears in [getHouseholds] / [watchHouseholds]
+  /// immediately (the read gate requires a member row) — then enqueues a
+  /// `CreateHouseholdOperation`. The two writes plus the enqueue are one
+  /// transaction: if the enqueue fails, the optimistic writes roll back.
+  ///
+  /// [language] is an IETF BCP 47 tag; [visibility] a `Private` | `Friends`
+  /// enum name — both optional and forwarded verbatim on the enqueued op.
+  ///
+  /// This method does **not** contact the server. A coordinator sends the
+  /// queued op and calls [reconcileCreatedHousehold] with the response.
+  ///
+  /// Returns the optimistic [Household] (client-assigned cuid2 id,
+  /// `isDirty` / `isLocalOnly` both `true`) together with the
+  /// `syncQueueId` of the enqueued `CreateHouseholdOperation`, which the
+  /// coordinator threads into [reconcileCreatedHousehold] so the op is
+  /// closed once the server confirms (otherwise the sync worker would
+  /// re-create the household). Throws [ArgumentError] if [name] is blank.
+  Future<({Household household, String syncQueueId})> create({
+    required String name,
+    String? description,
+    String? image,
+    String? language,
+    String? visibility,
+  });
+
+  /// Reconciles a server-confirmed household against the optimistic row
+  /// [create] wrote, correlated by [localId] (the client cuid2 the op
+  /// carried — a household has no natural business key, so this id is the
+  /// only handle tying the response to the optimistic row).
+  ///
+  /// The server assigns the canonical id (its create DTO has no id field).
+  /// When [serverHousehold]'s id differs from [localId], this migrates the
+  /// synthesized owner member row onto the canonical id and drops the stale
+  /// optimistic household row, then upserts [serverHousehold] with the sync
+  /// flags cleared. When [completedSyncQueueId] is provided, that queue
+  /// entry is marked completed in the **same transaction**; if any step
+  /// throws, all of it rolls back.
+  ///
+  /// The synthesized owner member row keeps its client-generated id; the
+  /// authoritative member id is reconciled by the membership sync (#122),
+  /// not here — nothing in the create-only flow reads it.
+  Future<void> reconcileCreatedHousehold(
+    Household serverHousehold, {
+    required String localId,
+    String? completedSyncQueueId,
+  });
 
   /// Upserts a [Household] from a server response. User-agnostic by
   /// design — the read-side boundary enforces visibility.

@@ -17,6 +17,7 @@ sealed class SyncOperation {
       ),
       RemoveFromCollectionOperation.type =>
         RemoveFromCollectionOperation.fromJson(json),
+      CreateHouseholdOperation.type => CreateHouseholdOperation.fromJson(json),
       _ => throw FormatException('Unknown SyncOperation type: "$type"'),
     };
   }
@@ -158,5 +159,79 @@ final class RemoveFromCollectionOperation extends SyncOperation {
   Map<String, dynamic> toJson() => {
     'type': type,
     'collection_id': collectionId,
+  };
+}
+
+// ── Household operations ─────────────────────────────────────────────
+
+/// Creates a household on the server (`POST /households`).
+///
+/// Enqueued by `HouseholdRepositoryImpl.create` after the optimistic
+/// local household row is written. Carries the full backend create
+/// contract; only [localId] is client-internal (it is **not** sent to
+/// the server — the remote data source builds the request body from
+/// the remaining fields).
+///
+/// ## Why [localId] is essential here
+///
+/// Unlike the collection ops — which can correlate a server response
+/// back to the local row via the `(userId, platformGameId, medium)`
+/// business key — a household has no natural unique key (two households
+/// may share a name). [localId] is therefore the only handle that ties
+/// the server's response to the optimistic row it confirms. The repo
+/// generates it as a cuid2 id before the insert, stores it as the local
+/// row's primary key, and reconciles the server-assigned id against it
+/// (the create DTO has no id field, so the server always assigns one).
+final class CreateHouseholdOperation extends SyncOperation {
+  const CreateHouseholdOperation({
+    required this.localId,
+    required this.name,
+    this.description,
+    this.image,
+    this.language,
+    this.visibility,
+  });
+
+  static const String type = 'create_household';
+
+  factory CreateHouseholdOperation.fromJson(Map<String, dynamic> json) =>
+      CreateHouseholdOperation(
+        localId: json['local_id'] as String,
+        name: json['name'] as String,
+        description: json['description'] as String?,
+        image: json['image'] as String?,
+        language: json['language'] as String?,
+        visibility: json['visibility'] as String?,
+      );
+
+  /// Local cuid2 id of the optimistic [Household] row this op creates.
+  /// Client-internal; not part of the server request body.
+  final String localId;
+
+  final String name;
+  final String? description;
+  final String? image;
+
+  /// IETF BCP 47 language tag (e.g. `en`, `pt-BR`, `zh-Hant`). The server
+  /// canonicalises it and resolves it to a `LanguageTag`. `null` omits it.
+  /// Deferred from the alpha create UI (#123) but carried here so that
+  /// wiring it up later needs no change to the sync payload format.
+  final String? language;
+
+  /// Household visibility enum name (`Private` | `Friends`). Carried as a
+  /// raw string — matching how [AddToCollectionOperation.medium] carries
+  /// its enum — to avoid a premature client-side `Visibility` enum. `null`
+  /// lets the server apply its default. Deferred from the alpha UI (#123).
+  final String? visibility;
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'local_id': localId,
+    'name': name,
+    if (description != null) 'description': description,
+    if (image != null) 'image': image,
+    if (language != null) 'language': language,
+    if (visibility != null) 'visibility': visibility,
   };
 }

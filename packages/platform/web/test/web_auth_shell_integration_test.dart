@@ -14,9 +14,9 @@ import 'package:web_platform/web.dart';
 /// End-to-end wiring test for the web auth path (#96), tying the two
 /// production pieces together through the real shell:
 ///
-/// - the real [WebPlatformBootstrap.initialize] (slice 2), whose injected
+/// - the real [WebPlatformBootstrap.initialize], whose injected
 ///   `serverScopeBuilder` yields
-/// - the real [WebActiveServerScope] (slice 1), which the branch-free
+/// - the real [WebActiveServerScope], which the branch-free
 ///   `BgeApp` auth subtree provisions the auth bloc from.
 ///
 /// The generic "shell provisions the bloc from a web-shaped BootstrapResult"

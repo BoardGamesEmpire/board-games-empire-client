@@ -8,7 +8,7 @@ import 'package:storage_interface/storage_interface.dart';
 import '../databases/encrypted_executor_factory.dart';
 import '../databases/server_database.dart';
 
-/// [ServerScopeInstaller] for the per-server storage slice: opens the
+/// [ServerScopeInstaller] for per-server storage: opens the
 /// encrypted [ServerDatabase] and registers it in the server's scope.
 ///
 /// ## Eager open
