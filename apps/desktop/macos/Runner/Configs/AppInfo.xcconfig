@@ -10,7 +10,7 @@
 PRODUCT_NAME = Board Games Empire
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.boardgamesempire.desktop.desktop
+PRODUCT_BUNDLE_IDENTIFIER = com.boardgamesempire.app
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.boardgamesempire.desktop. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 com.boardgamesempire.app. All rights reserved.

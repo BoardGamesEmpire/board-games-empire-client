@@ -4,6 +4,9 @@ import 'package:models/domain.dart';
 
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/household_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+
+import '../support/fixed_clock.dart';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +63,13 @@ void main() {
 
   setUp(() {
     db = ServerDatabase.memory();
-    repo = HouseholdRepositoryImpl(db: db, currentUserId: _kUserId);
+    final clock = FixedClockService(DateTime.utc(2024, 1, 15, 10, 30));
+    repo = HouseholdRepositoryImpl(
+      db: db,
+      currentUserId: _kUserId,
+      syncQueue: SyncQueueRepositoryImpl(db, clock),
+      clock: clock,
+    );
   });
 
   tearDown(() async => db.close());

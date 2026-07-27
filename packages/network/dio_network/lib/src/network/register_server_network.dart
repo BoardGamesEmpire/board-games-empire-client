@@ -5,11 +5,14 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart'
+    show HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
 import '../feedback/feedback_dio_transport.dart';
+import '../household/household_remote_data_source_impl.dart';
 import 'clock_skew_interceptor.dart';
 import 'dio_factory.dart';
 import 'network_log_interceptor.dart';
@@ -95,4 +98,12 @@ void registerServerNetwork({
   // BetterAuth session the feedback endpoint requires). Const and
   // stateless; nothing to dispose (the container owns the Dio).
   container.registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio));
+
+  // #39: the per-server household remote. Same convention as the feedback
+  // transport above — it shares the per-server Dio (base URL + BetterAuth
+  // session the `/households` endpoints require) and adds no auth of its
+  // own. Const and stateless; the container owns the Dio.
+  container.registerSingleton<HouseholdRemoteDataSource>(
+    HouseholdRemoteDataSourceImpl(dio),
+  );
 }

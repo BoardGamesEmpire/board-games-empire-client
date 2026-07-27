@@ -30,8 +30,8 @@ import '../../l10n/shell_localizations.dart';
 ///
 /// Dumb by design, like [CrashReportPrompt]: it takes a preview and
 /// callbacks and knows nothing about routing or the crash-draft slots.
-/// The crash path (#76 Slice 1b) presents it inside the crash overlay; the
-/// user-initiated flow (Slice 2) will push it as a route. Both provide an
+/// The crash path presents it inside the crash overlay; the
+/// user-initiated flow will push it as a route. Both provide an
 /// [Overlay] ancestor (the crash overlay's `Overlay.wrap`; the router's
 /// Navigator) — required because the stack-trace [SelectableText] hosts its
 /// selection toolbar in an [Overlay].
@@ -59,7 +59,7 @@ class FeedbackReviewScreen extends StatefulWidget {
   final Future<FeedbackSubmitResult> Function(FeedbackReport report) onSubmit;
 
   /// The user backed out of review before sending. The host returns to the
-  /// compact prompt (crash path) or pops the route (Slice 2).
+  /// compact prompt (crash path) or pops the route.
   final VoidCallback onCancel;
 
   /// The user dismissed the surface after a terminal outcome. The host

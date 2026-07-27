@@ -414,6 +414,7 @@ void main() {
                   AddToCollectionOperation() => op.localId,
                   UpdateCollectionOperation() => op.collectionId,
                   RemoveFromCollectionOperation() => op.collectionId,
+                  CreateHouseholdOperation() => op.localId,
                 },
               )
               .toList();
@@ -446,6 +447,7 @@ void main() {
                 AddToCollectionOperation() => op.localId,
                 UpdateCollectionOperation() => op.collectionId,
                 RemoveFromCollectionOperation() => op.collectionId,
+                CreateHouseholdOperation() => op.localId,
               },
             )
             .toSet();

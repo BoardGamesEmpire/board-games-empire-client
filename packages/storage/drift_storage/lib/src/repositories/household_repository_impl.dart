@@ -1,5 +1,7 @@
+import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
@@ -30,15 +32,22 @@ import '../databases/server_database.dart';
 /// graph query). The boundary enforcement happens at read time so
 /// the cache stays a faithful local mirror of what the server sent.
 ///
-/// ## Scope today: no queued writes
+/// ## Scope: create + cache-writers
 ///
-/// There are no mutation methods on this implementation — no
-/// `leaveHousehold`, `removeMember`, `transferOwnership`, etc. —
-/// because user-initiated household mutations are Phase 4 scope.
-/// Today's "cache-writer" methods ([cacheHousehold], [cacheMember],
-/// [cacheMembers]) are server-driven populators that accept payloads
-/// the server already auth-filtered, not user-initiated mutations
-/// against a sync queue.
+/// [create] is the one user-initiated mutation (P4, #39): it writes an
+/// optimistic household + a synthesized owner member row and enqueues a
+/// `CreateHouseholdOperation`, all in a single transaction, then
+/// [reconcileCreatedHousehold] applies the server's confirmed row. The
+/// remaining household mutations (`leaveHousehold`, `removeMember`,
+/// `transferOwnership`, …) are deferred to the membership work (#122).
+/// The "cache-writer" methods ([cacheHousehold], [cacheMember],
+/// [cacheMembers]) are server-driven populators that accept payloads the
+/// server already auth-filtered.
+///
+/// The [Household.isDirty] / [Household.isLocalOnly] columns are set on
+/// the optimistic [create] row and cleared by [reconcileCreatedHousehold]
+/// once the server confirms; server-sourced cache-writer rows carry them
+/// as `false`.
 ///
 /// **TODO(household-mutations-phase-4)**: a stale-cache window
 /// exists between server-side membership changes (leaves, removals,
@@ -74,14 +83,34 @@ import '../databases/server_database.dart';
 /// the auth contract the server-side `HouseholdsService` enforces
 /// today.
 class HouseholdRepositoryImpl implements HouseholdRepository {
+  /// [syncQueue] MUST be backed by the same [db] instance for [create]'s
+  /// "one transaction" guarantee to hold: the enqueue runs inside
+  /// `db.transaction(...)` and only joins that transaction when it writes to
+  /// the same database. `HouseholdScopeInstaller` wires it this way — a
+  /// `SyncQueueRepositoryImpl` over this scope's `ServerDatabase`. A
+  /// [SyncQueueRepository] over a *different* database would silently commit
+  /// the enqueue outside the transaction (optimistic rows and their queued op
+  /// could then diverge on partial failure), and no test would catch it.
   HouseholdRepositoryImpl({
     required ServerDatabase db,
     required String currentUserId,
+    required SyncQueueRepository syncQueue,
+    required ClockService clock,
   }) : _db = db,
-       _userId = currentUserId;
+       _userId = currentUserId,
+       _syncQueue = syncQueue,
+       _clock = clock;
 
   final ServerDatabase _db;
   final String _userId;
+  final SyncQueueRepository _syncQueue;
+
+  /// Server-corrected time source (#12). Timestamps this repository
+  /// produces ([create]'s fresh `createdAt` / `updatedAt`) come from
+  /// [ClockService.nowUtc], never `DateTime.now()`, staying consistent
+  /// with the sync-queue and collection timestamps against the same
+  /// server.
+  final ClockService _clock;
 
   @override
   Future<List<Household>> getHouseholds() async {
@@ -152,6 +181,8 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
             name: household.name,
             description: Value(household.description),
             image: Value(household.image),
+            isDirty: Value(household.isDirty),
+            isLocalOnly: Value(household.isLocalOnly),
             deletedAt: Value(household.deletedAt),
             createdAt: household.createdAt,
             updatedAt: household.updatedAt,
@@ -175,6 +206,123 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
           _memberToCompanion(m),
           onConflict: DoUpdate((old) => _memberToCompanion(m)),
         );
+      }
+    });
+  }
+
+  // ── Mutations (P4, #39) ──────────────────────────────────────────────────────────
+
+  @override
+  Future<({Household household, String syncQueueId})> create({
+    required String name,
+    String? description,
+    String? image,
+    String? language,
+    String? visibility,
+  }) async {
+    // Validate BEFORE opening the transaction so the cache and the sync
+    // queue stay untouched on bad input.
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be blank');
+    }
+
+    return _db.transaction(() async {
+      final now = _clock.nowUtc();
+      // cuid2 id — matches the backend's id format. The backend's create
+      // DTO strips client ids before Prisma, so a different canonical id
+      // comes back and [reconcileCreatedHousehold] migrates this row onto
+      // it. This localId is the sole correlation handle for that reconcile
+      // (a household has no natural business key).
+      final localId = cuid();
+
+      // Optimistic household row.
+      await _db
+          .into(_db.householdsTable)
+          .insert(
+            HouseholdsTableCompanion.insert(
+              id: localId,
+              name: trimmedName,
+              description: Value(description),
+              image: Value(image),
+              isDirty: const Value(true),
+              isLocalOnly: const Value(true),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      // Synthesized owner member so the read gate surfaces the household
+      // immediately. The server makes the creator a `HouseholdOwner` but
+      // doesn't return the member row; this row's id is client-generated
+      // and reconciled later by the membership sync (#122).
+      await _db
+          .into(_db.householdMembersTable)
+          .insert(
+            HouseholdMembersTableCompanion.insert(
+              id: cuid(),
+              userId: _userId,
+              householdId: localId,
+              roleName: Value(_encodeRole(HouseholdRole.householdOwner)),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+
+      // Durable create op. If this throws, the writes above roll back.
+      final entry = await _syncQueue.enqueue(
+        CreateHouseholdOperation(
+          localId: localId,
+          name: trimmedName,
+          description: description,
+          image: image,
+          language: language,
+          visibility: visibility,
+        ),
+      );
+
+      final row = await (_db.select(
+        _db.householdsTable,
+      )..where((t) => t.id.equals(localId))).getSingle();
+      return (household: _mapHousehold(row), syncQueueId: entry.id);
+    });
+  }
+
+  @override
+  Future<void> reconcileCreatedHousehold(
+    Household serverHousehold, {
+    required String localId,
+    String? completedSyncQueueId,
+  }) async {
+    return _db.transaction(() async {
+      // 1. Upsert the server-confirmed household (canonical id, flags
+      //    cleared). Done first so the members FK target exists before
+      //    the re-point below (FK enforcement is on).
+      await cacheHousehold(
+        serverHousehold.copyWith(isDirty: false, isLocalOnly: false),
+      );
+
+      // 2. Server-assigned id path: migrate the synthesized owner member
+      //    row(s) onto the canonical id, then drop the stale optimistic
+      //    household row. The (householdId, userId) unique index can't
+      //    collide — the canonical id is brand new.
+      if (localId != serverHousehold.id) {
+        await (_db.update(
+          _db.householdMembersTable,
+        )..where((t) => t.householdId.equals(localId))).write(
+          HouseholdMembersTableCompanion(
+            householdId: Value(serverHousehold.id),
+          ),
+        );
+        await (_db.delete(
+          _db.householdsTable,
+        )..where((t) => t.id.equals(localId))).go();
+      }
+
+      // 3. Close the queued op in the same transaction, if the caller
+      //    knows which one it was.
+      if (completedSyncQueueId != null) {
+        await _syncQueue.markCompleted(completedSyncQueueId);
       }
     });
   }
@@ -259,6 +407,8 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
     name: row.name,
     description: row.description,
     image: row.image,
+    isDirty: row.isDirty,
+    isLocalOnly: row.isLocalOnly,
     deletedAt: row.deletedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

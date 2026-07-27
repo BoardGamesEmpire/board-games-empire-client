@@ -1,0 +1,35 @@
+{
+  "@@locale": "en",
+  "createHouseholdTitle": "Create household",
+  "@createHouseholdTitle": {
+    "description": "Title of the create-household screen."
+  },
+  "createHouseholdNameLabel": "Household name",
+  "@createHouseholdNameLabel": {
+    "description": "Label for the required household name field."
+  },
+  "createHouseholdNameRequired": "Enter a name for your household.",
+  "@createHouseholdNameRequired": {
+    "description": "Validation error shown when the household name is empty."
+  },
+  "createHouseholdDescriptionLabel": "Description (optional)",
+  "@createHouseholdDescriptionLabel": {
+    "description": "Label for the optional household description field."
+  },
+  "createHouseholdSubmit": "Create household",
+  "@createHouseholdSubmit": {
+    "description": "Label for the button that submits the create-household form."
+  },
+  "createHouseholdSynced": "Household created.",
+  "@createHouseholdSynced": {
+    "description": "Confirmation shown when the household was created and confirmed by the server."
+  },
+  "createHouseholdQueued": "Household created. It'll finish syncing when you're back online.",
+  "@createHouseholdQueued": {
+    "description": "Confirmation shown when the household was created locally but not yet confirmed by the server."
+  },
+  "createHouseholdError": "Something went wrong creating your household. Please try again.",
+  "@createHouseholdError": {
+    "description": "Error shown when the household could not be created locally."
+  }
+}
