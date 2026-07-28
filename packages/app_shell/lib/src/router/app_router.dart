@@ -18,9 +18,13 @@ abstract final class AppRoutes {
   static const auth = '/auth';
   static const home = '/home';
   static const feedback = '/feedback';
+  static const settings = '/settings';
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
+  /// `settings` is deliberately absent: it is a normal post-ready
+  /// destination, not a bootstrap leg, so a ready app is not bounced off
+  /// it (#120).
   static const bootstrapLocations = {splash, error, serverAdd, auth};
 }
 
@@ -68,6 +72,20 @@ typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 /// [AppBootstrapReady].
 typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the settings surface (#120) for the [AppRoutes.settings] route.
+/// Supplied by [BgeApp]; returns null at navigation time when the
+/// app-level settings controllers are not yet available (before the first
+/// storage-ready bootstrap state, or a boot where hydrated storage was
+/// unavailable), in which case the route falls back to
+/// [NotYetAvailableScreen].
+///
+/// Like feedback, the route sits **outside** the auth [ShellRoute]
+/// (settings needs no `AuthBloc`) and is reachable only once
+/// [AppBootstrapReady] admits non-bootstrap locations. `settings` is not
+/// in [AppRoutes.bootstrapLocations], so a ready app is not bounced away
+/// from it.
+typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -85,6 +103,7 @@ GoRouter buildAppRouter({
   HomeScreenBuilder? homeBuilder,
   AuthScopeBuilder? authScopeBuilder,
   FeedbackScreenBuilder? feedbackBuilder,
+  SettingsScreenBuilder? settingsBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -156,6 +175,15 @@ GoRouter buildAppRouter({
         path: AppRoutes.feedback,
         builder: (context, _) =>
             feedbackBuilder?.call(context) ?? const NotYetAvailableScreen(),
+      ),
+      // #120: user settings. Outside the auth ShellRoute (no AuthBloc
+      // needed — see [SettingsScreenBuilder]); reachable only when
+      // [AppBootstrapReady] admits non-bootstrap locations, and not
+      // bounced (settings is not a bootstrap location).
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (context, _) =>
+            settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
       GoRoute(
         path: AppRoutes.error,

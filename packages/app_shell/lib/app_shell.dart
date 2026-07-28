@@ -6,8 +6,9 @@
 /// pending-link slot (#10), global uncaught-error capture (#34) with the
 /// "ask each time" crash-report flow (#69) and the full review/redaction
 /// surface (#76), app-level i18n — the generated [ShellLocalizations] plus
-/// the active-locale seam (#33) — and the shell screens (splash, bootstrap
-/// failure, placeholders, not-yet-available).
+/// the active-locale seam (#33) — the shell screens (splash, bootstrap
+/// failure, placeholders, not-yet-available), and the settings surface with
+/// its persisted theme-mode and locale controllers (#120).
 ///
 /// Platform composition roots live in `packages/platform/*`; the apps under
 /// `apps/*` are thin `main.dart` wrappers that hand a [PlatformBootstrap]
@@ -35,8 +36,17 @@ export 'src/screens/bootstrap_error_screen.dart';
 export 'src/screens/feedback_flow_screen.dart';
 export 'src/screens/home_placeholder_screen.dart';
 export 'src/screens/not_yet_available_screen.dart';
+export 'src/screens/settings_screen.dart';
 export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';
+export 'src/settings/entries/language_settings_entry.dart';
+export 'src/settings/entries/theme_mode_settings_entry.dart';
+export 'src/settings/locale_cubit.dart';
+export 'src/settings/settings_entry.dart';
+export 'src/settings/settings_scope.dart';
+export 'src/settings/settings_section.dart';
+export 'src/settings/settings_sections_builder.dart';
+export 'src/settings/theme_mode_cubit.dart';
 export 'src/widgets/bge_app.dart';
 export 'src/widgets/build_error_view.dart';
 export 'src/widgets/crash_report_prompt.dart';

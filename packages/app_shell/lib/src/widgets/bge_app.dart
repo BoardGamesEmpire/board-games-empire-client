@@ -16,6 +16,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
+import '../bootstrap/app_bootstrap_state.dart';
 import '../deep_links/deep_link_handler.dart';
 import '../deep_links/pending_deep_link_holder.dart';
 import '../i18n/active_locale.dart';
@@ -24,7 +25,11 @@ import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
 import '../screens/feedback_flow_screen.dart';
 import '../screens/home_placeholder_screen.dart';
+import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
+import '../settings/locale_cubit.dart';
+import '../settings/settings_sections_builder.dart';
+import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
 import 'feedback_review_screen.dart';
 import 'router_back_interceptor.dart';
@@ -37,8 +42,11 @@ import 'router_back_interceptor.dart';
 /// the OS "increase contrast" accessibility setting selects the
 /// high-contrast variants automatically via `MaterialApp`. OS text
 /// scaling is honored up to [BgeTextScale.maxScaleFactor] (WCAG 1.4.4:
-/// 200%) via a `MediaQuery` clamp in the app builder. [themeMode] stays
-/// [ThemeMode.system]; the user-facing selection + persistence is #78.
+/// 200%) via a `MediaQuery` clamp in the app builder. The persisted user
+/// selection drives `MaterialApp`'s `themeMode`/`locale` via app-level
+/// [HydratedCubit]s created once hydrated storage is ready (#120);
+/// [BgeApp.themeMode]/[BgeApp.locale] are the pre-storage-ready fallback
+/// and a test/embedder seam.
 ///
 /// i18n (#33): the shell owns the localization composition. Its own
 /// delegates ([ShellLocalizations.localizationsDelegates], which bundle
@@ -125,6 +133,7 @@ class BgeApp extends StatefulWidget {
     this.highContrastTheme,
     this.highContrastDarkTheme,
     this.themeMode = ThemeMode.system,
+    this.locale,
     this.additionalLocalizationsDelegates = const [],
     super.key,
   });
@@ -191,6 +200,12 @@ class BgeApp extends StatefulWidget {
   final ThemeData? highContrastDarkTheme;
 
   final ThemeMode themeMode;
+
+  /// Explicit `MaterialApp.locale` override (test/embedder seam). Null
+  /// follows system resolution. In production the persisted [LocaleCubit]
+  /// override wins once available (#120); this is the pre-storage-ready
+  /// fallback.
+  final Locale? locale;
   final List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates;
 
   @override
@@ -226,6 +241,36 @@ class _BgeAppState extends State<BgeApp> {
   final ValueNotifier<bool> _promptDismissArmed = ValueNotifier<bool>(false);
   Timer? _promptDismissDisarmTimer;
 
+  /// App-level, persisted theme-mode + locale controllers (#120).
+  ///
+  /// Created lazily on the first storage-ready bootstrap state — never
+  /// eagerly. They are [HydratedCubit]s, and `HydratedBloc.storage` is
+  /// initialized inside `AppBootstrapCubit`'s bootstrap *before* it emits
+  /// any post-init state (see [_isStorageReady]); constructing them before
+  /// then would call `hydrate()` with no storage and throw
+  /// `StorageNotFound`, crashing before the first frame — the exact
+  /// failure the deferred storage init exists to route to the retryable
+  /// error screen. App-level (not per-server): a sign-out must not tear
+  /// them down, so they live for the app's lifetime and are closed in
+  /// [dispose]. Null until created, or if storage was unavailable, in
+  /// which case theme/locale fall back to
+  /// [BgeApp.themeMode]/[BgeApp.locale].
+  ThemeModeCubit? _themeModeCubit;
+  LocaleCubit? _localeCubit;
+  bool _settingsControllersCreated = false;
+  StreamSubscription<AppBootstrapState>? _settingsControllerSub;
+
+  /// Rebuild [MaterialApp.router] when a settings controller emits. Kept
+  /// as plain stream subscriptions (rather than wrapping the app in a
+  /// `BlocBuilder`) so the widget *structure* under [build] never changes
+  /// shape when the controllers appear: a `BlocBuilder` wrapper would only
+  /// exist once the cubits do, and swapping it in would remount the whole
+  /// `MaterialApp.router` subtree — discarding in-flight Navigator/overlay
+  /// state (e.g. a half-typed crash-prompt comment). `setState` on the
+  /// same-shaped tree updates `themeMode`/`locale` in place instead.
+  StreamSubscription<ThemeMode>? _themeModeSub;
+  StreamSubscription<Locale?>? _localeSub;
+
   @override
   void initState() {
     super.initState();
@@ -247,12 +292,28 @@ class _BgeAppState extends State<BgeApp> {
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
       feedbackBuilder: _buildFeedbackRoute,
+      settingsBuilder: _buildSettingsRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
     final reporter = widget.feedbackReporter;
     if (reporter != null) {
       reporter.pendingCrashReport.addListener(_handlePendingCrashChanged);
+    }
+    // #120: create the persisted theme-mode + locale controllers as soon
+    // as hydrated storage is ready (the first storage-ready bootstrap
+    // state), then keep them for the app's lifetime. See the field docs
+    // for why they cannot be constructed eagerly here. If we are already at
+    // a storage-ready state we try synchronously; otherwise (or if that
+    // attempt fails) we listen and retry on later storage-ready states,
+    // cancelling only once creation succeeds.
+    if (_isStorageReady(widget.bootstrapCubit.state)) {
+      _createSettingsControllers();
+    }
+    if (!_settingsControllersCreated) {
+      _settingsControllerSub = widget.bootstrapCubit.stream.listen(
+        _onBootstrapStateForSettings,
+      );
     }
   }
 
@@ -408,6 +469,92 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
+  /// True once bootstrap has left the initializing/failed legs for a state
+  /// that only follows successful hydrated-storage init inside
+  /// `AppBootstrapCubit` — i.e. `HydratedBloc.storage` is guaranteed
+  /// available. `Failed` is excluded: storage init is the first bootstrap
+  /// step, so a storage failure surfaces as `Failed` with storage NOT
+  /// ready, and this must stay false there.
+  static bool _isStorageReady(AppBootstrapState state) =>
+      state is AppBootstrapNeedsServer ||
+      state is AppBootstrapNeedsAuth ||
+      state is AppBootstrapReady;
+
+  /// Constructs the app-level settings controllers exactly once, seeding
+  /// their defaults from [BgeApp.themeMode]/[BgeApp.locale] (so an embedder
+  /// default is honored on a fresh install, then overridden by any
+  /// persisted user selection). In production a storage-ready state
+  /// guarantees `HydratedBloc.storage` exists so construction succeeds;
+  /// the guard is a defensive net for tests (or an unforeseen state) that
+  /// reach a storage-ready state without initializing storage. On failure
+  /// it closes any partially constructed pair (no leaked cubit) and leaves
+  /// [_settingsControllersCreated] false so [_onBootstrapStateForSettings]
+  /// can retry on a later storage-ready state; until then theme/locale fall
+  /// back to the widget defaults rather than crashing.
+  void _createSettingsControllers() {
+    if (_settingsControllersCreated) return;
+    ThemeModeCubit? themeModeCubit;
+    LocaleCubit? localeCubit;
+    try {
+      themeModeCubit = ThemeModeCubit(initialThemeMode: widget.themeMode);
+      localeCubit = LocaleCubit(initialLocale: widget.locale);
+    } on Object {
+      // Close whatever was built (e.g. theme succeeded, locale threw) so a
+      // failed attempt never leaks a live cubit; the flag stays false to
+      // allow a retry.
+      unawaited(themeModeCubit?.close());
+      unawaited(localeCubit?.close());
+      return;
+    }
+    _settingsControllersCreated = true;
+    _themeModeCubit = themeModeCubit;
+    _localeCubit = localeCubit;
+    // Rebuild MaterialApp in place when either preference changes.
+    _themeModeSub = themeModeCubit.stream.listen((_) {
+      if (mounted) setState(() {});
+    });
+    _localeSub = localeCubit.stream.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// Retry-capable bootstrap-state handler for lazy settings-controller
+  /// creation. Runs on each emission until creation succeeds: ignores
+  /// non-storage-ready states, attempts creation on storage-ready ones, and
+  /// tears down the subscription (and rebuilds to bind the new values) only
+  /// once the controllers exist. A failed attempt keeps the subscription
+  /// alive so a later storage-ready state can retry.
+  void _onBootstrapStateForSettings(AppBootstrapState state) {
+    if (_settingsControllersCreated || !_isStorageReady(state)) return;
+    _createSettingsControllers();
+    if (!_settingsControllersCreated) return;
+    unawaited(_settingsControllerSub?.cancel());
+    _settingsControllerSub = null;
+    if (mounted) setState(() {});
+  }
+
+  /// Renders the #120 settings surface at navigation time. Null (→
+  /// [NotYetAvailableScreen], matching the feedback guard) until the
+  /// controllers exist. Composes the app-level section (theme; language
+  /// only when >1 supported locale) and passes the active server's alias
+  /// so the per-server section is shown/omitted correctly — at launch
+  /// there are no per-server entries, so that section is empty and omitted
+  /// by [SettingsScreen].
+  Widget? _buildSettingsRoute(BuildContext context) {
+    final themeModeCubit = _themeModeCubit;
+    final localeCubit = _localeCubit;
+    if (themeModeCubit == null || localeCubit == null) return null;
+    return SettingsScreen(
+      sections: buildSettingsSections(
+        themeModeCubit: themeModeCubit,
+        localeCubit: localeCubit,
+        supportedLocales: ShellLocalizations.supportedLocales,
+      ),
+      activeServerAlias:
+          widget.bootstrapCubit.activeServerScope?.active?.displayName,
+    );
+  }
+
   @override
   void dispose() {
     _router.dispose();
@@ -419,6 +566,11 @@ class _BgeAppState extends State<BgeApp> {
     _promptDismissDisarmTimer?.cancel();
     _promptDismissArmed.dispose();
     _reviewPreview.dispose();
+    unawaited(_settingsControllerSub?.cancel());
+    unawaited(_themeModeSub?.cancel());
+    unawaited(_localeSub?.cancel());
+    unawaited(_themeModeCubit?.close());
+    unawaited(_localeCubit?.close());
     if (widget.closeBootstrapCubitOnDispose) {
       unawaited(widget.bootstrapCubit.close());
     }
@@ -440,13 +592,27 @@ class _BgeAppState extends State<BgeApp> {
 
   @override
   Widget build(BuildContext context) {
+    // The tree shape is INVARIANT across the settings-controller lifecycle:
+    // `MaterialApp.router` is always the direct child of the bootstrap
+    // provider, whether or not the controllers exist yet. Reactivity comes
+    // from `setState` (the controllers' stream subscriptions), not from a
+    // conditionally-inserted `BlocBuilder` — inserting a wrapper when the
+    // cubits appear would remount the whole `MaterialApp.router` subtree
+    // and discard in-flight Navigator/overlay state. Once a controller
+    // exists it owns the value (seed = embedder default, then any persisted
+    // selection); before then the widget fallback applies. `locale` uses an
+    // explicit null check, not `??`, because a null controller *value*
+    // means "follow system" and must not fall back to [BgeApp.locale].
     return BlocProvider.value(
       value: widget.bootstrapCubit,
-      child: _buildMaterialApp(),
+      child: _buildMaterialApp(
+        themeMode: _themeModeCubit?.state ?? widget.themeMode,
+        locale: _localeCubit != null ? _localeCubit!.state : widget.locale,
+      ),
     );
   }
 
-  Widget _buildMaterialApp() {
+  Widget _buildMaterialApp({required ThemeMode themeMode, Locale? locale}) {
     return MaterialApp.router(
       onGenerateTitle: (context) =>
           ShellLocalizations.of(context).shellAppTitle,
@@ -456,7 +622,8 @@ class _BgeAppState extends State<BgeApp> {
           widget.highContrastTheme ?? BgeTheme.highContrastLight(),
       highContrastDarkTheme:
           widget.highContrastDarkTheme ?? BgeTheme.highContrastDark(),
-      themeMode: widget.themeMode,
+      themeMode: themeMode,
+      locale: locale,
       routerConfig: _router,
       builder: (context, child) {
         final content = child ?? const SizedBox.shrink();
