@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../l10n/shell_localizations.dart';
 import '../router/app_router.dart';
 
 /// Temporary authenticated landing surface (#37).
@@ -19,7 +20,8 @@ import '../router/app_router.dart';
 /// widget-test host in the meantime and is removed with this screen. It
 /// pushes [AppRoutes.feedback] (rather than `go`) so back returns here.
 /// The label reuses the feedback feature's compose title — one string,
-/// one translation.
+/// one translation. The **temporary** Settings launcher (#120) sits here
+/// for the same reason and likewise pushes [AppRoutes.settings].
 ///
 /// Must be built inside the scope-keyed [AuthBloc] provider (BgeApp's
 /// home builder), so `context.read<AuthBloc>()` resolves the same
@@ -32,10 +34,16 @@ class HomePlaceholderScreen extends StatelessWidget {
     'home_placeholder.send_feedback',
   );
 
+  /// Stable finder key for the temporary #120 settings launcher.
+  static const Key openSettingsButtonKey = Key(
+    'home_placeholder.open_settings',
+  );
+
   @override
   Widget build(BuildContext context) {
     final l10n = AuthLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
+    final shellL10n = ShellLocalizations.of(context);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -68,6 +76,16 @@ class HomePlaceholderScreen extends StatelessWidget {
                       onPressed: () => context.push(AppRoutes.feedback),
                       icon: const Icon(Icons.feedback_outlined),
                       label: Text(feedbackL10n.feedbackComposeTitle),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Semantics(
+                    button: true,
+                    child: OutlinedButton.icon(
+                      key: HomePlaceholderScreen.openSettingsButtonKey,
+                      onPressed: () => context.push(AppRoutes.settings),
+                      icon: const Icon(Icons.settings_outlined),
+                      label: Text(shellL10n.settingsTitle),
                     ),
                   ),
                   const SizedBox(height: 12),

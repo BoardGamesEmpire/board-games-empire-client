@@ -199,5 +199,37 @@
   "feedbackReviewClose": "Close",
   "@feedbackReviewClose": {
     "description": "Label of the button that dismisses the review screen after a terminal outcome"
+  },
+  "settingsTitle": "Settings",
+  "@settingsTitle": {
+    "description": "Title of the settings screen; also the label of the temporary settings launcher on the home placeholder (#120)"
+  },
+  "settingsSectionGeneral": "General",
+  "@settingsSectionGeneral": {
+    "description": "Header for the always-visible, app-level settings section that holds the theme and language controls (#120)"
+  },
+  "settingsThemeModeLabel": "Theme",
+  "@settingsThemeModeLabel": {
+    "description": "Group label for the theme-mode chooser (system / light / dark) (#120)"
+  },
+  "settingsThemeModeSystem": "System default",
+  "@settingsThemeModeSystem": {
+    "description": "Theme-mode option that follows the device's light/dark setting (#120)"
+  },
+  "settingsThemeModeLight": "Light",
+  "@settingsThemeModeLight": {
+    "description": "Light theme-mode option (#120)"
+  },
+  "settingsThemeModeDark": "Dark",
+  "@settingsThemeModeDark": {
+    "description": "Dark theme-mode option (#120)"
+  },
+  "settingsLanguageLabel": "Language",
+  "@settingsLanguageLabel": {
+    "description": "Group label for the app language chooser; shown only when more than one locale is supported (#120)"
+  },
+  "settingsLanguageSystemDefault": "System default",
+  "@settingsLanguageSystemDefault": {
+    "description": "Language option that follows the device language, falling back to English when the device language is unsupported (#120)"
   }
 }

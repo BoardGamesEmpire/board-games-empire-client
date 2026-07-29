@@ -99,9 +99,12 @@ import 'platform_bootstrap.dart';
 /// Theming (#32): the four theme slots ([theme], [darkTheme],
 /// [highContrastTheme], [highContrastDarkTheme]) are pure passthrough
 /// override seams — production `main.dart`s leave them null and [BgeApp]
-/// defaults them from `BgeTheme`, keeping the apps thin. [themeMode]
-/// stays [ThemeMode.system]; the user-facing selection + persistence is
-/// #78.
+/// defaults them from `BgeTheme`, keeping the apps thin. [themeMode] and
+/// [locale] seed the persisted user-preference controllers (#120): they
+/// are the fresh-install defaults and apply before hydrated storage is
+/// ready, then a stored user selection overrides them. Leaving them at
+/// their defaults ([ThemeMode.system] / null = follow-system) is the
+/// usual case.
 ///
 /// The splash route renders while bootstrap runs; hydrated-storage
 /// initialization happens inside the cubit so its failures surface on the
@@ -123,6 +126,7 @@ Future<void> runBgeApp({
   ThemeData? highContrastTheme,
   ThemeData? highContrastDarkTheme,
   ThemeMode themeMode = ThemeMode.system,
+  Locale? locale,
   List<LocalizationsDelegate<dynamic>> additionalLocalizationsDelegates =
       const [],
   UncaughtErrorReporter? uncaughtErrorReporter,
@@ -320,6 +324,7 @@ Future<void> runBgeApp({
       highContrastTheme: highContrastTheme,
       highContrastDarkTheme: highContrastDarkTheme,
       themeMode: themeMode,
+      locale: locale,
       additionalLocalizationsDelegates: additionalLocalizationsDelegates,
     ),
   );
