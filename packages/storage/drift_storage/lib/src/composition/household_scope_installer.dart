@@ -17,37 +17,27 @@ import '../repositories/sync_queue_repository_impl.dart';
 /// list, where every dependency it resolves from the container is already
 /// present.
 ///
-/// **App wiring is deliberately deferred to #129** (home menu / navigation
-/// shell), which is blocked by **#128**. The platform bootstrap
-/// (`native_platform_bootstrap.dart`) therefore still lists only
-/// `StorageScopeInstaller` and `NetworkScopeInstaller`, and nothing yet
-/// constructs `CreateHouseholdScreen` or registers `HouseholdLocalizations`:
-/// until #129 lands, `HouseholdRepository` is registered nowhere and the
-/// create slice is not reachable from the UI.
+/// ### User id is resolved lazily (#128)
 ///
-/// The deferral is not cosmetic. Adding this installer to the boot-time list
-/// as written crashes bootstrap: per-server scopes activate during
-/// `ServerOrchestrator.initialize()` — **before** sign-in — so the session
-/// read below throws and aborts activation (#128). #128 makes user-scoped
-/// per-server repositories registerable without a session (resolving the user
-/// id lazily at call time); #129 then wires the route, the l10n delegate, and
-/// this installer together behind a real menu.
+/// Per-server scopes activate during `ServerOrchestrator.initialize()` —
+/// **before** sign-in. The current user id is therefore unknown at
+/// activation and must not be read here. Instead the installer hands
+/// [HouseholdRepositoryImpl] a *provider* ([_resolveUserId]) that reads the
+/// live [AuthRepository.currentAuthState] each time a household action runs.
+/// All household actions sit behind the auth gate, so by the time the
+/// provider is invoked a session exists; if it is ever invoked without one
+/// that is a programmer error and it throws a [StateError] (rather than
+/// silently keying off an empty id).
 ///
-/// `currentUserId` is resolved once here, at activation, from the cached
-/// session ([AuthRepository.getCachedSession]); if none is present the install
-/// throws, aborting activation per the [ServerScopeInstaller] contract rather
-/// than registering a user-less repository.
-///
-/// **This eager resolution is the #128 defect** — it assumes scope activation
-/// only happens for a signed-in user, which is false: activation runs at boot,
-/// before authentication. #128 replaces it with a lazily-resolved user id
-/// (reading [AuthRepository.currentAuthState] at call time), so the scope
-/// registers pre-auth and the id is bound when a household action actually
-/// runs. Left as-is here so the fix lands as one reviewable change in #128.
+/// This replaces the previous eager `getCachedSession()` read that assumed
+/// activation only happened for a signed-in user — false, since activation
+/// runs at boot — and aborted bootstrap when it didn't (#128).
 ///
 /// The `HouseholdRemoteDataSource` the create coordinator also needs is
 /// **not** registered here — it shares the per-server Dio and is registered
-/// in `registerServerNetwork`, beside the resource it depends on.
+/// in `registerServerNetwork`, beside the resource it depends on. Wiring
+/// this installer into the platform boot list, the create route, and the
+/// `HouseholdLocalizations` delegate happens together in #129.
 class HouseholdScopeInstaller implements ServerScopeInstaller {
   const HouseholdScopeInstaller();
 
@@ -58,16 +48,7 @@ class HouseholdScopeInstaller implements ServerScopeInstaller {
   ) async {
     final db = container.get<ServerDatabase>();
     final clock = container.get<ClockService>();
-
-    final session = await container.get<AuthRepository>().getCachedSession();
-    final userId = session?.user.id;
-    if (userId == null) {
-      throw StateError(
-        'HouseholdScopeInstaller requires a signed-in session for server '
-        '"${config.bgeServerId}", but none was cached. Household scope '
-        'activation must follow authentication.',
-      );
-    }
+    final authRepository = container.get<AuthRepository>();
 
     final syncQueue = SyncQueueRepositoryImpl(db, clock);
     container.registerSingleton<SyncQueueRepository>(syncQueue);
@@ -75,10 +56,30 @@ class HouseholdScopeInstaller implements ServerScopeInstaller {
     container.registerSingleton<HouseholdRepository>(
       HouseholdRepositoryImpl(
         db: db,
-        currentUserId: userId,
+        currentUserId: () => _resolveUserId(authRepository, config),
         syncQueue: syncQueue,
         clock: clock,
       ),
+    );
+  }
+
+  /// Reads the authenticated user id from [authRepository] at call time.
+  ///
+  /// Throws a [StateError] if invoked while unauthenticated — unreachable in
+  /// normal use (household actions are gated behind sign-in), so a throw
+  /// here signals a wiring bug, not a user-facing state.
+  static String _resolveUserId(
+    AuthRepository authRepository,
+    ServerConfig config,
+  ) {
+    final state = authRepository.currentAuthState;
+    if (state is AuthStateAuthenticated) {
+      return state.session.user.id;
+    }
+    throw StateError(
+      'A household action ran for server "${config.bgeServerId}" without an '
+      'authenticated session. Household actions are only reachable behind '
+      'the auth gate; the current user id is resolved lazily at call time.',
     );
   }
 }

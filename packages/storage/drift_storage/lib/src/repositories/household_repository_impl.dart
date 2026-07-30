@@ -8,7 +8,18 @@ import '../databases/server_database.dart';
 
 /// Read cache + cache-writer implementation of [HouseholdRepository].
 ///
-/// Scoped to a current user via [currentUserId]. Every read path that
+/// Scoped to a current user via [currentUserId] — a provider resolved
+/// **lazily at call time** (#128), never at construction. The scope
+/// installer registers this repository at boot-time server-scope
+/// activation, which runs *before* sign-in; the user id is unknown then
+/// and only becomes needed when a household action actually runs (all of
+/// them sit behind the auth gate). The `Future`-returning reads resolve
+/// the provider on every call. The `Stream`-returning `watch*` methods
+/// resolve it once when the subscription begins — surfacing an
+/// unauthenticated state as a *stream* error, not a synchronous throw —
+/// and do not re-resolve if the authenticated user changes under a live
+/// subscription; tearing per-user state down on sign-out is a separate,
+/// scope-lifecycle concern (#135). Every read path that
 /// returns household data — list, single-by-id, watch, member list,
 /// member watch — gates on the current user being a member of the
 /// household in question AND on the household itself being live
@@ -93,16 +104,21 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   /// could then diverge on partial failure), and no test would catch it.
   HouseholdRepositoryImpl({
     required ServerDatabase db,
-    required String currentUserId,
+    required String Function() currentUserId,
     required SyncQueueRepository syncQueue,
     required ClockService clock,
   }) : _db = db,
-       _userId = currentUserId,
+       _currentUserId = currentUserId,
        _syncQueue = syncQueue,
        _clock = clock;
 
   final ServerDatabase _db;
-  final String _userId;
+
+  /// Resolves the current authenticated user id at call time (#128). The
+  /// installer wires this to the live auth state; it throws if invoked
+  /// while unauthenticated, which is a programmer error here (household
+  /// actions are only reachable behind the auth gate).
+  final String Function() _currentUserId;
   final SyncQueueRepository _syncQueue;
 
   /// Server-corrected time source (#12). Timestamps this repository
@@ -114,17 +130,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<List<Household>> getHouseholds() async {
-    final query = _db.select(_db.householdsTable).join([
-      innerJoin(
-        _db.householdMembersTable,
-        _db.householdMembersTable.householdId.equalsExp(
-              _db.householdsTable.id,
-            ) &
-            _db.householdMembersTable.userId.equals(_userId),
-      ),
-    ])..where(_db.householdsTable.deletedAt.isNull());
-
-    final rows = await query.get();
+    final rows = await _householdsQuery(_currentUserId()).get();
     return rows
         .map((r) => _mapHousehold(r.readTable(_db.householdsTable)))
         .toList();
@@ -139,7 +145,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
             _db.householdMembersTable.householdId.equalsExp(
                   _db.householdsTable.id,
                 ) &
-                _db.householdMembersTable.userId.equals(_userId),
+                _db.householdMembersTable.userId.equals(_currentUserId()),
           ),
         ])..where(
           _db.householdsTable.id.equals(householdId) &
@@ -154,7 +160,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<List<HouseholdMember>> getMembers(String householdId) async {
-    final rows = await _membersQuery(householdId).get();
+    final rows = await _membersQuery(householdId, _currentUserId()).get();
     return rows
         .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
         .toList();
@@ -162,10 +168,11 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
 
   @override
   Future<HouseholdMember?> getCurrentUserMember(String householdId) async {
+    final userId = _currentUserId();
     final row =
         await (_db.select(_db.householdMembersTable)..where(
               (t) =>
-                  t.householdId.equals(householdId) & t.userId.equals(_userId),
+                  t.householdId.equals(householdId) & t.userId.equals(userId),
             ))
             .getSingleOrNull();
     return row == null ? null : _mapMember(row);
@@ -261,7 +268,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
           .insert(
             HouseholdMembersTableCompanion.insert(
               id: cuid(),
-              userId: _userId,
+              userId: _currentUserId(),
               householdId: localId,
               roleName: Value(_encodeRole(HouseholdRole.householdOwner)),
               createdAt: now,
@@ -328,18 +335,12 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   }
 
   @override
-  Stream<List<Household>> watchHouseholds() {
-    final query = _db.select(_db.householdsTable).join([
-      innerJoin(
-        _db.householdMembersTable,
-        _db.householdMembersTable.householdId.equalsExp(
-              _db.householdsTable.id,
-            ) &
-            _db.householdMembersTable.userId.equals(_userId),
-      ),
-    ])..where(_db.householdsTable.deletedAt.isNull());
-
-    return query.watch().map(
+  Stream<List<Household>> watchHouseholds() async* {
+    // Resolve inside the async* body: an unauthenticated [_currentUserId]
+    // throw surfaces as a stream error the caller can observe (StreamBuilder,
+    // handleError, bloc onError), not a synchronous throw at subscribe time.
+    final userId = _currentUserId();
+    yield* _householdsQuery(userId).watch().map(
       (rows) => rows
           .map((r) => _mapHousehold(r.readTable(_db.householdsTable)))
           .toList(),
@@ -347,8 +348,11 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   }
 
   @override
-  Stream<List<HouseholdMember>> watchMembers(String householdId) {
-    return _membersQuery(householdId).watch().map(
+  Stream<List<HouseholdMember>> watchMembers(String householdId) async* {
+    // See [watchHouseholds]: resolve inside the body so an unauthenticated
+    // throw is delivered as a stream error, not synchronously at subscribe.
+    final userId = _currentUserId();
+    yield* _membersQuery(householdId, userId).watch().map(
       (rows) => rows
           .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
           .toList(),
@@ -356,6 +360,23 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────
+
+  /// Joined selectable behind [getHouseholds] / [watchHouseholds]: the
+  /// live (non-tombstoned) households that [userId] is a member of. The
+  /// caller resolves [userId] (per-call for the future, once-at-subscribe
+  /// for the stream) so the id is never read inside a synchronous query
+  /// builder on a stream path.
+  JoinedSelectStatement _householdsQuery(String userId) {
+    return _db.select(_db.householdsTable).join([
+      innerJoin(
+        _db.householdMembersTable,
+        _db.householdMembersTable.householdId.equalsExp(
+              _db.householdsTable.id,
+            ) &
+            _db.householdMembersTable.userId.equals(userId),
+      ),
+    ])..where(_db.householdsTable.deletedAt.isNull());
+  }
 
   /// Common selectable for [getMembers] and [watchMembers]: returns
   /// the members of [householdId] iff (a) the household exists and
@@ -382,7 +403,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
   /// TODO(visibility): when [Household.visibility] lands, public /
   /// restricted tiers can bypass the `me` self-join so non-members
   /// can browse a friend's household roster. See class doc.
-  JoinedSelectStatement _membersQuery(String householdId) {
+  JoinedSelectStatement _membersQuery(String householdId, String userId) {
     final me = _db.alias(_db.householdMembersTable, 'me');
     return _db.select(_db.householdMembersTable).join([
       innerJoin(
@@ -395,7 +416,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository {
       innerJoin(
         me,
         me.householdId.equalsExp(_db.householdMembersTable.householdId) &
-            me.userId.equals(_userId),
+            me.userId.equals(userId),
       ),
     ])..where(_db.householdMembersTable.householdId.equals(householdId));
   }

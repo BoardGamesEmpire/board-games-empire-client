@@ -26,7 +26,7 @@ void main() {
     syncQueue = SyncQueueRepositoryImpl(db, clock);
     repo = HouseholdRepositoryImpl(
       db: db,
-      currentUserId: _kUserId,
+      currentUserId: () => _kUserId,
       syncQueue: syncQueue,
       clock: clock,
     );
