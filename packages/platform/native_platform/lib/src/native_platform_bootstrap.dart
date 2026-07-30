@@ -28,23 +28,46 @@ typedef NativeOrchestratorFactory =
       required ServerContextFactory contextFactory,
     });
 
-/// Composes the real per-server [ServerContextFactory]: every context gets
-/// the drift storage installer (encrypted DB open with one-shot
-/// key-recovery) followed by the dio network installer. This is the
-/// composition deferred from #14/#38 to the platform bootstrap (#31).
+/// The per-server scope installers, in activation order: encrypted drift
+/// storage (DB open with one-shot key-recovery), then dio network, then the
+/// household scope. Also the seam tests use to assert the boot list's
+/// membership — that the household scope is wired, and last — without
+/// opening an encrypted database.
+///
+/// The household scope installs **last** and is safe to activate before
+/// sign-in: its user-id provider resolves lazily (see
+/// [HouseholdScopeInstaller]), so no cached session is required at
+/// activation. It reads the id only when a household query runs — a path
+/// gated behind the auth session — so onboarding and signed-out cold starts
+/// never trip it. (This wiring lands with that lazy resolution, #128; it is
+/// unsafe without it.)
+List<ServerScopeInstaller> buildNativeServerScopeInstallers({
+  required EncryptedExecutorFactory executorFactory,
+  required EncryptionKeyService keyService,
+  void Function(DatabaseRecoveryEvent event)? onRecovery,
+}) => [
+  StorageScopeInstaller(
+    executorFactory: executorFactory,
+    keyService: keyService,
+    onRecovery: onRecovery,
+  ),
+  const NetworkScopeInstaller(),
+  const HouseholdScopeInstaller(),
+];
+
+/// Composes the real per-server [ServerContextFactory] from
+/// [buildNativeServerScopeInstallers]. This is the composition deferred from
+/// #14/#38 to the platform bootstrap (#31).
 ServerContextFactory buildNativeServerContextFactory({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
 }) {
-  final installers = <ServerScopeInstaller>[
-    StorageScopeInstaller(
-      executorFactory: executorFactory,
-      keyService: keyService,
-      onRecovery: onRecovery,
-    ),
-    const NetworkScopeInstaller(),
-  ];
+  final installers = buildNativeServerScopeInstallers(
+    executorFactory: executorFactory,
+    keyService: keyService,
+    onRecovery: onRecovery,
+  );
   return (ServerConfig config) =>
       ServerContextImpl(config: config, installers: installers);
 }

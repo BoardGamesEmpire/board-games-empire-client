@@ -40,7 +40,6 @@ void main() {
     for (final (kind, title) in const [
       (ShellPlaceholderKind.serverAdd, 'Add a server'),
       (ShellPlaceholderKind.auth, 'Sign in'),
-      (ShellPlaceholderKind.home, 'Home'),
     ]) {
       testWidgets('renders the localized title for $kind', (tester) async {
         await tester.pumpWidget(_wrap(ShellPlaceholderScreen(kind: kind)));

@@ -60,9 +60,21 @@
   "@shellPlaceholderAuthTitle": {
     "description": "Title of the auth route placeholder (real UI lands with auth wiring)"
   },
-  "shellPlaceholderHomeTitle": "Home",
-  "@shellPlaceholderHomeTitle": {
-    "description": "Title of the home route placeholder"
+  "homeTitle": "Home",
+  "@homeTitle": {
+    "description": "App bar title on the authenticated home screen (#129)."
+  },
+  "homeActiveServerLabel": "Server",
+  "@homeActiveServerLabel": {
+    "description": "Caption above the active server name in the home navigation drawer header (#129)."
+  },
+  "homeEmptyStateTitle": "Welcome to Board Games Empire",
+  "@homeEmptyStateTitle": {
+    "description": "Heading of the home screen's empty state, shown before any content exists (#129)."
+  },
+  "homeEmptyStateBody": "Open the menu to create a household, adjust settings, or send feedback.",
+  "@homeEmptyStateBody": {
+    "description": "Body text of the home screen's empty state, pointing at the navigation drawer (#129)."
   },
   "shellPlaceholderBody": "This screen is under construction and arrives with an upcoming update.",
   "@shellPlaceholderBody": {

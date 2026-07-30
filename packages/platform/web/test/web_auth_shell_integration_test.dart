@@ -171,7 +171,7 @@ void main() {
   );
 
   testWidgets('the real web bootstrap + WebActiveServerScope drive the shell '
-      'to the home placeholder when a session is restored', (tester) async {
+      'to the home menu when a session is restored', (tester) async {
     final repo = _FakeAuthRepository(initialSession: _sampleSession());
     addTearDown(repo.dispose);
     final cubit = buildCubit(repo);
@@ -181,7 +181,7 @@ void main() {
     await cubit.initialize();
     await tester.pumpAndSettle();
 
-    expect(find.byType(HomePlaceholderScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsOneWidget);
     expect(find.byType(AuthScreen), findsNothing);
   });
 
@@ -198,6 +198,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AuthScreen), findsOneWidget);
-    expect(find.byType(HomePlaceholderScreen), findsNothing);
+    expect(find.byType(HomeScreen), findsNothing);
   });
 }

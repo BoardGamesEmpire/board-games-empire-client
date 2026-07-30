@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:mocktail/mocktail.dart';
 
+import '../support/active_server_fakes.dart';
+
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
 
@@ -44,6 +46,17 @@ void main() {
     ThemeMode themeMode = ThemeMode.system,
     Locale? locale,
   }) async {
+    // A faithful Ready state carries an active-server scope: the bootstrap
+    // attempt sets the scope before it can emit NeedsAuth, and
+    // onAuthenticated (the only path to Ready) fires only from NeedsAuth.
+    // Stubbing it lets `/home` resolve the real HomeScreen (static, so
+    // pumpAndSettle terminates) instead of the defensive builder-null
+    // fallback — the mock previously drove a state the app can't reach.
+    when(() => cubit.activeServerScope).thenReturn(
+      FakeActiveServerScope(
+        buildActiveServer(FakeAuthRepository(initialSession: sampleSession())),
+      ),
+    );
     whenListen(
       cubit,
       states.stream,

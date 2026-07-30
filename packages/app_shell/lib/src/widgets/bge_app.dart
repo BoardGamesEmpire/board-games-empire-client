@@ -5,6 +5,8 @@ import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:household/household.dart';
+import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -24,7 +26,8 @@ import '../observability/feedback_uncaught_error_reporter.dart';
 import '../observability/shell_observability.dart';
 import '../router/app_router.dart';
 import '../screens/feedback_flow_screen.dart';
-import '../screens/home_placeholder_screen.dart';
+import '../screens/home_menu_entry.dart';
+import '../screens/home_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
 import '../settings/locale_cubit.dart';
@@ -67,8 +70,9 @@ import 'router_back_interceptor.dart';
 /// [BlocListener] translates the bloc's terminal auth states into
 /// [AppBootstrapCubit.onAuthenticated] / [onSignedOut] — the presentation-
 /// layer coordination that drives the router gate (blocs never depend on
-/// blocs). The `/auth` route renders [AuthGate] and `/home` the temporary
-/// [HomePlaceholderScreen]; both resolve the same provided bloc. When no
+/// blocs). The `/auth` route renders [AuthGate] and `/home` the
+/// navigation-drawer menu ([HomeScreen], #129); both resolve the same
+/// provided bloc. When no
 /// scope/active server is available (tests without a scope; web until
 /// #96) the router renders its placeholders and no auth subtree is
 /// mounted.
@@ -293,6 +297,7 @@ class _BgeAppState extends State<BgeApp> {
       authScopeBuilder: _buildAuthScope,
       feedbackBuilder: _buildFeedbackRoute,
       settingsBuilder: _buildSettingsRoute,
+      createHouseholdBuilder: _buildCreateHouseholdRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
@@ -423,11 +428,87 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// Renders the home route at navigation time. Null (→ placeholder) when
-  /// no active server backs the auth bloc the home screen needs.
+  /// Renders the home route at navigation time — the navigation-drawer
+  /// menu (#129). Null (→ [NotYetAvailableScreen]) when no active server
+  /// backs the auth bloc the sign-out entry needs. Entry labels are
+  /// resolved here from each feature's localizations; each entry's action
+  /// runs against the context [HomeScreen] hands back (its State context,
+  /// under the auth scope + router), so `context.push` / `context.read`
+  /// resolve.
   Widget? _buildHomeRoute(BuildContext context) {
-    if (widget.bootstrapCubit.activeServerScope?.active == null) return null;
-    return const HomePlaceholderScreen();
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final authL10n = AuthLocalizations.of(context);
+    final feedbackL10n = FeedbackLocalizations.of(context);
+    final householdL10n = HouseholdLocalizations.of(context);
+    final shellL10n = ShellLocalizations.of(context);
+
+    // Only surface create-household where the per-server household scope is
+    // actually installed — the same guard _buildCreateHouseholdRoute
+    // applies. Otherwise the entry would dead-end on the (back-button-less)
+    // NotYetAvailableScreen: web never wires the scope, and native only
+    // wires it once #128 lands.
+    final container = active.container;
+    final canCreateHousehold =
+        container.isRegistered<HouseholdRepository>() &&
+        container.isRegistered<HouseholdRemoteDataSource>();
+
+    return HomeScreen(
+      activeServerName: active.displayName,
+      entries: [
+        if (canCreateHousehold)
+          HomeMenuEntry(
+            id: 'create_household',
+            icon: Icons.group_add_outlined,
+            label: householdL10n.createHouseholdTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.householdCreate),
+          ),
+        HomeMenuEntry(
+          id: 'send_feedback',
+          icon: Icons.feedback_outlined,
+          label: feedbackL10n.feedbackComposeTitle,
+          onSelected: (ctx) => ctx.push(AppRoutes.feedback),
+        ),
+        HomeMenuEntry(
+          id: 'settings',
+          icon: Icons.settings_outlined,
+          label: shellL10n.settingsTitle,
+          onSelected: (ctx) => ctx.push(AppRoutes.settings),
+        ),
+        HomeMenuEntry(
+          id: 'sign_out',
+          icon: Icons.logout,
+          label: authL10n.authSignOutButton,
+          isDestructive: true,
+          onSelected: (ctx) =>
+              ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
+        ),
+      ],
+    );
+  }
+
+  /// The #129 create-household wiring: resolves the per-server
+  /// [HouseholdRepository] + [HouseholdRemoteDataSource] from the *active
+  /// server's* scoped container — not [BgeApp.rootContainer], since the
+  /// household scope is per-server. Null (→ [NotYetAvailableScreen]) when
+  /// no active server is resolvable or its container lacks either
+  /// dependency (tests without a scope; web until the household scope is
+  /// wired there).
+  Widget? _buildCreateHouseholdRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<HouseholdRepository>() ||
+        !container.isRegistered<HouseholdRemoteDataSource>()) {
+      return null;
+    }
+
+    return CreateHouseholdScreen(
+      repository: container.get<HouseholdRepository>(),
+      remote: container.get<HouseholdRemoteDataSource>(),
+    );
   }
 
   /// The #107 user-initiated feedback wiring: resolves the device-global
@@ -742,6 +823,7 @@ class _BgeAppState extends State<BgeApp> {
         ServerOnboardingLocalizations.delegate,
         AuthLocalizations.delegate,
         FeedbackLocalizations.delegate,
+        HouseholdLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],
       supportedLocales: ShellLocalizations.supportedLocales,
