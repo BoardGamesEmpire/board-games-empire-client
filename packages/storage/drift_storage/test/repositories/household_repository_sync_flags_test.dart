@@ -70,7 +70,7 @@ void main() {
     final clock = FixedClockService(DateTime.utc(2024, 1, 15, 10, 30));
     repo = HouseholdRepositoryImpl(
       db: db,
-      currentUserId: _kUserId,
+      currentUserId: () => _kUserId,
       syncQueue: SyncQueueRepositoryImpl(db, clock),
       clock: clock,
     );
