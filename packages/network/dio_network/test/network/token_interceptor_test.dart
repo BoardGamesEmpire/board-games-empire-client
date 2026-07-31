@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:di/di.dart' show LocalClockService;
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,13 +43,15 @@ void main() {
   late _CapturingAdapter adapter;
   late Dio dio;
 
-  StoredToken validToken() => StoredToken(
+  StoredSession validToken() => StoredSession(
     token: 'tok-123',
+    persistedAt: DateTime.now().toUtc().subtract(const Duration(hours: 2)),
     expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
   );
 
-  StoredToken expiredToken() => StoredToken(
+  StoredSession expiredToken() => StoredSession(
     token: 'tok-old',
+    persistedAt: DateTime.now().toUtc().subtract(const Duration(hours: 2)),
     expiresAt: DateTime.now().toUtc().subtract(const Duration(hours: 1)),
   );
 
@@ -108,6 +111,64 @@ void main() {
     });
   });
 
+  // #98: the persisted expiry became nullable when the client stopped
+  // fabricating one at sign-in, so the gate is now "attach unless KNOWN
+  // expired" rather than "attach unless expired".
+  group('TokenInterceptor and an unconfirmed expiry (#98)', () {
+    test(
+      'attaches the token when the expiry is UNKNOWN — otherwise the '
+      'reconcile call that confirms it would go out unauthenticated',
+      () async {
+        when(() => storage.retrieve()).thenAnswer(
+          (_) async => StoredSession(
+            token: 'tok-fresh',
+            persistedAt: DateTime.now().toUtc(),
+          ),
+        );
+
+        await dio.get<dynamic>('/protected');
+
+        expect(adapter.captured?.headers['Authorization'], 'Bearer tok-fresh');
+      },
+    );
+
+    test('gates on the injected per-server clock rather than the device wall '
+        'clock, so a skewed device does not discard a live token', () async {
+      final correctedAdapter = _CapturingAdapter();
+      final correctedDio =
+          Dio(
+              BaseOptions(
+                baseUrl: 'https://api.example.com',
+                validateStatus: (_) => true,
+              ),
+            )
+            ..httpClientAdapter = correctedAdapter
+            ..interceptors.add(
+              TokenInterceptor(
+                tokenStorage: storage,
+                // Server-corrected time places us inside the session window
+                // even though the expiry is in the device's past.
+                clock: LocalClockService(() => DateTime.utc(2026, 1, 2)),
+              ),
+            );
+
+      when(() => storage.retrieve()).thenAnswer(
+        (_) async => StoredSession(
+          token: 'tok-live',
+          persistedAt: DateTime.utc(2026),
+          expiresAt: DateTime.utc(2026, 1, 8),
+        ),
+      );
+
+      await correctedDio.get<dynamic>('/protected');
+
+      expect(
+        correctedAdapter.captured?.headers['Authorization'],
+        'Bearer tok-live',
+      );
+    });
+  });
+
   // Closes the original PR #99 gap: the interceptor authenticated purely off
   // TokenStorageService.retrieve(), so a token surviving a failed clear() kept
   // being attached after sign-out. With the latch inside the shared store, the
@@ -120,7 +181,8 @@ void main() {
     late Dio latchDio;
 
     const validPayload =
-        '{"token":"survivor","expires_at":"2099-01-01T00:00:00.000Z"}';
+        '{"v":2,"token":"survivor","expires_at":"2099-01-01T00:00:00.000Z",'
+        '"persisted_at":"2026-01-01T00:00:00.000Z"}';
 
     setUp(() {
       secure = _MockSecureStorage();
@@ -149,7 +211,10 @@ void main() {
 
       // Sanity: before sign-out the interceptor attaches the bearer token.
       await latchDio.get<dynamic>('/protected');
-      expect(latchAdapter.captured?.headers['Authorization'], 'Bearer survivor');
+      expect(
+        latchAdapter.captured?.headers['Authorization'],
+        'Bearer survivor',
+      );
 
       // Sign-out clears the store; the delete throws but the latch is set.
       await expectLater(realStorage.clear(), throwsA(isA<StateError>()));

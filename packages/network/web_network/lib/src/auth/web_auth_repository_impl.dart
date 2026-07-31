@@ -151,8 +151,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     final sessionResponse = BgeSessionResponse.fromJson(response.data!);
     final auth = AuthResponse(
-      // Web: token is opaque — use session id as a stable reference.
-      // The actual cookie is browser-managed and never exposed to Dart.
+      // Web authenticates via the browser-managed httpOnly cookie, never
+      // this field — nothing on web reads `AuthResponse.token` as a
+      // credential. It is carried for shape parity with native.
+      //
+      // Note this IS the real session token, not an opaque identifier: an
+      // earlier comment here claimed it was the session id, which it never
+      // was. That makes it a live credential sitting in Dart-reachable
+      // memory on web, which partly undoes the point of the httpOnly
+      // cookie. Tracked separately (#144); do not persist or log it.
       token: sessionResponse.session.token,
       user: sessionResponse.user,
       expiresAt: sessionResponse.session.expiresAt,
@@ -178,6 +185,26 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// without a network round-trip. Delegates to [getSession].
   @override
   Future<AuthResponse?> getCachedSession() => getSession();
+
+  /// Always null: web never restores optimistically (#98, decision D10).
+  ///
+  /// Not a stub awaiting an implementation — a statement about what the
+  /// platform can know. Optimistic restore requires inspecting the session
+  /// material offline to check it has a server-confirmed expiry that has
+  /// not passed. The browser's httpOnly cookie is unreadable from Dart, so
+  /// there is nothing to inspect: the only alternative would be trusting a
+  /// separately persisted expiry as a proxy for a credential we cannot
+  /// confirm still exists, which would let a cleared cookie present as a
+  /// live session.
+  ///
+  /// The degenerate nature of the case makes this cheap to accept: web is
+  /// same-origin with its BGE server, so a server unreachable enough to
+  /// need offline restore is usually one that could not have served the app
+  /// either. Web therefore keeps #37's retryable "can't reach the server"
+  /// view at cold start. Revisiting this needs a readable non-httpOnly
+  /// expiry hint from the server — tracked separately.
+  @override
+  Future<AuthResponse?> restoreCachedSession() async => null;
 
   @override
   Stream<AuthState> watchAuthState() {

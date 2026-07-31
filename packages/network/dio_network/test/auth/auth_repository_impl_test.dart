@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:models/dto.dart';
 
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
@@ -53,10 +54,15 @@ Map<String, dynamic> _signInJson() => {
   'user': _wireUser(),
 };
 
+/// `session.token` is deliberately distinct from the sign-in grant's token:
+/// the client must adopt the server-vended credential on revalidation, and
+/// a shared fixture string would let a regression pass unnoticed.
+const _kServerVendedToken = 'session-tok-renewed';
+
 Map<String, dynamic> _sessionJson() => {
   'session': {
     'id': 'sess-1',
-    'token': 'session-tok-abc',
+    'token': _kServerVendedToken,
     'expiresAt': '2099-01-01T00:00:00.000Z',
     'userId': 'user-1',
   },
@@ -69,12 +75,14 @@ Response<Map<String, dynamic>> _ok(Map<String, dynamic> data) => Response(
   requestOptions: RequestOptions(path: ''),
 );
 
-Response<Map<String, dynamic>> _status(int code, [Map<String, dynamic>? data]) =>
-    Response(
-      data: data,
-      statusCode: code,
-      requestOptions: RequestOptions(path: ''),
-    );
+Response<Map<String, dynamic>> _status(
+  int code, [
+  Map<String, dynamic>? data,
+]) => Response(
+  data: data,
+  statusCode: code,
+  requestOptions: RequestOptions(path: ''),
+);
 
 void main() {
   late MockDio mockDio;
@@ -82,6 +90,7 @@ void main() {
   late AuthRepositoryImpl repo;
 
   final expiry = DateTime(2099).toUtc();
+  final persistedAt = DateTime.utc(2026, 1, 1);
 
   setUp(() {
     mockDio = MockDio();
@@ -104,12 +113,20 @@ void main() {
     () => mockStorage.store(
       token: any(named: 'token'),
       expiresAt: any(named: 'expiresAt'),
+      persistedAt: any(named: 'persistedAt'),
+      user: any(named: 'user'),
     ),
   ).thenAnswer((_) async {});
 
-  void stubRetrieve({String token = 'session-tok-abc'}) => when(
-    () => mockStorage.retrieve(),
-  ).thenAnswer((_) async => StoredToken(token: token, expiresAt: expiry));
+  void stubRetrieve({String token = 'session-tok-abc'}) =>
+      when(() => mockStorage.retrieve()).thenAnswer(
+        (_) async => StoredSession(
+          token: token,
+          expiresAt: expiry,
+          persistedAt: persistedAt,
+          user: AuthUser.fromJson(_wireUser()),
+        ),
+      );
 
   void stubClear() => when(() => mockStorage.clear()).thenAnswer((_) async {});
 
@@ -129,7 +146,11 @@ void main() {
         ).thenAnswer((_) async => _ok(_sessionJson()));
 
         final result = await repo.signIn(email: 'a@b.com', password: 'pass');
-        expect(result.token, 'session-tok-abc');
+        expect(
+          result.token,
+          _kServerVendedToken,
+          reason: 'sign-in reconciles, adopting the session endpoint token',
+        );
         expect(result.user.username, 'testuser');
       });
 
@@ -312,8 +333,11 @@ void main() {
 
         verify(
           () => mockStorage.store(
-            token: 'session-tok-abc',
+            // The server-vended token, not the one the request carried.
+            token: _kServerVendedToken,
             expiresAt: any(named: 'expiresAt'),
+            persistedAt: any(named: 'persistedAt'),
+            user: any(named: 'user'),
           ),
         ).called(1);
       });

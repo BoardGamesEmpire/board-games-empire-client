@@ -32,6 +32,8 @@ dependencies:
     path: ../core/observability
   server_onboarding:
     path: ../features/server_onboarding
+  ui:
+    path: ../ui/widgets
   ui_tokens:
     path: ../ui/tokens
 

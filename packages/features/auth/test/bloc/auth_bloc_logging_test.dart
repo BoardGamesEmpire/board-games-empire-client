@@ -12,7 +12,7 @@ import 'package:auth/src/bloc/auth_bloc_state.dart';
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 
-/// Failure logging (#100) is centralised in `onTransition` (warn/error by
+/// Failure logging (#100) is centralized in `onTransition` (warn/error by
 /// severity bucket) plus `onError` (backstop). These tests drive the bloc
 /// through each seam and assert the level of the record it emits on its own
 /// `bge.auth.bloc` logger, captured off `Logger.root` (delivery is
@@ -26,6 +26,11 @@ void main() {
   setUp(() {
     repo = MockAuthRepository();
     when(() => repo.watchAuthState()).thenAnswer((_) => const Stream.empty());
+    // #98: the indeterminate session-check paths consult the cached session
+    // before falling back to the retry view. "Nothing cached" keeps this
+    // suite asserting the log severities for AuthSessionCheckFailed.
+    when(() => repo.restoreCachedSession()).thenAnswer((_) async => null);
+    when(() => repo.getCachedSession()).thenAnswer((_) async => null);
     records = [];
     previous = Logger.root.level;
     Logger.root.level = Level.ALL;

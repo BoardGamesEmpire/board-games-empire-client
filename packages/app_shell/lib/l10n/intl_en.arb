@@ -243,5 +243,13 @@
   "settingsLanguageSystemDefault": "System default",
   "@settingsLanguageSystemDefault": {
     "description": "Language option that follows the device language, falling back to English when the device language is unsupported (#120)"
+  },
+  "shellUnverifiedSessionMessage": "Can't reach the server — using your saved sign-in. Changes will sync when the connection returns.",
+  "@shellUnverifiedSessionMessage": {
+    "description": "Banner shown across the signed-in shell when the session was restored from local material without server confirmation. Copy must stay accurate for BOTH causes — device offline AND server unreachable while online (5xx/timeout) — so it names the server, not the device's connectivity. Also read once by assistive technology via the live region when the banner appears (#98)"
+  },
+  "shellUnverifiedSessionDismiss": "Dismiss",
+  "@shellUnverifiedSessionDismiss": {
+    "description": "Tooltip and accessibility label for the control that hides the unverified-session banner until the next offline episode (#98)"
   }
 }
