@@ -20,6 +20,8 @@ dependencies:
     path: ../core/di
   feedback:
     path: ../features/feedback
+  household:
+    path: ../features/household
   interfaces:
     path: ../core/interfaces
   models:

@@ -19,6 +19,7 @@ abstract final class AppRoutes {
   static const home = '/home';
   static const feedback = '/feedback';
   static const settings = '/settings';
+  static const householdCreate = '/household/create';
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
@@ -86,6 +87,20 @@ typedef FeedbackScreenBuilder = Widget? Function(BuildContext context);
 /// from it.
 typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the create-household flow (#129) for the
+/// [AppRoutes.householdCreate] route. Supplied by [BgeApp]; returns null at
+/// navigation time when no active server is resolvable or its container
+/// carries no `HouseholdRepository` / `HouseholdRemoteDataSource` (tests
+/// without a container; web until the household scope is wired there), in
+/// which case the route falls back to [NotYetAvailableScreen].
+///
+/// The route sits **outside** the auth [ShellRoute]: the screen needs no
+/// `AuthBloc`, only the active server's scoped container. Reachability is
+/// still post-auth — the redirect table only admits non-bootstrap
+/// locations once [AppBootstrapReady] — and it is pushed from the home
+/// menu rather than deep-linked.
+typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -104,6 +119,7 @@ GoRouter buildAppRouter({
   AuthScopeBuilder? authScopeBuilder,
   FeedbackScreenBuilder? feedbackBuilder,
   SettingsScreenBuilder? settingsBuilder,
+  CreateHouseholdScreenBuilder? createHouseholdBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -162,9 +178,15 @@ GoRouter buildAppRouter({
           ),
           GoRoute(
             path: AppRoutes.home,
+            // Home is only reached once [AppBootstrapReady] (post-auth,
+            // active server present), so homeBuilder returns null only in a
+            // transient/defensive pre-active state. Falls back to
+            // [NotYetAvailableScreen]: static (so widget tests settle —
+            // a spinner would hang pumpAndSettle) and consistent with the
+            // other optional-builder routes (feedback / settings /
+            // householdCreate). The home placeholder is retired (#129).
             builder: (context, _) =>
-                homeBuilder?.call(context) ??
-                const ShellPlaceholderScreen(kind: ShellPlaceholderKind.home),
+                homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
           ),
         ],
       ),
@@ -184,6 +206,17 @@ GoRouter buildAppRouter({
         path: AppRoutes.settings,
         builder: (context, _) =>
             settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
+      ),
+      // #129: create-household flow. Outside the auth ShellRoute (needs no
+      // AuthBloc — only the active server's container; see
+      // [CreateHouseholdScreenBuilder]). Reachable only once
+      // [AppBootstrapReady] admits non-bootstrap locations; pushed from the
+      // home menu.
+      GoRoute(
+        path: AppRoutes.householdCreate,
+        builder: (context, _) =>
+            createHouseholdBuilder?.call(context) ??
+            const NotYetAvailableScreen(),
       ),
       GoRoute(
         path: AppRoutes.error,
@@ -208,10 +241,12 @@ GoRouter buildAppRouter({
   );
 }
 
-/// Builds the real home screen subtree for the [AppRoutes.home] route.
-/// Always supplied by [BgeApp] so the temporary sign-out control (#37) can
-/// reach the active server's auth bloc; returns null at navigation time
-/// when no active server backs the bloc, falling back to the placeholder.
+/// Builds the real home screen subtree for the [AppRoutes.home] route —
+/// the navigation-drawer menu (#129). Always supplied by [BgeApp] so the
+/// menu's sign-out entry can reach the active server's auth bloc; returns
+/// null at navigation time when no active server backs the bloc (a
+/// transient pre-active state), in which case the route falls back to
+/// [NotYetAvailableScreen], like the other optional-builder routes.
 typedef HomeScreenBuilder = Widget? Function(BuildContext context);
 
 /// Wraps the auth+home [ShellRoute] child with the active server's

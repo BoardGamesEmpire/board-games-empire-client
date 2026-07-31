@@ -42,6 +42,12 @@ void main() {
     final router = buildAppRouter(
       bootstrapCubit: cubit,
       refreshListenable: listenable,
+      // The production home body (HomeScreen) needs an active-server scope
+      // this router-level test does not build. Supply a minimal stand-in so
+      // the redirect assertions can recognize the home destination — the
+      // real builder-null fallback is the (defensive, unreachable)
+      // NotYetAvailableScreen, which renders no "Home" text.
+      homeBuilder: (_) => const Scaffold(body: Center(child: Text('Home'))),
     );
     // go_router does not own the listenable; dispose the router first (it
     // removes its listener during dispose) then the listenable.

@@ -9,9 +9,6 @@ enum ShellPlaceholderKind {
 
   /// Replaced by the auth wiring (#37).
   auth,
-
-  /// Replaced by the collection home (game collection feature).
-  home,
 }
 
 /// Temporary route body used until the real feature UI lands. Titles are
@@ -25,7 +22,6 @@ class ShellPlaceholderScreen extends StatelessWidget {
   String _title(ShellLocalizations i18n) => switch (kind) {
     ShellPlaceholderKind.serverAdd => i18n.shellPlaceholderServerAddTitle,
     ShellPlaceholderKind.auth => i18n.shellPlaceholderAuthTitle,
-    ShellPlaceholderKind.home => i18n.shellPlaceholderHomeTitle,
   };
 
   @override
