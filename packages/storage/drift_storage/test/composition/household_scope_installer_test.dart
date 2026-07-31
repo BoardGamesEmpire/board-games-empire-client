@@ -57,10 +57,10 @@ class _FakeAuthRepository implements AuthRepository {
   Stream<AuthState> watchAuthState() => throw UnimplementedError();
 }
 
-AuthResponse _session() => AuthResponse(
+AuthResponse _session({String userId = _kUserId}) => AuthResponse(
   token: 'tok',
   user: AuthUser(
-    id: _kUserId,
+    id: userId,
     username: 'tester',
     email: 'tester@example.com',
     emailVerified: true,
@@ -104,7 +104,8 @@ ServerConfig _config() => ServerConfig(
 /// Builds a scope container carrying the three resources the installer
 /// resolves — the [ServerDatabase], the [ClockService] and the
 /// [AuthRepository] — mirroring what `StorageScopeInstaller` /
-/// `registerServerNetwork` register ahead of this installer in production.
+/// `registerServerNetwork` register in the per-server scope, which the
+/// user-scope view falls through to in production (#135).
 DependencyContainer _scopeContainer(AuthRepository auth) {
   final db = ServerDatabase.memory();
   return DependencyContainerImpl()
@@ -118,22 +119,20 @@ DependencyContainer _scopeContainer(AuthRepository auth) {
 void main() {
   const installer = HouseholdScopeInstaller();
 
-  test(
-    'installs without a session — activation runs before sign-in (#128)',
-    () async {
-      final container = _scopeContainer(
-        _FakeAuthRepository(const AuthStateUnknown()),
-      );
-      addTearDown(container.dispose);
+  test('install never reads the auth state itself — resolution stays lazy '
+      '(#128), so it succeeds under an unknown state', () async {
+    final container = _scopeContainer(
+      _FakeAuthRepository(const AuthStateUnknown()),
+    );
+    addTearDown(container.dispose);
 
-      // The eager getCachedSession() read this replaces would have thrown
-      // here; the lazy provider defers resolution, so install succeeds.
-      await installer.install(container, _config());
+    // An eager session read would throw here; the lazy provider defers
+    // resolution, so install succeeds regardless of the live auth state.
+    await installer.install(container, _config(), _kUserId);
 
-      expect(container.isRegistered<HouseholdRepository>(), isTrue);
-      expect(container.isRegistered<SyncQueueRepository>(), isTrue);
-    },
-  );
+    expect(container.isRegistered<HouseholdRepository>(), isTrue);
+    expect(container.isRegistered<SyncQueueRepository>(), isTrue);
+  });
 
   test(
     'the registered repository resolves the live user id at call time',
@@ -142,7 +141,7 @@ void main() {
         _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config());
+      await installer.install(container, _config(), _kUserId);
 
       final repo = container.get<HouseholdRepository>();
 
@@ -159,7 +158,7 @@ void main() {
         _FakeAuthRepository(const AuthStateUnauthenticated()),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config());
+      await installer.install(container, _config(), _kUserId);
 
       final repo = container.get<HouseholdRepository>();
 
@@ -173,7 +172,7 @@ void main() {
     );
     final container = _scopeContainer(auth);
     addTearDown(container.dispose);
-    await installer.install(container, _config());
+    await installer.install(container, _config(), _kUserId);
     final repo = container.get<HouseholdRepository>();
 
     await expectLater(repo.getHouseholds(), completion(isEmpty));
@@ -186,13 +185,35 @@ void main() {
   });
 
   test(
+    'an authenticated user who is not the scope user throws — a missed '
+    'scope pop must fail loudly, never serve cross-user data (#135)',
+    () async {
+      final auth = _FakeAuthRepository(
+        AuthStateAuthenticated(session: _session()),
+      );
+      final container = _scopeContainer(auth);
+      addTearDown(container.dispose);
+      await installer.install(container, _config(), _kUserId);
+      final repo = container.get<HouseholdRepository>();
+
+      // A different user authenticates while the old user scope is somehow
+      // still live (the shell failed to pop it).
+      auth.authState = AuthStateAuthenticated(
+        session: _session(userId: 'user-someone-else'),
+      );
+
+      await expectLater(repo.getHouseholds(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test(
     'watch* deliver an unauthenticated id as a stream error, not a throw',
     () async {
       final container = _scopeContainer(
         _FakeAuthRepository(const AuthStateUnauthenticated()),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config());
+      await installer.install(container, _config(), _kUserId);
       final repo = container.get<HouseholdRepository>();
 
       // Invoking the watch methods must not throw synchronously; the
@@ -205,4 +226,27 @@ void main() {
       );
     },
   );
+
+  test('disposing the container closes a live watch stream — the dispose '
+      'wiring behind close-on-scope-pop (#135)', () async {
+    final container = _scopeContainer(
+      _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+    );
+    await installer.install(container, _config(), _kUserId);
+    final repo = container.get<HouseholdRepository>();
+
+    var done = false;
+    final sub = repo.watchHouseholds().listen(
+      (_) {},
+      onDone: () => done = true,
+    );
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+    expect(done, isFalse);
+
+    await container.dispose();
+    await pumpEventQueue();
+
+    expect(done, isTrue);
+  });
 }

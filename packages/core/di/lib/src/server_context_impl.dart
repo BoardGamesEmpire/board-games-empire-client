@@ -71,10 +71,12 @@ class ServerContextImpl implements ServerContext {
   ServerContextImpl({
     required ServerConfig config,
     List<ServerScopeInstaller> installers = const [],
+    List<UserScopeInstaller> userInstallers = const [],
     DependencyContainer Function()? containerFactory,
   }) : serverId = config.id,
        _config = config,
        _installers = installers,
+       _userInstallers = userInstallers,
        _container = _SwappableContainer(
          containerFactory ?? DependencyContainerImpl.new,
        ),
@@ -89,6 +91,23 @@ class ServerContextImpl implements ServerContext {
   final ServerConfig _config;
 
   final List<ServerScopeInstaller> _installers;
+  final List<UserScopeInstaller> _userInstallers;
+
+  /// The user id of the active user-session scope (#135), or null when no
+  /// session scope is active. Mirrored to consumers through the
+  /// [UserSessionScope] adapter this context registers into its container.
+  String? _activeUserId;
+
+  /// Serializes every scope mutation — state transitions AND user-session
+  /// operations (#135) — on one chain: each enqueued operation runs only
+  /// after the previous one settles, so a deactivation issued during a
+  /// background() cannot be skipped or interleaved; it simply runs after
+  /// the transition and observes the settled state. One chain also makes
+  /// deadlock structurally impossible (no operation ever awaits another's
+  /// future from inside the chain). Kept settled — errors are delivered to
+  /// the operation's own caller, never left on the chain — so [dispose]
+  /// can await it unconditionally.
+  Future<void> _scopeOps = Future<void>.value();
 
   @override
   DependencyContainer get container => _container;
@@ -133,11 +152,20 @@ class ServerContextImpl implements ServerContext {
           for (final installer in _installers) {
             await installer.install(_container, _config);
           }
+          // The per-user session lifecycle seam (#135). Registered into the
+          // per-server (base) scope on every fresh installation so the
+          // shell can resolve it like any other per-server service; the
+          // adapter delegates to this context's activateUserSession /
+          // deactivateUserSession.
+          _container.registerSingleton<UserSessionScope>(
+            _ContextUserSessionScope(this),
+          );
         } catch (_) {
           // Discard partial registrations so a retry starts from a clean
           // scope; _transition's catch rolls the state back and rethrows.
           // The reset is guarded so a throwing dispose callback (GetIt does
           // not shield them) cannot mask the real installer error.
+          _activeUserId = null;
           try {
             await _container.replaceInner();
           } catch (teardownError) {
@@ -169,8 +197,18 @@ class ServerContextImpl implements ServerContext {
     }
 
     await _transition(() async {
-      // Resources remain open during backgrounding — no-op here.
-      // The orchestrator owns the backgrounding timer.
+      // Per-server resources remain open during backgrounding — the DB,
+      // clients, and their registrations are retained for a cheap
+      // re-activation. The orchestrator owns the backgrounding timer.
+      //
+      // The user-session scope (#135) is the exception: leaving the
+      // active state ends the session. A server switch never emits an
+      // auth transition for the departing server (its AuthBloc is simply
+      // disposed by the shell's keyed provider), so nothing else would
+      // pop the scope — without this, the prior server's per-user
+      // repositories and their live queries would survive until suspend.
+      // The next sign-in state emission after re-activation rebuilds it.
+      await _teardownUserScope();
       _setState(ServerContextState.backgrounding);
     });
   }
@@ -201,6 +239,11 @@ class ServerContextImpl implements ServerContext {
       // monitoring, matching dispose()'s guarded teardown. replaceInner
       // still installs a fresh inner container even when the old one's
       // disposal throws.
+      // The user-session scope (#135) was already torn down on
+      // background(); if one somehow survived, replaceInner disposes the
+      // user scope first, then the base scope. Reset the bookkeeping so a
+      // post-resume activateUserSession starts clean.
+      _activeUserId = null;
       try {
         await _container.replaceInner();
       } catch (e) {
@@ -235,6 +278,14 @@ class ServerContextImpl implements ServerContext {
     }
     if (_state == ServerContextState.disposed) return;
 
+    // Let any queued scope operation settle too (#135) — a user installer
+    // mid-registration must not race the container teardown. The chain is
+    // kept settled, so this await cannot throw. (An operation enqueued
+    // after this point observes the disposed state itself.)
+    await _scopeOps;
+    if (_state == ServerContextState.disposed) return;
+
+    _activeUserId = null;
     _setState(ServerContextState.disposed);
     try {
       await _container.dispose();
@@ -270,6 +321,122 @@ class ServerContextImpl implements ServerContext {
     await Future<void>(() {});
   }
 
+  // ── User-session scope (#135) ────────────────────────────────────────
+
+  /// The user id of the active user-session scope, or null when none is
+  /// active. Exposed to consumers via the [UserSessionScope] adapter.
+  String? get activeUserId => _activeUserId;
+
+  /// Builds the per-user child scope for [userId]: pushes a fresh user
+  /// scope onto the container and runs every [UserScopeInstaller], in
+  /// order, against a view whose registrations land in the user scope
+  /// while resolution falls through to the per-server scope.
+  ///
+  /// - No-op when [userId] is already the active session user.
+  /// - A *different* active user is torn down first — a missed
+  ///   deactivation can't leak the prior user's services.
+  /// - Runs only after any in-flight transition or scope operation
+  ///   settles (one serialized chain), then requires the context to be
+  ///   [ServerContextState.active]; anything else is a wiring bug and
+  ///   throws [StateError] (auth UI only exists for the active server).
+  /// - On installer failure the partial user scope is discarded (the
+  ///   per-server scope is untouched) and the error propagates; a later
+  ///   call retries from a clean scope.
+  ///
+  /// Serialized with [deactivateUserSession] and every state transition
+  /// through [_scopeOps].
+  Future<void> activateUserSession(String userId) {
+    return _enqueueScopeOp(() async {
+      _assertNotDisposed();
+      if (_state != ServerContextState.active) {
+        throw StateError(
+          'Cannot activate a user session for $serverId in state $_state. '
+          'User sessions are only valid on an active context.',
+        );
+      }
+      if (_activeUserId == userId) return;
+
+      // Defensive: a different user's scope without an intervening
+      // deactivation. Tear it down before building the new one.
+      await _teardownUserScope();
+
+      final view = _container.beginUserScope();
+      try {
+        for (final installer in _userInstallers) {
+          await installer.install(view, _config, userId);
+        }
+      } catch (_) {
+        // Discard the partial user scope so a retry starts clean; the
+        // per-server scope is untouched. Guarded so a throwing dispose
+        // callback cannot mask the real installer error.
+        try {
+          await _container.endUserScope();
+        } catch (teardownError) {
+          assert(() {
+            debugPrint(
+              'ServerContext($serverId): user-scope reset after a failed '
+              'session activation threw (suppressed in favor of the '
+              'original installer error): $teardownError',
+            );
+            return true;
+          }());
+        }
+        rethrow;
+      }
+      _activeUserId = userId;
+    });
+  }
+
+  /// Tears the active user-session scope down, disposing every service its
+  /// installers registered (their `dispose:` callbacks run — the seam
+  /// through which per-user repositories close their vended streams).
+  ///
+  /// Best-effort and idempotent: a no-op when the context is disposed or
+  /// no user scope is active. Never skipped: the shared [_scopeOps] chain
+  /// queues it behind any in-flight transition, after which it observes
+  /// the settled state — post-suspend/dispose the scope already died with
+  /// the container (no-op); post-background the scope was torn down by
+  /// [background] itself (no-op). A live scope found here is disposed
+  /// regardless of state, so a sign-out can never be silently dropped.
+  Future<void> deactivateUserSession() {
+    return _enqueueScopeOp(() async {
+      if (_state == ServerContextState.disposed) {
+        _activeUserId = null;
+        return;
+      }
+      await _teardownUserScope();
+    });
+  }
+
+  /// Chains [op] onto [_scopeOps] and keeps the chain settled.
+  Future<void> _enqueueScopeOp(Future<void> Function() op) {
+    final result = _scopeOps.then((_) => op());
+    _scopeOps = result.then<void>(
+      (_) {},
+      onError: (Object _) {}, // the caller of [op] receives the error
+    );
+    return result;
+  }
+
+  /// Disposes the current user scope, if any, mirroring [suspend]'s guarded
+  /// teardown: a throwing dispose callback is logged, never rethrown, so
+  /// the session still ends and the next activation starts clean.
+  Future<void> _teardownUserScope() async {
+    _activeUserId = null;
+    if (!_container.hasUserScope) return;
+    try {
+      await _container.endUserScope();
+    } catch (e) {
+      assert(() {
+        debugPrint(
+          'ServerContext($serverId): user-scope disposal threw during '
+          'session deactivation: $e',
+        );
+        return true;
+      }());
+    }
+  }
+
   @override
   Stream<ServerContextState> watchState() {
     // Stream.multi runs the callback synchronously on each listen(),
@@ -302,7 +469,7 @@ class ServerContextImpl implements ServerContext {
     }
 
     _transitioning = true;
-    final future = _runTransition(body);
+    final future = _enqueueScopeOp(() => _runTransition(body));
     _inFlightTransition = future;
     try {
       await future;
@@ -363,6 +530,15 @@ class _SwappableContainer implements DependencyContainer {
   /// activation follow the identical code path.
   DependencyContainer? _inner;
 
+  /// The per-user child scope (#135), or null when no user session is
+  /// active. Resolution through this facade checks the user scope first,
+  /// then falls through to the base scope, so per-user registrations are
+  /// visible through the one stable `context.container` handle without any
+  /// change to the [DependencyContainer] interface. Registrations made
+  /// *through the facade* still land in the base scope — the user scope is
+  /// only written via the view [beginUserScope] hands to user installers.
+  DependencyContainer? _userScope;
+
   bool _disposed = false;
 
   DependencyContainer get _current {
@@ -374,16 +550,81 @@ class _SwappableContainer implements DependencyContainer {
     return _inner ??= _factory();
   }
 
+  /// Whether a user-session scope is currently active (#135).
+  bool get hasUserScope => _userScope != null;
+
+  /// Opens the per-user child scope and returns the container **view** to
+  /// hand to user installers: registrations land in the user scope while
+  /// resolution falls through to the base scope (#135).
+  ///
+  /// Throws [StateError] if a user scope is already open (the context
+  /// tears the previous one down first) or the facade is disposed.
+  DependencyContainer beginUserScope() {
+    if (_disposed) {
+      throw StateError(
+        'DependencyContainer has been disposed and cannot be used.',
+      );
+    }
+    if (_userScope != null) {
+      throw StateError(
+        'A user-session scope is already active; deactivate it before '
+        'activating another.',
+      );
+    }
+    final child = _factory();
+    _userScope = child;
+    return _UserScopeView(user: child, base: () => _current);
+  }
+
+  /// Disposes the current user scope (running every registration's dispose
+  /// callback) and detaches it. No-op when none is active (#135).
+  Future<void> endUserScope() async {
+    final user = _userScope;
+    _userScope = null;
+    if (user != null) await user.dispose();
+  }
+
   /// Disposes the current inner container (running every registration's
-  /// dispose callback) and prepares a fresh one for subsequent use.
+  /// dispose callback) and prepares a fresh one for subsequent use. The
+  /// user-session scope, being a child of the inner container's lifetime,
+  /// is torn down first (#135) — per-user services may hold resources from
+  /// the base scope (the per-server DB), so they must release before it.
+  /// Both disposals always run; the first error, if any, is rethrown.
   Future<void> replaceInner() async {
+    final user = _userScope;
+    _userScope = null;
     final old = _inner;
     _inner = null;
-    if (old != null) await old.dispose();
+
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    if (user != null) {
+      try {
+        await user.dispose();
+      } catch (e, s) {
+        firstError = e;
+        firstStackTrace = s;
+      }
+    }
+    if (old != null) {
+      try {
+        await old.dispose();
+      } catch (e, s) {
+        firstError ??= e;
+        firstStackTrace ??= s;
+      }
+    }
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStackTrace!);
+    }
   }
 
   @override
-  T get<T extends Object>() => _current.get<T>();
+  T get<T extends Object>() {
+    final user = _userScope;
+    if (user != null && user.isRegistered<T>()) return user.get<T>();
+    return _current.get<T>();
+  }
 
   @override
   void registerSingleton<T extends Object>(
@@ -402,18 +643,115 @@ class _SwappableContainer implements DependencyContainer {
       _current.registerFactory<T>(factory);
 
   @override
-  bool isRegistered<T extends Object>() => _current.isRegistered<T>();
+  bool isRegistered<T extends Object>() =>
+      (_userScope?.isRegistered<T>() ?? false) || _current.isRegistered<T>();
 
   @override
   Future<void> dispose() async {
     // Terminal and idempotent. If no inner container was ever created there
     // is nothing to dispose — and none is constructed just to be torn down.
+    // The user scope, if any, goes first for the same reason as
+    // [replaceInner]; both disposals always run.
     if (_disposed) return;
     _disposed = true;
+    final user = _userScope;
+    _userScope = null;
     final old = _inner;
     _inner = null;
-    if (old != null) await old.dispose();
+
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    if (user != null) {
+      try {
+        await user.dispose();
+      } catch (e, s) {
+        firstError = e;
+        firstStackTrace = s;
+      }
+    }
+    if (old != null) {
+      try {
+        await old.dispose();
+      } catch (e, s) {
+        firstError ??= e;
+        firstStackTrace ??= s;
+      }
+    }
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStackTrace!);
+    }
   }
+}
+
+/// The container view handed to [UserScopeInstaller]s (#135): registrations
+/// land in the user-session scope; resolution checks the user scope first,
+/// then falls through to the base (per-server) scope, so an installer can
+/// resolve server-lifetime resources and services a preceding user
+/// installer registered through one handle.
+///
+/// Lifecycle is owned by the context — the view exposes no teardown.
+class _UserScopeView implements DependencyContainer {
+  _UserScopeView({
+    required DependencyContainer user,
+    required DependencyContainer Function() base,
+  }) : _user = user,
+       _base = base;
+
+  final DependencyContainer _user;
+
+  /// Getter rather than a captured reference: the base is the swappable
+  /// inner container, resolved at call time.
+  final DependencyContainer Function() _base;
+
+  @override
+  T get<T extends Object>() =>
+      _user.isRegistered<T>() ? _user.get<T>() : _base().get<T>();
+
+  @override
+  bool isRegistered<T extends Object>() =>
+      _user.isRegistered<T>() || _base().isRegistered<T>();
+
+  @override
+  void registerSingleton<T extends Object>(
+    T instance, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) => _user.registerSingleton<T>(instance, dispose: dispose);
+
+  @override
+  void registerLazySingleton<T extends Object>(
+    T Function() factory, {
+    FutureOr<void> Function(T instance)? dispose,
+  }) => _user.registerLazySingleton<T>(factory, dispose: dispose);
+
+  @override
+  void registerFactory<T extends Object>(T Function() factory) =>
+      _user.registerFactory<T>(factory);
+
+  @override
+  Future<void> dispose() {
+    throw UnsupportedError(
+      'The user-scope view must not be disposed by installers; the '
+      'user-session scope lifecycle is owned by the ServerContext (#135).',
+    );
+  }
+}
+
+/// Container-resolvable [UserSessionScope] adapter (#135): the seam the
+/// shell drives on auth transitions, delegating to the owning
+/// [ServerContextImpl]'s user-session lifecycle.
+class _ContextUserSessionScope implements UserSessionScope {
+  _ContextUserSessionScope(this._context);
+
+  final ServerContextImpl _context;
+
+  @override
+  String? get activeUserId => _context.activeUserId;
+
+  @override
+  Future<void> activate(String userId) => _context.activateUserSession(userId);
+
+  @override
+  Future<void> deactivate() => _context.deactivateUserSession();
 }
 
 /// Factory function type for creating [ServerContext] instances.
