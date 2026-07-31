@@ -72,9 +72,9 @@
   "@homeEmptyStateTitle": {
     "description": "Heading of the home screen's empty state, shown before any content exists (#129)."
   },
-  "homeEmptyStateBody": "Open the menu to create a household, adjust settings, or send feedback.",
+  "homeEmptyStateBody": "Open the menu to get started.",
   "@homeEmptyStateBody": {
-    "description": "Body text of the home screen's empty state, pointing at the navigation drawer (#129)."
+    "description": "Body text of the home screen's empty state, pointing at the navigation drawer (#129). Deliberately does not enumerate the drawer's actions: the entry set is composed per platform and per session state (create-household appears only where the per-user household scope is installed, #135/#137), so naming actions here would promise unavailable ones and go stale as entries are added."
   },
   "shellPlaceholderBody": "This screen is under construction and arrives with an upcoming update.",
   "@shellPlaceholderBody": {
