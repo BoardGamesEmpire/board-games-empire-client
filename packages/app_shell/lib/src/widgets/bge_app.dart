@@ -758,6 +758,32 @@ class _BgeAppState extends State<BgeApp> {
 /// orchestration — web until #96) or has no active server, the child
 /// renders without an auth bloc; the router's placeholder builders then
 /// apply, and `onAuthenticated`/`onSignedOut` are simply never invoked.
+///
+/// ## User-session scope (#135)
+///
+/// This listener is also the single authority for the per-(server, user)
+/// dependency scope. On any transition into [AuthAuthenticated] it
+/// activates the [UserSessionScope] resolved from the active server's
+/// container for the session's user id; on any transition into
+/// [AuthUnauthenticated] — explicit sign-out *or* a mid-session
+/// authentication loss surfaced by the repository — it deactivates it, so
+/// per-user singletons and their live queries never outlive a user change.
+///
+/// Ordering differs by direction. **Sign-in**: activation completes
+/// *before* `onAuthenticated()`, so by the time the router advances to
+/// home the user's services are installed; if activation fails, the gate
+/// does **not** advance — the shell logs the failure and dispatches
+/// [AuthSignOutRequested], converging the system to a coherent
+/// unauthenticated state (an "authenticated" session whose per-user
+/// services can never resolve must not persist silently; signing back in
+/// retries from clean state). **Sign-out**: `onSignedOut()` runs first —
+/// synchronously, in the listener — and the scope pop follows, so the
+/// home subtree is already unmounting when its repositories are disposed
+/// and no live widget can dispatch into a disposed service; the pop still
+/// closes vended streams regardless of UI disposal, which is what the
+/// #135 acceptance relies on. A container with no registered
+/// [UserSessionScope] (web until #137; shell tests that don't provide
+/// one) skips the scope step entirely, keeping the prior behavior.
 class _AuthScope extends StatelessWidget {
   const _AuthScope({
     required this.scope,
@@ -770,6 +796,8 @@ class _AuthScope extends StatelessWidget {
   final VoidCallback onAuthenticated;
   final VoidCallback onSignedOut;
   final Widget child;
+
+  static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
 
   @override
   Widget build(BuildContext context) {
@@ -797,9 +825,26 @@ class _AuthScope extends StatelessWidget {
                 current is AuthAuthenticated || current is AuthUnauthenticated,
             listener: (context, state) {
               if (state is AuthAuthenticated) {
-                onAuthenticated();
+                // Captured synchronously — the async handler outlives this
+                // listener frame and needs the bloc for the sign-out
+                // fallback on activation failure.
+                final authBloc = context.read<AuthBloc>();
+                // Fire-and-forget from the framework's perspective; the
+                // ordering that matters (activation before the gate
+                // callback) is owned inside the handler, and the context
+                // serializes scope operations, so overlapping handlers
+                // cannot interleave scope mutations (#135).
+                unawaited(
+                  _handleAuthenticated(active, authBloc, state.session.user.id),
+                );
               } else if (state is AuthUnauthenticated) {
+                // Route first: the gate callback is synchronous here (its
+                // original pre-#135 semantics — a throw surfaces through
+                // the listener, not as an unhandled zone error), and the
+                // home subtree starts unmounting before the scope pop
+                // disposes its repositories.
                 onSignedOut();
+                unawaited(_deactivateSessionScope(active));
               }
             },
             child: child,
@@ -807,5 +852,77 @@ class _AuthScope extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Resolves the per-server [UserSessionScope], or null where the
+  /// platform composition hasn't registered one (web until #137).
+  UserSessionScope? _userSessionScopeOf(ActiveServer active) =>
+      active.container.isRegistered<UserSessionScope>()
+      ? active.container.get<UserSessionScope>()
+      : null;
+
+  /// Activates the user-session scope for [userId], then advances the
+  /// bootstrap gate. On activation failure the gate does **not** advance:
+  /// the failure is logged and a sign-out is dispatched so the system
+  /// converges to unauthenticated instead of stranding an authenticated
+  /// session whose per-user services can never resolve (#135) — signing
+  /// back in retries activation from a clean scope.
+  Future<void> _handleAuthenticated(
+    ActiveServer active,
+    AuthBloc authBloc,
+    String userId,
+  ) async {
+    final sessionScope = _userSessionScopeOf(active);
+    if (sessionScope != null) {
+      try {
+        await sessionScope.activate(userId);
+      } on Object catch (error, stackTrace) {
+        _log.error(
+          'User-session scope activation failed; signing out to recover',
+          error: error,
+          stackTrace: stackTrace,
+          context: {'serverId': active.serverId},
+        );
+        // The bloc may have been disposed by a server switch while the
+        // activation was in flight; there is nothing to converge then.
+        if (!authBloc.isClosed) {
+          authBloc.add(const AuthSignOutRequested());
+        }
+        return;
+      }
+    }
+    try {
+      onAuthenticated();
+    } on Object catch (error, stackTrace) {
+      // The callback runs in an unawaited async continuation; without
+      // this guard a throw (e.g. the bootstrap cubit closed during the
+      // await above) becomes an unhandled zone error.
+      _log.error(
+        'Bootstrap gate callback threw after sign-in',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'serverId': active.serverId},
+      );
+    }
+  }
+
+  /// Pops the user-session scope after the gate has routed away (#135):
+  /// the departing user's services are disposed and their live streams
+  /// closed while the home subtree unmounts. Failures are logged — the
+  /// user is already signed out; a scope bug must not resurface as an
+  /// unhandled zone error.
+  Future<void> _deactivateSessionScope(ActiveServer active) async {
+    final sessionScope = _userSessionScopeOf(active);
+    if (sessionScope == null) return;
+    try {
+      await sessionScope.deactivate();
+    } on Object catch (error, stackTrace) {
+      _log.error(
+        'User-session scope deactivation failed',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'serverId': active.serverId},
+      );
+    }
   }
 }
