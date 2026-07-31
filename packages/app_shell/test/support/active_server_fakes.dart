@@ -136,14 +136,18 @@ AuthResponse sampleSession() => AuthResponse(
 );
 
 /// An [ActiveServer] whose scoped container carries [repo] (and optionally
-/// the per-server household deps), mirroring the production per-server scope
-/// the shell reads its dependencies from. Pass the household deps to model a
-/// server whose household scope is installed (native, post-#128); omit them
-/// to model web or a not-yet-wired native server.
+/// the household deps and the user-session seam), mirroring the production
+/// per-server scope the shell reads its dependencies from. Pass the
+/// household deps to model a server whose user-session scope is active
+/// (native, post-#135/#129); omit them to model web or a signed-out
+/// server. Pass [userSessionScope] to observe or script the shell's
+/// #135 activate/deactivate wiring; omit it to model a platform without
+/// the seam (web until #137).
 ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
+  UserSessionScope? userSessionScope,
 }) {
   final container = DependencyContainerImpl()
     ..registerSingleton<AuthRepository>(repo);
@@ -154,6 +158,9 @@ ActiveServer buildActiveServer(
     container.registerSingleton<HouseholdRemoteDataSource>(
       householdRemoteDataSource,
     );
+  }
+  if (userSessionScope != null) {
+    container.registerSingleton<UserSessionScope>(userSessionScope);
   }
   return ActiveServer(
     serverId: 'server-uuid-1',

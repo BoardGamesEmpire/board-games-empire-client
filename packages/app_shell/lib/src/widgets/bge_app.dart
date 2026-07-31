@@ -444,11 +444,13 @@ class _BgeAppState extends State<BgeApp> {
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
 
-    // Only surface create-household where the per-server household scope is
-    // actually installed — the same guard _buildCreateHouseholdRoute
-    // applies. Otherwise the entry would dead-end on the (back-button-less)
-    // NotYetAvailableScreen: web never wires the scope, and native only
-    // wires it once #128 lands.
+    // Only surface create-household where the household scope is actually
+    // installed — the same guard _buildCreateHouseholdRoute applies.
+    // Otherwise the entry would dead-end on the (back-button-less)
+    // NotYetAvailableScreen. Post-#135 the household repository lives in
+    // the per-USER session scope, so on native this is true exactly while
+    // a user session is active — which home's own auth gating already
+    // implies — and false on web until its user tier lands (#137/#125).
     final container = active.container;
     final canCreateHousehold =
         container.isRegistered<HouseholdRepository>() &&
@@ -488,13 +490,27 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
-  /// The #129 create-household wiring: resolves the per-server
-  /// [HouseholdRepository] + [HouseholdRemoteDataSource] from the *active
-  /// server's* scoped container — not [BgeApp.rootContainer], since the
-  /// household scope is per-server. Null (→ [NotYetAvailableScreen]) when
-  /// no active server is resolvable or its container lacks either
-  /// dependency (tests without a scope; web until the household scope is
-  /// wired there).
+  /// The #129 create-household wiring: resolves the [HouseholdRepository]
+  /// (per-user session scope, #135) and [HouseholdRemoteDataSource]
+  /// (per-server scope) from the *active server's* scoped container — not
+  /// [BgeApp.rootContainer]. Null (→ [NotYetAvailableScreen]) when no
+  /// active server is resolvable or its container lacks either dependency
+  /// (tests without a scope; no active user session; web until its user
+  /// tier lands, #137).
+  ///
+  /// ## Captured-repository lifetime (#135)
+  ///
+  /// The repository instance is captured at route build. If the session
+  /// ends while this screen is pushed (sign-out from another surface,
+  /// token expiry), the scope pop disposes that instance and the auth
+  /// redirect pops this route; a submit racing that window hits the
+  /// repository's disposed guard as a StateError, which
+  /// `CreateHouseholdBloc` already contains — every repository call runs
+  /// under `on Object catch`, surfacing as a logged local-create failure
+  /// (or a queued-pending success post-server-create), never an unhandled
+  /// error. Accepted rather than resolving per-action: the outcome is
+  /// identical (a post-pop resolution would throw not-registered into the
+  /// same handlers) for measurably more machinery.
   Widget? _buildCreateHouseholdRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;

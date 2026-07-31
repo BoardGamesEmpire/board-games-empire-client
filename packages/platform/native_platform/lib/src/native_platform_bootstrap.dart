@@ -29,18 +29,15 @@ typedef NativeOrchestratorFactory =
     });
 
 /// The per-server scope installers, in activation order: encrypted drift
-/// storage (DB open with one-shot key-recovery), then dio network, then the
-/// household scope. Also the seam tests use to assert the boot list's
-/// membership — that the household scope is wired, and last — without
-/// opening an encrypted database.
+/// storage (DB open with one-shot key-recovery), then dio network. Also the
+/// seam tests use to assert the boot list's membership without opening an
+/// encrypted database.
 ///
-/// The household scope installs **last** and is safe to activate before
-/// sign-in: its user-id provider resolves lazily (see
-/// [HouseholdScopeInstaller]), so no cached session is required at
-/// activation. It reads the id only when a household query runs — a path
-/// gated behind the auth session — so onboarding and signed-out cold starts
-/// never trip it. (This wiring lands with that lazy resolution, #128; it is
-/// unsafe without it.)
+/// The household scope is **not** in this list: since #135 it is a
+/// per-*user* installer — see [buildNativeUserScopeInstallers]. Registering
+/// it here would resurrect the bug class #135 closed (per-user singletons
+/// living for the whole server scope, live queries surviving a same-server
+/// user change), which is exactly what the composition test guards against.
 List<ServerScopeInstaller> buildNativeServerScopeInstallers({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
@@ -52,12 +49,27 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
     onRecovery: onRecovery,
   ),
   const NetworkScopeInstaller(),
-  const HouseholdScopeInstaller(),
+];
+
+/// The per-user session-scope installers (#135), run on every sign-in by
+/// `UserSessionScope.activate()` and disposed on any transition out of the
+/// authenticated state. The household scope lives here (#129 wiring of the
+/// #135 tier): its repositories are rebuilt per (server, user) and their
+/// live `watch*` queries close when the session ends.
+///
+/// Ordering against [buildNativeServerScopeInstallers] is structural, not
+/// positional: the user-scope container view resolves the per-server
+/// resources these installers need (the database, clock, and auth
+/// repository) by falling through to the fully installed per-server scope,
+/// which is guaranteed to exist before any user session can activate.
+List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
+  HouseholdScopeInstaller(),
 ];
 
 /// Composes the real per-server [ServerContextFactory] from
-/// [buildNativeServerScopeInstallers]. This is the composition deferred from
-/// #14/#38 to the platform bootstrap (#31).
+/// [buildNativeServerScopeInstallers] + [buildNativeUserScopeInstallers].
+/// This is the composition deferred from #14/#38 to the platform bootstrap
+/// (#31); the user tier is #135's.
 ServerContextFactory buildNativeServerContextFactory({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
@@ -68,8 +80,12 @@ ServerContextFactory buildNativeServerContextFactory({
     keyService: keyService,
     onRecovery: onRecovery,
   );
-  return (ServerConfig config) =>
-      ServerContextImpl(config: config, installers: installers);
+  final userInstallers = buildNativeUserScopeInstallers();
+  return (ServerConfig config) => ServerContextImpl(
+    config: config,
+    installers: installers,
+    userInstallers: userInstallers,
+  );
 }
 
 /// Shared native (mobile + desktop) [PlatformBootstrap]: opens the
