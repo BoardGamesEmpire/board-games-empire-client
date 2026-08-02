@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/dto.dart';
 
 /// States for `AuthBloc` (#37).
@@ -35,29 +36,69 @@ final class AuthSessionCheckInProgress extends AuthBlocState {
   const AuthSessionCheckInProgress();
 }
 
+/// The user is in. [verification] says whether the server has confirmed
+/// that on this run (#98).
+///
+/// Verification is a field rather than a sibling state because every
+/// consumer's *routing* decision is identical for both values: the gate
+/// shows content, the user-session scope activates, the router goes to
+/// home. Only presentation differs. A separate sealed variant would force
+/// every exhaustive switch to change for no behavioural gain, and invites
+/// a consumer to forget that unverified still means authenticated.
+///
+/// [verification] participates in [props]. It must: an
+/// `unverifiedOffline → verified` transition changes nothing else about
+/// the state, so an equality that ignored it would make a successful
+/// revalidation invisible — both to `BlocBuilder` and to
+/// `AuthBloc.emit`, which skips emitting a state equal to the current
+/// one.
 final class AuthAuthenticated extends AuthBlocState {
-  const AuthAuthenticated({required this.session});
+  const AuthAuthenticated({
+    required this.session,
+    this.verification = SessionVerification.verified,
+  });
+
   final AuthResponse session;
 
+  /// Defaults to [SessionVerification.verified] — every construction site
+  /// other than the offline-restore path reached this state through a
+  /// server round trip.
+  final SessionVerification verification;
+
+  /// Whether this session came from local material the server has not yet
+  /// confirmed (#98). The one bit the presentation layer needs; nothing
+  /// else about routing or gating keys off it.
+  bool get isUnverifiedOffline =>
+      verification == SessionVerification.unverifiedOffline;
+
   @override
-  List<Object?> get props => [session];
+  List<Object?> get props => [session, verification];
 }
 
 final class AuthUnauthenticated extends AuthBlocState {
   const AuthUnauthenticated();
 }
 
-/// The startup session check could not be completed (#37).
+/// The startup session check could not be completed AND no cached session
+/// was eligible to enter on (#37, narrowed by #98).
 ///
-/// The repository's `getSession` never throws for an auth rejection — a
-/// 401 clears the stored token and returns null (→
-/// [AuthUnauthenticated]) — so reaching this state means the stored
-/// session is INDETERMINATE (offline, timeout, server error), not
-/// rejected. The auth gate renders a retryable "can't reach the server"
-/// view, never the sign-in form (which would wrongly suggest the stored
-/// session is gone); retry re-dispatches the session check. True
-/// offline-first restore (enter on a cached session, revalidate on
-/// reconnect) is #98.
+/// Two things must both be true to land here, which makes this rarer than
+/// it was before #98 — but not obsolete, which is why the retryable view
+/// survives:
+///
+/// 1. The check was **indeterminate** — offline, timeout, 5xx, or an
+///    unexpected fault such as a locked keychain. A rejection is never
+///    indeterminate: the repository clears the material and returns null
+///    for a 401, a 403, or BetterAuth's 200-with-null-body, all of which
+///    yield [AuthUnauthenticated] and the sign-in form.
+/// 2. No cached session qualified for optimistic entry — no session
+///    material at all, an expiry the server never confirmed, a missing
+///    user snapshot, a passed expiry, or a device clock that has moved
+///    backwards.
+///
+/// The auth gate renders a retryable "can't reach the server" view, never
+/// the sign-in form — which would wrongly suggest the stored session was
+/// rejected. Retry re-dispatches the session check.
 final class AuthSessionCheckFailed extends AuthBlocState {
   const AuthSessionCheckFailed([this.cause, this.stackTrace]);
 

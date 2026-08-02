@@ -31,6 +31,14 @@ void main() {
     when(
       () => mockRepo.watchAuthState(),
     ).thenAnswer((_) => const Stream.empty());
+    // #98: the indeterminate session-check paths now consult the cached
+    // session before falling back to the retry view. Default to "nothing
+    // cached" so these suites keep asserting the pre-#98 behaviour; the
+    // restore paths are covered in auth_bloc_offline_restore_test.dart.
+    when(() => mockRepo.restoreCachedSession()).thenAnswer((_) async => null);
+    // #98 review: the check path probes the cached session (pure read) to
+    // decide whether a restore budget applies.
+    when(() => mockRepo.getCachedSession()).thenAnswer((_) async => null);
   });
 
   group('AuthBloc', () {

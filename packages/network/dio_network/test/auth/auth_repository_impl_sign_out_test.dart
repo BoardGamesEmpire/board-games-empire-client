@@ -61,29 +61,31 @@ void main() {
 
   tearDown(() async => repo.onDispose());
 
-  void stubSignOutPostOk() => when(
-    () => mockDio.post<void>(
-      '$_kAuthBase/sign-out',
-      options: any(named: 'options'),
-    ),
-  ).thenAnswer(
-    (_) async => Response<void>(
-      statusCode: 200,
-      requestOptions: RequestOptions(path: ''),
-    ),
-  );
+  void stubSignOutPostOk() =>
+      when(
+        () => mockDio.post<void>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
+        (_) async => Response<void>(
+          statusCode: 200,
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
 
-  void stubSignOutPostFails() => when(
-    () => mockDio.post<void>(
-      '$_kAuthBase/sign-out',
-      options: any(named: 'options'),
-    ),
-  ).thenThrow(
-    DioException(
-      type: DioExceptionType.connectionError,
-      requestOptions: RequestOptions(path: ''),
-    ),
-  );
+  void stubSignOutPostFails() =>
+      when(
+        () => mockDio.post<void>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenThrow(
+        DioException(
+          type: DioExceptionType.connectionError,
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
 
   group('signOut() persistence invariant', () {
     test('happy path: completes and transitions to unauthenticated', () async {
@@ -103,8 +105,11 @@ void main() {
         'session is revoked server-side — the token is read BEFORE clear() '
         'latches it away, not left to the racing TokenInterceptor', () async {
       when(() => mockStorage.retrieve()).thenAnswer(
-        (_) async =>
-            StoredToken(token: 'live-token-xyz', expiresAt: DateTime(2099).toUtc()),
+        (_) async => StoredSession(
+          token: 'live-token-xyz',
+          expiresAt: DateTime(2099).toUtc(),
+          persistedAt: DateTime.utc(2026),
+        ),
       );
       when(() => mockStorage.clear()).thenAnswer((_) async {});
 
@@ -199,15 +204,18 @@ void main() {
       // Reach an authenticated state first, via a stored token + a valid
       // session response.
       when(() => mockStorage.retrieve()).thenAnswer(
-        (_) async => StoredToken(
+        (_) async => StoredSession(
           token: 'session-tok-abc',
           expiresAt: DateTime(2099).toUtc(),
+          persistedAt: DateTime.utc(2026),
         ),
       );
       when(
         () => mockStorage.store(
           token: any(named: 'token'),
           expiresAt: any(named: 'expiresAt'),
+          persistedAt: any(named: 'persistedAt'),
+          user: any(named: 'user'),
         ),
       ).thenAnswer((_) async {});
       when(

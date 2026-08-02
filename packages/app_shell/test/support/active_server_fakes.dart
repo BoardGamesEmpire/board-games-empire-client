@@ -20,10 +20,26 @@ const _kAuthBase = '/api/auth';
 /// A fake per-server [AuthRepository] with scriptable session state, backing
 /// the auth bloc the shell provisions from the active-server scope.
 class FakeAuthRepository implements AuthRepository {
-  FakeAuthRepository({AuthResponse? initialSession})
-    : _session = initialSession;
+  FakeAuthRepository({
+    AuthResponse? initialSession,
+    this.sessionCheckError,
+    AuthResponse? restorableSession,
+  }) : _session = initialSession,
+       _restorableSession = restorableSession;
 
   AuthResponse? _session;
+
+  /// When non-null, [getSession] throws it instead of answering — models
+  /// an unreachable server so the shell's #98 offline-restore path can be
+  /// driven. Clear it to model connectivity returning.
+  Object? sessionCheckError;
+
+  /// When non-null, [restoreCachedSession] adopts it as an
+  /// unverified-offline session, mirroring the production contract
+  /// (adoption is the point — see the interface docs). Null models a
+  /// device with nothing restorable.
+  final AuthResponse? _restorableSession;
+
   AuthState _currentState = const AuthStateUnknown();
   final _controller = StreamController<AuthState>.broadcast();
 
@@ -31,7 +47,11 @@ class FakeAuthRepository implements AuthRepository {
   AuthState get currentAuthState => _currentState;
 
   @override
-  Future<AuthResponse?> getSession() async => _session;
+  Future<AuthResponse?> getSession() async {
+    final error = sessionCheckError;
+    if (error != null) throw error;
+    return _session;
+  }
 
   @override
   Future<void> signOut() async {
@@ -64,6 +84,25 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   Future<AuthResponse?> getCachedSession() async => _session;
+
+  @override
+  Future<AuthResponse?> restoreCachedSession() async {
+    final restorable = _restorableSession;
+    if (restorable == null) return null;
+    _session = restorable;
+    _setState(
+      AuthStateAuthenticated(
+        session: restorable,
+        verification: SessionVerification.unverifiedOffline,
+      ),
+    );
+    return restorable;
+  }
+
+  /// Test seam: drive a repository-level auth transition through the
+  /// stream the shell mirrors (e.g. a successful revalidation confirming
+  /// an unverified session).
+  void emitAuthState(AuthState next) => _setState(next);
 
   // Seed the current state, then pipe subsequent transitions from
   // [_controller] — a detached `Stream.value(...)` would mask

@@ -87,6 +87,9 @@ class _FakeAuthRepository implements AuthRepository {
   Future<AuthResponse?> getCachedSession() async => _session;
 
   @override
+  Future<AuthResponse?> restoreCachedSession() async => null;
+
+  @override
   Stream<AuthState> watchAuthState() {
     return Stream.multi((controller) {
       controller.add(_currentState);

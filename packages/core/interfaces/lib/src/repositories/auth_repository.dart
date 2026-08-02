@@ -7,13 +7,15 @@ import 'package:models/domain.dart';
 /// [ServerIdentity] injected at construction — never hardcoded.
 ///
 /// Mobile/desktop: backed by [AuthRepositoryImpl] with [TokenStorageService].
-/// Web: backed by [WebAuthRepositoryImpl] using browser-managed httpOnly cookies.
+/// Web: backed by [WebAuthRepositoryImpl] using browser-managed httpOnly
+/// cookies.
 abstract class AuthRepository {
   /// Signs in with email and password.
   ///
   /// Throws [AuthInvalidCredentialsException] for 401/403.
   /// Throws [AuthNetworkException] for connectivity failures.
-  /// Throws [AuthServerException] for unexpected server errors.
+  /// Throws [AuthServerException] for unexpected server errors, including a
+  /// credential grant the server then reports no session for.
   Future<AuthResponse> signIn({
     required String email,
     required String password,
@@ -34,7 +36,23 @@ abstract class AuthRepository {
 
   /// Validates the current session with the server.
   ///
-  /// Returns null if unauthenticated. Updates stored expiry on success.
+  /// Returns null only when the server gives a **definitive** negative — a
+  /// 401, a 403, or BetterAuth's 200-with-null-body "no session" — in which
+  /// case the stored session material is cleared and the in-memory state
+  /// transitions to [AuthStateUnauthenticated]. Also returns null, without
+  /// touching storage or state, when the caller signed out while the request
+  /// was in flight: the newer intent wins.
+  ///
+  /// Throws (rather than returning null) whenever the answer is
+  /// **indeterminate**: [AuthNetworkException] for transport failures, and
+  /// [AuthServerException] for any other non-2xx. This split is what lets
+  /// the bloc layer distinguish "the session is gone" (→ sign-in form) from
+  /// "we could not check" (→ offline restore or the retry view, #37/#98).
+  /// A null return for an indeterminate outcome would land the user on the
+  /// sign-in form and wrongly imply the stored session was rejected.
+  ///
+  /// On success, updates the persisted expiry — the only path that produces
+  /// a **server-confirmed** expiry (see [getCachedSession]).
   Future<AuthResponse?> getSession();
 
   /// Signs out and clears the local session.
@@ -50,10 +68,58 @@ abstract class AuthRepository {
   /// repeated.
   Future<void> signOut();
 
-  /// Returns the locally cached session without a network call.
+  /// Returns the locally cached session without a network call, or null
+  /// when there is no session this device can vouch for offline.
+  ///
+  /// A **pure read** — it never mutates the in-memory auth state. Use
+  /// [restoreCachedSession] when the caller intends the cached session to
+  /// become the process's working session.
+  ///
+  /// Non-null requires all of (#98):
+  ///
+  /// - session material is present and not latched away by a sign-out;
+  /// - the expiry is **server-confirmed** — written by a successful
+  ///   [getSession], never guessed at sign-in. An unconfirmed expiry is not
+  ///   "unexpired", it is *unknown*, and unknown is not good enough to
+  ///   enter the app on;
+  /// - that expiry is in the future by the per-server [ClockService] —
+  ///   expiry lives on the *server's* timeline, so it wants the
+  ///   skew-corrected reading;
+  /// - a persisted user snapshot exists (the per-(server, user) scope in
+  ///   #135 cannot activate without a real user id);
+  /// - the *device's* clock is not provably wrong — it has not moved
+  ///   backwards past the moment the material was persisted. This one is
+  ///   evaluated against the raw device clock, not the corrected one:
+  ///   mixing the two makes a lagging device fail the check for a window
+  ///   equal to its own skew after every successful [getSession].
+  ///
+  /// An in-memory authenticated session takes precedence and is returned
+  /// as-is, so a signed-in caller is never told "not authenticated" merely
+  /// because the persisted expiry was never confirmed.
   ///
   /// On web, delegates to [getSession] since httpOnly cookies are opaque.
   Future<AuthResponse?> getCachedSession();
+
+  /// Attempts an optimistic offline restore (#98): reads the cached
+  /// session per [getCachedSession] and, on success, **adopts it as the
+  /// in-memory auth state** with [SessionVerification.unverifiedOffline],
+  /// notifying [watchAuthState] and [currentAuthState].
+  ///
+  /// Adoption is the point, not a side effect. Everything downstream of
+  /// the repository resolves the current user from the repository's own
+  /// state — most importantly the user-scoped per-server repositories,
+  /// which read [currentAuthState] lazily at call time (#128). A restore
+  /// that left the repository reporting [AuthStateUnknown] would put the
+  /// user on the home screen while every user-scoped read failed, which
+  /// is precisely the offline case this exists to serve.
+  ///
+  /// Returns null and leaves the state untouched when no cached session
+  /// qualifies. Never throws for an absent or ineligible session; a
+  /// storage fault propagates.
+  ///
+  /// Implementations that cannot inspect their session material offline
+  /// (web, whose cookie is opaque) return null unconditionally.
+  Future<AuthResponse?> restoreCachedSession();
 
   /// Stream of auth state changes. Replays current state on subscribe.
   Stream<AuthState> watchAuthState();
@@ -64,10 +130,36 @@ abstract class AuthRepository {
   /// Exists for synchronous consumers that cannot await a stream, e.g.
   /// the feedback target resolver deciding per `submit`/`drain` whether
   /// the active server's transport is usable (the feedback endpoint
-  /// requires an authenticated session). Belt-and-braces: a session can
-  /// still expire between this read and the request, which is why a 401
-  /// classifies as retryable rather than permanent.
+  /// requires an authenticated session), and the lazy current-user
+  /// resolution in user-scoped per-server repositories (#128).
+  /// Belt-and-braces: a session can still expire between this read and
+  /// the request, which is why a 401 classifies as retryable rather than
+  /// permanent. After an optimistic restore this reports
+  /// [AuthStateAuthenticated] with
+  /// [SessionVerification.unverifiedOffline] — authenticated as far as
+  /// this device knows, unconfirmed by the server.
   AuthState get currentAuthState;
+}
+
+/// How much the current session has been confirmed by the server (#98).
+///
+/// Deliberately a field on [AuthStateAuthenticated] rather than a separate
+/// state: every consumer's *routing* decision is identical for both values
+/// — the gate shows content, the user-session scope activates, the router
+/// goes to home. Only presentation differs. A separate sealed variant
+/// would force every exhaustive switch to change for no behavioural gain,
+/// and invites a consumer to forget that unverified still means
+/// authenticated.
+enum SessionVerification {
+  /// The server confirmed this session on this run — a sign-in, a
+  /// sign-up, or a successful `getSession`.
+  verified,
+
+  /// Restored from local material without server confirmation because the
+  /// server was unreachable (#98). The session is locally valid: present,
+  /// with a server-confirmed expiry that has not passed. It is *not* proof
+  /// the server still accepts it — that only arrives on revalidation.
+  unverifiedOffline,
 }
 
 /// Sealed hierarchy of authentication states.
@@ -83,9 +175,13 @@ abstract class AuthRepository {
 ///   `==`/`hashCode` overrides defend the non-const construction
 ///   case (e.g. a caller writing `AuthStateUnknown()` without
 ///   `const`) so the type alone determines equality.
-/// - [AuthStateAuthenticated]: compares by `session` (which is an
-///   `AuthResponse` — a freezed model with built-in value equality
-///   from `@freezed`'s generated `==`/`hashCode`).
+/// - [AuthStateAuthenticated]: compares by `session` (an `AuthResponse`
+///   — a freezed model with built-in value equality) **and**
+///   `verification`. The verification field MUST participate: a
+///   `unverifiedOffline → verified` transition on the same session
+///   changes nothing else about the state, so an equality that ignored
+///   it would make the successful revalidation invisible to every
+///   value-comparing consumer downstream (#98).
 ///
 /// Value equality matters for [AuthRepositoryStateChanged] in the
 /// bloc layer: that event extends Equatable with `props =
@@ -112,16 +208,27 @@ final class AuthStateUnknown extends AuthState {
 }
 
 final class AuthStateAuthenticated extends AuthState {
-  const AuthStateAuthenticated({required this.session});
+  const AuthStateAuthenticated({
+    required this.session,
+    this.verification = SessionVerification.verified,
+  });
+
   final AuthResponse session;
+
+  /// Whether the server confirmed this session on this run (#98).
+  /// Defaults to [SessionVerification.verified] — every pre-#98
+  /// construction site reached this state through a server round trip.
+  final SessionVerification verification;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is AuthStateAuthenticated && other.session == session);
+      (other is AuthStateAuthenticated &&
+          other.session == session &&
+          other.verification == verification);
 
   @override
-  int get hashCode => Object.hash(runtimeType, session);
+  int get hashCode => Object.hash(runtimeType, session, verification);
 }
 
 final class AuthStateUnauthenticated extends AuthState {
@@ -173,6 +280,22 @@ final class AuthServerException extends AuthException {
     super.cause,
   });
   final int? statusCode;
+}
+
+/// The operation was overtaken by a sign-out (or another supersession of
+/// the session) while it was in flight (#146).
+///
+/// Thrown by [AuthRepository.signIn]/[signUp] when a sign-out lands during
+/// the credential grant's persist-and-reconcile window. The newer intent
+/// won: state and storage already reflect the sign-out by the time this is
+/// thrown. Callers should treat it as a quiet return to the unauthenticated
+/// surface — NOT as a server fault; the previous behavior reported it as
+/// an [AuthServerException] "server disowned the session" contract
+/// violation, which pointed a user's own sign-out at the server.
+final class AuthSupersededException extends AuthException {
+  const AuthSupersededException({
+    super.message = 'The operation was superseded by a sign-out.',
+  });
 }
 
 /// Sign-out could not clear the locally persisted session material (#37).

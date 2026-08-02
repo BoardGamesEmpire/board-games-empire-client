@@ -42,6 +42,9 @@ class _FakeAuthRepository implements AuthRepository {
   Future<AuthResponse?> getCachedSession() => throw UnimplementedError();
 
   @override
+  Future<AuthResponse?> restoreCachedSession() => throw UnimplementedError();
+
+  @override
   Future<void> signOut() => throw UnimplementedError();
 
   @override

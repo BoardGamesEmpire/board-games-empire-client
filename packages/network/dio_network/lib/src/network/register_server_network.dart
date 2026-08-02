@@ -24,8 +24,8 @@ import 'token_interceptor.dart';
 /// This is the composition root for the Dio-based stack — the one place that
 /// knows how the pieces fit together. It wires:
 ///
-///   TokenStorageService -> TokenInterceptor -> DioFactory -> shared Dio
-///                                                          -> AuthRepository
+///   ClockService -> TokenStorageService -> TokenInterceptor -> DioFactory
+///                                      -> shared Dio -> AuthRepository
 ///
 /// The factory's [Dio] is registered as a shared per-server singleton so future
 /// repositories (game search, collection sync, …) resolve the same instance and
@@ -39,14 +39,6 @@ void registerServerNetwork({
   required DependencyContainer container,
   required ServerConfig config,
 }) {
-  // Token storage is keyed by the stable server-vended UUID so it survives
-  // user-facing URL changes for the same server instance.
-  final tokenStorage = TokenStorageService(serverId: config.bgeServerId);
-  container.registerSingleton<TokenStorageService>(tokenStorage);
-
-  const factory = DefaultDioFactory();
-  container.registerSingleton<DioFactory>(factory);
-
   // #12: per-server skew-corrected clock. Registered here — not in its
   // own installer — per the registration convention: it is fed by this
   // stack's Dio responses (via ClockSkewInterceptor below). Registered
@@ -54,11 +46,24 @@ void registerServerNetwork({
   // is a private wiring detail between this composition root and the
   // interceptor. Each server has its own clock, so estimates never leak
   // across scopes.
+  //
+  // Constructed FIRST because both the token interceptor and the auth
+  // repository now read it for session-expiry arithmetic (#98) — every
+  // timestamp on the auth path goes through the corrected clock rather
+  // than the raw device wall clock.
   final clock = ServerSkewClockService();
   container.registerSingleton<ClockService>(
     clock,
     dispose: (_) => clock.dispose(),
   );
+
+  // Session material is keyed by the stable server-vended UUID so it
+  // survives user-facing URL changes for the same server instance.
+  final tokenStorage = TokenStorageService(serverId: config.bgeServerId);
+  container.registerSingleton<TokenStorageService>(tokenStorage);
+
+  const factory = DefaultDioFactory();
+  container.registerSingleton<DioFactory>(factory);
 
   final dio = factory.buildForServer(
     baseUrl: config.serverUrl,
@@ -70,7 +75,7 @@ void registerServerNetwork({
       // tracing is at debug and self-gates to non-release builds; a
       // transport failure logs at error always.
       NetworkLogInterceptor(),
-      TokenInterceptor(tokenStorage: tokenStorage),
+      TokenInterceptor(tokenStorage: tokenStorage, clock: clock),
       // #12: feeds server Date headers to the skew estimator. Every
       // response through this Dio is a free calibration sample. LAST in
       // the stack, after TokenInterceptor: its send stamp is taken after
@@ -85,6 +90,7 @@ void registerServerNetwork({
     identity: config.cachedIdentity,
     tokenStorage: tokenStorage,
     dio: dio,
+    clock: clock,
   );
   container.registerSingleton<AuthRepository>(
     authRepository,

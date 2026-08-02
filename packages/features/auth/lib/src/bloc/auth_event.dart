@@ -91,6 +91,25 @@ final class AuthSignOutRequested extends AuthEvent {
   const AuthSignOutRequested();
 }
 
+/// Internal — re-checks a session that was entered without server
+/// confirmation (#98).
+///
+/// Dispatched by [AuthBloc] when [ConnectivityService] reports that
+/// connectivity has returned. Not a user-facing action: the handler no-ops
+/// unless the current state is an [AuthAuthenticated] carrying
+/// [SessionVerification.unverifiedOffline], so it is safe to fire
+/// speculatively — which matters, because `watch()` replays the current
+/// connectivity state to every new subscriber.
+///
+/// Deliberately distinct from [AuthSessionCheckRequested] rather than
+/// reusing it. The startup check emits [AuthSessionCheckInProgress] and
+/// owns the gate's splash; revalidation happens while the user is inside
+/// the app and must not send them back to a splash to re-verify a session
+/// they are actively using.
+final class AuthSessionRevalidationRequested extends AuthEvent {
+  const AuthSessionRevalidationRequested();
+}
+
 /// Internal — mirrors repository auth-stream changes into the bloc.
 final class AuthRepositoryStateChanged extends AuthEvent {
   const AuthRepositoryStateChanged(this.repoState);

@@ -16,6 +16,8 @@ import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import 'package:ui/ui.dart' show UnverifiedSessionBanner;
+
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
 import '../bootstrap/app_bootstrap_state.dart';
@@ -411,8 +413,27 @@ class _BgeAppState extends State<BgeApp> {
     scope: widget.bootstrapCubit.activeServerScope,
     onAuthenticated: widget.bootstrapCubit.onAuthenticated,
     onSignedOut: widget.bootstrapCubit.onSignedOut,
+    connectivity: _rootConnectivity(),
     child: child,
   );
+
+  /// Root-scoped [ConnectivityService] for the auth bloc's offline fast
+  /// path and reconnect revalidation (#98). Resolved from
+  /// [BgeApp.rootContainer] — NOT from the per-server container, whose
+  /// contract forbids parent-scope lookup (#38); connectivity is a
+  /// device-global concern registered once at the root, same as the
+  /// [FeedbackService] and [WellKnownClient] resolutions above. Null (no
+  /// container, or a composition without connectivity wiring — tests, or
+  /// a platform that never registered it) degrades the bloc gracefully:
+  /// no fast path, no automatic revalidation, indeterminate fallback
+  /// intact.
+  ConnectivityService? _rootConnectivity() {
+    final container = widget.rootContainer;
+    if (container == null || !container.isRegistered<ConnectivityService>()) {
+      return null;
+    }
+    return container.get<ConnectivityService>();
+  }
 
   /// Renders the auth route at navigation time. Falls back to the router's
   /// placeholder when no active server is resolvable (no scope, or none
@@ -887,12 +908,19 @@ class _AuthScope extends StatelessWidget {
     required this.scope,
     required this.onAuthenticated,
     required this.onSignedOut,
+    this.connectivity,
     required this.child,
   });
 
   final ActiveServerScope? scope;
   final VoidCallback onAuthenticated;
   final VoidCallback onSignedOut;
+
+  /// Device-global connectivity from the root container (#98); null on
+  /// compositions without it. Handed to the [AuthBloc], which owns every
+  /// decision made on it.
+  final ConnectivityService? connectivity;
+
   final Widget child;
 
   static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
@@ -915,12 +943,25 @@ class _AuthScope extends StatelessWidget {
           // session check is dispatched on creation so every freshly-keyed
           // bloc restores its own server's session.
           key: ValueKey('auth_bloc_${active.serverId}'),
-          create: (_) =>
-              AuthBloc(authRepository: active.container.get<AuthRepository>())
-                ..add(const AuthSessionCheckRequested()),
+          create: (_) => AuthBloc(
+            authRepository: active.container.get<AuthRepository>(),
+            connectivity: connectivity,
+          )..add(const AuthSessionCheckRequested()),
           child: BlocListener<AuthBloc, AuthBlocState>(
+            // Entry/exit transitions only. `current is AuthAuthenticated`
+            // alone was sufficient while equal Authenticated states never
+            // re-emitted; #98's verification field makes
+            // unverifiedOffline → verified a REAL state change, and this
+            // listener re-firing on it would re-run user-session scope
+            // activation and re-advance the bootstrap gate on every
+            // successful revalidation. Requiring previous to be
+            // non-authenticated keeps this listener to what it owns —
+            // session start and session end — while verification-only
+            // changes flow to presentation via BlocBuilder below.
             listenWhen: (previous, current) =>
-                current is AuthAuthenticated || current is AuthUnauthenticated,
+                (current is AuthAuthenticated &&
+                    previous is! AuthAuthenticated) ||
+                current is AuthUnauthenticated,
             listener: (context, state) {
               if (state is AuthAuthenticated) {
                 // Captured synchronously — the async handler outlives this
@@ -945,7 +986,7 @@ class _AuthScope extends StatelessWidget {
                 unawaited(_deactivateSessionScope(active));
               }
             },
-            child: child,
+            child: _UnverifiedSessionBannerHost(child: child),
           ),
         );
       },
@@ -1022,5 +1063,83 @@ class _AuthScope extends StatelessWidget {
         context: {'serverId': active.serverId},
       );
     }
+  }
+}
+
+/// Hosts the #98 unverified-session banner above the auth shell's
+/// navigator, so it shows on every route INSIDE the auth [ShellRoute]
+/// (auth + home) without any route opting in.
+///
+/// Scope note: routes deliberately placed OUTSIDE the auth shell
+/// (settings, feedback, create-household — each documented in
+/// `app_router.dart` as needing no [AuthBloc]) do not display it (#145).
+///
+/// Owns TWO things that must never disagree (#98 review):
+///
+/// 1. **Dismissal**, per-episode: dismissing hides the banner until the
+///    unverified condition next transitions false→true (a new episode).
+/// 2. **Inset compensation**: the banner's own SafeArea consumes the top
+///    window inset while it shows, so the content below must have that
+///    inset REMOVED — otherwise every route's app bar adds a second
+///    status-bar-height gap under the banner. When the banner is hidden
+///    (condition cleared OR dismissed), the content keeps its inset.
+///
+/// A banner-internal dismissal (the earlier design) breaks invariant 2:
+/// the banner hides itself while the host, unaware, keeps the inset
+/// removed, and content underlaps the status bar. Both decisions live
+/// here so they cannot diverge.
+class _UnverifiedSessionBannerHost extends StatefulWidget {
+  const _UnverifiedSessionBannerHost({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_UnverifiedSessionBannerHost> createState() =>
+      _UnverifiedSessionBannerHostState();
+}
+
+class _UnverifiedSessionBannerHostState
+    extends State<_UnverifiedSessionBannerHost> {
+  bool _dismissedThisEpisode = false;
+
+  static bool _isUnverified(AuthBlocState state) =>
+      state is AuthAuthenticated && state.isUnverifiedOffline;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocConsumer<AuthBloc, AuthBlocState>(
+      listenWhen: (previous, current) =>
+          !_isUnverified(previous) && _isUnverified(current),
+      // A new episode rearms dismissal — the condition re-occurring is new
+      // information even if the user dismissed the last occurrence.
+      listener: (_, _) => setState(() => _dismissedThisEpisode = false),
+      buildWhen: (previous, current) =>
+          _isUnverified(previous) != _isUnverified(current),
+      builder: (context, state) {
+        final shellL10n = ShellLocalizations.of(context);
+        final showBanner = _isUnverified(state) && !_dismissedThisEpisode;
+        return Column(
+          children: [
+            UnverifiedSessionBanner(
+              visible: showBanner,
+              message: shellL10n.shellUnverifiedSessionMessage,
+              dismissLabel: shellL10n.shellUnverifiedSessionDismiss,
+              onDismiss: () => setState(() => _dismissedThisEpisode = true),
+            ),
+            Expanded(
+              // The banner consumed the top inset while it shows; strip it
+              // from the content or app bars below inset a second time.
+              child: showBanner
+                  ? MediaQuery.removePadding(
+                      context: context,
+                      removeTop: true,
+                      child: widget.child,
+                    )
+                  : widget.child,
+            ),
+          ],
+        );
+      },
+    );
   }
 }

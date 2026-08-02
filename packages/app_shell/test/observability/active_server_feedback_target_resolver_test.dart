@@ -185,6 +185,9 @@ class _FakeAuthRepository implements AuthRepository {
   Future<AuthResponse?> getCachedSession() async => null;
 
   @override
+  Future<AuthResponse?> restoreCachedSession() async => null;
+
+  @override
   Future<AuthResponse?> getSession() async => null;
 
   @override
