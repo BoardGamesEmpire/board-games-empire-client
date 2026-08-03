@@ -5,9 +5,39 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import 'watch_disposal.dart';
 
-class SyncQueueRepositoryImpl implements SyncQueueRepository {
-  const SyncQueueRepositoryImpl(this._db, this._clock);
+/// Per-user implementation of [SyncQueueRepository] over the per-server
+/// `sync_queue` table (#147).
+///
+/// ## User scoping
+///
+/// The table is server-wide, but this repository is constructed per user
+/// session with the session's [userId] (its installer,
+/// `HouseholdScopeInstaller`, is a `UserScopeInstaller` and receives the
+/// id at install time). [enqueue] stamps every row with that id, and
+/// **every** other method — reads, status transitions, maintenance, and
+/// [remapCollectionId] — filters on it, so a repository built for user A
+/// can never observe or mutate user B's rows. On a shared device this is
+/// what keeps a departed user's queued offline writes dormant (intact but
+/// invisible) until *they* sign back in, and what prevents the drain
+/// worker (#121) from ever pushing one user's writes under another user's
+/// session. The id is fixed at construction rather than resolved lazily:
+/// the object lives in the user-session scope (#135) and is disposed on
+/// every authentication transition, so a resolvable instance cannot carry
+/// a stale identity.
+///
+/// ## Disposal (#135 / #138)
+///
+/// Disposal is the shared [WatchDisposal] contract: [watchPendingCount]
+/// is wrapped to **close** (never error) when the scope pops, and after
+/// [onDispose] every method throws [StateError]. See `watch_disposal.dart`
+/// — one fix surface shared with `HouseholdRepositoryImpl`.
+class SyncQueueRepositoryImpl
+    with WatchDisposal
+    implements SyncQueueRepository {
+  SyncQueueRepositoryImpl(this._db, this._clock, {required String userId})
+    : _userId = userId;
 
   final ServerDatabase _db;
 
@@ -17,8 +47,16 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   /// the collection repository against the same server.
   final ClockService _clock;
 
+  /// The user this repository instance is scoped to (#147). Stamped on
+  /// every enqueue; filtered on by every query.
+  final String _userId;
+
+  @override
+  String get disposedRepositoryName => 'SyncQueueRepository';
+
   @override
   Future<SyncQueueEntry> enqueue(SyncOperation operation) async {
+    checkNotDisposed();
     // cuid2 id — matches the format used everywhere else in the
     // codebase (game collections, household entities, the
     // backend's explicit cuid2 usage). Sync-queue ids never
@@ -34,6 +72,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
         .insert(
           SyncQueueTableCompanion.insert(
             id: id,
+            userId: _userId,
             payload: operation.serialized,
             status: const Value('pending'),
             retryCount: const Value(0),
@@ -43,12 +82,13 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
     final row = await (_db.select(
       _db.syncQueueTable,
-    )..where((t) => t.id.equals(id))).getSingle();
+    )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).getSingle();
     return _mapRow(row);
   }
 
   @override
   Future<List<SyncQueueEntry>> getPendingEntries() async {
+    checkNotDisposed();
     // Ordering: primary by createdAt (ASC, FIFO), tiebroken by SQLite
     // rowid (ASC, monotonic insertion order). The tiebreaker is
     // necessary because [ClockService.nowUtc] resolves to microseconds
@@ -64,6 +104,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
         await (_db.select(_db.syncQueueTable)
               ..where(
                 (t) =>
+                    t.userId.equals(_userId) &
                     t.status.isIn(['pending', 'failed']) &
                     t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries),
               )
@@ -77,18 +118,24 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
   @override
   Future<List<SyncQueueEntry>> getAllEntries() async {
+    checkNotDisposed();
     final rows =
-        await (_db.select(_db.syncQueueTable)..orderBy([
-              (t) => OrderingTerm.asc(t.createdAt),
-              (t) => OrderingTerm.asc(t.rowId),
-            ]))
+        await (_db.select(_db.syncQueueTable)
+              ..where((t) => t.userId.equals(_userId))
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.createdAt),
+                (t) => OrderingTerm.asc(t.rowId),
+              ]))
             .get();
     return rows.map(_mapRow).toList();
   }
 
   @override
   Future<void> markInProgress(String id) async {
-    await (_db.update(_db.syncQueueTable)..where((t) => t.id.equals(id))).write(
+    checkNotDisposed();
+    await (_db.update(
+      _db.syncQueueTable,
+    )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
       SyncQueueTableCompanion(
         status: const Value('inProgress'),
         lastAttemptAt: Value(_clock.nowUtc()),
@@ -98,21 +145,24 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
   @override
   Future<void> markCompleted(String id) async {
-    await (_db.update(_db.syncQueueTable)..where((t) => t.id.equals(id))).write(
-      const SyncQueueTableCompanion(status: Value('completed')),
-    );
+    checkNotDisposed();
+    await (_db.update(_db.syncQueueTable)
+          ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+        .write(const SyncQueueTableCompanion(status: Value('completed')));
   }
 
   @override
   Future<void> markFailed(String id, {required String error}) async {
+    checkNotDisposed();
     // Atomic increment: the retry count is bumped via a column
     // expression (`retry_count = retry_count + 1`) in a single UPDATE
     // statement rather than a read-then-write, so concurrent
     // markFailed calls against the same id cannot lose increments.
     //
-    // If the id no longer exists (e.g. already purged), the UPDATE
-    // affects zero rows and we move on — same effective behaviour as
-    // the prior `if (row == null) return` early-return.
+    // If the id no longer exists (e.g. already purged) — or belongs to
+    // a different user (#147) — the UPDATE affects zero rows and we
+    // move on; same effective behaviour as the prior
+    // `if (row == null) return` early-return.
     //
     // The `updates: {syncQueueTable}` argument hooks the raw UPDATE
     // into Drift's reactivity so any `.watch()`s on the queue table
@@ -123,12 +173,13 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
       '    retry_count = retry_count + 1, '
       '    last_error = ?, '
       '    last_attempt_at = ? '
-      'WHERE id = ?',
+      'WHERE id = ? AND user_id = ?',
       variables: [
         Variable.withString('failed'),
         Variable.withString(error),
         Variable.withDateTime(_clock.nowUtc()),
         Variable.withString(id),
+        Variable.withString(_userId),
       ],
       updates: {_db.syncQueueTable},
     );
@@ -136,6 +187,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
   @override
   Future<int> resetStaleInProgress() async {
+    checkNotDisposed();
     // Recovery path for sync-worker crashes. Entries left in the
     // inProgress state after a crash are counted as outstanding by
     // [getPendingCount] / [watchPendingCount] (both of which include
@@ -144,19 +196,27 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     // they'd sit stuck forever — visible to the UI but unreachable
     // to the worker.
     //
+    // Scoped to the current user (#147): a stale entry belonging to a
+    // departed user is *their* worker's to recover when they return;
+    // resetting it here would make it drainable under the wrong
+    // session the moment #121 lands.
+    //
     // Single bulk UPDATE so the reset is atomic; .write() returns
     // the affected row count which we propagate to the caller for
     // logging / metrics.
-    return (_db.update(_db.syncQueueTable)
-          ..where((t) => t.status.equals('inProgress')))
+    return (_db.update(_db.syncQueueTable)..where(
+          (t) => t.userId.equals(_userId) & t.status.equals('inProgress'),
+        ))
         .write(const SyncQueueTableCompanion(status: Value('pending')));
   }
 
   @override
   Future<int> purgeCompleted() async {
-    return (_db.delete(
-      _db.syncQueueTable,
-    )..where((t) => t.status.equals('completed'))).go();
+    checkNotDisposed();
+    return (_db.delete(_db.syncQueueTable)..where(
+          (t) => t.userId.equals(_userId) & t.status.equals('completed'),
+        ))
+        .go();
   }
 
   @override
@@ -164,6 +224,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
     required String oldCollectionId,
     required String newCollectionId,
   }) async {
+    checkNotDisposed();
     // Identity short-circuit — nothing to do if the caller passed
     // the same id twice. (Defensive; the only caller today
     // (reconcileFromServer) already guards against this.)
@@ -173,11 +234,18 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
       // We can't push the id filter into SQL because the target id
       // is buried inside the JSON payload. Fetch all retryable
       // entries, deserialize each, and rewrite the ones that match.
-      // The query uses the same predicate as [getPendingEntries] so
-      // we only ever touch entries the worker can still pick up.
+      // The SELECT uses the same predicate as [getPendingEntries] —
+      // including the user filter (#147) — and the per-row UPDATE
+      // below re-applies `user_id` alongside the id, so the write
+      // enforces the scope invariant independently of where its id
+      // came from: collection ids are cuid2 and cross-user collisions
+      // are practically impossible, but the boundary is enforced
+      // uniformly on every write rather than reasoned about
+      // per-method.
       final rows =
           await (_db.select(_db.syncQueueTable)..where(
                 (t) =>
+                    t.userId.equals(_userId) &
                     t.status.isIn(['pending', 'failed']) &
                     t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries),
               ))
@@ -199,7 +267,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
         await (_db.update(
           _db.syncQueueTable,
-        )..where((t) => t.id.equals(row.id))).write(
+        )..where((t) => t.id.equals(row.id) & t.userId.equals(_userId))).write(
           SyncQueueTableCompanion(payload: Value(rewritten.serialized)),
         );
         remapped++;
@@ -210,6 +278,7 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
 
   @override
   Future<int> getPendingCount() async {
+    checkNotDisposed();
     final count = _db.syncQueueTable.id.count();
     final query = _db.selectOnly(_db.syncQueueTable)
       ..addColumns([count])
@@ -221,18 +290,20 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   @override
   Stream<int> watchPendingCount() {
     // Drift's .watch() already emits the current value on subscribe
-    // and re-emits on every change to the sync_queue table, so the
-    // prior `async* { yield 0; yield* ...}` wrapper was emitting a
-    // misleading fake-zero ahead of the real value. Returning the
-    // Drift stream directly also avoids a category of bugs where the
-    // wrapper is implemented via a leaky StreamController whose inner
-    // subscription is never cancelled when the consumer cancels.
-    final count = _db.syncQueueTable.id.count();
-    return (_db.selectOnly(_db.syncQueueTable)
-          ..addColumns([count])
-          ..where(_pendingPredicate()))
-        .watchSingle()
-        .map((row) => row.read(count) ?? 0);
+    // and re-emits on every change to the sync_queue table. The raw
+    // Drift stream is tied to the per-server database and would
+    // outlive this repository's user-session scope, so it is wrapped
+    // by [_untilDisposed] (#135 / #138): the vended stream CLOSES on
+    // scope disposal instead of continuing to emit the departed
+    // user's (frozen) count.
+    return untilDisposed(() {
+      final count = _db.syncQueueTable.id.count();
+      return (_db.selectOnly(_db.syncQueueTable)
+            ..addColumns([count])
+            ..where(_pendingPredicate()))
+          .watchSingle()
+          .map((row) => row.read(count) ?? 0);
+    });
   }
 
   /// Returns a rewritten op when [op] targets [oldId], else null.
@@ -274,11 +345,15 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   /// worker. Used by [getPendingCount] and [watchPendingCount] to
   /// feed the UI's sync-queue badge.
   ///
-  /// Three rules, each defended by an existing test in the
+  /// Four rules, each defended by an existing test in the
   /// `getPendingCount() / watchPendingCount() — _pendingPredicate
-  /// symmetry` group:
+  /// symmetry` group (the user rule by the #147 scoping suite):
   ///
-  /// 1. **All three live statuses are included**: `pending` and
+  /// 1. **Only the current user's rows count** (#147): another
+  ///    user's dormant offline work is not this session's
+  ///    outstanding work and must not inflate the badge.
+  ///
+  /// 2. **All three live statuses are included**: `pending` and
   ///    `failed` because [getPendingEntries] returns them;
   ///    `inProgress` because those entries are still outstanding
   ///    work even though the worker has them locked (they go
@@ -287,15 +362,16 @@ class SyncQueueRepositoryImpl implements SyncQueueRepository {
   ///    by hiding them). `completed` is excluded — that's done
   ///    work.
   ///
-  /// 2. **`retryCount < maxRetries` applies to ALL three**, not
+  /// 3. **`retryCount < maxRetries` applies to ALL three**, not
   ///    just `failed`.
   ///
-  /// 3. **Symmetry with [getPendingEntries]** is enforced by the
+  /// 4. **Symmetry with [getPendingEntries]** is enforced by the
   ///    test group: every change to one predicate gets a
   ///    corresponding test for the other.
   Expression<bool> _pendingPredicate() {
     final t = _db.syncQueueTable;
-    return t.status.isIn(['pending', 'inProgress', 'failed']) &
+    return t.userId.equals(_userId) &
+        t.status.isIn(['pending', 'inProgress', 'failed']) &
         t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries);
   }
 

@@ -15,6 +15,12 @@ const _kOperation = AddToCollectionOperation(
   quantity: 1,
 );
 
+/// The user every repository instance in this file is scoped to (#147).
+/// Raw companion inserts stamp the same id so the direct-insert fixtures
+/// stay visible to the repository under test; cross-user scoping has its
+/// own suite in `sync_queue_user_scoping_test.dart`.
+const _kUserId = 'user-1';
+
 void main() {
   late ServerDatabase db;
   late SyncQueueRepositoryImpl repo;
@@ -24,7 +30,11 @@ void main() {
     // Real wall clock via the pass-through test double: these tests
     // predate #12 and exercise queue semantics, not timestamp origin
     // (the 'clock injection' group below covers that).
-    repo = SyncQueueRepositoryImpl(db, const SystemClockService());
+    repo = SyncQueueRepositoryImpl(
+      db,
+      const SystemClockService(),
+      userId: _kUserId,
+    );
   });
 
   tearDown(() async => db.close());
@@ -62,6 +72,7 @@ void main() {
             .insert(
               SyncQueueTableCompanion.insert(
                 id: 'queue-older',
+                userId: _kUserId,
                 payload: _kOperation.serialized,
                 status: const Value('pending'),
                 createdAt: older,
@@ -72,6 +83,7 @@ void main() {
             .insert(
               SyncQueueTableCompanion.insert(
                 id: 'queue-newer',
+                userId: _kUserId,
                 payload: _kOperation.serialized,
                 status: const Value('pending'),
                 createdAt: newer,
@@ -95,6 +107,7 @@ void main() {
                 .insert(
                   SyncQueueTableCompanion.insert(
                     id: id,
+                    userId: _kUserId,
                     payload: _kOperation.serialized,
                     status: const Value('pending'),
                     createdAt: t,
@@ -667,6 +680,7 @@ void main() {
                 .insert(
                   SyncQueueTableCompanion.insert(
                     id: 'dead-pending',
+                    userId: _kUserId,
                     payload: _kOperation.serialized,
                     status: const Value('pending'),
                     retryCount: const Value(SyncQueueEntry.maxRetries),
@@ -700,6 +714,7 @@ void main() {
                 .insert(
                   SyncQueueTableCompanion.insert(
                     id: 'dead-inprogress',
+                    userId: _kUserId,
                     payload: _kOperation.serialized,
                     status: const Value('inProgress'),
                     retryCount: const Value(SyncQueueEntry.maxRetries),
@@ -819,6 +834,7 @@ void main() {
               .insert(
                 SyncQueueTableCompanion.insert(
                   id: 'corrupt-1',
+                  userId: _kUserId,
                   payload: '{}',
                   status: const Value('mystery-state'),
                   createdAt: DateTime.now().toUtc(),
@@ -837,6 +853,7 @@ void main() {
               .insert(
                 SyncQueueTableCompanion.insert(
                   id: 'legacy-1',
+                  userId: _kUserId,
                   payload: '{}',
                   status: const Value('in_progress'),
                   createdAt: DateTime.now().toUtc(),
@@ -852,7 +869,11 @@ void main() {
       final fixed = DateTime.utc(2026, 7, 21, 12);
 
       test('enqueue createdAt comes from the injected clock', () async {
-        final clockRepo = SyncQueueRepositoryImpl(db, FixedClockService(fixed));
+        final clockRepo = SyncQueueRepositoryImpl(
+          db,
+          FixedClockService(fixed),
+          userId: _kUserId,
+        );
 
         final entry = await clockRepo.enqueue(_kOperation);
 
@@ -863,7 +884,11 @@ void main() {
         'markInProgress lastAttemptAt comes from the injected clock',
         () async {
           final clock = FixedClockService(fixed);
-          final clockRepo = SyncQueueRepositoryImpl(db, clock);
+          final clockRepo = SyncQueueRepositoryImpl(
+            db,
+            clock,
+            userId: _kUserId,
+          );
           final entry = await clockRepo.enqueue(_kOperation);
 
           clock.current = fixed.add(const Duration(minutes: 1));
@@ -876,7 +901,7 @@ void main() {
 
       test('markFailed lastAttemptAt comes from the injected clock', () async {
         final clock = FixedClockService(fixed);
-        final clockRepo = SyncQueueRepositoryImpl(db, clock);
+        final clockRepo = SyncQueueRepositoryImpl(db, clock, userId: _kUserId);
         final entry = await clockRepo.enqueue(_kOperation);
 
         clock.current = fixed.add(const Duration(minutes: 2));

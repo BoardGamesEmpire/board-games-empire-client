@@ -42,26 +42,42 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **2**.
+/// `schemaVersion` is **3**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
 ///   create path needs. Both are additive `BOOLEAN NOT NULL DEFAULT 0`
 ///   columns, so the step is a pair of `addColumn` calls that back-fill
 ///   existing rows with `false` — no data transform, no table rebuild.
+/// - **v2 → v3 (#147):** adds `sync_queue.user_id` (`TEXT NOT NULL`, no
+///   default) so queue rows are attributed to the user who enqueued them,
+///   and replaces the `(status, created_at)` index with
+///   `(user_id, status, created_at)` — every hot query now leads with the
+///   user filter. SQLite cannot `ALTER TABLE ... ADD COLUMN` a NOT NULL
+///   column without a default, and the locked decision is to **drop**
+///   legacy rows rather than backfill them (attributing them to whichever
+///   session happens to run the migration would be wrong — the rows may
+///   not be theirs), so the step drops and recreates the table: identical
+///   outcome, honest mechanics. `sync_queue` has no foreign-key edges in
+///   either direction, so the #54 FK-off + transaction wrapper question
+///   stays dormant.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
 /// `SchemaDowngradeError`, runs the `steps` dispatcher on upgrade, and applies
 /// the standard PRAGMAs (FK enforcement + WAL) after any migration.
 ///
-/// The v1 → v2 step is a hand-written [OnUpgrade] using the live table
-/// definitions — sufficient and safe for a purely additive change. If/when
-/// the generated step-by-step harness is activated (#54), swap the closure
-/// below for the generated `stepByStep(...)` dispatcher. Either way, the
-/// committed schema snapshot must be refreshed: `melos run schema:dump`
-/// writes `drift_schemas/server/drift_schema_v2.json`, which the CI schema
-/// freshness job byte-compares against a fresh dump.
+/// Both steps are hand-written [OnUpgrade] closures using the live table
+/// definitions — sufficient and safe for a purely-additive column change
+/// and for a rebuild of an FK-free table whose rows are deliberately
+/// discarded. If/when the generated step-by-step harness is activated
+/// (#54), swap the closure below for the generated `stepByStep(...)`
+/// dispatcher. Either way, the committed schema snapshot must be
+/// refreshed: `melos run schema:dump` writes
+/// `drift_schemas/server/drift_schema_v3.json`, and
+/// `melos run schema:migrations` regenerates `server_database.steps.dart`
+/// plus the `test/drift/` scaffold; the CI schema freshness job
+/// byte-compares the snapshot against a fresh dump.
 @DriftDatabase(
   tables: [
     GamesTable,
@@ -79,16 +95,39 @@ class ServerDatabase extends _$ServerDatabase {
   ServerDatabase.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
     steps: (Migrator m, int from, int to) async {
-      if (from < 2) {
+      // Every block is bounded on BOTH ends: `from < N` (the classic
+      // guard) AND `to >= N`. In production `to` is always
+      // [schemaVersion], making the upper bound a no-op — but the schema
+      // verifier in test/drift/ also runs *intermediate* migrations
+      // (e.g. 1 → 2 while the live schema is at 3), and an unbounded
+      // block would over-migrate past the requested target. This is the
+      // bounding `stepByStep(...)` would provide for free (#54).
+      if (from < 2 && to >= 2) {
         // v1 → v2 (#39): additive optimistic-write flags on households.
         // withDefault(false) back-fills existing rows.
         await m.addColumn(householdsTable, householdsTable.isDirty);
         await m.addColumn(householdsTable, householdsTable.isLocalOnly);
+      }
+      if (from < 3 && to >= 3) {
+        // v2 → v3 (#147): user-scope the sync queue. `user_id` is
+        // NOT NULL with no default, which SQLite refuses to ADD COLUMN,
+        // and the locked decision is that legacy (pre-column) rows are
+        // DROPPED, never backfilled — the migrating session's user may
+        // not own them. Dropping and recreating the table implements
+        // both in one honest move; the old `(status, created_at)` index
+        // goes down with the table and the new
+        // `(user_id, status, created_at)` index is created explicitly
+        // (createTable does not create a table's indexes). `sync_queue`
+        // has no FK edges, so no FK-off wrapper is needed (#54 stays
+        // deferred).
+        await m.deleteTable('sync_queue');
+        await m.createTable(syncQueueTable);
+        await m.createIndex(syncQueueUserStatusIdx);
       }
     },
   );

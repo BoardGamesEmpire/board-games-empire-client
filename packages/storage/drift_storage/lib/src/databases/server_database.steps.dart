@@ -962,8 +962,239 @@ i1.GeneratedColumn<String> _column_63(String aliasedName) =>
       type: i1.DriftSqlType.string,
       $customConstraints: 'NULL',
     );
+
+final class Schema3 extends i0.VersionedSchema {
+  Schema3({required super.database}) : super(version: 3);
+  @override
+  late final List<i1.DatabaseSchemaEntity> entities = [
+    games,
+    platformGames,
+    gameCollections,
+    households,
+    householdMembers,
+    syncQueue,
+    platformGamesGameIdIdx,
+    gameCollectionsUserIdx,
+    gameCollectionsUserPgameMediumUniqueIdx,
+    householdMembersUserIdx,
+    householdMembersHouseholdUserUniqueIdx,
+    syncQueueUserStatusIdx,
+  ];
+  late final Shape0 games = Shape0(
+    source: i0.VersionedTable(
+      entityName: 'games',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_1,
+        _column_2,
+        _column_3,
+        _column_4,
+        _column_5,
+        _column_6,
+        _column_7,
+        _column_8,
+        _column_9,
+        _column_10,
+        _column_11,
+        _column_12,
+        _column_13,
+        _column_14,
+        _column_15,
+        _column_16,
+        _column_17,
+        _column_18,
+        _column_19,
+        _column_20,
+        _column_21,
+        _column_22,
+        _column_23,
+        _column_24,
+        _column_25,
+        _column_26,
+        _column_27,
+        _column_28,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape1 platformGames = Shape1(
+    source: i0.VersionedTable(
+      entityName: 'platform_games',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_32,
+        _column_33,
+        _column_34,
+        _column_7,
+        _column_8,
+        _column_10,
+        _column_11,
+        _column_12,
+        _column_13,
+        _column_4,
+        _column_5,
+        _column_35,
+        _column_36,
+        _column_37,
+        _column_38,
+        _column_39,
+        _column_40,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape2 gameCollections = Shape2(
+    source: i0.VersionedTable(
+      entityName: 'game_collections',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_42,
+        _column_43,
+        _column_44,
+        _column_45,
+        _column_46,
+        _column_47,
+        _column_48,
+        _column_49,
+        _column_50,
+        _column_51,
+        _column_52,
+        _column_53,
+        _column_54,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape3 households = Shape3(
+    source: i0.VersionedTable(
+      entityName: 'households',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_55,
+        _column_3,
+        _column_4,
+        _column_53,
+        _column_54,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape4 householdMembers = Shape4(
+    source: i0.VersionedTable(
+      entityName: 'household_members',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_56,
+        _column_57,
+        _column_58,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape6 syncQueue = Shape6(
+    source: i0.VersionedTable(
+      entityName: 'sync_queue',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_59,
+        _column_60,
+        _column_61,
+        _column_62,
+        _column_30,
+        _column_63,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  final i1.Index platformGamesGameIdIdx = i1.Index(
+    'platform_games_game_id_idx',
+    'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
+  );
+  final i1.Index gameCollectionsUserIdx = i1.Index(
+    'game_collections_user_idx',
+    'CREATE INDEX game_collections_user_idx ON game_collections (user_id)',
+  );
+  final i1.Index gameCollectionsUserPgameMediumUniqueIdx = i1.Index(
+    'game_collections_user_pgame_medium_unique_idx',
+    'CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx ON game_collections (user_id, platform_game_id, medium) WHERE deleted_at IS NULL',
+  );
+  final i1.Index householdMembersUserIdx = i1.Index(
+    'household_members_user_idx',
+    'CREATE INDEX household_members_user_idx ON household_members (user_id)',
+  );
+  final i1.Index householdMembersHouseholdUserUniqueIdx = i1.Index(
+    'household_members_household_user_unique_idx',
+    'CREATE UNIQUE INDEX household_members_household_user_unique_idx ON household_members (household_id, user_id)',
+  );
+  final i1.Index syncQueueUserStatusIdx = i1.Index(
+    'sync_queue_user_status_idx',
+    'CREATE INDEX sync_queue_user_status_idx ON sync_queue (user_id, status, created_at)',
+  );
+}
+
+class Shape6 extends i0.VersionedTable {
+  Shape6({required super.source, required super.alias}) : super.aliased();
+  i1.GeneratedColumn<String> get id =>
+      columnsByName['id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get userId =>
+      columnsByName['user_id']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get payload =>
+      columnsByName['payload']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get status =>
+      columnsByName['status']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<int> get retryCount =>
+      columnsByName['retry_count']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<String> get lastError =>
+      columnsByName['last_error']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get createdAt =>
+      columnsByName['created_at']! as i1.GeneratedColumn<String>;
+  i1.GeneratedColumn<String> get lastAttemptAt =>
+      columnsByName['last_attempt_at']! as i1.GeneratedColumn<String>;
+}
+
 i0.MigrationStepWithVersion migrationSteps({
   required Future<void> Function(i1.Migrator m, Schema2 schema) from1To2,
+  required Future<void> Function(i1.Migrator m, Schema3 schema) from2To3,
 }) {
   return (currentVersion, database) async {
     switch (currentVersion) {
@@ -972,6 +1203,11 @@ i0.MigrationStepWithVersion migrationSteps({
         final migrator = i1.Migrator(database, schema);
         await from1To2(migrator, schema);
         return 2;
+      case 2:
+        final schema = Schema3(database: database);
+        final migrator = i1.Migrator(database, schema);
+        await from2To3(migrator, schema);
+        return 3;
       default:
         throw ArgumentError.value('Unknown migration from $currentVersion');
     }
@@ -980,6 +1216,7 @@ i0.MigrationStepWithVersion migrationSteps({
 
 i1.OnUpgrade stepByStep({
   required Future<void> Function(i1.Migrator m, Schema2 schema) from1To2,
+  required Future<void> Function(i1.Migrator m, Schema3 schema) from2To3,
 }) => i0.VersionedSchema.stepByStepHelper(
-  step: migrationSteps(from1To2: from1To2),
+  step: migrationSteps(from1To2: from1To2, from2To3: from2To3),
 );

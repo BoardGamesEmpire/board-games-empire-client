@@ -28,13 +28,15 @@ import '../support/fixed_clock.dart';
 /// rows ever move into per-user storage or a teardown path gains a
 /// delete, this is the test that must be consciously revisited.
 ///
-/// NOTE the deliberate asymmetry with the #135 acceptance suite next
-/// door: households vanish from the NEXT user's view via the membership
-/// read gate, but the queue as stored today is per-server with no user
-/// column at all, so a different user's scope sees the departed user's
-/// pending rows. That is a real cross-user hazard once a drain worker
-/// exists — tracked separately, NOT blessed by this test, and the reason
-/// the re-sign-in below is the SAME user.
+/// Since #147 the rows are additionally **data-scoped to the enqueuing
+/// user**: each carries a `user_id` and every repository read/write
+/// filters on it. Survival and scoping now compose: a departed user's
+/// rows persist in the table (this test) but are invisible to any other
+/// user's session scope, and drainable only when the SAME user returns —
+/// which is why the re-sign-in below is user A. The cross-user
+/// visibility/drain hazard this suite once carried a warning about is
+/// closed in the data model; its dedicated coverage lives in
+/// `../repositories/sync_queue_user_scoping_test.dart`.
 const _kUserA = 'user-a';
 const _kServerId = 'server-uuid-1';
 const _kAuthBase = '/api/auth';
