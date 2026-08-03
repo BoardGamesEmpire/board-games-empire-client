@@ -986,7 +986,12 @@ class _AuthScope extends StatelessWidget {
                 unawaited(_deactivateSessionScope(active));
               }
             },
-            child: _UnverifiedSessionBannerHost(child: child),
+            // #141: app resume, the third revalidation trigger. A dispatch
+            // trigger rather than chrome, hence a sibling of the banner
+            // host; rationale lives on the widget.
+            child: AuthLifecycleRevalidationTrigger(
+              child: _UnverifiedSessionBannerHost(child: child),
+            ),
           ),
         );
       },

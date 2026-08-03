@@ -23,9 +23,10 @@ import 'watch_disposal.dart';
 /// per-user session scope (#135): every authentication transition pops
 /// the scope, which disposes this repository ([WatchDisposal]), and disposal
 /// **closes** every vended `watch*` stream — so a subscription can never
-/// keep serving the previous user's rows. After disposal all methods
-/// throw [StateError] and fresh `watch*` calls return already-closed
-/// streams. Every read path that
+/// keep serving the previous user's rows. After disposal the
+/// `Future`-returning methods throw [StateError], while `watch*` calls
+/// return already-closed streams — the contract splits by return type so
+/// a stream consumer never faces a synchronous throw. Every read path that
 /// returns household data — list, single-by-id, watch, member list,
 /// member watch — gates on the current user being a member of the
 /// household in question AND on the household itself being live

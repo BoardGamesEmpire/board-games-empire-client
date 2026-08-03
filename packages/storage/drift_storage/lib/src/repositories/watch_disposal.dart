@@ -1,3 +1,4 @@
+// packages/storage/drift_storage/lib/src/repositories/watch_disposal.dart
 import 'dart:async';
 
 import 'package:interfaces/orchestration.dart';
@@ -17,7 +18,13 @@ import 'package:interfaces/orchestration.dart';
 ///
 /// - be registered with `dispose: (_) => instance.onDispose()` by their
 ///   scope installer;
-/// - call [checkNotDisposed] at the top of every public method;
+/// - call [checkNotDisposed] at the top of every public method **except**
+///   the `watch*` methods, whose post-disposal contract is an
+///   already-closed stream rather than a throw (a `Stream`-returning
+///   method must not throw synchronously — `StreamBuilder`, bloc
+///   `onError` and `.handleError` can only observe what arrives on the
+///   stream — and [untilDisposed] already handles the disposed case by
+///   closing immediately);
 /// - route every vended stream through [untilDisposed];
 /// - override [disposedRepositoryName] for the post-disposal error text.
 ///
@@ -26,9 +33,13 @@ import 'package:interfaces/orchestration.dart';
 /// per-server database right after the scope's dispose callbacks return,
 /// so Drift teardown must have fully completed by then, not merely
 /// started. It then closes every vended outer stream (the done event of
-/// the close-not-error contract) and is idempotent. After disposal,
-/// [checkNotDisposed] throws [StateError] and fresh [untilDisposed]
-/// streams are already closed.
+/// the close-not-error contract) and is idempotent.
+///
+/// Post-disposal behaviour therefore splits by return type, deliberately:
+/// `Future`-returning methods throw [StateError] via [checkNotDisposed]
+/// (a caller awaiting a one-shot read should learn its scope is gone),
+/// while `watch*` methods return an already-closed stream — subscribers
+/// see `onDone`, never an error.
 mixin WatchDisposal implements Disposable {
   /// Set once by [onDispose]; guards every public method (#135).
   bool _disposed = false;
