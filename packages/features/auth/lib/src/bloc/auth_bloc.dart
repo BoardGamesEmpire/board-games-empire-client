@@ -132,14 +132,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     // the handler no-ops unless the state is an unverified session, and at
     // construction it is [AuthInitial].
     //
-    // The other in-process triggers are the periodic timer in [onChange],
-    // which covers the case no connectivity edge ever fires for (an
-    // unverified state entered while ONLINE — server 5xx/timeout), and
-    // `AuthLifecycleRevalidationTrigger` in the widget layer, which covers
-    // a device suspended offline and resumed online without an observed
-    // coarse transition (#9 suppresses consecutive duplicates). All three
-    // dispatch the same event into the same droppable handler, so they
-    // cannot stack overlapping checks (#141).
+    // The other in-process triggers are the periodic timer in [onChange]
+    // (for an unverified state entered while ONLINE — server 5xx/timeout)
+    // and `AuthLifecycleRevalidationTrigger` (app resume, #141; see that
+    // widget for why resume needs its own trigger). All three dispatch the
+    // same event into the same droppable handler, so they cannot stack
+    // overlapping checks.
     _connectivitySubscription = _connectivity
         ?.watch()
         .where((state) => state == ConnectivityState.online)
