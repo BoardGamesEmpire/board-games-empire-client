@@ -1,13 +1,11 @@
-import 'dart:async';
-
 import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
-import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import 'watch_disposal.dart';
 
 /// Read cache + cache-writer implementation of [HouseholdRepository].
 ///
@@ -23,7 +21,7 @@ import '../databases/server_database.dart';
 /// and do not re-resolve if the authenticated user changes under a live
 /// subscription. That is safe because the repository lives in the
 /// per-user session scope (#135): every authentication transition pops
-/// the scope, which disposes this repository ([Disposable]), and disposal
+/// the scope, which disposes this repository ([WatchDisposal]), and disposal
 /// **closes** every vended `watch*` stream — so a subscription can never
 /// keep serving the previous user's rows. After disposal all methods
 /// throw [StateError] and fresh `watch*` calls return already-closed
@@ -101,7 +99,9 @@ import '../databases/server_database.dart';
 /// Until then the conservative "members-only" rule applies, matching
 /// the auth contract the server-side `HouseholdsService` enforces
 /// today.
-class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
+class HouseholdRepositoryImpl
+    with WatchDisposal
+    implements HouseholdRepository {
   /// [syncQueue] MUST be backed by the same [db] instance for [create]'s
   /// "one transaction" guarantee to hold: the enqueue runs inside
   /// `db.transaction(...)` and only joins that transaction when it writes to
@@ -136,96 +136,18 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
   /// server.
   final ClockService _clock;
 
-  /// Set once by [onDispose]; guards every public method (#135).
-  bool _disposed = false;
-
-  /// Live source (Drift) subscriptions behind vended watch streams,
-  /// tracked so [onDispose] can cancel them and *await* the cancellation
-  /// (#135): the suspend path closes the [ServerDatabase] right after this
-  /// repository's dispose callback returns, so Drift teardown must have
-  /// fully completed by then, not merely started.
-  final Set<StreamSubscription<dynamic>> _watchSubscriptions = {};
-
-  /// The outer controllers paired with [_watchSubscriptions], closed on
-  /// [onDispose] so every vended stream ends with a done event — the
-  /// locked close-not-error contract.
-  final Set<MultiStreamController<dynamic>> _watchControllers = {};
-
-  /// Tears this repository down when its user-session scope pops (#135):
-  /// wired by `HouseholdScopeInstaller` as the registration's `dispose:`
-  /// callback. Cancels every live source subscription (awaiting Drift's
-  /// teardown before returning — the per-server DB may close immediately
-  /// after), closes every vended `watch*` stream, and fails all later
-  /// calls loudly. Idempotent.
+  /// Close-on-dispose machinery lives in the shared [WatchDisposal]
+  /// mixin (#135, one fix surface with `SyncQueueRepositoryImpl`):
+  /// `HouseholdScopeInstaller` wires [onDispose] as the registration's
+  /// `dispose:` callback, every public method opens with
+  /// [checkNotDisposed], and both `watch*` methods route through
+  /// [untilDisposed].
   @override
-  Future<void> onDispose() async {
-    if (_disposed) return;
-    _disposed = true;
-
-    final subscriptions = List.of(_watchSubscriptions);
-    _watchSubscriptions.clear();
-    await Future.wait(subscriptions.map((sub) => sub.cancel()));
-
-    final controllers = List.of(_watchControllers);
-    _watchControllers.clear();
-    for (final controller in controllers) {
-      controller.close();
-    }
-  }
-
-  void _checkNotDisposed() {
-    if (_disposed) {
-      throw StateError(
-        'HouseholdRepository has been disposed — its user-session scope '
-        'was torn down (#135). Resolve a fresh instance from the active '
-        'user session.',
-      );
-    }
-  }
-
-  /// Wraps a `watch*` [source] so the returned stream **closes** when this
-  /// repository is disposed (#135), regardless of whether the subscriber
-  /// ever cancels. Drift streams are tied to the database — which is
-  /// per-server and outlives the user session — so without this wrapper a
-  /// subscription taken under one user would keep emitting after the scope
-  /// pop. [source] is invoked lazily per listener, preserving the async*
-  /// bodies' contract of delivering an unauthenticated user id as a
-  /// stream error rather than a synchronous throw.
-  ///
-  /// Each listener's source subscription and outer controller are tracked
-  /// for [onDispose]; both deregister on their own done/cancel so the
-  /// tracking sets only ever hold live entries. `onCancel` returns the
-  /// source cancellation future so a subscriber's `cancel()` also awaits
-  /// Drift teardown.
-  Stream<T> _untilDisposed<T>(Stream<T> Function() source) {
-    return Stream<T>.multi((controller) {
-      if (_disposed) {
-        controller.close();
-        return;
-      }
-      late final StreamSubscription<T> sub;
-      sub = source().listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: () {
-          _watchSubscriptions.remove(sub);
-          _watchControllers.remove(controller);
-          controller.close();
-        },
-      );
-      _watchSubscriptions.add(sub);
-      _watchControllers.add(controller);
-      controller.onCancel = () {
-        _watchSubscriptions.remove(sub);
-        _watchControllers.remove(controller);
-        return sub.cancel();
-      };
-    });
-  }
+  String get disposedRepositoryName => 'HouseholdRepository';
 
   @override
   Future<List<Household>> getHouseholds() async {
-    _checkNotDisposed();
+    checkNotDisposed();
     final rows = await _householdsQuery(_currentUserId()).get();
     return rows
         .map((r) => _mapHousehold(r.readTable(_db.householdsTable)))
@@ -234,7 +156,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Future<Household?> getHousehold(String householdId) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     final query =
         _db.select(_db.householdsTable).join([
           innerJoin(
@@ -257,7 +179,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Future<List<HouseholdMember>> getMembers(String householdId) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     final rows = await _membersQuery(householdId, _currentUserId()).get();
     return rows
         .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
@@ -266,7 +188,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Future<HouseholdMember?> getCurrentUserMember(String householdId) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     final userId = _currentUserId();
     final row =
         await (_db.select(_db.householdMembersTable)..where(
@@ -279,7 +201,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Future<void> cacheHousehold(Household household) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     await _db
         .into(_db.householdsTable)
         .insertOnConflictUpdate(
@@ -299,7 +221,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Future<void> cacheMember(HouseholdMember member) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     await _db
         .into(_db.householdMembersTable)
         .insertOnConflictUpdate(_memberToCompanion(member));
@@ -307,7 +229,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Future<void> cacheMembers(List<HouseholdMember> members) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     await _db.batch((b) {
       for (final m in members) {
         b.insert(
@@ -329,7 +251,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
     String? language,
     String? visibility,
   }) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     // Validate BEFORE opening the transaction so the cache and the sync
     // queue stay untouched on bad input.
     final trimmedName = name.trim();
@@ -404,7 +326,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
     required String localId,
     String? completedSyncQueueId,
   }) async {
-    _checkNotDisposed();
+    checkNotDisposed();
     return _db.transaction(() async {
       // 1. Upsert the server-confirmed household (canonical id, flags
       //    cleared). Done first so the members FK target exists before
@@ -440,7 +362,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Stream<List<Household>> watchHouseholds() =>
-      _untilDisposed(_watchHouseholdsSource);
+      untilDisposed(_watchHouseholdsSource);
 
   Stream<List<Household>> _watchHouseholdsSource() async* {
     // Resolve inside the async* body: an unauthenticated [_currentUserId]
@@ -456,7 +378,7 @@ class HouseholdRepositoryImpl implements HouseholdRepository, Disposable {
 
   @override
   Stream<List<HouseholdMember>> watchMembers(String householdId) =>
-      _untilDisposed(() => _watchMembersSource(householdId));
+      untilDisposed(() => _watchMembersSource(householdId));
 
   Stream<List<HouseholdMember>> _watchMembersSource(String householdId) async* {
     // See [_watchHouseholdsSource]: resolve inside the body so an

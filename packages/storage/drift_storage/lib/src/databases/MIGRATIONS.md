@@ -5,22 +5,36 @@ How `drift_storage` versions and migrates its two databases — `ServerDatabase`
 use drift's first-party tooling; we do **not** hand-write SQL snapshots or a
 bespoke migration registry.
 
-## Current state (v1)
+## Current state
 
-Both databases are at `schemaVersion == 1`. There are **no forward
-migrations** yet, so there is intentionally **no `*.steps.dart` file** and no
-generated `test/drift/**` scaffold — `drift_dev make-migrations` only emits
-those once a second schema version exists. Both databases build their strategy
-with `bgeMigrationStrategy()` (in `migration_policy.dart`); today that does
-exactly one thing on upgrade — it refuses downgrades — and applies the standard
-PRAGMAs on open.
+`ServerDatabase` is at `schemaVersion == 3`; `MetaDatabase` is at
+`schemaVersion == 1`. The server database has real forward migrations, so the
+generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
+(schema helpers + migration tests) exist and are **committed** — regenerate
+them with `melos run schema:migrations` after every schema change. Both
+databases build their strategy with `bgeMigrationStrategy()` (in
+`migration_policy.dart`), which refuses downgrades ahead of the steps and
+applies the standard PRAGMAs on open.
+
+Server schema history:
+
+- **v1 → v2 (#39):** additive `households.is_dirty` / `households.is_local_only`
+  flags via `addColumn` with back-filled `false`.
+- **v2 → v3 (#147):** user-scopes the sync queue — `sync_queue.user_id`
+  (`TEXT NOT NULL`, no default) plus the `(user_id, status, created_at)` index
+  replacing `(status, created_at)`. SQLite cannot ADD COLUMN a NOT NULL column
+  without a default, and legacy rows are deliberately **dropped** rather than
+  backfilled (attributing them to the migrating session's user would be
+  wrong), so the step drops and recreates the table. `sync_queue` has no FK
+  edges, so the FK-off wrapper question (#54) stays deferred.
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v3.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
-CI fails if either drifts from the live schema.
+CI fails if the latest snapshot of either database drifts from the live
+schema.
 
 ## Adding a schema change
 
@@ -32,21 +46,28 @@ CI fails if either drifts from the live schema.
    next to the database and migration tests under `test/drift/`. **Commit
    these** — they are not produced by `melos run generate`, and CI does not
    regenerate them.
-5. Pass the generated `stepByStep` dispatcher to the shared factory via its
-   `steps:` parameter — the factory keeps the downgrade guard ahead of it
-   automatically:
+5. Extend the `steps:` closure passed to the shared factory — the factory
+   keeps the downgrade guard ahead of it automatically. The shipped steps are
+   hand-written `if (from < N && to >= N)` blocks against the live table
+   definitions (the `to` bound matters: the schema verifier runs
+   *intermediate* migrations, and an unbounded block would over-migrate past
+   the requested target)
+   (sufficient for additive columns and for FK-free table rebuilds); switching
+   to the generated `stepByStep(...)` dispatcher remains an open option under
+   #54 and becomes compelling with the first destructive migration of an
+   FK-referenced table:
 
    ```dart
    @override
    MigrationStrategy get migration => bgeMigrationStrategy(
-     steps: stepByStep(
-       from1To2: (m, schema) async {
-         // e.g. await m.addColumn(schema.games, schema.games.newField);
-       },
-     ),
+     steps: (Migrator m, int from, int to) async {
+       if (from < N && to >= N) {
+         // e.g. await m.addColumn(gamesTable, gamesTable.newField);
+       }
+     },
    );
    ```
-6. Implement each `fromXToY` step, run `melos run test`, then commit.
+6. Implement each version block, run `melos run test`, then commit.
 
 > **Deferred to #54 — the FK-off + transaction wrapper.** Destructive migrations
 > need to run with foreign keys off, inside a transaction. Where that wrapper

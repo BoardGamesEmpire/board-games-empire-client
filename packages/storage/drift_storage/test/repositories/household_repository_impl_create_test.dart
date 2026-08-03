@@ -23,7 +23,7 @@ void main() {
   setUp(() {
     db = ServerDatabase.memory();
     clock = FixedClockService(_fixed);
-    syncQueue = SyncQueueRepositoryImpl(db, clock);
+    syncQueue = SyncQueueRepositoryImpl(db, clock, userId: _kUserId);
     repo = HouseholdRepositoryImpl(
       db: db,
       currentUserId: () => _kUserId,

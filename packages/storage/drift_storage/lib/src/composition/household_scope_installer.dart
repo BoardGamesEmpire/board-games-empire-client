@@ -14,9 +14,12 @@ import '../repositories/sync_queue_repository_impl.dart';
 /// scope, pushed on sign-in and popped on any transition out of the
 /// authenticated state (#135). Both repositories are keyed to the current
 /// user, so scoping them to the session guarantees a live query can never
-/// outlive a user change: popping the scope disposes them, and the
-/// household repository closes every vended `watch*` stream from its
-/// dispose path.
+/// outlive a user change: popping the scope disposes them, and both
+/// repositories close every vended `watch*` stream from their dispose
+/// paths. For the sync queue the user keying is **data-scoped**, not
+/// merely object-scoped (#147): rows carry the enqueuing user's id and
+/// every read/write filters on it, so a scope built for one user cannot
+/// observe or drain another user's queued offline work.
 ///
 /// Both depend on resources the per-server installers register — the
 /// [ServerDatabase] (`StorageScopeInstaller`) and the [ClockService] +
@@ -56,8 +59,20 @@ class HouseholdScopeInstaller implements UserScopeInstaller {
     final clock = container.get<ClockService>();
     final authRepository = container.get<AuthRepository>();
 
-    final syncQueue = SyncQueueRepositoryImpl(db, clock);
-    container.registerSingleton<SyncQueueRepository>(syncQueue);
+    // User-scoped (#147): the session's user id is stamped on every
+    // enqueue and filters every read/write, so this repository can never
+    // see or touch another user's rows in the server-wide table. Fixed at
+    // construction (not a lazy provider): the instance is disposed on
+    // every authentication transition, so it cannot carry a stale id.
+    final syncQueue = SyncQueueRepositoryImpl(db, clock, userId: userId);
+    container.registerSingleton<SyncQueueRepository>(
+      syncQueue,
+      // Close-on-teardown (#135, folded #138 item 1): scope deactivation
+      // disposes the repository, which closes every vended
+      // watchPendingCount stream — a subscription taken under this user
+      // stops delivering (even the frozen count) after the scope pops.
+      dispose: (_) => syncQueue.onDispose(),
+    );
 
     final households = HouseholdRepositoryImpl(
       db: db,

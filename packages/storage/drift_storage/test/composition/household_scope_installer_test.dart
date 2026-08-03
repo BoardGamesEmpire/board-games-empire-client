@@ -252,4 +252,67 @@ void main() {
 
     expect(done, isTrue);
   });
+
+  test('disposing the container closes a live sync-queue count stream — '
+      'the #138 close-on-scope-pop wiring for the queue', () async {
+    final container = _scopeContainer(
+      _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+    );
+    await installer.install(container, _config(), _kUserId);
+    final queue = container.get<SyncQueueRepository>();
+
+    var done = false;
+    final sub = queue.watchPendingCount().listen(
+      (_) {},
+      onDone: () => done = true,
+    );
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+    expect(done, isFalse);
+
+    await container.dispose();
+    await pumpEventQueue();
+
+    expect(done, isTrue);
+  });
+
+  test(
+    'the registered sync queue is data-scoped to the install user id '
+    '(#147): a sibling scope for another user sees none of its rows',
+    () async {
+      final auth = _FakeAuthRepository(
+        AuthStateAuthenticated(session: _session()),
+      );
+      // Two user scopes over the SAME database — the shared-device shape.
+      final db = ServerDatabase.memory();
+      DependencyContainer scope() => DependencyContainerImpl()
+        ..registerSingleton<ServerDatabase>(db)
+        ..registerSingleton<ClockService>(
+          FixedClockService(DateTime.utc(2024, 1, 15, 10, 30)),
+        )
+        ..registerSingleton<AuthRepository>(auth);
+      final scopeA = scope();
+      final scopeB = scope();
+      addTearDown(() async {
+        await scopeA.dispose();
+        await scopeB.dispose();
+        await db.close();
+      });
+
+      await installer.install(scopeA, _config(), _kUserId);
+      await installer.install(scopeB, _config(), 'user-someone-else');
+
+      final queueA = scopeA.get<SyncQueueRepository>();
+      await queueA.enqueue(
+        const CreateHouseholdOperation(localId: 'hh-1', name: 'HQ'),
+      );
+
+      expect(await queueA.getPendingCount(), 1);
+      expect(
+        await scopeB.get<SyncQueueRepository>().getPendingCount(),
+        0,
+        reason: '#147: another user\'s scope must not see the rows',
+      );
+    },
+  );
 }

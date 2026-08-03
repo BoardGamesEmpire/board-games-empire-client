@@ -6,6 +6,7 @@ import 'generated/schema.dart';
 
 import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
+import 'generated/schema_v3.dart' as v3;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -194,6 +195,123 @@ void main() {
           expectedNewSyncQueueData,
           await newDb.select(newDb.syncQueue).get(),
         );
+      },
+    );
+  });
+
+  // Data-integrity coverage for v2 → v3 (#147): the step user-scopes the
+  // sync queue by dropping and recreating `sync_queue` with the new
+  // `user_id TEXT NOT NULL` column and the `(user_id, status, created_at)`
+  // index. Two contracts are pinned here, both **deliberate**:
+  //
+  // 1. **Legacy sync_queue rows are DROPPED.** Pre-v3 rows carry no user
+  //    attribution, and backfilling them from whichever session happens to
+  //    run the migration would attribute work that may not be theirs —
+  //    the exact cross-user hazard #147 exists to close. Destructive for
+  //    this table by locked decision (acceptable pre-alpha; no production
+  //    DBs exist).
+  // 2. **Every other table is untouched.** The step names only
+  //    `sync_queue`; households and members (seeded with live data,
+  //    exercising the member FK across the migration) must survive
+  //    byte-for-byte.
+  test('migration from v2 to v3 drops legacy sync_queue rows and preserves '
+      'everything else (#147)', () async {
+    const householdId = 'hh_v2_1';
+    const createdAt = '2024-01-15T10:30:00.000Z';
+    const updatedAt = '2024-01-16T09:00:00.000Z';
+
+    final oldHouseholdsData = <v2.HouseholdsData>[
+      const v2.HouseholdsData(
+        id: householdId,
+        name: 'Game Night HQ',
+        description: 'Where we play',
+        isDirty: 0,
+        isLocalOnly: 0,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+    final expectedNewHouseholdsData = <v3.HouseholdsData>[
+      const v3.HouseholdsData(
+        id: householdId,
+        name: 'Game Night HQ',
+        description: 'Where we play',
+        isDirty: 0,
+        isLocalOnly: 0,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+
+    final oldHouseholdMembersData = <v2.HouseholdMembersData>[
+      const v2.HouseholdMembersData(
+        id: 'hm_v2_1',
+        userId: 'user_v2_1',
+        householdId: householdId,
+        showAllGames: 1,
+        roleName: 'HouseholdOwner',
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+    final expectedNewHouseholdMembersData = <v3.HouseholdMembersData>[
+      const v3.HouseholdMembersData(
+        id: 'hm_v2_1',
+        userId: 'user_v2_1',
+        householdId: householdId,
+        showAllGames: 1,
+        roleName: 'HouseholdOwner',
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+
+    // Two queued rows in different states — both unattributed at v2,
+    // both dropped at v3. A pending row is the D8-sensitive case (a
+    // departed user's surviving offline write); pinning its removal
+    // documents that the pre-alpha destructive default was chosen over
+    // a wrong backfill, not overlooked.
+    const payload =
+        '{"type":"create_household","local_id":"hh_local_1","name":"HQ"}';
+    final oldSyncQueueData = <v2.SyncQueueData>[
+      const v2.SyncQueueData(
+        id: 'sq_v2_pending',
+        payload: payload,
+        status: 'pending',
+        retryCount: 0,
+        createdAt: createdAt,
+      ),
+      const v2.SyncQueueData(
+        id: 'sq_v2_completed',
+        payload: payload,
+        status: 'completed',
+        retryCount: 0,
+        createdAt: createdAt,
+      ),
+    ];
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 2,
+      newVersion: 3,
+      createOld: v2.DatabaseAtV2.new,
+      createNew: v3.DatabaseAtV3.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insertAll(oldDb.households, oldHouseholdsData);
+        batch.insertAll(oldDb.householdMembers, oldHouseholdMembersData);
+        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
+      },
+      validateItems: (newDb) async {
+        expect(
+          expectedNewHouseholdsData,
+          await newDb.select(newDb.households).get(),
+        );
+        expect(
+          expectedNewHouseholdMembersData,
+          await newDb.select(newDb.householdMembers).get(),
+        );
+        // The locked #147 contract: legacy rows are gone, not carried.
+        expect(await newDb.select(newDb.syncQueue).get(), isEmpty);
       },
     );
   });

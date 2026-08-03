@@ -5,6 +5,20 @@ import 'package:models/domain.dart';
 /// The sync engine reads from this repository, sends operations to the server,
 /// and marks entries completed or failed. All writes go through here — no
 /// component should write directly to the server without enqueuing first.
+///
+/// ## Per-user scoping (#147)
+///
+/// Implementations are constructed **per user session** and every method —
+/// enqueue, reads, status transitions, maintenance, and
+/// [remapCollectionId] — operates only on entries the session's user
+/// enqueued. Entries belonging to other users of the same server are
+/// invisible and untouchable through this interface: on a shared device a
+/// departed user's queued offline writes lie dormant (intact, per the D8
+/// retention rule from #98/#142) until that user signs back in, and a
+/// drain worker (#121) operating through this interface can never push
+/// one user's writes under another user's session. The scoping lives in
+/// the data model (a stamped, filtered user id), not in consumer
+/// discipline; the method signatures are deliberately unchanged.
 abstract class SyncQueueRepository {
   /// Enqueues a new operation. Returns the created entry.
   Future<SyncQueueEntry> enqueue(SyncOperation operation);
@@ -14,7 +28,9 @@ abstract class SyncQueueRepository {
   /// order with rowid as a stable tiebreaker.
   Future<List<SyncQueueEntry>> getPendingEntries();
 
-  /// Returns all entries regardless of status. Useful for diagnostics.
+  /// Returns all of the current user's entries regardless of status.
+  /// Useful for diagnostics. Other users' entries are never included
+  /// (#147).
   Future<List<SyncQueueEntry>> getAllEntries();
 
   /// Marks [id] as [SyncStatus.inProgress] and records the attempt timestamp.
