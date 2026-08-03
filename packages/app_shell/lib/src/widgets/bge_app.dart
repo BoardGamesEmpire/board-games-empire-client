@@ -986,7 +986,14 @@ class _AuthScope extends StatelessWidget {
                 unawaited(_deactivateSessionScope(active));
               }
             },
-            child: _UnverifiedSessionBannerHost(child: child),
+            // #141: app resume is a third revalidation trigger, after
+            // #98's connectivity edge and periodic timer. Outside the
+            // BlocListener's own concern, hence a sibling wrapper rather
+            // than folded into the banner host — one is a dispatch
+            // trigger, the other presentation.
+            child: AuthLifecycleRevalidationTrigger(
+              child: _UnverifiedSessionBannerHost(child: child),
+            ),
           ),
         );
       },

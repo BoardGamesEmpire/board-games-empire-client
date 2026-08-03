@@ -64,8 +64,12 @@ import 'auth_bloc_state.dart';
 /// - **Fallback**: the check was attempted and came back indeterminate.
 ///
 /// A session entered this way is [SessionVerification.unverifiedOffline]
-/// until revalidation confirms it. Revalidation fires when connectivity
-/// returns; see [AuthSessionRevalidationRequested].
+/// until revalidation confirms it. Three triggers dispatch
+/// [AuthSessionRevalidationRequested]: a connectivity `offline → online`
+/// edge (#98), the periodic retry timer in [onChange] for an unverified
+/// state entered while online (#98), and app resume, owned by
+/// `AuthLifecycleRevalidationTrigger` in the widget layer (#141) because
+/// this bloc must not reach into Flutter bindings.
 ///
 /// ## Concurrency
 ///
@@ -128,12 +132,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     // the handler no-ops unless the state is an unverified session, and at
     // construction it is [AuthInitial].
     //
-    // The other in-process trigger is the periodic timer in [onChange],
-    // which covers the case no connectivity edge ever fires for: an
-    // unverified state entered while ONLINE (server 5xx/timeout). A device
-    // suspended offline and resumed online without an observed coarse
-    // transition (#9 suppresses consecutive duplicates) is covered
-    // separately by app-resume revalidation — see #141.
+    // The other in-process triggers are the periodic timer in [onChange],
+    // which covers the case no connectivity edge ever fires for (an
+    // unverified state entered while ONLINE — server 5xx/timeout), and
+    // `AuthLifecycleRevalidationTrigger` in the widget layer, which covers
+    // a device suspended offline and resumed online without an observed
+    // coarse transition (#9 suppresses consecutive duplicates). All three
+    // dispatch the same event into the same droppable handler, so they
+    // cannot stack overlapping checks (#141).
     _connectivitySubscription = _connectivity
         ?.watch()
         .where((state) => state == ConnectivityState.online)

@@ -29,10 +29,13 @@ import 'watch_disposal.dart';
 ///
 /// ## Disposal (#135 / #138)
 ///
-/// Disposal is the shared [WatchDisposal] contract: [watchPendingCount]
-/// is wrapped to **close** (never error) when the scope pops, and after
-/// [onDispose] every method throws [StateError]. See `watch_disposal.dart`
-/// — one fix surface shared with `HouseholdRepositoryImpl`.
+/// Disposal is the shared [WatchDisposal] contract, and it splits by
+/// return type: after [onDispose] the `Future`-returning methods throw
+/// [StateError], while [watchPendingCount] **closes** rather than errors
+/// — a live subscription ends with `onDone` on the scope pop, and a call
+/// made after disposal returns an already-closed stream. See
+/// `watch_disposal.dart` — one fix surface shared with
+/// `HouseholdRepositoryImpl`.
 class SyncQueueRepositoryImpl
     with WatchDisposal
     implements SyncQueueRepository {
@@ -293,7 +296,7 @@ class SyncQueueRepositoryImpl
     // and re-emits on every change to the sync_queue table. The raw
     // Drift stream is tied to the per-server database and would
     // outlive this repository's user-session scope, so it is wrapped
-    // by [_untilDisposed] (#135 / #138): the vended stream CLOSES on
+    // by [untilDisposed] (#135 / #138): the vended stream CLOSES on
     // scope disposal instead of continuing to emit the departed
     // user's (frozen) count.
     return untilDisposed(() {
@@ -389,7 +392,7 @@ class SyncQueueRepositoryImpl
   ///
   /// Strict: any value outside the canonical [SyncStatus] name set
   /// throws [StateError]. A row whose `status` column holds an
-  /// unrecognised value represents either DB corruption or a newer
+  /// unrecognized value represents either DB corruption or a newer
   /// code-side enum case that's been deployed before this read path
   /// was updated. Both must surface rather than be silently coerced
   /// into [SyncStatus.pending] — the prior fallback would have caused
