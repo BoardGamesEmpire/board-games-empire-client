@@ -23,9 +23,8 @@ class FakeAuthRepository implements AuthRepository {
   FakeAuthRepository({
     AuthResponse? initialSession,
     this.sessionCheckError,
-    AuthResponse? restorableSession,
-  }) : _session = initialSession,
-       _restorableSession = restorableSession;
+    this._restorableSession,
+  }) : _session = initialSession;
 
   AuthResponse? _session;
 

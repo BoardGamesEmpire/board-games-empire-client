@@ -24,17 +24,15 @@ import 'package:observability/observability.dart';
 /// [close] (hot restart does not fire dispose).
 class RotatingFileLogSink implements LogSink {
   RotatingFileLogSink({
-    required Future<Directory> Function() directoryProvider,
+    required this._directoryProvider,
     this.baseName = 'bge',
     this.maxBytes = 1 << 20,
     this.maxFiles = 3,
-    LogRecordFormatter formatter = const LogRecordFormatter(),
+    this._formatter = const LogRecordFormatter(),
     int preOpenBufferLimit = 200,
   }) : assert(maxBytes > 0, 'maxBytes must be positive'),
        assert(maxFiles >= 1, 'maxFiles must be at least 1'),
        assert(preOpenBufferLimit >= 0, 'preOpenBufferLimit must be >= 0'),
-       _directoryProvider = directoryProvider,
-       _formatter = formatter,
        _preOpenBufferLimit = preOpenBufferLimit;
 
   final Future<Directory> Function() _directoryProvider;

@@ -24,10 +24,9 @@ void configureWebUrlStrategy() => setPathUrlStrategy();
 /// separately in #63.
 class WebPlatformBootstrap implements PlatformBootstrap {
   const WebPlatformBootstrap({
-    Future<void> Function(DependencyContainer container)? rootModule,
-    Future<ActiveServerScope> Function()? serverScopeBuilder,
-  }) : _rootModule = rootModule,
-       _serverScopeBuilder = serverScopeBuilder;
+    this._rootModule,
+    this._serverScopeBuilder,
+  });
 
   /// Injectable root-module seam (#69); null → [registerWebRootModule].
   /// Nullable field rather than a defaulted one so the constructor stays

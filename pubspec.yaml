@@ -1,7 +1,30 @@
 name: board_games_empire
 
+# ── Toolchain pin (#153) ───────────────────────────────────────────
+# `flutter:` below is an EXACT version, not a floor. It is the single
+# source of truth for the toolchain: CI reads it directly with
+# `flutter-version-file: pubspec.yaml` (subosito/flutter-action), so a
+# workflow can no longer disagree with the pubspecs. Every Flutter
+# package in the workspace declares `flutter: ">=<this version>"`, and
+# `melos run check:constraints` fails the build if any drifts.
+#
+# `sdk:` is the Dart floor that pairs with it — Flutter 3.44.4 bundles
+# Dart 3.12.2, and 3.44.0 was the first stable to ship Dart 3.12. The
+# Flutter constraint is deliberately the tighter of the two so it does
+# real work: `sdk: ^3.12.0` alone would still admit Flutter 3.44.0-.3.
+#
+# To bump, edit both values here and run
+#   dart run tool/check_sdk_constraints.dart --fix
+# to propagate the floor to every package. Goldens (#32) run local-only,
+# so also regenerate them (`melos run goldens:update`) and commit the
+# refreshed `goldens/ci/` PNGs in the same PR.
+#
+# Trade-off of an exact pin: `flutter pub get` fails on any other
+# Flutter version, newer stables included. That is the point — it makes
+# toolchain moves deliberate rather than silent.
 environment:
-  sdk: ">=3.9.0 <4.0.0"
+  sdk: ^3.12.0
+  flutter: 3.44.4
 
 dependency_overrides:
   analyzer: 10.2.0
@@ -21,6 +44,8 @@ dev_dependencies:
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   build_runner: ^2.14.1
+  # Read-only pubspec parsing for tool/check_sdk_constraints.dart (#153).
+  yaml: ^3.1.2
 
 workspace:
   - apps/mobile
@@ -85,6 +110,15 @@ melos:
     schema:migrations:
       run: melos exec -c 1 --scope="drift_storage" -- "flutter pub run drift_dev make-migrations"
       description: Generate step-by-step migration scaffolding + schema tests for all databases registered in build.yaml.
+
+    # ── Toolchain constraint consistency (#153) ────────────────────
+    # Guards against the drift this repo already had: `flutter: ">=3.0.0"`
+    # left over from `flutter create` in 17 packages. pub can't catch it,
+    # because the Dart floor already excludes every Flutter that low, so
+    # the constraint never fails a resolve. CI runs this on every PR.
+    check:constraints:
+      run: dart run tool/check_sdk_constraints.dart
+      description: Verify every package's sdk/flutter constraints match the root toolchain pin. Add --fix to propagate a bump.
 
     # Analysis and testing
     analyze:

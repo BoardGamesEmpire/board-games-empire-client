@@ -26,8 +26,7 @@ import 'uncaught_error_record.dart';
 /// Single slot, newest crash wins — mirroring
 /// `ShellObservability.lastUncaughtError`.
 final class FeedbackUncaughtErrorReporter implements UncaughtErrorReporter {
-  FeedbackUncaughtErrorReporter({required FeedbackService service})
-    : _service = service;
+  FeedbackUncaughtErrorReporter({required this._service});
 
   final FeedbackService _service;
   final ValueNotifier<FeedbackReport?> _pending =

@@ -54,13 +54,11 @@ import 'server_context_impl.dart';
 /// sufficient while no rename-server flow exists.
 class ServerOrchestratorImpl implements ServerOrchestrator {
   ServerOrchestratorImpl({
-    required ServerRepository serverRepository,
-    required DevicePreferencesRepository preferencesRepository,
+    required this._serverRepository,
+    required this._preferencesRepository,
     ServerContextFactory? contextFactory,
     @visibleForTesting bool? isDesktopOverride,
-  }) : _serverRepository = serverRepository,
-       _preferencesRepository = preferencesRepository,
-       _contextFactory = contextFactory ?? defaultServerContextFactory,
+  }) : _contextFactory = contextFactory ?? defaultServerContextFactory,
        _isDesktop = isDesktopOverride ?? _detectDesktop();
 
   final ServerRepository _serverRepository;

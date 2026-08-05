@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:models/domain.dart';
 
 // Canonical fixture matching the /.well-known/bge-identity wire format.

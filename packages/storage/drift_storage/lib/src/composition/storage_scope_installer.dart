@@ -49,15 +49,14 @@ class StorageScopeInstaller implements ServerScopeInstaller {
   ///
   /// [executorFactory] builds the encrypted executor and resolves file
   /// paths; [keyService] is consulted only for key deletion during
-  /// recovery (the factory obtains keys itself). [onRecovery] is the app
+  /// recovery (the factory obtains keys itself). [_onRecovery] is the app
   /// layer's notification hook and may be null until #55 wires it.
   StorageScopeInstaller({
     required EncryptedExecutorFactory executorFactory,
     required EncryptionKeyService keyService,
-    void Function(DatabaseRecoveryEvent event)? onRecovery,
+    this._onRecovery,
   }) : _factory = executorFactory,
-       _keys = keyService,
-       _onRecovery = onRecovery;
+       _keys = keyService;
 
   final EncryptedExecutorFactory _factory;
   final EncryptionKeyService _keys;

@@ -104,7 +104,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     devicePreferencesRepositoryFactory,
     NativeOrchestratorFactory? orchestratorFactory,
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
-    void Function(DatabaseRecoveryEvent event)? onServerDatabaseRecovery,
+    this._onServerDatabaseRecovery,
     Future<void> Function(DependencyContainer container)? rootModule,
     DeepLinkSource Function()? deepLinkSourceFactory,
     BgeLogger? logger,
@@ -130,7 +130,6 @@ class NativePlatformBootstrap implements PlatformBootstrap {
        _orchestratorFactory = orchestratorFactory ?? _defaultOrchestrator,
        _hydratedDirectoryProvider =
            hydratedDirectoryProvider ?? _defaultHydratedDirectory,
-       _onServerDatabaseRecovery = onServerDatabaseRecovery,
        _rootModule = rootModule ?? registerNativeRootModule,
        _deepLinkSourceFactory =
            deepLinkSourceFactory ?? AppLinksDeepLinkSource.new {

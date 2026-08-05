@@ -36,14 +36,12 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   FakePlatformBootstrap({
     List<Object> outcomes = const [],
     this.supportsReset = true,
-    ServerOrchestrator? orchestrator,
-    ActiveServerScope? activeServerScope,
+    this._orchestrator,
+    this._activeServerScope,
     this.rootContainerOutcome,
     this.onCreateRootContainer,
     this.deepLinkSource,
-  }) : _outcomes = List.of(outcomes),
-       _orchestrator = orchestrator,
-       _activeServerScope = activeServerScope;
+  }) : _outcomes = List.of(outcomes);
 
   final List<Object> _outcomes;
   final ServerOrchestrator? _orchestrator;

@@ -28,17 +28,14 @@ import 'platform_bootstrap.dart';
 /// on blocs).
 class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   AppBootstrapCubit({
-    required PlatformBootstrap platformBootstrap,
+    required this._platformBootstrap,
     HydratedStorageInitializer? hydratedStorageInitializer,
-    FeedbackService? feedbackService,
-    int resetOfferThreshold = 3,
+    this._feedbackService,
+    this._resetOfferThreshold = 3,
     BgeLogger? logger,
-  }) : _platformBootstrap = platformBootstrap,
-       _feedbackService = feedbackService,
-       _logger = logger ?? BgeLogger('bge.shell.bootstrap'),
+  }) : _logger = logger ?? BgeLogger('bge.shell.bootstrap'),
        _initializeHydratedStorage =
            hydratedStorageInitializer ?? _defaultHydratedStorageInitializer,
-       _resetOfferThreshold = resetOfferThreshold,
        super(const AppBootstrapInitializing());
 
   final PlatformBootstrap _platformBootstrap;

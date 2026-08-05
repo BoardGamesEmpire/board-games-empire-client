@@ -71,10 +71,9 @@ import 'package:models/dto.dart';
 /// `AuthRepository.signOut` contract.
 class TokenStorageService {
   TokenStorageService({
-    required String serverId,
+    required this._serverId,
     @visibleForTesting FlutterSecureStorage? storage,
-  }) : _serverId = serverId,
-       _storage = storage ?? const FlutterSecureStorage();
+  }) : _storage = storage ?? const FlutterSecureStorage();
 
   final String _serverId;
   final FlutterSecureStorage _storage;

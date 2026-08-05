@@ -21,12 +21,10 @@ import 'pending_deep_link_holder.dart';
 /// (`BgeApp.disposeDeepLinkHandlerOnDispose`).
 class DeepLinkHandler {
   DeepLinkHandler({
-    required DeepLinkSource source,
-    required PendingDeepLinkHolder holder,
+    required this._source,
+    required this._holder,
     BgeLogger? logger,
-  }) : _source = source,
-       _holder = holder,
-       _logger = logger ?? BgeLogger('bge.shell.deep_links');
+  }) : _logger = logger ?? BgeLogger('bge.shell.deep_links');
 
   final DeepLinkSource _source;
   final PendingDeepLinkHolder _holder;

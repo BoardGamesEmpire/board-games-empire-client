@@ -155,14 +155,11 @@ import '../databases/server_database.dart';
 /// for the full flow.
 class GameCollectionRepositoryImpl implements GameCollectionRepository {
   GameCollectionRepositoryImpl({
-    required ServerDatabase db,
-    required SyncQueueRepository syncQueue,
+    required this._db,
+    required this._syncQueue,
     required String currentUserId,
-    required ClockService clock,
-  }) : _db = db,
-       _syncQueue = syncQueue,
-       _userId = currentUserId,
-       _clock = clock;
+    required this._clock,
+  }) : _userId = currentUserId;
 
   final ServerDatabase _db;
   final SyncQueueRepository _syncQueue;

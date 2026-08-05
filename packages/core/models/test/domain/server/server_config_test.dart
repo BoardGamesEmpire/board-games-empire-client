@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:models/domain.dart';
 
 const _kBgeServerId = '550e8400-e29b-41d4-a716-446655440000';

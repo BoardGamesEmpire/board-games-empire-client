@@ -26,10 +26,8 @@ import 'package:http_status/http_status.dart';
 /// resource owned by the container. [onDispose] tears down only the auth-state
 /// stream.
 class WebAuthRepositoryImpl implements AuthRepository, Disposable {
-  WebAuthRepositoryImpl({required ServerIdentity identity, required Dio dio})
-    : _identity = identity,
-      _dio = dio,
-      _stateController = StreamController<AuthState>.broadcast(sync: true);
+  WebAuthRepositoryImpl({required this._identity, required this._dio})
+    : _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   final ServerIdentity _identity;
   final Dio _dio;

@@ -103,7 +103,7 @@ import 'watch_disposal.dart';
 class HouseholdRepositoryImpl
     with WatchDisposal
     implements HouseholdRepository {
-  /// [syncQueue] MUST be backed by the same [db] instance for [create]'s
+  /// [_syncQueue] MUST be backed by the same [_db] instance for [create]'s
   /// "one transaction" guarantee to hold: the enqueue runs inside
   /// `db.transaction(...)` and only joins that transaction when it writes to
   /// the same database. `HouseholdScopeInstaller` wires it this way — a
@@ -112,14 +112,11 @@ class HouseholdRepositoryImpl
   /// the enqueue outside the transaction (optimistic rows and their queued op
   /// could then diverge on partial failure), and no test would catch it.
   HouseholdRepositoryImpl({
-    required ServerDatabase db,
-    required String Function() currentUserId,
-    required SyncQueueRepository syncQueue,
-    required ClockService clock,
-  }) : _db = db,
-       _currentUserId = currentUserId,
-       _syncQueue = syncQueue,
-       _clock = clock;
+    required this._db,
+    required this._currentUserId,
+    required this._syncQueue,
+    required this._clock,
+  });
 
   final ServerDatabase _db;
 
