@@ -27,17 +27,25 @@
 // Bumping the toolchain is therefore: edit the root `environment:`
 // block, then run with `--fix`.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
 void main(List<String> args) {
   final fix = args.contains('--fix');
-  final unknown = args.where((a) => a != '--fix');
+  final unknown = args.where((a) => a != '--fix' && a != '--self-test');
   if (unknown.isNotEmpty) {
     stderr.writeln('Unknown argument(s): ${unknown.join(', ')}');
-    stderr.writeln('Usage: dart run tool/check_sdk_constraints.dart [--fix]');
+    stderr.writeln(
+      'Usage: dart run tool/check_sdk_constraints.dart [--fix|--self-test]',
+    );
     exit(64); // EX_USAGE
+  }
+
+  if (args.contains('--self-test')) {
+    _selfTest();
+    return;
   }
 
   final root = File('pubspec.yaml');
@@ -87,6 +95,7 @@ void main(List<String> args) {
   }
 
   final problems = <String>[];
+  final unfixable = <String>[];
   var fixed = 0;
 
   for (final dir in members) {
@@ -130,10 +139,18 @@ void main(List<String> args) {
     }
 
     if (fix) {
-      file.writeAsStringSync(
-        _rewriteEnvironment(source, expectedSdk, wantFlutter),
-      );
-      fixed++;
+      final rewritten = _rewriteEnvironment(source, expectedSdk, wantFlutter);
+      if (rewritten == null) {
+        // Never report a fix that did not happen. A silent no-op here
+        // would read as "fixed" and leave the next run still failing.
+        unfixable.add(
+          '$path: could not locate a top-level `environment:` block to '
+          'rewrite — fix this one by hand',
+        );
+      } else {
+        file.writeAsStringSync(rewritten);
+        fixed++;
+      }
     }
   }
 
@@ -149,6 +166,13 @@ void main(List<String> args) {
     stdout.writeln('Rewrote $fixed pubspec(s):');
     for (final p in problems) {
       stdout.writeln('  $p');
+    }
+    if (unfixable.isNotEmpty) {
+      stderr.writeln('\nCould not rewrite ${unfixable.length} pubspec(s):');
+      for (final p in unfixable) {
+        stderr.writeln('  $p');
+      }
+      exit(1);
     }
     stdout.writeln('Run `flutter pub get` to re-resolve.');
     return;
@@ -169,6 +193,125 @@ void main(List<String> args) {
 
 String _show(String? value) => value == null ? '(absent)' : '"$value"';
 
+/// Fixture tests for [_rewriteEnvironment].
+///
+/// The rewriter's failure mode is a silent no-op — it returns something
+/// plausible, `--fix` reports success, and the drift is still there on the
+/// next run. That is invisible to the workspace check itself, because the
+/// workspace only ever holds already-correct pubspecs. So the shapes it
+/// has to survive are pinned here instead. Run by the `constraints` CI job.
+void _selfTest() {
+  const sdk = '^3.12.0';
+  const flutter = '>=3.44.4';
+  var failures = 0;
+
+  void expect(String name, String? actual, String? expected) {
+    if (actual == expected) {
+      stdout.writeln('  ok   $name');
+    } else {
+      failures++;
+      stdout.writeln('  FAIL $name');
+      stdout.writeln('       expected: ${jsonEncode(expected)}');
+      stdout.writeln('       actual:   ${jsonEncode(actual)}');
+    }
+  }
+
+  expect(
+    'rewrites both keys',
+    _rewriteEnvironment(
+      'name: a\nenvironment:\n  sdk: ">=3.9.0 <4.0.0"\n'
+      '  flutter: ">=3.0.0"\nresolution: workspace\n',
+      sdk,
+      flutter,
+    ),
+    'name: a\nenvironment:\n  sdk: ^3.12.0\n'
+    '  flutter: ">=3.44.4"\nresolution: workspace\n',
+  );
+
+  expect(
+    'inserts a missing flutter floor',
+    _rewriteEnvironment(
+      'environment:\n  sdk: ">=3.9.0 <4.0.0"\nresolution: workspace\n',
+      sdk,
+      flutter,
+    ),
+    'environment:\n  sdk: ^3.12.0\n  flutter: ">=3.44.4"\n'
+    'resolution: workspace\n',
+  );
+
+  // Regression: --fix used to report success and change nothing here.
+  expect(
+    'inserts a missing sdk floor',
+    _rewriteEnvironment(
+      'environment:\n  flutter: ">=3.0.0"\nresolution: workspace\n',
+      sdk,
+      flutter,
+    ),
+    'environment:\n  sdk: ^3.12.0\n  flutter: ">=3.44.4"\n'
+    'resolution: workspace\n',
+  );
+
+  expect(
+    'writes an empty environment block',
+    _rewriteEnvironment('environment:\nresolution: workspace\n', sdk, null),
+    'environment:\n  sdk: ^3.12.0\nresolution: workspace\n',
+  );
+
+  // Regression: the block used to be found by exact string equality.
+  expect(
+    'matches environment: with a trailing comment',
+    _rewriteEnvironment(
+      'environment: # toolchain\n  sdk: ">=3.9.0 <4.0.0"\n'
+      '  flutter: ">=3.0.0"\nresolution: workspace\n',
+      sdk,
+      flutter,
+    ),
+    'environment: # toolchain\n  sdk: ^3.12.0\n'
+    '  flutter: ">=3.44.4"\nresolution: workspace\n',
+  );
+
+  expect(
+    'drops the flutter key for a Flutter-free package',
+    _rewriteEnvironment(
+      'environment:\n  sdk: ">=3.9.0 <4.0.0"\n  flutter: ">=3.0.0"\n'
+      'resolution: workspace\n',
+      sdk,
+      null,
+    ),
+    'environment:\n  sdk: ^3.12.0\nresolution: workspace\n',
+  );
+
+  expect(
+    'preserves comments inside the block',
+    _rewriteEnvironment(
+      'environment:\n  # pinned, see root\n  sdk: ">=3.9.0 <4.0.0"\n'
+      'resolution: workspace\n',
+      sdk,
+      null,
+    ),
+    'environment:\n  # pinned, see root\n  sdk: ^3.12.0\n'
+    'resolution: workspace\n',
+  );
+
+  expect(
+    'ignores an indented environment: key',
+    _rewriteEnvironment('foo:\n  environment:\n    sdk: "x"\n', sdk, null),
+    null,
+  );
+
+  expect(
+    'reports failure when there is no environment block',
+    _rewriteEnvironment('name: a\nresolution: workspace\n', sdk, null),
+    null,
+  );
+
+  if (failures > 0) {
+    stderr.writeln('\n$failures self-test failure(s).');
+    exit(1);
+  }
+  stdout.writeln('check_sdk_constraints self-test passed.');
+}
+
 /// Whether any dependency is sourced from the Flutter SDK.
 ///
 /// Matches on the `sdk: flutter` source rather than a hardcoded package
@@ -186,14 +329,30 @@ bool _usesFlutterSdk(YamlMap pubspec) {
   return false;
 }
 
-/// Rewrites the `environment:` block in place.
+/// Matches the top-level `environment:` key, tolerating trailing spaces
+/// and a trailing comment.
+///
+/// Anchored at column 0 on purpose. Matching a left-trimmed prefix
+/// instead would also hit an indented `environment:` nested under some
+/// other key, and `environment_overrides:` — both of which would rewrite
+/// the wrong block.
+final _environmentKey = RegExp(r'^environment:[ \t]*(#.*)?$');
+final _sdkLine = RegExp(r'^\s*sdk:');
+final _flutterLine = RegExp(r'^\s*flutter:');
+
+/// Rewrites the `environment:` block, returning null if there is no
+/// top-level block to rewrite.
+///
+/// Null rather than the unchanged source: the caller has to be able to
+/// tell "nothing needed changing" from "I could not do this", or `--fix`
+/// reports a fix it never made.
 ///
 /// Edits raw lines rather than round-tripping through the YAML writer,
 /// which would drop every comment in the file.
-String _rewriteEnvironment(String source, String sdk, String? flutter) {
+String? _rewriteEnvironment(String source, String sdk, String? flutter) {
   final lines = source.split('\n');
-  final start = lines.indexWhere((l) => l.trimRight() == 'environment:');
-  if (start == -1) return source;
+  final start = lines.indexWhere(_environmentKey.hasMatch);
+  if (start == -1) return null;
 
   // The block runs to the next line that is neither blank nor indented.
   var end = start + 1;
@@ -208,41 +367,31 @@ String _rewriteEnvironment(String source, String sdk, String? flutter) {
 
   final block = lines.sublist(start + 1, end);
   final indent = RegExp(r'^(\s+)').firstMatch(
-        block.firstWhere(
-          (l) => l.trim().isNotEmpty,
-          orElse: () => '  x',
-        ),
+        block.firstWhere((l) => l.trim().isNotEmpty, orElse: () => '  x'),
       )?.group(1) ??
       '  ';
 
+  // Strip the two keys we own, remembering where the first one sat so the
+  // replacements land in the same place rather than at the top of the
+  // block. Anything else — comments, a `dart:` key — is left untouched.
   final rebuilt = <String>[];
-  var wroteFlutter = false;
+  var anchor = -1;
   for (final line in block) {
-    if (RegExp(r'^\s*sdk:').hasMatch(line)) {
-      rebuilt.add('${indent}sdk: $sdk');
-      // Keep `flutter:` adjacent to `sdk:` when introducing it.
-      if (flutter != null && !block.any(_isFlutterLine)) {
-        rebuilt.add('${indent}flutter: "$flutter"');
-        wroteFlutter = true;
-      }
-    } else if (_isFlutterLine(line)) {
-      if (flutter != null) {
-        rebuilt.add('${indent}flutter: "$flutter"');
-        wroteFlutter = true;
-      }
-      // else: drop the line — the package is Flutter-free.
+    if (_sdkLine.hasMatch(line) || _flutterLine.hasMatch(line)) {
+      anchor = anchor == -1 ? rebuilt.length : anchor;
     } else {
       rebuilt.add(line);
     }
   }
+  // No sdk/flutter key at all: insert ahead of the block's existing
+  // content so the constraints stay the first thing you read.
+  if (anchor == -1) anchor = 0;
 
-  // Only possible if the block had no `sdk:` line to anchor to.
-  if (flutter != null && !wroteFlutter) {
-    rebuilt.insert(0, '${indent}flutter: "$flutter"');
-  }
+  rebuilt.insertAll(anchor, [
+    '${indent}sdk: $sdk',
+    if (flutter != null) '${indent}flutter: "$flutter"',
+  ]);
 
   return [...lines.sublist(0, start + 1), ...rebuilt, ...lines.sublist(end)]
       .join('\n');
 }
-
-bool _isFlutterLine(String line) => RegExp(r'^\s*flutter:').hasMatch(line);

@@ -42,6 +42,11 @@ jobs:
           cache: true
       - name: Resolve workspace
         run: flutter pub get
+      # The rewriter's failure mode is a silent no-op, which the workspace
+      # check below cannot see (it only ever reads correct pubspecs), so
+      # the drift shapes it must survive are pinned as fixtures.
+      - name: Constraint tooling self-test
+        run: dart run tool/check_sdk_constraints.dart --self-test
       - name: Constraints must match the root pin
         run: dart run tool/check_sdk_constraints.dart
 
