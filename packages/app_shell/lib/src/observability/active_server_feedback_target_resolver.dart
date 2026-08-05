@@ -29,8 +29,8 @@ import 'package:observability/observability.dart';
 /// scope can legitimately exist before its network leg is installed.
 class ActiveServerFeedbackTargetResolver implements FeedbackTargetResolver {
   const ActiveServerFeedbackTargetResolver({
-    required ActiveServerScope? Function() scopeSource,
-  }) : _scopeSource = scopeSource;
+    required this._scopeSource,
+  });
 
   final ActiveServerScope? Function() _scopeSource;
 

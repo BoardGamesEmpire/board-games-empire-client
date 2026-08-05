@@ -27,8 +27,7 @@ import 'package:interfaces/orchestration.dart';
 /// Owns no resources: subscriptions are per-listener and cancelled with
 /// the listener; nothing to dispose.
 class OrchestratorActiveServerScope implements ActiveServerScope {
-  OrchestratorActiveServerScope({required ServerOrchestrator orchestrator})
-    : _orchestrator = orchestrator;
+  OrchestratorActiveServerScope({required this._orchestrator});
 
   final ServerOrchestrator _orchestrator;
 

@@ -11,8 +11,8 @@ import 'package:interfaces/repositories.dart';
 /// scope (#82) and the orchestrator, not this lookup.
 class ServerRepositoryKnownServerLookup implements KnownServerLookup {
   ServerRepositoryKnownServerLookup({
-    required ServerRepository serverRepository,
-  }) : _serverRepository = serverRepository;
+    required this._serverRepository,
+  });
 
   final ServerRepository _serverRepository;
 

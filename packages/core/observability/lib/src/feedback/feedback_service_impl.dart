@@ -33,17 +33,13 @@ import 'queued_feedback_report.dart';
 ///   id convention.
 class FeedbackServiceImpl implements FeedbackService {
   FeedbackServiceImpl({
-    required List<Breadcrumb> Function() breadcrumbSource,
-    required FeedbackEnvironment Function() environmentSource,
-    required FeedbackTargetResolver targetResolver,
-    required FeedbackSink sink,
+    required this._breadcrumbSource,
+    required this._environmentSource,
+    required this._targetResolver,
+    required this._sink,
     String Function()? correlationKeyGenerator,
     BgeLogger? logger,
-  }) : _breadcrumbSource = breadcrumbSource,
-       _environmentSource = environmentSource,
-       _targetResolver = targetResolver,
-       _sink = sink,
-       _correlationKeyGenerator = correlationKeyGenerator ?? cuid,
+  }) : _correlationKeyGenerator = correlationKeyGenerator ?? cuid,
        _logger = logger ?? BgeLogger('bge.observability.feedback');
 
   final List<Breadcrumb> Function() _breadcrumbSource;

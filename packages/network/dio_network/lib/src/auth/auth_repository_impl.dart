@@ -39,17 +39,12 @@ import 'token_storage_service.dart';
 /// old seven-day guess unsafe to build on.
 class AuthRepositoryImpl implements AuthRepository, Disposable {
   AuthRepositoryImpl({
-    required ServerIdentity identity,
-    required TokenStorageService tokenStorage,
-    required Dio dio,
-    ClockService clock = const LocalClockService(),
-    DateTime Function() deviceNowUtc = _systemDeviceNowUtc,
-  }) : _identity = identity,
-       _tokenStorage = tokenStorage,
-       _dio = dio,
-       _clock = clock,
-       _deviceNowUtc = deviceNowUtc,
-       _stateController = StreamController<AuthState>.broadcast(sync: true);
+    required this._identity,
+    required this._tokenStorage,
+    required this._dio,
+    this._clock = const LocalClockService(),
+    this._deviceNowUtc = _systemDeviceNowUtc,
+  }) : _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   static DateTime _systemDeviceNowUtc() => DateTime.now().toUtc();
 

@@ -39,8 +39,7 @@ import 'watch_disposal.dart';
 class SyncQueueRepositoryImpl
     with WatchDisposal
     implements SyncQueueRepository {
-  SyncQueueRepositoryImpl(this._db, this._clock, {required String userId})
-    : _userId = userId;
+  SyncQueueRepositoryImpl(this._db, this._clock, {required this._userId});
 
   final ServerDatabase _db;
 

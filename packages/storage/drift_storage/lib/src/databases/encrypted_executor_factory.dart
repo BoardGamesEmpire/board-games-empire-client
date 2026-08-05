@@ -63,7 +63,7 @@ import 'package:storage_interface/storage_interface.dart';
 class EncryptedExecutorFactory {
   /// Creates the factory.
   ///
-  /// [keyService] supplies per-database encryption keys.
+  /// [_keyService] supplies per-database encryption keys.
   ///
   /// [baseDirectoryProvider] resolves the directory all database paths are
   /// relative to; it defaults to [getApplicationSupportDirectory] and is
@@ -73,11 +73,10 @@ class EncryptedExecutorFactory {
   /// dev escape hatch) without recompiling; production wiring must not pass
   /// it.
   EncryptedExecutorFactory({
-    required EncryptionKeyService keyService,
+    required this._keyService,
     Future<Directory> Function()? baseDirectoryProvider,
     @visibleForTesting bool? encryptionEnabled,
-  }) : _keyService = keyService,
-       _baseDirectoryProvider =
+  }) : _baseDirectoryProvider =
            baseDirectoryProvider ?? getApplicationSupportDirectory,
        _encryptionEnabled = encryptionEnabled ?? _encryptionEnabledDefault;
 

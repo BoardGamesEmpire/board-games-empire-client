@@ -5,7 +5,8 @@ publish_to: none
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.9.0 <4.0.0"
+  sdk: ^3.12.0
+  flutter: ">=3.44.4"
 resolution: workspace
 
 # Apps are thin wrappers: all composition lives in the platform package

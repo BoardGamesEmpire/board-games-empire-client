@@ -33,10 +33,9 @@ import '../auth/token_storage_service.dart';
 /// one) purely on the strength of being wrong about the time.
 class TokenInterceptor extends Interceptor {
   TokenInterceptor({
-    required TokenStorageService tokenStorage,
-    ClockService clock = const LocalClockService(),
-  }) : _tokenStorage = tokenStorage,
-       _clock = clock;
+    required this._tokenStorage,
+    this._clock = const LocalClockService(),
+  });
 
   final TokenStorageService _tokenStorage;
 

@@ -101,15 +101,11 @@ import 'auth_bloc_state.dart';
 /// reasoning; this bloc does not duplicate it.
 class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   AuthBloc({
-    required AuthRepository authRepository,
-    ConnectivityService? connectivity,
-    Duration restoreBudget = const Duration(seconds: 4),
-    Duration? revalidationInterval = const Duration(seconds: 30),
-  }) : _authRepository = authRepository,
-       _connectivity = connectivity,
-       _restoreBudget = restoreBudget,
-       _revalidationInterval = revalidationInterval,
-       super(const AuthInitial()) {
+    required this._authRepository,
+    this._connectivity,
+    this._restoreBudget = const Duration(seconds: 4),
+    this._revalidationInterval = const Duration(seconds: 30),
+  }) : super(const AuthInitial()) {
     on<AuthSessionCheckRequested>(_onSessionCheck, transformer: droppable());
     on<AuthSessionRevalidationRequested>(
       _onSessionRevalidation,

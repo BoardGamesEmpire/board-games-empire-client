@@ -30,10 +30,9 @@ class CreateHouseholdBloc
     extends Bloc<CreateHouseholdEvent, CreateHouseholdState> {
   CreateHouseholdBloc({
     required HouseholdRepository repository,
-    required HouseholdRemoteDataSource remote,
+    required this._remote,
     BgeLogger? logger,
   }) : _repo = repository,
-       _remote = remote,
        _logger = logger ?? BgeLogger('bge.household.create'),
        super(const CreateHouseholdInitial()) {
     on<CreateHouseholdSubmitted>(_onSubmitted);

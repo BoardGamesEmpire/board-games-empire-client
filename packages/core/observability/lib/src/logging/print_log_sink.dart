@@ -12,12 +12,11 @@ import 'log_sink.dart';
 /// CI/test sink.
 class PrintLogSink implements LogSink {
   /// Creates the sink. [out] defaults to `print`; tests inject a spy.
-  /// [formatter] controls the line shape.
+  /// [_formatter] controls the line shape.
   PrintLogSink({
     void Function(String line)? out,
-    LogRecordFormatter formatter = const LogRecordFormatter(),
-  }) : _out = out ?? _defaultOut,
-       _formatter = formatter;
+    this._formatter = const LogRecordFormatter(),
+  }) : _out = out ?? _defaultOut;
 
   final void Function(String line) _out;
   final LogRecordFormatter _formatter;

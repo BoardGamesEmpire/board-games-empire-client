@@ -67,14 +67,11 @@ import 'package:models/dto.dart';
 /// before the session gate passes.
 class UserDataExportBundler {
   UserDataExportBundler({
-    required UserDataExportRegistry registry,
-    required ServerRepository serverRepository,
-    required BuildInfo buildInfo,
-    DateTime Function() now = _defaultNow,
-  }) : _registry = registry,
-       _serverRepository = serverRepository,
-       _buildInfo = buildInfo,
-       _now = now;
+    required this._registry,
+    required this._serverRepository,
+    required this._buildInfo,
+    this._now = _defaultNow,
+  });
 
   static DateTime _defaultNow() => DateTime.now();
 

@@ -70,13 +70,11 @@ import 'dependency_container_impl.dart';
 class ServerContextImpl implements ServerContext {
   ServerContextImpl({
     required ServerConfig config,
-    List<ServerScopeInstaller> installers = const [],
-    List<UserScopeInstaller> userInstallers = const [],
+    this._installers = const [],
+    this._userInstallers = const [],
     DependencyContainer Function()? containerFactory,
   }) : serverId = config.id,
        _config = config,
-       _installers = installers,
-       _userInstallers = userInstallers,
        _container = _SwappableContainer(
          containerFactory ?? DependencyContainerImpl.new,
        ),
@@ -692,10 +690,9 @@ class _SwappableContainer implements DependencyContainer {
 /// Lifecycle is owned by the context — the view exposes no teardown.
 class _UserScopeView implements DependencyContainer {
   _UserScopeView({
-    required DependencyContainer user,
-    required DependencyContainer Function() base,
-  }) : _user = user,
-       _base = base;
+    required this._user,
+    required this._base,
+  });
 
   final DependencyContainer _user;
 

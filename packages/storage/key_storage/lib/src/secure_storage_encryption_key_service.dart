@@ -30,15 +30,14 @@ import 'package:interfaces/services.dart';
 class SecureStorageEncryptionKeyService implements EncryptionKeyService {
   /// Creates the service.
   ///
-  /// [storage] is injectable for testing; production wiring passes a default
+  /// [_storage] is injectable for testing; production wiring passes a default
   /// [FlutterSecureStorage]. [random] must be cryptographically secure and
   /// defaults to [Random.secure] — it is injectable only so tests can make
   /// generation deterministic.
   SecureStorageEncryptionKeyService({
-    required FlutterSecureStorage storage,
+    required this._storage,
     Random? random,
-  }) : _storage = storage,
-       _random = random ?? Random.secure();
+  }) : _random = random ?? Random.secure();
 
   static const _prefix = 'encryption_key:';
   static const _metaIdentifier = 'meta';

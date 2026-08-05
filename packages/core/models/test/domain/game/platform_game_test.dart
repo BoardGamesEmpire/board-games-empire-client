@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:models/domain.dart';
 
 DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');

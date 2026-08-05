@@ -28,18 +28,13 @@ import 'server_onboarding_state.dart';
 class ServerOnboardingBloc
     extends Bloc<ServerOnboardingEvent, ServerOnboardingState> {
   ServerOnboardingBloc({
-    required WellKnownClient wellKnownClient,
-    required VersionNegotiator versionNegotiator,
-    required ConnectivityService connectivityService,
-    required BuildInfo buildInfo,
-    required ServerOrchestrator orchestrator,
+    required this._wellKnownClient,
+    required this._versionNegotiator,
+    required this._connectivityService,
+    required this._buildInfo,
+    required this._orchestrator,
     BgeLogger? logger,
-  }) : _wellKnownClient = wellKnownClient,
-       _versionNegotiator = versionNegotiator,
-       _connectivityService = connectivityService,
-       _buildInfo = buildInfo,
-       _orchestrator = orchestrator,
-       _logger = logger ?? BgeLogger('bge.onboarding'),
+  }) : _logger = logger ?? BgeLogger('bge.onboarding'),
        super(const ServerOnboardingIdle()) {
     on<ServerOnboardingSubmitted>(_onSubmitted);
   }
