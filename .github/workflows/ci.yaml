@@ -156,6 +156,14 @@ jobs:
   # One root `dart analyze .` walks every workspace member and honours
   # each package's own analysis_options.yaml. Needs generated code, so
   # it restores the artifact from `generate` first.
+  #
+  # --fatal-infos because infos were invisible to every gate before
+  # #158: `dart analyze` exits 0 on them, so three
+  # unintended_html_in_doc_comment infos sat in core/observability
+  # unnoticed and had to be re-triaged as "known" each time anyone
+  # looked. The workspace is clean at this level, so keep it that way —
+  # if a new info is genuinely acceptable, silence it at the source with
+  # an `// ignore:` and a reason rather than reopening the gate.
   analyze:
     name: Analyze
     needs: generate
@@ -176,7 +184,7 @@ jobs:
       - name: Resolve workspace
         run: flutter pub get
       - name: Analyze whole workspace
-        run: dart analyze .
+        run: dart analyze --fatal-infos .
 
   # ── Discover packages that have tests ───────────────────────────
   # Builds the test matrix dynamically so new packages are picked up

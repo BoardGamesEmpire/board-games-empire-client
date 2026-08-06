@@ -1,5 +1,15 @@
-// Verifies that every workspace package declares the same SDK
-// constraints, derived from the root pubspec (#153).
+// Verifies the pubspec invariants that hold across every package in the
+// workspace. Two of them today:
+//
+//   1. SDK constraints match the root pubspec (#153) — the bulk of this
+//      file, and the one `--fix` can repair.
+//   2. Every pubspec, root included, declares `publish_to: none` (#156).
+//
+// Kept under this filename because CI, the `check:constraints` melos
+// script, and a handful of comments all reference it; the name is
+// narrower than the remit.
+//
+// ── 1. SDK constraints ─────────────────────────────────────────────
 //
 // The root `environment.flutter` is an exact version and is the single
 // source of truth for the toolchain — CI installs exactly it via
@@ -20,9 +30,29 @@
 // internal consistency with the root, not the external release history,
 // so there is nothing here to keep current.
 //
+// ── 2. publish_to ──────────────────────────────────────────────────
+//
+// Nothing in this repo is published. `publish_to: none` is the explicit
+// guard, and it was absent on exactly two packages (core/di,
+// core/interfaces) plus the root while present on the other 26 — an
+// oversight, not a decision (#156). Unlike the SDK invariant this one
+// covers the root pubspec as well, since `dart pub publish` from the
+// workspace root would target `board_games_empire`.
+//
+// Check-only: it is a one-line edit, and a rewriter would need its own
+// raw-line inserter and self-test fixtures for no real gain.
+//
+// ── Coverage ───────────────────────────────────────────────────────
+//
+// Packages are discovered from the root `workspace:` list, not from
+// disk, so a package that exists but is not listed is invisible to both
+// invariants. That is the right trade — an unlisted package is not part
+// of the resolve — but do not read this as "every package on disk".
+//
 // Usage:
 //   dart run tool/check_sdk_constraints.dart          # report, exit 1 on drift
-//   dart run tool/check_sdk_constraints.dart --fix    # rewrite offenders
+//   dart run tool/check_sdk_constraints.dart --fix    # rewrite SDK offenders
+//   dart run tool/check_sdk_constraints.dart --self-test
 //
 // Bumping the toolchain is therefore: edit the root `environment:`
 // block, then run with `--fix`.
@@ -95,8 +125,14 @@ void main(List<String> args) {
   }
 
   final problems = <String>[];
+  final publishProblems = <String>[];
   final unfixable = <String>[];
   var fixed = 0;
+
+  // The root is a real package too — `dart pub publish` from here would
+  // target `board_games_empire` — so it gets the publish_to check even
+  // though it is not one of its own `workspace:` members.
+  _checkPublishTo('pubspec.yaml', rootYaml, publishProblems);
 
   for (final dir in members) {
     final path = '$dir/pubspec.yaml';
@@ -108,6 +144,10 @@ void main(List<String> args) {
 
     final source = file.readAsStringSync();
     final yaml = loadYaml(source) as YamlMap;
+
+    // Before the environment checks, which `continue` past this point.
+    _checkPublishTo(path, yaml, publishProblems);
+
     final env = yaml['environment'] as YamlMap?;
     if (env == null) {
       problems.add('$path: has no `environment:` block');
@@ -154,10 +194,31 @@ void main(List<String> args) {
     }
   }
 
+  // Reported before the SDK results and never repaired by --fix, so it
+  // gets its own exit path. Folding it into `problems` would make --fix
+  // claim to have rewritten something it cannot touch.
+  if (publishProblems.isNotEmpty) {
+    // "does not declare", not "missing": the check also catches a
+    // publish_to that is present but set to something else, where
+    // "missing" would misdescribe it.
+    stderr.writeln(
+      '${publishProblems.length} pubspec(s) do not declare '
+      '`publish_to: none`:',
+    );
+    for (final p in publishProblems) {
+      stderr.writeln('  $p');
+    }
+    stderr.writeln(
+      '\nNothing in this repo is published. Set `publish_to: none` below '
+      '`description:` in each — this check does not rewrite it for you.',
+    );
+  }
+
   if (problems.isEmpty) {
+    if (publishProblems.isNotEmpty) exit(1);
     stdout.writeln(
-      'SDK constraints consistent across ${members.length} workspace '
-      'packages (Flutter $pin, sdk $expectedSdk).',
+      'Workspace pubspec invariants hold across ${members.length} packages '
+      'plus the root (Flutter $pin, sdk $expectedSdk, publish_to none).',
     );
     return;
   }
@@ -174,6 +235,7 @@ void main(List<String> args) {
       }
       exit(1);
     }
+    if (publishProblems.isNotEmpty) exit(1);
     stdout.writeln('Run `flutter pub get` to re-resolve.');
     return;
   }
@@ -189,6 +251,18 @@ void main(List<String> args) {
     '\nFix with: dart run tool/check_sdk_constraints.dart --fix',
   );
   exit(1);
+}
+
+/// Records a problem unless [pubspec] declares `publish_to: none`.
+///
+/// Reads the parsed value rather than matching raw text: quoting varies
+/// across the workspace (`none` in most, `'none'` in three), and YAML
+/// resolves both to the same string, where a regex would have to know
+/// about both.
+void _checkPublishTo(String path, YamlMap pubspec, List<String> problems) {
+  final actual = pubspec['publish_to']?.toString();
+  if (actual == 'none') return;
+  problems.add('$path: publish_to is ${_show(actual)}, expected "none"');
 }
 
 String _show(String? value) => value == null ? '(absent)' : '"$value"';

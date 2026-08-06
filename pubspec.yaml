@@ -1,4 +1,5 @@
 name: board_games_empire
+publish_to: none
 
 # ── Toolchain pin (#153) ───────────────────────────────────────────
 # `flutter:` below is an EXACT version, not a floor. It is the single
@@ -118,7 +119,7 @@ melos:
     # the constraint never fails a resolve. CI runs this on every PR.
     check:constraints:
       run: dart run tool/check_sdk_constraints.dart
-      description: Verify every package's sdk/flutter constraints match the root toolchain pin. Add --fix to propagate a bump.
+      description: Verify workspace pubspec invariants — sdk/flutter constraints match the root pin, and every pubspec declares publish_to none. Add --fix to propagate a toolchain bump.
 
     # Analysis and testing
     analyze:
@@ -127,42 +128,56 @@ melos:
       packageFilters:
         flutter: true
 
+    # --fatal-infos to match `flutter analyze`, which treats infos as
+    # fatal already. Without it the pure-Dart half of the workspace had
+    # a weaker gate than the Flutter half, which is how #158's three
+    # infos survived in core/observability. CI's root analyze passes the
+    # same flag.
     analyze:dart:
-      run: melos exec -- dart analyze .
-      description: Run dart analyze on pure-Dart packages
+      run: melos exec -- dart analyze --fatal-infos .
+      description: Run dart analyze on pure-Dart packages (infos fatal, as in flutter analyze)
       packageFilters:
         flutter: false
 
+    # --exclude-tags golden so this matches CI's test job exactly. Run
+    # `test:goldens` for the golden check; see the golden block below.
     test:
-      run: melos exec -c 4 -- "flutter test --coverage --test-randomize-ordering-seed random"
-      description: Run all Flutter tests in workspace
-      packageFilters:
-        dirExists: test
-
-    test:core:
-      run: melos exec -c 1 --scope="packages/core/*" -- "dart test"
-      description: Test all core packages
-      packageFilters:
-        dirExists: test
-
-    test:storage:
-      run: melos exec -c 1 --scope="packages/storage/*" -- "dart test"
-      description: Test all storage packages
+      run: melos exec -c 4 -- "flutter test --coverage --exclude-tags golden --test-randomize-ordering-seed random"
+      description: Run all non-golden tests in the workspace (mirrors CI).
       packageFilters:
         dirExists: test
 
     # ── Golden baselines (#32) ─────────────────────────────────────
-    # Regenerate committed golden baselines after an *intended* visual
-    # change. Runs only golden-tagged tests, in every package with a
-    # test dir; packages without goldens match zero tests and no-op
-    # (exit 0). Writes test/**/goldens/ci/ (committed, Ahem-rendered)
-    # plus test/**/goldens/<platform>/ (gitignored) — commit only the
-    # ci/ PNGs. CI never runs this; CI only compares.
+    # Only test/**/goldens/ci/ is committed (Ahem-rendered, renderer
+    # stable). The per-host test/**/goldens/<platform>/ variant is
+    # disabled in each package's flutter_test_config.dart, because
+    # alchemist compares it for real and its PNGs are gitignored — a
+    # fresh clone would fail on a missing baseline rather than skip.
+    #
+    # `test:goldens` compares against the committed ci/ PNGs and so
+    # works on a fresh clone. `goldens:update` rewrites them after an
+    # *intended* visual change — commit only the ci/ PNGs. Neither runs
+    # in CI, which excludes golden tags entirely; see #159 for closing
+    # that gap.
+    #
+    # Both filter on test/goldens, i.e. packages that actually own
+    # baselines (just ui_tokens today). A package with a test dir but no
+    # golden-tagged tests does NOT no-op: `flutter test --tags golden`
+    # exits 79 ("no tests ran"), which melos reports as a failure. The
+    # broader dirExists: test filter therefore failed in 21 of 22
+    # packages — goldens:update had that bug from the start, and the
+    # comment here used to claim exit 0.
+    test:goldens:
+      run: melos exec -c 1 -- "flutter test --tags golden"
+      description: Compare golden-tagged tests against the committed test/**/goldens/ci/ baselines.
+      packageFilters:
+        dirExists: test/goldens
+
     goldens:update:
       run: melos exec -c 1 -- "flutter test --update-goldens --tags golden"
-      description: Regenerate golden baselines across the workspace. Commit only test/**/goldens/ci/.
+      description: Regenerate golden baselines after an intended visual change. Commit only test/**/goldens/ci/.
       packageFilters:
-        dirExists: test
+        dirExists: test/goldens
 
     # Clean and get dependencies
     clean:
@@ -263,16 +278,36 @@ melos:
       description: Run Flutter doctor
 
     # Run all apps (requires multiple terminals or background processes)
+    #
+    # POSIX shell only — job control, `wait`, `case`, `uname`. It will not
+    # run under cmd or PowerShell, so a Windows contributor should start
+    # `web`, `mobile` and `desktop-windows` in separate terminals instead.
+    # Not worth a Dart rewrite for an experimental convenience script
+    # while `clean:generated` (find) and `web:server` (trap, job control)
+    # carry the same assumption; if that assumption is ever lifted, lift
+    # it across all three rather than here alone.
+    #
+    # There is no `desktop` script — only desktop-macos/-linux/-windows —
+    # so this dispatches on the host. It used to call `melos run desktop`
+    # and fail on that leg every time.
+    #
+    # `melos run web` serves the raw dev server; the cookie-bearing
+    # origin is the proxy (`melos run web:proxy`), which this does not
+    # start. See docs/dev/web-proxy.md.
     run-all:
       run: |
         echo "Starting all applications..."
-        echo "Web: http://localhost:8080"
+        echo "Web dev server: http://localhost:${BGE_WEB_PORT:-5000} (run web:proxy separately for the real origin)"
         echo "Note: Mobile and Desktop require connected devices"
         melos run web &
         melos run mobile &
-        melos run desktop &
+        case "$(uname -s)" in
+          Darwin) melos run desktop-macos & ;;
+          Linux) melos run desktop-linux & ;;
+          *) melos run desktop-windows & ;;
+        esac
         wait
-      description: Run all applications simultaneously (experimental)
+      description: Run all applications simultaneously (experimental; POSIX shell only)
 
     build-all:
       run: |

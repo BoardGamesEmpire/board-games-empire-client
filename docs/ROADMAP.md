@@ -64,8 +64,9 @@ A short orientation for anyone (human or LLM) picking this up cold:
 - **DioFactory / `dio_network` (PR #22, closes #14):** `DioFactory`,
   `DefaultDioFactory`, `TokenInterceptor`, per-platform registration; refactored
   auth repos.
-- Three Flutter apps scaffolded under `apps/{mobile,desktop,browser}/` — **still
-  the counter-template `main.dart`** (replaced in P0).
+- Three Flutter apps under `apps/{mobile,desktop,browser}/`, each a thin
+  `main.dart` that constructs a platform `PlatformBootstrap` and hands it to
+  `runBgeApp` (#31). The counter template is gone.
 
 ## Alpha scope (confirmed)
 
