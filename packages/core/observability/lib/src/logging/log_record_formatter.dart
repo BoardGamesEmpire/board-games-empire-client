@@ -8,12 +8,18 @@ import 'context_log_message.dart';
 /// Renders a [LogRecord] into a single flat line for text sinks — the
 /// rotating file sink and the web `print` console (issue #100).
 ///
-/// One line per record so logs scan vertically: `<time> [<LEVEL>]
-/// <logger>: <message>` optionally followed by ` <compact-json-context>`
-/// and, when an error rode along, ` | <error>`. The level tag is the BGE
-/// five-level name (`VERBOSE`/`DEBUG`/`INFO`/`WARN`/`ERROR`), collapsed
-/// from the underlying `package:logging` [Level] via [BgeLogLevel], not
-/// the raw `FINE`/`SEVERE` names.
+/// One line per record so logs scan vertically:
+/// `<time> [<LEVEL>] <logger>: <message>`, optionally followed by
+/// `<compact-json-context>` and, when an error rode along, `| <error>`.
+/// The level tag is the BGE five-level name
+/// (`VERBOSE`/`DEBUG`/`INFO`/`WARN`/`ERROR`), collapsed from the
+/// underlying `package:logging` [Level] via [BgeLogLevel], not the raw
+/// `FINE`/`SEVERE` names.
+///
+/// Every bracketed placeholder above must open and close its backtick
+/// span on one line: `unintended_html_in_doc_comment` pairs backticks
+/// per line, so a span wrapped across two lines leaves the second line's
+/// angle brackets bare and dartdoc eats them as HTML tags (#158).
 ///
 /// The context is read from the record's structured payload
 /// ([ContextLogMessage] or a raw `Map`), NOT from `record.message` —

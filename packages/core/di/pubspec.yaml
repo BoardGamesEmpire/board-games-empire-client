@@ -1,5 +1,6 @@
 name: di
 description: "Dependency injection setup and configuration"
+publish_to: none
 
 environment:
   sdk: ^3.12.0

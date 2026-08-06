@@ -1,0 +1,10 @@
+# Templates are a starting point, not a gate — blank issues stay enabled so a
+# tech-debt or chore note doesn't have to be forced into a bug/feature shape.
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/BoardGamesEmpire/board-games-empire-client/security/advisories/new
+    about: Report privately, not as a public issue. See SECURITY.md.
+  - name: Setup or toolchain trouble
+    url: https://github.com/BoardGamesEmpire/board-games-empire-client/blob/master/CONTRIBUTING.md
+    about: Resolve errors on `flutter pub get` are usually the exact Flutter pin — check CONTRIBUTING.md first.

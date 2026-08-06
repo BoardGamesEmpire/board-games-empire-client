@@ -1,5 +1,6 @@
 name: interfaces
 description: "Abstract contracts and interfaces"
+publish_to: none
 
 environment:
   sdk: ^3.12.0
