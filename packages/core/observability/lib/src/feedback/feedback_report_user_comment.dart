@@ -9,7 +9,7 @@ import 'feedback_report.dart';
 /// when they approve the prompt. Rebuilding via
 /// `FeedbackService.buildReport` would re-snapshot post-crash breadcrumb
 /// noise, so the comment is appended to the existing draft's message
-/// instead — everything else (stack trace, breadcrumbs, correlationKey,
+/// instead — everything else (stack trace, breadcrumbs, clientRequestId,
 /// environment) is preserved.
 extension FeedbackReportUserComment on FeedbackReport {
   /// Returns a copy with [comment] appended after the existing message,

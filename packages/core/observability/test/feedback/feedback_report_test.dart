@@ -10,7 +10,7 @@ FeedbackReport _validBugReport() => FeedbackReport(
   platform: 'android',
   locale: 'en-US',
   deviceInfo: const {'model': 'Pixel 9'},
-  correlationKey: 'ck-001',
+  clientRequestId: 'ck-001',
 );
 
 void main() {
@@ -122,13 +122,13 @@ void main() {
         appVersion: 'v' * (FeedbackConstants.maxAppVersionLength + 1),
         platform: 'p' * (FeedbackConstants.maxPlatformLength + 1),
         locale: 'l' * (FeedbackConstants.maxLocaleLength + 1),
-        correlationKey: 'c' * (FeedbackConstants.maxCorrelationKeyLength + 1),
+        clientRequestId: 'c' * (FeedbackConstants.maxClientRequestIdLength + 1),
       );
       final violations = report.validate();
       expect(violations, contains(contains('appVersion')));
       expect(violations, contains(contains('platform')));
       expect(violations, contains(contains('locale')));
-      expect(violations, contains(contains('correlationKey')));
+      expect(violations, contains(contains('clientRequestId')));
     });
 
     test('flags userRedactedFields over the backend array cap', () {
@@ -147,6 +147,39 @@ void main() {
         title: 't' * FeedbackConstants.maxTitleLength,
       );
       expect(report.validate(), isEmpty);
+    });
+  });
+
+  // The wire key is produced by json_serializable from the Dart field
+  // name — there is no `@JsonKey` and no `field_rename`, so the rename in
+  // #161 only reaches the wire once codegen re-runs. Nothing else in the
+  // suite would notice a stale `.g.dart` still emitting `correlationKey`;
+  // the backend would, with a 400, because its validation pipe runs
+  // `forbidNonWhitelisted: true`. These assertions are the local
+  // equivalent of that 400.
+  group('FeedbackReport wire shape', () {
+    test('carries the idempotency token as clientRequestId', () {
+      final json = _validBugReport().toJson();
+
+      expect(json['clientRequestId'], 'ck-001');
+    });
+
+    test('does not emit the pre-#161 correlationKey', () {
+      final json = _validBugReport().toJson();
+
+      expect(json.containsKey('correlationKey'), isFalse);
+    });
+
+    test('ignores an unrecognised correlationKey on decode rather than '
+        'throwing — which is why a stale persisted record needs reaping, '
+        'not a decode fallback', () {
+      final json = _validBugReport().toJson()
+        ..remove('clientRequestId')
+        ..['correlationKey'] = 'ck-001';
+
+      final decoded = FeedbackReport.fromJson(json);
+
+      expect(decoded.clientRequestId, isNull);
     });
   });
 }

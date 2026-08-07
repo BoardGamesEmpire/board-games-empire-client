@@ -29,7 +29,7 @@ import 'queued_feedback_report.dart';
 ///   [submit]/[drainPending] (#97).
 /// - [sink] — the durable store for user-approved-but-unsent reports,
 ///   as [QueuedFeedbackReport] records tagged with their server.
-/// - [correlationKeyGenerator] — defaults to cuid2 ([cuid]), the repo's
+/// - [clientRequestIdGenerator] — defaults to cuid2 ([cuid]), the repo's
 ///   id convention.
 class FeedbackServiceImpl implements FeedbackService {
   FeedbackServiceImpl({
@@ -37,16 +37,16 @@ class FeedbackServiceImpl implements FeedbackService {
     required this._environmentSource,
     required this._targetResolver,
     required this._sink,
-    String Function()? correlationKeyGenerator,
+    String Function()? clientRequestIdGenerator,
     BgeLogger? logger,
-  }) : _correlationKeyGenerator = correlationKeyGenerator ?? cuid,
+  }) : _clientRequestIdGenerator = clientRequestIdGenerator ?? cuid,
        _logger = logger ?? BgeLogger('bge.observability.feedback');
 
   final List<Breadcrumb> Function() _breadcrumbSource;
   final FeedbackEnvironment Function() _environmentSource;
   final FeedbackTargetResolver _targetResolver;
   final FeedbackSink _sink;
-  final String Function() _correlationKeyGenerator;
+  final String Function() _clientRequestIdGenerator;
   final BgeLogger _logger;
 
   @override
@@ -57,7 +57,7 @@ class FeedbackServiceImpl implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? correlationKey,
+    String? clientRequestId,
   }) {
     final message = _composeMessage(errorMessage, userComment);
     if (message == null) {
@@ -77,7 +77,7 @@ class FeedbackServiceImpl implements FeedbackService {
       platform: environment.platform,
       locale: environment.locale,
       deviceInfo: environment.deviceInfo,
-      correlationKey: correlationKey ?? _correlationKeyGenerator(),
+      clientRequestId: clientRequestId ?? _clientRequestIdGenerator(),
       breadcrumbs: _trimBreadcrumbs(_breadcrumbSource()),
     );
   }
@@ -92,30 +92,32 @@ class FeedbackServiceImpl implements FeedbackService {
         'Invalid feedback report: ${violations.join('; ')}',
       );
     }
-    final correlationKey = report.correlationKey;
-    if (correlationKey == null || correlationKey.isEmpty) {
+    final clientRequestId = report.clientRequestId;
+    if (clientRequestId == null || clientRequestId.isEmpty) {
       // Also a client-side contract violation, caught before any I/O:
-      // the sink is keyed by the correlationKey, so a keyless report
-      // would otherwise fail *at queue time* and masquerade as a
+      // the sink addresses a record by this value (via
+      // QueuedFeedbackReport.storageKey), so a keyless report would
+      // otherwise fail *at queue time* and masquerade as a
       // FeedbackPersistenceException — a sink fault it isn't.
-      // [buildReport] always supplies a key; only hand-built reports
-      // can land here.
+      // [buildReport] always supplies one; only hand-built reports can
+      // land here.
       throw const FeedbackPermanentSubmissionException(
-        'Invalid feedback report: a correlationKey is required '
+        'Invalid feedback report: a clientRequestId is required '
         '(buildReport generates one)',
       );
     }
-    if (correlationKey.contains('/') ||
-        correlationKey.contains(r'\') ||
-        correlationKey.contains('..')) {
-      // Same misclassification hazard as the keyless case: the key is a
-      // plain storage/idempotency token (cuid2 from [buildReport]), and
-      // durable sinks legitimately reject path segments in it
-      // (FileFeedbackSink interpolates the key into a file name).
-      // Rejecting the shape here, permanently and before any I/O, keeps
-      // that from surfacing as a phantom persistence failure.
+    if (clientRequestId.contains('/') ||
+        clientRequestId.contains(r'\') ||
+        clientRequestId.contains('..')) {
+      // Same misclassification hazard as the keyless case. The value is
+      // a plain token (cuid2 from [buildReport]) that also has to serve
+      // as the record's storage address, and durable sinks legitimately
+      // reject path segments in an address (FileFeedbackSink interpolates
+      // it into a file name). Rejecting the shape here, permanently and
+      // before any I/O, keeps that from surfacing as a phantom
+      // persistence failure.
       throw const FeedbackPermanentSubmissionException(
-        'Invalid feedback report: correlationKey must not contain '
+        'Invalid feedback report: clientRequestId must not contain '
         'path segments',
       );
     }
@@ -153,10 +155,10 @@ class FeedbackServiceImpl implements FeedbackService {
   /// documented) coalesce into it instead of racing: two concurrent
   /// runs would both read the same [FeedbackSink.pending] snapshot
   /// before either removes anything and re-POST every record — harmless
-  /// server-side (correlationKey idempotency) but redundant network
-  /// work and double-counted results. A signal arriving mid-drain gets
-  /// the in-flight run's count; the next signal after completion starts
-  /// a fresh one.
+  /// server-side (`clientRequestId` idempotency, wired by backend #251)
+  /// but redundant network work and double-counted results. A signal
+  /// arriving mid-drain gets the in-flight run's count; the next signal
+  /// after completion starts a fresh one.
   Future<int>? _activeDrain;
 
   @override
@@ -189,7 +191,7 @@ class FeedbackServiceImpl implements FeedbackService {
           'Dropping permanently rejected queued feedback report',
           error: error,
           context: {
-            'correlationKey': record.correlationKey,
+            'clientRequestId': record.storageKey,
             'statusCode': error.statusCode,
           },
         );
@@ -207,14 +209,15 @@ class FeedbackServiceImpl implements FeedbackService {
     return sent;
   }
 
-  /// Removes a drained record, best-effort. A keyless record has no
-  /// address (durable sinks filter these out of pending()); any other
-  /// removal fault — an unusable key reaching a strict sink, a
-  /// transient I/O error — is logged and swallowed rather than allowed
-  /// to abort the drain: the record simply re-sends on the next drain,
-  /// and correlationKey idempotency dedupes it server-side.
+  /// Removes a drained record, best-effort. A record with no storage key
+  /// has no address (durable sinks discard these rather than emitting
+  /// them from pending(), per the [FeedbackSink] contract); any other
+  /// removal fault — an unusable key reaching a strict sink, a transient
+  /// I/O error — is logged and swallowed rather than allowed to abort the
+  /// drain: the record simply re-sends on the next drain, and
+  /// `clientRequestId` idempotency dedupes it server-side.
   Future<void> _removeRecord(QueuedFeedbackReport record) async {
-    final key = record.correlationKey;
+    final key = record.storageKey;
     if (key == null || key.isEmpty) return;
     try {
       await _sink.remove(key);
@@ -223,7 +226,7 @@ class FeedbackServiceImpl implements FeedbackService {
         'Failed to remove drained feedback report',
         error: error,
         stackTrace: stackTrace,
-        context: {'correlationKey': key},
+        context: {'clientRequestId': key},
       );
     }
   }

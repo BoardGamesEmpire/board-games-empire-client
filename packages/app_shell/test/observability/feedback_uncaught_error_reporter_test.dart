@@ -132,7 +132,7 @@ class _FakeFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? correlationKey,
+    String? clientRequestId,
   }) {
     if (buildError != null) throw buildError!;
     buildCalls.add(
@@ -150,7 +150,7 @@ class _FakeFeedbackService implements FeedbackService {
       message: errorMessage ?? userComment ?? 'built',
       stackTrace: stackTrace,
       title: title,
-      correlationKey: 'built-${buildCalls.length}',
+      clientRequestId: 'built-${buildCalls.length}',
     );
     builtReports.add(report);
     return report;

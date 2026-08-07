@@ -13,7 +13,7 @@ import 'package:test/test.dart';
 ///   required FeedbackEnvironment Function() environmentSource,
 ///   required FeedbackTargetResolver targetResolver,   // #97
 ///   required FeedbackSink sink,
-///   String Function()? correlationKeyGenerator, // default: cuid2
+///   String Function()? clientRequestIdGenerator, // default: cuid2
 ///   BgeLogger? logger,
 /// })
 /// ```
@@ -52,13 +52,13 @@ void main() {
     List<Breadcrumb> Function()? breadcrumbSource,
     FeedbackTargetResolver? targetResolver,
     FeedbackSink? sink,
-    String Function()? correlationKeyGenerator,
+    String Function()? clientRequestIdGenerator,
   }) => FeedbackServiceImpl(
     breadcrumbSource: breadcrumbSource ?? () => const [],
     environmentSource: () => environment,
     targetResolver: targetResolver ?? _StaticTargetResolver(null),
     sink: sink ?? _RecordingSink(),
-    correlationKeyGenerator: correlationKeyGenerator,
+    clientRequestIdGenerator: clientRequestIdGenerator,
   );
 
   group('buildReport', () {
@@ -194,7 +194,7 @@ void main() {
       expect(report.validate(), isNot(contains(contains('breadcrumbs'))));
     });
 
-    test('generates a correlationKey when the caller supplies none', () {
+    test('generates a clientRequestId when the caller supplies none', () {
       final service = buildService();
 
       final first = service.buildReport(
@@ -208,14 +208,14 @@ void main() {
         errorMessage: 'It misbehaved',
       );
 
-      expect(first.correlationKey, isNotNull);
-      expect(first.correlationKey, isNotEmpty);
-      expect(first.correlationKey, isNot(second.correlationKey));
+      expect(first.clientRequestId, isNotNull);
+      expect(first.clientRequestId, isNotEmpty);
+      expect(first.clientRequestId, isNot(second.clientRequestId));
     });
 
     test('uses the injected key generator and preserves a caller key', () {
       final service = buildService(
-        correlationKeyGenerator: () => 'generated-key',
+        clientRequestIdGenerator: () => 'generated-key',
       );
 
       final generated = service.buildReport(
@@ -227,11 +227,11 @@ void main() {
         category: FeedbackCategory.bug,
         severity: FeedbackSeverity.low,
         errorMessage: 'It misbehaved',
-        correlationKey: 'caller-key',
+        clientRequestId: 'caller-key',
       );
 
-      expect(generated.correlationKey, 'generated-key');
-      expect(supplied.correlationKey, 'caller-key');
+      expect(generated.clientRequestId, 'generated-key');
+      expect(supplied.clientRequestId, 'caller-key');
     });
   });
 
@@ -404,7 +404,7 @@ void main() {
       expect(sink.persisted, isEmpty);
     });
 
-    test('rejects a report without a correlationKey as permanent before '
+    test('rejects a report without a clientRequestId as permanent before '
         'any I/O — never misclassified as a persistence failure at '
         'queue time', () async {
       final transport = _RecordingTransport();
@@ -433,7 +433,7 @@ void main() {
       expect(sink.persisted, isEmpty);
     });
 
-    test('rejects a path-unsafe correlationKey as permanent before any '
+    test('rejects a path-unsafe clientRequestId as permanent before any '
         'I/O — a durable sink would throw on it at queue time and '
         'masquerade as a persistence failure', () async {
       final sink = _RecordingSink();
@@ -444,7 +444,7 @@ void main() {
           category: FeedbackCategory.bug,
           severity: FeedbackSeverity.low,
           message: 'It misbehaved',
-          correlationKey: key,
+          clientRequestId: key,
         );
 
         await expectLater(
@@ -516,7 +516,7 @@ void main() {
             category: FeedbackCategory.bug,
             severity: FeedbackSeverity.low,
             message: 'pending',
-            correlationKey: key,
+            clientRequestId: key,
           ),
           serverId: serverId,
         );
@@ -540,7 +540,7 @@ void main() {
       final sent = await service.drainPending();
 
       expect(sent, 2);
-      expect(transport.sent.map((r) => r.correlationKey), ['a', 'b']);
+      expect(transport.sent.map((r) => r.clientRequestId), ['a', 'b']);
       expect(sink.removed, ['a', 'b']);
     });
 
@@ -562,7 +562,7 @@ void main() {
       final sent = await service.drainPending();
 
       expect(sent, 1);
-      expect(transport.sent.map((r) => r.correlationKey), ['mine']);
+      expect(transport.sent.map((r) => r.clientRequestId), ['mine']);
       expect(sink.removed, ['mine']);
     });
 
@@ -593,7 +593,7 @@ void main() {
 
       expect(sent, 1);
       expect(sink.removed, ['a']);
-      expect(transport.sent.map((r) => r.correlationKey), ['a', 'b']);
+      expect(transport.sent.map((r) => r.clientRequestId), ['a', 'b']);
     });
 
     test('drops a permanently rejected record and continues — no '
@@ -625,11 +625,11 @@ void main() {
       expect(sent, 1);
       // Both removed: 'bad' as a permanent drop, 'good' as sent.
       expect(sink.removed, ['bad', 'good']);
-      expect(transport.sent.map((r) => r.correlationKey), ['bad', 'good']);
+      expect(transport.sent.map((r) => r.clientRequestId), ['bad', 'good']);
     });
 
     test('a keyless record mid-queue is not removed and does not abort '
-        'the drain — belt-and-braces for a sink that did not filter '
+        'the drain — belt-and-braces for a sink that did not discard '
         'it', () async {
       final transport = _RecordingTransport();
       final sink = _RecordingSink(
@@ -658,7 +658,7 @@ void main() {
       // no address, but it must not throw the drain to a halt).
       expect(sent, 2);
       expect(sink.removed, ['good']);
-      expect(transport.sent.map((r) => r.correlationKey), [null, 'good']);
+      expect(transport.sent.map((r) => r.clientRequestId), [null, 'good']);
     });
 
     test('a removal fault after a successful send is swallowed — the '
@@ -681,7 +681,7 @@ void main() {
       final sent = await service.drainPending();
 
       expect(sent, 2);
-      expect(transport.sent.map((r) => r.correlationKey), ['a', 'b']);
+      expect(transport.sent.map((r) => r.clientRequestId), ['a', 'b']);
       expect(sink.removed, isEmpty);
     });
 
@@ -825,9 +825,9 @@ class _RecordingSink implements FeedbackSink {
   Future<List<QueuedFeedbackReport>> pending() async => List.of(_pending);
 
   @override
-  Future<void> remove(String correlationKey) async {
+  Future<void> remove(String storageKey) async {
     if (removeError != null) throw removeError!;
-    removed.add(correlationKey);
-    _pending.removeWhere((r) => r.correlationKey == correlationKey);
+    removed.add(storageKey);
+    _pending.removeWhere((r) => r.storageKey == storageKey);
   }
 }

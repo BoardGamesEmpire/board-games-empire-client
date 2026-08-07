@@ -15,7 +15,7 @@ void main() {
     category: FeedbackCategory.crash,
     severity: FeedbackSeverity.critical,
     message: 'It broke',
-    correlationKey: 'key-1',
+    clientRequestId: 'key-1',
   );
 
   Widget host(Widget child) => MaterialApp(

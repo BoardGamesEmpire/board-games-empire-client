@@ -2,7 +2,7 @@ import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
 /// Contract pinned (#69, envelope shape #97): keyed by the report's
-/// correlationKey, insertion-ordered pending, idempotent remove — the
+/// storage key, insertion-ordered pending, idempotent remove — the
 /// same observable contract as `FileFeedbackSink`, minus durability.
 void main() {
   QueuedFeedbackReport record(
@@ -14,7 +14,7 @@ void main() {
       category: FeedbackCategory.bug,
       severity: FeedbackSeverity.low,
       message: message,
-      correlationKey: key,
+      clientRequestId: key,
     ),
     serverId: serverId,
   );
@@ -32,7 +32,7 @@ void main() {
 
       final pending = await sink.pending();
 
-      expect(pending.map((r) => r.correlationKey), ['key-a', 'key-b']);
+      expect(pending.map((r) => r.storageKey), ['key-a', 'key-b']);
       expect(pending.first.serverId, 'srv-1');
       expect(pending.last.serverId, isNull);
     });
@@ -57,10 +57,10 @@ void main() {
       await sink.remove('key-a');
       await sink.remove('nope');
 
-      expect((await sink.pending()).map((r) => r.correlationKey), ['key-b']);
+      expect((await sink.pending()).map((r) => r.storageKey), ['key-b']);
     });
 
-    test('rejects a record whose report has no correlationKey — the '
+    test('rejects a record whose report has no clientRequestId — the '
         'sink is keyed by it', () async {
       final sink = MemoryFeedbackSink();
       const keyless = QueuedFeedbackReport(

@@ -25,10 +25,10 @@ void main() {
 
   // Parameterized because FeedbackReport is freezed (value equality) and
   // the stub service maps record.message straight onto report.message with
-  // a constant correlationKey: two reports built from equal records are
+  // a constant clientRequestId: two reports built from equal records are
   // `==`, and ValueNotifier's setter short-circuits on `==` — the change
   // listener never fires. Production is immune (the real service stamps a
-  // unique cuid2 correlationKey per build), but tests simulating "a new
+  // unique cuid2 clientRequestId per build), but tests simulating "a new
   // crash" must make the draft value-distinct or nothing is notified.
   UncaughtErrorRecord record([String message = 'bad state']) =>
       UncaughtErrorRecord.capture(
@@ -238,14 +238,14 @@ class _StubFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? correlationKey,
+    String? clientRequestId,
   }) => FeedbackReport(
     category: category,
     severity: severity ?? FeedbackSeverity.critical,
     message: errorMessage ?? 'crash',
     stackTrace: stackTrace,
     title: title,
-    correlationKey: 'stub-key',
+    clientRequestId: 'stub-key',
   );
 
   @override

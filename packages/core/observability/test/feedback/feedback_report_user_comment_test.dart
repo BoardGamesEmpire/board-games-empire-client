@@ -11,7 +11,7 @@ void main() {
     category: FeedbackCategory.crash,
     severity: FeedbackSeverity.critical,
     message: 'StateError: bad state',
-    correlationKey: 'key-1',
+    clientRequestId: 'key-1',
   );
 
   group('FeedbackReport.withUserComment', () {
@@ -31,7 +31,7 @@ void main() {
 
       expect(result.category, draft.category);
       expect(result.severity, draft.severity);
-      expect(result.correlationKey, draft.correlationKey);
+      expect(result.clientRequestId, draft.clientRequestId);
     });
 
     test('an empty or whitespace-only comment returns the report '
@@ -64,7 +64,7 @@ void main() {
         category: FeedbackCategory.crash,
         severity: FeedbackSeverity.critical,
         message: 'm' * (FeedbackConstants.maxMessageLength - 2),
-        correlationKey: 'key-1',
+        clientRequestId: 'key-1',
       );
 
       final result = full.withUserComment('would not fit');
@@ -80,7 +80,7 @@ void main() {
         category: FeedbackCategory.crash,
         severity: FeedbackSeverity.critical,
         message: 'm' * (FeedbackConstants.maxMessageLength - 3),
-        correlationKey: 'key-1',
+        clientRequestId: 'key-1',
       );
 
       final result = nearFull.withUserComment('AB');

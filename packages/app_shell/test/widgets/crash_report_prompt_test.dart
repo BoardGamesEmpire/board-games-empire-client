@@ -25,7 +25,7 @@ void main() {
     message: 'StateError: bad state',
     stackTrace: '#0 main (file.dart:1)',
     title: 'StateError',
-    correlationKey: 'key-1',
+    clientRequestId: 'key-1',
   );
 
   Future<void> pumpPrompt(
@@ -85,7 +85,7 @@ void main() {
       expect(submitted, isNotNull);
       expect(submitted!.message, contains('StateError: bad state'));
       expect(submitted!.message, contains('I was adding a game'));
-      expect(submitted!.correlationKey, draft.correlationKey);
+      expect(submitted!.clientRequestId, draft.clientRequestId);
     });
 
     testWidgets('send without a comment submits the draft unchanged', (

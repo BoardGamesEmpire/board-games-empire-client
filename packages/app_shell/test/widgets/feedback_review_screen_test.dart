@@ -23,7 +23,7 @@ void main() {
     platform: 'macos',
     locale: 'en-US',
     deviceInfo: const {'model': 'MacBookPro', 'osVersion': '14.5'},
-    correlationKey: 'key-1',
+    clientRequestId: 'key-1',
     breadcrumbs: [
       Breadcrumb(
         timestamp: DateTime.utc(2026, 1, 1),

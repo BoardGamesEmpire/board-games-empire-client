@@ -11,18 +11,25 @@ import 'queued_feedback_report.dart';
 /// `observability`.
 ///
 /// Insertion order is preserved so [pending] drains oldest-first.
+///
+/// [pending] has no reject path, so the discard obligation in the
+/// [FeedbackSink] contract is satisfied trivially: [persist] refuses an
+/// un-addressable record up front, records are keyed by the value read
+/// off the record itself (so key and address cannot disagree), and
+/// nothing here can decay into an undecodable state the way persisted
+/// bytes can.
 class MemoryFeedbackSink implements FeedbackSink {
   final Map<String, QueuedFeedbackReport> _byKey = {};
   final List<String> _order = [];
 
   @override
   Future<void> persist(QueuedFeedbackReport record) async {
-    final key = record.correlationKey;
+    final key = record.storageKey;
     if (key == null || key.isEmpty) {
       throw ArgumentError.value(
-        record.correlationKey,
-        'record.report.correlationKey',
-        'MemoryFeedbackSink requires a correlationKey',
+        record.storageKey,
+        'record.report.clientRequestId',
+        'MemoryFeedbackSink requires a storage key',
       );
     }
     if (!_byKey.containsKey(key)) _order.add(key);
@@ -35,9 +42,9 @@ class MemoryFeedbackSink implements FeedbackSink {
   ];
 
   @override
-  Future<void> remove(String correlationKey) async {
-    if (_byKey.remove(correlationKey) != null) {
-      _order.remove(correlationKey);
+  Future<void> remove(String storageKey) async {
+    if (_byKey.remove(storageKey) != null) {
+      _order.remove(storageKey);
     }
   }
 }

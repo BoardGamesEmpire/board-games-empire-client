@@ -35,7 +35,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     late final Response<Map<String, dynamic>> response;
     try {
       response = await _dio.post<Map<String, dynamic>>(
-        '/households',
+        '/api/households',
         data: {
           'name': name,
           'description': ?description,

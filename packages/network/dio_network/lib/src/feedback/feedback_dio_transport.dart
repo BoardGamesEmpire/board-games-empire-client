@@ -40,7 +40,7 @@ class FeedbackDioTransport implements FeedbackTransport {
   Future<void> send(FeedbackReport report) async {
     try {
       final response = await _dio.post<dynamic>(
-        '/feedback/reports',
+        '/api/feedback/reports',
         data: report.toJson(),
       );
       // Defensive: Dio throws on non-2xx by default, but a custom

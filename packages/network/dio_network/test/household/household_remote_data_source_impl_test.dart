@@ -38,13 +38,13 @@ Response<Map<String, dynamic>> _resp(
 }) => Response(
   data: data,
   statusCode: statusCode,
-  requestOptions: RequestOptions(path: '/households'),
+  requestOptions: RequestOptions(path: '/api/households'),
 );
 
 DioException _dioError(DioExceptionType type, {Response<dynamic>? response}) =>
     DioException(
       type: type,
-      requestOptions: RequestOptions(path: '/households'),
+      requestOptions: RequestOptions(path: '/api/households'),
       response: response,
     );
 
@@ -112,14 +112,14 @@ void main() {
         expect(household.image, isNull);
       });
 
-      test('hits the relative /households path', () async {
+      test('hits the relative /api/households path', () async {
         stubPost(_resp(_createEnvelope(_householdJson())));
 
         await remote.createHousehold(name: 'Game Night HQ');
 
         verify(
           () => mockDio.post<Map<String, dynamic>>(
-            '/households',
+            '/api/households',
             data: any(named: 'data'),
           ),
         ).called(1);
