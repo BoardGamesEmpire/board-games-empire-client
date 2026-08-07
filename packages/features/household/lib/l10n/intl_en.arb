@@ -20,6 +20,10 @@
   "@createHouseholdSubmit": {
     "description": "Label for the button that submits the create-household form."
   },
+  "createHouseholdInProgress": "Creating household…",
+  "@createHouseholdInProgress": {
+    "description": "Progress label announced and shown while the household is being created"
+  },
   "createHouseholdSynced": "Household created.",
   "@createHouseholdSynced": {
     "description": "Confirmation shown when the household was created and confirmed by the server."

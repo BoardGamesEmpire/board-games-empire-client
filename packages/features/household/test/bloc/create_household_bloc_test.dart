@@ -53,20 +53,21 @@ void main() {
   CreateHouseholdBloc build() =>
       CreateHouseholdBloc(repository: repo, remote: remote);
 
+  /// Stubs a successful inline server send returning the canonical row.
+  void stubRemoteSuccess() {
+    when(
+      () => remote.createHousehold(
+        name: any(named: 'name'),
+        description: any(named: 'description'),
+      ),
+    ).thenAnswer((_) async => _household(id: 'hh_server', localOnly: false));
+  }
+
   group('CreateHouseholdBloc', () {
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
       'inline sync success -> Submitting then Success(pendingSync:false), '
       'reconciling with the canonical id and the queue id',
-      setUp: () {
-        when(
-          () => remote.createHousehold(
-            name: any(named: 'name'),
-            description: any(named: 'description'),
-          ),
-        ).thenAnswer(
-          (_) async => _household(id: 'hh_server', localOnly: false),
-        );
-      },
+      setUp: stubRemoteSuccess,
       build: build,
       act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
       expect: () => [
@@ -168,14 +169,7 @@ void main() {
       'reconcile failure after a successful create -> Success(pendingSync:true) '
       'rather than stranding the bloc in Submitting',
       setUp: () {
-        when(
-          () => remote.createHousehold(
-            name: any(named: 'name'),
-            description: any(named: 'description'),
-          ),
-        ).thenAnswer(
-          (_) async => _household(id: 'hh_server', localOnly: false),
-        );
+        stubRemoteSuccess();
         when(
           () => repo.reconcileCreatedHousehold(
             any(),
@@ -197,17 +191,7 @@ void main() {
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
       'sends the repository-canonical (trimmed) name to the remote, '
       'not the raw submitted value',
-      setUp: () {
-        // The repository trims: a submitted "  HQ  " persists as "HQ".
-        when(
-          () => remote.createHousehold(
-            name: any(named: 'name'),
-            description: any(named: 'description'),
-          ),
-        ).thenAnswer(
-          (_) async => _household(id: 'hh_server', localOnly: false),
-        );
-      },
+      setUp: stubRemoteSuccess,
       build: build,
       act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: '  HQ  ')),
       verify: (_) {
@@ -225,6 +209,77 @@ void main() {
             description: any(named: 'description'),
           ),
         ).called(1);
+      },
+    );
+
+    // #132: the re-entrancy guard in _onSubmitted. The disabled submit
+    // button is a *different* defense living in the form; this covers the
+    // bloc's own, which is what protects the keyboard "done" path and any
+    // future caller that dispatches the event directly.
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'a second submit while one is in flight is dropped: one Submitting, '
+      'one local write, one remote send',
+      setUp: stubRemoteSuccess,
+      build: build,
+      act: (bloc) {
+        // The first handler runs synchronously up to its first await (past
+        // the guard and the Submitting emit), so the second event is
+        // delivered into the Submitting state.
+        bloc
+          ..add(const CreateHouseholdSubmitted(name: 'HQ'))
+          ..add(const CreateHouseholdSubmitted(name: 'HQ'));
+      },
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_server')
+            .having((s) => s.pendingSync, 'pendingSync', isFalse),
+      ],
+      verify: (_) {
+        verify(() => repo.create(name: 'HQ', description: null)).called(1);
+        verify(
+          () => remote.createHousehold(name: 'HQ', description: null),
+        ).called(1);
+      },
+    );
+
+    // #132: the guard must not latch. A failure returns the bloc to a
+    // non-Submitting state, so the user's retry has to be accepted — the
+    // screen keeps the form mounted precisely so they can retry.
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'a retry after a local failure is accepted (the guard does not latch)',
+      setUp: () {
+        stubRemoteSuccess();
+        var attempt = 0;
+        when(
+          () => repo.create(
+            name: any(named: 'name'),
+            description: any(named: 'description'),
+          ),
+        ).thenAnswer((_) async {
+          attempt++;
+          if (attempt == 1) throw StateError('db is down');
+          return (household: _household(), syncQueueId: 'q1');
+        });
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const CreateHouseholdSubmitted(name: 'HQ'));
+        // Wait for the terminal failure rather than a bare delay, so the
+        // second submit is provably not a re-entrant one.
+        await bloc.stream.firstWhere((s) => s is CreateHouseholdFailure);
+        bloc.add(const CreateHouseholdSubmitted(name: 'HQ'));
+      },
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdFailure>(),
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_server')
+            .having((s) => s.pendingSync, 'pendingSync', isFalse),
+      ],
+      verify: (_) {
+        verify(() => repo.create(name: 'HQ', description: null)).called(2);
       },
     );
   });
