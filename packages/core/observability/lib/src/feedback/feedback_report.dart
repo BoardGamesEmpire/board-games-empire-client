@@ -29,6 +29,11 @@ part 'feedback_report.g.dart';
 ///   the serialized JSON — the service trims the snapshot oldest-first
 ///   at build time so an over-cap trail never reaches submission.
 ///
+/// Every field name here is a **wire** name: `toJson` is what the
+/// transport POSTs verbatim, and the backend's validation pipe runs with
+/// `forbidNonWhitelisted: true`, so a field this class names differently
+/// from the DTO earns a 400 rather than being quietly ignored.
+///
 /// Invariants enforced at construction (mirroring the DTO's ValidateIf
 /// and IsNotEmpty rules):
 ///
@@ -89,8 +94,18 @@ abstract class FeedbackReport with _$FeedbackReport {
     Map<String, dynamic>? deviceInfo,
 
     /// Idempotency token — unique per (user, report) on the backend, so
-    /// offline-queue retries don't create duplicates.
-    String? correlationKey,
+    /// offline-queue retries don't create duplicates. The backend
+    /// short-circuits a replay to the existing report (backend #251) and
+    /// uses this same field name for `POST /households` (backend #210).
+    ///
+    /// Deliberately **not** named for correlation: the backend's
+    /// `correlationId` is a request-*tracing* concept, and a near-homonym
+    /// here read as a false cognate for it.
+    ///
+    /// Durable sinks address a queued record by this value — see
+    /// `QueuedFeedbackReport.storageKey`, the single point where the wire
+    /// vocabulary meets the storage vocabulary.
+    String? clientRequestId,
 
     /// Field paths redacted before submission. Sets
     /// `redactionApplied=true` server-side.
@@ -117,6 +132,9 @@ abstract class FeedbackReport with _$FeedbackReport {
   /// returns human-readable violations (empty when submittable). Each
   /// violation names the offending field, so the submission UI can map
   /// messages onto inputs.
+  ///
+  /// These strings are English literals naming *wire* fields; see #166
+  /// for making them structured and localizable.
   List<String> validate() {
     final violations = <String>[];
 
@@ -152,9 +170,9 @@ abstract class FeedbackReport with _$FeedbackReport {
     cap('platform', platform, FeedbackConstants.maxPlatformLength);
     cap('locale', locale, FeedbackConstants.maxLocaleLength);
     cap(
-      'correlationKey',
-      correlationKey,
-      FeedbackConstants.maxCorrelationKeyLength,
+      'clientRequestId',
+      clientRequestId,
+      FeedbackConstants.maxClientRequestIdLength,
     );
 
     if (userRedactedFields.length > FeedbackConstants.maxRedactedFields) {

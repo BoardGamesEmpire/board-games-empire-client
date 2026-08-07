@@ -95,8 +95,8 @@ import 'router_back_interceptor.dart';
 /// changes identity while the review surface is open, the slot is cleared
 /// and the flow bounces back to the compact prompt — which reads the live
 /// draft each build, so the newer crash is what the user sees. (Comparing
-/// `correlationKey` would be equivalent today; `identical()` was chosen as
-/// the smaller primitive. Revisit with `correlationKey` if the reporter
+/// `clientRequestId` would be equivalent today; `identical()` was chosen as
+/// the smaller primitive. Revisit with `clientRequestId` if the reporter
 /// ever starts rebuilding equal drafts as new instances.)
 ///
 /// System back (#106): while the crash flow is up, a
@@ -112,7 +112,7 @@ import 'router_back_interceptor.dart';
 /// surface's internal phase, so system back during its sending/terminal
 /// phases also bounces to the prompt even though the visible `BackButton`
 /// is disabled/hidden then — a re-send from the prompt is deduplicated
-/// server-side by the report's `correlationKey`.
+/// server-side by the report's `clientRequestId`.
 ///
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and

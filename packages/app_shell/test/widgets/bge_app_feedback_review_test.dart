@@ -122,14 +122,14 @@ class _StubFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? correlationKey,
+    String? clientRequestId,
   }) => FeedbackReport(
     category: category,
     severity: severity ?? FeedbackSeverity.critical,
     message: errorMessage ?? 'crash',
     stackTrace: stackTrace,
     title: title,
-    correlationKey: 'stub-key',
+    clientRequestId: 'stub-key',
   );
 
   @override

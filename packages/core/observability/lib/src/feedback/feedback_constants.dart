@@ -31,8 +31,9 @@ abstract final class FeedbackConstants {
   /// Field-level cap on `locale`.
   static const int maxLocaleLength = 32;
 
-  /// Field-level cap on `correlationKey`.
-  static const int maxCorrelationKeyLength = 128;
+  /// Field-level cap on `clientRequestId` (backend #251; the same field
+  /// name and cap `POST /households` uses, per backend #210).
+  static const int maxClientRequestIdLength = 128;
 
   /// Cap on the `userRedactedFields` array length.
   static const int maxRedactedFields = 64;

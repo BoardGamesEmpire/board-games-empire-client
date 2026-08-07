@@ -37,6 +37,22 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   factory QueuedFeedbackReport.fromJson(Map<String, dynamic> json) =>
       _$QueuedFeedbackReportFromJson(json);
 
-  /// The report's idempotency token — the sink's storage key.
-  String? get correlationKey => report.correlationKey;
+  /// The sink's address for this record.
+  ///
+  /// This getter is the **only** place the wire vocabulary and the
+  /// storage vocabulary meet. [FeedbackSink] and its implementations know
+  /// records by `storageKey`; the value they get is the report's
+  /// [FeedbackReport.clientRequestId], because reusing the idempotency
+  /// token as the address is what makes a drain racing a resubmission
+  /// safe — the same record can't be queued twice under two names, and a
+  /// replayed send dedupes server-side (backend #251).
+  ///
+  /// Not a stored field: deriving it keeps a single source of truth, so
+  /// the address can never drift from the token that has to match it.
+  ///
+  /// Null when the report carries no `clientRequestId`. Such a record is
+  /// un-addressable: `FeedbackSink.persist` rejects it, and
+  /// `FeedbackSink.pending` discards it rather than emitting something no
+  /// drain could ever remove.
+  String? get storageKey => report.clientRequestId;
 }

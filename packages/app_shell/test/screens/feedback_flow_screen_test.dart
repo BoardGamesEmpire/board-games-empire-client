@@ -174,7 +174,7 @@ class _RecordingFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? correlationKey,
+    String? clientRequestId,
   }) {
     buildCalls.add(
       _BuildCall(
@@ -190,7 +190,7 @@ class _RecordingFeedbackService implements FeedbackService {
       severity: severity,
       message: userComment ?? errorMessage ?? 'message',
       title: title,
-      correlationKey: 'stub-${buildCalls.length}',
+      clientRequestId: 'stub-${buildCalls.length}',
     );
   }
 

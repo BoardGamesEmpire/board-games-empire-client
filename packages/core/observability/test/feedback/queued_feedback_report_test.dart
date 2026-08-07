@@ -11,23 +11,25 @@ import 'package:test/test.dart';
 ///   pure mirror of the backend's `CreateFeedbackReportDto`.
 /// - JSON round-trips losslessly, tagged and untagged, so the file sink
 ///   can store the envelope as-is.
-/// - The envelope's JSON is distinguishable from a legacy bare-report
-///   map by the presence of the `report` key (the sink's legacy-decode
-///   pivot).
+/// - The report nests under a `report` key rather than being flattened
+///   alongside `serverId`, so the wire DTO stays recoverable verbatim.
+///   The file sink's legacy bare-report decode path, which used this key
+///   as its pivot, was removed with #161 — a bare-report file is now
+///   reaped, so the shape assertion stands on its own terms.
 void main() {
   const report = FeedbackReport(
     category: FeedbackCategory.crash,
     severity: FeedbackSeverity.critical,
     message: 'It broke',
     stackTrace: '#0 main (file.dart:1)',
-    correlationKey: 'key-1',
+    clientRequestId: 'key-1',
   );
 
   group('QueuedFeedbackReport', () {
-    test('exposes the report correlationKey as its own storage key', () {
+    test('exposes the report clientRequestId as its own storage key', () {
       const record = QueuedFeedbackReport(report: report, serverId: 'srv-1');
 
-      expect(record.correlationKey, 'key-1');
+      expect(record.storageKey, 'key-1');
     });
 
     test('serverId defaults to null — an untagged, device-global '
@@ -60,18 +62,20 @@ void main() {
       expect(decoded.serverId, isNull);
     });
 
-    test('nests the report as a map under the "report" key — the '
-        'envelope-vs-legacy pivot the file sink relies on', () {
+    test('nests the report as a map under the "report" key rather than '
+        'flattening it alongside serverId', () {
       const record = QueuedFeedbackReport(report: report, serverId: 'srv-1');
 
       final json = record.toJson();
 
       expect(json['report'], isA<Map<String, dynamic>>());
       expect(
-        (json['report'] as Map<String, dynamic>)['correlationKey'],
+        (json['report'] as Map<String, dynamic>)['clientRequestId'],
         'key-1',
       );
-      // The legacy bare-report shape has no 'report' key.
+      // A bare report is not mistakable for an envelope: it has no
+      // 'report' key, so decoding one as an envelope fails and the file
+      // sink reaps it (#161) rather than accepting it.
       expect(report.toJson().containsKey('report'), isFalse);
     });
   });

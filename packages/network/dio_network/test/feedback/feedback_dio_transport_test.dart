@@ -29,7 +29,7 @@ void main() {
     severity: FeedbackSeverity.critical,
     message: 'It broke',
     stackTrace: '#0 main (file.dart:1)',
-    correlationKey: 'key-1',
+    clientRequestId: 'key-1',
   );
 
   late _MockDio dio;
@@ -38,7 +38,7 @@ void main() {
     dio = _MockDio();
   });
 
-  RequestOptions options() => RequestOptions(path: '/feedback/reports');
+  RequestOptions options() => RequestOptions(path: '/api/feedback/reports');
 
   Response<dynamic> response(int statusCode) =>
       Response<dynamic>(requestOptions: options(), statusCode: statusCode);
@@ -63,7 +63,7 @@ void main() {
       expect(FeedbackDioTransport(dio), isA<FeedbackTransport>());
     });
 
-    test('POSTs the report JSON to /feedback/reports and completes on '
+    test('POSTs the report JSON to /api/feedback/reports and completes on '
         '201', () async {
       when(
         () => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')),
@@ -72,7 +72,7 @@ void main() {
       await send();
 
       verify(
-        () => dio.post<dynamic>('/feedback/reports', data: report.toJson()),
+        () => dio.post<dynamic>('/api/feedback/reports', data: report.toJson()),
       ).called(1);
     });
 
