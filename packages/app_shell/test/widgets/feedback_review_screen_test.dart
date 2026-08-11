@@ -299,8 +299,15 @@ void main() {
         'toggled state — a11y baseline', (tester) async {
       await pumpReview(tester);
 
+      // The key now sits on `BgeSubmitButton`, which renders the FilledButton;
+      // reading semantics off the wrapper returns the enclosing route node.
       expect(
-        tester.getSemantics(find.byKey(FeedbackReviewScreen.sendButtonKey)),
+        tester.getSemantics(
+          find.descendant(
+            of: find.byKey(FeedbackReviewScreen.sendButtonKey),
+            matching: find.byType(FilledButton),
+          ),
+        ),
         isSemantics(isButton: true),
       );
       expect(

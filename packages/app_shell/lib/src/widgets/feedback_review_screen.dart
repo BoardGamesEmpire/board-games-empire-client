@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
 
 import '../../l10n/shell_localizations.dart';
@@ -272,10 +274,15 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       children: [
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: EdgeInsets.fromLTRB(
+                  BgeTokens.of(context).spaceMd,
+                  BgeTokens.of(context).spaceMd,
+                  BgeTokens.of(context).spaceMd,
+                  BgeTokens.of(context).spaceSm,
+                ),
                 child: Text(i18n.feedbackReviewExplanation),
               ),
               _sectionHeader(i18n.feedbackReviewSectionReport),
@@ -310,7 +317,12 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   }
 
   Widget _sectionHeader(String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    padding: EdgeInsets.fromLTRB(
+      BgeTokens.of(context).spaceMd,
+      BgeTokens.of(context).spaceMd,
+      BgeTokens.of(context).spaceMd,
+      BgeTokens.of(context).spaceXs,
+    ),
     child: Semantics(
       header: true,
       child: Text(text, style: Theme.of(context).textTheme.titleSmall),
@@ -343,11 +355,22 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       ExpansionTile(
         key: FeedbackReviewScreen.stackTraceSectionKey,
         title: Text(i18n.feedbackReviewStackTrace),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        childrenPadding: EdgeInsets.fromLTRB(
+          BgeTokens.of(context).spaceMd,
+          0,
+          BgeTokens.of(context).spaceMd,
+          BgeTokens.of(context).spaceMd,
+        ),
         children: [
           SelectableText(
             trace,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            // Monospace is load-bearing here — a stack trace's alignment is
+            // information — so this legitimately sits outside the type scale.
+            // It still derives from it: bodySmall supplies the size and the
+            // scheme supplies the color, and only the family is overridden.
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontFamily: BgeTypography.monospaceFamily,
+            ),
           ),
         ],
       );
@@ -372,20 +395,16 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   Widget _footer(ShellLocalizations i18n, {required bool sending}) => SafeArea(
     top: false,
     child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: SizedBox(
-        width: double.infinity,
-        child: FilledButton(
-          key: FeedbackReviewScreen.sendButtonKey,
-          onPressed: sending ? null : _send,
-          child: sending
-              ? const SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(i18n.feedbackReviewSend),
-        ),
+      padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
+      // Was a hand-rolled in-flight button with a bare spinner: while sending,
+      // it announced as an unnamed disabled button. BgeSubmitButton keeps the
+      // accessible name and announces the state change (#165).
+      child: BgeSubmitButton(
+        key: FeedbackReviewScreen.sendButtonKey,
+        label: i18n.feedbackReviewSend,
+        progressLabel: i18n.feedbackReviewSending,
+        submitting: sending,
+        onPressed: _send,
       ),
     ),
   );
@@ -400,7 +419,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   }) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -411,12 +430,12 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
                 key: key,
                 children: [
                   Icon(icon),
-                  const SizedBox(width: 8),
+                  const BgeGap.sm(axis: Axis.horizontal),
                   Expanded(child: Text(text)),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const BgeGap.md(),
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton(

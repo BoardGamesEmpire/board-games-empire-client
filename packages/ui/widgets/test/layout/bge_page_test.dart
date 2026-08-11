@@ -1,0 +1,103 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
+
+Widget _host(
+  Widget child, {
+  Size size = const Size(400, 800),
+  double scale = 1,
+}) {
+  return MediaQuery(
+    data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
+    child: MaterialApp(theme: BgeTheme.light(), home: child),
+  );
+}
+
+void main() {
+  group('BgePage content width', () {
+    testWidgets('constrains the content column on a wide window', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(2560, 1440);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _host(const BgePage(child: Text('body')), size: const Size(2560, 1440)),
+      );
+
+      // Unconstrained, a form stretches across the whole monitor and a label
+      // ends up a forearm away from its input.
+      final width = tester.getSize(find.text('body')).width;
+      expect(width, lessThanOrEqualTo(BgeTokens.standard.contentMaxWidth));
+    });
+
+    testWidgets('is inert on a phone-width window', (tester) async {
+      await tester.pumpWidget(
+        _host(const BgePage(child: Text('body')), size: const Size(360, 800)),
+      );
+
+      // 480 is wider than any phone, so the constraint must not bite here.
+      expect(tester.takeException(), isNull);
+      expect(find.text('body'), findsOneWidget);
+    });
+  });
+
+  group('BgePage scrolling', () {
+    testWidgets('scrolls content that overflows at large text scale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          BgePage(
+            child: Column(children: List.generate(40, (i) => Text('row $i'))),
+          ),
+          size: const Size(320, 480),
+          scale: 2,
+        ),
+      );
+
+      // The failure mode this prevents is not cosmetic: without a scroll view,
+      // the bottom of a form is permanently unreachable at the 200% text scale
+      // the app guarantees.
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+    });
+
+    testWidgets('scrolls even when the content fits', (tester) async {
+      await tester.pumpWidget(_host(const BgePage(child: Text('short'))));
+
+      // Scroll is not opt-in per screen; each new screen re-deciding it is how
+      // one of them gets it wrong.
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+    });
+  });
+
+  group('BgePage chrome', () {
+    testWidgets('shows an app bar only when a title is given', (tester) async {
+      await tester.pumpWidget(_host(const BgePage(child: Text('b'))));
+      expect(find.byType(AppBar), findsNothing);
+
+      await tester.pumpWidget(
+        _host(const BgePage(title: Text('Settings'), child: Text('b'))),
+      );
+      expect(find.byType(AppBar), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+    });
+
+    testWidgets('centers vertically only when asked', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          const BgePage(centerVertically: true, child: Text('centered')),
+          size: const Size(400, 800),
+        ),
+      );
+
+      final center = tester.getCenter(find.text('centered'));
+      // Roughly mid-viewport rather than pinned to the top.
+      expect(center.dy, greaterThan(200));
+      expect(tester.takeException(), isNull);
+    });
+  });
+}

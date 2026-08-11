@@ -62,7 +62,7 @@ void main() {
       expect(find.text('Household name'), findsOneWidget);
       expect(find.text('Description (optional)'), findsOneWidget);
       expect(
-        find.widgetWithText(ElevatedButton, 'Create household'),
+        find.widgetWithText(FilledButton, 'Create household'),
         findsOneWidget,
       );
     });
@@ -198,8 +198,11 @@ void main() {
         ),
       );
 
-      final button = tester.widget<ElevatedButton>(
-        find.byKey(CreateHouseholdForm.submitButtonKey),
+      final button = tester.widget<FilledButton>(
+        find.descendant(
+          of: find.byKey(CreateHouseholdForm.submitButtonKey),
+          matching: find.byType(FilledButton),
+        ),
       );
       expect(button.onPressed, isNull, reason: 'disabled, but still present');
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -348,11 +351,11 @@ void main() {
       // spinner has no accessible name, so a screen reader announces
       // nothing at the moment the user most needs status.
       expect(
-        find.widgetWithText(ElevatedButton, 'Creating household…'),
+        find.widgetWithText(FilledButton, 'Creating household…'),
         findsOneWidget,
       );
       // Matched by ancestry of the progress label rather than by position:
-      // ElevatedButton contributes its own Semantics, so "the first
+      // FilledButton contributes its own Semantics, so "the first
       // Semantics under the button" is not ours.
       expect(
         find.ancestor(
@@ -370,7 +373,12 @@ void main() {
       // property of the node the platform sees, not of which widgets happen
       // to be nested where.
       expect(
-        tester.getSemantics(find.byKey(CreateHouseholdForm.submitButtonKey)),
+        tester.getSemantics(
+          find.descendant(
+            of: find.byKey(CreateHouseholdForm.submitButtonKey),
+            matching: find.byType(FilledButton),
+          ),
+        ),
         isSemantics(
           label: 'Creating household…',
           isButton: true,
@@ -428,7 +436,7 @@ void main() {
       // there would be worse than the bare spinner it replaced.
       expect(tester.takeException(), isNull);
       expect(
-        find.widgetWithText(ElevatedButton, 'Creating household…'),
+        find.widgetWithText(FilledButton, 'Creating household…'),
         findsOneWidget,
       );
     });

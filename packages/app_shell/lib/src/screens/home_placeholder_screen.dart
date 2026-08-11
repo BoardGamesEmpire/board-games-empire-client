@@ -1,6 +1,7 @@
 import 'package:auth/auth.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -50,9 +51,11 @@ class HomePlaceholderScreen extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: BoxConstraints(
+              maxWidth: BgeTokens.of(context).contentMaxWidth,
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -62,13 +65,13 @@ class HomePlaceholderScreen extends StatelessWidget {
                     size: 48,
                     color: theme.colorScheme.primary,
                   ),
-                  const SizedBox(height: 16),
+                  const BgeGap.md(),
                   Text(
                     l10n.authSignInTitle,
                     style: theme.textTheme.headlineSmall,
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
+                  const BgeGap.lg(),
                   Semantics(
                     button: true,
                     child: OutlinedButton.icon(
@@ -78,7 +81,7 @@ class HomePlaceholderScreen extends StatelessWidget {
                       label: Text(feedbackL10n.feedbackComposeTitle),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const BgeGap.sm(),
                   Semantics(
                     button: true,
                     child: OutlinedButton.icon(
@@ -88,7 +91,7 @@ class HomePlaceholderScreen extends StatelessWidget {
                       label: Text(shellL10n.settingsTitle),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const BgeGap.sm(),
                   Semantics(
                     button: true,
                     child: OutlinedButton.icon(

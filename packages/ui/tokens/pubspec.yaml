@@ -26,3 +26,34 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # The display typeface (#32). Bundled, never fetched — an app that reaches
+  # out to a font CDN at startup leaks a request per user, which is exactly
+  # what a self-hosted, privacy-first client must not do. Bundling costs
+  # binary size (~360KB) and nothing else.
+  #
+  # Applies to the display/headline/title roles ONLY; body and label stay on
+  # the platform typeface. See `BgeTypography` for why that split exists.
+  #
+  # ONE variable font covers every weight the app uses. Static instances would
+  # mean a separate ~120KB file per weight, so the variable file is smaller in
+  # aggregate as soon as more than three weights are in play — and it unlocks
+  # the `opsz` axis, which `BgeTypography.opticalSizeFor` uses to give large
+  # display text genuinely different letterforms from small titles.
+  #
+  # Every axis must be set explicitly. Fraunces' own `fvar` defaults are
+  # opsz=9, wght=900, WONK=1 — small-text letterforms, black weight, wonky
+  # alternates on — so an unspecified axis is not "neutral", it is a choice,
+  # and rarely the one you want. See `BgeTypography`.
+  #
+  # Not subsetted, deliberately: this build maps 624 codepoints and contains
+  # no Cyrillic or Greek to strip, so the usual subsetting win is not there.
+  # Dropping axes would save more, but `opsz` is load-bearing and the rest is
+  # small — not worth a fonttools step in the toolchain for it.
+  #
+  # Licensed SIL OFL 1.1 — `fonts/OFL.txt` ships beside it, as the licence
+  # requires. Do not remove that file.
+  fonts:
+    - family: Fraunces
+      fonts:
+        - asset: fonts/Fraunces-Variable.ttf

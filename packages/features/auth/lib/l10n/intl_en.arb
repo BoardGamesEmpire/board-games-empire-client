@@ -36,6 +36,14 @@
   "@authPasswordCreateHint": {
     "description": "Password field hint text on the registration form"
   },
+  "authPasswordShow": "Show password",
+  "@authPasswordShow": {
+    "description": "Tooltip and screen-reader label for the control that reveals the typed password"
+  },
+  "authPasswordHide": "Hide password",
+  "@authPasswordHide": {
+    "description": "Tooltip and screen-reader label for the control that re-obscures the typed password"
+  },
   "authUsernameLabel": "Username",
   "@authUsernameLabel": {
     "description": "Username field label"

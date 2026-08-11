@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 
@@ -63,9 +64,11 @@ class BootstrapErrorScreen extends StatelessWidget {
     return Scaffold(
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: BoxConstraints(
+              maxWidth: BgeTokens.of(context).contentMaxWidth,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -76,7 +79,7 @@ class BootstrapErrorScreen extends StatelessWidget {
                     color: colorScheme.error,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const BgeGap.md(),
                 // Live region so screen readers announce the failure when
                 // it appears, without needing focus to land on it.
                 MergeSemantics(
@@ -89,9 +92,9 @@ class BootstrapErrorScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const BgeGap.sm(),
                 Text(i18n.shellBootstrapErrorBody, textAlign: TextAlign.center),
-                const SizedBox(height: 24),
+                const BgeGap.lg(),
                 FilledButton(
                   key: retryButtonKey,
                   style: FilledButton.styleFrom(minimumSize: _minTapTarget),
@@ -99,7 +102,7 @@ class BootstrapErrorScreen extends StatelessWidget {
                   child: Text(i18n.shellBootstrapErrorRetry),
                 ),
                 if (canOfferReset) ...[
-                  const SizedBox(height: 12),
+                  const BgeGap.sm(),
                   OutlinedButton(
                     key: resetButtonKey,
                     style: OutlinedButton.styleFrom(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import 'home_menu_entry.dart';
@@ -78,6 +79,19 @@ class _HomeScreenState extends State<HomeScreen> {
         // Launcher semantics: entries push routes / fire actions and
         // return, so nothing is persistently selected yet.
         selectedIndex: null,
+        // Set explicitly, because it is load-bearing for alignment and
+        // Flutter's default is an untokenized 12.
+        //
+        // A destination's content starts at `tilePadding + 16` — the 16 is a
+        // fixed gutter inside NavigationDrawerDestination that is not
+        // configurable. So the header, the divider, and the action tiles
+        // (whose ListTile adds its own 16) all have to be inset by this same
+        // value to line up. Leaving the default 12 while the surrounding
+        // insets moved onto the token scale is exactly how the two groups
+        // drifted 4dp apart.
+        tilePadding: EdgeInsetsDirectional.symmetric(
+          horizontal: BgeTokens.of(context).spaceSm,
+        ),
         onDestinationSelected: (index) => _select(destinations[index]),
         children: [
           _DrawerHeader(
@@ -88,12 +102,31 @@ class _HomeScreenState extends State<HomeScreen> {
             NavigationDrawerDestination(
               key: HomeScreen.entryKey(entry.id),
               icon: Icon(entry.icon),
-              label: Text(entry.label),
+              // Flexible, not a bare Text. `NavigationDrawerDestination`
+              // places the label as a direct, non-flexed child of an internal
+              // Row, so the Text's intrinsic width drives layout and
+              // `overflow: ellipsis` alone never engages — it only applies
+              // once the Text is width-constrained. Flexible supplies that
+              // constraint from the one position that can.
+              //
+              // The hazard is real rather than theoretical: this label fit by
+              // luck under the previous typeface and went 2.4px over when the
+              // type scale gained letter-spacing. A longer localization would
+              // have done the same. SemanticsNode.label keeps the full string.
+              label: Flexible(
+                child: Text(entry.label, overflow: TextOverflow.ellipsis),
+              ),
             ),
           if (actions.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(28, 8, 28, 8),
-              child: Divider(),
+            Padding(
+              // spaceLg (24) = the drawer's content inset: `tilePadding`
+              // (spaceSm) plus the 16 gutter inside each destination. See
+              // `tilePadding` above; `home_screen_test.dart` pins it.
+              padding: EdgeInsets.symmetric(
+                horizontal: BgeTokens.of(context).spaceLg,
+                vertical: BgeTokens.of(context).spaceSm,
+              ),
+              child: const Divider(),
             ),
             for (final entry in actions)
               _DrawerActionTile(entry: entry, onSelected: () => _select(entry)),
@@ -103,9 +136,11 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: BoxConstraints(
+              maxWidth: BgeTokens.of(context).contentMaxWidth,
+            ),
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -114,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     size: 48,
                     color: theme.colorScheme.primary,
                   ),
-                  const SizedBox(height: 16),
+                  const BgeGap.md(),
                   Semantics(
                     header: true,
                     child: Text(
@@ -123,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const BgeGap.sm(),
                   Text(
                     l10n.homeEmptyStateBody,
                     style: theme.textTheme.bodyMedium,
@@ -157,12 +192,19 @@ class _DrawerHeader extends StatelessWidget {
 
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 16, 8),
+      // Start inset is spaceLg (24) to match the drawer's content inset —
+      // `tilePadding` (spaceSm) plus the 16 gutter inside each destination.
+      padding: EdgeInsets.fromLTRB(
+        BgeTokens.of(context).spaceLg,
+        BgeTokens.of(context).spaceMd,
+        BgeTokens.of(context).spaceMd,
+        BgeTokens.of(context).spaceSm,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(serverLabel, style: theme.textTheme.labelSmall),
-          const SizedBox(height: 4),
+          const BgeGap.xs(),
           Semantics(
             header: true,
             child: Text(name, style: theme.textTheme.titleMedium),
@@ -186,7 +228,9 @@ class _DrawerActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.error;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      // spaceSm here + ListTile's own 16 content padding = the same 24 the
+      // destinations sit at. Both halves have to move together.
+      padding: EdgeInsets.symmetric(horizontal: BgeTokens.of(context).spaceSm),
       child: ListTile(
         key: HomeScreen.entryKey(entry.id),
         leading: Icon(entry.icon, color: color),

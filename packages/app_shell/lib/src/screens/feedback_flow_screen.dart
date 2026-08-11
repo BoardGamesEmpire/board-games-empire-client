@@ -1,5 +1,6 @@
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
 
 import '../widgets/feedback_review_screen.dart';
@@ -94,9 +95,11 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
         child: SingleChildScrollView(
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: BoxConstraints(
+                maxWidth: BgeTokens.of(context).contentMaxWidth,
+              ),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
                 child: FeedbackComposeForm(model: _model, onSubmit: _onCompose),
               ),
             ),

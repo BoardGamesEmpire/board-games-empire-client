@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 
@@ -13,9 +14,11 @@ class NotYetAvailableScreen extends StatelessWidget {
     return Scaffold(
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: BoxConstraints(
+              maxWidth: BgeTokens.of(context).contentMaxWidth,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -24,7 +27,7 @@ class NotYetAvailableScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineSmall,
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const BgeGap.sm(),
                 Text(
                   i18n.shellNotYetAvailableBody,
                   textAlign: TextAlign.center,

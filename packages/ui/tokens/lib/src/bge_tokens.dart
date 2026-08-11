@@ -30,28 +30,79 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     required this.radiusLg,
     required this.minTapTarget,
     required this.focusOutlineWidth,
+    required this.contentMaxWidth,
+    required this.breakpointMedium,
+    required this.breakpointExpanded,
     required this.motionShort,
     required this.motionMedium,
     required this.motionLong,
   });
 
+  // ── Scale primitives ───────────────────────────────────────────────
+  // The spacing scale as bare `const double`s, so it can be referenced from
+  // const initializers. Dart forbids reading an instance field of a const
+  // object inside a constant expression, so `BgeTokens.standard.spaceMd` is
+  // not available to one — which `BgeGap`'s const constructors need. These are
+  // the single source of truth; [standard] is built from them.
+
+  /// Extra-small spacing step: 4dp.
+  static const double spaceXsValue = 4;
+
+  /// Small spacing step: 8dp. The intra-control gap.
+  static const double spaceSmValue = 8;
+
+  /// Medium spacing step: 16dp. The inter-control rhythm.
+  static const double spaceMdValue = 16;
+
+  /// Large spacing step: 24dp. The section break.
+  static const double spaceLgValue = 24;
+
+  /// Extra-large spacing step: 32dp.
+  static const double spaceXlValue = 32;
+
+  /// Double-extra-large spacing step: 48dp.
+  static const double spaceXxlValue = 48;
+
   /// The app-wide token values.
   static const BgeTokens standard = BgeTokens(
-    spaceXs: 4,
-    spaceSm: 8,
-    spaceMd: 16,
-    spaceLg: 24,
-    spaceXl: 32,
-    spaceXxl: 48,
+    spaceXs: spaceXsValue,
+    spaceSm: spaceSmValue,
+    spaceMd: spaceMdValue,
+    spaceLg: spaceLgValue,
+    spaceXl: spaceXlValue,
+    spaceXxl: spaceXxlValue,
     radiusSm: 4,
     radiusMd: 12,
     radiusLg: 16,
     minTapTarget: 48,
     focusOutlineWidth: 2,
+    contentMaxWidth: 480,
+    breakpointMedium: 600,
+    breakpointExpanded: 840,
     motionShort: Duration(milliseconds: 150),
     motionMedium: Duration(milliseconds: 300),
     motionLong: Duration(milliseconds: 500),
   );
+
+  /// The ambient token set, or [standard] when no theme provides one.
+  ///
+  /// **Prefer this over `Theme.of(context).extension<BgeTokens>()!`.** Two
+  /// reasons, and the second is the important one:
+  ///
+  /// 1. Ergonomics. The extension lookup is long enough at a call site that
+  ///    people quietly keep typing `16` instead — which is how this token set
+  ///    ended up with zero consumers repo-wide before #165.
+  /// 2. The fallback. Widget tests across the feature packages pump a bare
+  ///    `MaterialApp`, where the extension resolves to `null` and the
+  ///    bang-operator form throws. Falling back to [standard] means tokenizing
+  ///    a widget does not drag its whole test file along with it — and since
+  ///    [standard] is exactly what every `BgeTheme` installs, the fallback
+  ///    renders identically to the themed path rather than approximating it.
+  ///
+  /// Mirrors the shape `BgeMotion.durationOf` and `BgeTextScale.clampedOf`
+  /// already use, so the token layer presents one consistent accessor idiom.
+  static BgeTokens of(BuildContext context) =>
+      Theme.of(context).extension<BgeTokens>() ?? standard;
 
   // ── Spacing scale (logical px) ─────────────────────────────────────
 
@@ -94,6 +145,25 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// Visible-focus indicator stroke width (WCAG 2.4.7).
   final double focusOutlineWidth;
 
+  // ── Layout ─────────────────────────────────────────────────────────
+
+  /// Maximum width of a page's primary content column (logical px).
+  ///
+  /// Keeps forms and prose at a comfortable measure on desktop and web
+  /// instead of stretching them across a 2560px monitor. Applied by `BgePage`;
+  /// this literal was previously copy-pasted into eleven screens.
+  final double contentMaxWidth;
+
+  /// Width at or above which a layout may use its medium form (logical px).
+  final double breakpointMedium;
+
+  /// Width at or above which a layout may use its expanded form (logical px).
+  ///
+  /// Breakpoints exist because desktop and browser are first-class targets
+  /// here, not an afterthought — a phone-shaped layout stretched to a desktop
+  /// window is the most common way a cross-platform Flutter app looks wrong.
+  final double breakpointExpanded;
+
   // ── Motion durations ───────────────────────────────────────────────
   // Resolve through `BgeMotion.durationOf` so OS reduced-motion collapses
   // them to zero.
@@ -120,6 +190,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     double? radiusLg,
     double? minTapTarget,
     double? focusOutlineWidth,
+    double? contentMaxWidth,
+    double? breakpointMedium,
+    double? breakpointExpanded,
     Duration? motionShort,
     Duration? motionMedium,
     Duration? motionLong,
@@ -136,6 +209,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       radiusLg: radiusLg ?? this.radiusLg,
       minTapTarget: minTapTarget ?? this.minTapTarget,
       focusOutlineWidth: focusOutlineWidth ?? this.focusOutlineWidth,
+      contentMaxWidth: contentMaxWidth ?? this.contentMaxWidth,
+      breakpointMedium: breakpointMedium ?? this.breakpointMedium,
+      breakpointExpanded: breakpointExpanded ?? this.breakpointExpanded,
       motionShort: motionShort ?? this.motionShort,
       motionMedium: motionMedium ?? this.motionMedium,
       motionLong: motionLong ?? this.motionLong,
@@ -159,6 +235,17 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       focusOutlineWidth: lerpDouble(
         focusOutlineWidth,
         other.focusOutlineWidth,
+        t,
+      )!,
+      contentMaxWidth: lerpDouble(contentMaxWidth, other.contentMaxWidth, t)!,
+      breakpointMedium: lerpDouble(
+        breakpointMedium,
+        other.breakpointMedium,
+        t,
+      )!,
+      breakpointExpanded: lerpDouble(
+        breakpointExpanded,
+        other.breakpointExpanded,
         t,
       )!,
       motionShort: lerpDuration(motionShort, other.motionShort, t),

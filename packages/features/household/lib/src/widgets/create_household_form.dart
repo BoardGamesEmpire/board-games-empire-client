@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:household/l10n/household_localizations.dart';
 
@@ -15,15 +17,17 @@ import 'package:household/l10n/household_localizations.dart';
 /// accessible name); the name field advances to the description with the
 /// keyboard's "next" action, and the description's "done" action submits.
 ///
-/// The in-flight treatment follows `ServerAddForm` (#36), which is the
-/// house pattern for this (#132): the button is disabled but **keeps an
-/// accessible name** — it swaps the submit label for a localized progress
-/// label rather than leaving a bare spinner, and the swap sits in a
-/// [Semantics] live region so assistive tech announces the state change
-/// instead of only exposing it on next focus. The fields go read-only for
-/// the same reason they do there: their values were captured at submit, so
-/// edits during the send would be silently discarded, and read-only also
-/// tears down the input connection, which closes the keyboard submit path
+/// The in-flight treatment comes from [BgeSubmitButton] (#165). It used to be
+/// hand-rolled here, copied from `ServerAddForm` — which is how #163's
+/// overflow reached two screens instead of one. The button is disabled but
+/// **keeps an accessible name**, swapping the submit label for a localized
+/// progress label rather than leaving a bare spinner, inside a live region so
+/// assistive tech announces the change instead of only exposing it on next
+/// focus. All of that now lives in one widget.
+///
+/// The fields go read-only while submitting: their values were captured at
+/// submit, so edits during the send would be silently discarded, and read-only
+/// also tears down the input connection, which closes the keyboard submit path
 /// while in flight.
 class CreateHouseholdForm extends StatefulWidget {
   const CreateHouseholdForm({
@@ -104,60 +108,34 @@ class _CreateHouseholdFormState extends State<CreateHouseholdForm> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          ReactiveTextField<String>(
+          BgeTextField(
             key: CreateHouseholdForm.nameFieldKey,
             formControlName: 'name',
+            label: l10n.createHouseholdNameLabel,
             readOnly: widget.submitting,
-            textInputAction: TextInputAction.next,
-            decoration: InputDecoration(
-              labelText: l10n.createHouseholdNameLabel,
-              border: const OutlineInputBorder(),
-            ),
             validationMessages: {
               ValidationMessage.required: (_) =>
                   l10n.createHouseholdNameRequired,
             },
           ),
-          const SizedBox(height: 16),
-          ReactiveTextField<String>(
+          const BgeGap.md(),
+          BgeTextField(
             key: CreateHouseholdForm.descriptionFieldKey,
             formControlName: 'description',
+            label: l10n.createHouseholdDescriptionLabel,
             readOnly: widget.submitting,
             textInputAction: TextInputAction.done,
             minLines: 1,
             maxLines: 3,
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              labelText: l10n.createHouseholdDescriptionLabel,
-              border: const OutlineInputBorder(),
-            ),
+            onSubmitted: _submit,
           ),
-          const SizedBox(height: 24),
-          ElevatedButton(
+          const BgeGap.lg(),
+          BgeSubmitButton(
             key: CreateHouseholdForm.submitButtonKey,
-            onPressed: widget.submitting ? null : _submit,
-            child: widget.submitting
-                ? Semantics(
-                    liveRegion: true,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        const SizedBox(width: 12),
-                        // Flexible, not a bare Text: the label's intrinsic
-                        // width outgrows a narrow screen at large text scale,
-                        // and an unbounded child in a Row overflows rather
-                        // than wrapping. Let it wrap and grow the button.
-                        Flexible(child: Text(l10n.createHouseholdInProgress)),
-                      ],
-                    ),
-                  )
-                : Text(l10n.createHouseholdSubmit),
+            label: l10n.createHouseholdSubmit,
+            progressLabel: l10n.createHouseholdInProgress,
+            submitting: widget.submitting,
+            onPressed: _submit,
           ),
         ],
       ),

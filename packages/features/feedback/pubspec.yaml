@@ -18,6 +18,12 @@ dependencies:
 
   reactive_forms: ^18.1.1
   intl: ^0.20.2
+  # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
+  # scale — both declared directly because this package imports from both.
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
 
 dev_dependencies:
   flutter_test:

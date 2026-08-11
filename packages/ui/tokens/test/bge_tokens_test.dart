@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -16,9 +17,99 @@ void main() {
       expect(t.radiusLg, 16);
       expect(t.minTapTarget, 48);
       expect(t.focusOutlineWidth, 2);
+      expect(t.contentMaxWidth, 480);
+      expect(t.breakpointMedium, 600);
+      expect(t.breakpointExpanded, 840);
       expect(t.motionShort, const Duration(milliseconds: 150));
       expect(t.motionMedium, const Duration(milliseconds: 300));
       expect(t.motionLong, const Duration(milliseconds: 500));
+    });
+
+    test('is built from the const scale primitives', () {
+      // The primitives exist so `BgeGap`'s const constructors can reference
+      // the scale (Dart forbids reading an instance field of a const object
+      // in a constant expression). If these ever drift from `standard`, a gap
+      // widget and a padding sourced from the same token would disagree.
+      expect(BgeTokens.standard.spaceXs, BgeTokens.spaceXsValue);
+      expect(BgeTokens.standard.spaceSm, BgeTokens.spaceSmValue);
+      expect(BgeTokens.standard.spaceMd, BgeTokens.spaceMdValue);
+      expect(BgeTokens.standard.spaceLg, BgeTokens.spaceLgValue);
+      expect(BgeTokens.standard.spaceXl, BgeTokens.spaceXlValue);
+      expect(BgeTokens.standard.spaceXxl, BgeTokens.spaceXxlValue);
+    });
+  });
+
+  group('BgeTokens.of', () {
+    testWidgets('returns the installed extension under a BgeTheme', (
+      tester,
+    ) async {
+      late BgeTokens resolved;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          home: Builder(
+            builder: (context) {
+              resolved = BgeTokens.of(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      expect(resolved, same(BgeTokens.standard));
+    });
+
+    testWidgets('falls back to standard under a bare MaterialApp', (
+      tester,
+    ) async {
+      // This is the property that lets a widget be tokenized without dragging
+      // its whole test file along: feature widget tests pump a bare
+      // MaterialApp, where the extension resolves to null.
+      late BgeTokens resolved;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              resolved = BgeTokens.of(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      expect(resolved, same(BgeTokens.standard));
+    });
+  });
+
+  group('BgeGap', () {
+    testWidgets('constrains only its own axis', (tester) async {
+      // A gap that sized both axes would force the cross-axis extent of its
+      // parent — a square gap in a Column widens the Column to the gap.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Column(
+            children: [
+              BgeGap.md(),
+              BgeGap.sm(axis: Axis.horizontal),
+            ],
+          ),
+        ),
+      );
+
+      final vertical = tester.getSize(find.byType(BgeGap).first);
+      expect(vertical.height, BgeTokens.spaceMdValue);
+      expect(vertical.width, 0);
+
+      final horizontal = tester.getSize(find.byType(BgeGap).last);
+      expect(horizontal.width, BgeTokens.spaceSmValue);
+      expect(horizontal.height, 0);
+    });
+
+    test('named constructors match the spacing scale', () {
+      expect(const BgeGap.xs().extent, BgeTokens.spaceXsValue);
+      expect(const BgeGap.sm().extent, BgeTokens.spaceSmValue);
+      expect(const BgeGap.md().extent, BgeTokens.spaceMdValue);
+      expect(const BgeGap.lg().extent, BgeTokens.spaceLgValue);
+      expect(const BgeGap.xl().extent, BgeTokens.spaceXlValue);
+      expect(const BgeGap.xxl().extent, BgeTokens.spaceXxlValue);
     });
   });
 

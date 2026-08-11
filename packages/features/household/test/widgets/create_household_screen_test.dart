@@ -124,7 +124,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.widgetWithText(ElevatedButton, 'Create household'),
+        find.widgetWithText(FilledButton, 'Create household'),
         findsOneWidget,
       );
     });
@@ -278,20 +278,23 @@ void main() {
       await fillAndSubmit(tester);
       await tester.pump();
 
-      final button = tester.widget<ElevatedButton>(
-        find.byKey(CreateHouseholdForm.submitButtonKey),
+      final button = tester.widget<FilledButton>(
+        find.descendant(
+          of: find.byKey(CreateHouseholdForm.submitButtonKey),
+          matching: find.byType(FilledButton),
+        ),
       );
       expect(button.onPressed, isNull);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(
-        find.widgetWithText(ElevatedButton, 'Creating household…'),
+        find.widgetWithText(FilledButton, 'Creating household…'),
         findsOneWidget,
         reason: 'the in-flight button keeps an accessible name (#132)',
       );
       // The AppBar title is the same string as the submit label, so this
       // has to be scoped to the button to mean anything.
       expect(
-        find.widgetWithText(ElevatedButton, 'Create household'),
+        find.widgetWithText(FilledButton, 'Create household'),
         findsNothing,
       );
 
@@ -326,8 +329,7 @@ void main() {
       // #162 inverts it. Do not "fix" the test — fix the screen.
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates:
-              HouseholdLocalizations.localizationsDelegates,
+          localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
           supportedLocales: HouseholdLocalizations.supportedLocales,
           home: CreateHouseholdScreen(repository: repo, remote: remote),
         ),

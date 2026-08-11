@@ -42,7 +42,56 @@ void _expectContrast(ColorScheme scheme, {required double minimum}) {
   }
 }
 
+/// Every background a body-text color can legitimately land on.
+///
+/// The authored-pair table above checks `onSurface` against `surface` only.
+/// That is not the whole story: cards, sheets and banners paint one of the
+/// surface-container roles, and text sits on those just as often. Solving the
+/// on-roles against the bare surface alone left the top containers failing
+/// while the pair test still reported green.
+List<(String, Color)> _surfaceFamily(ColorScheme s) => [
+  ('surface', s.surface),
+  ('surfaceDim', s.surfaceDim),
+  ('surfaceBright', s.surfaceBright),
+  ('surfaceContainerLowest', s.surfaceContainerLowest),
+  ('surfaceContainerLow', s.surfaceContainerLow),
+  ('surfaceContainer', s.surfaceContainer),
+  ('surfaceContainerHigh', s.surfaceContainerHigh),
+  ('surfaceContainerHighest', s.surfaceContainerHighest),
+];
+
+void _expectSurfaceFamilyContrast(
+  ColorScheme scheme, {
+  required double minimum,
+}) {
+  for (final (name, background) in _surfaceFamily(scheme)) {
+    for (final (fgName, foreground) in [
+      ('onSurface', scheme.onSurface),
+      ('onSurfaceVariant', scheme.onSurfaceVariant),
+    ]) {
+      final ratio = Wcag.contrastRatio(foreground, background);
+      expect(
+        ratio,
+        greaterThanOrEqualTo(minimum),
+        reason:
+            '$fgName on $name is ${ratio.toStringAsFixed(2)}:1, '
+            'below the required $minimum:1',
+      );
+    }
+  }
+}
+
 void main() {
+  final schemes = <String, (ColorScheme, double)>{
+    'light': (BgeColorSchemes.light, Wcag.aaNormalText),
+    'dark': (BgeColorSchemes.dark, Wcag.aaNormalText),
+    'highContrastLight': (
+      BgeColorSchemes.highContrastLight,
+      Wcag.aaaNormalText,
+    ),
+    'highContrastDark': (BgeColorSchemes.highContrastDark, Wcag.aaaNormalText),
+  };
+
   group('BgeColorSchemes contrast (WCAG 2.1)', () {
     test('light: every authored pair ≥ ${Wcag.aaNormalText}:1 (AA)', () {
       _expectContrast(BgeColorSchemes.light, minimum: Wcag.aaNormalText);
@@ -68,6 +117,37 @@ void main() {
         minimum: Wcag.aaaNormalText,
       );
     });
+  });
+
+  group('BgeColorSchemes surface family', () {
+    for (final entry in schemes.entries) {
+      final (scheme, minimum) = entry.value;
+      test('${entry.key}: body text is legible on every surface role', () {
+        _expectSurfaceFamilyContrast(scheme, minimum: minimum);
+      });
+    }
+  });
+
+  group('BgeColorSchemes hue separation', () {
+    // Contrast answers "can this be read?", never "can these be told apart?".
+    // Ember and crimson can sit at the same luminance, pass every assertion
+    // above, and still be indistinguishable — which is exactly what the first
+    // draft of this palette did at 43° apart.
+    for (final entry in schemes.entries) {
+      final (scheme, _) = entry.value;
+      test('${entry.key}: tertiary (ember) is distinguishable from error', () {
+        final degrees = Oklch.separation(scheme.tertiary, scheme.error);
+        expect(
+          degrees,
+          greaterThanOrEqualTo(Oklch.minAccentSeparation),
+          reason:
+              'tertiary and error are only ${degrees.toStringAsFixed(1)}° '
+              'apart in OKLCH hue; both are warm and mid-luminance, so below '
+              '${Oklch.minAccentSeparation}° they read as the same colour and '
+              'an ember "pending" badge starts looking like an error.',
+        );
+      });
+    }
   });
 
   group('BgeColorSchemes brightness', () {

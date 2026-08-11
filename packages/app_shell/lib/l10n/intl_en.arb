@@ -192,6 +192,10 @@
   "@feedbackReviewSend": {
     "description": "Label of the review screen's send button"
   },
+  "feedbackReviewSending": "Sending report…",
+  "@feedbackReviewSending": {
+    "description": "Label on the send button while the feedback report is being submitted; replaces the resting label so the button keeps an accessible name"
+  },
   "feedbackReviewSent": "Report sent. Thank you!",
   "@feedbackReviewSent": {
     "description": "Confirmation shown when the reviewed report reached the server"

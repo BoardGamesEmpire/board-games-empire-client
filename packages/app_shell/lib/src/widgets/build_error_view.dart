@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import '../../l10n/shell_localizations_en.dart';
@@ -109,9 +110,11 @@ class BuildErrorView extends StatelessWidget {
           // Center's loosened constraints. (The pin-to-top gotcha is the
           // inverted nesting.) Pinned by the geometry test.
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: BoxConstraints(
+                maxWidth: BgeTokens.of(context).contentMaxWidth,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -130,7 +133,7 @@ class BuildErrorView extends StatelessWidget {
                     ),
                   ),
                   if (showDiagnostics) ...[
-                    const SizedBox(height: 16),
+                    const BgeGap.md(),
                     // Developer signal only — excluded from semantics so
                     // screen readers get the friendly message, not a raw
                     // exception string.

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../l10n/shell_localizations.dart';
@@ -41,7 +42,12 @@ class LanguageSettingsEntry implements SettingsEntry {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: EdgeInsets.fromLTRB(
+                BgeTokens.of(context).spaceMd,
+                BgeTokens.of(context).spaceSm,
+                BgeTokens.of(context).spaceMd,
+                0,
+              ),
               child: Text(
                 i18n.settingsLanguageLabel,
                 style: Theme.of(context).textTheme.titleMedium,

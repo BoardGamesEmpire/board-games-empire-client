@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
 
 import '../../l10n/shell_localizations.dart';
@@ -136,12 +137,14 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
     return SafeArea(
       child: Material(
         elevation: 8,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusMd),
         color: theme.colorScheme.surface,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: BoxConstraints(
+              maxWidth: BgeTokens.of(context).contentMaxWidth,
+            ),
             child: switch (_phase) {
               _PromptPhase.composing ||
               _PromptPhase.sending => _composing(i18n),
@@ -187,9 +190,9 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
           i18n.crashReportPromptTitle,
           style: Theme.of(context).textTheme.titleMedium,
         ),
-        const SizedBox(height: 4),
+        const BgeGap.xs(),
         Text(i18n.crashReportPromptExplanation),
-        const SizedBox(height: 12),
+        const BgeGap.sm(),
         if (title != null && title.isNotEmpty)
           Text(title, style: Theme.of(context).textTheme.labelLarge),
         Text(
@@ -197,7 +200,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
           maxLines: 3,
           overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 12),
+        const BgeGap.sm(),
         TextField(
           key: CrashReportPrompt.commentFieldKey,
           controller: _comment,
@@ -212,7 +215,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
         // #106: the back-dismiss hint, host-driven. A live region so the
         // "press back again" affordance is announced when it appears.
         if (widget.showDismissHint) ...[
-          const SizedBox(height: 8),
+          const BgeGap.sm(),
           Semantics(
             liveRegion: true,
             child: Text(
@@ -222,7 +225,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
             ),
           ),
         ],
-        const SizedBox(height: 12),
+        const BgeGap.sm(),
         OverflowBar(
           alignment: MainAxisAlignment.end,
           spacing: 8,
@@ -274,12 +277,12 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
             key: key,
             children: [
               Icon(icon),
-              const SizedBox(width: 8),
+              const BgeGap.sm(axis: Axis.horizontal),
               Expanded(child: Text(text)),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const BgeGap.sm(),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(

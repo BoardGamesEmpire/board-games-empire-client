@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 
@@ -95,9 +96,11 @@ class SessionUnreachableView extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
+              constraints: BoxConstraints(
+                maxWidth: BgeTokens.of(context).contentMaxWidth,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -107,7 +110,7 @@ class SessionUnreachableView extends StatelessWidget {
                     size: 48,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
-                  const SizedBox(height: 16),
+                  const BgeGap.md(),
                   Semantics(
                     liveRegion: true,
                     child: Column(
@@ -117,7 +120,7 @@ class SessionUnreachableView extends StatelessWidget {
                           style: theme.textTheme.headlineSmall,
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 8),
+                        const BgeGap.sm(),
                         Text(
                           l10n.authSessionUnreachableBody,
                           style: theme.textTheme.bodyMedium,
@@ -126,7 +129,7 @@ class SessionUnreachableView extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const BgeGap.lg(),
                   Semantics(
                     button: true,
                     child: FilledButton(

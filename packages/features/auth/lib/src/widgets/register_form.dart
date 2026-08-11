@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 
@@ -6,7 +8,6 @@ import '../../l10n/auth_localizations.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_bloc_state.dart';
-import 'auth_text_field.dart';
 
 /// Registration form for email/password sign-up.
 ///
@@ -85,7 +86,6 @@ class _RegisterFormState extends State<RegisterForm> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l10n = AuthLocalizations.of(context);
 
     return BlocBuilder<AuthBloc, AuthBlocState>(
@@ -99,28 +99,32 @@ class _RegisterFormState extends State<RegisterForm> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                AuthTextField(
+                BgeTextField(
                   formControlName: 'email',
                   label: l10n.authEmailLabel,
                   hint: l10n.authEmailHint,
                   keyboardType: TextInputType.emailAddress,
+                  // An address is not prose. The old AuthTextField exposed no
+                  // way to say so, so these were autocorrected.
+                  autocorrect: false,
+                  enableSuggestions: false,
                   autofillHints: const [AutofillHints.email],
                   textInputAction: TextInputAction.next,
-                  enabled: !isLoading,
+                  readOnly: isLoading,
                   autofocus: true,
                   validationMessages: {
                     ValidationMessage.required: (_) => l10n.authErrorRequired,
                     ValidationMessage.email: (_) => l10n.authErrorInvalidEmail,
                   },
                 ),
-                const SizedBox(height: 16),
-                AuthTextField(
+                const BgeGap.md(),
+                BgeTextField(
                   formControlName: 'username',
                   label: l10n.authUsernameLabel,
                   hint: l10n.authUsernameHint,
                   autofillHints: const [AutofillHints.username],
                   textInputAction: TextInputAction.next,
-                  enabled: !isLoading,
+                  readOnly: isLoading,
                   validationMessages: {
                     ValidationMessage.required: (_) => l10n.authErrorRequired,
                     ValidationMessage.minLength: (e) =>
@@ -129,42 +133,44 @@ class _RegisterFormState extends State<RegisterForm> {
                         ),
                   },
                 ),
-                const SizedBox(height: 16),
+                const BgeGap.md(),
                 // Optional name fields — side by side on wider screens
                 Row(
                   children: [
                     Expanded(
-                      child: AuthTextField(
+                      child: BgeTextField(
                         formControlName: 'firstName',
                         label: l10n.authFirstNameLabel,
                         autofillHints: const [AutofillHints.givenName],
                         textInputAction: TextInputAction.next,
-                        enabled: !isLoading,
+                        readOnly: isLoading,
                         validationMessages: const {},
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const BgeGap.sm(axis: Axis.horizontal),
                     Expanded(
-                      child: AuthTextField(
+                      child: BgeTextField(
                         formControlName: 'lastName',
                         label: l10n.authLastNameLabel,
                         autofillHints: const [AutofillHints.familyName],
                         textInputAction: TextInputAction.next,
-                        enabled: !isLoading,
+                        readOnly: isLoading,
                         validationMessages: const {},
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                AuthTextField(
+                const BgeGap.md(),
+                BgeTextField(
                   formControlName: 'password',
                   label: l10n.authPasswordLabel,
                   hint: l10n.authPasswordCreateHint,
                   isPassword: true,
+                  revealLabel: l10n.authPasswordShow,
+                  obscureLabel: l10n.authPasswordHide,
                   autofillHints: const [AutofillHints.newPassword],
                   textInputAction: TextInputAction.done,
-                  enabled: !isLoading,
+                  readOnly: isLoading,
                   onSubmitted: () => _submit(context),
                   validationMessages: {
                     ValidationMessage.required: (_) => l10n.authErrorRequired,
@@ -174,28 +180,15 @@ class _RegisterFormState extends State<RegisterForm> {
                         ),
                   },
                 ),
-                const SizedBox(height: 24),
-                Semantics(
-                  button: true,
-                  enabled: !isLoading,
-                  label: isLoading
-                      ? l10n.authRegisterLoadingLabel
-                      : l10n.authRegisterButton,
-                  child: FilledButton(
-                    onPressed: isLoading ? null : () => _submit(context),
-                    child: isLoading
-                        ? SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          )
-                        : Text(l10n.authRegisterButton),
-                  ),
+                const BgeGap.lg(),
+                BgeSubmitButton(
+                  label: l10n.authRegisterButton,
+                  progressLabel: l10n.authRegisterLoadingLabel,
+                  submitting: isLoading,
+                  onPressed: () => _submit(context),
                 ),
                 if (widget.onSwitchToSignIn != null) ...[
-                  const SizedBox(height: 16),
+                  const BgeGap.md(),
                   TextButton(
                     onPressed: isLoading ? null : widget.onSwitchToSignIn,
                     child: Text(l10n.authSwitchToSignIn),

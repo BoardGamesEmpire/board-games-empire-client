@@ -196,9 +196,18 @@ melos script that has a CI counterpart, change both.
 - **No hardcoded user-facing strings.** Every user-visible string comes from an
   ARB-backed localizations class, and template keys need an `@key` description —
   the coverage test hard-fails without one.
-- **No literal colors at call sites.** Color, typography, spacing, and motion
-  come from `ui_tokens`. See [packages/ui/tokens/README.md](packages/ui/tokens/README.md)
-  for the contrast guarantees.
+- **No literal colors, spacing, type, or radii at call sites.** All of them
+  come from `ui_tokens` — use `const BgeGap.md()` for spacing,
+  `Theme.of(context).colorScheme` for color, `Theme.of(context).textTheme` for
+  type. This is enforced by
+  `packages/ui/tokens/test/design_system_enforcement_test.dart` (it runs in
+  `melos run test`), not by review. See
+  [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md) for the rules and
+  [packages/ui/tokens/README.md](packages/ui/tokens/README.md) for the contrast
+  guarantees.
+
+  The heading used to say "no literal **colors**" while the body listed spacing
+  too (#165). It means all of them.
 - **Apps stay thin.** Behaviour belongs in `app_shell` or a feature package, not
   in `apps/*/lib/main.dart`.
 - **Platform differences go behind an interface**, as paired implementations

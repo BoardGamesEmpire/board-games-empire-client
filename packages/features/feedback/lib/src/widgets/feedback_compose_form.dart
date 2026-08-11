@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 
@@ -83,13 +85,12 @@ class FeedbackComposeForm extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(l10n.feedbackComposeExplanation),
-          const SizedBox(height: 16),
+          const BgeGap.md(),
           ReactiveDropdownField<FeedbackCategory>(
             key: FeedbackComposeForm.categoryFieldKey,
             formControlName: FeedbackComposeFormModel.categoryControlName,
             decoration: InputDecoration(
               labelText: l10n.feedbackComposeCategoryLabel,
-              border: const OutlineInputBorder(),
             ),
             readOnly: !enabled,
             items: [
@@ -121,14 +122,13 @@ class FeedbackComposeForm extends StatelessWidget {
               // the moment the field is shown again (see the model doc).
               model.syncSeverityEnablement();
               return Padding(
-                padding: const EdgeInsets.only(top: 16),
+                padding: EdgeInsets.only(top: BgeTokens.of(context).spaceMd),
                 child: ReactiveDropdownField<FeedbackSeverity>(
                   key: FeedbackComposeForm.severityFieldKey,
                   formControlName: FeedbackComposeFormModel.severityControlName,
                   readOnly: !enabled,
                   decoration: InputDecoration(
                     labelText: l10n.feedbackComposeSeverityLabel,
-                    border: const OutlineInputBorder(),
                   ),
                   items: [
                     for (final severity in FeedbackSeverity.values)
@@ -145,47 +145,36 @@ class FeedbackComposeForm extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 16),
-          ReactiveTextField<String>(
+          const BgeGap.md(),
+          BgeTextField(
             key: FeedbackComposeForm.messageFieldKey,
             formControlName: FeedbackComposeFormModel.messageControlName,
+            label: l10n.feedbackComposeMessageLabel,
+            hint: l10n.feedbackComposeMessageHint,
             readOnly: !enabled,
             minLines: 3,
             maxLines: 6,
             textInputAction: TextInputAction.newline,
             keyboardType: TextInputType.multiline,
-            decoration: InputDecoration(
-              labelText: l10n.feedbackComposeMessageLabel,
-              hintText: l10n.feedbackComposeMessageHint,
-              border: const OutlineInputBorder(),
-            ),
             validationMessages: {
               ValidationMessage.required: (_) =>
                   l10n.feedbackComposeErrorRequired,
             },
           ),
-          const SizedBox(height: 16),
-          ReactiveTextField<String>(
+          const BgeGap.md(),
+          BgeTextField(
             key: FeedbackComposeForm.titleFieldKey,
             formControlName: FeedbackComposeFormModel.titleControlName,
+            label: l10n.feedbackComposeTitleLabel,
             readOnly: !enabled,
             textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              labelText: l10n.feedbackComposeTitleLabel,
-              border: const OutlineInputBorder(),
-            ),
+            onSubmitted: _submit,
           ),
-          const SizedBox(height: 24),
-          Semantics(
-            button: true,
-            enabled: enabled,
+          const BgeGap.lg(),
+          BgeSubmitButton(
+            key: FeedbackComposeForm.submitButtonKey,
             label: l10n.feedbackComposeReviewButton,
-            child: FilledButton(
-              key: FeedbackComposeForm.submitButtonKey,
-              onPressed: enabled ? _submit : null,
-              child: Text(l10n.feedbackComposeReviewButton),
-            ),
+            onPressed: enabled ? _submit : null,
           ),
         ],
       ),

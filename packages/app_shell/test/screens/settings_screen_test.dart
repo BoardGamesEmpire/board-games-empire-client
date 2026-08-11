@@ -155,9 +155,26 @@ void main() {
         sections: appSections(supportedLocales: const [Locale('en')]),
       );
 
-      expect(find.bySemanticsLabel(RegExp('System default')), findsWidgets);
-      expect(find.bySemanticsLabel(RegExp('Light')), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('Dark')), findsOneWidget);
+      // Scoped to each option's own tile rather than searched screen-wide.
+      // A bare `bySemanticsLabel(RegExp('Light'))` matches any prose on the
+      // screen that happens to contain the word — which is exactly what
+      // happened when explanatory copy was added beneath the selector. The
+      // claim under test is "each option carries its label", so assert it
+      // against the option.
+      for (final (key, label) in const [
+        ('settings_theme_system', 'System default'),
+        ('settings_theme_light', 'Light'),
+        ('settings_theme_dark', 'Dark'),
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.bySemanticsLabel(RegExp(label)),
+          ),
+          findsWidgets,
+          reason: '$key must expose its label to assistive technology',
+        );
+      }
       handle.dispose();
     });
 

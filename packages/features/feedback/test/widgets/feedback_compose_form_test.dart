@@ -162,7 +162,10 @@ void main() {
     );
 
     final button = tester.widget<FilledButton>(
-      find.byKey(FeedbackComposeForm.submitButtonKey),
+      find.descendant(
+        of: find.byKey(FeedbackComposeForm.submitButtonKey),
+        matching: find.byType(FilledButton),
+      ),
     );
     expect(button.onPressed, isNull);
   });
