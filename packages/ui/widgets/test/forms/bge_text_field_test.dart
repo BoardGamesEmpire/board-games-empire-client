@@ -41,6 +41,27 @@ void main() {
       form.dispose();
     });
 
+    testWidgets('exposes its name once, not twice', (tester) async {
+      // Regression: an enclosing `Semantics(label:, textField:)` on top of
+      // `InputDecoration.labelText` produced two nested nodes carrying the
+      // same label, which reads out as "Email, Email". It looked like
+      // belt-and-braces accessibility and was a stutter.
+      final handle = tester.ensureSemantics();
+      final form = _form();
+      await tester.pumpWidget(
+        _host(form, const BgeTextField(formControlName: 'email', label: 'E')),
+      );
+
+      expect(
+        find.bySemanticsLabel('E'),
+        findsOneWidget,
+        reason: 'exactly one semantics node should carry the field name',
+      );
+
+      handle.dispose();
+      form.dispose();
+    });
+
     testWidgets('takes its border from the theme, so fields match across '
         'features', (tester) async {
       final form = _form();

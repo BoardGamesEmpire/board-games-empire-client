@@ -16,7 +16,10 @@ import 'package:ui_tokens/ui_tokens.dart';
 ///
 /// - A visible label, always — never hint-only. A hint disappears the moment
 ///   the user types, taking with it the only clue about what the field wanted.
-/// - [Semantics.label] so VoiceOver/TalkBack read the field name.
+/// - The accessible name comes from `InputDecoration.labelText` alone. An
+///   extra `Semantics(label:)` wrapper looks like insurance and is actually a
+///   stutter: it adds a second node with the same label, so the field
+///   announces as "Email, Email".
 /// - A visually-hidden **live region** announces validation errors the moment
 ///   they appear. Without it, a screen-reader user learns a field is invalid
 ///   only by navigating back onto it — which is how a form ends up feeling
@@ -152,32 +155,34 @@ class _BgeTextFieldState extends State<BgeTextField> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Semantics(
-          label: widget.label,
-          textField: true,
-          child: ReactiveTextField<String>(
-            formControlName: widget.formControlName,
-            autofocus: widget.autofocus,
-            readOnly: widget.readOnly,
-            autocorrect: widget.autocorrect,
-            enableSuggestions: widget.enableSuggestions,
-            obscureText: widget.isPassword && _obscure,
-            textInputAction: widget.textInputAction,
-            keyboardType: widget.keyboardType,
-            autofillHints: widget.autofillHints,
-            minLines: widget.minLines,
-            maxLines: widget.maxLines,
-            onSubmitted: widget.onSubmitted != null
-                ? (_) => widget.onSubmitted!()
-                : null,
-            validationMessages: widget.validationMessages,
-            decoration: InputDecoration(
-              // Label, not hint-only. The border comes from the theme.
-              labelText: widget.label,
-              hintText: widget.hint,
-              helperText: widget.helper,
-              suffixIcon: widget.isPassword ? _visibilityToggle(context) : null,
-            ),
+        // No enclosing `Semantics(label:, textField:)` here, deliberately.
+        // `InputDecoration.labelText` already gives the field both its
+        // accessible name and its textField flag; wrapping it added a SECOND
+        // nested node carrying the same label, which screen readers announce
+        // twice ("Email, Email"). Inherited from the auth-feature original,
+        // where it read as belt-and-braces and was really a stutter.
+        ReactiveTextField<String>(
+          formControlName: widget.formControlName,
+          autofocus: widget.autofocus,
+          readOnly: widget.readOnly,
+          autocorrect: widget.autocorrect,
+          enableSuggestions: widget.enableSuggestions,
+          obscureText: widget.isPassword && _obscure,
+          textInputAction: widget.textInputAction,
+          keyboardType: widget.keyboardType,
+          autofillHints: widget.autofillHints,
+          minLines: widget.minLines,
+          maxLines: widget.maxLines,
+          onSubmitted: widget.onSubmitted != null
+              ? (_) => widget.onSubmitted!()
+              : null,
+          validationMessages: widget.validationMessages,
+          decoration: InputDecoration(
+            // Label, not hint-only. The border comes from the theme.
+            labelText: widget.label,
+            hintText: widget.hint,
+            helperText: widget.helper,
+            suffixIcon: widget.isPassword ? _visibilityToggle(context) : null,
           ),
         ),
         _LiveErrorAnnouncer(

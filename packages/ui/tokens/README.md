@@ -52,12 +52,17 @@ read?", never "can these be told apart?", and these two are the palette's one
 genuinely confusable pair.
 
 `BgeColorSchemes` is **generated** — do not hand-edit it. Change the hues or
-targets in `tool/derive_palette.dart` and regenerate:
+targets in `tool/derive_palette.dart`, verify, then regenerate:
 
 ```bash
+dart tool/derive_palette.dart          # verify; exits 1 if any check fails
 dart -Demit=true tool/derive_palette.dart \
   > packages/ui/tokens/lib/src/bge_color_schemes.dart
 ```
+
+Verification covers every authored pair, the accents against `surface`, body
+text against the whole surface family, and the ember/error hue separation —
+and sets an exit code, so it is safe to chain or run from a script.
 
 Then keep `bge_color_schemes_test.dart` green and refresh the goldens.
 

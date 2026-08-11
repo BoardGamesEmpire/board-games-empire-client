@@ -7,7 +7,7 @@
 // has no way to know which constraint each value was satisfying.
 //
 // Usage:
-//   dart tool/derive_palette.dart                 # verify + print the report
+//   dart tool/derive_palette.dart                 # verify; exits 1 on failure
 //   dart -Demit=true tool/derive_palette.dart \
 //     > packages/ui/tokens/lib/src/bge_color_schemes.dart
 //
@@ -165,7 +165,13 @@ class Scheme {
   final double min;
   final Map<String, int> v = {};
 
-  void report() {
+  /// Prints this scheme's report and returns whether every constraint held.
+  ///
+  /// The return value is load-bearing: `main` turns it into a process exit
+  /// code. Printing "FAIL" while exiting 0 meant the documented verify
+  /// invocation always looked successful, so a broken palette would sail past
+  /// any script or CI step that ran this and trusted the status.
+  bool report() {
     final pairs = <String, (int, int)>{
       'onPrimary/primary': (v['onPrimary']!, v['primary']!),
       'onPrimaryContainer/primaryContainer': (
@@ -214,11 +220,15 @@ class Scheme {
       });
     }
 
-    // Accents must also read on the surface — they're used for icons/labels.
+    // Accents must also read on the surface — they're used for icons and
+    // labels, not only as button fills. A real failure, not a warning: the
+    // previous WARN wording implied it was advisory when nothing downstream
+    // was checking it.
     for (final role in ['primary', 'secondary', 'tertiary', 'error']) {
       final r = contrast(v[role]!, v['surface']!);
       if (r < 4.5) {
-        print('    WARN $role on surface only ${r.toStringAsFixed(2)}:1');
+        ok = false;
+        print('    FAIL $role on surface only ${r.toStringAsFixed(2)}:1');
       }
     }
     // Body text sits on the containers too, not just on `surface`.
@@ -234,14 +244,30 @@ class Scheme {
       final r1 = contrast(v['onSurface']!, v[c]!);
       final r2 = contrast(v['onSurfaceVariant']!, v[c]!);
       if (r1 < min) {
+        ok = false;
         print('    FAIL onSurface/$c ${r1.toStringAsFixed(2)}:1');
       }
       if (r2 < min) {
+        ok = false;
         print('    FAIL onSurfaceVariant/$c ${r2.toStringAsFixed(2)}:1');
       }
     }
+
+    // Hue separation was previously printed and never compared to anything,
+    // so the palette could collapse ember into crimson without the report
+    // saying so. Mirrors `Oklch.minAccentSeparation`; keep the two in step.
+    const minAccentSeparation = 45.0;
     final hd = hueDelta(v['tertiary']!, v['error']!);
-    print('    ember/error hue separation: ${hd.toStringAsFixed(1)}°');
+    if (hd < minAccentSeparation) {
+      ok = false;
+      print(
+        '    FAIL ember/error hue separation ${hd.toStringAsFixed(1)}° '
+        '< $minAccentSeparation°',
+      );
+    } else {
+      print('    ember/error hue separation: ${hd.toStringAsFixed(1)}°');
+    }
+    return ok;
   }
 
   /// Emits the `ColorScheme` body as compilable Dart.
@@ -518,8 +544,19 @@ void main() {
     build('highContrastLight', dark: false, aa: 7.0, hc: true),
   ];
   if (!emitMode) {
+    // Aggregated across every scheme, then turned into an exit code — the
+    // whole point of a "verify" mode is that a caller can act on the result
+    // without reading stdout.
+    var allPass = true;
     for (final s in schemes) {
-      s.report();
+      if (!s.report()) allPass = false;
+    }
+    if (!allPass) {
+      stderr.writeln(
+        '\nPalette verification FAILED. Fix the hues, chroma or targets '
+        'above and re-run before regenerating bge_color_schemes.dart.',
+      );
+      exitCode = 1;
     }
   }
   if (!emitMode) {
