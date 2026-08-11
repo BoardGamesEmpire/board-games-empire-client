@@ -165,10 +165,10 @@ Use these. They exist because the hand-rolled versions drifted.
 
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
-| `BgePage` | 11 copies of Scaffold→SafeArea→Center→Scroll→ConstrainedBox | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained |
-| `BgeSubmitButton` | 4 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
+| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 10 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained |
+| `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance; one semantics node |
-| `BgeTextField` | 2 hand-rolled wrappers | Visible label; live-region error announcement; 48dp password toggle; theme border |
+| `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
 
 ### In-flight forms
 

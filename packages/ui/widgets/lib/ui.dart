@@ -5,10 +5,18 @@
 /// Wiring those is the consuming layer's job (`app_shell` for shell chrome,
 /// feature packages for their screens).
 ///
-/// Everything here is justified by duplication that already existed. The four
-/// core widgets replaced, respectively, 11, 4, 3 and 2 hand-rolled copies
-/// across the feature packages (#165). New widgets belong here once a second
-/// call site wants them — not in anticipation of one.
+/// Everything here is justified by duplication that already existed, and the
+/// migration is complete rather than aspirational — `BgePage` is used by all
+/// 10 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
+/// `BgeTextField` by every form field in 5 files (#165).
+///
+/// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
+/// `BuildErrorView` render above the navigator with no `Scaffold` of their
+/// own, so they are not pages. They share only the width constraint, which
+/// they take from `BgeTokens.contentMaxWidth`.
+///
+/// New widgets belong here once a second call site wants them — not in
+/// anticipation of one.
 library;
 
 export 'src/banners/bge_inline_banner.dart';

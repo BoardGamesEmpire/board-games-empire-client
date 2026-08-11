@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
@@ -71,9 +72,10 @@ class _HomeScreenState extends State<HomeScreen> {
         .where((e) => e.isDestructive)
         .toList(growable: false);
 
-    return Scaffold(
-      key: _scaffoldKey,
-      appBar: AppBar(title: Text(l10n.homeTitle)),
+    return BgePage(
+      scaffoldKey: _scaffoldKey,
+      centerVertically: true,
+      title: Text(l10n.homeTitle),
       drawer: NavigationDrawer(
         key: HomeScreen.drawerKey,
         // Launcher semantics: entries push routes / fire actions and
@@ -133,42 +135,30 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ],
       ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: BgeTokens.of(context).contentMaxWidth,
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.dashboard_customize_outlined,
-                    size: 48,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const BgeGap.md(),
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      l10n.homeEmptyStateTitle,
-                      style: theme.textTheme.headlineSmall,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const BgeGap.sm(),
-                  Text(
-                    l10n.homeEmptyStateBody,
-                    style: theme.textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.dashboard_customize_outlined,
+            size: 48,
+            color: theme.colorScheme.primary,
+          ),
+          const BgeGap.md(),
+          Semantics(
+            header: true,
+            child: Text(
+              l10n.homeEmptyStateTitle,
+              style: theme.textTheme.headlineSmall,
+              textAlign: TextAlign.center,
             ),
           ),
-        ),
+          const BgeGap.sm(),
+          Text(
+            l10n.homeEmptyStateBody,
+            style: theme.textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

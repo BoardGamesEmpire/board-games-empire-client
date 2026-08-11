@@ -1,6 +1,6 @@
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
-import 'package:ui_tokens/ui_tokens.dart';
+import 'package:ui/ui.dart';
 import 'package:observability/observability.dart';
 
 import '../widgets/feedback_review_screen.dart';
@@ -89,23 +89,9 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
 
   Widget _compose(BuildContext context) {
     final l10n = FeedbackLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(l10n.feedbackComposeTitle)),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: BgeTokens.of(context).contentMaxWidth,
-              ),
-              child: Padding(
-                padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
-                child: FeedbackComposeForm(model: _model, onSubmit: _onCompose),
-              ),
-            ),
-          ),
-        ),
-      ),
+    return BgePage(
+      title: Text(l10n.feedbackComposeTitle),
+      child: FeedbackComposeForm(model: _model, onSubmit: _onCompose),
     );
   }
 

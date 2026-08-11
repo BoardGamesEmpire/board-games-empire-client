@@ -1,6 +1,7 @@
 import 'package:auth/auth.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -47,66 +48,54 @@ class HomePlaceholderScreen extends StatelessWidget {
     final shellL10n = ShellLocalizations.of(context);
     final theme = Theme.of(context);
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: BgeTokens.of(context).contentMaxWidth,
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 48,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const BgeGap.md(),
-                  Text(
-                    l10n.authSignInTitle,
-                    style: theme.textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
-                  ),
-                  const BgeGap.lg(),
-                  Semantics(
-                    button: true,
-                    child: OutlinedButton.icon(
-                      key: HomePlaceholderScreen.sendFeedbackButtonKey,
-                      onPressed: () => context.push(AppRoutes.feedback),
-                      icon: const Icon(Icons.feedback_outlined),
-                      label: Text(feedbackL10n.feedbackComposeTitle),
-                    ),
-                  ),
-                  const BgeGap.sm(),
-                  Semantics(
-                    button: true,
-                    child: OutlinedButton.icon(
-                      key: HomePlaceholderScreen.openSettingsButtonKey,
-                      onPressed: () => context.push(AppRoutes.settings),
-                      icon: const Icon(Icons.settings_outlined),
-                      label: Text(shellL10n.settingsTitle),
-                    ),
-                  ),
-                  const BgeGap.sm(),
-                  Semantics(
-                    button: true,
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.read<AuthBloc>().add(
-                        const AuthSignOutRequested(),
-                      ),
-                      icon: const Icon(Icons.logout),
-                      label: Text(l10n.authSignOutButton),
-                    ),
-                  ),
-                ],
-              ),
+    return BgePage(
+      centerVertically: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 48,
+            color: theme.colorScheme.primary,
+          ),
+          const BgeGap.md(),
+          Text(
+            l10n.authSignInTitle,
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+          const BgeGap.lg(),
+          Semantics(
+            button: true,
+            child: OutlinedButton.icon(
+              key: HomePlaceholderScreen.sendFeedbackButtonKey,
+              onPressed: () => context.push(AppRoutes.feedback),
+              icon: const Icon(Icons.feedback_outlined),
+              label: Text(feedbackL10n.feedbackComposeTitle),
             ),
           ),
-        ),
+          const BgeGap.sm(),
+          Semantics(
+            button: true,
+            child: OutlinedButton.icon(
+              key: HomePlaceholderScreen.openSettingsButtonKey,
+              onPressed: () => context.push(AppRoutes.settings),
+              icon: const Icon(Icons.settings_outlined),
+              label: Text(shellL10n.settingsTitle),
+            ),
+          ),
+          const BgeGap.sm(),
+          Semantics(
+            button: true,
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  context.read<AuthBloc>().add(const AuthSignOutRequested()),
+              icon: const Icon(Icons.logout),
+              label: Text(l10n.authSignOutButton),
+            ),
+          ),
+        ],
       ),
     );
   }

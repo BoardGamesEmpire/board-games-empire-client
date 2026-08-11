@@ -24,13 +24,29 @@ void main() {
       addTearDown(tester.view.reset);
 
       await tester.pumpWidget(
-        _host(const BgePage(child: Text('body')), size: const Size(2560, 1440)),
+        _host(
+          // A child that WANTS the full width. Measuring `Text('body')` would
+          // measure its ~30px intrinsic width, which is under 480 whether or
+          // not the constraint exists — that assertion passed with BgePage's
+          // ConstrainedBox deleted entirely, so it tested nothing.
+          const BgePage(
+            child: SizedBox(
+              key: Key('greedy'),
+              width: double.infinity,
+              height: 20,
+            ),
+          ),
+          size: const Size(2560, 1440),
+        ),
       );
 
       // Unconstrained, a form stretches across the whole monitor and a label
-      // ends up a forearm away from its input.
-      final width = tester.getSize(find.text('body')).width;
-      expect(width, lessThanOrEqualTo(BgeTokens.standard.contentMaxWidth));
+      // ends up a forearm away from its input. Asserted as equality, not a
+      // bound: a greedy child should be capped at exactly contentMaxWidth.
+      expect(
+        tester.getSize(find.byKey(const Key('greedy'))).width,
+        BgeTokens.standard.contentMaxWidth,
+      );
     });
 
     testWidgets('is inert on a phone-width window', (tester) async {

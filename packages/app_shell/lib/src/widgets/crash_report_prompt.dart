@@ -228,7 +228,7 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
         const BgeGap.sm(),
         OverflowBar(
           alignment: MainAxisAlignment.end,
-          spacing: 8,
+          spacing: BgeTokens.of(context).spaceSm,
           children: [
             TextButton(
               key: CrashReportPrompt.discardButtonKey,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -60,42 +61,34 @@ class _AuthScreenState extends State<AuthScreen> {
 
     return BlocListener<AuthBloc, AuthBlocState>(
       listener: _handleStateChange,
-      child: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: BgeTokens.of(context).spaceLg,
-                vertical: BgeTokens.of(context).spaceXl,
-              ),
-              child: ConstrainedBox(
-                // Comfortable reading width on desktop/tablet
-                constraints: BoxConstraints(
-                  maxWidth: BgeTokens.of(context).contentMaxWidth,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(context, colorScheme),
-                    const BgeGap.xl(),
-                    if (widget.identity.hasEmailAndPassword)
-                      _buildEmailPasswordSection(context),
-                    if (widget.identity.hasEmailAndPassword &&
-                        widget.identity.hasOidc) ...[
-                      const BgeGap.lg(),
-                      _buildDivider(context),
-                      const BgeGap.lg(),
-                    ],
-                    if (widget.identity.hasOidc) _buildOidcSection(context),
-                    if (!widget.identity.hasEmailAndPassword &&
-                        !widget.identity.hasOidc)
-                      _buildNoStrategiesMessage(context),
-                  ],
-                ),
-              ),
-            ),
-          ),
+      child: BgePage(
+        centerVertically: true,
+        // Wider vertical breathing room than the default: this is the first
+        // screen after server-add and carries no app bar, so the form would
+        // otherwise sit hard against the status bar.
+        padding: EdgeInsets.symmetric(
+          horizontal: BgeTokens.of(context).spaceLg,
+          vertical: BgeTokens.of(context).spaceXl,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildHeader(context, colorScheme),
+            const BgeGap.xl(),
+            if (widget.identity.hasEmailAndPassword)
+              _buildEmailPasswordSection(context),
+            if (widget.identity.hasEmailAndPassword &&
+                widget.identity.hasOidc) ...[
+              const BgeGap.lg(),
+              _buildDivider(context),
+              const BgeGap.lg(),
+            ],
+            if (widget.identity.hasOidc) _buildOidcSection(context),
+            if (!widget.identity.hasEmailAndPassword &&
+                !widget.identity.hasOidc)
+              _buildNoStrategiesMessage(context),
+          ],
         ),
       ),
     );

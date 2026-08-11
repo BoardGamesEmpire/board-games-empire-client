@@ -47,7 +47,14 @@ class BgeTextField extends StatefulWidget {
     this.maxLines = 1,
     this.validationMessages = const {},
     super.key,
-  });
+  }) : assert(
+         !isPassword || (obscureLabel != null && revealLabel != null),
+         'A password field must be given localized obscureLabel and '
+         'revealLabel strings. They are the tooltip and the screen-reader '
+         'name of the visibility toggle — user-facing UI, and this package '
+         'takes strings rather than owning a localization delegate. Without '
+         'this assert the toggle silently shipped English on every locale.',
+       );
 
   /// The control this field binds to.
   final String formControlName;
@@ -73,15 +80,19 @@ class BgeTextField extends StatefulWidget {
   /// Whether this is a password field, which adds a visibility toggle.
   final bool isPassword;
 
-  /// Localized tooltip/semantic label for "hide password". Required in
-  /// practice when [isPassword] is set — see [revealLabel].
+  /// Localized tooltip and screen-reader label for "hide password".
+  ///
+  /// Required whenever [isPassword] is set — asserted in the constructor.
+  /// Nullable only because it is meaningless on a non-password field.
   final String? obscureLabel;
 
-  /// Localized tooltip/semantic label for "show password".
+  /// Localized tooltip and screen-reader label for "show password".
   ///
-  /// Null falls back to an English default. That fallback exists so this
-  /// package stays free of localization delegates (its stated convention), not
-  /// because English is acceptable in shipped UI — pass the localized strings.
+  /// Required whenever [isPassword] is set. There is deliberately no English
+  /// fallback: this package takes strings rather than owning a localization
+  /// delegate, and a default would let a caller ship an untranslated control
+  /// without ever noticing — the failure is invisible in the developer's own
+  /// locale.
   final String? revealLabel;
 
   /// Invoked on the keyboard's submit action.
@@ -179,9 +190,9 @@ class _BgeTextFieldState extends State<BgeTextField> {
 
   Widget _visibilityToggle(BuildContext context) {
     final tokens = BgeTokens.of(context);
-    final label = _obscure
-        ? (widget.revealLabel ?? 'Show password')
-        : (widget.obscureLabel ?? 'Hide password');
+    // Non-null by the constructor assert whenever `isPassword` is set, which
+    // is the only path that reaches this.
+    final label = _obscure ? widget.revealLabel! : widget.obscureLabel!;
 
     return SizedBox(
       // Explicit rather than relying on IconButton's default: the field's
@@ -197,6 +208,19 @@ class _BgeTextFieldState extends State<BgeTextField> {
     );
   }
 }
+
+/// Edge length of the box that carries the error announcement's semantics.
+///
+/// **Not a spacing decision, which is why it is named rather than inline.** A
+/// semantics node with an empty rect can be dropped when the tree is compiled,
+/// and a dropped node announces nothing; this is the smallest box that is
+/// guaranteed to survive. `SizedBox.shrink()` does not.
+///
+/// Naming it also removes the need for a file-wide `spacing` exemption in
+/// `design_system_enforcement_test.dart`. A blanket exemption would have kept
+/// itself alive on the strength of this one anchor while waving through every
+/// future literal `SizedBox` in the file.
+const double _semanticsAnchorExtent = 1;
 
 /// A zero-size node that announces validation errors as they appear.
 ///
@@ -303,10 +327,10 @@ class _LiveErrorAnnouncerState extends State<_LiveErrorAnnouncer> {
     return Semantics(
       liveRegion: true,
       label: message,
-      // Not `SizedBox.shrink()`: a semantics node with an empty rect can be
-      // dropped when the tree is compiled, and a dropped node announces
-      // nothing. A 1×1 box keeps it in the tree at no visible cost.
-      child: const SizedBox(width: 1, height: 1),
+      child: const SizedBox(
+        width: _semanticsAnchorExtent,
+        height: _semanticsAnchorExtent,
+      ),
     );
   }
 }

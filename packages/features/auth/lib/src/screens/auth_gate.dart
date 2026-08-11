@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -92,57 +93,46 @@ class SessionUnreachableView extends StatelessWidget {
     final l10n = AuthLocalizations.of(context);
     final theme = Theme.of(context);
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(BgeTokens.of(context).spaceLg),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: BgeTokens.of(context).contentMaxWidth,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Icon(
-                    Icons.cloud_off_outlined,
-                    size: 48,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  const BgeGap.md(),
-                  Semantics(
-                    liveRegion: true,
-                    child: Column(
-                      children: [
-                        Text(
-                          l10n.authSessionUnreachableTitle(serverDisplayName),
-                          style: theme.textTheme.headlineSmall,
-                          textAlign: TextAlign.center,
-                        ),
-                        const BgeGap.sm(),
-                        Text(
-                          l10n.authSessionUnreachableBody,
-                          style: theme.textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const BgeGap.lg(),
-                  Semantics(
-                    button: true,
-                    child: FilledButton(
-                      autofocus: true,
-                      onPressed: onRetry,
-                      child: Text(l10n.authRetryButton),
-                    ),
-                  ),
-                ],
-              ),
+    return BgePage(
+      centerVertically: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(
+            Icons.cloud_off_outlined,
+            size: 48,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const BgeGap.md(),
+          Semantics(
+            liveRegion: true,
+            child: Column(
+              children: [
+                Text(
+                  l10n.authSessionUnreachableTitle(serverDisplayName),
+                  style: theme.textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+                const BgeGap.sm(),
+                Text(
+                  l10n.authSessionUnreachableBody,
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
-        ),
+          const BgeGap.lg(),
+          Semantics(
+            button: true,
+            child: FilledButton(
+              autofocus: true,
+              onPressed: onRetry,
+              child: Text(l10n.authRetryButton),
+            ),
+          ),
+        ],
       ),
     );
   }

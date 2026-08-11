@@ -4,10 +4,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// The standard page scaffold: a scrollable, width-constrained, centered
 /// content column inside a [Scaffold] (#165).
 ///
-/// Replaces a block that was copy-pasted into eleven screens —
+/// Replaces a block that was hand-rolled in every page-shaped screen —
 /// `Scaffold` → `SafeArea` → `Center` → `SingleChildScrollView` →
-/// `ConstrainedBox(maxWidth: 480)` — each with its own hand-typed padding.
-/// The literal `480` is now [BgeTokens.contentMaxWidth]; the padding is on the
+/// `ConstrainedBox(maxWidth: 480)` — each with its own hand-typed padding and
+/// its own decision about whether to scroll. All 10 such screens now use this;
+/// the literal `480` is [BgeTokens.contentMaxWidth] and the padding is on the
 /// spacing scale.
 ///
 /// ```dart
@@ -43,6 +44,8 @@ class BgePage extends StatelessWidget {
     this.automaticallyImplyLeading = true,
     this.floatingActionButton,
     this.bottomNavigationBar,
+    this.drawer,
+    this.scaffoldKey,
     this.padding,
     this.centerVertically = false,
     this.scrollController,
@@ -70,6 +73,16 @@ class BgePage extends StatelessWidget {
 
   /// Optional [Scaffold.bottomNavigationBar].
   final Widget? bottomNavigationBar;
+
+  /// Optional [Scaffold.drawer].
+  final Widget? drawer;
+
+  /// Key on the underlying [Scaffold].
+  ///
+  /// A drawer is not a route, so it is closed through the [ScaffoldState]
+  /// rather than by popping the navigator — which needs a handle on the
+  /// Scaffold this widget owns.
+  final GlobalKey<ScaffoldState>? scaffoldKey;
 
   /// Content padding. Defaults to `spaceLg` on all sides.
   final EdgeInsetsGeometry? padding;
@@ -103,6 +116,8 @@ class BgePage extends StatelessWidget {
     }
 
     return Scaffold(
+      key: scaffoldKey,
+      drawer: drawer,
       appBar: title == null
           ? null
           : AppBar(

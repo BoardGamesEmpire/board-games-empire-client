@@ -110,12 +110,6 @@ void main() {
 ///
 /// Keyed by workspace-relative path; the value lists the exempt rule ids.
 const Map<String, List<String>> _allowlist = {
-  // The 1x1 box is a semantics anchor, not a spacing decision: a
-  // zero-rect node can be dropped when the semantics tree is compiled, and a
-  // dropped node announces nothing. There is no token for "smallest box that
-  // still exists".
-  'packages/ui/widgets/lib/src/forms/bge_text_field.dart': ['spacing'],
-
   // The token layer defines the values every other package consumes; literals
   // in these two files are the definitions, not call sites.
   //
@@ -137,7 +131,15 @@ class _Rule {
 final List<_Rule> _rules = [
   _Rule(
     'spacing',
-    RegExp(r'(SizedBox|EdgeInsets|EdgeInsetsDirectional)[\w.]*\([^)]*?\b\d'),
+    RegExp(
+      // Constructors that take spacing positionally or by side...
+      r'(SizedBox|EdgeInsets|EdgeInsetsDirectional)[\w.]*\([^)]*?\b\d'
+      // ...and spacing-valued PROPERTIES. Flex, Wrap, OverflowBar and friends
+      // take `spacing:`/`runSpacing:`/`gap:` directly, which the constructor
+      // patterns above never see — the first version of this rule missed an
+      // `OverflowBar(spacing: 8)` while claiming spacing was enforced.
+      r'|\b(spacing|runSpacing|gap|horizontalSpacing|verticalSpacing):\s*\d',
+    ),
     'literal spacing',
   ),
   _Rule(
@@ -172,8 +174,9 @@ class _Violation {
   final String text;
 
   String describe(String root) {
-    final rel = file.startsWith('$root/')
-        ? file.substring(root.length + 1)
+    final normalizedRoot = root.replaceAll(r'\', '/');
+    final rel = file.startsWith('$normalizedRoot/')
+        ? file.substring(normalizedRoot.length + 1)
         : file;
     return '  $rel:$line — ${rule.message}: ${text.trim()}';
   }
@@ -181,6 +184,7 @@ class _Violation {
 
 List<_Violation> _scan(String root) {
   final violations = <_Violation>[];
+  final normalizedRoot = root.replaceAll(r'\', '/');
 
   // BOTH trees. `apps/` is thin by design — three `main.dart` wrappers of a
   // dozen lines each — but "small" is not "exempt", and an unscanned directory
@@ -198,28 +202,33 @@ List<_Violation> _scan(String root) {
     (d) => d.listSync(recursive: true, followLinks: false),
   )) {
     if (entity is! File || !entity.path.endsWith('.dart')) continue;
+
+    // Normalized to forward slashes before any path check. Windows is a
+    // supported desktop target, and `FileSystemEntity.path` uses backslashes
+    // there — so every `/lib/` test below would fail, every file would be
+    // skipped, and the suite would report a clean tree while enforcing
+    // nothing. A gate that silently passes is worse than no gate.
+    final path = entity.path.replaceAll(r'\', '/');
     // Only shipped code. Tests legitimately construct arbitrary sizes to
     // exercise layout, and generated output is not hand-written.
-    if (!entity.path.contains('/lib/')) continue;
-    if (entity.path.contains('/.dart_tool/')) continue;
-    if (entity.path.contains('/l10n/')) continue;
+    if (!path.contains('/lib/')) continue;
+    if (path.contains('/.dart_tool/')) continue;
+    if (path.contains('/l10n/')) continue;
     // Build output and vendored plugin sources are not ours to police.
-    if (entity.path.contains('/ephemeral/')) continue;
-    if (entity.path.contains('/.plugin_symlinks/')) continue;
-    if (entity.path.contains('/build/')) continue;
-    if (entity.path.endsWith('.g.dart') ||
-        entity.path.endsWith('.freezed.dart')) {
-      continue;
-    }
+    if (path.contains('/ephemeral/')) continue;
+    if (path.contains('/.plugin_symlinks/')) continue;
+    if (path.contains('/build/')) continue;
+    if (path.endsWith('.g.dart') || path.endsWith('.freezed.dart')) continue;
 
-    final rel = entity.path.substring(root.length + 1);
+    // Also normalized, since `_allowlist` keys are forward-slash paths.
+    final rel = path.substring(normalizedRoot.length + 1);
     final exempt = _allowlist[rel] ?? const <String>[];
 
     violations.addAll(
       _scanSource(
         entity.readAsStringSync(),
         exempt: exempt,
-      ).map((v) => _Violation(entity.path, v.line, v.rule, v.text)),
+      ).map((v) => _Violation(path, v.line, v.rule, v.text)),
     );
   }
   return violations;
