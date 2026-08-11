@@ -3,6 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+/// Hosts [child] at [size] wide and [scale] text scale.
+///
+/// The ancestor `MediaQuery` IS effective here, despite sitting above
+/// `MaterialApp`: the framework's `MediaQuery.fromView` is inserted by `View`,
+/// ABOVE the widget under test, and `WidgetsApp` adds none of its own — so
+/// this wrapper is the nearest one and wins. (Checked with a probe rather
+/// than assumed; a review flagged the opposite and was wrong.)
+///
+/// Width, though, comes from the explicit [SizedBox] below, NOT from
+/// `MediaQueryData.size` — that field is metadata and constrains nothing. If
+/// you remove the SizedBox, these cases quietly start running at the test
+/// view's 800px and stop testing narrowness at all.
 Widget _host(
   Widget child, {
   Size size = const Size(320, 640),

@@ -141,6 +141,40 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('an action inherits the banner tone, not the ambient accent', (
+      tester,
+    ) async {
+      // A plain TextButton defaults to colorScheme.primary — 2.92:1 against
+      // the dark error container, and it fails the same way on every toned
+      // container. The action must take the banner's own foreground.
+      final scheme = BgeTheme.dark().colorScheme;
+
+      await tester.pumpWidget(
+        _host(
+          BgeInlineBanner(
+            tone: BgeBannerTone.error,
+            message: 'Could not reach the server.',
+            action: TextButton(onPressed: () {}, child: const Text('Retry')),
+          ),
+          theme: BgeTheme.dark(),
+        ),
+      );
+
+      final label = tester.widget<Text>(find.text('Retry'));
+      final resolved =
+          DefaultTextStyle.of(tester.element(find.text('Retry'))).style.color ??
+          label.style?.color;
+
+      expect(
+        resolved,
+        scheme.onErrorContainer,
+        reason:
+            'the action should render in onErrorContainer (7.01:1), not '
+            'primary (2.92:1)',
+      );
+      expect(resolved, isNot(scheme.primary));
+    });
+
     testWidgets('can opt out of announcing', (tester) async {
       final handle = tester.ensureSemantics();
 
@@ -185,6 +219,12 @@ void main() {
             size: Size(320, 640),
             textScaler: TextScaler.linear(2),
           ),
+          // The text scaler applies despite this MediaQuery sitting above
+          // MaterialApp — `MediaQuery.fromView` comes from `View`, which is
+          // higher still, so the nearest one wins. Width comes from the
+          // explicit SizedBox, not from `MediaQueryData.size`, which is
+          // metadata and constrains nothing.
+          //
           // Scrollable, because that is how banners are actually hosted —
           // inside a BgePage. At 2.0 text scale this banner is taller than a
           // 640px viewport, and pinning it in a non-scrolling body would be

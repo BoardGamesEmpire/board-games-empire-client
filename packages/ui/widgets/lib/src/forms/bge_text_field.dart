@@ -222,7 +222,9 @@ class _BgeTextFieldState extends State<BgeTextField> {
 /// future literal `SizedBox` in the file.
 const double _semanticsAnchorExtent = 1;
 
-/// A zero-size node that announces validation errors as they appear.
+/// A visually-imperceptible node that announces validation errors as they
+/// appear. Deliberately 1x1 rather than zero-size — see
+/// [_semanticsAnchorExtent].
 ///
 /// The announcement rides a [Semantics.label] on a 1×1 box rather than
 /// rendering invisible text. The earlier version of this widget drew a real

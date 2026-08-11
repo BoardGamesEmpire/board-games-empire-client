@@ -130,7 +130,30 @@ class BgeInlineBanner extends StatelessWidget {
         Expanded(child: message),
         if (action != null) ...[
           const BgeGap.sm(axis: Axis.horizontal),
-          action!,
+          // The action inherits the banner's foreground rather than the
+          // ambient one. A plain `TextButton` defaults to `colorScheme
+          // .primary`, which is electric blue — 2.92:1 against the dark
+          // error container, and it fails the same way on every toned
+          // container because each is a saturated mid-dark surface the
+          // accent was never solved against.
+          //
+          // Applied as a theme rather than a required parameter so callers
+          // keep passing an ordinary button: making legibility opt-in is how
+          // it gets missed.
+          TextButtonTheme(
+            data: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: foreground),
+            ),
+            child: IconButtonTheme(
+              data: IconButtonThemeData(
+                style: IconButton.styleFrom(foregroundColor: foreground),
+              ),
+              child: IconTheme.merge(
+                data: IconThemeData(color: foreground),
+                child: action!,
+              ),
+            ),
+          ),
         ],
       ],
     );

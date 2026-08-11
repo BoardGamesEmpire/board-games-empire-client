@@ -122,6 +122,11 @@ class _RegisterFormState extends State<RegisterForm> {
                   formControlName: 'username',
                   label: l10n.authUsernameLabel,
                   hint: l10n.authUsernameHint,
+                  // An identifier, not prose — same rule as the email field.
+                  // Autocorrect on a credential silently alters what the user
+                  // believes they typed.
+                  autocorrect: false,
+                  enableSuggestions: false,
                   autofillHints: const [AutofillHints.username],
                   textInputAction: TextInputAction.next,
                   readOnly: isLoading,

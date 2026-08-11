@@ -5,17 +5,35 @@ truth for color, typography scale, spacing, density, motion, and the
 theme-level accessibility baseline. Consumed via `Theme.of(context)` — the
 app shell installs `BgeTheme` as the `MaterialApp` default.
 
+See [`docs/design/STYLE_GUIDE.md`](../../../docs/design/STYLE_GUIDE.md) for
+what the app should look like and why; this README covers the package API.
+
 ## Conventions (project-wide)
 
-- **No literal colors at call sites.** Reference `Theme.of(context).colorScheme`
-  and `Theme.of(context).extension<BgeTokens>()!`. This is the token contract
-  the future SDUI/plugin layer (#19) leans on.
+- **No literal colors, spacing, radii or type at call sites.** Reference
+  `Theme.of(context).colorScheme`, `Theme.of(context).textTheme`, and
+  `BgeTokens.of(context)` — **not** `extension<BgeTokens>()!`, which throws
+  wherever no `BgeTheme` is installed (every feature widget test pumps a bare
+  `MaterialApp`). `BgeTokens.of` falls back to `BgeTokens.standard`, the same
+  values every theme installs. For gaps, prefer `const BgeGap.md()`.
+
+  This is enforced by `test/design_system_enforcement_test.dart`, which runs
+  in `melos run test` — the rule was documented and unenforced for a long
+  time, and repo-wide adherence was zero (#165). It is also the token
+  contract the future SDUI/plugin layer (#19) leans on.
 - **No information conveyed by color alone.** Pair color with an icon, text,
   or shape change. This — plus verified AA contrast and the high-contrast
   themes — is the project's answer to color-vision deficiency (confirmed
   decision: no per-CVD palettes).
-- **System typeface.** Tokens define the type *scale* (`BgeTypography`), not
-  a family — zero font assets, zero network fetches (offline/privacy-first).
+- **Two typefaces, split by role.** Display, headline and title render in
+  the bundled **Fraunces** (SIL OFL, variable, ~360KB, `fonts/`); body and
+  label stay on the platform face. This amends #32's original "zero font
+  assets" decision — the font ships in the binary, so there is still **zero
+  network fetch and no third party**; the cost is size, not privacy.
+
+  Every variable axis must be set explicitly. Fraunces' own defaults are
+  `opsz=9, wght=900, WONK=1`, so an unset axis is not neutral — it silently
+  renders small-text letterforms at display sizes. See `BgeTypography`.
 - **OS accessibility signals are honored automatically.** High-contrast
   themes ride `MediaQuery.highContrast`; reduced motion rides
   `MediaQuery.disableAnimations` via `BgeMotion`; OS text scaling is honored
@@ -24,8 +42,24 @@ app shell installs `BgeTheme` as the `MaterialApp` default.
 ## Contrast guarantees
 
 Every authored on-role/role pair is test-enforced: ≥ 4.5:1 (WCAG 2.1 AA,
-normal text) in light/dark, ≥ 7.0:1 in the high-contrast variants. Do not
-edit `BgeColorSchemes` without keeping `bge_color_schemes_test.dart` green.
+normal text) in light/dark, ≥ 7.0:1 in the high-contrast variants. Body text
+is also checked against **every** member of the surface family, not just
+`surface` — text sits on containers too.
+
+`tertiary` (ember) and `error` (crimson) are additionally held ~54° apart in
+OKLCH hue (`Oklch.minAccentSeparation`). Contrast answers "can this be
+read?", never "can these be told apart?", and these two are the palette's one
+genuinely confusable pair.
+
+`BgeColorSchemes` is **generated** — do not hand-edit it. Change the hues or
+targets in `tool/derive_palette.dart` and regenerate:
+
+```bash
+dart -Demit=true tool/derive_palette.dart \
+  > packages/ui/tokens/lib/src/bge_color_schemes.dart
+```
+
+Then keep `bge_color_schemes_test.dart` green and refresh the goldens.
 
 ## Goldens
 

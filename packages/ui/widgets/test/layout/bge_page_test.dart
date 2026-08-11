@@ -3,11 +3,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+/// Sets the actual render surface, then hosts [child].
+///
+/// `MediaQueryData.size` is **metadata, not layout constraints** — a widget
+/// under `MediaQuery(size: Size(320, 480))` still lays out against the test
+/// view's 800x600. Every "narrow window" case here previously set only that
+/// field, so it ran at 800 wide and tested nothing about narrow windows. The
+/// size has to go on `tester.view`.
+///
+/// The text scaler is different: an ancestor `MediaQuery` IS effective. The
+/// framework's own `MediaQuery.fromView` is inserted by `View`, ABOVE the
+/// widget under test — `WidgetsApp` inserts none of its own — so this wrapper
+/// sits below it and wins. Verified, not assumed.
 Widget _host(
+  WidgetTester tester,
   Widget child, {
   Size size = const Size(400, 800),
   double scale = 1,
 }) {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+
   return MediaQuery(
     data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
     child: MaterialApp(theme: BgeTheme.light(), home: child),
@@ -19,12 +36,9 @@ void main() {
     testWidgets('constrains the content column on a wide window', (
       tester,
     ) async {
-      tester.view.physicalSize = const Size(2560, 1440);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-
       await tester.pumpWidget(
         _host(
+          tester,
           // A child that WANTS the full width. Measuring `Text('body')` would
           // measure its ~30px intrinsic width, which is under 480 whether or
           // not the constraint exists — that assertion passed with BgePage's
@@ -51,12 +65,29 @@ void main() {
 
     testWidgets('is inert on a phone-width window', (tester) async {
       await tester.pumpWidget(
-        _host(const BgePage(child: Text('body')), size: const Size(360, 800)),
+        _host(
+          tester,
+          const BgePage(
+            child: SizedBox(
+              key: Key('greedy'),
+              width: double.infinity,
+              height: 20,
+            ),
+          ),
+          size: const Size(360, 800),
+        ),
       );
 
-      // 480 is wider than any phone, so the constraint must not bite here.
-      expect(tester.takeException(), isNull);
-      expect(find.text('body'), findsOneWidget);
+      // 480 is wider than any phone, so the constraint must not bite. Asserted
+      // by measuring rather than by "nothing threw": the greedy child should
+      // get the whole window minus padding, which also proves the window is
+      // actually 360 wide — the earlier version set only `MediaQueryData.size`
+      // and silently ran at the 800px default.
+      final padding = BgeTokens.standard.spaceLg * 2;
+      expect(
+        tester.getSize(find.byKey(const Key('greedy'))).width,
+        360 - padding,
+      );
     });
   });
 
@@ -66,6 +97,7 @@ void main() {
     ) async {
       await tester.pumpWidget(
         _host(
+          tester,
           BgePage(
             child: Column(children: List.generate(40, (i) => Text('row $i'))),
           ),
@@ -82,7 +114,9 @@ void main() {
     });
 
     testWidgets('scrolls even when the content fits', (tester) async {
-      await tester.pumpWidget(_host(const BgePage(child: Text('short'))));
+      await tester.pumpWidget(
+        _host(tester, const BgePage(child: Text('short'))),
+      );
 
       // Scroll is not opt-in per screen; each new screen re-deciding it is how
       // one of them gets it wrong.
@@ -92,11 +126,11 @@ void main() {
 
   group('BgePage chrome', () {
     testWidgets('shows an app bar only when a title is given', (tester) async {
-      await tester.pumpWidget(_host(const BgePage(child: Text('b'))));
+      await tester.pumpWidget(_host(tester, const BgePage(child: Text('b'))));
       expect(find.byType(AppBar), findsNothing);
 
       await tester.pumpWidget(
-        _host(const BgePage(title: Text('Settings'), child: Text('b'))),
+        _host(tester, const BgePage(title: Text('Settings'), child: Text('b'))),
       );
       expect(find.byType(AppBar), findsOneWidget);
       expect(find.text('Settings'), findsOneWidget);
@@ -105,6 +139,7 @@ void main() {
     testWidgets('centers vertically only when asked', (tester) async {
       await tester.pumpWidget(
         _host(
+          tester,
           const BgePage(centerVertically: true, child: Text('centered')),
           size: const Size(400, 800),
         ),
