@@ -7,8 +7,12 @@ library;
 
 export 'src/accessibility/bge_motion.dart';
 export 'src/accessibility/bge_text_scale.dart';
+export 'src/accessibility/oklch.dart';
 export 'src/accessibility/wcag_contrast.dart';
 export 'src/bge_color_schemes.dart';
+export 'src/bge_gap.dart';
+export 'src/bge_palette.dart';
+export 'src/bge_status_colors.dart';
 export 'src/bge_theme.dart';
 export 'src/bge_tokens.dart';
 export 'src/bge_typography.dart';

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/server_onboarding_localizations.dart';
 import '../widgets/server_add_form.dart';
@@ -13,36 +15,27 @@ class ServerAddScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = ServerOnboardingLocalizations.of(context);
 
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      l10n.serverAddTitle,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.serverAddIntro,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 24),
-                  const ServerAddForm(),
-                ],
-              ),
+    return BgePage(
+      centerVertically: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(
+              l10n.serverAddTitle,
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
           ),
-        ),
+          const BgeGap.sm(),
+          Text(
+            l10n.serverAddIntro,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const BgeGap.lg(),
+          const ServerAddForm(),
+        ],
       ),
     );
   }

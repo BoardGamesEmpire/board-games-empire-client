@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:flutter/semantics.dart';
@@ -59,37 +61,34 @@ class _AuthScreenState extends State<AuthScreen> {
 
     return BlocListener<AuthBloc, AuthBlocState>(
       listener: _handleStateChange,
-      child: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: ConstrainedBox(
-                // Comfortable reading width on desktop/tablet
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(context, colorScheme),
-                    const SizedBox(height: 32),
-                    if (widget.identity.hasEmailAndPassword)
-                      _buildEmailPasswordSection(context),
-                    if (widget.identity.hasEmailAndPassword &&
-                        widget.identity.hasOidc) ...[
-                      const SizedBox(height: 24),
-                      _buildDivider(context),
-                      const SizedBox(height: 24),
-                    ],
-                    if (widget.identity.hasOidc) _buildOidcSection(context),
-                    if (!widget.identity.hasEmailAndPassword &&
-                        !widget.identity.hasOidc)
-                      _buildNoStrategiesMessage(context),
-                  ],
-                ),
-              ),
-            ),
-          ),
+      child: BgePage(
+        centerVertically: true,
+        // Wider vertical breathing room than the default: this is the first
+        // screen after server-add and carries no app bar, so the form would
+        // otherwise sit hard against the status bar.
+        padding: EdgeInsets.symmetric(
+          horizontal: BgeTokens.of(context).spaceLg,
+          vertical: BgeTokens.of(context).spaceXl,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildHeader(context, colorScheme),
+            const BgeGap.xl(),
+            if (widget.identity.hasEmailAndPassword)
+              _buildEmailPasswordSection(context),
+            if (widget.identity.hasEmailAndPassword &&
+                widget.identity.hasOidc) ...[
+              const BgeGap.lg(),
+              _buildDivider(context),
+              const BgeGap.lg(),
+            ],
+            if (widget.identity.hasOidc) _buildOidcSection(context),
+            if (!widget.identity.hasEmailAndPassword &&
+                !widget.identity.hasOidc)
+              _buildNoStrategiesMessage(context),
+          ],
         ),
       ),
     );
@@ -110,7 +109,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 size: 16,
                 color: colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(width: 6),
+              const BgeGap.xs(axis: Axis.horizontal),
               Flexible(
                 child: Text(
                   widget.serverDisplayName,
@@ -123,7 +122,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const BgeGap.sm(),
         Text(
           _isSignIn ? l10n.authSignInTitle : l10n.authRegisterTitle,
           style: Theme.of(
@@ -162,7 +161,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 enabled: !isLoading,
                 onPressed: () => _handleOidc(context, oidcStrategy),
               ),
-              const SizedBox(height: 12),
+              const BgeGap.sm(),
             ],
           ],
         );
@@ -175,7 +174,9 @@ class _AuthScreenState extends State<AuthScreen> {
       children: [
         const Expanded(child: Divider()),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(
+            horizontal: BgeTokens.of(context).spaceMd,
+          ),
           child: Text(
             AuthLocalizations.of(context).authOrDivider,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -192,7 +193,7 @@ class _AuthScreenState extends State<AuthScreen> {
     return Semantics(
       liveRegion: true,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
         child: Text(
           AuthLocalizations.of(context).authNoStrategiesMessage,
           style: Theme.of(context).textTheme.bodyMedium,

@@ -93,15 +93,68 @@ class _TokenShowcase extends StatelessWidget {
               ),
               SizedBox(height: tokens.spaceSm),
               _RolePair(
+                label: 'secondary container',
+                background: scheme.secondaryContainer,
+                foreground: scheme.onSecondaryContainer,
+                tokens: tokens,
+              ),
+              SizedBox(height: tokens.spaceSm),
+              // Ember and crimson are rendered ADJACENT on purpose. They are
+              // the palette's one genuinely risky pair — both warm, both
+              // mid-luminance — and the hue-separation test can only assert a
+              // number. Side by side in a golden, a human can see at a glance
+              // whether "attention" still reads as distinct from "failure".
+              _RolePair(
+                label: 'tertiary container (ember)',
+                background: scheme.tertiaryContainer,
+                foreground: scheme.onTertiaryContainer,
+                tokens: tokens,
+              ),
+              SizedBox(height: tokens.spaceSm),
+              _RolePair(
                 label: 'error container',
                 background: scheme.errorContainer,
                 foreground: scheme.onErrorContainer,
                 tokens: tokens,
               ),
+              SizedBox(height: tokens.spaceMd),
+              // Accents on the bare surface: how they actually appear as icons
+              // and emphasis text, which the container swatches do not show.
+              _AccentRow(scheme: scheme, tokens: tokens),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The four domain status colors, each with its mandatory icon.
+///
+/// Rendered on the bare surface because that is where status indicators
+/// actually live. The icons are not decoration: the project conveys no meaning
+/// by color alone, so a status swatch without its icon would misrepresent the
+/// component this golden is meant to protect.
+class _AccentRow extends StatelessWidget {
+  const _AccentRow({required this.scheme, required this.tokens});
+
+  final ColorScheme scheme;
+  final BgeTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = BgeStatusColors.forScheme(scheme);
+    return Row(
+      children: [
+        for (final value in BgeStatus.values) ...[
+          Icon(
+            BgeStatusColors.iconFor(value),
+            color: status.colorFor(value),
+            size: tokens.spaceLg,
+          ),
+          SizedBox(width: tokens.spaceSm),
+        ],
+      ],
     );
   }
 }

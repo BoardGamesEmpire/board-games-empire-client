@@ -85,12 +85,28 @@ Two naming traps when writing imports:
 - **`packages/app_shell` sits directly under `packages/`**, not under a layer
   directory like everything else.
 
+## Appearance
+
+The app follows your OS light/dark setting, and you can override it in
+Settings. It is **designed dark-first** — the palette ("storm over walnut") was
+authored against the dark theme and the light theme derived from it, so dark
+mode is where the app looks its best. The light and high-contrast themes are
+fully supported and meet the same WCAG AA contrast bar; they are simply not
+where the design started.
+
+The OS "increase contrast" setting is honored automatically, as is OS text
+scaling up to 200%.
+
+See [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md).
+
 ## Documentation
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — toolchain pin, first run, the melos
   scripts, codegen ordering, goldens, and what CI gates
 - [docs/ROADMAP.md](docs/ROADMAP.md) — architectural ground truth, phases,
   deferred decisions
+- [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md) — identity, tokens,
+  the shared widget set, and the accessibility rules
 - [docs/dev/web-proxy.md](docs/dev/web-proxy.md) — local web testing
 - [SECURITY.md](SECURITY.md) — reporting a vulnerability
 

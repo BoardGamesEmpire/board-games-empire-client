@@ -133,4 +133,45 @@ void main() {
 
     handle.dispose();
   });
+
+  testWidgets('drawer header, destinations, and actions share one start '
+      'inset', (tester) async {
+    // This drifted silently once already. The token sweep moved the header
+    // and divider to 24 and the action tiles to 8+16=24, while the
+    // destinations stayed at Flutter's default tilePadding 12 + a fixed 16
+    // internal gutter = 28. Nothing failed; the drawer just stopped lining up.
+    //
+    // Asserted on rendered geometry rather than on the padding values,
+    // because the destinations' 16dp gutter is internal to Flutter and not
+    // visible from this side — only the resulting edge is.
+    await _pump(tester, entries: _entries([]), activeServerName: 'My Server');
+    await _openDrawer(tester);
+
+    double startOf(Finder f) => tester.getTopLeft(f).dx;
+
+    final destination = startOf(
+      find.descendant(
+        of: find.byKey(HomeScreen.entryKey('settings')),
+        matching: find.byIcon(Icons.settings_outlined),
+      ),
+    );
+    final action = startOf(
+      find.descendant(
+        of: find.byKey(HomeScreen.entryKey('sign_out')),
+        matching: find.byIcon(Icons.logout),
+      ),
+    );
+    final header = startOf(find.text('My Server'));
+
+    expect(
+      action,
+      moreOrLessEquals(destination, epsilon: 0.5),
+      reason: 'action tile icons must line up with destination icons',
+    );
+    expect(
+      header,
+      moreOrLessEquals(destination, epsilon: 0.5),
+      reason: 'the header must line up with the destinations below it',
+    );
+  });
 }

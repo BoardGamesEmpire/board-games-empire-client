@@ -21,6 +21,8 @@ dependencies:
     path: ../../core/observability
   ui:
     path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
 
   flutter_bloc: ^9.1.1
   bloc_concurrency: ^0.3.0

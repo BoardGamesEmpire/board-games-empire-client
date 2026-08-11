@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 
@@ -27,26 +29,19 @@ class ShellPlaceholderScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = ShellLocalizations.of(context);
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _title(i18n),
-                  style: Theme.of(context).textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(i18n.shellPlaceholderBody, textAlign: TextAlign.center),
-              ],
-            ),
+    return BgePage(
+      centerVertically: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _title(i18n),
+            style: Theme.of(context).textTheme.headlineSmall,
+            textAlign: TextAlign.center,
           ),
-        ),
+          const BgeGap.sm(),
+          Text(i18n.shellPlaceholderBody, textAlign: TextAlign.center),
+        ],
       ),
     );
   }

@@ -23,7 +23,8 @@
 
 - [ ] No hardcoded user-facing strings — new strings are ARB-backed with an
       `@key` description
-- [ ] No literal colors or spacing at call sites — values come from `ui_tokens`
+- [ ] No literal colors, spacing, type, or radii at call sites — values come
+      from `ui_tokens` (enforced by the design-system test)
 - [ ] Drift schema changed → ran `melos run schema:dump` and committed the JSON
 - [ ] Goldens changed intentionally → ran `melos run goldens:update` and
       committed only `test/**/goldens/ci/`

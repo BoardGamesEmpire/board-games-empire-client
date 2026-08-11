@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../bloc/server_onboarding_bloc.dart';
 import '../bloc/server_onboarding_event.dart';
@@ -58,64 +60,46 @@ class ServerAddForm extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                ReactiveTextField<String>(
+                BgeTextField(
                   formControlName: urlControlName,
+                  label: l10n.serverAddUrlLabel,
+                  hint: l10n.serverAddUrlHint,
+                  helper: l10n.serverAddUrlHelper,
                   readOnly: inProgress,
                   keyboardType: TextInputType.url,
+                  // A hostname is not prose. An autocorrected server address
+                  // fails in a way the user cannot diagnose, because the field
+                  // still shows what they believe they typed.
                   autocorrect: false,
-                  textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    labelText: l10n.serverAddUrlLabel,
-                    hintText: l10n.serverAddUrlHint,
-                    helperText: l10n.serverAddUrlHelper,
-                  ),
+                  enableSuggestions: false,
                 ),
-                const SizedBox(height: 16),
-                ReactiveTextField<String>(
+                const BgeGap.md(),
+                BgeTextField(
                   formControlName: aliasControlName,
+                  label: l10n.serverAddAliasLabel,
+                  hint: l10n.serverAddAliasHint,
                   readOnly: inProgress,
                   textInputAction: TextInputAction.done,
-                  onSubmitted: (_) {
+                  onSubmitted: () {
                     if (!inProgress) _submit(context, form);
                   },
-                  decoration: InputDecoration(
-                    labelText: l10n.serverAddAliasLabel,
-                    hintText: l10n.serverAddAliasHint,
-                  ),
                 ),
-                const SizedBox(height: 24),
+                const BgeGap.lg(),
                 if (failure != null) ...[
-                  Semantics(
-                    liveRegion: true,
-                    child: _FailureBanner(
-                      title: l10n.serverAddErrorTitle,
-                      message: _failureMessage(l10n, failure),
-                    ),
+                  // The live region now lives inside the banner, so it can no
+                  // longer be forgotten at a call site.
+                  BgeInlineBanner(
+                    tone: BgeBannerTone.error,
+                    title: l10n.serverAddErrorTitle,
+                    message: _failureMessage(l10n, failure),
                   ),
-                  const SizedBox(height: 16),
+                  const BgeGap.md(),
                 ],
-                FilledButton(
-                  onPressed: inProgress ? null : () => _submit(context, form),
-                  child: inProgress
-                      ? Semantics(
-                          liveRegion: true,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(l10n.serverAddInProgress),
-                            ],
-                          ),
-                        )
-                      : Text(l10n.serverAddSubmit),
+                BgeSubmitButton(
+                  label: l10n.serverAddSubmit,
+                  progressLabel: l10n.serverAddInProgress,
+                  submitting: inProgress,
+                  onPressed: () => _submit(context, form),
                 ),
               ],
             );
@@ -148,35 +132,3 @@ String _failureMessage(
   ServerOnboardingCapacityExceeded() => l10n.serverAddErrorCapacity,
   ServerOnboardingUnexpectedFailure() => l10n.serverAddErrorUnexpected,
 };
-
-class _FailureBanner extends StatelessWidget {
-  const _FailureBanner({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colors.errorContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(color: colors.onErrorContainer),
-          ),
-          const SizedBox(height: 4),
-          Text(message, style: TextStyle(color: colors.onErrorContainer)),
-        ],
-      ),
-    );
-  }
-}

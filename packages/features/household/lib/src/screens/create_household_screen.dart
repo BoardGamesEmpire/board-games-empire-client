@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
@@ -72,22 +73,17 @@ class _CreateHouseholdView extends StatelessWidget {
       },
       builder: (context, state) {
         final submitting = state is CreateHouseholdSubmitting;
-        return Scaffold(
-          appBar: AppBar(title: Text(l10n.createHouseholdTitle)),
-          body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: CreateHouseholdForm(
-                submitting: submitting,
-                onSubmit: ({required name, description}) =>
-                    context.read<CreateHouseholdBloc>().add(
-                      CreateHouseholdSubmitted(
-                        name: name,
-                        description: description,
-                      ),
-                    ),
-              ),
-            ),
+        return BgePage(
+          title: Text(l10n.createHouseholdTitle),
+          child: CreateHouseholdForm(
+            submitting: submitting,
+            onSubmit: ({required name, description}) =>
+                context.read<CreateHouseholdBloc>().add(
+                  CreateHouseholdSubmitted(
+                    name: name,
+                    description: description,
+                  ),
+                ),
           ),
         );
       },

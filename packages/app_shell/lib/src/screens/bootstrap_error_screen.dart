@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 
@@ -60,60 +62,53 @@ class BootstrapErrorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ShellLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ExcludeSemantics(
-                  child: Icon(
-                    Icons.error_outline,
-                    size: 48,
-                    color: colorScheme.error,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Live region so screen readers announce the failure when
-                // it appears, without needing focus to land on it.
-                MergeSemantics(
-                  child: Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      i18n.shellBootstrapErrorTitle,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(i18n.shellBootstrapErrorBody, textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-                FilledButton(
-                  key: retryButtonKey,
-                  style: FilledButton.styleFrom(minimumSize: _minTapTarget),
-                  onPressed: onRetry,
-                  child: Text(i18n.shellBootstrapErrorRetry),
-                ),
-                if (canOfferReset) ...[
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    key: resetButtonKey,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: _minTapTarget,
-                      foregroundColor: colorScheme.error,
-                    ),
-                    onPressed: () => _confirmReset(context),
-                    child: Text(i18n.shellBootstrapErrorReset),
-                  ),
-                ],
-              ],
+    return BgePage(
+      centerVertically: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(
+            child: Icon(
+              Icons.error_outline,
+              size: 48,
+              color: colorScheme.error,
             ),
           ),
-        ),
+          const BgeGap.md(),
+          // Live region so screen readers announce the failure when
+          // it appears, without needing focus to land on it.
+          MergeSemantics(
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                i18n.shellBootstrapErrorTitle,
+                style: Theme.of(context).textTheme.headlineSmall,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+          const BgeGap.sm(),
+          Text(i18n.shellBootstrapErrorBody, textAlign: TextAlign.center),
+          const BgeGap.lg(),
+          FilledButton(
+            key: retryButtonKey,
+            style: FilledButton.styleFrom(minimumSize: _minTapTarget),
+            onPressed: onRetry,
+            child: Text(i18n.shellBootstrapErrorRetry),
+          ),
+          if (canOfferReset) ...[
+            const BgeGap.sm(),
+            OutlinedButton(
+              key: resetButtonKey,
+              style: OutlinedButton.styleFrom(
+                minimumSize: _minTapTarget,
+                foregroundColor: colorScheme.error,
+              ),
+              onPressed: () => _confirmReset(context),
+              child: Text(i18n.shellBootstrapErrorReset),
+            ),
+          ],
+        ],
       ),
     );
   }

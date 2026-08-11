@@ -771,9 +771,19 @@ class _BgeAppState extends State<BgeApp> {
                               dispatcher: _router.backButtonDispatcher,
                               onBack: () => _handleCrashBack(reporter),
                             ),
-                            const ModalBarrier(
+                            ModalBarrier(
                               dismissible: false,
-                              color: Colors.black54,
+                              // `scrim` rather than a literal black54. The
+                              // schemes author this role as a warm near-black
+                              // on the walnut hue, so the veil belongs to the
+                              // palette instead of being neutral; a palette
+                              // swap carries it. It does NOT vary by
+                              // brightness or high contrast — every scheme
+                              // authors the same value, and the alpha below is
+                              // fixed — so do not read more into it than that.
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.scrim.withValues(alpha: 0.54),
                             ),
                             // The builder slot sits ABOVE the router's
                             // Navigator, so the Navigator's Overlay is not
@@ -792,7 +802,9 @@ class _BgeAppState extends State<BgeApp> {
                                 child: Align(
                                   alignment: Alignment.bottomCenter,
                                   child: Padding(
-                                    padding: const EdgeInsets.all(16),
+                                    padding: EdgeInsets.all(
+                                      BgeTokens.of(context).spaceMd,
+                                    ),
                                     child: ValueListenableBuilder<bool>(
                                       valueListenable: _promptDismissArmed,
                                       builder: (context, dismissArmed, _) {

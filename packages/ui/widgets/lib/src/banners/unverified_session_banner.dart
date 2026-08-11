@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Passive notice that the current session was restored from local material
 /// without server confirmation (#98).
@@ -82,7 +83,12 @@ class UnverifiedSessionBanner extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsetsDirectional.only(start: 16, end: 4),
+          padding: EdgeInsetsDirectional.only(
+            start: BgeTokens.of(context).spaceMd,
+            // Tighter at the end: the dismiss IconButton brings its own 48dp
+            // tap target, which already supplies most of the visual inset.
+            end: BgeTokens.of(context).spaceXs,
+          ),
           child: Row(
             children: [
               Expanded(
@@ -109,10 +115,12 @@ class UnverifiedSessionBanner extends StatelessWidget {
                           Icons.cloud_off_outlined,
                           color: colorScheme.onTertiaryContainer,
                         ),
-                        const SizedBox(width: 12),
+                        const BgeGap.sm(axis: Axis.horizontal),
                         Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: BgeTokens.of(context).spaceSm,
+                            ),
                             child: Text(
                               message,
                               style: Theme.of(context).textTheme.bodyMedium

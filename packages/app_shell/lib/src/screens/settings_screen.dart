@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import '../settings/settings_scope.dart';
@@ -77,7 +78,12 @@ class SettingsScreen extends StatelessWidget {
     return [
       if (header != null)
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          padding: EdgeInsets.fromLTRB(
+            BgeTokens.of(context).spaceMd,
+            BgeTokens.of(context).spaceMd,
+            BgeTokens.of(context).spaceMd,
+            BgeTokens.of(context).spaceXs,
+          ),
           child: Semantics(
             header: true,
             child: Text(header, style: Theme.of(context).textTheme.titleSmall),
