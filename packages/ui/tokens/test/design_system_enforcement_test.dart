@@ -62,6 +62,79 @@ void main() {
       );
     });
 
+    // A test for the test. Three review rounds found rules that passed while
+    // enforcing less than their documentation claimed — a scanner reporting a
+    // clean tree is indistinguishable from one that is looking in the wrong
+    // place, so the rules get their own fixtures rather than being trusted.
+    //
+    // Add a case here whenever a rule changes. "The suite is green" says
+    // nothing on its own; these say what green means.
+    group('the rules catch what they claim', () {
+      const shouldFire = <String, String>{
+        // spacing — constructors, the BgeGap escape hatch, and properties
+        'SizedBox(height: 16)': 'spacing',
+        'EdgeInsets.all(24)': 'spacing',
+        'EdgeInsetsDirectional.only(start: 16)': 'spacing',
+        'const BgeGap.custom(12)': 'spacing',
+        'OverflowBar(spacing: 8)': 'spacing',
+        'Column(spacing: 12)': 'spacing',
+        'Wrap(runSpacing: 4)': 'spacing',
+        // color — every way to name one that is not a scheme role
+        'color: Colors.black54': 'color',
+        'Color(0xFF2B8FF0)': 'color',
+        'Color.fromARGB(255, 1, 2, 3)': 'color',
+        'Color.fromRGBO(1, 2, 3, 1)': 'color',
+        'Color.from(alpha: 1, red: 1, green: 0, blue: 0)': 'color',
+        'CupertinoColors.systemRed': 'color',
+        // type — both shapes, including the one that never says TextStyle
+        "TextStyle(fontFamily: 'monospace', fontSize: 12)": 'type',
+        'textTheme.bodySmall?.copyWith(fontSize: 12)': 'type',
+        'TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12)':
+            'type',
+        // radius / width
+        'BorderRadius.circular(12)': 'radius',
+        'BoxConstraints(maxWidth: 480)': 'width',
+      };
+
+      const shouldNotFire = <String>[
+        // The tokenized forms. If any of these fire, the rule is unusable and
+        // the codebase cannot satisfy its own gate.
+        'const BgeGap.md()',
+        'const BgeGap.sm(axis: Axis.horizontal)',
+        'EdgeInsets.all(BgeTokens.of(context).spaceLg)',
+        'SizedBox(height: tokens.spaceMd)',
+        'OverflowBar(spacing: BgeTokens.of(context).spaceSm)',
+        'color: Theme.of(context).colorScheme.primary',
+        'Color.lerp(synced, other.synced, t)',
+        'BorderRadius.circular(tokens.radiusMd)',
+        'BoxConstraints(maxWidth: tokens.contentMaxWidth)',
+        // The one sanctioned type override: a token reference, not a literal.
+        'copyWith(fontFamily: BgeTypography.monospaceFamily)',
+        'TextStyle(fontSize: size, height: height)',
+      ];
+
+      shouldFire.forEach((source, ruleId) {
+        test('flags $source', () {
+          final hits = _scanSource(source).map((v) => v.rule.id).toSet();
+          expect(
+            hits,
+            contains(ruleId),
+            reason: '"$source" must trip the "$ruleId" rule',
+          );
+        });
+      });
+
+      for (final source in shouldNotFire) {
+        test('allows $source', () {
+          expect(
+            _scanSource(source).map((v) => v.rule.id),
+            isEmpty,
+            reason: '"$source" is the tokenized form and must be legal',
+          );
+        });
+      }
+    });
+
     test('the allowlist has not gone stale', () {
       // An allowlist entry that no longer earns its keep is worse than no
       // entry: it silently disables a rule for a whole file, forever, on the
@@ -110,16 +183,26 @@ void main() {
 ///
 /// Keyed by workspace-relative path; the value lists the exempt rule ids.
 const Map<String, List<String>> _allowlist = {
-  // The token layer defines the values every other package consumes; literals
-  // in these two files are the definitions, not call sites.
-  //
-  // This list started with seven entries covering the whole token package.
-  // Five of them were dead on arrival — blanket exemptions for rules that
-  // could never have fired there — and the staleness check found them. Keep it
-  // to files that genuinely trip a rule.
+  // The generated scheme table: these `Color(0x…)` values ARE the palette
+  // every other file consumes through `colorScheme`, so they are definitions
+  // rather than call sites. The one remaining entry.
   'packages/ui/tokens/lib/src/bge_color_schemes.dart': ['color'],
-  'packages/ui/tokens/lib/src/bge_typography.dart': ['type'],
 };
+
+// This list started at seven entries covering most of the token package, and
+// every removal was forced by the staleness check rather than noticed by
+// reading:
+//
+//   * five were dead on arrival — blanket exemptions for rules that could
+//     never have fired in those files;
+//   * `bge_text_field.dart` stopped needing one once its 1×1 semantics anchor
+//     was given a name instead of being written inline;
+//   * `bge_typography.dart` stopped needing one once the `type` rule matched
+//     literal values rather than any mention of `fontSize:`/`fontFamily:` —
+//     the file names its sizes, so it never wrote a literal to begin with.
+//
+// The pattern is worth remembering: an exemption was usually a sign the RULE
+// was wrong, not that the file was special.
 
 class _Rule {
   const _Rule(this.id, this.pattern, this.message);
@@ -132,8 +215,11 @@ final List<_Rule> _rules = [
   _Rule(
     'spacing',
     RegExp(
-      // Constructors that take spacing positionally or by side...
-      r'(SizedBox|EdgeInsets|EdgeInsetsDirectional)[\w.]*\([^)]*?\b\d'
+      // Constructors that take spacing positionally or by side. `BgeGap` is
+      // in here for `BgeGap.custom(12)` — the escape hatch is only an escape
+      // hatch if using it is visible; without this the tokenized-looking
+      // form was the easiest way to bypass the scale entirely.
+      r'(SizedBox|EdgeInsets|EdgeInsetsDirectional|BgeGap)[\w.]*\([^)]*?\b\d'
       // ...and spacing-valued PROPERTIES. Flex, Wrap, OverflowBar and friends
       // take `spacing:`/`runSpacing:`/`gap:` directly, which the constructor
       // patterns above never see — the first version of this rule missed an
@@ -144,9 +230,15 @@ final List<_Rule> _rules = [
   ),
   _Rule(
     'color',
-    // `Colors.` (the Material palette) or a raw ARGB literal. Both bypass the
-    // scheme, so neither responds to theme, high contrast, or a palette swap.
-    RegExp(r'\bColors\.\w+|\bColor\(0x'),
+    // Every way to write a colour that is not a scheme role. `Colors.` and
+    // `CupertinoColors.` are the platform palettes; `Color(0x…)` and the
+    // `Color.fromARGB`/`fromRGBO`/`from` factories are raw channel values.
+    // All bypass the scheme, so none responds to theme, high contrast, or a
+    // palette swap. `Color.lerp` is deliberately NOT here — it interpolates
+    // colours it was given rather than inventing one.
+    RegExp(
+      r'\bColors\.\w+|\bCupertinoColors\.\w+|\bColor\(0x|\bColor\.from\w*\(',
+    ),
     'literal color',
   ),
   _Rule(
@@ -156,7 +248,17 @@ final List<_Rule> _rules = [
   ),
   _Rule(
     'type',
-    RegExp(r'TextStyle\([^)]*\b(fontSize|fontFamily):'),
+    // Matches the ARGUMENT, not the enclosing constructor. Anchoring on
+    // `TextStyle(` missed both of the common shapes: `copyWith(fontSize: 12)`
+    // never mentions TextStyle, and in
+    // `TextStyle(color: Theme.of(context)…, fontSize: 12)` the `[^)]*` ran
+    // out at the `)` of `of(context)` long before reaching the size.
+    //
+    // Deliberately literal-only — a number for size, a quoted string for
+    // family. `fontFamily: BgeTypography.monospaceFamily` is a token
+    // reference and must stay legal, or the one sanctioned override becomes
+    // impossible to write.
+    RegExp(r'''\bfontSize:\s*\d|\bfontFamily:\s*['"]'''),
     'literal type (font size or family)',
   ),
   _Rule(
