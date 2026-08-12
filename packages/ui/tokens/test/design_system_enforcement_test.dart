@@ -79,6 +79,15 @@ void main() {
         'OverflowBar(spacing: 8)': 'spacing',
         'Column(spacing: 12)': 'spacing',
         'Wrap(runSpacing: 4)': 'spacing',
+        // Mixed token-and-literal: the shape a half-finished migration
+        // leaves behind, and the one a regex cannot see past.
+        'EdgeInsets.fromLTRB(BgeTokens.of(context).spaceMd, 12, 0, 0)':
+            'spacing',
+        'SizedBox(width: MediaQuery.of(context).size.width, height: 24)':
+            'spacing',
+        'BoxConstraints(maxWidth: MediaQuery.of(context).size.width, '
+                'minWidth: 100)':
+            'width',
         // color — every way to name one that is not a scheme role
         'color: Colors.black54': 'color',
         'Color(0xFF2B8FF0)': 'color',
@@ -108,6 +117,16 @@ void main() {
         'Color.lerp(synced, other.synced, t)',
         'BorderRadius.circular(tokens.radiusMd)',
         'BoxConstraints(maxWidth: tokens.contentMaxWidth)',
+        // Non-dimensional arguments are none of this rule's business. Reading
+        // the whole argument list would report the stroke width here as
+        // literal spacing, and a rule that cries wolf gets switched off.
+        'SizedBox.square(dimension: t.spaceMd, child: Spinner(strokeWidth: 2))',
+        'SizedBox(width: double.infinity, child: FilledButton(onPressed: f))',
+        'EdgeInsets.all(tokens.spaceMd)',
+        // Zero is "none", not a scale value. There is no token for nothing,
+        // and `EdgeInsets.zero` cannot express a single zero side.
+        'EdgeInsets.fromLTRB(t.spaceMd, t.spaceSm, t.spaceMd, 0)',
+        'BoxConstraints(minHeight: 0)',
         // The one sanctioned type override: a token reference, not a literal.
         'copyWith(fontFamily: BgeTypography.monospaceFamily)',
         'TextStyle(fontSize: size, height: height)',
@@ -206,25 +225,25 @@ const Map<String, List<String>> _allowlist = {
 
 class _Rule {
   const _Rule(this.id, this.pattern, this.message);
+
   final String id;
-  final RegExp pattern;
+
+  /// Source pattern, or null when the rule is only reachable through
+  /// [_scanDimensionalConstructors] — some shapes cannot be matched with a
+  /// regex at all, because a nested call truncates `[^)]*`.
+  final RegExp? pattern;
+
   final String message;
 }
 
 final List<_Rule> _rules = [
+  // Spacing-valued PROPERTIES. Flex, Wrap, OverflowBar and friends take
+  // `spacing:`/`runSpacing:`/`gap:` directly, which no constructor pattern
+  // sees — an `OverflowBar(spacing: 8)` slipped through on that.
   _Rule(
     'spacing',
     RegExp(
-      // Constructors that take spacing positionally or by side. `BgeGap` is
-      // in here for `BgeGap.custom(12)` — the escape hatch is only an escape
-      // hatch if using it is visible; without this the tokenized-looking
-      // form was the easiest way to bypass the scale entirely.
-      r'(SizedBox|EdgeInsets|EdgeInsetsDirectional|BgeGap)[\w.]*\([^)]*?\b\d'
-      // ...and spacing-valued PROPERTIES. Flex, Wrap, OverflowBar and friends
-      // take `spacing:`/`runSpacing:`/`gap:` directly, which the constructor
-      // patterns above never see — the first version of this rule missed an
-      // `OverflowBar(spacing: 8)` while claiming spacing was enforced.
-      r'|\b(spacing|runSpacing|gap|horizontalSpacing|verticalSpacing):\s*\d',
+      r'\b(spacing|runSpacing|gap|horizontalSpacing|verticalSpacing):\s*\d',
     ),
     'literal spacing',
   ),
@@ -246,6 +265,10 @@ final List<_Rule> _rules = [
     RegExp(r'(BorderRadius|Radius)\.circular\(\s*\d'),
     'literal radius',
   ),
+  // Reached only via `_scanDimensionalConstructors` — `BoxConstraints` takes
+  // its widths as arguments that a regex cannot reliably reach past a nested
+  // `MediaQuery.of(context)`.
+  const _Rule('width', null, 'literal layout width'),
   _Rule(
     'type',
     // Matches the ARGUMENT, not the enclosing constructor. Anchoring on
@@ -260,11 +283,6 @@ final List<_Rule> _rules = [
     // impossible to write.
     RegExp(r'''\bfontSize:\s*\d|\bfontFamily:\s*['"]'''),
     'literal type (font size or family)',
-  ),
-  _Rule(
-    'width',
-    RegExp(r'BoxConstraints\([^)]*(maxWidth|minWidth):\s*\d'),
-    'literal layout width',
   ),
 ];
 
@@ -336,6 +354,131 @@ List<_Violation> _scan(String root) {
   return violations;
 }
 
+/// Constructors whose arguments are dimensions, and the rule each reports as.
+///
+/// These cannot be done with a regex. `[^)]*` stops at the FIRST `)`, so a
+/// nested token lookup hides everything after it —
+/// `EdgeInsets.fromLTRB(BgeTokens.of(context).spaceMd, 12, 0, 0)` passed the
+/// gate because the scan ran out at the `)` of `of(context)`. Mixed
+/// token-and-literal constructors are exactly the shape a half-finished
+/// migration leaves behind, so missing them defeats the point.
+const Map<String, String> _dimensionalConstructors = {
+  'SizedBox': 'spacing',
+  'EdgeInsets': 'spacing',
+  'EdgeInsetsDirectional': 'spacing',
+  // The escape hatch is only an escape hatch if reaching for it is visible.
+  'BgeGap': 'spacing',
+  'BoxConstraints': 'width',
+};
+
+/// Named arguments of those constructors that carry a dimension.
+///
+/// Everything else — `child:`, `key:`, `axis:` — is skipped. Without this,
+/// `SizedBox.square(dimension: t.spaceMd, child: CircularProgressIndicator(
+/// strokeWidth: 2))` would report the stroke width as literal spacing, and a
+/// rule that cries wolf gets switched off.
+const Set<String> _dimensionalArgs = {
+  'width',
+  'height',
+  'dimension',
+  'left',
+  'top',
+  'right',
+  'bottom',
+  'start',
+  'end',
+  'horizontal',
+  'vertical',
+  'minWidth',
+  'maxWidth',
+  'minHeight',
+  'maxHeight',
+};
+
+/// Splits a balanced argument list on top-level commas.
+List<String> _topLevelArgs(String args) {
+  final out = <String>[];
+  var depth = 0;
+  var start = 0;
+  for (var i = 0; i < args.length; i++) {
+    final c = args[i];
+    if (c == '(' || c == '[' || c == '{') {
+      depth++;
+    } else if (c == ')' || c == ']' || c == '}') {
+      depth--;
+    } else if (c == ',' && depth == 0) {
+      out.add(args.substring(start, i));
+      start = i + 1;
+    }
+  }
+  out.add(args.substring(start));
+  return out.where((a) => a.trim().isNotEmpty).toList();
+}
+
+/// Bare numeric literals — not parts of identifiers, and not hex colours
+/// (those are the `color` rule's business).
+final _bareNumber = RegExp(r'(?<![\w.$])\d+(?:\.\d+)?');
+
+/// Whether [value] contains a NON-ZERO numeric literal.
+///
+/// Zero is exempt on purpose: `EdgeInsets.fromLTRB(t.spaceMd, t.spaceSm,
+/// t.spaceMd, 0)` and `minHeight: 0` are saying "none", and there is no token
+/// for nothing. `EdgeInsets.zero` covers the all-sides case but cannot express
+/// a single zero side, so demanding a token here would make correct code
+/// unwritable — the fastest way to get an enforcement rule deleted.
+bool _hasNonZeroLiteral(String value) =>
+    _bareNumber.allMatches(value).any((m) => double.parse(m.group(0)!) != 0);
+
+/// Finds literal dimensions inside [_dimensionalConstructors].
+List<_Violation> _scanDimensionalConstructors(String source) {
+  final found = <_Violation>[];
+  final opener = RegExp(
+    r'\b(' + _dimensionalConstructors.keys.join('|') + r')(?:\.\w+)?\s*\(',
+  );
+
+  for (final m in opener.allMatches(source)) {
+    final ruleId = _dimensionalConstructors[m.group(1)]!;
+    final rule = _rules.firstWhere((r) => r.id == ruleId);
+
+    // Walk to the matching close paren, so nested calls cannot truncate us.
+    var depth = 0;
+    var end = -1;
+    for (var i = m.end - 1; i < source.length; i++) {
+      final c = source[i];
+      if (c == '(') {
+        depth++;
+      } else if (c == ')') {
+        depth--;
+        if (depth == 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end == -1) continue;
+
+    for (final arg in _topLevelArgs(source.substring(m.end, end))) {
+      final colon = arg.indexOf(':');
+      final String value;
+      if (colon != -1 &&
+          RegExp(r'^\s*\w+\s*$').hasMatch(arg.substring(0, colon))) {
+        final name = arg.substring(0, colon).trim();
+        if (!_dimensionalArgs.contains(name)) continue;
+        value = arg.substring(colon + 1);
+      } else {
+        // Positional: `EdgeInsets.all(24)`, `BgeGap.custom(12)`.
+        value = arg;
+      }
+      if (_hasNonZeroLiteral(value)) {
+        final line = '\n'.allMatches(source.substring(0, m.start)).length + 1;
+        found.add(_Violation('', line, rule, '${m.group(0)}…${value.trim()}'));
+        break;
+      }
+    }
+  }
+  return found;
+}
+
 /// Scans one file's source. Exposed for the allowlist staleness check.
 ///
 /// Matches against the WHOLE source, not line by line. `dart format` wraps
@@ -368,10 +511,15 @@ List<_Violation> _scanSource(String source, {List<String> exempt = const []}) {
       })
       .join('\n');
 
-  final found = <_Violation>[];
+  final found = <_Violation>[
+    for (final v in _scanDimensionalConstructors(stripped))
+      if (!exempt.contains(v.rule.id)) v,
+  ];
   for (final rule in _rules) {
     if (exempt.contains(rule.id)) continue;
-    for (final match in rule.pattern.allMatches(stripped)) {
+    final pattern = rule.pattern;
+    if (pattern == null) continue;
+    for (final match in pattern.allMatches(stripped)) {
       final line =
           '\n'.allMatches(stripped.substring(0, match.start)).length + 1;
       found.add(_Violation('', line, rule, match.group(0)!));

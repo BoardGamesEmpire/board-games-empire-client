@@ -51,8 +51,14 @@ flutter:
   # Dropping axes would save more, but `opsz` is load-bearing and the rest is
   # small — not worth a fonttools step in the toolchain for it.
   #
-  # Licensed SIL OFL 1.1 — `fonts/OFL.txt` ships beside it, as the licence
-  # requires. Do not remove that file.
+  # Licensed SIL OFL 1.1, which requires the notice to be DISTRIBUTED with the
+  # font — not merely present in the repo. Flutter's license collector only
+  # reads a `LICENSE` file at each package root, and asset declarations do not
+  # feed it, so `fonts/OFL.txt` alone would never have reached a release build:
+  # the notice lives in `packages/ui/tokens/LICENSE`, which the tool folds into
+  # the app's aggregated licenses (and `showLicensePage`). `fonts/OFL.txt` is
+  # kept as the upstream artifact. `font_license_test.dart` fails if either
+  # goes missing.
   fonts:
     - family: Fraunces
       fonts:
