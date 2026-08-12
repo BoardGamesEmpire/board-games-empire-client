@@ -59,6 +59,13 @@ flutter:
   # the app's aggregated licenses (and `showLicensePage`). `fonts/OFL.txt` is
   # kept as the upstream artifact. `font_license_test.dart` fails if either
   # goes missing.
+  #
+  # That LICENSE holds TWO entries — Apache-2.0 for this package's Dart source,
+  # then the font's OFL — separated by a line of eighty hyphens, which is the
+  # delimiter Flutter's collector splits on. Each entry is introduced by the
+  # name it applies to followed by a blank line. The lone `ui_tokens` on line 1
+  # reads like a stray word and is not: drop it and the Apache text's own first
+  # three lines become the "package names" on the app's license page.
   fonts:
     - family: Fraunces
       fonts:

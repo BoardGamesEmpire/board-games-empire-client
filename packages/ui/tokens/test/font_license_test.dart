@@ -53,7 +53,27 @@ void main() {
       // multi-entry format: names, blank line, text, 80 hyphens between.
       final text = File('$packageRoot/LICENSE').readAsStringSync();
 
-      expect(text, startsWith('ui_tokens\n'));
+      // The bare "ui_tokens" on line 1 looks like a stray word and has been
+      // deleted once already. It is load-bearing. Because this file holds TWO
+      // licenses, Flutter's collector treats everything before the first blank
+      // line of EACH entry as the list of package names that entry applies to
+      // (LicenseCollector.obtainLicenses). Without it, the Apache entry's
+      // first three lines become the "package names", and the app's license
+      // page lists:
+      //
+      //     Apache License
+      //     Version 2.0, January 2004
+      //     http://www.apache.org/licenses/
+      //
+      // as three packages instead of `ui_tokens`. Keep the line.
+      expect(
+        text,
+        startsWith('ui_tokens\n\n'),
+        reason:
+            'the first entry must be introduced by its package name followed '
+            'by a blank line, or Flutter parses the license text itself as '
+            'the package list',
+      );
       expect(text, contains('Apache License'));
       expect(
         text,
