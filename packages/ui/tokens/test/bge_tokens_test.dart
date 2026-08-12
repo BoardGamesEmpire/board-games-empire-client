@@ -103,13 +103,55 @@ void main() {
       expect(horizontal.height, 0);
     });
 
-    test('named constructors match the spacing scale', () {
-      expect(const BgeGap.xs().extent, BgeTokens.spaceXsValue);
-      expect(const BgeGap.sm().extent, BgeTokens.spaceSmValue);
-      expect(const BgeGap.md().extent, BgeTokens.spaceMdValue);
-      expect(const BgeGap.lg().extent, BgeTokens.spaceLgValue);
-      expect(const BgeGap.xl().extent, BgeTokens.spaceXlValue);
-      expect(const BgeGap.xxl().extent, BgeTokens.spaceXxlValue);
+    testWidgets('named constructors track the AMBIENT tokens, not constants', (
+      tester,
+    ) async {
+      // The regression this guards: `BgeGap` used to store the value from
+      // `BgeTokens.spaceMdValue` at construction, so a theme supplying
+      // `copyWith(spaceMd: 20)` moved every EdgeInsets to 20 while every gap
+      // stayed at 16. Two readers of one token must not be able to disagree.
+      const customised = BgeTokens.standard;
+      final widened = customised.copyWith(spaceMd: 20);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light().copyWith(extensions: [widened]),
+          home: const Column(children: [BgeGap.md()]),
+        ),
+      );
+
+      expect(tester.getSize(find.byType(BgeGap)).height, 20);
+    });
+
+    testWidgets('each step resolves its own token', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          home: const Column(
+            children: [
+              BgeGap.xs(),
+              BgeGap.sm(),
+              BgeGap.md(),
+              BgeGap.lg(),
+              BgeGap.xl(),
+              BgeGap.xxl(),
+            ],
+          ),
+        ),
+      );
+
+      const expected = [
+        BgeTokens.spaceXsValue,
+        BgeTokens.spaceSmValue,
+        BgeTokens.spaceMdValue,
+        BgeTokens.spaceLgValue,
+        BgeTokens.spaceXlValue,
+        BgeTokens.spaceXxlValue,
+      ];
+      final gaps = find.byType(BgeGap);
+      for (var i = 0; i < expected.length; i++) {
+        expect(tester.getSize(gaps.at(i)).height, expected[i]);
+      }
     });
   });
 

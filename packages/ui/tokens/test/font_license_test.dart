@@ -44,5 +44,24 @@ void main() {
         reason: 'OFL 1.1 requires the copyright notice, not just the terms',
       );
     });
+
+    test('the package license does not misrepresent the Dart source', () {
+      // Flutter attributes a package-root LICENSE to the PACKAGE. A file
+      // holding only the font's OFL would therefore present `ui_tokens`
+      // itself as OFL-licensed and drop the Apache-2.0 terms the source is
+      // actually under. Both entries ship, in Flutter's documented
+      // multi-entry format: names, blank line, text, 80 hyphens between.
+      final text = File('$packageRoot/LICENSE').readAsStringSync();
+
+      expect(text, startsWith('ui_tokens\n'));
+      expect(text, contains('Apache License'));
+      expect(
+        text,
+        contains('\n${'-' * 80}\nFraunces\n'),
+        reason:
+            'the two licenses must be separated by the 80-hyphen delimiter '
+            'Flutter uses to split entries, or they merge into one',
+      );
+    });
   });
 }

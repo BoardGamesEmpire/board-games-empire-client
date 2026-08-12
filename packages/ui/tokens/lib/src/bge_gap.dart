@@ -38,50 +38,108 @@ import 'package:ui_tokens/src/bge_tokens.dart';
 /// [BgeTokens]) — a palette varies colors, never the rhythm — so there is
 /// nothing context-dependent to look up.
 class BgeGap extends StatelessWidget {
-  /// A gap of exactly [extent] logical pixels.
+  /// A gap of exactly [customExtent] logical pixels, bypassing the scale.
   ///
   /// Prefer the named constructors. A literal here is precisely what the
   /// enforcement test looks for, so reaching for this should feel like a
   /// decision rather than a default.
-  const BgeGap.custom(this.extent, {this.axis = Axis.vertical, super.key});
+  const BgeGap.custom(
+    double this.customExtent, {
+    this.axis = Axis.vertical,
+    super.key,
+  }) : _step = BgeSpacingStep.custom;
 
   /// 4dp — the tightest step. Label to its own helper text.
   const BgeGap.xs({this.axis = Axis.vertical, super.key})
-    : extent = BgeTokens.spaceXsValue;
+    : _step = BgeSpacingStep.xs,
+      customExtent = null;
 
   /// 8dp — the intra-control gap: spinner to label, icon to text.
   const BgeGap.sm({this.axis = Axis.vertical, super.key})
-    : extent = BgeTokens.spaceSmValue;
+    : _step = BgeSpacingStep.sm,
+      customExtent = null;
 
   /// 16dp — the inter-control rhythm: field to field.
   const BgeGap.md({this.axis = Axis.vertical, super.key})
-    : extent = BgeTokens.spaceMdValue;
+    : _step = BgeSpacingStep.md,
+      customExtent = null;
 
   /// 24dp — the section break: last field to submit button.
   const BgeGap.lg({this.axis = Axis.vertical, super.key})
-    : extent = BgeTokens.spaceLgValue;
+    : _step = BgeSpacingStep.lg,
+      customExtent = null;
 
   /// 32dp.
   const BgeGap.xl({this.axis = Axis.vertical, super.key})
-    : extent = BgeTokens.spaceXlValue;
+    : _step = BgeSpacingStep.xl,
+      customExtent = null;
 
   /// 48dp.
   const BgeGap.xxl({this.axis = Axis.vertical, super.key})
-    : extent = BgeTokens.spaceXxlValue;
+    : _step = BgeSpacingStep.xxl,
+      customExtent = null;
 
-  /// The gap size in logical pixels.
-  final double extent;
+  final BgeSpacingStep _step;
+
+  /// The explicit size passed to [BgeGap.custom]; null for scale steps.
+  final double? customExtent;
 
   /// Which axis the gap occupies. Vertical by default: gaps live in [Column]s
   /// far more often than in [Row]s.
   final Axis axis;
 
+  /// The resolved size, from the ambient token set.
+  double extentOf(BuildContext context) =>
+      customExtent ?? _step.resolve(BgeTokens.of(context));
+
   @override
-  Widget build(BuildContext context) => switch (axis) {
-    // Only the relevant dimension is constrained. Setting both would force
-    // the cross-axis extent of the parent — a square gap in a Column widens
-    // the Column to the gap's width.
-    Axis.vertical => SizedBox(height: extent),
-    Axis.horizontal => SizedBox(width: extent),
+  Widget build(BuildContext context) {
+    final extent = extentOf(context);
+    return switch (axis) {
+      // Only the relevant dimension is constrained. Setting both would force
+      // the cross-axis extent of the parent — a square gap in a Column widens
+      // the Column to the gap's width.
+      Axis.vertical => SizedBox(height: extent),
+      Axis.horizontal => SizedBox(width: extent),
+    };
+  }
+}
+
+/// A step on the spacing scale, resolved against a [BgeTokens] instance.
+///
+/// Exists so [BgeGap] can stay `const` while still reading the ambient tokens
+/// — it stores which step it is, not what that step currently measures.
+enum BgeSpacingStep {
+  /// [BgeTokens.spaceXs].
+  xs,
+
+  /// [BgeTokens.spaceSm].
+  sm,
+
+  /// [BgeTokens.spaceMd].
+  md,
+
+  /// [BgeTokens.spaceLg].
+  lg,
+
+  /// [BgeTokens.spaceXl].
+  xl,
+
+  /// [BgeTokens.spaceXxl].
+  xxl,
+
+  /// An explicit size that is not on the scale.
+  custom;
+
+  /// This step's size in [tokens].
+  double resolve(BgeTokens tokens) => switch (this) {
+    BgeSpacingStep.xs => tokens.spaceXs,
+    BgeSpacingStep.sm => tokens.spaceSm,
+    BgeSpacingStep.md => tokens.spaceMd,
+    BgeSpacingStep.lg => tokens.spaceLg,
+    BgeSpacingStep.xl => tokens.spaceXl,
+    BgeSpacingStep.xxl => tokens.spaceXxl,
+    // Never reached: `BgeGap.custom` supplies its own value.
+    BgeSpacingStep.custom => tokens.spaceMd,
   };
 }

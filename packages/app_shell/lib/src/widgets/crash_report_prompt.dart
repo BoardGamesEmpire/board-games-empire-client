@@ -204,12 +204,19 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
         TextField(
           key: CrashReportPrompt.commentFieldKey,
           controller: _comment,
-          enabled: !sending,
+          // `readOnly`, not `enabled: false` — the app-wide rule (see
+          // `BgeTextField.readOnly`). A disabled field leaves focus traversal,
+          // so a keyboard or screen-reader user mid-report has the control
+          // vanish for the duration of the send. This is a raw `TextField`
+          // rather than a `BgeTextField` because the crash overlay renders
+          // above the navigator and outside any `ReactiveForm`, which is
+          // exactly why the earlier sweep missed it.
+          readOnly: sending,
           maxLines: 3,
           minLines: 1,
           decoration: InputDecoration(
+            // Border from the theme, like every other field.
             labelText: i18n.crashReportPromptCommentLabel,
-            border: const OutlineInputBorder(),
           ),
         ),
         // #106: the back-dismiss hint, host-driven. A live region so the
