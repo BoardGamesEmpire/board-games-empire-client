@@ -96,7 +96,11 @@ void main() {
         ).thenReturn({'languageTag': corrupt});
         final cubit = LocaleCubit();
         addTearDown(cubit.close);
-        expect(cubit.state, isNull, reason: 'tag "$corrupt" should follow system');
+        expect(
+          cubit.state,
+          isNull,
+          reason: 'tag "$corrupt" should follow system',
+        );
       }
     });
   });

@@ -34,10 +34,8 @@ class SecureStorageEncryptionKeyService implements EncryptionKeyService {
   /// [FlutterSecureStorage]. [random] must be cryptographically secure and
   /// defaults to [Random.secure] — it is injectable only so tests can make
   /// generation deterministic.
-  SecureStorageEncryptionKeyService({
-    required this._storage,
-    Random? random,
-  }) : _random = random ?? Random.secure();
+  SecureStorageEncryptionKeyService({required this._storage, Random? random})
+    : _random = random ?? Random.secure();
 
   static const _prefix = 'encryption_key:';
   static const _metaIdentifier = 'meta';

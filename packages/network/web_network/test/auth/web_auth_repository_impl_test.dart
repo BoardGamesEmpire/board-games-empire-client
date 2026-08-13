@@ -59,12 +59,14 @@ Response<Map<String, dynamic>> _ok(Map<String, dynamic> data) => Response(
   requestOptions: RequestOptions(path: ''),
 );
 
-Response<Map<String, dynamic>> _status(int code, [Map<String, dynamic>? data]) =>
-    Response(
-      data: data,
-      statusCode: code,
-      requestOptions: RequestOptions(path: ''),
-    );
+Response<Map<String, dynamic>> _status(
+  int code, [
+  Map<String, dynamic>? data,
+]) => Response(
+  data: data,
+  statusCode: code,
+  requestOptions: RequestOptions(path: ''),
+);
 
 void main() {
   late MockDio mockDio;

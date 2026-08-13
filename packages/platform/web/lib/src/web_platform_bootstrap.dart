@@ -23,10 +23,7 @@ void configureWebUrlStrategy() => setPathUrlStrategy();
 /// local data layer for web (drift/wasm via `web_storage`) is designed
 /// separately in #63.
 class WebPlatformBootstrap implements PlatformBootstrap {
-  const WebPlatformBootstrap({
-    this._rootModule,
-    this._serverScopeBuilder,
-  });
+  const WebPlatformBootstrap({this._rootModule, this._serverScopeBuilder});
 
   /// Injectable root-module seam (#69); null → [registerWebRootModule].
   /// Nullable field rather than a defaulted one so the constructor stays

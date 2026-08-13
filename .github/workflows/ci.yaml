@@ -50,6 +50,39 @@ jobs:
       - name: Constraints must match the root pin
         run: dart run tool/check_sdk_constraints.dart
 
+  # ── Formatting (#173) ────────────────────────────────────────────
+  # Standalone and codegen-free, like `constraints`: formatting parses,
+  # it does not resolve types, so no generated sources are needed. They
+  # are gitignored and `git ls-files` therefore never offers them —
+  # which is also what keeps this job checking the same file set a
+  # developer checks locally, where those files are present on disk.
+  #
+  # `flutter pub get` IS required, and not for package resolution as
+  # such: very_good_analysis sets `formatter: trailing_commas: preserve`
+  # and reaches the formatter via an `include:` on a package: URI. With
+  # no package_config that include silently falls back to `automate`,
+  # the formatter joins calls a trailing comma should have pinned open,
+  # and this job would fail commits every developer sees as clean.
+  # --language-version does not substitute for it.
+  #
+  # Runs the same script the `format:check` melos script runs, so the
+  # file-set rules have one definition — the `check_sdk_constraints`
+  # arrangement, and the reason this job does not simply call melos.
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: pubspec.yaml
+          channel: stable
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Dart source must be formatted
+        run: dart run tool/format_workspace.dart --check
+
   # ── Codegen (fresh, once) + schema freshness ────────────────────
   # Generated code (.g.dart / .freezed.dart / .config.dart, and the
   # gen-l10n localizations per #33) is gitignored, so every job that

@@ -28,14 +28,12 @@ class GamesTable extends Table {
       text().withDefault(const Constant('BaseGame'))();
 
   /// Aggregate play count across all users (server-provided).
-  IntColumn get totalPlayCount =>
-      integer().withDefault(const Constant(0))();
+  IntColumn get totalPlayCount => integer().withDefault(const Constant(0))();
 
   RealColumn get averageRating => real().nullable()();
   RealColumn get bayesRating => real().nullable()();
   IntColumn get ratingsCount => integer().nullable()();
-  IntColumn get ownedByCount =>
-      integer().withDefault(const Constant(0))();
+  IntColumn get ownedByCount => integer().withDefault(const Constant(0))();
 
   // JSON arrays of names for the denormalised relation lists.
   TextColumn get categoriesJson => text().withDefault(const Constant('[]'))();
@@ -48,8 +46,7 @@ class GamesTable extends Table {
   /// 'Friends', 'FriendsOfFriends', 'FriendsOfHouseholds'). Matches the
   /// [JsonValue] annotations on the [Visibility] enum. Default 'Public'
   /// mirrors the model's default.
-  TextColumn get visibility =>
-      text().withDefault(const Constant('Public'))();
+  TextColumn get visibility => text().withDefault(const Constant('Public'))();
 
   /// Server user id of the row's creator. Nullable for legacy/imported
   /// games whose creator is unknown.

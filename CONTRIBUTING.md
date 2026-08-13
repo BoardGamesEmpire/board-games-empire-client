@@ -96,6 +96,8 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `generate` | Staged codegen — l10n, then build_runner. Required on a fresh checkout. |
 | `analyze` | `flutter analyze` on Flutter packages |
 | `analyze:dart` | `dart analyze --fatal-infos` on pure-Dart packages |
+| `format` | `dart format` over every tracked `.dart` file |
+| `format:check` | Fail if any tracked Dart source is unformatted. Mirrors CI. |
 | `test` | All non-golden tests, 22 packages. Mirrors CI. |
 | `test:goldens` | Golden tests only, against the committed baselines |
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
@@ -178,11 +180,12 @@ CI diffs the snapshots against a fresh dump and fails if they are stale.
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on
-pushes to `master`, in five jobs:
+pushes to `master`, in six jobs:
 
 | Job | Gate |
 | --- | --- |
 | `constraints` | `check_sdk_constraints.dart --self-test`, then the real check |
+| `format` | `dart format --set-exit-if-changed` over the workspace source |
 | `generate` | Codegen succeeds; Drift schema snapshots are not stale. Publishes generated sources as an artifact the later jobs restore. |
 | `analyze` | One root `dart analyze --fatal-infos .` across the workspace |
 | `discover-tests` | Builds the test matrix by finding `test/` directories |

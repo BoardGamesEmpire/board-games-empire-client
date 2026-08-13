@@ -80,9 +80,7 @@ void main(List<String> args) {
 
   final root = File('pubspec.yaml');
   if (!root.existsSync()) {
-    stderr.writeln(
-      'pubspec.yaml not found. Run this from the workspace root.',
-    );
+    stderr.writeln('pubspec.yaml not found. Run this from the workspace root.');
     exit(1);
   }
 
@@ -169,12 +167,12 @@ void main(List<String> args) {
       problems.add(
         wantFlutter == null
             ? '$path: declares flutter ${_show(actualFlutter)} but depends on '
-                'nothing from the Flutter SDK — the key should be removed'
+                  'nothing from the Flutter SDK — the key should be removed'
             : actualFlutter == null
-                ? '$path: depends on the Flutter SDK but declares no '
-                    '`flutter:` constraint, expected ${_show(wantFlutter)}'
-                : '$path: flutter is ${_show(actualFlutter)}, expected '
-                    '${_show(wantFlutter)}',
+            ? '$path: depends on the Flutter SDK but declares no '
+                  '`flutter:` constraint, expected ${_show(wantFlutter)}'
+            : '$path: flutter is ${_show(actualFlutter)}, expected '
+                  '${_show(wantFlutter)}',
       );
     }
 
@@ -247,9 +245,7 @@ void main(List<String> args) {
   for (final p in problems) {
     stderr.writeln('  $p');
   }
-  stderr.writeln(
-    '\nFix with: dart run tool/check_sdk_constraints.dart --fix',
-  );
+  stderr.writeln('\nFix with: dart run tool/check_sdk_constraints.dart --fix');
   exit(1);
 }
 
@@ -299,7 +295,7 @@ void _selfTest() {
       flutter,
     ),
     'name: a\nenvironment:\n  sdk: ^3.12.0\n'
-    '  flutter: ">=3.44.4"\nresolution: workspace\n',
+        '  flutter: ">=3.44.4"\nresolution: workspace\n',
   );
 
   expect(
@@ -310,7 +306,7 @@ void _selfTest() {
       flutter,
     ),
     'environment:\n  sdk: ^3.12.0\n  flutter: ">=3.44.4"\n'
-    'resolution: workspace\n',
+        'resolution: workspace\n',
   );
 
   // Regression: --fix used to report success and change nothing here.
@@ -322,7 +318,7 @@ void _selfTest() {
       flutter,
     ),
     'environment:\n  sdk: ^3.12.0\n  flutter: ">=3.44.4"\n'
-    'resolution: workspace\n',
+        'resolution: workspace\n',
   );
 
   expect(
@@ -341,7 +337,7 @@ void _selfTest() {
       flutter,
     ),
     'environment: # toolchain\n  sdk: ^3.12.0\n'
-    '  flutter: ">=3.44.4"\nresolution: workspace\n',
+        '  flutter: ">=3.44.4"\nresolution: workspace\n',
   );
 
   expect(
@@ -364,7 +360,7 @@ void _selfTest() {
       null,
     ),
     'environment:\n  # pinned, see root\n  sdk: ^3.12.0\n'
-    'resolution: workspace\n',
+        'resolution: workspace\n',
   );
 
   expect(
@@ -440,9 +436,12 @@ String? _rewriteEnvironment(String source, String sdk, String? flutter) {
   }
 
   final block = lines.sublist(start + 1, end);
-  final indent = RegExp(r'^(\s+)').firstMatch(
-        block.firstWhere((l) => l.trim().isNotEmpty, orElse: () => '  x'),
-      )?.group(1) ??
+  final indent =
+      RegExp(r'^(\s+)')
+          .firstMatch(
+            block.firstWhere((l) => l.trim().isNotEmpty, orElse: () => '  x'),
+          )
+          ?.group(1) ??
       '  ';
 
   // Strip the two keys we own, remembering where the first one sat so the
@@ -466,6 +465,9 @@ String? _rewriteEnvironment(String source, String sdk, String? flutter) {
     if (flutter != null) '${indent}flutter: "$flutter"',
   ]);
 
-  return [...lines.sublist(0, start + 1), ...rebuilt, ...lines.sublist(end)]
-      .join('\n');
+  return [
+    ...lines.sublist(0, start + 1),
+    ...rebuilt,
+    ...lines.sublist(end),
+  ].join('\n');
 }

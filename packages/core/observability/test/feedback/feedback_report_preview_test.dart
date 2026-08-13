@@ -65,10 +65,9 @@ void main() {
 
   group('displayJson', () {
     test('marks redacted fields visibly instead of removing them', () {
-      final json = FeedbackReportPreview(report: _report())
-          .redactField('platform')
-          .redactField('deviceInfo.model')
-          .displayJson();
+      final json = FeedbackReportPreview(
+        report: _report(),
+      ).redactField('platform').redactField('deviceInfo.model').displayJson();
       expect(json['platform'], FeedbackReportPreview.redactedMarker);
       expect(
         (json['deviceInfo'] as Map<String, dynamic>)['model'],
@@ -83,9 +82,9 @@ void main() {
       'userRedactedFields reflects the preview, not the underlying report',
       () {
         final report = _report().copyWith(userRedactedFields: ['title']);
-        final json = FeedbackReportPreview(report: report)
-            .redactField('platform')
-            .displayJson();
+        final json = FeedbackReportPreview(
+          report: report,
+        ).redactField('platform').displayJson();
         expect(json['userRedactedFields'], equals(['platform']));
       },
     );
@@ -96,9 +95,9 @@ void main() {
         message: 'm',
         deviceInfo: const {'model': null, 'osVersion': '16'},
       );
-      final json = FeedbackReportPreview(report: report)
-          .redactField('deviceInfo.model')
-          .displayJson();
+      final json = FeedbackReportPreview(
+        report: report,
+      ).redactField('deviceInfo.model').displayJson();
       final device = json['deviceInfo'] as Map<String, dynamic>;
       expect(device['model'], isNull);
       expect(device['osVersion'], '16');
@@ -182,9 +181,9 @@ void main() {
         message: 'm',
         deviceInfo: const {'model': null, 'osVersion': '16'},
       );
-      final submittable = FeedbackReportPreview(report: report)
-          .redactField('deviceInfo.model')
-          .toSubmittableReport();
+      final submittable = FeedbackReportPreview(
+        report: report,
+      ).redactField('deviceInfo.model').toSubmittableReport();
       expect(submittable.deviceInfo!['model'], isNull);
       expect(submittable.deviceInfo!['osVersion'], '16');
     });
