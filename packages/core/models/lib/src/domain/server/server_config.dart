@@ -57,8 +57,10 @@ abstract class ServerConfig with _$ServerConfig {
   bool get isDisconnected => connectionState == ConnectionState.disconnected;
 
   /// Whether the cached identity should be refreshed.
-  /// True if never fetched, or if older than the server's Cache-Control
-  /// max-age of 3600 seconds.
+  /// True once [lastIdentityFetchedAt] is older than the server's
+  /// Cache-Control max-age of 3600 seconds. There is no "never fetched"
+  /// case: a config is only constructed after a successful well-known
+  /// fetch, so [lastIdentityFetchedAt] is required and non-nullable.
   bool get isIdentityStale {
     final fetched = lastIdentityFetchedAt;
     return DateTime.now().toUtc().difference(fetched).inHours >= 1;

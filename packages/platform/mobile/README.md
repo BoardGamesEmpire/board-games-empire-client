@@ -1,39 +1,33 @@
-<!--
-This README describes the package. If you publish this package to pub.dev,
-this README's contents appear on the landing page for your package.
+# mobile_platform
 
-For information about how to write a good package README, see the guide for
-[writing package pages](https://dart.dev/tools/pub/writing-package-pages).
+The mobile composition root for Board Games Empire.
 
-For general information about developing packages, see the Dart guide for
-[creating packages](https://dart.dev/guides/libraries/create-packages)
-and the Flutter guide for
-[developing packages and plugins](https://flutter.dev/to/develop-packages).
--->
+A thin subclass of `NativePlatformBootstrap` (from `native_platform`), which
+does the real work: opening the encrypted meta database, building the meta
+repositories, composing the per-server `ServerContextFactory`, and
+constructing and initializing the `ServerOrchestrator`. This package exists
+as the hook point for mobile-specific concerns.
 
-TODO: Put a short description of the package here that helps potential users
-know whether this package might be useful for them.
+## Responsibilities
 
-## Features
+- **`MobilePlatformBootstrap`** — the shared native composition, unmodified
+  for the alpha scope. Logging stays Logcat-only; the rotating file log is a
+  desktop-only override.
 
-TODO: List what your package can do. Maybe include images, gifs, or videos.
+## Boundaries
 
-## Getting started
+- Mobile-specific work that has not landed yet belongs here when it does:
+  connectivity monitoring, device info for feedback reports, deep-link
+  manifests (#10), and `BuildInfo` (#35).
+- Everything shared with desktop stays in `native_platform`. If a change
+  would apply to both, it goes there, not here — which is why this class is
+  currently empty, and that is the intended state rather than an omission.
 
-TODO: List prerequisites and provide or point to information on how to
-start using the package.
-
-## Usage
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder.
+## Entry point
 
 ```dart
-const like = 'sample';
+// apps/mobile/lib/main.dart
+await runBgeApp(platformBootstrap: MobilePlatformBootstrap());
 ```
 
-## Additional information
-
-TODO: Tell users more about the package: where to find more information, how to
-contribute to the package, how to file issues, what response they can expect
-from the package authors, and more.
+Part of the Board Games Empire client monorepo; not published to pub.dev.

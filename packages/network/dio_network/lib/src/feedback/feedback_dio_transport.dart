@@ -4,7 +4,7 @@ import 'package:observability/observability.dart';
 /// Concrete [FeedbackTransport] posting through a **per-server** Dio
 /// instance (#69, #97).
 ///
-/// Wire contract (backend `libs/api/feedback`): `POST /feedback/reports`
+/// Wire contract (backend `libs/api/feedback`): `POST /api/feedback/reports`
 /// → 201. The path is relative — the per-server Dio carries the base URL
 /// (path-prefix deployments included), and the existing per-server auth
 /// plumbing attaches the BetterAuth session the endpoint requires (CASL

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:observability/observability.dart';
 
-/// Wire contract (resolved from backend source): `POST /feedback/reports`
+/// Wire contract (resolved from backend source): `POST /api/feedback/reports`
 /// → 201. The path is relative — the per-server Dio carries the base URL
 /// (path-prefix deployments included), and the existing per-server auth
 /// plumbing attaches the BetterAuth session (the endpoint requires it:

@@ -164,7 +164,7 @@ final class RemoveFromCollectionOperation extends SyncOperation {
 
 // ── Household operations ─────────────────────────────────────────────
 
-/// Creates a household on the server (`POST /households`).
+/// Creates a household on the server (`POST /api/households`).
 ///
 /// Enqueued by `HouseholdRepositoryImpl.create` after the optimistic
 /// local household row is written. Carries the full backend create

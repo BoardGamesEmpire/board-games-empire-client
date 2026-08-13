@@ -156,7 +156,8 @@ why, and #159 for the open question of which host should own the baseline.
 Commit only the `ci/` PNGs.
 
 Both golden scripts filter on `dirExists: test/goldens`, so they run only in
-packages that actually own baselines (just `ui_tokens` today). If you add goldens
+packages that actually own baselines — `ui_tokens` and `ui`
+(`packages/ui/widgets`) today. If you add goldens
 to another package, put them under `test/goldens/` or the scripts will skip it —
 and note that `flutter test --tags golden` exits 79 ("no tests ran") in a package
 with no golden-tagged tests, which melos reports as a failure rather than a

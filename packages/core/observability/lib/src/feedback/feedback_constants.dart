@@ -32,7 +32,7 @@ abstract final class FeedbackConstants {
   static const int maxLocaleLength = 32;
 
   /// Field-level cap on `clientRequestId` (backend #251; the same field
-  /// name and cap `POST /households` uses, per backend #210).
+  /// name and cap `POST /api/households` uses, per backend #210).
   static const int maxClientRequestIdLength = 128;
 
   /// Cap on the `userRedactedFields` array length.
