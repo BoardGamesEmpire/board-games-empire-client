@@ -96,7 +96,7 @@ abstract class FeedbackReport with _$FeedbackReport {
     /// Idempotency token — unique per (user, report) on the backend, so
     /// offline-queue retries don't create duplicates. The backend
     /// short-circuits a replay to the existing report (backend #251) and
-    /// uses this same field name for `POST /households` (backend #210).
+    /// uses this same field name for `POST /api/households` (backend #210).
     ///
     /// Deliberately **not** named for correlation: the backend's
     /// `correlationId` is a request-*tracing* concept, and a near-homonym

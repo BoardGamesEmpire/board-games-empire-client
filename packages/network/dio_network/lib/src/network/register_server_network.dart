@@ -107,7 +107,7 @@ void registerServerNetwork({
 
   // #39: the per-server household remote. Same convention as the feedback
   // transport above — it shares the per-server Dio (base URL + BetterAuth
-  // session the `/households` endpoints require) and adds no auth of its
+  // session the `/api/households` endpoints require) and adds no auth of its
   // own. Const and stateless; the container owns the Dio.
   container.registerSingleton<HouseholdRemoteDataSource>(
     HouseholdRemoteDataSourceImpl(dio),

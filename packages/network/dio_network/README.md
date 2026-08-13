@@ -41,7 +41,7 @@ Interceptor order (see `register_server_network.dart` for the reasoning):
 
 ## HouseholdRemoteDataSourceImpl
 
-Implements `HouseholdRemoteDataSource` (#39): `POST /households`, unwrapping
+Implements `HouseholdRemoteDataSource` (#39): `POST /api/households`, unwrapping
 the `{ message, household }` envelope into a domain `Household`.
 
 - Takes the **injected** per-server `Dio` — the base URL (path-prefix

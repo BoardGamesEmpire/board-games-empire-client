@@ -1,0 +1,17 @@
+// Editor-only. No CI job lints markdown; this exists so a stock
+// markdownlint setup does not flag the repo's own conventions.
+{
+  // MD041 — "first line in a file should be a top-level heading" — is
+  // off repo-wide. The driver is changelogs: 22 of the 24 package
+  // CHANGELOG.md files open at `## <version>`, the format
+  // `flutter create` generates and the one pub.dev parses as a version
+  // heading. The rule is wrong for those files rather than the reverse,
+  // and markdownlint cannot scope a rule to a filename glob.
+  //
+  // It also fires on PULL_REQUEST_TEMPLATE.md (opens at `## What`) and
+  // on the package READMEs still carrying the pub template, which open
+  // with the template's HTML comment. Those READMEs are a real gap —
+  // tracked separately, see #198 — not something a lint rule should be
+  // left on to nag about.
+  "MD041": false
+}

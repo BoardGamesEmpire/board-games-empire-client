@@ -161,8 +161,9 @@ melos:
     # that gap.
     #
     # Both filter on test/goldens, i.e. packages that actually own
-    # baselines (just ui_tokens today). A package with a test dir but no
-    # golden-tagged tests does NOT no-op: `flutter test --tags golden`
+    # baselines (ui_tokens and ui/widgets today). A package with a test
+    # dir but no golden-tagged tests does NOT no-op:
+    # `flutter test --tags golden`
     # exits 79 ("no tests ran"), which melos reports as a failure. The
     # broader dirExists: test filter therefore failed in 21 of 22
     # packages — goldens:update had that bug from the start, and the

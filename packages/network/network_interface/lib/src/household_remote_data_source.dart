@@ -34,7 +34,7 @@ import 'package:models/domain.dart';
 abstract class HouseholdRemoteDataSource {
   /// Creates a household on the server.
   ///
-  /// Wire contract (backend `libs/api/household`): `POST /households`
+  /// Wire contract (backend `libs/api/household`): `POST /api/households`
   /// `{ name, description?, image?, language?, visibility? }` → 201
   /// `{ message, household }`. The creator becomes `HouseholdOwner`
   /// server-side. [language] is an IETF BCP 47 tag; [visibility] is a
