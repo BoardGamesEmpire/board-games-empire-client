@@ -52,6 +52,27 @@ import 'server_context_impl.dart';
 /// event (async delivery, above), the config it reads is consistent with
 /// that event. The stored config is a connect-time snapshot; that is
 /// sufficient while no rename-server flow exists.
+///
+/// ## Promotion order (#175)
+///
+/// Disconnecting the active server promotes the **most recently active**
+/// of the remaining connected servers, as the [ServerOrchestrator]
+/// contract states. [_lastActiveTick] is that record: [_commitActive]
+/// stamps the newly active server with a monotonically increasing
+/// counter, and [_mostRecentlyActiveOther] promotes the highest.
+///
+/// The counter is removed with the context, on the same paths that clear
+/// [_configs], so recency describes a server's *current* connection. A
+/// server that disconnects and reconnects therefore starts with no
+/// recency rather than reclaiming a stale stamp — it has not been active
+/// since it came back, and promoting it over a server that has been
+/// would not be "most recently active" in any sense a user would
+/// recognize.
+///
+/// A server that has never been active carries no tick and ranks below
+/// every server that has; among equals the insertion order of
+/// [_contexts] decides, which is the pre-#175 behavior preserved as the
+/// tiebreak.
 class ServerOrchestratorImpl implements ServerOrchestrator {
   ServerOrchestratorImpl({
     required this._serverRepository,
@@ -66,11 +87,26 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   final ServerContextFactory _contextFactory;
   final bool _isDesktop;
 
+  /// The connected contexts, keyed by local server id.
+  ///
+  /// Iteration order is load-bearing, not incidental: a Dart map literal is
+  /// a `LinkedHashMap`, and [_mostRecentlyActiveOther] leans on that
+  /// insertion order as the promotion tiebreak among servers with no
+  /// recency. Swapping in an unordered or sorted map would change which
+  /// server gets promoted — the "falls back to insertion order" test
+  /// covers that, so it would fail rather than drift silently.
   final Map<String, ServerContext> _contexts = {};
 
   /// Connect-time [ServerConfig] snapshots, keyed like [_contexts] and
   /// mutated in lockstep with it (see class docs, "Config bookkeeping").
   final Map<String, ServerConfig> _configs = {};
+
+  /// Activation recency, newest = highest (see class docs, "Promotion
+  /// order"). A monotonic counter rather than a timestamp: promotion only
+  /// needs the ordering, and a counter cannot be perturbed by clock skew,
+  /// NTP steps, or two activations landing in the same clock tick.
+  final Map<String, int> _lastActiveTick = {};
+  int _activationTick = 0;
 
   final Map<String, Timer> _backgroundingTimers = {};
 
@@ -167,6 +203,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
           _logError('activating restored server $chosenActive failed', e, st);
           await _disposeQuietly(_contexts.remove(chosenActive)!);
           _configs.remove(chosenActive);
+          _lastActiveTick.remove(chosenActive);
           await _updateStateQuietly(chosenActive, ConnectionState.disconnected);
           _activeServerId = null;
         }
@@ -306,6 +343,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
               }
               await _disposeQuietly(_contexts.remove(serverId)!);
               _configs.remove(serverId);
+              _lastActiveTick.remove(serverId);
               rethrow;
             }
           }
@@ -342,7 +380,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       // app continues with no active server rather than pointing at a
       // context that is not actually active.
       if (_activeServerId == serverId) {
-        final nextId = _contexts.keys.where((id) => id != serverId).firstOrNull;
+        final nextId = _mostRecentlyActiveOther(serverId);
 
         String? promotedId;
         if (nextId != null) {
@@ -375,6 +413,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       await context.dispose();
       _contexts.remove(serverId);
       _configs.remove(serverId);
+      _lastActiveTick.remove(serverId);
 
       await _serverRepository.updateConnectionState(
         serverId: serverId,
@@ -512,11 +551,34 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     }
     _contexts.clear();
     _configs.clear();
+    _lastActiveTick.clear();
+    _activeServerId = null;
 
     await _activeContextController.close();
     await _contextsController.close();
 
     _isInitialized = false;
+  }
+
+  /// The connected server other than [excludedId] that was active most
+  /// recently, or null if there is no other connected server.
+  ///
+  /// Servers that have never been active in their current connection carry
+  /// no tick and rank below every server that has. Ties — which is the
+  /// common case, since a monitoring server that was never activated is
+  /// the norm — fall back to insertion order, because [_contexts] is
+  /// insertion-ordered and the fold keeps the incumbent on a non-strict
+  /// comparison.
+  String? _mostRecentlyActiveOther(String excludedId) {
+    final candidates = _contexts.keys.where((id) => id != excludedId);
+    if (candidates.isEmpty) return null;
+
+    return candidates.reduce(
+      (best, id) =>
+          (_lastActiveTick[id] ?? -1) > (_lastActiveTick[best] ?? -1)
+          ? id
+          : best,
+    );
   }
 
   /// Brings [context] to [ServerContextState.active] from any connected
@@ -559,6 +621,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     }
 
     _activeServerId = serverId;
+    _lastActiveTick[serverId] = ++_activationTick;
     _emitActiveChange();
   }
 

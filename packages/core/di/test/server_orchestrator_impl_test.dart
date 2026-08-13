@@ -453,6 +453,71 @@ void main() {
       });
     });
 
+    // Three servers, because promotion *order* is unobservable with two:
+    // insertion order and activation recency can only disagree when a
+    // server other than the first-connected has been active (#175).
+    group('disconnectServer() promotion order', () {
+      setUp(() async {
+        await orchestrator.initialize();
+        stubUpdateConnectionState();
+        stubUpdateLastActive();
+        for (final id in ['server-a', 'server-b', 'server-c']) {
+          stubGetServer(id);
+          await orchestrator.connectServer(id);
+        }
+      });
+
+      test('promotes the most recently active server, not the first '
+          'connected', () async {
+        // server-a is active from its connect; b then c take over in
+        // turn. Among the survivors of disconnecting c, insertion order
+        // would say a and recency says b — so this distinguishes them.
+        await orchestrator.switchActiveServer('server-b');
+        await orchestrator.switchActiveServer('server-c');
+
+        await orchestrator.disconnectServer('server-c');
+
+        expect(orchestrator.activeServerId, 'server-b');
+      });
+
+      test('falls back to insertion order among servers that were never '
+          'active', () async {
+        // Only server-a has ever been active, so b and c carry no
+        // recency at all; the earliest-connected of them wins.
+        await orchestrator.disconnectServer('server-a');
+
+        expect(orchestrator.activeServerId, 'server-b');
+      });
+
+      test('a reconnected server carries no recency from its previous '
+          'connection', () async {
+        // server-b was active more recently than server-a, but then
+        // disconnected and came back — and has not been active since.
+        // server-a therefore wins: recency is scoped to a server's
+        // current connection, like the rest of the per-context
+        // bookkeeping, not to its whole history. Carrying the stale
+        // stamp across the reconnect would promote server-b here.
+        await orchestrator.switchActiveServer('server-b');
+        await orchestrator.switchActiveServer('server-c');
+        await orchestrator.disconnectServer('server-b');
+        await orchestrator.connectServer('server-b');
+
+        await orchestrator.disconnectServer('server-c');
+
+        expect(orchestrator.activeServerId, 'server-a');
+      });
+
+      test('activeServerId is null once the last connected server is '
+          'disconnected', () async {
+        await orchestrator.disconnectServer('server-b');
+        await orchestrator.disconnectServer('server-c');
+        await orchestrator.disconnectServer('server-a');
+
+        expect(orchestrator.activeServerId, isNull);
+        expect(orchestrator.currentConnectedCount, 0);
+      });
+    });
+
     group('switchActiveServer()', () {
       setUp(() async {
         await orchestrator.initialize();
@@ -487,12 +552,20 @@ void main() {
         ).called(greaterThan(0));
       });
 
-      test('no-op when switching to already active server', () async {
+      // The documented contract is an idempotent no-op, not a throw:
+      // a switcher UI marks the active server, so re-selecting it must
+      // not be an error (#175).
+      test('returns without effect when the target is already active', () async {
         await orchestrator.switchActiveServer('server-a'); // already active
+
+        expect(orchestrator.activeServerId, 'server-a');
         verifyNever(() => mockContexts['server-a']!.background());
       });
 
-      test('throws StateError for disconnected target', () async {
+      // StateError, not ServerNotFoundException: the target may well be
+      // registered in the repository — what it is not is *connected*,
+      // and switchActiveServer never consults the repository (#175).
+      test('throws StateError for a target that is not connected', () async {
         expect(
           () => orchestrator.switchActiveServer('not-connected'),
           throwsStateError,
@@ -543,6 +616,25 @@ void main() {
         await orchestrator.initialize();
         await orchestrator.dispose();
         await expectLater(orchestrator.dispose(), completes);
+      });
+
+      // dispose() resets orchestrator state, and activeServerId is part
+      // of it: leaving the pointer set would report a non-null active
+      // server whose context and config both read null, contradicting
+      // the documented "null whenever no server is active" (#175).
+      test('clears the active server pointer with the contexts', () async {
+        await orchestrator.initialize();
+        stubUpdateConnectionState();
+        stubUpdateLastActive();
+        stubGetServer('server-a');
+        await orchestrator.connectServer('server-a');
+        expect(orchestrator.activeServerId, 'server-a');
+
+        await orchestrator.dispose();
+
+        expect(orchestrator.activeServerId, isNull);
+        expect(orchestrator.getActiveContext(), isNull);
+        expect(orchestrator.activeConfig, isNull);
       });
     });
 

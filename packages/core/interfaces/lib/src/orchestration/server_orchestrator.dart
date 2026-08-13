@@ -18,7 +18,13 @@ abstract class ServerOrchestrator {
   int get currentConnectedCount;
 
   /// Local server id of the currently active foreground server.
-  /// Null only before [initialize] completes.
+  ///
+  /// Null whenever no server is active, which is a normal state and not
+  /// only a pre-[initialize] one: before [initialize] completes, after it
+  /// completes with no connected servers to restore, after the last
+  /// connected server is disconnected, and after a promotion or a
+  /// restore-time activation fails. Treat it as nullable at every point
+  /// in the lifecycle.
   String? get activeServerId;
 
   /// The [ServerConfig] of the currently active server; null when no
@@ -87,6 +93,12 @@ abstract class ServerOrchestrator {
   ///
   /// If disconnecting the active server and other connected servers exist,
   /// the most recently active among them becomes the new active server.
+  /// Recency is scoped to a server's current connection: one that has
+  /// never been active since it connected ranks below any that has, and
+  /// among servers with no recency the earliest-connected wins. If the
+  /// promotion itself fails, or there is no other connected server,
+  /// [activeServerId] becomes null rather than pointing at a context that
+  /// is not actually active.
   ///
   /// Throws [ServerNotFoundException] if [serverId] is not in the repository.
   /// Throws [StateError] if server is already disconnected.
@@ -99,8 +111,16 @@ abstract class ServerOrchestrator {
   /// - Transitions [targetServerId] from monitoring or backgrounding to
   ///   [ServerContextState.active], cancelling its backgrounding timer if present.
   ///
-  /// Throws [ServerNotFoundException] if [targetServerId] is not connected.
-  /// Throws [StateError] if [targetServerId] is already active or disconnected.
+  /// Returns without effect if [targetServerId] is already the active
+  /// server — the call is idempotent, so a switcher UI can hand it the
+  /// user's selection without first checking whether it changed.
+  ///
+  /// Throws [StateError] if [targetServerId] is not currently connected,
+  /// which covers a disconnected server and an unregistered id alike.
+  /// Not [ServerNotFoundException]: this method never consults the
+  /// repository, so the target may well be registered there — what it is
+  /// not is connected, and switching is only meaningful between connected
+  /// servers.
   Future<void> switchActiveServer(String targetServerId);
 
   /// Returns the context for [serverId], or null if disconnected.
