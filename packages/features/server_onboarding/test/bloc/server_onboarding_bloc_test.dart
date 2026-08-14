@@ -104,6 +104,57 @@ void main() {
       );
     });
 
+    group('stale failure cleared by the form (#171)', () {
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'retires a failure so a stale banner cannot outlive the input it '
+        'describes',
+        build: build,
+        seed: () => const ServerOnboardingUnreachable(),
+        act: (bloc) => bloc.add(const ServerOnboardingFailureCleared()),
+        expect: () => const [ServerOnboardingIdle()],
+        verify: (_) {
+          verifyNever(() => wellKnown.fetchIdentity(any()));
+          verifyNever(
+            () => orchestrator.addAndActivateServer(
+              displayName: any(named: 'displayName'),
+              serverUrl: any(named: 'serverUrl'),
+              bgeServerId: any(named: 'bgeServerId'),
+              identity: any(named: 'identity'),
+            ),
+          );
+        },
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'is inert when there is no failure to retire',
+        build: build,
+        act: (bloc) => bloc.add(const ServerOnboardingFailureCleared()),
+        expect: () => const <ServerOnboardingState>[],
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'cannot interrupt a request in flight',
+        build: build,
+        seed: () => const ServerOnboardingInProgress(),
+        act: (bloc) => bloc.add(const ServerOnboardingFailureCleared()),
+        // A widget clearing a banner has no business cancelling a request,
+        // and the form's fields are read-only while one is running anyway —
+        // but the bloc is where that has to be true rather than assumed.
+        expect: () => const <ServerOnboardingState>[],
+      );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'cannot undo a success',
+        build: build,
+        seed: () => const ServerOnboardingSucceeded(
+          serverId: 'local-1',
+          displayName: 'Home BGE',
+        ),
+        act: (bloc) => bloc.add(const ServerOnboardingFailureCleared()),
+        expect: () => const <ServerOnboardingState>[],
+      );
+    });
+
     group('offline fast-fail (#9)', () {
       blocTest<ServerOnboardingBloc, ServerOnboardingState>(
         'surfaces offline before any fetch',
