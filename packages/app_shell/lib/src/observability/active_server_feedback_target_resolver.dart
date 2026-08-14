@@ -28,9 +28,7 @@ import 'package:observability/observability.dart';
 /// life. The container lookups are `isRegistered`-guarded because a
 /// scope can legitimately exist before its network leg is installed.
 class ActiveServerFeedbackTargetResolver implements FeedbackTargetResolver {
-  const ActiveServerFeedbackTargetResolver({
-    required this._scopeSource,
-  });
+  const ActiveServerFeedbackTargetResolver({required this._scopeSource});
 
   final ActiveServerScope? Function() _scopeSource;
 

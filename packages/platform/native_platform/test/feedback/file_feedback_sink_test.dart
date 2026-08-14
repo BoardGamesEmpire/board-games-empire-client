@@ -205,10 +205,7 @@ void main() {
 
       final pending = await sink.pending();
 
-      expect(pending.map((r) => r.storageKey), [
-        'zzz-oldest',
-        'aaa-newest',
-      ]);
+      expect(pending.map((r) => r.storageKey), ['zzz-oldest', 'aaa-newest']);
     });
 
     test('pending reaps a pre-#161 record whose token was written as '
@@ -225,7 +222,8 @@ void main() {
       expect(
         stale.existsSync(),
         isFalse,
-        reason: 'the #161 decision is drop, not skip — a skipped file '
+        reason:
+            'the #161 decision is drop, not skip — a skipped file '
             'would leak for the life of the install',
       );
     });
@@ -361,7 +359,8 @@ void main() {
       expect(
         abandoned.existsSync(),
         isFalse,
-        reason: 'every abandoned temp has a distinct name, so never '
+        reason:
+            'every abandoned temp has a distinct name, so never '
             'reclaiming them grows without bound',
       );
     });

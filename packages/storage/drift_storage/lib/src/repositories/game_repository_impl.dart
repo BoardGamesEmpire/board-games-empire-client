@@ -19,22 +19,18 @@ class GameRepositoryImpl implements GameRepository {
     // lookups stay consistent with the list/watch APIs. The schema
     // permits `deletedAt` on games for soft-delete; this filter
     // ensures the rest of the app never has to special-case it.
-    final row =
-        await (_db.select(_db.gamesTable)..where(
-              (t) => t.id.equals(id) & t.deletedAt.isNull(),
-            ))
-            .getSingleOrNull();
+    final row = await (_db.select(
+      _db.gamesTable,
+    )..where((t) => t.id.equals(id) & t.deletedAt.isNull())).getSingleOrNull();
     return row == null ? null : _mapGame(row);
   }
 
   @override
   Future<List<Game>> getGames(List<String> ids) async {
     if (ids.isEmpty) return [];
-    final rows =
-        await (_db.select(_db.gamesTable)..where(
-              (t) => t.id.isIn(ids) & t.deletedAt.isNull(),
-            ))
-            .get();
+    final rows = await (_db.select(
+      _db.gamesTable,
+    )..where((t) => t.id.isIn(ids) & t.deletedAt.isNull())).get();
     return rows.map(_mapGame).toList();
   }
 
@@ -123,9 +119,8 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Stream<Game?> watchGame(String id) =>
-      (_db.select(_db.gamesTable)..where(
-            (t) => t.id.equals(id) & t.deletedAt.isNull(),
-          ))
+      (_db.select(_db.gamesTable)
+            ..where((t) => t.id.equals(id) & t.deletedAt.isNull()))
           .watchSingleOrNull()
           .map((row) => row == null ? null : _mapGame(row));
 

@@ -54,10 +54,8 @@ class ClockSkewInterceptor extends Interceptor {
   /// clock, never [ClockService.nowUtc] — the estimator compares raw
   /// local time to server time, and correcting the inputs with the
   /// output would feed the estimate back into itself.
-  ClockSkewInterceptor({
-    required this._recorder,
-    DateTime Function()? nowUtc,
-  }) : _nowUtc = nowUtc ?? _systemNowUtc;
+  ClockSkewInterceptor({required this._recorder, DateTime Function()? nowUtc})
+    : _nowUtc = nowUtc ?? _systemNowUtc;
 
   static DateTime _systemNowUtc() => DateTime.now().toUtc();
 

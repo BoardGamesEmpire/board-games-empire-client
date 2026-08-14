@@ -555,12 +555,15 @@ void main() {
       // The documented contract is an idempotent no-op, not a throw:
       // a switcher UI marks the active server, so re-selecting it must
       // not be an error (#175).
-      test('returns without effect when the target is already active', () async {
-        await orchestrator.switchActiveServer('server-a'); // already active
+      test(
+        'returns without effect when the target is already active',
+        () async {
+          await orchestrator.switchActiveServer('server-a'); // already active
 
-        expect(orchestrator.activeServerId, 'server-a');
-        verifyNever(() => mockContexts['server-a']!.background());
-      });
+          expect(orchestrator.activeServerId, 'server-a');
+          verifyNever(() => mockContexts['server-a']!.background());
+        },
+      );
 
       // StateError, not ServerNotFoundException: the target may well be
       // registered in the repository — what it is not is *connected*,

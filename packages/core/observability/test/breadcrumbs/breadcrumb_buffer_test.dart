@@ -13,7 +13,10 @@ void main() {
 
   group('BreadcrumbBuffer ring semantics', () {
     test('capacity must be positive', () {
-      expect(() => BreadcrumbBuffer(capacity: 0), throwsA(isA<AssertionError>()));
+      expect(
+        () => BreadcrumbBuffer(capacity: 0),
+        throwsA(isA<AssertionError>()),
+      );
     });
 
     test('captures records in order up to capacity', () {
@@ -124,15 +127,11 @@ void main() {
     test('sanitizes default-redacted keys from a context map', () {
       final buffer = BreadcrumbBuffer(capacity: 5)..attach();
       addTearDown(buffer.detach);
-      BgeLogger('bge.test.ctx').info(
-        'auth attempt',
-        context: {'password': 'hunter2', 'attempt': 2},
-      );
+      BgeLogger(
+        'bge.test.ctx',
+      ).info('auth attempt', context: {'password': 'hunter2', 'attempt': 2});
       final crumb = buffer.snapshot().single;
-      expect(crumb.sanitizedContext, {
-        'password': '<redacted>',
-        'attempt': 2,
-      });
+      expect(crumb.sanitizedContext, {'password': '<redacted>', 'attempt': 2});
     });
 
     test('sanitizes nested context maps', () {
@@ -155,10 +154,9 @@ void main() {
         redactedContextFields: {'shoeSize'},
       )..attach();
       addTearDown(buffer.detach);
-      BgeLogger('bge.test.custom').info(
-        'profile',
-        context: {'shoeSize': 44, 'password': 'visible-now'},
-      );
+      BgeLogger(
+        'bge.test.custom',
+      ).info('profile', context: {'shoeSize': 44, 'password': 'visible-now'});
       expect(buffer.snapshot().single.sanitizedContext, {
         'shoeSize': '<redacted>',
         'password': 'visible-now',
@@ -175,10 +173,10 @@ void main() {
     test('raw Map payload uses a placeholder message, not toString()', () {
       final buffer = BreadcrumbBuffer(capacity: 5)..attach();
       addTearDown(buffer.detach);
-      Logger('bge.test.rawmap').log(
-        Level.INFO,
-        <String, dynamic>{'password': 'hunter2', 'note': 'visible'},
-      );
+      Logger('bge.test.rawmap').log(Level.INFO, <String, dynamic>{
+        'password': 'hunter2',
+        'note': 'visible',
+      });
       final crumb = buffer.snapshot().single;
       expect(crumb.message, BreadcrumbBuffer.rawMapMessagePlaceholder);
       expect(crumb.sanitizedContext, {

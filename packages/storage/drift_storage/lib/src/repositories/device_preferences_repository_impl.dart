@@ -42,13 +42,11 @@ class DevicePreferencesRepositoryImpl implements DevicePreferencesRepository {
 
   @override
   Stream<DevicePreferences> watch() =>
-      (_database.select(
-            _database.devicePreferencesTable,
-          )..where((t) => t.id.equals(kDevicePreferencesId)))
+      (_database.select(_database.devicePreferencesTable)
+            ..where((t) => t.id.equals(kDevicePreferencesId)))
           .watchSingleOrNull()
           .map(
-            (row) =>
-                row != null ? _mapToModel(row) : const DevicePreferences(),
+            (row) => row != null ? _mapToModel(row) : const DevicePreferences(),
           );
 
   DevicePreferences _mapToModel(

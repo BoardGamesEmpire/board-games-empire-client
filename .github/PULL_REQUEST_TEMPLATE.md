@@ -15,6 +15,7 @@
      leaving it to be discovered. -->
 
 - [ ] `melos run analyze` / `melos run analyze:dart`
+- [ ] `melos run format:check`
 - [ ] `melos run test`
 - [ ] `melos run check:constraints`
 - [ ] `melos run test:goldens` (if anything visual changed)

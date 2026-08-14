@@ -689,10 +689,7 @@ class _SwappableContainer implements DependencyContainer {
 ///
 /// Lifecycle is owned by the context — the view exposes no teardown.
 class _UserScopeView implements DependencyContainer {
-  _UserScopeView({
-    required this._user,
-    required this._base,
-  });
+  _UserScopeView({required this._user, required this._base});
 
   final DependencyContainer _user;
 

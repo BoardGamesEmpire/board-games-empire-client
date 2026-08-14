@@ -97,19 +97,16 @@ void main() {
       },
     );
 
-    test(
-      'reset survives a sink whose close() throws and still restores the '
-      'root level (test hygiene must not cascade)',
-      () async {
-        final rootLevelBeforeInit = Logger.root.level;
-        ShellObservability.initialize(sink: _ThrowingCloseSink());
-        expect(Logger.root.level, Level.ALL); // initialize raised it
+    test('reset survives a sink whose close() throws and still restores the '
+        'root level (test hygiene must not cascade)', () async {
+      final rootLevelBeforeInit = Logger.root.level;
+      ShellObservability.initialize(sink: _ThrowingCloseSink());
+      expect(Logger.root.level, Level.ALL); // initialize raised it
 
-        await expectLater(ShellObservability.reset(), completes);
+      await expectLater(ShellObservability.reset(), completes);
 
-        expect(Logger.root.level, rootLevelBeforeInit);
-        expect(ShellObservability.isInitialized, isFalse);
-      },
-    );
+      expect(Logger.root.level, rootLevelBeforeInit);
+      expect(ShellObservability.isInitialized, isFalse);
+    });
   });
 }

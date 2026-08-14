@@ -574,8 +574,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
     if (candidates.isEmpty) return null;
 
     return candidates.reduce(
-      (best, id) =>
-          (_lastActiveTick[id] ?? -1) > (_lastActiveTick[best] ?? -1)
+      (best, id) => (_lastActiveTick[id] ?? -1) > (_lastActiveTick[best] ?? -1)
           ? id
           : best,
     );

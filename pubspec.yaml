@@ -121,6 +121,40 @@ melos:
       run: dart run tool/check_sdk_constraints.dart
       description: Verify workspace pubspec invariants — sdk/flutter constraints match the root pin, and every pubspec declares publish_to none. Add --fix to propagate a toolchain bump.
 
+    # ── Formatting (#173) ─────────────────────────────────────────
+    # The work is in tool/format_workspace.dart, not inline here, for the
+    # same reason check:constraints delegates to a script: CI runs the
+    # identical command, so the file-set rules live in exactly one place
+    # without CI having to depend on melos. That script's header carries
+    # the full reasoning — why the list comes from `git ls-files` rather
+    # than a directory walk, and why it batches.
+    #
+    # Run these from a RESOLVED workspace. Formatting depends on
+    # `formatter: trailing_commas: preserve`, which very_good_analysis
+    # sets and which reaches the formatter through an `include:` on a
+    # package: URI — unresolvable without .dart_tool/package_config.json.
+    # Unresolved, that include silently falls back to `automate` and the
+    # formatter starts joining calls whose trailing comma should have
+    # pinned them open, so the SAME commit formats differently
+    # (bge_typography.dart is the one file in the tree that shows it).
+    # `melos bootstrap` has resolved locally; CI runs `flutter pub get`
+    # before the check for exactly this reason. Note --language-version
+    # does NOT substitute for the resolve — the divergence is the
+    # trailing-comma mode, not the language version.
+    #
+    # Today only ui_tokens includes very_good_analysis; the other 27
+    # packages include flutter_lints, which sets no formatter block and
+    # so gets the default `automate`. The workspace is therefore
+    # formatted under two different modes, and whichever way #194
+    # settles that will require a reformat sweep like #173's.
+    format:
+      run: dart run tool/format_workspace.dart
+      description: Format all tracked Dart source. Requires a resolved workspace (melos bootstrap).
+
+    format:check:
+      run: dart run tool/format_workspace.dart --check
+      description: Fail if any tracked Dart source is unformatted (mirrors CI). Run `melos run format` to fix.
+
     # Analysis and testing
     analyze:
       run: melos exec -- flutter analyze .

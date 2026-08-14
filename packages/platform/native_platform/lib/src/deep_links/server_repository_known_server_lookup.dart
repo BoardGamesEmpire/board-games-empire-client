@@ -10,9 +10,7 @@ import 'package:interfaces/repositories.dart';
 /// (switching to a known-but-inactive server) belong to the consumption
 /// scope (#82) and the orchestrator, not this lookup.
 class ServerRepositoryKnownServerLookup implements KnownServerLookup {
-  ServerRepositoryKnownServerLookup({
-    required this._serverRepository,
-  });
+  ServerRepositoryKnownServerLookup({required this._serverRepository});
 
   final ServerRepository _serverRepository;
 
