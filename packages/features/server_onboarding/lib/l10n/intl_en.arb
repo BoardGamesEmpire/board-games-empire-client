@@ -20,6 +20,10 @@
   "@serverAddUrlHelper": {
     "description": "Helper text under the URL field explaining scheme handling"
   },
+  "serverAddUrlRequired": "Enter the address of your server.",
+  "@serverAddUrlRequired": {
+    "description": "Inline field error when the server URL is left blank or is only whitespace"
+  },
   "serverAddAliasLabel": "Nickname (optional)",
   "@serverAddAliasLabel": {
     "description": "Label for the optional server alias field"

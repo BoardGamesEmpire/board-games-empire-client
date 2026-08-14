@@ -37,6 +37,7 @@ class ServerOnboardingBloc
   }) : _logger = logger ?? BgeLogger('bge.onboarding'),
        super(const ServerOnboardingIdle()) {
     on<ServerOnboardingSubmitted>(_onSubmitted);
+    on<ServerOnboardingFailureCleared>(_onFailureCleared);
   }
 
   final WellKnownClient _wellKnownClient;
@@ -45,6 +46,18 @@ class ServerOnboardingBloc
   final BuildInfo _buildInfo;
   final ServerOrchestrator _orchestrator;
   final BgeLogger _logger;
+
+  /// Retires a failure the user has already been told about by other means.
+  ///
+  /// Deliberately narrow: it clears a [ServerOnboardingFailure] and nothing
+  /// else. In particular it cannot interrupt an in-flight request or undo a
+  /// success, both of which would be a form widget reaching past its remit.
+  void _onFailureCleared(
+    ServerOnboardingFailureCleared event,
+    Emitter<ServerOnboardingState> emit,
+  ) {
+    if (state is ServerOnboardingFailure) emit(const ServerOnboardingIdle());
+  }
 
   Future<void> _onSubmitted(
     ServerOnboardingSubmitted event,

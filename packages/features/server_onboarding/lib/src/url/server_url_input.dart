@@ -1,3 +1,5 @@
+import 'package:reactive_forms/reactive_forms.dart';
+
 /// Normalization and validation for the user-entered server URL (#36).
 ///
 /// Policy (locked in the #36 design review):
@@ -62,6 +64,39 @@ final class ServerUrlInvalid extends ServerUrlResult {
 
   @override
   String toString() => 'ServerUrlInvalid($error)';
+}
+
+/// Error keys [serverUrlValidator] emits, one per [ServerUrlError].
+///
+/// Named because each must match in two places — here and the field's
+/// `validationMessages` — and a typo in either is silent.
+const serverUrlMalformedError = 'serverUrlMalformed';
+const serverUrlSchemeError = 'serverUrlUnsupportedScheme';
+const serverUrlInsecureError = 'serverUrlInsecureHttp';
+
+/// The policy above as a `reactive_forms` validator, so a form can reject an
+/// address at the field instead of learning from the bloc that it was bad.
+///
+/// Runs [normalizeServerUrl] rather than restating it — the same rules, run
+/// earlier, which is what keeps field validity and bloc acceptance in step.
+///
+/// Blank returns null: `Validators.required` owns that case and its message
+/// is the useful one. Here it would report as malformed, which is what
+/// [normalizeServerUrl] says and no help to someone who has not typed yet.
+Map<String, dynamic>? serverUrlValidator(AbstractControl<dynamic> control) {
+  final value = control.value;
+  if (value is! String || value.trim().isEmpty) return null;
+
+  final result = normalizeServerUrl(value);
+  if (result is! ServerUrlInvalid) return null;
+
+  return <String, dynamic>{
+    switch (result.error) {
+      ServerUrlError.malformed => serverUrlMalformedError,
+      ServerUrlError.unsupportedScheme => serverUrlSchemeError,
+      ServerUrlError.insecureHttp => serverUrlInsecureError,
+    }: true,
+  };
 }
 
 /// Applies the policy above to raw user [input].
