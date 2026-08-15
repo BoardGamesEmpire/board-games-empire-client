@@ -71,7 +71,8 @@ dart -Demit=true tool/derive_palette.dart \
 
 Both need a resolved workspace; emit verifies first and writes nothing if a
 check fails. CI runs the first form on every PR. The hue threshold it checks
-is the one `Oklch` exposes — both read `ui_tokens/lib/palette_math.dart`.
+is the one `Oklch` exposes — both read
+`packages/ui/tokens/lib/palette_math.dart`.
 
 Two things about that script are easy to get wrong later:
 
