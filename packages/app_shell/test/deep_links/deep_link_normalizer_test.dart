@@ -174,6 +174,19 @@ void main() {
           DeepLinkRejectionReason.missingResourcePath,
         );
       });
+
+      test('a serverId whose percent-escape is not valid UTF-8', () {
+        // Rejection, not an exception: this clears every other check, so
+        // the decode is the last step and used to throw straight out of
+        // `DeepLinkHandler._onUri` past both of its log calls.
+        final result = normalizeDeepLink(Uri.parse('bge://server/%FF/game/5'));
+
+        expect(result, isA<DeepLinkRejected>());
+        expect(
+          (result as DeepLinkRejected).reason,
+          DeepLinkRejectionReason.malformedServerId,
+        );
+      });
     });
   });
 
@@ -209,6 +222,37 @@ void main() {
 
       expect(rendered, isNot(contains('SECRET-TOKEN')));
       expect(rendered, contains(deepLinkRedactionPlaceholder));
+    });
+
+    test('toString redacts a credential-shaped serverId too', () {
+      // The serverId is a path segment lifted straight out of the link, so
+      // it can carry the same userInfo shape `location` is redacted for.
+      // Printing it raw beside an already-redacted location would
+      // contradict the redaction two fields along in the same string.
+      const link = NormalizedDeepLink(
+        serverId: 'alice:hunter2@server',
+        location: '/server/alice:hunter2@server/game/5',
+      );
+
+      final rendered = link.toString();
+
+      expect(rendered, isNot(contains('hunter2')));
+      expect(rendered, contains('<redacted>@server'));
+    });
+
+    test('toString cannot be made to span log lines', () {
+      // `serverId` is stored DECODED, so `bge://server/%0Aforged/...`
+      // yields one holding a real newline. Interpolating it raw would let
+      // a link forge a second line in any log that prints the object.
+      const link = NormalizedDeepLink(
+        serverId: '\nforged',
+        location: '/server/%0Aforged/game/5',
+      );
+
+      final rendered = link.toString();
+
+      expect(rendered, isNot(contains('\n')));
+      expect(rendered, contains('%0Aforged'));
     });
   });
 }
