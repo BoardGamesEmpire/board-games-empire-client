@@ -11,6 +11,16 @@
 //   dart -Demit=true tool/derive_palette.dart \
 //     > packages/ui/tokens/lib/src/bge_color_schemes.dart
 //
+// Both forms need a resolved workspace (`melos bootstrap`, or `flutter pub
+// get` at the root): the shared palette math arrives over a `package:` URI.
+//
+// Emit verifies first and writes nothing to stdout if verification fails, so
+// no failing palette is ever produced. It cannot un-truncate the redirect
+// target, though — the shell empties that file before this process starts, so
+// a failed emit leaves it zero-length rather than stale, and `git checkout`
+// is the way back. The report goes to stderr, because in emit mode stdout IS
+// the generated file.
+//
 // After regenerating, run the token tests — they are the authority, since they
 // use Flutter's own `Color.computeLuminance` rather than the copy here:
 //   melos run test --scope=ui_tokens
@@ -37,16 +47,27 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-double _srgbToLinear(double c) =>
-    c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+// The hue transform, the sRGB transfer function and the separation floor are
+// shared with `Oklch`, which wraps them for `Color` callers (#172). That file
+// is Flutter-free on purpose: this script cannot reach `dart:ui`. It is still
+// a `package:` URI, so run this from a resolved workspace.
+import 'package:ui_tokens/palette_math.dart';
+
 double _linearToSrgb(double c) => c <= 0.0031308
     ? c * 12.92
     : 1.055 * math.pow(c, 1 / 2.4).toDouble() - 0.055;
 
+/// WCAG relative luminance — a copy of `Color.computeLuminance`, which is what
+/// the token tests use and therefore what this has to agree with.
+///
+/// It stays here rather than moving next to the hue math because there is
+/// nothing on the other side to share it with: `Wcag.contrastRatio` delegates
+/// the whole luminance step to Flutter. Only [srgbToLinear] genuinely existed
+/// twice, and now does not.
 double luminance(int rgb) {
-  final r = _srgbToLinear(((rgb >> 16) & 0xFF) / 255);
-  final g = _srgbToLinear(((rgb >> 8) & 0xFF) / 255);
-  final b = _srgbToLinear((rgb & 0xFF) / 255);
+  final r = srgbToLinear(((rgb >> 16) & 0xFF) / 255);
+  final g = srgbToLinear(((rgb >> 8) & 0xFF) / 255);
+  final b = srgbToLinear((rgb & 0xFF) / 255);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
@@ -74,31 +95,16 @@ int? oklchToRgb(double L, double C, double hDeg) {
   return (ch(lr) << 16) | (ch(lg) << 8) | ch(lb);
 }
 
-/// Approximate OKLCH hue of an sRGB colour (for the separation check).
-double rgbToOklchHue(int rgb) {
-  final r = _srgbToLinear(((rgb >> 16) & 0xFF) / 255);
-  final g = _srgbToLinear(((rgb >> 8) & 0xFF) / 255);
-  final b = _srgbToLinear((rgb & 0xFF) / 255);
-  final l = math
-      .pow(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 1 / 3)
-      .toDouble();
-  final m = math
-      .pow(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 1 / 3)
-      .toDouble();
-  final s = math
-      .pow(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b, 1 / 3)
-      .toDouble();
-  final A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
-  final B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
-  var h = math.atan2(B, A) * 180 / math.pi;
-  if (h < 0) h += 360;
-  return h;
-}
+/// [oklchHue] and [hueSeparation] for the packed-int colours this script
+/// works in. Named after them so one vocabulary crosses the boundary.
+double oklchHueOf(int rgb) => oklchHue(
+  ((rgb >> 16) & 0xFF) / 255,
+  ((rgb >> 8) & 0xFF) / 255,
+  (rgb & 0xFF) / 255,
+);
 
-double hueDelta(int a, int b) {
-  final d = (rgbToOklchHue(a) - rgbToOklchHue(b)).abs();
-  return d > 180 ? 360 - d : d;
-}
+double hueSeparationOf(int a, int b) =>
+    hueSeparation(oklchHueOf(a), oklchHueOf(b));
 
 double maxChroma(double L, double hue) {
   var lo = 0.0, hi = 0.45;
@@ -159,19 +165,25 @@ const hRed = 14.0; // error — pushed toward crimson to buy the separation
 const hWalnut = 62.0; // warm earth; very low chroma on surfaces
 
 class Scheme {
-  Scheme(this.name, this.isDark, this.min);
+  Scheme(this.name, this.min);
   final String name;
-  final bool isDark;
   final double min;
   final Map<String, int> v = {};
 
-  /// Prints this scheme's report and returns whether every constraint held.
+  /// Writes this scheme's report to [out] and returns whether every constraint
+  /// held.
   ///
   /// The return value is load-bearing: `main` turns it into a process exit
   /// code. Printing "FAIL" while exiting 0 meant the documented verify
   /// invocation always looked successful, so a broken palette would sail past
   /// any script or CI step that ran this and trusted the status.
-  bool report() {
+  ///
+  /// Every check runs before the banner is written. The banner used to be
+  /// printed after the authored pairs alone, while the accent-on-surface,
+  /// container and hue-separation checks below could still flip the verdict —
+  /// so a failing scheme announced "ALL PASS" and then listed its failures.
+  /// Exit code was right; the summary a human reads was not.
+  bool report(void Function(String) out) {
     final pairs = <String, (int, int)>{
       'onPrimary/primary': (v['onPrimary']!, v['primary']!),
       'onPrimaryContainer/primaryContainer': (
@@ -200,25 +212,13 @@ class Scheme {
         v['inverseSurface']!,
       ),
     };
-    var ok = true;
+    final failures = <String>[];
     final worst = <String, double>{};
     pairs.forEach((k, p) {
       final r = contrast(p.$1, p.$2);
       worst[k] = r;
-      if (r < min) ok = false;
+      if (r < min) failures.add('FAIL $k ${r.toStringAsFixed(2)}:1');
     });
-    final lowest = worst.entries.reduce((a, b) => a.value < b.value ? a : b);
-    print(
-      '$name  target ${min.toStringAsFixed(1)}:1  '
-      '${ok ? "ALL PASS" : "*** FAIL ***"}  '
-      '(tightest: ${lowest.key} ${lowest.value.toStringAsFixed(2)}:1)',
-    );
-    if (!ok) {
-      pairs.forEach((k, p) {
-        final r = contrast(p.$1, p.$2);
-        if (r < min) print('    FAIL $k ${r.toStringAsFixed(2)}:1');
-      });
-    }
 
     // Accents must also read on the surface — they're used for icons and
     // labels, not only as button fills. A real failure, not a warning: the
@@ -227,8 +227,7 @@ class Scheme {
     for (final role in ['primary', 'secondary', 'tertiary', 'error']) {
       final r = contrast(v[role]!, v['surface']!);
       if (r < 4.5) {
-        ok = false;
-        print('    FAIL $role on surface only ${r.toStringAsFixed(2)}:1');
+        failures.add('FAIL $role on surface only ${r.toStringAsFixed(2)}:1');
       }
     }
     // Body text sits on the containers too, not just on `surface`.
@@ -244,30 +243,39 @@ class Scheme {
       final r1 = contrast(v['onSurface']!, v[c]!);
       final r2 = contrast(v['onSurfaceVariant']!, v[c]!);
       if (r1 < min) {
-        ok = false;
-        print('    FAIL onSurface/$c ${r1.toStringAsFixed(2)}:1');
+        failures.add('FAIL onSurface/$c ${r1.toStringAsFixed(2)}:1');
       }
       if (r2 < min) {
-        ok = false;
-        print('    FAIL onSurfaceVariant/$c ${r2.toStringAsFixed(2)}:1');
+        failures.add('FAIL onSurfaceVariant/$c ${r2.toStringAsFixed(2)}:1');
       }
     }
 
     // Hue separation was previously printed and never compared to anything,
     // so the palette could collapse ember into crimson without the report
-    // saying so. Mirrors `Oklch.minAccentSeparation`; keep the two in step.
-    const minAccentSeparation = 45.0;
-    final hd = hueDelta(v['tertiary']!, v['error']!);
+    // saying so. The floor is `minAccentSeparation` from `palette_math.dart`
+    // — the same constant `Oklch` exposes, so the tool and the token test
+    // cannot disagree about it (#172).
+    final hd = hueSeparationOf(v['tertiary']!, v['error']!);
     if (hd < minAccentSeparation) {
-      ok = false;
-      print(
-        '    FAIL ember/error hue separation ${hd.toStringAsFixed(1)}° '
+      failures.add(
+        'FAIL ember/error hue separation ${hd.toStringAsFixed(1)}° '
         '< $minAccentSeparation°',
       );
-    } else {
-      print('    ember/error hue separation: ${hd.toStringAsFixed(1)}°');
     }
-    return ok;
+
+    final lowest = worst.entries.reduce((a, b) => a.value < b.value ? a : b);
+    out(
+      '$name  target ${min.toStringAsFixed(1)}:1  '
+      '${failures.isEmpty ? "ALL PASS" : "*** FAIL ***"}  '
+      '(tightest: ${lowest.key} ${lowest.value.toStringAsFixed(2)}:1)',
+    );
+    for (final f in failures) {
+      out('    $f');
+    }
+    if (hd >= minAccentSeparation) {
+      out('    ember/error hue separation: ${hd.toStringAsFixed(1)}°');
+    }
+    return failures.isEmpty;
   }
 
   /// Emits the `ColorScheme` body as compilable Dart.
@@ -319,43 +327,14 @@ class Scheme {
     'surfaceTint',
   ];
 
+  /// Human-readable listing of the solved values, for verify mode.
+  ///
+  /// Walks [_order] rather than its own copy of it: the two lists were
+  /// identical by hand, so adding a role meant remembering to add it twice or
+  /// watching it silently drop out of the listing.
   void dump() {
     print('\n  // $name');
-    for (final k in [
-      'primary',
-      'onPrimary',
-      'primaryContainer',
-      'onPrimaryContainer',
-      'secondary',
-      'onSecondary',
-      'secondaryContainer',
-      'onSecondaryContainer',
-      'tertiary',
-      'onTertiary',
-      'tertiaryContainer',
-      'onTertiaryContainer',
-      'error',
-      'onError',
-      'errorContainer',
-      'onErrorContainer',
-      'surface',
-      'onSurface',
-      'onSurfaceVariant',
-      'outline',
-      'outlineVariant',
-      'surfaceDim',
-      'surfaceBright',
-      'surfaceContainerLowest',
-      'surfaceContainerLow',
-      'surfaceContainer',
-      'surfaceContainerHigh',
-      'surfaceContainerHighest',
-      'inverseSurface',
-      'onInverseSurface',
-      'inversePrimary',
-      'scrim',
-      'surfaceTint',
-    ]) {
+    for (final k in _order) {
       print('  ${k.padRight(22)} Color(${dart(v[k]!)}),');
     }
   }
@@ -368,7 +347,7 @@ Scheme build(
   required double aa,
   required bool hc,
 }) {
-  final s = Scheme(name, dark, aa);
+  final s = Scheme(name, aa);
   // Surface anchors the whole scheme.
   final surface = dark
       ? (hc ? 0x000000 : oklchToRgb(0.190, 0.014, hWalnut)!)
@@ -543,22 +522,33 @@ void main() {
     build('highContrastDark ', dark: true, aa: 7.0, hc: true),
     build('highContrastLight', dark: false, aa: 7.0, hc: true),
   ];
-  if (!emitMode) {
-    // Aggregated across every scheme, then turned into an exit code — the
-    // whole point of a "verify" mode is that a caller can act on the result
-    // without reading stdout.
-    var allPass = true;
-    for (final s in schemes) {
-      if (!s.report()) allPass = false;
-    }
-    if (!allPass) {
-      stderr.writeln(
-        '\nPalette verification FAILED. Fix the hues, chroma or targets '
-        'above and re-run before regenerating bge_color_schemes.dart.',
-      );
-      exitCode = 1;
+  // Verify in BOTH modes. Emit used to skip this entirely, so
+  // `dart -Demit=true … > bge_color_schemes.dart` would write a palette that
+  // fails its own checks straight into the tree — the one moment the checks
+  // exist for. The token tests catch it eventually; verifying here costs a
+  // third of a second.
+  //
+  // In emit mode stdout IS the generated file, so the report goes to stderr.
+  // Aggregated across every scheme, then turned into an exit code: the whole
+  // point of a verify mode is that a caller can act on the result without
+  // reading the report.
+  final void Function(String) report = emitMode ? stderr.writeln : print;
+  var allPass = true;
+  for (final s in schemes) {
+    if (!s.report(report)) allPass = false;
+  }
+  if (!allPass) {
+    stderr.writeln(
+      '\nPalette verification FAILED. Fix the hues, chroma or targets '
+      'above and re-run before regenerating bge_color_schemes.dart.',
+    );
+    exitCode = 1;
+    if (emitMode) {
+      stderr.writeln('Refusing to emit: nothing was written to stdout.');
+      return;
     }
   }
+
   if (!emitMode) {
     for (final s in schemes) {
       s.dump();
@@ -663,11 +653,15 @@ void main() {
     'highContrastLight': ('highContrastLight', 'light'),
     'highContrastDark': ('highContrastDark', 'dark'),
   };
+  // Blank line BETWEEN schemes, not before the first: `dart format` deletes a
+  // blank line straight after `{`, so emitting one left every regeneration
+  // one formatter diff away from the committed file.
+  var first = true;
   for (final e in order.entries) {
     final s = schemes.firstWhere((x) => x.name.trim() == e.key);
-    out
-      ..writeln()
-      ..write(s.emit(e.value.$1, e.value.$2, docs[e.key]!));
+    if (!first) out.writeln();
+    first = false;
+    out.write(s.emit(e.value.$1, e.value.$2, docs[e.key]!));
   }
   out.writeln('}');
   stdout.write(out);

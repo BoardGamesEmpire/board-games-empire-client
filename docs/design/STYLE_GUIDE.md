@@ -69,6 +69,10 @@ dart -Demit=true tool/derive_palette.dart \
   > packages/ui/tokens/lib/src/bge_color_schemes.dart
 ```
 
+Both need a resolved workspace; emit verifies first and writes nothing if a
+check fails. CI runs the first form on every PR. The hue threshold it checks
+is the one `Oklch` exposes — both read `ui_tokens/lib/palette_math.dart`.
+
 Two things about that script are easy to get wrong later:
 
 - **Accents target barely above the 4.5:1 floor deliberately.** Raising the
