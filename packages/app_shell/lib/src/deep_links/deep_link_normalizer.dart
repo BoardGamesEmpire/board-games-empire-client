@@ -25,6 +25,10 @@ enum DeepLinkRejectionReason {
   /// A serverId but no resource path (`bge://server/abc`): there is
   /// nothing to route to.
   missingResourcePath,
+
+  /// The serverId carries a percent-escape that is not valid UTF-8
+  /// (`bge://server/%FF/...`), so it cannot be decoded.
+  malformedServerId,
 }
 
 /// A deep link that passed validation, expressed in the router's terms.
@@ -53,11 +57,18 @@ final class NormalizedDeepLink {
   @override
   int get hashCode => Object.hash(serverId, location);
 
-  /// Redacted — [location] can carry invitation/RSVP tokens, and
-  /// `toString` leaks into logs, test failures, and crash breadcrumbs.
+  /// Redacted — [location] can carry invitation/RSVP tokens and [serverId]
+  /// the userInfo shape it was lifted out of, and `toString` leaks into
+  /// logs, test failures, and crash breadcrumbs.
+  ///
+  /// [serverId] is stored decoded, so it is re-encoded before the redactor
+  /// (whose contract is raw segments) — otherwise a control character
+  /// smuggled in as an escape (`%0Aforged`) would arrive here as a real
+  /// newline and let a link forge a second log line.
   @override
   String toString() =>
-      'NormalizedDeepLink(serverId: $serverId, '
+      'NormalizedDeepLink(serverId: '
+      '${redactDeepLinkSegmentForLog(Uri.encodeComponent(serverId))}, '
       'location: ${redactDeepLinkForLog(Uri.parse(location))})';
 }
 
@@ -88,7 +99,9 @@ final class DeepLinkRejected extends DeepLinkNormalizationResult {
 ///   hosts during parsing, so `BGE://SERVER/...` arrives normalized);
 /// - authority must be the bare literal `server` — a userInfo or explicit
 ///   port component is a mismatch, and any other host is rejected;
-/// - the first path segment is the serverId and must be non-empty;
+/// - the first path segment is the serverId and must be non-empty, and
+///   must decode — an escape that is not valid UTF-8 is a rejection, since
+///   a malformed link may never leave by way of an exception;
 /// - at least one further path segment (the resource path) must follow;
 /// - the query string is preserved verbatim; the fragment is dropped;
 /// - percent-encoded path segments survive as single segments
@@ -117,6 +130,19 @@ DeepLinkNormalizationResult normalizeDeepLink(Uri uri) {
     return const DeepLinkRejected(DeepLinkRejectionReason.missingServerId);
   }
 
+  // Decoded here rather than at the return, so a hostile escape leaves as
+  // a rejection like every other malformed link. `Uri.decodeComponent`
+  // throws on an escape that is not valid UTF-8, and this is the last step
+  // of the pipeline — the throw would escape `DeepLinkHandler._onUri` past
+  // both of its log calls, and `Stream.listen`'s `onError` does not catch
+  // a throw out of `onData`, so the link vanished without a breadcrumb.
+  final String serverId;
+  try {
+    serverId = Uri.decodeComponent(rawServerId);
+  } on FormatException {
+    return const DeepLinkRejected(DeepLinkRejectionReason.malformedServerId);
+  }
+
   final resourceSegments = segments.sublist(1);
   if (!resourceSegments.any((segment) => segment.isNotEmpty)) {
     return const DeepLinkRejected(DeepLinkRejectionReason.missingResourcePath);
@@ -131,9 +157,6 @@ DeepLinkNormalizationResult normalizeDeepLink(Uri uri) {
   // The fragment is intentionally dropped: no reserved pattern uses one.
 
   return DeepLinkNormalized(
-    NormalizedDeepLink(
-      serverId: Uri.decodeComponent(rawServerId),
-      location: location.toString(),
-    ),
+    NormalizedDeepLink(serverId: serverId, location: location.toString()),
   );
 }
