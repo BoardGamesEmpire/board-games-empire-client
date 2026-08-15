@@ -50,6 +50,28 @@ jobs:
       - name: Constraints must match the root pin
         run: dart run tool/check_sdk_constraints.dart
 
+  # ── Palette verification (#192) ──────────────────────────────────
+  # `bge_color_schemes.dart` is generated, and the token tests assert the
+  # generated VALUES. Nothing asserted the generator: it could lose its
+  # verify mode and stay green until the next person regenerated the
+  # palette by hand. Codegen-free like the two jobs around it — the
+  # script is plain Dart and only needs the workspace resolved, since it
+  # shares the hue math and the separation floor with `Oklch` (#172).
+  palette:
+    name: Palette
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: pubspec.yaml
+          channel: stable
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Palette must satisfy its own contrast and hue targets
+        run: dart run tool/derive_palette.dart
+
   # ── Formatting (#173) ────────────────────────────────────────────
   # Standalone and codegen-free, like `constraints`: formatting parses,
   # it does not resolve types, so no generated sources are needed. They

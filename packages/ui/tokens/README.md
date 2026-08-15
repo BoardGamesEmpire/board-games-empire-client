@@ -51,8 +51,13 @@ OKLCH hue (`Oklch.minAccentSeparation`). Contrast answers "can this be
 read?", never "can these be told apart?", and these two are the palette's one
 genuinely confusable pair.
 
+That floor, the OKLCH hue transform and the sRGB transfer function are
+defined once in `lib/palette_math.dart` — a Flutter-free second entry point,
+outside the barrel, so `tool/derive_palette.dart` can check the palette
+against the same numbers `Oklch` exposes to the app. Change them there.
+
 `BgeColorSchemes` is **generated** — do not hand-edit it. Change the hues or
-targets in `tool/derive_palette.dart`, verify, then regenerate:
+targets in `tool/derive_palette.dart` and regenerate:
 
 ```bash
 dart tool/derive_palette.dart          # verify; exits 1 if any check fails
@@ -60,9 +65,16 @@ dart -Demit=true tool/derive_palette.dart \
   > packages/ui/tokens/lib/src/bge_color_schemes.dart
 ```
 
+Both need a resolved workspace (`melos bootstrap`). Emit verifies first and
+writes nothing if a check fails, so the second command does not need the
+first — run it to read the report. Note that the shell truncates the target
+before the script starts, so a failed emit leaves it empty; `git checkout`
+puts it back.
+
 Verification covers every authored pair, the accents against `surface`, body
 text against the whole surface family, and the ember/error hue separation —
-and sets an exit code, so it is safe to chain or run from a script.
+and sets an exit code, so it is safe to chain or run from a script. CI runs
+it on every PR (`melos run check:palette` locally).
 
 Then keep `bge_color_schemes_test.dart` green and refresh the goldens.
 
