@@ -42,8 +42,11 @@ deferred to #121, which will own retry / failure / cancel semantics.
   sealed events and states; success carries the `householdId` and a
   `pendingSync` flag.
 - `CreateHouseholdForm` — `reactive_forms` over a locally-owned `FormGroup`
-  (name required, description optional). No `valueChanges` subscriptions;
-  values are read and validated at submit.
+  (name required, description optional). Values are read and validated at
+  submit. One `valueChanges` subscription, which fires `onEdited` so the
+  screen can retire a spent error banner: bound to bloc state, it does not
+  fade the way a SnackBar would, so it would otherwise keep complaining
+  about the name the user is replacing (#191).
 
 ## Wiring (owned by `app_shell` / platform composition)
 

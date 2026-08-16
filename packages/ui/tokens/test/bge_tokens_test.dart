@@ -18,6 +18,7 @@ void main() {
       expect(t.minTapTarget, 48);
       expect(t.focusOutlineWidth, 2);
       expect(t.contentMaxWidth, 480);
+      expect(t.paneMaxWidth, 840);
       expect(t.breakpointMedium, 600);
       expect(t.breakpointExpanded, 840);
       expect(t.motionShort, const Duration(milliseconds: 150));

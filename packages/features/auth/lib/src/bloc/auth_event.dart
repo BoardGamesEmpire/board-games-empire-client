@@ -131,3 +131,15 @@ final class AuthRepositoryStateChanged extends AuthEvent {
   @override
   String toString() => 'AuthRepositoryStateChanged(${repoState.runtimeType})';
 }
+
+/// Retires an [AuthOperationFailure] that is no longer about anything the
+/// user can still see.
+///
+/// The failure surface is an inline banner bound to bloc state (#191), so
+/// unlike the SnackBar it replaced it does not fade on its own. Without
+/// this, switching from sign-in to register left a credentials complaint
+/// pinned above the registration form — the same defect
+/// `ServerOnboardingFailureCleared` exists to prevent.
+final class AuthFailureCleared extends AuthEvent {
+  const AuthFailureCleared();
+}

@@ -20,7 +20,10 @@ A short orientation for anyone (human or LLM) picking this up cold:
   UX, but the multi-server infrastructure stays in place** — it is hard to retrofit.
 - **Self-hosted philosophy.** No third-party data sharing by default. Bug
   reports, analytics, and similar flows route to sinks the server admin
-  configures via `/.well-known/bge-identity`. Users opt in.
+  configures. Users opt in. Note the tier split: `/.well-known/bge-identity`
+  is anonymous tier-1 and deliberately carries no sink config (backend #47);
+  sinks and feature flags moved to authenticated tier-2 discovery,
+  `GET /api/discovery/server` (backend #78, open).
 - **Offline-first infrastructure, online-first alpha UX.** Mutations write
   locally + enqueue against a per-server sync queue; reconciliation runs against
   server responses with surgical tombstone purges. The client DB is a *temporary
@@ -93,7 +96,10 @@ retrofit-hard infrastructure.
 - #10 Deep-link URL scheme + manifests — **interface/manifest-only**
 - #11 UserDataExporter interface — **interface-only**
 - #15 Push notification interface — **interface-only**
-- #17 Analytics interface — **interface-only**
+- #17 Analytics interface — **interface-only**. Anything beyond the interface
+  slice is blocked on backend #78 (tier-2 discovery endpoint) and #49
+  (advertise sinks), both open; routing (client-direct vs. backend-mediated)
+  is under review on backend #49.
 
 ### P1 — Server discovery & add flow (#24)
 

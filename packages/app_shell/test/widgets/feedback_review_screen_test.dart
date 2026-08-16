@@ -2,6 +2,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// `FeedbackReviewScreen` (issue #76) — the full review & redaction
 /// surface. It is presentation-only and model-driven: redaction toggles
@@ -41,17 +42,19 @@ void main() {
     VoidCallback? onCancel,
     VoidCallback? onClose,
   }) async {
-    // The review surface is a scrolling form. In the default 800x600 test
-    // viewport the lower rows (environment/device toggles and the
-    // diagnostics sections) fall outside the lazily-built ListView cache
-    // extent, so they are never realized and can't be found or tapped.
-    // Give the test a tall viewport so every row is on-screen; reset after.
+    // The review surface is a scrolling form. Its rows now build eagerly
+    // (BgePage owns the scrolling, so the list shrink-wraps), but rows below
+    // the fold still cannot be tapped — `tester.tap` requires the target to
+    // be on-screen. Give the test a tall viewport; reset after.
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
+        // The real theme, so a measure assertion tests the wiring rather
+        // than `BgeTokens.of`'s no-theme fallback agreeing with itself.
+        theme: BgeTheme.light(),
         localizationsDelegates: ShellLocalizations.localizationsDelegates,
         supportedLocales: ShellLocalizations.supportedLocales,
         home: FeedbackReviewScreen(
@@ -66,6 +69,52 @@ void main() {
   }
 
   const redacted = FeedbackReportPreview.redactedMarker;
+
+  group('FeedbackReviewScreen layout', () {
+    testWidgets('caps the content column at the form measure', (tester) async {
+      await pumpReview(tester);
+
+      // Step one of this flow (compose) is a BgePage capped at this measure.
+      // Built on a raw Scaffold, this step ran full-bleed, so the column
+      // visibly jumped width halfway through the flow on any desktop window.
+      // The harness viewport is 1200 wide, comfortably past the cap.
+      // Measured on a row: the list is a sliver and has no width of its own,
+      // and a row is what the measure governs.
+      expect(
+        tester
+            .getSize(
+              find.byKey(FeedbackReviewScreen.redactToggleKey('platform')),
+            )
+            .width,
+        BgeTokens.standard.contentMaxWidth,
+      );
+    });
+
+    testWidgets('keeps the send button pinned while the report scrolls', (
+      tester,
+    ) async {
+      await pumpReview(tester);
+      // Shorten the viewport after pumping — the harness sets a tall one so
+      // every row is tappable, but this case needs the report to overflow.
+      tester.view.physicalSize = const Size(1200, 500);
+      await tester.pumpAndSettle();
+
+      final before = tester
+          .getTopLeft(find.byKey(FeedbackReviewScreen.sendButtonKey))
+          .dy;
+      // Scoped to the page's own scroll view: an unscoped byType finder
+      // throws the moment a second scrollable appears anywhere in the tree.
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -200));
+      await tester.pump();
+
+      // The send button is the page footer, not the last row: on a long
+      // report it must not scroll out of reach.
+      expect(
+        tester.getTopLeft(find.byKey(FeedbackReviewScreen.sendButtonKey)).dy,
+        before,
+      );
+    });
+  });
 
   group('FeedbackReviewScreen', () {
     testWidgets('renders the message and environment values', (tester) async {
