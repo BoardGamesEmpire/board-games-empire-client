@@ -64,6 +64,24 @@ void main() {
   }
 
   group('CreateHouseholdBloc', () {
+    group('CreateHouseholdFailureCleared', () {
+      blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+        'retires a spent failure so its banner stops rendering',
+        build: build,
+        seed: () => const CreateHouseholdFailure(),
+        act: (bloc) => bloc.add(const CreateHouseholdFailureCleared()),
+        expect: () => [isA<CreateHouseholdInitial>()],
+      );
+
+      blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+        'is inert while a submit is in flight — an edit must not wipe it',
+        build: build,
+        seed: () => const CreateHouseholdSubmitting(),
+        act: (bloc) => bloc.add(const CreateHouseholdFailureCleared()),
+        expect: () => const <CreateHouseholdState>[],
+      );
+    });
+
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
       'inline sync success -> Submitting then Success(pendingSync:false), '
       'reconciling with the canonical id and the queue id',

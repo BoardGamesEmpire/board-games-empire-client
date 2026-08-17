@@ -42,6 +42,37 @@ void main() {
   });
 
   group('AuthBloc', () {
+    group('AuthFailureCleared', () {
+      // The widget tests for this run against a mock bloc and only verify
+      // that the event was dispatched, so they would pass just the same if
+      // this handler emitted the wrong state or stopped clearing at all.
+      blocTest<AuthBloc, AuthBlocState>(
+        'retires a spent failure to unauthenticated so its banner stops '
+        'rendering',
+        build: () => AuthBloc(authRepository: mockRepo),
+        seed: () => const AuthFailureInvalidCredentials(),
+        act: (b) => b.add(const AuthFailureCleared()),
+        expect: () => [const AuthUnauthenticated()],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'leaves an authenticated session alone — clearing a banner must not '
+        'look like a sign-out',
+        build: () => AuthBloc(authRepository: mockRepo),
+        seed: () => AuthAuthenticated(session: _session()),
+        act: (b) => b.add(const AuthFailureCleared()),
+        expect: () => const <AuthBlocState>[],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'is inert when no failure is showing',
+        build: () => AuthBloc(authRepository: mockRepo),
+        seed: () => const AuthUnauthenticated(),
+        act: (b) => b.add(const AuthFailureCleared()),
+        expect: () => const <AuthBlocState>[],
+      );
+    });
+
     group('AuthSessionCheckRequested', () {
       blocTest<AuthBloc, AuthBlocState>(
         'emits [session check in progress, authenticated] when session '

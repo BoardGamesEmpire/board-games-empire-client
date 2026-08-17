@@ -157,10 +157,23 @@ without a tokenized harness.
 
 ### Layout
 
-- `contentMaxWidth` (480) — the primary content column. Applied by `BgePage`.
-  Desktop and browser are first-class targets; an unconstrained form stretches
-  across a 27" monitor and puts a label a forearm from its input.
+- `contentMaxWidth` (480) — the reading measure, for forms and prose. Applied
+  by `BgePage` as its default. Desktop and browser are first-class targets; an
+  unconstrained form stretches across a 27" monitor and puts a label a forearm
+  from its input.
+- `paneMaxWidth` (840) — the list/pane measure, via
+  `BgePage(width: BgePageWidth.pane)`. A settings row is a label plus a
+  trailing control, not a line of prose, so it reads badly squeezed to 480 —
+  but it is still capped, because nothing stretches to the monitor.
 - `breakpointMedium` (600) / `breakpointExpanded` (840).
+
+**Measures are caps; breakpoints are thresholds.** A cap is already adaptive —
+below it the content simply fills the window, so the same widget fits a phone
+and stops short on a monitor with no window-class check. Reach for a breakpoint
+only when a layout should *change form* (rail vs. bottom bar, one pane vs.
+two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
+value today and are still separate tokens: retuning one must not silently move
+the other. Nothing consumes the breakpoints yet — that is #207.
 
 ---
 
@@ -170,7 +183,7 @@ Use these. They exist because the hand-rolled versions drifted.
 
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
-| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 10 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained |
+| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
@@ -186,6 +199,46 @@ still closes the keyboard submit path. `BgeTextField` deliberately exposes no
 
 The in-flight signal is carried by `BgeSubmitButton` — label swap plus spinner,
 in a live region — not by greying the form out.
+
+### Error and outcome surfaces
+
+Three screens once answered this three different ways, on contradictory
+assumptions about what a SnackBar announces (#191). One rule now, and the
+question it turns on is **does the screen survive the outcome?**
+
+| Situation | Surface |
+| --- | --- |
+| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) |
+| Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar` |
+
+A state change with no outcome copy — a mode switch, a filter applied — is not
+on this table. It takes a **live region on the text that changed**, per the
+accessibility rules below; it does not take a `SemanticsService` announcement.
+
+The discriminator is survival, not form-ness. `CreateHouseholdScreen` shows
+both rows: success pops the screen, so its confirmation must outlive the route
+and is a SnackBar owned by the `ScaffoldMessenger` above it; failure stays put,
+so it is a banner on the screen. Splitting them by "is it a form outcome?"
+would have put an inline banner on a screen that is about to be destroyed.
+
+**A banner has to be retired; a SnackBar retires itself.** This is the half
+that is easy to miss on the way from one surface to the other. A SnackBar
+fades after a few seconds, so nothing has to remember to remove it. A banner
+is bound to state and stays until that state changes — so the bloc needs a
+`FailureCleared` event, and the screen has to send it when the failure stops
+describing anything the user can still see: they edited the field it
+complains about, or they switched to a different form. Skip this and the user
+reads a complaint about the value they just replaced, or a sign-in error
+pinned above the registration form. `ServerOnboardingFailureCleared` is the
+reference; auth and create-household follow it.
+
+**Never wrap a SnackBar in `Semantics(liveRegion: true)`.** Flutter already
+does — `snack_bar.dart` wraps every SnackBar in
+`Semantics(container: true, liveRegion: true)`, unconditionally, with no
+opt-out. Adding another nests a live region inside a live region, which makes
+assistive tech announce twice; the same stutter `BgeTextField` documents. This
+was verified in the SDK, not assumed — the two screens that disagreed about it
+could not both be right.
 
 **Fields that are not prose** — URLs, hostnames, emails, IDs, codes — must set
 `autocorrect: false` and `enableSuggestions: false`. An autocorrected server
@@ -247,12 +300,15 @@ legible body text on every surface role.
 
 ## 7. Checklist for a new screen
 
-- [ ] Built on `BgePage`
+- [ ] Built on `BgePage` — `width: BgePageWidth.pane` for a list surface, the
+      default form measure otherwise; `footer:` for a pinned action
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`
 - [ ] Forms use `BgeTextField` + `BgeSubmitButton`
-- [ ] Errors use `BgeInlineBanner`
+- [ ] Outcomes follow the surface rule above — banner if the screen stays,
+      SnackBar if it pops, and never a SnackBar inside a live region
+- [ ] A banner is retired when its failure stops applying (edit, mode switch)
 - [ ] Status uses `BgeStatusColors` **with its icon**
 - [ ] Checked at 320dp and 200% text scale
 - [ ] Checked in dark, light, and high contrast

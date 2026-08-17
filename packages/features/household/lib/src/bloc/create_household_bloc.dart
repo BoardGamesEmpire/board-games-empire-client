@@ -36,11 +36,21 @@ class CreateHouseholdBloc
        _logger = logger ?? BgeLogger('bge.household.create'),
        super(const CreateHouseholdInitial()) {
     on<CreateHouseholdSubmitted>(_onSubmitted);
+    on<CreateHouseholdFailureCleared>(_onFailureCleared);
   }
 
   final HouseholdRepository _repo;
   final HouseholdRemoteDataSource _remote;
   final BgeLogger _logger;
+
+  /// Drops a spent failure back to initial so its banner stops rendering.
+  /// Guarded so a stray event cannot wipe a success or an in-flight submit.
+  void _onFailureCleared(
+    CreateHouseholdFailureCleared event,
+    Emitter<CreateHouseholdState> emit,
+  ) {
+    if (state is CreateHouseholdFailure) emit(const CreateHouseholdInitial());
+  }
 
   Future<void> _onSubmitted(
     CreateHouseholdSubmitted event,

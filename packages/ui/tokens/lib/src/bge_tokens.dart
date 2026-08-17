@@ -31,6 +31,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     required this.minTapTarget,
     required this.focusOutlineWidth,
     required this.contentMaxWidth,
+    required this.paneMaxWidth,
     required this.breakpointMedium,
     required this.breakpointExpanded,
     required this.motionShort,
@@ -77,6 +78,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     minTapTarget: 48,
     focusOutlineWidth: 2,
     contentMaxWidth: 480,
+    paneMaxWidth: 840,
     breakpointMedium: 600,
     breakpointExpanded: 840,
     motionShort: Duration(milliseconds: 150),
@@ -150,9 +152,25 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// Maximum width of a page's primary content column (logical px).
   ///
   /// Keeps forms and prose at a comfortable measure on desktop and web
-  /// instead of stretching them across a 2560px monitor. Applied by `BgePage`;
-  /// this literal was previously copy-pasted into eleven screens.
+  /// instead of stretching them across a 2560px monitor. `BgePage`'s default;
+  /// this literal was previously copy-pasted into eleven screens. List and
+  /// pane surfaces take [paneMaxWidth] instead.
   final double contentMaxWidth;
+
+  /// Maximum width of a page's primary content column on *list and pane*
+  /// surfaces (logical px).
+  ///
+  /// [contentMaxWidth] is a reading measure, tuned so the eye does not lose the
+  /// line between a label and its input. A settings row is not prose: it is a
+  /// label with a trailing control, and squeezing it to a reading measure
+  /// strands the control in the middle of a wide window. This is the same idea
+  /// — never stretch to the monitor — at the width a row wants.
+  ///
+  /// Distinct from [breakpointExpanded] despite sharing its current value.
+  /// A breakpoint is a *threshold* ("change form at this width"); this is a
+  /// *measure* ("grow no wider than this"). Retuning one should not silently
+  /// move the other.
+  final double paneMaxWidth;
 
   /// Width at or above which a layout may use its medium form (logical px).
   final double breakpointMedium;
@@ -191,6 +209,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     double? minTapTarget,
     double? focusOutlineWidth,
     double? contentMaxWidth,
+    double? paneMaxWidth,
     double? breakpointMedium,
     double? breakpointExpanded,
     Duration? motionShort,
@@ -210,6 +229,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       minTapTarget: minTapTarget ?? this.minTapTarget,
       focusOutlineWidth: focusOutlineWidth ?? this.focusOutlineWidth,
       contentMaxWidth: contentMaxWidth ?? this.contentMaxWidth,
+      paneMaxWidth: paneMaxWidth ?? this.paneMaxWidth,
       breakpointMedium: breakpointMedium ?? this.breakpointMedium,
       breakpointExpanded: breakpointExpanded ?? this.breakpointExpanded,
       motionShort: motionShort ?? this.motionShort,
@@ -238,6 +258,7 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
         t,
       )!,
       contentMaxWidth: lerpDouble(contentMaxWidth, other.contentMaxWidth, t)!,
+      paneMaxWidth: lerpDouble(paneMaxWidth, other.paneMaxWidth, t)!,
       breakpointMedium: lerpDouble(
         breakpointMedium,
         other.breakpointMedium,

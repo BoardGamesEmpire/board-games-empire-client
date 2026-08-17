@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
@@ -8,9 +10,10 @@ import 'package:household/l10n/household_localizations.dart';
 /// The create-household form: a required name and an optional description.
 ///
 /// Owns its [FormGroup] (reactive_forms, per the project's form convention —
-/// no `valueChanges` subscriptions; state is derived synchronously and
-/// validated at submit). Calls [onSubmit] with the field values when valid,
-/// otherwise marks the controls touched so validation messages show.
+/// one `valueChanges` subscription, for [onEdited]; everything else is
+/// derived synchronously and validated at submit). Calls [onSubmit] with the
+/// field values when valid, otherwise marks the controls touched so
+/// validation messages show.
 ///
 /// Accessibility: each field carries a visible label via [InputDecoration]
 /// (which the framework also exposes to screen readers as the field's
@@ -33,6 +36,7 @@ class CreateHouseholdForm extends StatefulWidget {
   const CreateHouseholdForm({
     required this.onSubmit,
     this.submitting = false,
+    this.onEdited,
     super.key,
   });
 
@@ -42,6 +46,15 @@ class CreateHouseholdForm extends StatefulWidget {
   /// When true, the fields are read-only and the submit button is disabled
   /// and shows the localized progress label with a spinner.
   final bool submitting;
+
+  /// Invoked on every value change, so the caller can retire an error banner
+  /// that describes the value being replaced.
+  ///
+  /// Every change, not just the first after a failure: the form has no view
+  /// of the submission state. The caller filters — its bloc drops the event
+  /// unless a failure is actually showing — which keeps form and bloc
+  /// knowledge apart at the cost of a no-op event per keystroke.
+  final VoidCallback? onEdited;
 
   /// Stable finder keys for widget tests.
   static const Key nameFieldKey = Key('create_household.name');
@@ -76,8 +89,21 @@ class _CreateHouseholdFormState extends State<CreateHouseholdForm> {
         : null;
   }
 
+  StreamSubscription<Object?>? _editSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // A stream subscription rather than an `onChanged`: BgeTextField exposes
+    // none, and the control is the thing that actually changes.
+    _editSubscription = _form.valueChanges.listen((_) {
+      if (mounted) widget.onEdited?.call();
+    });
+  }
+
   @override
   void dispose() {
+    _editSubscription?.cancel();
     _form.dispose();
     super.dispose();
   }

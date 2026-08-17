@@ -21,3 +21,14 @@ final class CreateHouseholdSubmitted extends CreateHouseholdEvent {
   @override
   List<Object?> get props => [name, description];
 }
+
+/// Retires a [CreateHouseholdFailure] once the user edits the form it
+/// complains about.
+///
+/// The failure surface is an inline banner bound to bloc state (#191), so
+/// it does not fade the way the SnackBar it replaced did. Without this, a
+/// user fixing the name kept reading a complaint about the value they had
+/// just replaced.
+final class CreateHouseholdFailureCleared extends CreateHouseholdEvent {
+  const CreateHouseholdFailureCleared();
+}

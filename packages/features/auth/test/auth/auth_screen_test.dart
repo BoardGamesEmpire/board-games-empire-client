@@ -191,7 +191,7 @@ void main() {
     });
 
     group('error handling', () {
-      testWidgets('shows SnackBar on an operation failure kind', (
+      testWidgets('shows an inline banner on an operation failure kind', (
         tester,
       ) async {
         whenListen(
@@ -210,6 +210,70 @@ void main() {
 
         // The screen maps the kind to the localized message.
         expect(find.text('Incorrect email or password.'), findsOneWidget);
+        // In a banner, not a SnackBar: the screen stays put through a
+        // failure, so the message belongs on it (#191). Asserting the
+        // surface — the earlier version checked only that the copy existed,
+        // which passed for any surface at all.
+        expect(find.byKey(AuthScreen.failureBannerKey), findsOneWidget);
+        expect(find.byType(SnackBar), findsNothing);
+      });
+
+      testWidgets('retires the failure when the user edits a field', (
+        tester,
+      ) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureInvalidCredentials(),
+          ]),
+          initialState: const AuthFailureInvalidCredentials(),
+        );
+
+        await tester.pumpWidget(
+          _wrap(_screen(_identity(), mockBloc), mockBloc),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(AuthScreen.failureBannerKey), findsOneWidget);
+
+        await tester.enterText(
+          find.byType(TextField).first,
+          'someone@example.com',
+        );
+        await tester.pumpAndSettle();
+
+        // Correcting the credentials the banner complains about has to
+        // retire it. The banner is bound to bloc state and does not fade the
+        // way the SnackBar it replaced did, so without this the user reads a
+        // complaint about the value they are in the middle of replacing.
+        verify(() => mockBloc.add(const AuthFailureCleared())).called(1);
+      });
+
+      testWidgets('retires the failure when the user switches modes', (
+        tester,
+      ) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureInvalidCredentials(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(
+          _wrap(_screen(_identity(), mockBloc), mockBloc),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(AuthScreen.failureBannerKey), findsOneWidget);
+
+        await tester.tap(find.text("Don't have an account? Register"));
+        await tester.pump();
+
+        // The banner is bound to bloc state, so unlike the SnackBar it
+        // replaced it does not fade. Without an explicit retirement the
+        // sign-in complaint stays pinned above the *registration* form.
+        verify(() => mockBloc.add(const AuthFailureCleared())).called(1);
       });
     });
 

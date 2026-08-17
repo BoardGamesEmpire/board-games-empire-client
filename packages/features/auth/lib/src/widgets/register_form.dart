@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -30,6 +32,7 @@ class _RegisterFormState extends State<RegisterForm> {
   static const _kMinUsernameLength = 3;
 
   late final FormGroup _form;
+  StreamSubscription<Object?>? _editSubscription;
 
   @override
   void initState() {
@@ -56,12 +59,32 @@ class _RegisterFormState extends State<RegisterForm> {
       'firstName': FormControl<String>(value: ''),
       'lastName': FormControl<String>(value: ''),
     });
+    _editSubscription = _form.valueChanges.listen(_retireFailureOnEdit);
   }
 
   @override
   void dispose() {
+    _editSubscription?.cancel();
     _form.dispose();
     super.dispose();
+  }
+
+  /// Retires a spent failure banner as soon as the user edits.
+  ///
+  /// The banner is bound to bloc state and does not fade the way the SnackBar
+  /// it replaced did, so without this the user reads a complaint about the
+  /// credentials they are in the middle of correcting (#191). Dispatched
+  /// straight to the bloc rather than handed up as a callback because this
+  /// form already talks to the bloc — its submit does the same.
+  ///
+  /// The bloc drops the event unless a failure is actually showing, so the
+  /// per-keystroke event is a no-op in the common case.
+  void _retireFailureOnEdit(Object? _) {
+    if (!mounted) return;
+    final bloc = context.read<AuthBloc>();
+    if (bloc.state is AuthOperationFailure) {
+      bloc.add(const AuthFailureCleared());
+    }
   }
 
   void _submit(BuildContext context) {

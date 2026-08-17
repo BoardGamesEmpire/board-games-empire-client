@@ -104,12 +104,25 @@ void main() {
     await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
   }
 
-  /// Outcome copy must be delivered inside a [SnackBar]: it is a semantics
-  /// live region, which is what makes assistive tech announce the result
-  /// (#40's "announce on success/failure"). Inline body text would render
-  /// the same copy and announce nothing.
+  /// Outcome copy must land on an announcing surface — never as plain body
+  /// text, which would render the same words and announce nothing (#40's
+  /// "announce on success/failure"). The two outcomes use different surfaces
+  /// on purpose (#191):
+  ///
+  /// Success pops the screen, so its confirmation has to outlive the route.
+  /// That is a [SnackBar], which Flutter wraps in a
+  /// `Semantics(container: true, liveRegion: true)` — verified in
+  /// `snack_bar.dart`, and the reason nothing here adds a live-region wrapper
+  /// of its own. Nesting two would make screen readers stutter.
   Finder inSnackBar(String copy) =>
       find.descendant(of: find.byType(SnackBar), matching: find.text(copy));
+
+  /// Failure keeps the user on the screen, so it belongs on the screen: a
+  /// [BgeInlineBanner], which announces itself on appearance.
+  Finder inErrorBanner(String copy) => find.descendant(
+    of: find.byKey(CreateHouseholdScreen.errorBannerKey),
+    matching: find.text(copy),
+  );
 
   group('CreateHouseholdScreen', () {
     testWidgets('renders the localized title in the app bar', (tester) async {
@@ -193,7 +206,9 @@ void main() {
       await fillAndSubmit(tester);
       await tester.pumpAndSettle();
 
-      expect(inSnackBar(_errorCopy), findsOneWidget);
+      expect(inErrorBanner(_errorCopy), findsOneWidget);
+      // Not a SnackBar: the screen stays put, so the error belongs on it.
+      expect(find.byType(SnackBar), findsNothing);
       expect(popped, isFalse);
       expect(find.byKey(CreateHouseholdForm.submitButtonKey), findsOneWidget);
     });
@@ -227,6 +242,34 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('the error banner retires as soon as the user edits', (
+      tester,
+    ) async {
+      when(
+        () => repo.create(
+          name: any(named: 'name'),
+          description: any(named: 'description'),
+        ),
+      ).thenThrow(StateError('db is down'));
+
+      await tester.pumpWidget(harness(onPopped: (_) {}));
+      await openScreen(tester);
+      await fillAndSubmit(tester);
+      await tester.pumpAndSettle();
+      expect(inErrorBanner(_errorCopy), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(CreateHouseholdForm.nameFieldKey),
+        'HQ2',
+      );
+      await tester.pumpAndSettle();
+
+      // The banner is bound to bloc state, so unlike the SnackBar it
+      // replaced it does not fade. Left alone it would keep complaining
+      // about the value the user has just replaced.
+      expect(find.byKey(CreateHouseholdScreen.errorBannerKey), findsNothing);
+    });
+
     testWidgets('after a failure the form keeps its input and a retry reaches '
         'the repository again', (tester) async {
       var attempt = 0;
@@ -248,7 +291,7 @@ void main() {
       await fillAndSubmit(tester, name: 'Game Night HQ');
       await tester.pumpAndSettle();
 
-      expect(inSnackBar(_errorCopy), findsOneWidget);
+      expect(inErrorBanner(_errorCopy), findsOneWidget);
       // The typed name survives the failure — the user must not have to
       // retype it to retry.
       expect(find.text('Game Night HQ'), findsOneWidget);

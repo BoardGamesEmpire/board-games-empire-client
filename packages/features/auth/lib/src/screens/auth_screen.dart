@@ -3,10 +3,10 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
-import 'package:flutter/semantics.dart';
 
 import '../../l10n/auth_localizations.dart';
 import '../bloc/auth_bloc.dart';
+import '../bloc/auth_event.dart';
 import '../bloc/auth_bloc_state.dart';
 import '../widgets/login_form.dart';
 import '../widgets/register_form.dart';
@@ -19,7 +19,9 @@ import '../widgets/oidc_strategy_button.dart';
 /// the registration form and toggle link are suppressed.
 ///
 /// Accessibility:
-/// - Error messages shown in a live-region [SnackBar] for screen readers
+/// - Operation failures surface in a [BgeInlineBanner], which announces
+///   itself on appearance. The screen stays put through a failure, so the
+///   message belongs on it rather than in a SnackBar (#191).
 /// - Focus is managed between sign-in/register mode switches
 /// - Server name displayed so screen readers can identify which server
 ///   the user is authenticating against
@@ -37,6 +39,9 @@ class AuthScreen extends StatefulWidget {
     required this.identity,
     required this.serverDisplayName,
   });
+
+  /// Key on the operation-failure banner, for tests.
+  static const Key failureBannerKey = Key('auth_failure_banner');
 
   /// The server identity for this auth context. Drives which strategies
   /// are shown and which endpoints are used.
@@ -59,9 +64,13 @@ class _AuthScreenState extends State<AuthScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return BlocListener<AuthBloc, AuthBlocState>(
-      listener: _handleStateChange,
-      child: BgePage(
+    // Scoped to the failure surface: the OIDC section and both forms hold
+    // their own narrower builders, and an unscoped rebuild here would make
+    // those pointless by rebuilding the whole page on every tick.
+    return BlocBuilder<AuthBloc, AuthBlocState>(
+      buildWhen: (previous, current) =>
+          previous is AuthOperationFailure || current is AuthOperationFailure,
+      builder: (context, state) => BgePage(
         centerVertically: true,
         // Wider vertical breathing room than the default: this is the first
         // screen after server-add and carries no app bar, so the form would
@@ -76,6 +85,17 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             _buildHeader(context, colorScheme),
             const BgeGap.xl(),
+            if (state case final AuthOperationFailure failure) ...[
+              BgeInlineBanner(
+                key: AuthScreen.failureBannerKey,
+                tone: BgeBannerTone.error,
+                message: _localizedFailure(
+                  AuthLocalizations.of(context),
+                  failure,
+                ),
+              ),
+              const BgeGap.md(),
+            ],
             if (widget.identity.hasEmailAndPassword)
               _buildEmailPasswordSection(context),
             if (widget.identity.hasEmailAndPassword &&
@@ -123,11 +143,20 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
         ),
         const BgeGap.sm(),
-        Text(
-          _isSignIn ? l10n.authSignInTitle : l10n.authRegisterTitle,
-          style: Theme.of(
-            context,
-          ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+        // A live region rather than a `SemanticsService` announcement: this
+        // heading IS the thing that changes when the user switches modes, so
+        // the change announces itself. Android deprecated announcement events
+        // because they clear TalkBack's speech queue mid-utterance — the
+        // style guide's standing rule, which the old `_switchMode` call
+        // predated.
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            _isSignIn ? l10n.authSignInTitle : l10n.authRegisterTitle,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
         ),
       ],
     );
@@ -203,21 +232,6 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  void _handleStateChange(BuildContext context, AuthBlocState state) {
-    if (state is AuthOperationFailure) {
-      final message = _localizedFailure(AuthLocalizations.of(context), state);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Semantics(liveRegion: true, child: Text(message)),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-    }
-  }
-
   /// The single place the sealed failure kinds become user-facing copy.
   /// Exhaustive: a new kind fails compilation here until it gets a
   /// localized message.
@@ -231,21 +245,25 @@ class _AuthScreenState extends State<AuthScreen> {
       };
 
   void _switchMode({required bool signIn}) {
-    final l10n = AuthLocalizations.of(context);
+    // Retire any failure first: it describes a submission to the form the
+    // user is leaving, so carrying it over would pin a credentials
+    // complaint above the registration form. The banner is bound to bloc
+    // state and does not fade the way the SnackBar it replaced did (#191).
+    context.read<AuthBloc>().add(const AuthFailureCleared());
+    // The heading is a live region, so changing it announces the new mode.
     setState(() => _isSignIn = signIn);
-    // Announce mode change to screen readers
-    SemanticsService.sendAnnouncement(
-      View.of(context),
-      signIn
-          ? l10n.authSwitchedToSignInAnnouncement
-          : l10n.authSwitchedToRegisterAnnouncement,
-      Directionality.of(context),
-    );
   }
 
   void _handleOidc(BuildContext context, OidcStrategy strategy) {
     // TODO(phase5): Launch OIDC redirect flow via platform-specific
     // browser integration. For now this is a placeholder.
+    //
+    // A SnackBar rather than a BgeInlineBanner, and deliberately: this is a
+    // transient "not built yet" notice, not the outcome of a form the user
+    // submitted, and it disappears with this placeholder. Note it carries no
+    // `Semantics(liveRegion:)` wrapper — SnackBar already is one
+    // (`snack_bar.dart`), and nesting the two makes screen readers stutter
+    // (#191).
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(

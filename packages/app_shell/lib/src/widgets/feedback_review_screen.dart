@@ -71,6 +71,7 @@ class FeedbackReviewScreen extends StatefulWidget {
   /// Stable finder keys — tests use these so they hold across locales.
   static const Key sendButtonKey = Key('feedback_review.send');
   static const Key backButtonKey = Key('feedback_review.back');
+
   static const Key closeButtonKey = Key('feedback_review.close');
   static const Key sentConfirmationKey = Key('feedback_review.sent');
   static const Key queuedConfirmationKey = Key('feedback_review.queued');
@@ -78,6 +79,9 @@ class FeedbackReviewScreen extends StatefulWidget {
   static const Key submissionRejectedKey = Key('feedback_review.rejected');
   static const Key stackTraceSectionKey = Key('feedback_review.stack_trace');
   static const Key breadcrumbsSectionKey = Key('feedback_review.breadcrumbs');
+
+  /// Key on the review list — the content column the measure caps.
+  static const Key reviewListKey = Key('feedback_review.list');
 
   /// The redaction toggle key for [path] (a top-level field name or a
   /// `deviceInfo.<key>` dot-path). Stable across locales.
@@ -152,19 +156,48 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     final i18n = ShellLocalizations.of(context);
     final sending = _phase == _ReviewPhase.sending;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(i18n.feedbackReviewTitle),
-        automaticallyImplyLeading: false,
-        leading: _terminal
-            ? null
-            : BackButton(
-                key: FeedbackReviewScreen.backButtonKey,
-                onPressed: sending ? null : widget.onCancel,
-              ),
-      ),
-      body: switch (_phase) {
-        _ReviewPhase.reviewing || _ReviewPhase.sending => _reviewing(i18n),
+    // The complement of _terminal by construction; deriving it rather than
+    // re-listing the phases keeps the two from drifting apart.
+    final reviewing = !_terminal;
+    final rows = reviewing ? _reviewRows(i18n) : null;
+
+    return BgePage.slivers(
+      title: Text(i18n.feedbackReviewTitle),
+      automaticallyImplyLeading: false,
+      leading: _terminal
+          ? null
+          : BackButton(
+              key: FeedbackReviewScreen.backButtonKey,
+              onPressed: sending ? null : widget.onCancel,
+            ),
+      // Step one of this flow (compose) is a BgePage; this is step two. Built
+      // on a raw Scaffold, the content column snapped from the form measure to
+      // the full window halfway through the flow — visible as a jump on any
+      // desktop window (#191).
+      //
+      // The send button is the page footer rather than the last row of the
+      // list so it stays reachable on a long report, which is what the
+      // Expanded+Column here used to buy.
+      footer: reviewing ? _footer(i18n, sending: sending) : null,
+      padding: EdgeInsets.zero,
+      // The count a screen reader reads as "item 3 of 9". CustomScrollView
+      // cannot infer it the way ListView(children:) does. Null on the
+      // terminal states, which are one message rather than a collection.
+      semanticChildCount: rows?.length,
+      slivers: switch (_phase) {
+        _ReviewPhase.reviewing || _ReviewPhase.sending => [
+          SliverPadding(
+            padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
+            // A SliverList through BgePage.slivers, so the page keeps one
+            // real viewport: these rows are a collection a screen reader
+            // navigates, and a list nested inside a box scroll view loses
+            // its `scrollChildCount`. See SettingsScreen for the measurement.
+            sliver: SliverList.list(
+              key: FeedbackReviewScreen.reviewListKey,
+              children: rows!,
+            ),
+          ),
+        ],
         _ReviewPhase.sent => _outcome(
           i18n,
           key: FeedbackReviewScreen.sentConfirmationKey,
@@ -193,7 +226,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     );
   }
 
-  Widget _reviewing(ShellLocalizations i18n) {
+  List<Widget> _reviewRows(ShellLocalizations i18n) {
     final report = _preview.report;
     // Single serialization per build: displayJson() already derives from
     // report.toJson() and applies masking, so read BOTH the presence gate
@@ -270,50 +303,38 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
         _breadcrumbsSection(i18n, report.breadcrumbs),
     ];
 
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  BgeTokens.of(context).spaceMd,
-                  BgeTokens.of(context).spaceMd,
-                  BgeTokens.of(context).spaceMd,
-                  BgeTokens.of(context).spaceSm,
-                ),
-                child: Text(i18n.feedbackReviewExplanation),
-              ),
-              _sectionHeader(i18n.feedbackReviewSectionReport),
-              _readOnlyRow(
-                i18n.feedbackReviewFieldCategory,
-                report.category.toWire(),
-              ),
-              if (report.severity != null)
-                _readOnlyRow(
-                  i18n.feedbackReviewFieldSeverity,
-                  report.severity!.toWire(),
-                ),
-              ...reportRows,
-              if (environmentRows.isNotEmpty) ...[
-                _sectionHeader(i18n.feedbackReviewSectionEnvironment),
-                ...environmentRows,
-              ],
-              if (deviceRows.isNotEmpty) ...[
-                _sectionHeader(i18n.feedbackReviewSectionDevice),
-                ...deviceRows,
-              ],
-              if (diagnostics.isNotEmpty) ...[
-                _sectionHeader(i18n.feedbackReviewSectionDiagnostics),
-                ...diagnostics,
-              ],
-            ],
-          ),
+    final tokens = BgeTokens.of(context);
+    return [
+      Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spaceMd,
+          tokens.spaceMd,
+          tokens.spaceMd,
+          tokens.spaceSm,
         ),
-        _footer(i18n, sending: sending),
+        child: Text(i18n.feedbackReviewExplanation),
+      ),
+      _sectionHeader(i18n.feedbackReviewSectionReport),
+      _readOnlyRow(i18n.feedbackReviewFieldCategory, report.category.toWire()),
+      if (report.severity != null)
+        _readOnlyRow(
+          i18n.feedbackReviewFieldSeverity,
+          report.severity!.toWire(),
+        ),
+      ...reportRows,
+      if (environmentRows.isNotEmpty) ...[
+        _sectionHeader(i18n.feedbackReviewSectionEnvironment),
+        ...environmentRows,
       ],
-    );
+      if (deviceRows.isNotEmpty) ...[
+        _sectionHeader(i18n.feedbackReviewSectionDevice),
+        ...deviceRows,
+      ],
+      if (diagnostics.isNotEmpty) ...[
+        _sectionHeader(i18n.feedbackReviewSectionDiagnostics),
+        ...diagnostics,
+      ],
+    ];
   }
 
   Widget _sectionHeader(String text) => Padding(
@@ -411,7 +432,24 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
 
   /// Terminal outcome: an announced status line plus a dismiss affordance,
   /// mirroring [CrashReportPrompt]'s outcome states.
-  Widget _outcome(
+  List<Widget> _outcome(
+    ShellLocalizations i18n, {
+    required Key key,
+    required IconData icon,
+    required String text,
+  }) => [
+    // Fills whatever the viewport has left and centres in it — the sliver
+    // equivalent of the box path's `centerVertically`, which a lazy list
+    // cannot use because it has no total height.
+    SliverFillRemaining(
+      hasScrollBody: false,
+      child: Center(
+        child: _outcomeBody(i18n, key: key, icon: icon, text: text),
+      ),
+    ),
+  ];
+
+  Widget _outcomeBody(
     ShellLocalizations i18n, {
     required Key key,
     required IconData icon,

@@ -115,6 +115,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     on<AuthRegisterRequested>(_onRegister, transformer: droppable());
     on<AuthSignOutRequested>(_onSignOut, transformer: droppable());
     on<AuthRepositoryStateChanged>(_onRepositoryStateChanged);
+    on<AuthFailureCleared>(_onFailureCleared);
 
     // Mirror repository-level state changes (e.g. token expiry detected by
     // the interceptor) into the bloc stream.
@@ -361,6 +362,28 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       addError(error, stackTrace);
     }
     emit(const AuthUnauthenticated());
+  }
+
+  /// Drops a spent failure back to unauthenticated so its banner stops
+  /// rendering. Guarded: only a failure is retired, so a stray event cannot
+  /// knock a live session out.
+  ///
+  /// [AuthUnauthenticated] and not [AuthInitial]: initial routes the gate to
+  /// the splash, which would throw the user off the form they are still
+  /// filling in. Unauthenticated is also simply true — a failed sign-in
+  /// leaves no session — and routes back to the same screen.
+  ///
+  /// Worth knowing: the shell's session-scope listener wakes on any
+  /// transition into [AuthUnauthenticated], so it now also sees this one.
+  /// Deactivating a scope that was never activated is a no-op, and this
+  /// event cannot fire from an authenticated state, so the effect is inert —
+  /// but the listener is doing session-lifecycle work on a banner dismissal,
+  /// which is a wider predicate than it needs (#208).
+  void _onFailureCleared(
+    AuthFailureCleared event,
+    Emitter<AuthBlocState> emit,
+  ) {
+    if (state is AuthOperationFailure) emit(const AuthUnauthenticated());
   }
 
   void _onRepositoryStateChanged(

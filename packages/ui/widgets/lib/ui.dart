@@ -7,7 +7,7 @@
 ///
 /// Everything here is justified by duplication that already existed, and the
 /// migration is complete rather than aspirational — `BgePage` is used by all
-/// 10 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
+/// 12 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
 /// `BgeTextField` by every form field in 5 files (#165).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
