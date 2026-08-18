@@ -44,12 +44,20 @@ const reservedDeepLinkPathPatterns = <String>[
 ];
 
 /// Builds the real server-add screen subtree (#36) for the
-/// [AppRoutes.serverAdd] route. Supplied by [BgeApp] when the root
-/// container carries the onboarding services (native); when null the
-/// pre-#36 placeholder is kept — which is also the correct web behavior,
-/// where the route is unreachable ([AppBootstrapNeedsServer] never
-/// occurs on web) and no `WellKnownClient` implementation exists.
-typedef ServerAddScreenBuilder = Widget Function(BuildContext context);
+/// [AppRoutes.serverAdd] route. Always supplied by [BgeApp]; returns null
+/// at navigation time when the composition cannot back the flow, in which
+/// case the route falls back to the placeholder.
+///
+/// Null covers a partial root container (any of `WellKnownClient`,
+/// `VersionNegotiator`, `ConnectivityService`, `BuildInfo` unregistered)
+/// and an absent `ServerOrchestrator`. The whole set is checked, not a
+/// representative member (#189): the orchestrator in particular is only
+/// available once bootstrap has succeeded, so it cannot be settled when
+/// the router is built. This is also the correct web behavior, where the
+/// route is unreachable ([AppBootstrapNeedsServer] never occurs on web),
+/// no `WellKnownClient` implementation exists, and the orchestrator is
+/// null by design.
+typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.

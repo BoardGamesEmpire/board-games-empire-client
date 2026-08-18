@@ -222,6 +222,10 @@ class _BgeAppState extends State<BgeApp> {
   late final BootstrapStreamListenable _refreshListenable;
   late final GoRouter _router;
 
+  /// Diagnostics for route builders that degrade to a placeholder because
+  /// the composition cannot back them (#189).
+  static final BgeLogger _log = BgeLogger('bge.shell.router');
+
   /// The #76 review slot: non-null while the user is on the full review &
   /// redaction surface for the pending crash draft. Held at the widget
   /// layer (not on the reporter) because it is seeded from the typed
@@ -286,14 +290,16 @@ class _BgeAppState extends State<BgeApp> {
     _router = buildAppRouter(
       bootstrapCubit: widget.bootstrapCubit,
       refreshListenable: _refreshListenable,
-      serverAddBuilder: _buildServerAddBuilder(),
       // Always supplied: the router is built in initState, before
-      // bootstrap yields a scope, so gating these on availability *now*
-      // would capture null forever. They resolve the scope at navigation
-      // time instead — by then bootstrap has committed the active server
-      // (a registered server routes to /auth only after that). When no
-      // scope exists at all (web until #96), the builders fall back to the
-      // placeholders, matching the pre-#37 behavior.
+      // bootstrap yields an orchestrator or a scope, so gating these on
+      // availability *now* would capture null forever. They resolve at
+      // navigation time instead — by then bootstrap has committed the
+      // active server (a registered server routes to /auth only after
+      // that) and published the orchestrator. When the backing
+      // composition is absent altogether (a partial or empty root
+      // container; a platform with no orchestrator), the builders fall
+      // back to the placeholders, matching the pre-#37 behavior.
+      serverAddBuilder: _buildServerAddRoute,
       authBuilder: _buildAuthRoute,
       homeBuilder: _buildHomeRoute,
       authScopeBuilder: _buildAuthScope,
@@ -417,23 +423,31 @@ class _BgeAppState extends State<BgeApp> {
     child: child,
   );
 
-  /// Root-scoped [ConnectivityService] for the auth bloc's offline fast
-  /// path and reconnect revalidation (#98). Resolved from
-  /// [BgeApp.rootContainer] — NOT from the per-server container, whose
-  /// contract forbids parent-scope lookup (#38); connectivity is a
-  /// device-global concern registered once at the root, same as the
-  /// [FeedbackService] and [WellKnownClient] resolutions above. Null (no
-  /// container, or a composition without connectivity wiring — tests, or
-  /// a platform that never registered it) degrades the bloc gracefully:
-  /// no fast path, no automatic revalidation, indeterminate fallback
-  /// intact.
-  ConnectivityService? _rootConnectivity() {
+  /// Resolves a device-global service from [BgeApp.rootContainer], or null
+  /// when there is no container or [T] is not registered in it.
+  ///
+  /// The one place the check-then-resolve pair lives. Route builders that
+  /// need several services get a nullable local per service, so a missing
+  /// one is a `null` the type system carries into the constructor call
+  /// rather than a check that can be forgotten (#189: the `/server-add`
+  /// guard verified one of the five collaborators it went on to resolve).
+  ///
+  /// Never from a per-server container, whose contract forbids
+  /// parent-scope lookup (#38) — these are device-global concerns
+  /// registered once at the root.
+  T? _rootService<T extends Object>() {
     final container = widget.rootContainer;
-    if (container == null || !container.isRegistered<ConnectivityService>()) {
-      return null;
-    }
-    return container.get<ConnectivityService>();
+    if (container == null || !container.isRegistered<T>()) return null;
+    return container.get<T>();
   }
+
+  /// Root-scoped [ConnectivityService] for the auth bloc's offline fast
+  /// path and reconnect revalidation (#98). Null (no container, or a
+  /// composition without connectivity wiring — tests, or a platform that
+  /// never registered it) degrades the bloc gracefully: no fast path, no
+  /// automatic revalidation, indeterminate fallback intact.
+  ConnectivityService? _rootConnectivity() =>
+      _rootService<ConnectivityService>();
 
   /// Renders the auth route at navigation time. Falls back to the router's
   /// placeholder when no active server is resolvable (no scope, or none
@@ -553,31 +567,69 @@ class _BgeAppState extends State<BgeApp> {
   /// [BgeApp.feedbackReporter], which may legitimately be absent — and
   /// hosts the compose → review flow. Null (→ [NotYetAvailableScreen])
   /// when no container or no registered service exists (tests; a platform
-  /// composition without feedback wiring), matching the
-  /// [_buildServerAddBuilder] guard pattern.
+  /// composition without feedback wiring).
+  ///
+  /// Not logged, unlike [_buildServerAddRoute]: this route is *pushed*
+  /// from the home menu rather than pinned by a bootstrap redirect, so the
+  /// fallback is a screen the user chose to open and the app is still
+  /// working. That said, [NotYetAvailableScreen] carries no app bar and so
+  /// no back button, which on desktop (no system back gesture, no hardware
+  /// key) leaves no visible exit — tracked separately rather than papered
+  /// over with a log here.
   Widget? _buildFeedbackRoute(BuildContext context) {
-    final container = widget.rootContainer;
-    if (container == null || !container.isRegistered<FeedbackService>()) {
-      return null;
-    }
-    return FeedbackFlowScreen(
-      feedbackService: container.get<FeedbackService>(),
-    );
+    final feedbackService = _rootService<FeedbackService>();
+    if (feedbackService == null) return null;
+    return FeedbackFlowScreen(feedbackService: feedbackService);
   }
 
-  /// The #36 server-add wiring.
-  ServerAddScreenBuilder? _buildServerAddBuilder() {
-    final container = widget.rootContainer;
-    if (container == null || !container.isRegistered<WellKnownClient>()) {
+  /// The #36 server-add wiring, resolved at navigation time (#189).
+  ///
+  /// Resolution has to happen at navigation time because the
+  /// [ServerOrchestrator] does not exist when the router is built —
+  /// `AppBootstrapCubit` only publishes it once bootstrap has succeeded,
+  /// so an availability check in `initState` would capture null forever
+  /// (the same reason the auth/home builders resolve late).
+  ///
+  /// Every collaborator is a nullable local, and the guard is one
+  /// all-or-nothing check over the whole set. That is deliberate: adding a
+  /// required dependency to [ServerOnboardingBloc] forces a new
+  /// [_rootService] local, and passing a nullable local to a non-nullable
+  /// parameter is a compile error — so the guard cannot fall behind the
+  /// resolution the way it did before #189, when one checked service stood
+  /// in for five.
+  ///
+  /// Null (→ the server-add [ShellPlaceholderScreen]) covers a composition
+  /// that cannot back the flow: no container at all (tests; the empty
+  /// fallback container `runBgeApp` boots on when `createRootContainer`
+  /// fails), a partial registration set, or a platform with no
+  /// orchestrator.
+  Widget? _buildServerAddRoute(BuildContext context) {
+    final wellKnownClient = _rootService<WellKnownClient>();
+    final versionNegotiator = _rootService<VersionNegotiator>();
+    final connectivityService = _rootService<ConnectivityService>();
+    final buildInfo = _rootService<BuildInfo>();
+    final orchestrator = widget.bootstrapCubit.orchestrator;
+    if (wellKnownClient == null ||
+        versionNegotiator == null ||
+        connectivityService == null ||
+        buildInfo == null ||
+        orchestrator == null) {
+      _logServerAddUnavailable([
+        if (wellKnownClient == null) 'WellKnownClient',
+        if (versionNegotiator == null) 'VersionNegotiator',
+        if (connectivityService == null) 'ConnectivityService',
+        if (buildInfo == null) 'BuildInfo',
+        if (orchestrator == null) 'ServerOrchestrator',
+      ]);
       return null;
     }
-    return (context) => BlocProvider<ServerOnboardingBloc>(
+    return BlocProvider<ServerOnboardingBloc>(
       create: (_) => ServerOnboardingBloc(
-        wellKnownClient: container.get<WellKnownClient>(),
-        versionNegotiator: container.get<VersionNegotiator>(),
-        connectivityService: container.get<ConnectivityService>(),
-        buildInfo: container.get<BuildInfo>(),
-        orchestrator: widget.bootstrapCubit.orchestrator!,
+        wellKnownClient: wellKnownClient,
+        versionNegotiator: versionNegotiator,
+        connectivityService: connectivityService,
+        buildInfo: buildInfo,
+        orchestrator: orchestrator,
       ),
       child: BlocListener<ServerOnboardingBloc, ServerOnboardingState>(
         listenWhen: (_, current) => current is ServerOnboardingSucceeded,
@@ -586,6 +638,26 @@ class _BgeAppState extends State<BgeApp> {
       ),
     );
   }
+
+  /// Reports a server-add composition that cannot back the route (#189),
+  /// naming every absent member — the diagnostic exists to spare whoever
+  /// reads it from bisecting the composition by hand.
+  ///
+  /// Error, not warning, and unconditional: this route is reachable in
+  /// exactly one bootstrap state. [AppBootstrapNeedsServer] pins every
+  /// location to it and every other state redirects away
+  /// ([AppRoutes.bootstrapLocations] bounces a ready app to `/home`), so
+  /// reaching the fallback means the user is *stuck* on a placeholder with
+  /// no retry and no exit. There is no shipped quiet case to filter out:
+  /// web never enters that state (its `initialize` always reports
+  /// `hasServer: true`), so it never builds this route at all. Tests that
+  /// drive the state deliberately are the one caller that reaches the
+  /// fallback on purpose, and they assert on this record.
+  void _logServerAddUnavailable(List<String> missing) => _log.error(
+    'Server-add is unavailable: the composition is missing '
+    '${missing.join(', ')}.',
+    context: {'missing': missing},
+  );
 
   /// True once bootstrap has left the initializing/failed legs for a state
   /// that only follows successful hydrated-storage init inside
