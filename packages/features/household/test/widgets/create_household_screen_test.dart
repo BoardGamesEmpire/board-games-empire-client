@@ -8,6 +8,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -103,6 +104,37 @@ void main() {
     await tester.enterText(find.byKey(CreateHouseholdForm.nameFieldKey), name);
     await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
   }
+
+  /// Sets the render surface to a small window. `MediaQueryData.size` is
+  /// metadata and constrains nothing, so the viewport the banner has to be
+  /// revealed within has to come from the view.
+  ///
+  /// 400dp tall rather than the checklist's 480: at 200% text scale this form
+  /// still *fits* a 480dp viewport, so there is nothing to scroll and #209's
+  /// bug cannot arise there. Desktop and browser are first-class targets, so a
+  /// window this short is a real one — and it is the shape where the failure
+  /// was reported.
+  void useNarrowWindow(WidgetTester tester) {
+    tester.view.physicalSize = const Size(320, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
+
+  ScrollableState pageScroll(WidgetTester tester) =>
+      tester.state<ScrollableState>(find.byType(Scrollable).first);
+
+  /// The banner's top edge in the page scroll viewport's own space.
+  ///
+  /// Geometry rather than `findsOneWidget`, which passes for a banner scrolled
+  /// clean out of the viewport — the bug in #209 and the reason no existing
+  /// assertion here could catch it.
+  double bannerTop(WidgetTester tester) => tester
+      .renderObject<RenderBox>(find.byKey(CreateHouseholdScreen.errorBannerKey))
+      .localToGlobal(
+        Offset.zero,
+        ancestor: tester.renderObject<RenderBox>(find.byType(Scrollable).first),
+      )
+      .dy;
 
   /// Outcome copy must land on an announcing surface — never as plain body
   /// text, which would render the same words and announce nothing (#40's
@@ -268,6 +300,61 @@ void main() {
       // replaced it does not fade. Left alone it would keep complaining
       // about the value the user has just replaced.
       expect(find.byKey(CreateHouseholdScreen.errorBannerKey), findsNothing);
+    });
+
+    testWidgets('the failure banner is scrolled into view on a small window at '
+        '200% text scale', (tester) async {
+      // #209: the banner announced itself but nothing revealed it. At 200%
+      // text scale on a small window the form overflows, so the user has
+      // scrolled down to reach the submit button — their tap failed, the
+      // banner appeared above the viewport, and the visible result was a
+      // button that did nothing.
+      useNarrowWindow(tester);
+      when(
+        () => repo.create(
+          name: any(named: 'name'),
+          description: any(named: 'description'),
+        ),
+      ).thenThrow(StateError('db is down'));
+
+      await tester.pumpWidget(
+        MediaQuery(
+          // Above MaterialApp on purpose: `MediaQuery.fromView` is inserted by
+          // `View`, higher still, so this one wins for the subtree below.
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: harness(onPopped: (_) {}),
+        ),
+      );
+      await openScreen(tester);
+
+      // The user scrolls down to reach the submit button.
+      final position = pageScroll(tester).position;
+      expect(
+        position.maxScrollExtent,
+        greaterThan(0),
+        reason:
+            'sanity: at 200% scale this form must overflow the viewport, '
+            'or there is nothing for the reveal to fix',
+      );
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      await fillAndSubmit(tester);
+      await tester.pumpAndSettle();
+
+      expect(inErrorBanner(_errorCopy), findsOneWidget, reason: 'sanity');
+      // The revealed position, not merely "somewhere on screen": asserting
+      // `top >= 0 && top < viewportHeight` would restate the widget's own
+      // visibility guard, so it would pass for any implementation that
+      // satisfies the guard — including one that leaves a few dp of banner
+      // showing above the bottom edge.
+      expect(
+        bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+        reason:
+            'the banner leads with its top edge, one spacing step below '
+            'the viewport start so it is not flush against the app bar',
+      );
     });
 
     testWidgets('after a failure the form keeps its input and a retry reaches '
