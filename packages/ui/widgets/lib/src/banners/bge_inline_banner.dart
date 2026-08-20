@@ -303,8 +303,30 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     );
     final duration = BgeMotion.durationOf(context, tokens.motionShort);
 
-    // Released on the accomplished reveal, immediately before it happens —
-    // the guarantee this widget makes is now met.
+    // Released immediately BEFORE the scroll, not after it lands, and the
+    // ordering is forced rather than incidental: `animateTo` begins a
+    // DrivenScrollActivity, whose `isScrolling` flips `isScrollingNotifier`.
+    // A listener still attached would therefore fire on this widget's own
+    // animation and re-enter — past the gesture guard, because `animateTo`
+    // never touches `userScrollDirection` (it only calls `beginActivity`), so
+    // a programmatic scroll still reads as idle. The re-entry starts a second
+    // animateTo that interrupts the first. Measured: two competing animations
+    // for one reveal, the first reporting that it never reached its target.
+    //
+    // KNOWN GAP, not a deliberate choice: an interrupted animation is never
+    // retried. Anything that begins a new scroll activity on this position
+    // disposes the DrivenScrollActivity, and a bare TAP is enough — the drag
+    // recognizer's `onDown` fires on pointer-down before arena resolution
+    // (monodrag.dart `_addPointer`), calling `position.hold()`. Measured: a
+    // tap 4ms in froze the scroll at 354 of a 1184 target and left the banner
+    // 845dp down a 480dp viewport, off screen, with nothing queued.
+    //
+    // Tapping a field, or the submit button a second time, is enough to do it
+    // — so this is not covered by the "never fight a scroll the USER is
+    // driving" rule above, which is about drags. Retrying after a drag would
+    // fight the user; retrying after a tap would not. The fix — check arrival
+    // on the returned future and re-arm only when the position is idle — is a
+    // behaviour change, tracked in #233.
     _stopAwaitingIdle();
 
     // The zero-duration branch is not decoration: `animateTo` builds a
