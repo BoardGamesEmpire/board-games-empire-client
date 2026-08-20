@@ -94,13 +94,14 @@ class BgeInlineBanner extends StatefulWidget {
   /// Whether the banner scrolls itself into view on appearance, and again
   /// whenever its copy changes.
   ///
-  /// Leave true for an outcome. Set false for:
+  /// Leave true for an outcome. Set false for a **persistent** banner — an
+  /// offline indicator is furniture rather than news, and one that scrolls
+  /// itself into view on every mount fights a restored scroll position.
   ///
-  /// - a **persistent** banner — an offline indicator is furniture rather than
-  ///   news, and one that scrolls itself into view on every mount fights a
-  ///   restored scroll position;
-  /// - a banner built **lazily inside a list**, where every newly realized row
-  ///   would ask for the viewport as the user scrolls past it.
+  /// A banner built **lazily inside a list** does not need the flag: a row is
+  /// never treated as an arriving outcome, whatever this is set to. Relying on
+  /// the flag there would mean a forgotten one makes the list unusable rather
+  /// than merely unhelpful, so it is detected instead.
   ///
   /// **Precondition.** The reveal acts on the **nearest enclosing vertical
   /// scroll view**, and needs laid-out geometry. Without one it is a silent
@@ -208,8 +209,16 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
       _deferUntilIdle(position);
       return;
     }
-    _stopAwaitingIdle();
 
+    // The queue is NOT released here. Every return below this point leaves the
+    // banner unrevealed, and releasing on the way past them dropped a deferred
+    // reveal permanently: an attempt that re-ran when a fling settled, then
+    // bailed on geometry, detached its listener and was never re-triggered —
+    // `didUpdateWidget` reschedules only on a copy change or a `reveal`
+    // false-to-true flip, and an unchanged error message is neither. That is
+    // the #209 failure mode arriving by a different route. Released instead at
+    // the two points that actually settle the question: an accomplished reveal,
+    // and the already-visible check that makes one unnecessary.
     final self = context.findRenderObject();
     final viewport = scrollable.context.findRenderObject();
     if (self is! RenderBox ||
@@ -241,7 +250,13 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
       node != null && node != viewport;
       node = node.parent
     ) {
-      if (node is RenderSliverMultiBoxAdaptor) return;
+      if (node is RenderSliverMultiBoxAdaptor) {
+        // Releases the queue: being a lazily-built row is structural, so no
+        // later idle transition changes the answer. Holding the listener would
+        // pin it for the widget's life and re-run this walk on every scroll.
+        _stopAwaitingIdle();
+        return;
+      }
     }
 
     final tokens = BgeTokens.of(context);
@@ -256,7 +271,13 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     // bottom edge "visible" — which is the shape ServerAddForm produces, since
     // its banner lands in the space the submit button occupied.
     final endsOnScreen = top + self.size.height <= viewport.size.height;
-    if (top >= 0 && (endsOnScreen || top <= inset)) return;
+    if (top >= 0 && (endsOnScreen || top <= inset)) {
+      // Releases the queue: the banner is readable where it stands, which is
+      // the outcome the deferral was waiting for. This is the "user scrolled to
+      // it themselves during the fling" case — satisfied, not abandoned.
+      _stopAwaitingIdle();
+      return;
+    }
 
     // Computed rather than delegated to `Scrollable.ensureVisible`, for two
     // reasons. It reveals flush against the viewport edge with no way to keep
@@ -282,6 +303,10 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     );
     final duration = BgeMotion.durationOf(context, tokens.motionShort);
 
+    // Released on the accomplished reveal, immediately before it happens —
+    // the guarantee this widget makes is now met.
+    _stopAwaitingIdle();
+
     // The zero-duration branch is not decoration: `animateTo` builds a
     // DrivenScrollActivity whatever the duration, so under OS reduced motion it
     // would still take a frame to arrive rather than being complete instantly.
@@ -306,9 +331,11 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     // scroll direction and re-defers if the gesture is still running — the
     // ballistic tail of a fling is part of it — so this needs no notion of
     // "is it over yet" of its own, and there is no branch here that the
-    // deferral tests cannot reach. The listener stays attached until a reveal
-    // actually happens, so a transition cannot slip through the gap between
-    // detaching and re-attaching.
+    // deferral tests cannot reach. The listener stays attached until the reveal
+    // is either accomplished or settled as unnecessary — never merely because
+    // an attempt was made — so a transition cannot slip through the gap between
+    // detaching and re-attaching, and an attempt that bails on geometry stays
+    // queued for the next one.
     //
     // Back through the scheduler rather than revealing inline: this fires from
     // a notifier mid-frame, and the reveal needs settled geometry.

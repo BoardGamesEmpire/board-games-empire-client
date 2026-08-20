@@ -247,11 +247,12 @@ bar, reading as clipped. Three consequences worth knowing:
   string can be taller than the viewport — measured, `serverAddErrorClientTooNew`
   is 816dp against a 480dp one. Centring the reveal would show the middle of a
   wrapped sentence. (That the banner can be that tall at all is #228.)
-- **Pass `reveal: false` for a banner that is not an arriving outcome** — a
-  *persistent* one (an offline indicator is furniture, not news, and one that
-  scrolls itself into view on every mount fights a restored scroll position),
-  or one built **lazily inside a list**, where every newly realized row would
-  otherwise ask for the viewport as the user scrolls past it.
+- **Pass `reveal: false` for a *persistent* banner** — an offline indicator is
+  furniture, not news, and one that scrolls itself into view on every mount
+  fights a restored scroll position. A banner built **lazily inside a list**
+  needs no flag: a row is never treated as an arriving outcome, because a
+  forgotten flag there would make the list unusable rather than merely
+  unhelpful.
 - **It needs a vertical scroll view to work.** Unlike `announce`, which always
   annotates the semantics node, reveal acts on the nearest enclosing vertical
   scroll view and is a silent no-op without one — it does not walk outward
@@ -340,7 +341,7 @@ legible body text on every surface role.
       SnackBar if it pops, and never a SnackBar inside a live region
 - [ ] A banner is retired when its failure stops applying (edit, mode switch)
 - [ ] Arriving outcome banners are left to reveal themselves; `reveal: false`
-      for a persistent banner or one built lazily in a list
+      only for a persistent one
 - [ ] Status uses `BgeStatusColors` **with its icon**
 - [ ] Checked at 320dp and 200% text scale
 - [ ] Checked in dark, light, and high contrast
