@@ -185,7 +185,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | --- | --- | --- |
 | `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
-| `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance; one semantics node |
+| `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
 
 ### In-flight forms
@@ -231,6 +231,36 @@ complains about, or they switched to a different form. Skip this and the user
 reads a complaint about the value they just replaced, or a sign-in error
 pinned above the registration form. `ServerOnboardingFailureCleared` is the
 reference; auth and create-household follow it.
+
+**An announced banner still has to be seen.** `BgeInlineBanner` is a live
+region, so assistive tech reads it on appearance — which is exactly why a
+banner outside the viewport used to survive review. A sighted user who had
+scrolled down to reach the submit button got a button that appeared to do
+nothing (#209). The banner now reveals itself on appearance, and again whenever
+its copy changes, so no call site re-decides it: it leads with **its own top
+edge**, landing one spacing step below the viewport start rather than flush
+against it — `BgePage` keeps its content inset inside the scroll view, so a
+flush reveal scrolls that inset away and the banner ends up against the app
+bar, reading as clipped. Three consequences worth knowing:
+
+- **The top edge, not the whole banner.** At 200% text scale a single error
+  string can be taller than the viewport — measured, `serverAddErrorClientTooNew`
+  is 816dp against a 480dp one. Centring the reveal would show the middle of a
+  wrapped sentence. (That the banner can be that tall at all is #228.)
+- **Pass `reveal: false` for a banner that is not an arriving outcome** — a
+  *persistent* one (an offline indicator is furniture, not news, and one that
+  scrolls itself into view on every mount fights a restored scroll position),
+  or one built **lazily inside a list**, where every newly realized row would
+  otherwise ask for the viewport as the user scrolls past it.
+- **It needs a vertical scroll view to work.** Unlike `announce`, which always
+  annotates the semantics node, reveal acts on the nearest enclosing vertical
+  scroll view and is a silent no-op without one — it does not walk outward
+  through nested ones. A screen that hosts a banner outside a scroll view, or
+  inside a nested one, keeps it in view itself. `BgePage` supplies exactly one,
+  which is why every current call site gets this for free.
+
+Reveal is opt-out for the same reason `announce` is: an accessibility guarantee
+that each call site has to remember is one that some call site will forget.
 
 **Never wrap a SnackBar in `Semantics(liveRegion: true)`.** Flutter already
 does — `snack_bar.dart` wraps every SnackBar in
@@ -309,6 +339,8 @@ legible body text on every surface role.
 - [ ] Outcomes follow the surface rule above — banner if the screen stays,
       SnackBar if it pops, and never a SnackBar inside a live region
 - [ ] A banner is retired when its failure stops applying (edit, mode switch)
+- [ ] Arriving outcome banners are left to reveal themselves; `reveal: false`
+      for a persistent banner or one built lazily in a list
 - [ ] Status uses `BgeStatusColors` **with its icon**
 - [ ] Checked at 320dp and 200% text scale
 - [ ] Checked in dark, light, and high contrast

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:auth/l10n/auth_localizations.dart';
 import 'package:auth/src/bloc/auth_event.dart';
@@ -62,6 +65,37 @@ Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
 
 AuthScreen _screen(ServerIdentity identity, MockAuthBloc bloc) =>
     AuthScreen(identity: identity, serverDisplayName: 'Test BGE Server');
+
+/// Sets the render surface to a small window. `MediaQueryData.size` is metadata
+/// and constrains nothing, so the viewport the banner has to be revealed within
+/// has to come from the view.
+///
+/// 400dp tall rather than the checklist's 480: at 200% text scale this screen
+/// overflows a 480dp viewport by only ~8dp, so a regression test pinned there
+/// would reproduce #209 by a margin that any copy or spacing change could
+/// erase, and would then pass while testing nothing. Desktop and browser are
+/// first-class targets, so a window this short is a real one.
+void _useNarrowWindow(WidgetTester tester) {
+  tester.view.physicalSize = const Size(320, 400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
+ScrollableState _pageScroll(WidgetTester tester) =>
+    tester.state<ScrollableState>(find.byType(Scrollable).first);
+
+/// The failure banner's top edge in the page scroll viewport's own space.
+///
+/// Geometry rather than `findsOneWidget`, which passes for a banner scrolled
+/// clean out of the viewport — the bug in #209, and the reason no existing
+/// assertion in this file could catch it.
+double _bannerTop(WidgetTester tester) => tester
+    .renderObject<RenderBox>(find.byKey(AuthScreen.failureBannerKey))
+    .localToGlobal(
+      Offset.zero,
+      ancestor: tester.renderObject<RenderBox>(find.byType(Scrollable).first),
+    )
+    .dy;
 
 void main() {
   late MockAuthBloc mockBloc;
@@ -312,6 +346,64 @@ void main() {
         await tester.pump();
 
         expect(find.text('Create Account'), findsWidgets);
+      });
+    });
+
+    group('failure banner reveal (#209)', () {
+      testWidgets('a failure that appears above the viewport is scrolled into '
+          'view on a small window at 200% text scale', (tester) async {
+        // The banner announces itself, so a screen-reader user is told. A
+        // sighted user who had scrolled down to reach the sign-in button saw a
+        // button that did nothing, with the message above the viewport.
+        _useNarrowWindow(tester);
+
+        // A controller rather than `Stream.fromIterable` so the failure lands
+        // AFTER the user has scrolled, which is the whole scenario.
+        final states = StreamController<AuthBlocState>();
+        addTearDown(states.close);
+        whenListen(mockBloc, states.stream, initialState: const AuthInitial());
+
+        await tester.pumpWidget(
+          MediaQuery(
+            // Above MaterialApp on purpose: `MediaQuery.fromView` is inserted
+            // by `View`, higher still, so this one wins for the subtree below.
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: _wrap(_screen(_identity(), mockBloc), mockBloc),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final position = _pageScroll(tester).position;
+        expect(
+          position.maxScrollExtent,
+          greaterThan(0),
+          reason:
+              'sanity: at 200% scale this screen must overflow the '
+              'viewport, or there is nothing for the reveal to fix',
+        );
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pumpAndSettle();
+
+        states.add(const AuthFailureInvalidCredentials());
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(AuthScreen.failureBannerKey),
+          findsOneWidget,
+          reason: 'sanity',
+        );
+        // The revealed position, not merely "somewhere on screen": asserting
+        // `top >= 0 && top < viewportHeight` would restate the widget's own
+        // visibility guard, so it would pass for any implementation that
+        // satisfies the guard — including one that leaves a few dp of banner
+        // showing above the bottom edge.
+        expect(
+          _bannerTop(tester),
+          moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+          reason:
+              'the banner leads with its top edge, one spacing step below '
+              'the viewport start so it is not flush against the window edge',
+        );
       });
     });
   });
