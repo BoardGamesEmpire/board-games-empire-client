@@ -164,7 +164,10 @@ without a tokenized harness.
 - `paneMaxWidth` (840) — the list/pane measure, via
   `BgePage(width: BgePageWidth.pane)`. A settings row is a label plus a
   trailing control, not a line of prose, so it reads badly squeezed to 480 —
-  but it is still capped, because nothing stretches to the monitor.
+  but it is still capped, because nothing stretches to the monitor. A surface
+  that mixes rows *with* prose keeps 480: the prose decides, which is why
+  `FeedbackReviewScreen` takes the reading measure and `SettingsScreen` does
+  not.
 - `breakpointMedium` (600) / `breakpointExpanded` (840).
 
 **Measures are caps; breakpoints are thresholds.** A cap is already adaptive —
@@ -183,10 +186,54 @@ Use these. They exist because the hand-rolled versions drifted.
 
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
-| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure |
+| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
+
+### List surfaces
+
+A screen whose content is a list is built on **`BgePage.slivers`**, not a
+`ListView` in `child:`. The box constructor already supplies a scroll view, so a
+nested list has to be shrink-wrapped and made non-scrollable — and that splits
+the collection semantics (the scrollable node loses its `scrollChildCount` while
+the node that still carries it cannot scroll, so a screen reader stops saying
+"item 3 of 9") as well as forfeiting per-viewport realization. `.slivers` gives
+the page one real viewport, so a `SliverList` keeps both.
+
+**A builder needs nothing extra.** `slivers:` takes a `List<Widget>` and
+`SliverList.builder` is a widget, so a paginated list goes straight through —
+including the shape a search screen actually has, with a query field above the
+results and a loading tail below them:
+
+```dart
+BgePage.slivers(
+  title: Text(l10n.searchTitle),
+  width: BgePageWidth.pane,
+  semanticChildCount: results.length,
+  slivers: [
+    const SliverToBoxAdapter(child: SearchField()),
+    SliverList.builder(
+      itemCount: results.length,
+      itemBuilder: (context, i) => ResultRow(results[i]),
+    ),
+    if (loadingMore) const SliverToBoxAdapter(child: LoadingRow()),
+  ],
+)
+```
+
+**`semanticChildCount` is required, and it is what the list holds right now.**
+`ListView(children:)` infers the count; a `CustomScrollView` cannot, so the
+caller has to say. A paginated caller passes the loaded count and lets it grow
+as pages arrive — **not** null-until-the-last-page, which announces nothing at
+all. This is what `ListView.builder` already does (`semanticChildCount ??
+itemCount`): the number describes the children the viewport holds, not a total
+sitting on the server.
+
+Nothing verifies it for you. `ListView.builder` asserts the count against its
+`itemCount`; `CustomScrollView` asserts only `>= 0`, and `BgePage` cannot see
+inside the slivers it is handed. A count that disagrees with the list is silent,
+so it belongs in the screen's test.
 
 ### In-flight forms
 
@@ -331,8 +378,13 @@ legible body text on every surface role.
 
 ## 7. Checklist for a new screen
 
-- [ ] Built on `BgePage` — `width: BgePageWidth.pane` for a list surface, the
-      default form measure otherwise; `footer:` for a pinned action
+- [ ] Built on `BgePage` — `BgePage.slivers` for a list surface, the box
+      constructor otherwise; `footer:` for a pinned action
+- [ ] Measure: `width: BgePageWidth.pane` for rows that are a label plus a
+      trailing control; the default 480 for prose, and for a surface mixing
+      prose with rows
+- [ ] A list surface passes `semanticChildCount` — the count it currently
+      holds, grown as pages arrive, never left null on a known list
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`
