@@ -42,10 +42,15 @@ void main() {
     VoidCallback? onCancel,
     VoidCallback? onClose,
   }) async {
-    // The review surface is a scrolling form. Its rows now build eagerly
-    // (BgePage owns the scrolling, so the list shrink-wraps), but rows below
-    // the fold still cannot be tapped — `tester.tap` requires the target to
-    // be on-screen. Give the test a tall viewport; reset after.
+    // The review surface is a SliverList through BgePage.slivers, so rows
+    // below the fold are not built at all — they can be neither found nor
+    // tapped. Give the test a tall viewport; reset after.
+    //
+    // The reason changed with the sliver migration (a612dbc) even though the
+    // tall viewport did not: before it, the rows built eagerly and only the
+    // tap was blocked, because `tester.tap` needs an on-screen target. Now
+    // `find` cannot reach them either, which is a stricter requirement met by
+    // the same fix.
     tester.view.physicalSize = const Size(1200, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

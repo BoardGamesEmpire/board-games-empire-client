@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -28,6 +29,75 @@ Widget _host(
   return MediaQuery(
     data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
     child: MaterialApp(theme: BgeTheme.light(), home: child),
+  );
+}
+
+/// The count a screen reader reads as "item 3 of 9", taken off the node that
+/// actually scrolls.
+///
+/// Walked rather than fetched with `tester.getSemantics`, which resolves to the
+/// nearest merged ancestor — that is not the viewport's node, so it reports
+/// null whether or not the count is wired, and an assertion built on it passes
+/// for the broken case. `SettingsScreen`'s test carries the same walk; this is
+/// the primitive's own copy, so the guarantee is tested where it is made.
+int? _countOnScrollingNode(WidgetTester tester) {
+  SemanticsNode? root;
+  tester.binding.rootPipelineOwner.visitChildren((owner) {
+    root ??= owner.semanticsOwner?.rootSemanticsNode;
+  });
+
+  int? found;
+  void walk(SemanticsNode node) {
+    final data = node.getSemanticsData();
+    final scrolls =
+        data.hasAction(SemanticsAction.scrollUp) ||
+        data.hasAction(SemanticsAction.scrollDown);
+    if (scrolls && node.scrollChildCount != null) {
+      found = node.scrollChildCount;
+    }
+    node.visitChildren((child) {
+      walk(child);
+      return true;
+    });
+  }
+
+  walk(root!);
+  return found;
+}
+
+/// A paginated list that grows by a page when a row is tapped.
+///
+/// Also the worked example of the style-guide rule: `semanticChildCount` tracks
+/// what the list currently holds, not a total from the server, so it moves with
+/// `_loaded`.
+class _GrowingList extends StatefulWidget {
+  const _GrowingList();
+
+  @override
+  State<_GrowingList> createState() => _GrowingListState();
+}
+
+class _GrowingListState extends State<_GrowingList> {
+  static const _pageSize = 20;
+
+  int _loaded = _pageSize;
+
+  @override
+  Widget build(BuildContext context) => BgePage.slivers(
+    title: const Text('paged'),
+    semanticChildCount: _loaded,
+    slivers: [
+      SliverList.builder(
+        itemCount: _loaded,
+        itemBuilder: (context, index) => SizedBox(
+          height: 48,
+          child: TextButton(
+            onPressed: () => setState(() => _loaded += _pageSize),
+            child: Text('row $index'),
+          ),
+        ),
+      ),
+    ],
   );
 }
 
@@ -380,6 +450,243 @@ void main() {
       // Roughly mid-viewport rather than pinned to the top.
       expect(center.dy, greaterThan(200));
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('BgePage.slivers', () {
+    testWidgets('realizes only the rows near the viewport', (tester) async {
+      final built = <int>[];
+
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage.slivers(
+            title: const Text('list'),
+            width: BgePageWidth.pane,
+            semanticChildCount: 1000,
+            slivers: [
+              SliverList.builder(
+                itemCount: 1000,
+                itemBuilder: (context, index) {
+                  built.add(index);
+                  return SizedBox(height: 48, child: Text('row $index'));
+                },
+              ),
+            ],
+          ),
+          size: const Size(400, 300),
+        ),
+      );
+
+      // The laziness half of why this constructor exists. Bounded to a
+      // fraction of the list rather than an exact count: realization follows
+      // the viewport and the cache extent, so pinning a number would break on
+      // any row-height change. A `ListView` shrink-wrapped in `child:` under
+      // an unbounded main axis builds all 1000 instead.
+      expect(built.length, lessThan(100));
+      // The specific claim, not just "fewer than all": a row far past the
+      // fold is never touched. `lessThan(100)` alone would also pass for a
+      // list that built rows 0-11 and 988-999.
+      expect(built, isNot(contains(999)));
+
+      final realizedBefore = built.length;
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -3000));
+      await tester.pump();
+
+      // Realization keeps following the viewport rather than happening once at
+      // mount — asserted by growth, because the bounds above would also hold
+      // for a list that built twelve rows and then stopped working.
+      expect(built.length, greaterThan(realizedBefore));
+      expect(
+        built.fold<int>(-1, (max, i) => i > max ? i : max),
+        greaterThan(20),
+      );
+    });
+
+    testWidgets('stays lazy behind a leading sliver', (tester) async {
+      final built = <int>[];
+
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage.slivers(
+            title: const Text('search'),
+            width: BgePageWidth.pane,
+            semanticChildCount: 500,
+            slivers: [
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 60, child: Text('query field')),
+              ),
+              SliverList.builder(
+                itemCount: 500,
+                itemBuilder: (context, index) {
+                  built.add(index);
+                  return SizedBox(height: 48, child: Text('row $index'));
+                },
+              ),
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 60, child: Text('loading more')),
+              ),
+            ],
+          ),
+          size: const Size(400, 300),
+        ),
+      );
+
+      // The shape a paginated search screen actually has: a field above the
+      // results and a loading tail below them. Worth its own case because the
+      // slivers are wrapped in a SliverMainAxisGroup — a group that measured
+      // its children to place them would defeat the laziness the single-sliver
+      // case above proves, and nothing else here would notice.
+      expect(built.length, lessThan(100));
+      expect(find.text('query field'), findsOneWidget);
+    });
+
+    testWidgets('puts the collection count on the node that scrolls', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage.slivers(
+            title: const Text('list'),
+            semanticChildCount: 40,
+            slivers: [
+              SliverList.builder(
+                itemCount: 40,
+                itemBuilder: (context, index) =>
+                    SizedBox(height: 48, child: Text('row $index')),
+              ),
+            ],
+          ),
+          size: const Size(400, 300),
+        ),
+      );
+
+      // "Item 3 of 40". A CustomScrollView cannot infer this the way
+      // `ListView(children:)` does, so the constructor passes it through — and
+      // it has to arrive on the node that *scrolls*, because Android's
+      // AccessibilityBridge derives CollectionInfo from that node. A count
+      // stranded on a non-scrolling node is exactly the regression #191
+      // shipped and #210 measured.
+      expect(_countOnScrollingNode(tester), 40);
+
+      handle.dispose();
+    });
+
+    testWidgets('holds a lazily built row to the page measure', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage.slivers(
+            title: const Text('list'),
+            width: BgePageWidth.pane,
+            semanticChildCount: 100,
+            slivers: [
+              SliverList.builder(
+                itemCount: 100,
+                itemBuilder: (context, index) => SizedBox(
+                  key: index == 0 ? const Key('greedy') : null,
+                  width: double.infinity,
+                  height: 48,
+                ),
+              ),
+            ],
+          ),
+          size: const Size(2560, 1440),
+        ),
+      );
+
+      // The box path caps its content with a ConstrainedBox around a child it
+      // has in hand. The sliver path cannot: it computes a gutter from the
+      // constraints and applies SliverPadding, so the cap has to hold for rows
+      // that do not exist yet. Equality rather than a bound — a greedy row
+      // should stop at exactly the pane measure.
+      expect(
+        tester.getSize(find.byKey(const Key('greedy'))).width,
+        BgeTokens.standard.paneMaxWidth,
+      );
+    });
+
+    testWidgets('pins a footer over a lazy list at the same measure', (
+      tester,
+    ) async {
+      final built = <int>[];
+
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage.slivers(
+            title: const Text('list'),
+            width: BgePageWidth.pane,
+            semanticChildCount: 300,
+            footer: const SizedBox(
+              key: Key('footer'),
+              width: double.infinity,
+              height: 40,
+            ),
+            slivers: [
+              SliverList.builder(
+                itemCount: 300,
+                itemBuilder: (context, index) {
+                  built.add(index);
+                  return SizedBox(
+                    // Greedy, so the row reports the cap rather than the
+                    // intrinsic width of a label.
+                    key: index == 0 ? const Key('greedy') : null,
+                    width: double.infinity,
+                    height: 48,
+                  );
+                },
+              ),
+            ],
+          ),
+          size: const Size(2560, 1440),
+        ),
+      );
+
+      // `slivers:` + `footer:` is what FeedbackReviewScreen ships, and the
+      // combination is covered nowhere else: the footer branch wraps the
+      // content in a LayoutBuilder + Column, so the sliver viewport computes
+      // its gutter against the Expanded's constraints rather than against the
+      // Scaffold body's.
+      //
+      // The row is what makes this case see that. A footer's width comes from
+      // the footer branch's own ConstrainedBox, which never touches
+      // `_sliverContent` — asserted by itself it stays green with the gutter
+      // deleted, and it is already covered by 'follows the page measure on a
+      // pane page'. So assert the pair, which is the claim in the name: the
+      // footer lines up with the lazy content column above it.
+      final rowWidth = tester.getSize(find.byKey(const Key('greedy'))).width;
+      expect(rowWidth, BgeTokens.standard.paneMaxWidth);
+      expect(tester.getSize(find.byKey(const Key('footer'))).width, rowWidth);
+      // Laziness has to survive being nested in that Column — an Expanded
+      // whose child got an unbounded main axis would realize all 300.
+      expect(built.length, lessThan(100));
+    });
+
+    testWidgets('follows the count when another page arrives', (tester) async {
+      final handle = tester.ensureSemantics();
+
+      await tester.pumpWidget(
+        _host(tester, const _GrowingList(), size: const Size(400, 300)),
+      );
+
+      expect(_countOnScrollingNode(tester), 20);
+
+      await tester.tap(find.text('row 0'));
+      await tester.pump();
+
+      // A paginated list announces what it currently holds, so the count has
+      // to survive a rebuild rather than be read once at mount. This is the
+      // mechanism the style-guide rule rests on: without it a paginated caller
+      // would have no way to report a growing count and would have to pass
+      // null, which announces nothing at all.
+      expect(_countOnScrollingNode(tester), 40);
+
+      handle.dispose();
     });
   });
 }
