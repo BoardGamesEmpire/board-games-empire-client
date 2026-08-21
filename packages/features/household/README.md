@@ -53,11 +53,15 @@ deferred to #121, which will own retry / failure / cancel semantics.
 - **Route**: supply `CreateHouseholdScreen` to its route, resolving
   `HouseholdRepository` + `HouseholdRemoteDataSource` from the **active**
   server scope's container.
-- **Scope**: add `HouseholdScopeInstaller()` **last** in the per-server
-  installer list — it registers `SyncQueueRepository` + `HouseholdRepository`
-  and depends on the database, clock, and cached session that the storage and
-  network installers register first. The `HouseholdRemoteDataSource` is
-  registered by `registerServerNetwork` (it shares the per-server Dio).
+- **Scope**: add `UserSessionScopeInstaller()` (renamed from
+  `HouseholdScopeInstaller` in #150) to the per-*user* installer list — it
+  registers `SyncQueueRepository`, `HouseholdRepository` and
+  `GameCollectionRepository`. It resolves the database, clock and cached
+  session from the per-*server* tier, but that ordering is structural, not
+  positional: a per-server scope is always fully installed before any user
+  session can activate, so position within either list carries no
+  constraint. The `HouseholdRemoteDataSource` is registered by
+  `registerServerNetwork` (it shares the per-server Dio).
 - **l10n**: register `HouseholdLocalizations.delegate` in the app's
   `localizationsDelegates`.
 

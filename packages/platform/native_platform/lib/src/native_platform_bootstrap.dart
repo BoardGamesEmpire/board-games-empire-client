@@ -33,11 +33,12 @@ typedef NativeOrchestratorFactory =
 /// seam tests use to assert the boot list's membership without opening an
 /// encrypted database.
 ///
-/// The household scope is **not** in this list: since #135 it is a
+/// The user-session scope is **not** in this list: since #135 it is a
 /// per-*user* installer — see [buildNativeUserScopeInstallers]. Registering
-/// it here would resurrect the bug class #135 closed (per-user singletons
-/// living for the whole server scope, live queries surviving a same-server
-/// user change), which is exactly what the composition test guards against.
+/// its repositories here would resurrect the bug class #135 closed (per-user
+/// singletons living for the whole server scope, live queries surviving a
+/// same-server user change), which is exactly what the composition test
+/// guards against.
 List<ServerScopeInstaller> buildNativeServerScopeInstallers({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
@@ -53,9 +54,10 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 
 /// The per-user session-scope installers (#135), run on every sign-in by
 /// `UserSessionScope.activate()` and disposed on any transition out of the
-/// authenticated state. The household scope lives here (#129 wiring of the
-/// #135 tier): its repositories are rebuilt per (server, user) and their
-/// live `watch*` queries close when the session ends.
+/// authenticated state. The user-session scope lives here (#129 wiring of
+/// the #135 tier): its repositories — the sync queue, households and game
+/// collections (#150) — are rebuilt per (server, user) and their live
+/// `watch*` queries close when the session ends.
 ///
 /// Ordering against [buildNativeServerScopeInstallers] is structural, not
 /// positional: the user-scope container view resolves the per-server
@@ -63,7 +65,7 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// repository) by falling through to the fully installed per-server scope,
 /// which is guaranteed to exist before any user session can activate.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
-  HouseholdScopeInstaller(),
+  UserSessionScopeInstaller(),
 ];
 
 /// Composes the real per-server [ServerContextFactory] from

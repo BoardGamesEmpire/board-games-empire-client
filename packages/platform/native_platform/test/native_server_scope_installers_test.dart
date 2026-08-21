@@ -1,5 +1,6 @@
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:native_platform/native_platform.dart';
@@ -19,26 +20,34 @@ void main() {
   // install-on-sign-in for the user list — is covered by the context and
   // acceptance suites in core/di and drift_storage (#135).
 
-  test('the household scope is wired in the USER tier (#129/#135)', () {
+  test('the user-session scope is wired in the USER tier (#129/#135)', () {
     final userInstallers = buildNativeUserScopeInstallers();
 
-    // Must be present, or create-household dead-ends: the user-session
-    // scope is what registers HouseholdRepository on sign-in.
-    expect(userInstallers.whereType<HouseholdScopeInstaller>(), isNotEmpty);
+    // Must be present, or create-household and the collection feature
+    // dead-end: the user-session scope is what registers
+    // HouseholdRepository and GameCollectionRepository on sign-in (#150).
+    expect(userInstallers.whereType<UserSessionScopeInstaller>(), isNotEmpty);
   });
 
-  test('the household scope is ABSENT from the per-server tier — '
-      'registering it there resurrects the #135 bug class', () {
+  test('no per-server installer is ALSO a user-scope installer — '
+      'registering per-user services there resurrects the #135 bug class', () {
     final installers = buildNativeServerScopeInstallers(
       executorFactory: _MockExecutorFactory(),
       keyService: _MockKeyService(),
     );
 
-    // A per-server household registration would live for the whole server
-    // scope: per-user singletons surviving a same-server user change, live
-    // watch* queries emitting the prior user's rows after sign-out. This
-    // is the regression the #129 heads-up on the issue warned about.
-    expect(installers.whereType<HouseholdScopeInstaller>(), isEmpty);
+    // A per-server registration of a per-user repository would live for the
+    // whole server scope: singletons surviving a same-server user change,
+    // live watch* queries emitting the prior user's rows after sign-out.
+    // This is the regression the #129 heads-up on the issue warned about.
+    //
+    // Asserted against the *interface*, not UserSessionScopeInstaller: that
+    // concrete type cannot appear in a List<ServerScopeInstaller> at all
+    // (the two installer interfaces are unrelated, so adding it would not
+    // compile), which made the previous assertion unfalsifiable. A class
+    // implementing both interfaces — the way this bug class would actually
+    // return — does type-check into this list, and fails here.
+    expect(installers.whereType<UserScopeInstaller>(), isEmpty);
   });
 
   test('the per-server tier keeps storage before network', () {

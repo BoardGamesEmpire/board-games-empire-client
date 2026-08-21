@@ -14,7 +14,7 @@ import 'watch_disposal.dart';
 ///
 /// The table is server-wide, but this repository is constructed per user
 /// session with the session's [userId] (its installer,
-/// `HouseholdScopeInstaller`, is a `UserScopeInstaller` and receives the
+/// `UserSessionScopeInstaller`, is a `UserScopeInstaller` and receives the
 /// id at install time). [enqueue] stamps every row with that id, and
 /// **every** other method — reads, status transitions, maintenance, and
 /// [remapCollectionId] — filters on it, so a repository built for user A

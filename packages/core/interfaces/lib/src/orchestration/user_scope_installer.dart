@@ -19,7 +19,7 @@ import 'dependency_container.dart';
 /// registered here is shared across server scopes.
 ///
 /// This mirrors [ServerScopeInstaller]'s seam role: implementations live
-/// beside the concretes they wire (e.g. `HouseholdScopeInstaller` in
+/// beside the concretes they wire (e.g. `UserSessionScopeInstaller` in
 /// `drift_storage`), and the platform app composes the list it hands to
 /// `ServerContextImpl` — the `di` package stays free of storage and network
 /// dependencies.

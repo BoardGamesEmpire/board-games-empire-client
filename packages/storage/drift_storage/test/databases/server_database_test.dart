@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:drift_storage/src/databases/server_database.dart';
 
+import '../support/platform_game_fixture.dart';
+
 // ── Matchers ────────────────────────────────────────────────────────────────────
 
 // Match against the underlying SqliteException's message text rather
@@ -30,42 +32,6 @@ final _isUniqueViolation = throwsA(
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
 const _kUserId = 'user-1';
-const _kPlatformGameId = 'pg-1';
-
-Future<void> _seedGame(ServerDatabase db, {String id = 'game-1'}) async {
-  final now = DateTime.now().toUtc();
-  // Upsert so repeat seeds in the same test don't trip the games PK.
-  await db
-      .into(db.gamesTable)
-      .insertOnConflictUpdate(
-        GamesTableCompanion.insert(
-          id: id,
-          title: 'Test Game',
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-}
-
-Future<void> _seedPlatformGame(
-  ServerDatabase db, {
-  String id = _kPlatformGameId,
-}) async {
-  await _seedGame(db);
-  final now = DateTime.now().toUtc();
-  await db
-      .into(db.platformGamesTable)
-      .insert(
-        PlatformGamesTableCompanion.insert(
-          id: id,
-          gameId: 'game-1',
-          platformId: 'plat-1',
-          platformName: 'Tabletop',
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-}
 
 Future<void> _seedHousehold(ServerDatabase db, {String id = 'h-1'}) async {
   final now = DateTime.now().toUtc();
@@ -84,7 +50,7 @@ Future<void> _seedHousehold(ServerDatabase db, {String id = 'h-1'}) async {
 GameCollectionsTableCompanion _collection({
   required String id,
   String userId = _kUserId,
-  String platformGameId = _kPlatformGameId,
+  String platformGameId = kFixturePlatformGameId,
   String medium = 'Physical',
   DateTime? deletedAt,
   String? releaseId,
@@ -179,7 +145,7 @@ void main() {
       // the UTC marker. See
       // https://drift.simonbinder.eu/guides/datetime-migrations.
       test('UTC DateTime round-trips with isUtc preserved', () async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
         final ts = DateTime.utc(2025, 6, 1);
         await db
             .into(db.gameCollectionsTable)
@@ -192,7 +158,7 @@ void main() {
       });
 
       test('datetime columns are stored as ISO-8601 text', () async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
         await db
             .into(db.gameCollectionsTable)
             .insert(
@@ -216,7 +182,7 @@ void main() {
 
     group('game_collections.deletedAt column', () {
       test('stores and reads back nullable DateTime', () async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
         final ts = DateTime.parse('2024-01-15T10:30:00Z');
         await db
             .into(db.gameCollectionsTable)
@@ -226,7 +192,7 @@ void main() {
       });
 
       test('defaults to null when omitted', () async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
         await db.into(db.gameCollectionsTable).insert(_collection(id: 'col-1'));
         final row = await db.select(db.gameCollectionsTable).getSingle();
         expect(row.deletedAt, isNull);
@@ -235,7 +201,7 @@ void main() {
 
     group('game_collections.releaseId column', () {
       test('stores and reads back nullable text', () async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
         await db
             .into(db.gameCollectionsTable)
             .insert(_collection(id: 'col-1', releaseId: 'rel-42'));
@@ -244,7 +210,7 @@ void main() {
       });
 
       test('defaults to null when omitted', () async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
         await db.into(db.gameCollectionsTable).insert(_collection(id: 'col-1'));
         final row = await db.select(db.gameCollectionsTable).getSingle();
         expect(row.releaseId, isNull);
@@ -253,7 +219,7 @@ void main() {
 
     group('partial unique index on game_collections', () {
       setUp(() async {
-        await _seedPlatformGame(db);
+        await seedPlatformGame(db);
       });
 
       test('rejects a second live row with same (user, pg, medium)', () async {

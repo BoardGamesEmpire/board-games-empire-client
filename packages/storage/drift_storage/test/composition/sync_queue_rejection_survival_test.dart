@@ -156,7 +156,7 @@ void main() {
     context = ServerContextImpl(
       config: _config(),
       installers: [_BaseFixtureInstaller(auth)],
-      userInstallers: const [HouseholdScopeInstaller()],
+      userInstallers: const [UserSessionScopeInstaller()],
     );
     await context.activate();
     session = context.container.get<UserSessionScope>();

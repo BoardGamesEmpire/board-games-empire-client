@@ -48,10 +48,14 @@ A short orientation for anyone (human or LLM) picking this up cold:
   HouseholdMember, SyncOperation hierarchy (PR #6).
 - Drift schemas matching Prisma backend models, with partial unique indexes and
   tombstone semantics; UTC-preserving ISO-8601 datetime storage (PR #21).
-- Per-server `GameCollectionRepositoryImpl` — offline-first add/update/remove +
-  sync queue + surgical reconcileFromServer + resurrection preserving play history.
-- Per-server `HouseholdRepositoryImpl` (read-cache + cache-writer). Write methods
-  land in P4.
+- `GameCollectionRepositoryImpl` — offline-first add/update/remove + sync queue +
+  surgical reconcileFromServer + resurrection preserving play history. Registered
+  in the **user-session** scope by `UserSessionScopeInstaller` (#150), so it is
+  disposed — and closes its watch streams — on any exit from the active user
+  session: sign-out or session loss, a server switch (`background()`), suspend,
+  and context dispose.
+- `HouseholdRepositoryImpl` (read-cache + cache-writer + `create`), in the same
+  **user-session** scope and with the same disposal triggers.
 - Per-server `GameRepositoryImpl` (read cache + cache writer, server-managed).
 - `SyncQueueRepositoryImpl` — cuid2 ids, idempotent remap, atomic increments,
   exhausted-retry filtering, pending-count watch.
