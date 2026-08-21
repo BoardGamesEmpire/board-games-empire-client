@@ -6,12 +6,13 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
-    show HouseholdRemoteDataSource;
+    show GameCollectionRemoteDataSource, HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
 import '../feedback/feedback_dio_transport.dart';
+import '../game_collection/game_collection_remote_data_source_impl.dart';
 import '../household/household_remote_data_source_impl.dart';
 import 'clock_skew_interceptor.dart';
 import 'dio_factory.dart';
@@ -111,5 +112,17 @@ void registerServerNetwork({
   // own. Const and stateless; the container owns the Dio.
   container.registerSingleton<HouseholdRemoteDataSource>(
     HouseholdRemoteDataSourceImpl(dio),
+  );
+
+  // #253: the per-server collection remote — the network seam the collection
+  // slice had none of. Same convention and the same placement as the household
+  // remote above: it shares the per-server Dio (base URL + the BetterAuth
+  // session `/api/game-collections` requires) and adds no auth of its own.
+  // Const and stateless; the container owns the Dio.
+  //
+  // The read side feeds #44's hydrate, the write side is what #121's drain
+  // pushes queued collection operations through.
+  container.registerSingleton<GameCollectionRemoteDataSource>(
+    GameCollectionRemoteDataSourceImpl(dio),
   );
 }
