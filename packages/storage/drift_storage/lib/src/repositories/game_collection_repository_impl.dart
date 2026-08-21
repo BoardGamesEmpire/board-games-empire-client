@@ -5,6 +5,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import 'watch_disposal.dart';
 
 /// Offline-first implementation of [GameCollectionRepository] backed by
 /// the per-server [ServerDatabase] plus a [SyncQueueRepository] for
@@ -45,6 +46,27 @@ import '../databases/server_database.dart';
 /// throws [StateError] if the response is for a different user. A
 /// wrong/stale server response or a buggy caller cannot inject
 /// another user's collection row into this repository's cache.
+///
+/// ## Disposal (#135 / #138 / #150)
+///
+/// The instance is fixed to one user at construction, so it lives in the
+/// **user-session scope** and is disposed whenever that scope pops — which
+/// is any exit from the active user session, not only an authentication
+/// change: sign-out or session loss, a server switch
+/// (`ServerContextImpl.background()`), suspend, and context dispose. Its
+/// Drift streams, however, are tied to the per-server [ServerDatabase],
+/// which outlives that scope — so disposal is the
+/// shared [WatchDisposal] contract, exactly as for
+/// `SyncQueueRepositoryImpl` and `HouseholdRepositoryImpl`. Without it, a
+/// `watchCollection()` subscription taken under user A would keep
+/// emitting A's frozen rows after A signs out and B signs in.
+///
+/// The contract splits by return type: after `onDispose()` the
+/// `Future`-returning methods throw [StateError], while
+/// [watchCollection] and [watchEntry] **close** rather than error — a
+/// live subscription ends with `onDone` on the scope pop, and a call made
+/// after disposal returns an already-closed stream. `UserSessionScopeInstaller`
+/// wires `onDispose` as the registration's dispose callback.
 ///
 /// ## Quantity validation
 ///
@@ -153,7 +175,9 @@ import '../databases/server_database.dart';
 /// `reconcileFromServer` uses the same helper to detect id
 /// reassignment and tombstone confirmation — see [reconcileFromServer]
 /// for the full flow.
-class GameCollectionRepositoryImpl implements GameCollectionRepository {
+class GameCollectionRepositoryImpl
+    with WatchDisposal
+    implements GameCollectionRepository {
   GameCollectionRepositoryImpl({
     required this._db,
     required this._syncQueue,
@@ -175,10 +199,14 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   /// server-supplied and are not produced here.
   final ClockService _clock;
 
+  @override
+  String get disposedRepositoryName => 'GameCollectionRepository';
+
   // ── Reads ──────────────────────────────────────────────────────────────────────
 
   @override
   Future<List<GameCollection>> getCollection() async {
+    checkNotDisposed();
     final rows = await (_db.select(
       _db.gameCollectionsTable,
     )..where((t) => t.userId.equals(_userId) & t.deletedAt.isNull())).get();
@@ -190,6 +218,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     required String platformGameId,
     required GameMedium medium,
   }) async {
+    checkNotDisposed();
     final row =
         await (_db.select(_db.gameCollectionsTable)..where(
               (t) =>
@@ -212,6 +241,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     int? rating,
     String? comment,
   }) async {
+    checkNotDisposed();
     // Validate BEFORE opening the transaction so the cache and the
     // sync queue stay untouched on bad input. A zero or negative
     // quantity makes no business sense — the duplicate-triplet path
@@ -366,6 +396,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
     String? comment,
     DateTime? lastPlayed,
   }) async {
+    checkNotDisposed();
     // null = "leave unchanged" by the API contract; only validate
     // when the caller actually supplied a value. Same pre-transaction
     // fail-fast rationale as addToCollection.
@@ -444,6 +475,7 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
 
   @override
   Future<void> removeFromCollection(String id) async {
+    checkNotDisposed();
     return _db.transaction(() async {
       final now = _clock.nowUtc();
 
@@ -538,11 +570,24 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   /// If [completedSyncQueueId] is provided, the matching queue
   /// entry is marked completed in the same Drift transaction. If
   /// any step throws, all writes roll back together.
+  ///
+  /// This is the one method whose caller is a background drain (#121)
+  /// rather than the UI, so its post-disposal behaviour is worth stating:
+  /// if the user-session scope pops between the send and the reconcile,
+  /// this throws and the queue entry stays `pending`. Relaxing the
+  /// [checkNotDisposed] guard would not change that — [SyncQueueRepository]
+  /// is disposed by the same scope pop, so `markCompleted` (and
+  /// `remapCollectionId`) would throw inside the transaction and roll the
+  /// whole thing back anyway. A re-sent create can therefore duplicate the
+  /// server row, because the backend's create DTO strips the
+  /// client-supplied id and so offers no idempotency key. Closing that is
+  /// the drain worker's problem, tracked on #121.
   @override
   Future<void> reconcileFromServer(
     GameCollection serverEntry, {
     String? completedSyncQueueId,
   }) async {
+    checkNotDisposed();
     // Boundary check: fail fast BEFORE opening the transaction so
     // the local cache and sync queue stay untouched on a
     // misrouted server response.
@@ -620,22 +665,26 @@ class GameCollectionRepositoryImpl implements GameCollectionRepository {
   // ── Streams ──────────────────────────────────────────────────────────────────
 
   @override
-  Stream<List<GameCollection>> watchCollection() =>
-      (_db.select(_db.gameCollectionsTable)
-            ..where((t) => t.userId.equals(_userId) & t.deletedAt.isNull()))
-          .watch()
-          .map((rows) => rows.map(_mapRow).toList());
+  Stream<List<GameCollection>> watchCollection() => untilDisposed(
+    () =>
+        (_db.select(_db.gameCollectionsTable)
+              ..where((t) => t.userId.equals(_userId) & t.deletedAt.isNull()))
+            .watch()
+            .map((rows) => rows.map(_mapRow).toList()),
+  );
 
   @override
-  Stream<GameCollection?> watchEntry(String id) =>
-      (_db.select(_db.gameCollectionsTable)..where(
-            (t) =>
-                t.id.equals(id) &
-                t.userId.equals(_userId) &
-                t.deletedAt.isNull(),
-          ))
-          .watchSingleOrNull()
-          .map((row) => row == null ? null : _mapRow(row));
+  Stream<GameCollection?> watchEntry(String id) => untilDisposed(
+    () =>
+        (_db.select(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.id.equals(id) &
+                  t.userId.equals(_userId) &
+                  t.deletedAt.isNull(),
+            ))
+            .watchSingleOrNull()
+            .map((row) => row == null ? null : _mapRow(row)),
+  );
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────
 

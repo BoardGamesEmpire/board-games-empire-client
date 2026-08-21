@@ -10,8 +10,10 @@ import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
 import '../support/fixed_clock.dart';
+import '../support/platform_game_fixture.dart';
 
-/// #135 acceptance, full-stack over the real context + installer + Drift DB:
+/// User-session scope acceptance (#135, extended by #150), full-stack over
+/// the real context + installer + Drift DB:
 ///
 /// 1. A live `watchHouseholds()` subscription across a same-server
 ///    sign-out → sign-in stops emitting the prior user's data (the stream
@@ -19,6 +21,10 @@ import '../support/fixed_clock.dart';
 /// 2. Per-user singletons are rebuilt after a user change: the repository
 ///    resolved under user B is a different instance, and user A's
 ///    households are invisible to it.
+///
+/// #150 extends both to `GameCollectionRepository`, which joined the same
+/// scope, and adds the missed-pop case: a *direct* user change with no
+/// intervening sign-out.
 
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
@@ -146,7 +152,7 @@ void main() {
     context = ServerContextImpl(
       config: _config(),
       installers: [_BaseFixtureInstaller(auth)],
-      userInstallers: const [HouseholdScopeInstaller()],
+      userInstallers: const [UserSessionScopeInstaller()],
     );
     await context.activate();
     session = context.container.get<UserSessionScope>();
@@ -257,5 +263,99 @@ void main() {
 
     await signIn(_kUserB);
     expect(context.container.isRegistered<HouseholdRepository>(), isTrue);
+  });
+
+  test('a live watchCollection subscription closes on sign-out and the '
+      'rebuilt scope serves only the new user\'s collection (#150)', () async {
+    await signIn(_kUserA);
+    await seedPlatformGame(context.container.get<ServerDatabase>());
+    final collectionsA = context.container.get<GameCollectionRepository>();
+    await collectionsA.addToCollection(
+      platformGameId: kFixturePlatformGameId,
+      medium: GameMedium.physical,
+    );
+
+    final emissions = <List<GameCollection>>[];
+    final errors = <Object>[];
+    var done = false;
+    final sub = collectionsA.watchCollection().listen(
+      emissions.add,
+      onError: errors.add,
+      onDone: () => done = true,
+    );
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+    expect(emissions.last, hasLength(1));
+    final countBeforeSignOut = emissions.length;
+
+    await signOut();
+    await pumpEventQueue();
+
+    expect(done, isTrue, reason: 'scope pop must close vended streams');
+    expect(errors, isEmpty, reason: 'close-on-pop, never error-on-pop');
+    expect(emissions.length, countBeforeSignOut);
+
+    await signIn(_kUserB);
+    final collectionsB = context.container.get<GameCollectionRepository>();
+    expect(identical(collectionsA, collectionsB), isFalse);
+
+    // The row is still in the shared per-server table; user B's scope
+    // must not see it. This pins the *wiring* — the repository's own
+    // userId filter is covered in its unit tests.
+    await expectLater(collectionsB.getCollection(), completion(isEmpty));
+    await expectLater(
+      collectionsB.watchCollection().first,
+      completion(isEmpty),
+    );
+  });
+
+  test('the disposed collection repository fails loudly instead of writing '
+      'for the departed user (#150)', () async {
+    await signIn(_kUserA);
+    // No platform-game seed: every call below throws from
+    // checkNotDisposed() before any SQL runs, so there is no FK to satisfy.
+    final collectionsA = context.container.get<GameCollectionRepository>();
+
+    await signOut();
+
+    await expectLater(collectionsA.getCollection(), throwsA(isA<StateError>()));
+    await expectLater(
+      collectionsA.addToCollection(
+        platformGameId: kFixturePlatformGameId,
+        medium: GameMedium.physical,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    await expectLater(collectionsA.watchCollection(), emitsDone);
+  });
+
+  test('a direct user change with no intervening sign-out still disposes the '
+      'departing user\'s collection repository — a missed pop cannot serve '
+      'cross-user data (#150)', () async {
+    await signIn(_kUserA);
+    await seedPlatformGame(context.container.get<ServerDatabase>());
+    final collectionsA = context.container.get<GameCollectionRepository>();
+    await collectionsA.addToCollection(
+      platformGameId: kFixturePlatformGameId,
+      medium: GameMedium.physical,
+    );
+
+    // No signOut(): user B activates straight over user A's live
+    // session. The context tears the previous scope down defensively,
+    // which is what keeps the fixed-at-construction user id safe — a
+    // stale reference cannot outlive the user it was built for.
+    auth.authState = _authenticated(_kUserB);
+    await session.activate(_kUserB);
+
+    await expectLater(
+      collectionsA.getCollection(),
+      throwsA(isA<StateError>()),
+      reason: "user A's instance is disposed, not silently reused",
+    );
+    await expectLater(
+      context.container.get<GameCollectionRepository>().getCollection(),
+      completion(isEmpty),
+      reason: "user B resolves a fresh instance scoped to B",
+    );
   });
 }

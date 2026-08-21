@@ -106,7 +106,7 @@ class HouseholdRepositoryImpl
   /// [_syncQueue] MUST be backed by the same [_db] instance for [create]'s
   /// "one transaction" guarantee to hold: the enqueue runs inside
   /// `db.transaction(...)` and only joins that transaction when it writes to
-  /// the same database. `HouseholdScopeInstaller` wires it this way — a
+  /// the same database. `UserSessionScopeInstaller` wires it this way — a
   /// `SyncQueueRepositoryImpl` over this scope's `ServerDatabase`. A
   /// [SyncQueueRepository] over a *different* database would silently commit
   /// the enqueue outside the transaction (optimistic rows and their queued op
@@ -136,7 +136,7 @@ class HouseholdRepositoryImpl
 
   /// Close-on-dispose machinery lives in the shared [WatchDisposal]
   /// mixin (#135, one fix surface with `SyncQueueRepositoryImpl`):
-  /// `HouseholdScopeInstaller` wires [onDispose] as the registration's
+  /// `UserSessionScopeInstaller` wires [onDispose] as the registration's
   /// `dispose:` callback, every public method opens with
   /// [checkNotDisposed], and both `watch*` methods route through
   /// [untilDisposed].

@@ -1,7 +1,7 @@
 library;
 
-export 'src/composition/household_scope_installer.dart';
 export 'src/composition/storage_scope_installer.dart';
+export 'src/composition/user_session_scope_installer.dart';
 
 export 'src/databases/encrypted_executor_factory.dart';
 export 'src/databases/meta_database.dart';

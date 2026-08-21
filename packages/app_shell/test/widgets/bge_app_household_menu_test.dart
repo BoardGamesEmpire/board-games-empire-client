@@ -31,7 +31,7 @@ class _MockHouseholdRemoteDataSource extends Mock
 /// - [HouseholdRemoteDataSource] is per-**server** (`registerServerNetwork`),
 ///   so it is registered from boot onward.
 /// - [HouseholdRepository] is per-**user session** — installed on sign-in by
-///   `HouseholdScopeInstaller` in the user tier, disposed on sign-out.
+///   `UserSessionScopeInstaller` in the user tier, disposed on sign-out.
 ///
 /// "Remote registered, repository absent" is therefore a real reachable
 /// native state (signed out, or a session whose activation failed), not a
