@@ -2,9 +2,12 @@ import 'package:interfaces/services.dart';
 
 /// Pass-through [ClockService] null object (#12).
 ///
-/// For scopes without a skew source — the web stack until its `Date`
-/// feeder lands (#118), and tests that want real wall-clock behaviour
-/// without constructing an estimator. Follows the
+/// For scopes without a skew source, and tests that want real
+/// wall-clock behaviour without constructing an estimator. No
+/// *container* registers it any more — native and web both register
+/// `ServerSkewClockService` (#12, #118) — but it remains the production
+/// constructor default for `TokenInterceptor` and `AuthRepositoryImpl`,
+/// which fall back to it when no estimator is injected. Follows the
 /// `UnsupportedPushNotificationService` null-object precedent: honest
 /// about its limits ([skewEstimate] is permanently `null`) rather than
 /// pretending to correct.

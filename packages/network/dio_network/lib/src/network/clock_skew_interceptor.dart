@@ -21,7 +21,11 @@ import 'package:network_interface/network_interface.dart';
 /// Installed **last** in the interceptor stack, so the send stamp is
 /// taken after `TokenInterceptor`'s async token-storage read — the only
 /// non-trivial pre-dispatch latency — and immediately before Dio hands
-/// the request to the adapter. Residual widening of the measured window
+/// the request to the adapter. That ordering constraint is native-only:
+/// the web stack has no `TokenInterceptor`, so this is simply the sole
+/// interceptor there and nothing async precedes the stamp.
+///
+/// Residual widening of the measured window
 /// (serialization, TCP dispatch) is sub-millisecond and shifts the
 /// midpoint slightly *earlier* than the server's `Date` generation
 /// instant, a systematic error orders of magnitude below both the
@@ -39,13 +43,18 @@ import 'package:network_interface/network_interface.dart';
 /// 4xx/5xx — arrives through [onResponse]; only transport failures
 /// (which carry no headers) reach the error path.
 ///
-/// Web-safe: `Date` parsing uses the pure-Dart [tryParseHttpDate]
-/// (IMF-fixdate only) rather than `dart:io`'s `HttpDate`, because this
-/// library is transitively compiled into web builds — the `dio_network`
-/// barrel exports `register_server_network.dart`, which imports this
-/// file, and `web_network` imports that barrel. The web stack still
-/// does not *install* this interceptor; its feeder (and the CORS
-/// `Access-Control-Expose-Headers: Date` prerequisite) is #118.
+/// Web-safe, and installed on web: `Date` parsing uses the pure-Dart
+/// [tryParseHttpDate] (IMF-fixdate only) rather than `dart:io`'s
+/// `HttpDate`, so this class compiles for web as well as native.
+/// `registerServerNetworkWeb` installs it in the web stack's shared Dio
+/// (#118) — as the *only* interceptor there, since the browser owns the
+/// session cookie and there is no `TokenInterceptor` to sit behind.
+///
+/// Web reads the header because that stack addresses the browser's own
+/// origin, where no CORS filtering applies. A cross-origin deployment
+/// would need `Access-Control-Expose-Headers: Date` from the server,
+/// and without it the estimate simply stays `null` — the same supported
+/// degraded state as a response with no `Date` at all.
 class ClockSkewInterceptor extends Interceptor {
   /// Creates the interceptor.
   ///
