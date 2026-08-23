@@ -24,9 +24,10 @@
 /// split).
 ///
 /// Concrete implementations live in `packages/core/di`:
-/// `ServerSkewClockService` (skew-corrected, fed by the network layer)
-/// and `LocalClockService` (pass-through null object for scopes without
-/// a skew source — e.g. web until its feeder lands).
+/// `ServerSkewClockService` (skew-corrected, fed by the network layer —
+/// registered by both the native and web stacks) and `LocalClockService`
+/// (pass-through null object for scopes without a skew source; no
+/// production scope registers it today).
 abstract interface class ClockService {
   /// The current UTC time, adjusted by the most recent server-skew
   /// estimate.
@@ -62,9 +63,11 @@ abstract interface class ClockService {
 
 /// Feed surface for clock-skew samples.
 ///
-/// The transport layer (a Dio interceptor on native; a `web_network`
-/// feeder later — see #118) observes the `Date` header on server
-/// responses and reports one sample per response. Splitting this from
+/// The transport layer observes the `Date` header on server responses
+/// and reports one sample per response. Both stacks feed it through the
+/// same `ClockSkewInterceptor`: installed by `registerServerNetwork` on
+/// native (#12) and by `registerServerNetworkWeb` on web (#118).
+/// Splitting this from
 /// [ClockService] keeps transport code off the concrete estimator and
 /// consumers off the ingestion API (ISP; same split as
 /// `ActiveLocaleReader` / `ActiveLocaleController`).

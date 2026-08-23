@@ -50,8 +50,10 @@ void main() {
       await const NetworkScopeInstaller().install(container, _makeConfig());
 
       // The native stack must register the estimator (fed by the Dio
-      // interceptor), not the pass-through null object — the null object
-      // is the web stack's fallback until #118.
+      // interceptor), not the pass-through null object. Web registers the
+      // same estimator since #118, so no container registers the null
+      // object — it survives as a constructor default, not as a scope's
+      // clock.
       expect(container.get<ClockService>(), isA<ServerSkewClockService>());
     });
 
