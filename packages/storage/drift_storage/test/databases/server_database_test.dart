@@ -6,6 +6,8 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:drift_storage/drift_storage_native.dart'
+    show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 
 import '../support/platform_game_fixture.dart';
@@ -76,7 +78,7 @@ void main() {
   late ServerDatabase db;
 
   setUp(() {
-    db = ServerDatabase.memory();
+    db = inMemoryServerDatabase();
   });
 
   tearDown(() async => db.close());

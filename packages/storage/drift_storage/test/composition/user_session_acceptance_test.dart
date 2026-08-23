@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
+import 'package:drift_storage/drift_storage_native.dart'
+    show inMemoryServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -132,7 +134,7 @@ class _BaseFixtureInstaller implements ServerScopeInstaller {
     ServerConfig config,
   ) async {
     container.registerSingleton<ServerDatabase>(
-      ServerDatabase.memory(),
+      inMemoryServerDatabase(),
       dispose: (db) => db.close(),
     );
     container.registerSingleton<ClockService>(

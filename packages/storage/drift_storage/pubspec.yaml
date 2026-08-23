@@ -1,5 +1,5 @@
 name: drift_storage
-description: "SQLite storage for mobile and desktop"
+description: "Drift databases and repositories: a platform-neutral half (drift_storage.dart) plus the native SQLCipher executor (drift_storage_native.dart)"
 version: 1.0.0
 publish_to: none
 

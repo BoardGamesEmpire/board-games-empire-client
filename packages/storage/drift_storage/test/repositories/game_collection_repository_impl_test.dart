@@ -4,6 +4,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
+import 'package:drift_storage/drift_storage_native.dart'
+    show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 
@@ -60,7 +62,7 @@ void main() {
   late GameCollectionRepositoryImpl repo;
 
   setUp(() async {
-    db = ServerDatabase.memory();
+    db = inMemoryServerDatabase();
     mockSync = MockSyncQueue();
 
     _stubMockSyncDefaults(mockSync);

@@ -4,7 +4,8 @@ import 'package:storage_interface/storage_interface.dart';
 
 import 'package:drift_storage/src/databases/meta_database.dart';
 import 'package:drift_storage/src/databases/migration_policy.dart';
-import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/drift_storage_native.dart'
+    show inMemoryServerDatabase;
 
 void main() {
   group('guardAgainstDowngrade', () {
@@ -34,7 +35,7 @@ void main() {
   // that framework behaviour, only that our callback refuses it.
   group('ServerDatabase migration', () {
     test('onUpgrade refuses a downgrade', () async {
-      final db = ServerDatabase.memory();
+      final db = inMemoryServerDatabase();
       addTearDown(db.close);
       await expectLater(
         db.migration.onUpgrade(db.createMigrator(), 2, 1),

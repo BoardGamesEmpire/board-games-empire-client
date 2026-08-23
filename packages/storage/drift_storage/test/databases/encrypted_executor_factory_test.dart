@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift_storage/drift_storage.dart';
+import 'package:drift_storage/drift_storage_native.dart';
 import 'package:interfaces/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' show SqliteException, sqlite3;
