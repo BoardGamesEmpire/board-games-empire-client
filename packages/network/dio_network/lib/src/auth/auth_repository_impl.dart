@@ -339,8 +339,11 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // the user to the sign-in form and implied their stored session had been
     // rejected — the exact failure mode #37's design set out to avoid, and
     // the one #98's optimistic fallback depends on being able to detect.
-    // `WebAuthRepositoryImpl.getSession` already throws here; this restores
-    // parity.
+    // `WebAuthRepositoryImpl.getSession` throws here too — though not until
+    // #180: when this comment was first written web was asserted to "already"
+    // throw and in fact did not, returning null for any non-2xx that carried
+    // no body. Both implementations agree now; do not weaken either half
+    // without the other.
     if (status != HttpStatusCode.ok) {
       throw AuthServerException(
         message: 'Unexpected $status from the session endpoint.',
