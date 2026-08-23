@@ -307,9 +307,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       final response = await _dio.post<void>(_identity.signOutEndpoint);
 
       final status = response.statusCode;
-      if (status == null ||
-          status < HttpStatusCode.ok ||
-          status >= HttpStatusCode.multipleChoices) {
+      if (!_isSuccessStatus(status)) {
         // `validateStatus: (_) => true` (`WebDioFactory`) resolves a 5xx as
         // an ordinary Response, so the catch below only ever sees transport
         // faults. Without this branch the failure that actually matters —
@@ -406,7 +404,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     if (data == null) {
       _log.warn(
         'No body on a successful $context; the session endpoint has to '
-        'confirm this sign-in unaided',
+        'confirm this $context unaided',
         context: {'status': response.statusCode},
       );
       return null;
@@ -421,7 +419,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // AuthLoading. Nothing raw leaves here.
       _log.warn(
         'Unreadable $context envelope; the session endpoint has to confirm '
-        'this sign-in unaided',
+        'this $context unaided',
         error: error,
         stackTrace: stackTrace,
         context: {'status': response.statusCode},
@@ -567,15 +565,28 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw const AuthEmailAlreadyExistsException();
     }
 
-    if (status == null ||
-        status < HttpStatusCode.ok ||
-        status >= HttpStatusCode.multipleChoices) {
+    if (!_isSuccessStatus(status)) {
       throw AuthServerException(
         message: 'Unexpected $status during $context.',
         statusCode: status,
       );
     }
   }
+
+  /// Whether [status] is a 2xx.
+  ///
+  /// One definition, used by both the credential paths ([_assertSuccess])
+  /// and [signOut]. They had the range test written out separately, so a
+  /// change to what counts as success — treating 3xx as its own case, say —
+  /// could have landed on one and missed the other, leaving sign-out
+  /// logging "not accepted" for a status sign-in treats as fine.
+  ///
+  /// A null status means Dio resolved a response without one, which is not
+  /// a success this repository will act on.
+  static bool _isSuccessStatus(int? status) =>
+      status != null &&
+      status >= HttpStatusCode.ok &&
+      status < HttpStatusCode.multipleChoices;
 
   /// Whether a rejected auth response means "this email is already
   /// registered".

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -641,6 +644,71 @@ void main() {
     group('credential grant reconcile (signUp)', () {
       Future<AuthResponse> register() =>
           repo.signUp(email: 'a@b.com', password: 'p', username: 'u');
+
+      late List<LogRecord> records;
+      late StreamSubscription<LogRecord> sub;
+      late Level previousLevel;
+
+      setUp(() {
+        records = [];
+        previousLevel = Logger.root.level;
+        Logger.root.level = Level.ALL;
+        sub = Logger.root.onRecord.listen(records.add);
+      });
+
+      tearDown(() async {
+        await sub.cancel();
+        Logger.root.level = previousLevel;
+      });
+
+      // The log line is the only surface these two failures have: both
+      // deliberately let the sign-up succeed, so a caller sees nothing. A
+      // message naming the wrong flow makes the one available signal
+      // misleading.
+      test(
+        'names the sign-up in the no-body warning, never the sign-in',
+        () async {
+          when(
+            () => mockDio.post<Map<String, dynamic>>(
+              '$_kAuthBase/sign-up/email',
+              data: any(named: 'data'),
+            ),
+          ).thenAnswer((_) async => _status(200));
+          when(
+            () => mockDio.get<Map<String, dynamic>>(any()),
+          ).thenAnswer((_) async => _ok(_sessionJson()));
+
+          await register();
+
+          final warning = records.singleWhere(
+            (r) => r.message.contains('No body on a successful'),
+          );
+          expect(warning.message, contains('sign-up'));
+          expect(warning.message, isNot(contains('sign-in')));
+        },
+      );
+
+      test('names the sign-up in the unreadable-envelope warning', () async {
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer(
+          (_) async => _ok({'token': 'tok', 'user': 'not-an-object'}),
+        );
+        when(
+          () => mockDio.get<Map<String, dynamic>>(any()),
+        ).thenAnswer((_) async => _ok(_sessionJson()));
+
+        await register();
+
+        final warning = records.singleWhere(
+          (r) => r.message.contains('envelope'),
+        );
+        expect(warning.message, contains('sign-up'));
+        expect(warning.message, isNot(contains('sign-in')));
+      });
 
       test('a grant response with no body does not fail the sign-up', () async {
         when(
