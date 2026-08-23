@@ -378,8 +378,6 @@ class GameCollectionRemoteDataSourceImpl
 
   // ── Failure classification ──────────────────────────────────────────
 
-  /// A response status, when present, is authoritative; without one the
-  /// failure is a connection-level fault and always transient.
   /// Whether [body] is the API's own error envelope for a response carrying
   /// [status] — the evidence that the application answered rather than
   /// something in front of it.
@@ -413,6 +411,8 @@ class GameCollectionRemoteDataSourceImpl
       body['message'] != null &&
       body['error'] is String;
 
+  /// A response status, when present, is authoritative; without one the
+  /// failure is a connection-level fault and always transient.
   GameCollectionRemoteException _classifyDioException(
     DioException error, {
     required String action,

@@ -5,6 +5,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
+import 'package:observability/observability.dart';
 import 'package:http_status/http_status.dart';
 
 /// Web implementation of [AuthRepository].
@@ -32,8 +33,30 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   final ServerIdentity _identity;
   final Dio _dio;
   final StreamController<AuthState> _stateController;
+  final BgeLogger _log = BgeLogger('bge.web.auth.repository');
 
   AuthState _currentState = const AuthStateUnknown();
+
+  /// Monotonic sign-out counter, mirroring `AuthRepositoryImpl._sessionEpoch`
+  /// (#146). Bumped as the first statement of [signOut], before any await;
+  /// every method that can be suspended while a session is being decided
+  /// captures it in its synchronous prologue and re-compares afterwards.
+  ///
+  /// Without it, a [getSession] still in flight when the user signs out
+  /// resolves afterwards and re-asserts [AuthStateAuthenticated] for a
+  /// session whose cookie the server has already revoked — the newer intent
+  /// must win.
+  ///
+  /// Both halves must sit ahead of every suspension point: a capture taken
+  /// after an await samples a value the racing sign-out may already have
+  /// bumped, which makes the later comparison match and the guard silently
+  /// inert.
+  ///
+  /// Web needs only ONE checkpoint per method, where native has two. Native's
+  /// second exists to unwind its own `TokenStorageService.store`; web
+  /// persists nothing, and no await separates its guard from the state
+  /// emission it protects.
+  int _sessionEpoch = 0;
 
   @override
   AuthState get currentAuthState => _currentState;
@@ -57,17 +80,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     _assertSuccess(response, context: 'sign-in');
 
-    // BetterAuth sets the session cookie in the response; the browser stores
-    // it automatically. Immediately fetch the session for the full user object
-    // and canonical expiry.
-    final session = await getSession();
-    if (session == null) {
-      throw const AuthServerException(
-        message: 'Sign-in succeeded but session could not be retrieved.',
-      );
-    }
-
-    return session;
+    // BetterAuth set the session cookie in this response and the browser
+    // stored it automatically. The reconcile that follows is for the full
+    // user object and the canonical expiry — not for the credential.
+    return _reconcileCredentialGrant(
+      _grantOrNull(response, context: 'sign-in'),
+      context: 'sign-in',
+    );
   }
 
   @override
@@ -108,46 +127,124 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     _assertSuccess(response, context: 'sign-up');
 
-    final session = await getSession();
-    if (session == null) {
-      throw const AuthServerException(
-        message: 'Registration succeeded but session could not be retrieved.',
-      );
-    }
-
-    return session;
+    return _reconcileCredentialGrant(
+      _grantOrNull(response, context: 'sign-up'),
+      context: 'sign-up',
+    );
   }
 
   @override
   Future<AuthResponse?> getSession() async {
+    // Captured in the synchronous prologue, before ANY await — see
+    // [_sessionEpoch].
+    final epoch = _sessionEpoch;
+
     late final Response<Map<String, dynamic>> response;
     try {
       response = await _dio.get<Map<String, dynamic>>(
         _identity.sessionEndpoint,
       );
     } on DioException catch (e) {
-      if (e.response?.statusCode == HttpStatusCode.unauthorized) {
+      // A rejected session (401, 403) normally arrives as a Response, not a
+      // thrown DioException — `WebDioFactory` sets validateStatus:(_)=>true,
+      // so any HTTP status resolves and is classified on the response path
+      // below. Reaching here therefore usually means a transport-level
+      // failure (no connection, timeout, CORS), which is INDETERMINATE.
+      //
+      // Usually, not always: this repository takes ANY injected [Dio] and
+      // `WebDioFactory` honours caller-supplied interceptors, so a rejection
+      // can still surface thrown — from an interceptor, or a Dio whose
+      // validateStatus is not the factory's. When it does it is the same
+      // DEFINITIVE negative the response path settles, and it has to settle
+      // the same way. Throwing it instead (as this did before) left
+      // `_currentState` at [AuthStateUnknown] while `AuthBloc` had already
+      // routed to the sign-in form, so `watchAuthState` went on replaying
+      // "unknown" to every later subscriber — and, reaching
+      // [_reconcileCredentialGrant] as an exception, it was bucketed as
+      // indeterminate and kept a session the server had just disowned.
+      final mapped = _mapDioException(e);
+
+      if (epoch != _sessionEpoch) {
+        _log.warn(
+          'Discarding a failed session request that resolved after sign-out',
+          error: e,
+        );
+        return null;
+      }
+
+      if (mapped is AuthInvalidCredentialsException) {
         _setState(const AuthStateUnauthenticated());
         return null;
       }
 
-      throw _mapDioException(e);
+      throw mapped;
     }
 
-    if (response.statusCode == HttpStatusCode.unauthorized ||
-        response.data == null) {
+    // The user signed out while this request was in flight. Their intent is
+    // newer than this response: discard it without touching state, so
+    // sign-out stays final (see [_sessionEpoch]).
+    if (epoch != _sessionEpoch) {
+      _log.warn(
+        'Discarding a session response that resolved after sign-out',
+        context: {'status': response.statusCode},
+      );
+      return null;
+    }
+
+    final status = response.statusCode;
+
+    // Three shapes of "definitively no session": an explicit 401, a 403, and
+    // BetterAuth's 200-with-null-body — which is how it reports an absent or
+    // expired session rather than using a status code. All three mean the
+    // browser's cookie is dead: settle on unauthenticated.
+    //
+    // 403 belongs here, not in the indeterminate bucket below. Because
+    // validateStatus is permissive it resolves as a Response and never
+    // reaches `_mapDioException` — the path that maps 403 to
+    // `AuthInvalidCredentialsException`. Classifying it as indeterminate
+    // stranded a genuinely revoked session on the retry-forever view with no
+    // way out. A false positive from an intermediary costs one re-sign-in,
+    // which is the cheaper failure. Native locked the same call (#180).
+    final isDefinitiveNoSession =
+        status == HttpStatusCode.unauthorized ||
+        status == HttpStatusCode.forbidden ||
+        (status == HttpStatusCode.ok && response.data == null);
+
+    if (isDefinitiveNoSession) {
       _setState(const AuthStateUnauthenticated());
       return null;
     }
 
-    if (response.statusCode != HttpStatusCode.ok) {
+    // Anything else is INDETERMINATE and must throw, not return null (#98).
+    // This check MUST come after the definitive cases and before any body
+    // inspection: an earlier `response.data == null` test that ignored the
+    // status turned a bodiless 502 — a proxy fault — into a definitive "no
+    // session", signing the user out for a server hiccup and implying their
+    // session had been rejected (#180). A 2xx that is not the documented 200
+    // shape lands here too: it carries no session and no rejection.
+    if (status != HttpStatusCode.ok) {
       throw AuthServerException(
-        message: 'Unexpected ${response.statusCode} from session endpoint.',
-        statusCode: response.statusCode,
+        message: 'Unexpected $status from the session endpoint.',
+        statusCode: status,
       );
     }
 
-    final sessionResponse = BgeSessionResponse.fromJson(response.data!);
+    // A 200 whose body is not the documented shape is a server fault, and it
+    // has to leave here as one: `AuthRepository` admits only AuthException
+    // subtypes out of getSession, and AuthBloc's sign-in / register handlers
+    // catch nothing wider — a bare parse error would slip past every clause
+    // and strand the form on AuthLoading with no way back. Native still
+    // reaches straight for `fromJson` here and has the same gap.
+    final BgeSessionResponse sessionResponse;
+    try {
+      sessionResponse = BgeSessionResponse.fromJson(response.data!);
+    } on Object catch (error) {
+      throw AuthServerException(
+        message: 'The session endpoint returned an unreadable response.',
+        statusCode: status,
+        cause: error,
+      );
+    }
     final auth = AuthResponse(
       // Web authenticates via the browser-managed httpOnly cookie, never
       // this field — nothing on web reads `AuthResponse.token` as a
@@ -167,15 +264,74 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     return auth;
   }
 
+  /// Signs out, **awaiting** the server POST — deliberately unlike native's
+  /// fire-and-forget (`AuthRepositoryImpl.signOut`, #37 review #9).
+  ///
+  /// The native decision rests on a step web does not have. There, the POST
+  /// is genuinely best-effort because `TokenStorageService.clear()` destroys
+  /// the credential locally: sign-out is final the moment that returns,
+  /// whatever the network does. Web holds no session material of its own —
+  /// the httpOnly cookie is the session, Dart cannot touch it, and the
+  /// server's `Set-Cookie: Max-Age=0` on THIS response is the only thing
+  /// that ends it. Returning before it lands leaves the cookie live: a page
+  /// reload in that window sends it again, the session endpoint honours it,
+  /// and the user is silently signed back in. In-memory state is not a
+  /// teardown when the credential outlives the process.
+  ///
+  /// Awaiting costs the user nothing. The local transition to
+  /// [AuthStateUnauthenticated] happens synchronously below, before the POST
+  /// is even sent, so `AuthBloc`'s mirror subscription flips the gate at
+  /// once — the await governs when this future resolves, not when the app
+  /// stops presenting a signed-in session. That is what makes awaiting cheap
+  /// here where native judged it too expensive (#37 review #9): what native
+  /// rejected was a spinner, and there is no spinner left to pay for.
+  ///
+  /// Residual risk, unavoidable on either posture: if the POST never lands
+  /// the cookie is never cleared, and the session survives until it expires
+  /// server-side. Awaiting cannot fix that — but it does mean the failure is
+  /// observed and logged rather than silently discarded.
   @override
   Future<void> signOut() async {
+    // Both statements run before any await, and both make the user's intent
+    // locally true at once. The epoch invalidates a session response still
+    // in flight (see [_sessionEpoch]); the transition means nothing
+    // observing this repository waits on the network to learn the session is
+    // over. Leaving the transition in a `finally` after the awaited POST
+    // held `currentAuthState` at authenticated for the full 10s
+    // receiveTimeout against an unreachable server, with the caller — and
+    // the gate — sitting on AuthLoading for all of it.
+    _sessionEpoch += 1;
+    _setState(const AuthStateUnauthenticated());
+
     try {
-      await _dio.post<void>(_identity.signOutEndpoint);
-    } catch (_) {
-      // Best-effort. The browser discards the cookie on the server's
-      // Set-Cookie: Max-Age=0 response regardless of Dart-side errors.
-    } finally {
-      _setState(const AuthStateUnauthenticated());
+      final response = await _dio.post<void>(_identity.signOutEndpoint);
+
+      final status = response.statusCode;
+      if (status == null ||
+          status < HttpStatusCode.ok ||
+          status >= HttpStatusCode.multipleChoices) {
+        // `validateStatus: (_) => true` (`WebDioFactory`) resolves a 5xx as
+        // an ordinary Response, so the catch below only ever sees transport
+        // faults. Without this branch the failure that actually matters —
+        // the server declining to revoke, hence no `Set-Cookie: Max-Age=0`
+        // — is the one failure logged nowhere, and the doc's promise that
+        // awaiting makes it observable would hold for nothing.
+        _log.warn(
+          'Sign-out was not accepted; the session cookie may still be live '
+          'until it expires server-side',
+          context: {'status': status},
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      // Best-effort in the sense that it cannot fail the sign-out — the
+      // user's intent stands either way. It is not best-effort in the sense
+      // of being skippable; see the doc above.
+      _log.warn(
+        'Sign-out POST did not complete; the session cookie may still be '
+        'live until it expires server-side',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -220,6 +376,171 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   void _setState(AuthState next) {
     _currentState = next;
     if (!_stateController.isClosed) _stateController.add(next);
+  }
+
+  /// Parses the grant envelope BetterAuth returns from sign-in / sign-up, or
+  /// null when it cannot be read.
+  ///
+  /// Web never sends this token anywhere — the browser holds the httpOnly
+  /// cookie that actually authorises requests, and nothing here reads
+  /// [AuthResponse.token] as a credential. What the envelope is wanted for is
+  /// the **user identity**: an authenticated state without a real `user.id`
+  /// cannot activate the per-(server, user) scope (#135).
+  ///
+  /// Nullable on purpose, and this is where web has to diverge from native.
+  /// Native needs the token — it persists it and every later request carries
+  /// it — so an unreadable grant is genuinely fatal there. Here the grant is
+  /// only ever a FALLBACK for an indeterminate reconcile: on the happy path
+  /// [_reconcileCredentialGrant] adopts the confirmed session and discards
+  /// this one untouched. Failing here would therefore reject sign-ins the
+  /// session endpoint was about to confirm — including BetterAuth's
+  /// documented `token: null` envelope (email verification required, or
+  /// `autoSignIn: false`), a null the DTO's `required String token` cannot
+  /// hold. Whether the sign-in stands is the reconcile's call, and the
+  /// reconcile is the authority regardless.
+  AuthResponse? _grantOrNull(
+    Response<Map<String, dynamic>> response, {
+    required String context,
+  }) {
+    final data = response.data;
+    if (data == null) {
+      _log.warn(
+        'No body on a successful $context; the session endpoint has to '
+        'confirm this sign-in unaided',
+        context: {'status': response.statusCode},
+      );
+      return null;
+    }
+
+    try {
+      return AuthResponse.fromJson(data);
+    } on Object catch (error, stackTrace) {
+      // Native reaches straight for `response.data!` and lets a malformed
+      // body escape as a raw parse error, which slips past every
+      // `on AuthException` clause in AuthBloc and strands the form on
+      // AuthLoading. Nothing raw leaves here.
+      _log.warn(
+        'Unreadable $context envelope; the session endpoint has to confirm '
+        'this sign-in unaided',
+        error: error,
+        stackTrace: stackTrace,
+        context: {'status': response.statusCode},
+      );
+      return null;
+    }
+  }
+
+  /// Reconciles a freshly granted credential against the session endpoint.
+  ///
+  /// Native parity with `AuthRepositoryImpl._finalizeCredentialGrant`, minus
+  /// its persistence half — web stores nothing, so there is no write to undo
+  /// and no second epoch checkpoint.
+  ///
+  /// Three outcomes, and the distinction matters:
+  ///
+  /// - reconcile succeeds → adopt the confirmed session, which carries the
+  ///   server's canonical expiry;
+  /// - reconcile is **INDETERMINATE** (transport failure, 5xx) → keep the
+  ///   granted session, or rethrow if [granted] is null. Authentication genuinely happened and the browser
+  ///   already holds the cookie proving it; failing here would report
+  ///   "connection failed" for a sign-in that worked. The cost is an
+  ///   unconfirmed expiry, which on web forfeits nothing — web never
+  ///   restores optimistically ([restoreCachedSession] is unconditionally
+  ///   null, #98 D10), so there is no offline path that needed it;
+  /// - reconcile returns a **DEFINITIVE** "no session" → the server accepted
+  ///   the credential and then disowned the session. That is a server
+  ///   contract violation, not a network condition, and it must not be
+  ///   reported as success.
+  Future<AuthResponse> _reconcileCredentialGrant(
+    AuthResponse? granted, {
+    required String context,
+  }) async {
+    // Captured before the reconcile await, mirroring native's capture in
+    // `_finalizeCredentialGrant`. Like native, it does not cover the
+    // credential POST that preceded it — a deliberate bound, not an
+    // oversight: every dispatcher of `AuthSignOutRequested` is either
+    // unreachable while that POST is in flight or causally downstream of
+    // it. The two UI dispatchers are home-menu entries
+    // (`home_placeholder_screen.dart:93`, `bge_app.dart:522`), reachable
+    // only from an authenticated shell. The one programmatic dispatcher
+    // (`bge_app.dart:1117`) fires when `UserSessionScope.activate` fails,
+    // which cannot run until this reconcile has already emitted — and web
+    // registers no `UserSessionScope` at all until #137.
+    //
+    // Widening the capture would therefore guard a race no caller can
+    // produce, and it would guard it incompletely: the late credential
+    // response sets a fresh cookie that Dart cannot clear, so honouring a
+    // supersession there needs a second revocation POST, not an earlier
+    // capture. Revisit if any screen ever offers sign-out over
+    // `AuthLoading` — that, not this line, is what holds the bound.
+    final epoch = _sessionEpoch;
+
+    final AuthResponse? confirmed;
+    try {
+      confirmed = await getSession();
+    } on AuthException catch (error, stackTrace) {
+      if (epoch != _sessionEpoch) {
+        // The reconcile failed AND a sign-out landed meanwhile: do not adopt
+        // the granted session over the sign-out's teardown.
+        throw const AuthSupersededException();
+      }
+
+      // Indeterminate reconcile and no readable grant ([_grantOrNull]):
+      // nothing adoptable exists on either side. Surface the reconcile's own
+      // failure rather than dressing it up as a server fault — it is what
+      // actually went wrong, and its retryable copy is the honest thing to
+      // show for a sign-in whose credentials the server accepted. A
+      // synthesised stand-in would carry no real `user.id` and so could not
+      // activate the per-(server, user) scope anyway (#135).
+      if (granted == null) rethrow;
+
+      _log.warn(
+        'Session reconcile after $context could not complete; keeping the '
+        'granted session with an unconfirmed expiry',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      _setState(AuthStateAuthenticated(session: granted));
+      return granted;
+    }
+
+    if (confirmed == null) {
+      // Null has two meanings and only one is the server's fault: the
+      // reconcile's own epoch guard discards a response that resolved after
+      // a sign-out and returns null. Blaming the server for the user's own
+      // sign-out surfaced AuthFailureServer on the form (#146).
+      if (epoch != _sessionEpoch) {
+        throw const AuthSupersededException();
+      }
+      throw AuthServerException(
+        message:
+            'Authentication succeeded but the server reported no session '
+            'during $context.',
+      );
+    }
+
+    // No epoch recheck here, unlike both failure branches above, and the
+    // asymmetry is deliberate. Their window is a network round trip wide;
+    // this one spans two adjacent microtasks — `getSession` emitted the
+    // authenticated state synchronously and then returned, so the only way
+    // to move the epoch in between is to observe that emission and call
+    // [signOut] before this continuation resumes. Nothing can:
+    // [watchAuthState] wraps the `sync: true` controller in a `Stream.multi`
+    // whose delivery is asynchronous, so subscribers are notified strictly
+    // AFTER an awaiting caller resumes. The controller's synchrony never
+    // leaves this class, and it is pinned by a test.
+    //
+    // A guard here would therefore be unreachable — the same reason the
+    // dead `on DioException` 401 branch was removed rather than repaired
+    // (#180). If [watchAuthState] ever delivers synchronously, that test
+    // fails and this becomes a real window; fix it there, not by adding an
+    // untestable check here.
+    //
+    // No _setState either: the successful getSession above already emitted
+    // the authenticated state. Native repeats the emission; on web the
+    // stream is broadcast, so repeating it would publish an observable
+    // duplicate for no gain.
+    return confirmed;
   }
 
   EmailAndPasswordStrategy _requireEmailPasswordStrategy() {
