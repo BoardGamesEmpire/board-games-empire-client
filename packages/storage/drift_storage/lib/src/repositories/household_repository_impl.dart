@@ -222,7 +222,13 @@ class HouseholdRepositoryImpl
     checkNotDisposed();
     await _db
         .into(_db.householdMembersTable)
-        .insertOnConflictUpdate(_memberToCompanion(member));
+        .insert(
+          _memberToCompanion(member),
+          onConflict: DoUpdate(
+            (old) => _memberToCompanion(member),
+            target: _memberConflictTarget,
+          ),
+        );
   }
 
   @override
@@ -233,7 +239,10 @@ class HouseholdRepositoryImpl
         b.insert(
           _db.householdMembersTable,
           _memberToCompanion(m),
-          onConflict: DoUpdate((old) => _memberToCompanion(m)),
+          onConflict: DoUpdate(
+            (old) => _memberToCompanion(m),
+            target: _memberConflictTarget,
+          ),
         );
       }
     });
@@ -475,6 +484,23 @@ class HouseholdRepositoryImpl
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );
+
+  /// The conflict target for member upserts: the `(householdId, userId)`
+  /// unique index, **not** the primary key (#267 D4).
+  ///
+  /// A member's primary key is its id, but a person's membership of a
+  /// household is unique on `(householdId, userId)` — and the two ids for
+  /// one membership legitimately differ. `create` synthesizes an owner row
+  /// under a client-generated cuid2 and `reconcileCreatedHousehold` keeps
+  /// that id deliberately (the authoritative id is #122's job), so the
+  /// server's row for the same membership arrives under a different id.
+  /// Upserting on the primary key makes that a `UNIQUE` constraint failure
+  /// instead of the update it should be, which would kill a hydrate on the
+  /// ordinary create-then-sign-in-again path.
+  List<Column<Object>> get _memberConflictTarget => [
+    _db.householdMembersTable.householdId,
+    _db.householdMembersTable.userId,
+  ];
 
   HouseholdMembersTableCompanion _memberToCompanion(HouseholdMember m) =>
       HouseholdMembersTableCompanion.insert(

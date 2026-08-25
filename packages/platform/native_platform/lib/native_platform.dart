@@ -15,6 +15,7 @@ export 'src/build_info/package_info_build_info_reader.dart';
 export 'src/deep_links/app_links_deep_link_source.dart';
 export 'src/deep_links/server_repository_known_server_lookup.dart';
 export 'src/feedback/file_feedback_sink.dart';
+export 'src/household/household_hydrate_installer.dart';
 export 'src/logging/rotating_file_log_sink.dart';
 export 'src/native_platform_bootstrap.dart';
 export 'src/native_root_module.dart';
