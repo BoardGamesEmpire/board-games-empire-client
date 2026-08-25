@@ -2,6 +2,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
+import 'package:drift_storage/drift_storage_native.dart'
+    show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/household_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
@@ -62,7 +64,7 @@ void main() {
   late HouseholdRepositoryImpl repo;
 
   setUp(() {
-    db = ServerDatabase.memory();
+    db = inMemoryServerDatabase();
     final clock = FixedClockService(DateTime.utc(2024, 1, 15, 10, 30));
     repo = HouseholdRepositoryImpl(
       db: db,

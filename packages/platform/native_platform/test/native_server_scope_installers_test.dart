@@ -1,4 +1,5 @@
 import 'package:drift_storage/drift_storage.dart';
+import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';

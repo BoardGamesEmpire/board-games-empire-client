@@ -1,5 +1,4 @@
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 
 import '../tables/game_table.dart';
 import '../tables/platform_game_table.dart';
@@ -91,8 +90,12 @@ part 'server_database.g.dart';
 class ServerDatabase extends _$ServerDatabase {
   ServerDatabase(super.executor);
 
-  /// In-memory database for tests.
-  ServerDatabase.memory() : super(NativeDatabase.memory());
+  // No `.memory()` constructor here (#287): `NativeDatabase.memory()` is
+  // `dart:ffi`-backed, and naming it in this file would pull the whole
+  // package's neutral surface out of a web build. VM tests get the
+  // equivalent from `inMemoryServerDatabase()` in
+  // `drift_storage_native.dart`; web gets its own executor from
+  // `web_storage` (#288).
 
   @override
   int get schemaVersion => 3;

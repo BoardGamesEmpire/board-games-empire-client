@@ -1,5 +1,7 @@
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
+import 'package:drift_storage/drift_storage_native.dart'
+    show inMemoryServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -115,7 +117,7 @@ ServerConfig _config() => ServerConfig(
 /// shared-device shape. The container then does not own the database
 /// (the test closes it once, after both scopes are disposed).
 DependencyContainer _scopeContainer(AuthRepository auth, {ServerDatabase? db}) {
-  final database = db ?? ServerDatabase.memory();
+  final database = db ?? inMemoryServerDatabase();
   return DependencyContainerImpl()
     ..registerSingleton<ServerDatabase>(
       database,
@@ -315,7 +317,7 @@ void main() {
         AuthStateAuthenticated(session: _session()),
       );
       // Two user scopes over the SAME database — the shared-device shape.
-      final db = ServerDatabase.memory();
+      final db = inMemoryServerDatabase();
       final (a: scopeA, b: scopeB) = await _siblingScopes(
         auth,
         db,
@@ -394,7 +396,7 @@ void main() {
       // Two user scopes over the SAME database — the shared-device shape.
       // The repository already filters on userId; this pins the *wiring*,
       // proving the installer hands each scope its own user's id.
-      final db = ServerDatabase.memory();
+      final db = inMemoryServerDatabase();
       final (a: scopeA, b: scopeB) = await _siblingScopes(
         auth,
         db,
