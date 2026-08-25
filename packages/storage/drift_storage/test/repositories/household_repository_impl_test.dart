@@ -549,6 +549,77 @@ void main() {
         },
       );
 
+      test('cacheMember replaces a synthesized owner row when the server row '
+          'carries a different id (#267 D4)', () async {
+        // Same collision as the batch writer below, through the
+        // single-row path. `cacheMember` is the writer #122's
+        // membership sync will reach for, so it must resolve the
+        // (householdId, userId) index too — not the primary key.
+        await _seedHousehold(db, id: 'h-1');
+        final now = DateTime.now().toUtc();
+
+        await _seedMember(
+          db,
+          id: 'local-owner-cuid',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+
+        await repo.cacheMember(
+          HouseholdMember(
+            id: 'server-member-id',
+            userId: _kUserId,
+            householdId: 'h-1',
+            role: HouseholdRole.householdOwner,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+        final members = await repo.getMembers('h-1');
+        expect(members, hasLength(1));
+        expect(members.single.id, equals('server-member-id'));
+      });
+
+      test('cacheMembers replaces a synthesized owner row when the server row '
+          'carries a different id (#267 D4)', () async {
+        // The create flow synthesizes an owner member row with a
+        // CLIENT-generated id, and reconcileCreatedHousehold
+        // deliberately keeps that id (the authoritative one is #122's
+        // job). So the server's row for the same (householdId, userId)
+        // arrives under a DIFFERENT id — which collides with the
+        // (householdId, userId) unique index, not with the primary key.
+        // Resolving conflicts on the primary key alone makes this an
+        // insert failure and kills the hydrate on the common path.
+        await _seedHousehold(db, id: 'h-1');
+        final now = DateTime.now().toUtc();
+
+        await _seedMember(
+          db,
+          id: 'local-owner-cuid',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+
+        await repo.cacheMembers([
+          HouseholdMember(
+            id: 'server-member-id',
+            userId: _kUserId,
+            householdId: 'h-1',
+            role: HouseholdRole.householdOwner,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ]);
+
+        final members = await repo.getMembers('h-1');
+        expect(members, hasLength(1));
+        expect(members.single.id, equals('server-member-id'));
+        expect(members.single.role, equals(HouseholdRole.householdOwner));
+      });
+
       test('cacheMember is user-agnostic (caches a row for a different user, '
           'boundary gate prevents read leakage)', () async {
         // The repo is scoped to _kUserId, but the cache writers

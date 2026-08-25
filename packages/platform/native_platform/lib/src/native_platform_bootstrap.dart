@@ -18,6 +18,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 
 import 'deep_links/app_links_deep_link_source.dart';
+import 'household/household_hydrate_installer.dart';
 import 'logging/rotating_file_log_sink.dart';
 import 'native_root_module.dart';
 
@@ -65,8 +66,14 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// resources these installers need (the database, clock, and auth
 /// repository) by falling through to the fully installed per-server scope,
 /// which is guaranteed to exist before any user session can activate.
+/// [HouseholdHydrateInstaller] runs last and is ordered, not incidental: it
+/// resolves the [HouseholdRepository] the preceding installer registers, and
+/// starts the #267 household hydrate for the session. It starts that drain
+/// unawaited — activation is the bootstrap gate, and a throw here signs the
+/// user out, so an unreachable server must not reach this list's caller.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   UserSessionScopeInstaller(),
+  HouseholdHydrateInstaller(),
 ];
 
 /// Composes the real per-server [ServerContextFactory] from
