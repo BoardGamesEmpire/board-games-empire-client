@@ -67,8 +67,9 @@ void main() {
     when(() => repo.cacheMembers(any())).thenAnswer((_) async {});
   });
 
-  HouseholdHydrator build({int limit = HouseholdRemoteDataSource.maxPageSize}) =>
-      HouseholdHydrator(repository: repo, remote: remote, limit: limit);
+  HouseholdHydrator build({
+    int limit = HouseholdRemoteDataSource.maxPageSize,
+  }) => HouseholdHydrator(repository: repo, remote: remote, limit: limit);
 
   group('HouseholdHydrator — the complete set', () {
     test('caches every household from a single-page complete set', () async {
@@ -89,8 +90,9 @@ void main() {
 
       await build().hydrate();
 
-      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
-          .cast<Household>();
+      final cached = verify(
+        () => repo.cacheHousehold(captureAny()),
+      ).captured.cast<Household>();
       expect(cached.map((h) => h.id), equals(['h-1', 'h-2']));
     });
 
@@ -101,19 +103,15 @@ void main() {
           limit: any(named: 'limit'),
         ),
       ).thenAnswer(
-        (_) async => _page(
-          ids: ['h-1'],
-          page: 1,
-          limit: 100,
-          total: 1,
-          hasMore: false,
-        ),
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
       );
 
       await build().hydrate();
 
-      final cached = verify(() => repo.cacheMembers(captureAny())).captured
-          .cast<List<HouseholdMember>>();
+      final cached = verify(
+        () => repo.cacheMembers(captureAny()),
+      ).captured.cast<List<HouseholdMember>>();
       expect(cached.single.single.id, equals('m-h-1'));
       expect(cached.single.single.householdId, equals('h-1'));
     });
@@ -125,13 +123,8 @@ void main() {
           limit: any(named: 'limit'),
         ),
       ).thenAnswer(
-        (_) async => _page(
-          ids: const [],
-          page: 1,
-          limit: 100,
-          total: 0,
-          hasMore: false,
-        ),
+        (_) async =>
+            _page(ids: const [], page: 1, limit: 100, total: 0, hasMore: false),
       );
 
       await build().hydrate();
@@ -164,19 +157,15 @@ void main() {
         ),
       );
       when(() => remote.fetchHouseholds(page: 3, limit: 2)).thenAnswer(
-        (_) async => _page(
-          ids: ['h-5'],
-          page: 3,
-          limit: 2,
-          total: 5,
-          hasMore: false,
-        ),
+        (_) async =>
+            _page(ids: ['h-5'], page: 3, limit: 2, total: 5, hasMore: false),
       );
 
       await build(limit: 2).hydrate();
 
-      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
-          .cast<Household>();
+      final cached = verify(
+        () => repo.cacheHousehold(captureAny()),
+      ).captured.cast<Household>();
       expect(
         cached.map((h) => h.id),
         equals(['h-1', 'h-2', 'h-3', 'h-4', 'h-5']),
@@ -199,7 +188,9 @@ void main() {
       await build(limit: 2).hydrate();
 
       verify(() => remote.fetchHouseholds(page: 1, limit: 2)).called(1);
-      verifyNever(() => remote.fetchHouseholds(page: 2, limit: any(named: 'limit')));
+      verifyNever(
+        () => remote.fetchHouseholds(page: 2, limit: any(named: 'limit')),
+      );
     });
   });
 
@@ -260,13 +251,8 @@ void main() {
           limit: any(named: 'limit'),
         ),
       ).thenAnswer(
-        (_) async => _page(
-          ids: ['h-1'],
-          page: 1,
-          limit: 100,
-          total: 1,
-          hasMore: false,
-        ),
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
       );
 
       expect(await build().hydrate(), equals(HydrateOutcome.complete));
@@ -295,13 +281,8 @@ void main() {
         ),
       );
       when(() => remote.fetchHouseholds(page: 3, limit: 2)).thenAnswer(
-        (_) async => _page(
-          ids: ['h-5'],
-          page: 3,
-          limit: 2,
-          total: 5,
-          hasMore: false,
-        ),
+        (_) async =>
+            _page(ids: ['h-5'], page: 3, limit: 2, total: 5, hasMore: false),
       );
 
       expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.complete));
@@ -330,15 +311,13 @@ void main() {
         ),
       );
 
-      final outcome = await build(limit: 2)
-          .hydrate()
-          .timeout(
-            const Duration(seconds: 5),
-            onTimeout: () => fail(
-              'hydrate() never terminated against a server that always '
-              'reports hasMore',
-            ),
-          );
+      final outcome = await build(limit: 2).hydrate().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail(
+          'hydrate() never terminated against a server that always '
+          'reports hasMore',
+        ),
+      );
 
       verify(() => remote.fetchHouseholds(page: 1, limit: 2)).called(1);
       verifyNever(
@@ -407,8 +386,9 @@ void main() {
 
       expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.failed));
 
-      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
-          .cast<Household>();
+      final cached = verify(
+        () => repo.cacheHousehold(captureAny()),
+      ).captured.cast<Household>();
       expect(cached.map((h) => h.id), equals(['h-1', 'h-2']));
     });
 
@@ -418,13 +398,8 @@ void main() {
       // scope activation, which treats a throw as a wiring failure and
       // signs the user out.
       when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
-        (_) async => _page(
-          ids: ['h-1'],
-          page: 1,
-          limit: 2,
-          total: 5,
-          hasMore: true,
-        ),
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
       when(
         () => repo.cacheHousehold(any()),
@@ -435,13 +410,8 @@ void main() {
 
     test('stops requesting pages once a write has failed', () async {
       when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
-        (_) async => _page(
-          ids: ['h-1'],
-          page: 1,
-          limit: 2,
-          total: 5,
-          hasMore: true,
-        ),
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
       when(
         () => repo.cacheHousehold(any()),
