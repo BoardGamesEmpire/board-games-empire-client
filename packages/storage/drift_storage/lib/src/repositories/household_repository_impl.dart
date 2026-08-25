@@ -406,16 +406,37 @@ class HouseholdRepositoryImpl
   /// caller resolves [userId] (per-call for the future, once-at-subscribe
   /// for the stream) so the id is never read inside a synchronous query
   /// builder on a stream path.
+  ///
+  /// ## Order (#269 D3)
+  ///
+  /// `name` ascending, compared lower-cased, with `createdAt` breaking a
+  /// tie. Both readers share this selectable, so the list screen's stream
+  /// cannot disagree with a one-shot read of the same rows.
+  ///
+  /// This had no `ORDER BY` at all until the list screen needed one, which
+  /// left the rows in whatever order SQLite happened to return — stable in
+  /// practice and free to change on any upsert. The tiebreak is
+  /// deliberately **not** `id`: a household id is a client- or
+  /// server-issued cuid2, so ordering on it is arbitrary order wearing
+  /// determinism. `createdAt` is a key a person can reason about.
+  ///
+  /// Lower-casing rather than `COLLATE NOCASE` is the same ASCII-only fold
+  /// either way; this one is visible in the query drift builds.
   JoinedSelectStatement _householdsQuery(String userId) {
     return _db.select(_db.householdsTable).join([
-      innerJoin(
-        _db.householdMembersTable,
-        _db.householdMembersTable.householdId.equalsExp(
-              _db.householdsTable.id,
-            ) &
-            _db.householdMembersTable.userId.equals(userId),
-      ),
-    ])..where(_db.householdsTable.deletedAt.isNull());
+        innerJoin(
+          _db.householdMembersTable,
+          _db.householdMembersTable.householdId.equalsExp(
+                _db.householdsTable.id,
+              ) &
+              _db.householdMembersTable.userId.equals(userId),
+        ),
+      ])
+      ..where(_db.householdsTable.deletedAt.isNull())
+      ..orderBy([
+        OrderingTerm.asc(_db.householdsTable.name.lower()),
+        OrderingTerm.asc(_db.householdsTable.createdAt),
+      ]);
   }
 
   /// Common selectable for [getMembers] and [watchMembers]: returns

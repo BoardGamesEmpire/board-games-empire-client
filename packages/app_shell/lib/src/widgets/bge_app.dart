@@ -305,6 +305,7 @@ class _BgeAppState extends State<BgeApp> {
       authScopeBuilder: _buildAuthScope,
       feedbackBuilder: _buildFeedbackRoute,
       settingsBuilder: _buildSettingsRoute,
+      householdListBuilder: _buildHouseholdListRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -479,27 +480,31 @@ class _BgeAppState extends State<BgeApp> {
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
 
-    // Only surface create-household where the household scope is actually
-    // installed — the same guard _buildCreateHouseholdRoute applies.
+    // Only surface households where the household scope is actually
+    // installed — the same guard _buildHouseholdListRoute applies.
     // Otherwise the entry would dead-end on the (back-button-less)
     // NotYetAvailableScreen. Post-#135 the household repository lives in
     // the per-USER session scope, so on native this is true exactly while
     // a user session is active — which home's own auth gating already
     // implies — and false on web until its user tier lands (#137/#125).
+    //
+    // The repository ALONE (#269 D4): this entry opens the list, which
+    // renders from the local cache. A missing HouseholdRemoteDataSource
+    // costs the list its create affordance, not its existence — so gating
+    // the entry on it, as the create entry this replaces had to, would
+    // hide a screen that works.
     final container = active.container;
-    final canCreateHousehold =
-        container.isRegistered<HouseholdRepository>() &&
-        container.isRegistered<HouseholdRemoteDataSource>();
+    final canReadHouseholds = container.isRegistered<HouseholdRepository>();
 
     return HomeScreen(
       activeServerName: active.displayName,
       entries: [
-        if (canCreateHousehold)
+        if (canReadHouseholds)
           HomeMenuEntry(
-            id: 'create_household',
-            icon: Icons.group_add_outlined,
-            label: householdL10n.createHouseholdTitle,
-            onSelected: (ctx) => ctx.push(AppRoutes.householdCreate),
+            id: 'households',
+            icon: Icons.groups_outlined,
+            label: householdL10n.householdListTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.household),
           ),
         HomeMenuEntry(
           id: 'send_feedback',
@@ -522,6 +527,51 @@ class _BgeAppState extends State<BgeApp> {
               ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
         ),
       ],
+    );
+  }
+
+  /// The #269 household-list wiring: resolves the [HouseholdRepository]
+  /// (per-user session scope, #135) from the *active server's* scoped
+  /// container, plus the optional [HouseholdHydrationStatus] the hydrate
+  /// installer publishes (#267/#269 D1). Null (→ [NotYetAvailableScreen])
+  /// when no active server is resolvable or its container carries no
+  /// repository (tests without a scope; no active user session; web until
+  /// its user tier lands, #137).
+  ///
+  /// Two things are deliberately *optional* here where the create route
+  /// requires them:
+  ///
+  /// - the **hydration status** is absent on any composition that runs no
+  ///   drain, and the screen reads absent as settled rather than as
+  ///   forever-loading;
+  /// - the **remote data source** decides only whether `onCreate` is
+  ///   offered. A container without one still gets a working list (#269
+  ///   D4), which is the whole reason this route's gate is narrower than
+  ///   the create route's.
+  ///
+  /// Captured-instance lifetime is the create route's, for the create
+  /// route's reasons: a session ending disposes the repository and the auth
+  /// redirect pops this route. A `watch*` subscription racing that window
+  /// **closes** (`WatchDisposal` closes vended streams rather than erroring
+  /// them), which the list bloc reads as "no more answers" — freezing rows
+  /// it already has, or surfacing its error state when it never got any.
+  Widget? _buildHouseholdListRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<HouseholdRepository>()) return null;
+
+    final hydration = container.isRegistered<HouseholdHydrationStatus>()
+        ? container.get<HouseholdHydrationStatus>().watch()
+        : null;
+
+    return HouseholdListScreen(
+      repository: container.get<HouseholdRepository>(),
+      hydration: hydration,
+      onCreate: container.isRegistered<HouseholdRemoteDataSource>()
+          ? (ctx) => ctx.push(AppRoutes.householdCreate)
+          : null,
     );
   }
 

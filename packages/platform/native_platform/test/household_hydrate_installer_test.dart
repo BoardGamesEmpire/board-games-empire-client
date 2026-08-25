@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -146,6 +147,119 @@ void main() {
       completes,
     );
     await Future<void>.delayed(Duration.zero);
+  });
+
+  group('hydration status (#269 D1)', () {
+    test('install publishes a status the list screen can read', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => _emptyPage());
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+
+      expect(container.isRegistered<HouseholdHydrationStatus>(), isTrue);
+    });
+
+    test('reports the pass as running, then refreshed', () async {
+      final blocked = Completer<PaginatedResult<HouseholdWithMembers>>();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) => blocked.future);
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      final status = container.get<HouseholdHydrationStatus>();
+
+      // Set synchronously during install, not on the drain's first turn:
+      // the screen can be built before the fetch has been issued, and an
+      // idle status there would render "no households" over a cache that
+      // is about to fill.
+      expect(status.state, equals(HouseholdHydrationState.running));
+
+      blocked.complete(_emptyPage());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(status.state, equals(HouseholdHydrationState.refreshed));
+    });
+
+    test('reports a failed drain as failed', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container.get<HouseholdHydrationStatus>().state,
+        equals(HouseholdHydrationState.failed),
+      );
+    });
+
+    test('publishes no status where there is no household client', () async {
+      // Absent reads as idle (#269 D1). Registering a permanently-idle
+      // status instead would be a lie the screen cannot see through.
+      final bare = DependencyContainerImpl()
+        ..registerSingleton<HouseholdRepository>(repo);
+      addTearDown(bare.dispose);
+
+      await const HouseholdHydrateInstaller().install(
+        bare,
+        _config(),
+        'user-1',
+      );
+
+      expect(bare.isRegistered<HouseholdHydrationStatus>(), isFalse);
+    });
+
+    test('a drain landing after the scope pops does not throw', () async {
+      // The drain is unawaited, so it outlives the scope that started it.
+      // The status is closed by then, and an error out of this path is an
+      // unhandled async error on the sign-in path.
+      final blocked = Completer<PaginatedResult<HouseholdWithMembers>>();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) => blocked.future);
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      final status = container.get<HouseholdHydrationStatus>();
+
+      await container.dispose();
+      blocked.complete(_emptyPage());
+      await Future<void>.delayed(Duration.zero);
+
+      // Closed by the scope teardown, so the late outcome is dropped.
+      expect(status.state, equals(HouseholdHydrationState.running));
+    });
   });
 
   test('install is a no-op where the server has no household client', () async {

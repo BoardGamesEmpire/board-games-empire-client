@@ -2,8 +2,10 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -19,23 +21,25 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
-/// Exercises the #129 create-household menu gate in `_buildHomeRoute`: the
-/// entry appears only when **both** household dependencies resolve from the
-/// active server's container (the same registration check
-/// `_buildCreateHouseholdRoute` applies), so it can never dead-end on the
-/// back-button-less NotYetAvailableScreen.
+/// Exercises the household menu gate in `_buildHomeRoute`.
 ///
-/// The two dependencies now live in *different* scopes (#135), so the gate
-/// is genuinely two-sided rather than one check written twice:
+/// The entry is the **household list** (#269), replacing #129's
+/// create-household entry — create moved to the list's own FAB. That
+/// changes the gate, and the change is the point of this file: the list
+/// reads the local cache, so it is gated on [HouseholdRepository] **alone**
+/// (#269 D4), where create needed a [HouseholdRemoteDataSource] as well.
+///
+/// The two dependencies live in *different* scopes (#135), which is what
+/// makes the distinction observable rather than theoretical:
 ///
 /// - [HouseholdRemoteDataSource] is per-**server** (`registerServerNetwork`),
 ///   so it is registered from boot onward.
 /// - [HouseholdRepository] is per-**user session** — installed on sign-in by
 ///   `UserSessionScopeInstaller` in the user tier, disposed on sign-out.
 ///
-/// "Remote registered, repository absent" is therefore a real reachable
-/// native state (signed out, or a session whose activation failed), not a
-/// hypothetical: the tests below cover it directly. Web currently has
+/// "Repository registered, remote absent" is the case that separates the
+/// old gate from the new one: under #129's rule the entry vanished, under
+/// #269's it stays and the list simply offers no create affordance. Web has
 /// neither until its user tier lands (#137).
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -58,13 +62,17 @@ void main() {
     required bool withRepository,
     required bool withRemote,
   }) async {
+    final repository = _MockHouseholdRepository();
+    // The list screen's bloc subscribes as soon as the route builds.
+    when(
+      repository.watchHouseholds,
+    ).thenAnswer((_) => Stream<List<Household>>.value(const []));
+
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
-          householdRepository: withRepository
-              ? _MockHouseholdRepository()
-              : null,
+          householdRepository: withRepository ? repository : null,
           householdRemoteDataSource: withRemote
               ? _MockHouseholdRemoteDataSource()
               : null,
@@ -83,45 +91,58 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('BgeApp home create-household gate (#129)', () {
-    testWidgets('shows create-household when both household dependencies '
-        'are registered', (tester) async {
+  group('BgeApp home household gate (#269)', () {
+    testWidgets('shows the households entry when the repository resolves', (
+      tester,
+    ) async {
       await pumpHomeDrawer(tester, withRepository: true, withRemote: true);
 
-      expect(
-        find.byKey(HomeScreen.entryKey('create_household')),
-        findsOneWidget,
-      );
+      expect(find.byKey(HomeScreen.entryKey('households')), findsOneWidget);
     });
 
-    testWidgets('hides create-household when the per-user repository is '
-        'absent but the per-server remote is registered — the real '
-        'signed-out native state (#135)', (tester) async {
-      await pumpHomeDrawer(tester, withRepository: false, withRemote: true);
-
-      // Dropping `isRegistered<HouseholdRepository>()` from the gate would
-      // pass every other test in this file but fail here.
-      expect(find.byKey(HomeScreen.entryKey('create_household')), findsNothing);
-      expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
-    });
-
-    testWidgets('hides create-household when the per-server remote is absent '
-        'but a repository is registered', (tester) async {
+    testWidgets('shows the households entry with no household client — the '
+        'list reads the cache (#269 D4)', (tester) async {
       await pumpHomeDrawer(tester, withRepository: true, withRemote: false);
 
-      // The mirror case: dropping the remote half of the gate would pass
-      // every other test in this file but fail here.
-      expect(find.byKey(HomeScreen.entryKey('create_household')), findsNothing);
+      // The case the old create-only gate got wrong. Reinstating
+      // `isRegistered<HouseholdRemoteDataSource>()` in this gate would
+      // pass every other test in this file but fail here.
+      expect(find.byKey(HomeScreen.entryKey('households')), findsOneWidget);
+    });
+
+    testWidgets('hides the households entry when the per-user repository is '
+        'absent — the real signed-out native state (#135)', (tester) async {
+      await pumpHomeDrawer(tester, withRepository: false, withRemote: true);
+
+      expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);
       expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
     });
 
-    testWidgets('hides create-household when neither is registered — web '
+    testWidgets('hides the households entry when neither is registered — web '
         'until its user tier lands (#137)', (tester) async {
       await pumpHomeDrawer(tester, withRepository: false, withRemote: false);
 
-      expect(find.byKey(HomeScreen.entryKey('create_household')), findsNothing);
+      expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);
       // The scope-independent entries still render.
       expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
+    });
+
+    testWidgets('retires the create-household entry — create is the list '
+        "screen's FAB now", (tester) async {
+      await pumpHomeDrawer(tester, withRepository: true, withRemote: true);
+
+      expect(find.byKey(HomeScreen.entryKey('create_household')), findsNothing);
+    });
+
+    testWidgets('opens the list from the drawer', (tester) async {
+      await pumpHomeDrawer(tester, withRepository: true, withRemote: true);
+
+      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.pumpAndSettle();
+
+      // The container carries a repository, so the route resolves its real
+      // screen rather than the NotYetAvailable fallback.
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
     });
   });
 }

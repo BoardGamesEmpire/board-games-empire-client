@@ -19,6 +19,11 @@ abstract final class AppRoutes {
   static const home = '/home';
   static const feedback = '/feedback';
   static const settings = '/settings';
+
+  /// The household list (#269). Singular, consistent with
+  /// [householdCreate] and with the reserved
+  /// `/server/:serverId/household/:householdId/invite/:token` deep link.
+  static const household = '/household';
   static const householdCreate = '/household/create';
   static const error = '/error';
 
@@ -109,6 +114,21 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// menu rather than deep-linked.
 typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the household list (#269) for the [AppRoutes.household] route.
+/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container carries no `HouseholdRepository`
+/// (tests without a container; web until its user tier lands, #137), in
+/// which case the route falls back to [NotYetAvailableScreen].
+///
+/// Guarded on the repository **alone**, unlike
+/// [CreateHouseholdScreenBuilder]: the list reads the local cache and needs
+/// no `HouseholdRemoteDataSource` (#269 D4). Where the remote is missing the
+/// list still renders — it simply offers no create affordance.
+///
+/// Sits outside the auth [ShellRoute] for the same reason the create route
+/// does: it needs the active server's scoped container, not an `AuthBloc`.
+typedef HouseholdListScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -128,6 +148,7 @@ GoRouter buildAppRouter({
   FeedbackScreenBuilder? feedbackBuilder,
   SettingsScreenBuilder? settingsBuilder,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
+  HouseholdListScreenBuilder? householdListBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -215,11 +236,22 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
+      // #269: the household list, and the home menu's household
+      // destination. Same placement and reachability as the create route
+      // below; declared before it only for reading order — go_router
+      // matches on the full path, so `/household` never swallows
+      // `/household/create`.
+      GoRoute(
+        path: AppRoutes.household,
+        builder: (context, _) =>
+            householdListBuilder?.call(context) ??
+            const NotYetAvailableScreen(),
+      ),
       // #129: create-household flow. Outside the auth ShellRoute (needs no
       // AuthBloc — only the active server's container; see
       // [CreateHouseholdScreenBuilder]). Reachable only once
       // [AppBootstrapReady] admits non-bootstrap locations; pushed from the
-      // home menu.
+      // list screen's FAB (#269) — until then, from the home menu.
       GoRoute(
         path: AppRoutes.householdCreate,
         builder: (context, _) =>
