@@ -1,6 +1,22 @@
 import 'package:models/domain.dart';
 
-/// Remote data source for household write operations against a BGE server.
+import 'paginated_result.dart';
+
+/// One household from the list endpoint, with the members it embeds.
+///
+/// The two travel together because the server sends them together: the list
+/// include carries each household's full member roster, and discarding it
+/// would mean a second round trip for data already in hand. They stay
+/// **separate values** rather than a members field on [Household] because the
+/// repository caches them into separate tables through separate writers
+/// (`cacheHousehold` / `cacheMembers`), and the return shape should match that
+/// seam rather than the wire's nesting.
+typedef HouseholdWithMembers = ({
+  Household household,
+  List<HouseholdMember> members,
+});
+
+/// Remote data source for household reads and writes against a BGE server.
 ///
 /// The first domain REST client (P4, #39). Implementations run over a
 /// **per-server** authenticated transport — the injected client carries
@@ -8,16 +24,11 @@ import 'package:models/domain.dart';
 /// session the endpoints require; this interface adds no auth handling
 /// of its own.
 ///
-/// ## Scope today: create only
+/// ## Scope today: create + list
 ///
-/// Only [createHousehold] is defined. The create flow needs nothing more:
-/// the server assigns the household id, which the caller reconciles onto
-/// the optimistic local row, and the creator's `HouseholdOwner` member row
-/// is synthesized client-side (its server counterpart is not read in the
-/// create-only alpha, so no member fetch is required). A `fetchHouseholds`
-/// method — including the members the list endpoint embeds — will land with
-/// the initial household-list sync / membership work (#122), tested against
-/// the real member response shape at that point.
+/// [createHousehold] (#39) and [fetchHouseholds] (#266). The remaining
+/// household calls — update, delete, and every membership mutation — land
+/// with the membership work (#122) and #246.
 ///
 /// ## Failure classification
 ///
@@ -31,7 +42,51 @@ import 'package:models/domain.dart';
 /// - [HouseholdRemotePermanentException]: 400 (validation), 403 (forbidden),
 ///   every other 4xx, and a 2xx whose body doesn't carry a parseable
 ///   household — retrying cannot succeed.
+///
+/// One documented exception to "every other 4xx": a **404 from
+/// [fetchHouseholds] is transient**. The list route always exists in a
+/// deployed server, so a 404 on it reports a routing or deployment fault —
+/// a misrouted path prefix, an API not yet deployed — rather than an answer
+/// about households. Classifying it permanent would end a hydrate for the
+/// life of the process, including after the server is fixed. The same
+/// reasoning governs the collection list route (#253 D6).
 abstract class HouseholdRemoteDataSource {
+  /// The server's `limit` ceiling for the household list. A larger `limit`
+  /// is **rejected with a 400**, not clamped.
+  static const int maxPageSize = 100;
+
+  /// The server's depth ceiling: `(page - 1) * limit` may not exceed this,
+  /// enforced as a validation error on `page`. Exceeding it is a 400, not an
+  /// empty page. A household drain will never approach it.
+  static const int maxPageDepth = 100000;
+
+  /// Fetches **one page** of the households the acting user can read, newest
+  /// first (`createdAt desc, id desc`), with the members each row embeds.
+  ///
+  /// Paging is the caller's: this returns the page the server gave and
+  /// nothing more. Drain by following [PaginationMeta.hasMore] — never by
+  /// inferring the end of the list from a page shorter than [limit].
+  ///
+  /// [page] is **1-based** and [limit] is capped at [maxPageSize]; both are
+  /// validated server-side and a violation is a 400, so implementations throw
+  /// [ArgumentError] before the request rather than spending a round trip on
+  /// a rejection the caller could have known about locally.
+  ///
+  /// ### Scope is the caller's role, not their membership
+  ///
+  /// `GET /households` widens by role: a member gets the households they
+  /// belong to, an admin gets **every household on the server**. This method
+  /// reports what the server sent and makes no attempt to tell the two apart
+  /// — `PaginationMeta.total` is the only available signal, and it is a hint
+  /// rather than a determination. backend#364 is the membership-scoped read
+  /// that would make the distinction real.
+  ///
+  /// Throws [HouseholdRemoteException] (see class doc for classification).
+  Future<PaginatedResult<HouseholdWithMembers>> fetchHouseholds({
+    int page = 1,
+    int limit = maxPageSize,
+  });
+
   /// Creates a household on the server.
   ///
   /// Wire contract (backend `libs/api/household`): `POST /api/households`
