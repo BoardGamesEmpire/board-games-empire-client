@@ -191,6 +191,36 @@ void main() {
     await expectLater(bloc.stream, emitsThrough(isA<HouseholdListError>()));
   });
 
+  test(
+    'a cache error is not terminal — the next rows recover the screen',
+    () async {
+      // Drift adds a query error to its listener and KEEPS the stream open
+      // (`stream_queries.dart` catch → `controller.addError`), and both
+      // `yield*` and `WatchDisposal.untilDisposed` forward it without
+      // terminating. So a transient read failure is followed by real data,
+      // and stranding the screen on the error surface would need a route
+      // re-push to clear.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.addError(StateError('transient read failure'));
+      await expectLater(bloc.stream, emitsThrough(isA<HouseholdListError>()));
+
+      households.add([_household('h-1')]);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          isA<HouseholdListReady>().having(
+            (s) => s.households,
+            'households',
+            hasLength(1),
+          ),
+        ),
+      );
+    },
+  );
+
   test('the error state is not undone by a later hydrate result', () async {
     final bloc = build();
     addTearDown(bloc.close);

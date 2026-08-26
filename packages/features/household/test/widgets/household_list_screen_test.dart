@@ -7,6 +7,7 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -51,16 +52,31 @@ void main() {
     unawaited(hydration.close());
   });
 
-  Widget harness({void Function(BuildContext context)? onCreate}) =>
-      MaterialApp(
-        localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
-        supportedLocales: HouseholdLocalizations.supportedLocales,
-        home: HouseholdListScreen(
-          repository: repository,
-          hydration: hydration.stream,
-          onCreate: onCreate,
-        ),
-      );
+  Widget harness({
+    void Function(BuildContext context)? onCreate,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => MaterialApp(
+    localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
+    supportedLocales: HouseholdLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: HouseholdListScreen(
+      repository: repository,
+      hydration: hydration.stream,
+      onCreate: onCreate,
+    ),
+  );
+
+  /// Renders into a phone-width window. `MediaQueryData.size` constrains
+  /// nothing on its own, so the width a row has to fit into has to come
+  /// from the view.
+  void useNarrowWindow(WidgetTester tester, {double width = 320}) {
+    tester.view.physicalSize = Size(width, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
 
   group('while the cache is filling', () {
     testWidgets('shows a spinner rather than an empty state', (tester) async {
@@ -214,6 +230,50 @@ void main() {
       await tester.pump();
 
       expect(created, equals(1));
+    });
+  });
+
+  group('at the largest text scale the app honors', () {
+    // BgeTextScale.maxScaleFactor — WCAG 1.4.4's 200%, which the shell
+    // clamps to app-wide. A row that asserts at that scale is a row that
+    // is unusable for exactly the users the badge is written for.
+    for (final width in <double>[320, 360, 412]) {
+      testWidgets('a badged row lays out on a ${width.toInt()}dp window', (
+        tester,
+      ) async {
+        useNarrowWindow(tester, width: width);
+        await tester.pumpWidget(
+          harness(
+            textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+          ),
+        );
+        households.add([
+          _household(
+            'h-1',
+            name: 'The Sunday Board Game Club',
+            isLocalOnly: true,
+          ),
+        ]);
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text(_notSyncedCopy), findsOneWidget);
+      });
+    }
+
+    testWidgets('a badged row lays out at an intermediate scale too', (
+      tester,
+    ) async {
+      // 200% is not the only breaking point — the trailing-slot assert
+      // fires well below it on a narrow window.
+      useNarrowWindow(tester, width: 360);
+      await tester.pumpWidget(
+        harness(textScaler: const TextScaler.linear(1.6)),
+      );
+      households.add([_household('h-1', isDirty: true)]);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
     });
   });
 

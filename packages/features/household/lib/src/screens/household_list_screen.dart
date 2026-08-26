@@ -194,16 +194,40 @@ class _HouseholdRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final description = household.description;
+    final hasDescription = description != null && description.isNotEmpty;
 
     return Semantics(
       key: HouseholdListScreen.rowKey(household.id),
       container: true,
       child: ListTile(
         title: Text(household.name),
-        subtitle: description == null || description.isEmpty
-            ? null
-            : Text(description),
-        trailing: _pending ? const _PendingBadge() : null,
+        // The badge sits UNDER the name, not in `ListTile.trailing`.
+        //
+        // Trailing is a fixed slot measured against the tile width, and
+        // "Not yet synced" at the 200% text scale this app guarantees
+        // (`BgeTextScale.maxScaleFactor`) is wider than a phone row has to
+        // spare — Flutter asserts *Trailing widget consumes the entire tile
+        // width* and the row fails to lay out. It fires from 1.6× on a
+        // 360dp window, so it is the ordinary large-text setting rather
+        // than the extreme.
+        //
+        // Constraining the slot instead would have kept the position and
+        // truncated the words, which is the one thing this badge cannot
+        // afford to lose: it is the whole reason the state is not conveyed
+        // by colour.
+        subtitle: hasDescription || _pending
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasDescription) Text(description),
+                  if (_pending) ...[
+                    if (hasDescription) const BgeGap.xs(),
+                    const _PendingBadge(),
+                  ],
+                ],
+              )
+            : null,
       ),
     );
   }
@@ -227,14 +251,22 @@ class _PendingBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
+          // Scales with its label: an icon pinned to a fixed size beside
+          // 200%-scaled text stops reading as part of the same badge.
           BgeStatusColors.iconFor(BgeStatus.pending),
-          size: theme.textTheme.labelMedium?.fontSize,
+          size: MediaQuery.textScalerOf(
+            context,
+          ).scale(theme.textTheme.labelMedium?.fontSize ?? 0),
           color: color,
         ),
         const BgeGap.xs(axis: Axis.horizontal),
-        Text(
-          l10n.householdListNotSynced,
-          style: theme.textTheme.labelMedium?.copyWith(color: color),
+        // Flexible, so the label wraps inside the row rather than
+        // overflowing it on a narrow window.
+        Flexible(
+          child: Text(
+            l10n.householdListNotSynced,
+            style: theme.textTheme.labelMedium?.copyWith(color: color),
+          ),
         ),
       ],
     );

@@ -30,7 +30,7 @@ import 'household_list_state.dart';
 /// | empty | running | loading — unknown, not empty |
 /// | empty | anything else | ready, no rows |
 /// | rows | any | ready — a populated cache is never hidden |
-/// | error | any | error, and it sticks |
+/// | error | any | error, until the cache speaks again |
 /// | ended, nothing read | any | error — nothing answered, and nothing will |
 /// | ended, rows read | any | those rows, frozen |
 ///
@@ -48,6 +48,14 @@ import 'household_list_state.dart';
 /// lets the auth redirect pop the route; a close with nothing read has no
 /// answer to show, and saying "no households" there would be a claim about
 /// data nobody managed to read.
+///
+/// An **error is not terminal**, because the stream that raised it is not.
+/// Drift adds a failed query's error to its listener and keeps the stream
+/// open (`stream_queries.dart`), and neither `yield*` nor
+/// `WatchDisposal.untilDisposed` ends on a forwarded error — so the next
+/// table update delivers rows on the same subscription. Only fresh rows
+/// clear the error state: a hydrate result is an annotation, not data, and
+/// letting it lift the error would show a list nobody could read.
 ///
 /// A **null** [hydration] stream means no hydrate exists to wait for
 /// (a container with no household client, #137). That reads as settled,
@@ -102,6 +110,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   /// having answered with nothing.
   List<Household>? _households;
 
+  /// Set by a failed read, cleared by the next successful one.
+  bool _readFailed = false;
+
   /// Idle until told otherwise, which is also what an absent hydrate
   /// means.
   HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
@@ -110,6 +121,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     HouseholdListCacheUpdated event,
     Emitter<HouseholdListState> emit,
   ) {
+    // Rows are the one thing that clears a failed read: they are proof the
+    // stream recovered.
+    _readFailed = false;
     _households = event.households;
     _emitDerived(emit);
   }
@@ -117,7 +131,10 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   void _onCacheFailed(
     HouseholdListCacheFailed event,
     Emitter<HouseholdListState> emit,
-  ) => emit(const HouseholdListError());
+  ) {
+    _readFailed = true;
+    emit(const HouseholdListError());
+  }
 
   void _onCacheEnded(
     HouseholdListCacheEnded event,
@@ -137,10 +154,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   }
 
   void _emitDerived(Emitter<HouseholdListState> emit) {
-    // A failed read is terminal: the stream that would correct it has
-    // already ended. Recovering the screen on a *hydrate* result would be
-    // showing rows we can no longer read.
-    if (state is HouseholdListError) return;
+    // Holds the error against everything except fresh rows — see the class
+    // doc. In particular a hydrate result must not lift it.
+    if (_readFailed) return emit(const HouseholdListError());
 
     final households = _households;
     if (households == null) return emit(const HouseholdListLoading());
