@@ -156,13 +156,18 @@ void main() {
     );
 
     test('a staleness check that throws is treated as not stale', () async {
+      // Recorded in a flag rather than asserted inside `run`: a pass
+      // isolates each entry's throw, so a `fail()` in there is swallowed
+      // exactly like any other error and the test passes regardless.
+      var ran = false;
       rehydrator.register(
         'household',
         isStale: () => throw StateError('boom'),
-        run: () async => fail('a broken staleness check must not run a pass'),
+        run: () async => ran = true,
       );
 
       await expectLater(rehydrator.rehydrateStale(), completes);
+      expect(ran, isFalse, reason: 'a broken staleness check must not run');
     });
   });
 
