@@ -201,6 +201,31 @@ void main() {
       expect(find.text(_unknownRoleCopy), findsOneWidget);
     });
 
+    testWidgets('appears on the deep-link path, where the cache was cold', (
+      tester,
+    ) async {
+      // The symptom the one-shot identity lookup produced: open the screen
+      // cold, the hydrate lands the roster, and "Your role" was never
+      // shown because the first (correct) answer to "who are you" was null.
+      HouseholdMember? cached;
+      when(
+        () => repository.getCurrentUserMember(any()),
+      ).thenAnswer((_) async => cached);
+
+      await tester.pumpWidget(harness());
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      cached = _member('u-me', role: HouseholdRole.householdOwner);
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.roleKey), findsOneWidget);
+      expect(find.text('Owner'), findsOneWidget);
+    });
+
     testWidgets('omits the block entirely for a null binding', (tester) async {
       await tester.pumpWidget(harness());
       await settleWith(tester, roster: [_member('u-me', role: null)]);
@@ -224,6 +249,27 @@ void main() {
       expect(find.byKey(HouseholdDetailScreen.roleKey), findsNothing);
       expect(find.text('1 member'), findsOneWidget);
     });
+  });
+
+  testWidgets('never flashes "No members" between the two hydrate writes', (
+    tester,
+  ) async {
+    // cacheHousehold and cacheMembers are separate writes, so the
+    // household is briefly on screen with an empty roster.
+    await tester.pumpWidget(harness());
+    hydration.add(HouseholdHydrationState.running);
+    members.add(const []);
+    households.add([_household(_id)]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('No members'), findsNothing);
+    expect(find.byKey(HouseholdDetailScreen.loadingKey), findsOneWidget);
+
+    members.add([_member('u-me'), _member('u-2')]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 members'), findsOneWidget);
   });
 
   group('not found', () {

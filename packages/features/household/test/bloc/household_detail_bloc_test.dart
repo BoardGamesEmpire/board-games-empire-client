@@ -264,6 +264,68 @@ void main() {
       );
     });
 
+    test('resolves on the deep-link path, where the cache was cold when we '
+        'first asked', () async {
+      // The path this bloc exists for. `getCurrentUserMember` reads the
+      // local cache, so on a cold start it answers null — there are no
+      // member rows yet. Latching that null for the life of the screen
+      // leaves "Your role" silently missing even after the hydrate lands
+      // the roster with our row in it.
+      HouseholdMember? cached;
+      when(
+        () => repository.getCurrentUserMember(_id),
+      ).thenAnswer((_) async => cached);
+
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      hydration.add(HouseholdHydrationState.running);
+      await settle();
+
+      // The drain lands: household, then members, and now the cache can
+      // answer who we are.
+      cached = _member('u-me', role: HouseholdRole.householdOwner);
+      households.add([_household(_id)]);
+      members.add([
+        _member('u-me', role: HouseholdRole.householdOwner),
+        _member('u-2'),
+      ]);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          isA<HouseholdDetailReady>()
+              .having((s) => s.memberCount, 'memberCount', 2)
+              .having((s) => s.role, 'role', HouseholdRole.householdOwner),
+        ),
+      );
+    });
+
+    test('asks again only while we are still unidentified', () async {
+      // Bounded: the retry is driven by roster emissions and stops the
+      // moment an answer arrives, so it cannot become a query per tick.
+      HouseholdMember? cached;
+      when(
+        () => repository.getCurrentUserMember(_id),
+      ).thenAnswer((_) async => cached);
+
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      cached = _member('u-me');
+      members.add([_member('u-me')]);
+      await settle();
+      members.add([_member('u-me'), _member('u-2')]);
+      await settle();
+      members.add([_member('u-me'), _member('u-2'), _member('u-3')]);
+      await settle();
+
+      // Construction, plus one retry that succeeded. The two later
+      // emissions ask nothing.
+      verify(() => repository.getCurrentUserMember(_id)).called(2);
+    });
+
     test('is null when the roster carries no role binding for us', () async {
       final bloc = build();
       addTearDown(bloc.close);
@@ -318,6 +380,59 @@ void main() {
           isA<HouseholdDetailReady>().having((s) => s.role, 'role', isNull),
         ),
       );
+    });
+  });
+
+  group('the roster gate', () {
+    test('an empty roster under a visible household holds, rather than '
+        'claiming nobody is in it', () async {
+      // The hydrator writes cacheHousehold and cacheMembers as separate
+      // writes, so between them the household is visible and the roster is
+      // still `const []`. Rendering "No members" there states something
+      // false about a household that always has at least its owner.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      hydration.add(HouseholdHydrationState.running);
+      members.add(const []);
+      households.add([_household(_id)]);
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailLoading>());
+    });
+
+    test('and gives up holding once the pass settles', () async {
+      // Bounded by the same signal the absent-household branch uses: an
+      // empty roster nothing is going to fill is rendered, not spun on.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      hydration.add(HouseholdHydrationState.running);
+      members.add(const []);
+      households.add([_household(_id)]);
+      await settle();
+      hydration.add(HouseholdHydrationState.refreshed);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          isA<HouseholdDetailReady>().having(
+            (s) => s.memberCount,
+            'memberCount',
+            0,
+          ),
+        ),
+      );
+    });
+
+    test('does not hold where there is no hydrate to wait for', () async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+
+      members.add(const []);
+      households.add([_household(_id)]);
+
+      await expectLater(bloc.stream, emitsThrough(isA<HouseholdDetailReady>()));
     });
   });
 

@@ -48,10 +48,18 @@ import 'household_detail_state.dart';
 /// ## Why the roster is a gate, not a decoration
 ///
 /// The member count is one of the three things this screen exists to say,
-/// and `Household` carries no count field — it is the roster's length. A
-/// household with no member rows yet would render "No members", which is
-/// false of every household (the creator's own row is synthesized at
-/// create). So a household without its roster is still loading.
+/// and `Household` carries no count field — it is the roster's length.
+///
+/// So the screen waits for the roster, and waits through an **empty** one
+/// as well as an absent one: the membership gate only shows a household we
+/// hold a member row for, so "this household has no members" is false of
+/// every household that can appear here. The hydrator makes the empty
+/// window reachable rather than theoretical, writing the household and its
+/// members as two separate writes.
+///
+/// Both waits are bounded by the hydrate: whatever the cache holds when
+/// the pass settles is what gets rendered, including a count of zero. A
+/// spinner nothing can resolve is worse than a number that looks odd.
 ///
 /// ## The current user's role (#270 D4)
 ///
@@ -126,10 +134,15 @@ class HouseholdDetailBloc
       onDone: () => add(const HouseholdDetailHydrationEnded()),
     );
 
-    unawaited(_resolveIdentity(repository, householdId));
+    _repository = repository;
+    _householdId = householdId;
+    unawaited(_resolveIdentity());
   }
 
   final BgeLogger _logger;
+
+  late final HouseholdRepository _repository;
+  late final String _householdId;
 
   late final StreamSubscription<List<Household>> _households;
   late final StreamSubscription<List<HouseholdMember>> _members;
@@ -157,23 +170,38 @@ class HouseholdDetailBloc
   bool _hydrationDone = false;
 
   /// The current user's id, once known. [_identityResolved] separates "not
-  /// yet asked" from "asked, and there is no answer".
+  /// yet asked" from "asked at least once", and gates only the first paint
+  /// — a later re-ask must not put a rendered screen back on a spinner.
   String? _currentUserId;
   bool _identityResolved = false;
+  bool _identityInFlight = false;
 
   HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
 
   /// Resolves who the current user is, so their row can be found in the
-  /// roster. Swallows everything: a disposed repository throws a
-  /// `StateError` here during the teardown window, and the streams above
-  /// are what report that the screen is over.
-  Future<void> _resolveIdentity(
-    HouseholdRepository repository,
-    String householdId,
-  ) async {
+  /// roster.
+  ///
+  /// `getCurrentUserMember` reads the **local cache**, which is why this
+  /// cannot be a single shot at construction. On the deep-link and
+  /// restored-route paths this bloc is built for, the cache is cold when
+  /// the screen opens: there is no member row yet, the answer is null, and
+  /// latching that null would leave "Your role" missing for the life of
+  /// the screen even after the hydrate lands our own row. So it is asked
+  /// again when the roster arrives and we are still unidentified.
+  ///
+  /// Bounded three ways: only while [_currentUserId] is null, only on a
+  /// roster emission that could contain us, and never twice at once. In
+  /// practice that is one extra query on a cold start and none afterwards.
+  ///
+  /// Swallows everything: a disposed repository throws a `StateError` here
+  /// during the teardown window, and the streams are what report that the
+  /// screen is over.
+  Future<void> _resolveIdentity() async {
+    if (_identityInFlight) return;
+    _identityInFlight = true;
     String? userId;
     try {
-      userId = (await repository.getCurrentUserMember(householdId))?.userId;
+      userId = (await _repository.getCurrentUserMember(_householdId))?.userId;
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Could not resolve the current user for this household',
@@ -181,6 +209,7 @@ class HouseholdDetailBloc
         stackTrace: stackTrace,
       );
     }
+    _identityInFlight = false;
     if (isClosed) return;
     add(HouseholdDetailIdentityResolved(userId));
   }
@@ -203,6 +232,12 @@ class HouseholdDetailBloc
   ) {
     _membersFailed = false;
     _members0 = event.members;
+    // The roster just changed, and if we still do not know which row is
+    // ours it is now worth asking again — see [_resolveIdentity]. An empty
+    // roster cannot contain us, so it is not worth a query.
+    if (_currentUserId == null && event.members.isNotEmpty) {
+      unawaited(_resolveIdentity());
+    }
     _emitDerived(emit);
   }
 
@@ -211,7 +246,9 @@ class HouseholdDetailBloc
     Emitter<HouseholdDetailState> emit,
   ) {
     _identityResolved = true;
-    _currentUserId = event.userId;
+    // A later null is "still could not tell", not "we are nobody" — it
+    // must not erase an id an earlier pass established.
+    _currentUserId ??= event.userId;
     _emitDerived(emit);
   }
 
@@ -291,10 +328,26 @@ class HouseholdDetailBloc
 
     // The count is load-bearing content, so it waits for a real answer
     // rather than showing zero. Identity waits with it: the role is part
-    // of the same first paint, and it is one local query that always
-    // reports — hence no done-flag of its own.
+    // of the same first paint, and it is one local query — hence no
+    // done-flag of its own.
     final members = _members0;
     if (members == null) return emit(_waitingOn(_membersDone));
+
+    // An EMPTY roster under a visible household is a contradiction, not a
+    // fact: the membership gate only shows a household we hold a member
+    // row for, so a household on screen always has at least us in it. The
+    // hydrator makes the contradiction reachable — `cacheHousehold` and
+    // `cacheMembers` are separate writes, so between them the household
+    // has arrived and the roster is still `const []`, and rendering "No
+    // members" there states something false.
+    //
+    // Held only while a pass could still deliver it, the same bound the
+    // absent-household branch uses. An empty roster nothing is going to
+    // fill gets rendered rather than spun on.
+    if (members.isEmpty && _filling) {
+      return emit(const HouseholdDetailLoading());
+    }
+
     if (!_identityResolved) return emit(const HouseholdDetailLoading());
 
     emit(
