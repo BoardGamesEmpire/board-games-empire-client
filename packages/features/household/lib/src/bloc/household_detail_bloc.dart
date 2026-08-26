@@ -124,6 +124,7 @@ class HouseholdDetailBloc
           ),
         );
 
+    _hasHydrationSource = hydration != null;
     _hydration = hydration?.listen(
       (state) => add(HouseholdDetailHydrationUpdated(state)),
       onError: (Object error, StackTrace stackTrace) => _logger.warn(
@@ -153,6 +154,14 @@ class HouseholdDetailBloc
   Household? _household;
   bool _householdAnswered = false;
 
+  /// Whether this household has ever been in an emission.
+  ///
+  /// Separates the two ways it can be absent, which want different answers:
+  /// never seen is a cache that may still be filling, while seen-and-gone is
+  /// a real removal — tombstoned, or membership revoked — and waiting on the
+  /// hydrate to speak would be waiting for it to come back.
+  bool _householdEverSeen = false;
+
   /// Null until the roster has answered.
   List<HouseholdMember>? _members0;
 
@@ -169,12 +178,27 @@ class HouseholdDetailBloc
   bool _membersDone = false;
   bool _hydrationDone = false;
 
+  /// Whether a hydration stream was supplied at all, and whether it has
+  /// said anything yet.
+  ///
+  /// The two are not the same, and conflating them is a race: this bloc
+  /// subscribes to `watchHouseholds()` **before** the hydration stream, and
+  /// both deliver asynchronously. `HouseholdHydrationStatus.watch()` replays
+  /// its current value from `onListen`, so in practice it arrives first —
+  /// but if the cache answers "absent" before that replay is processed,
+  /// [_hydrationState] is still its `idle` default, `idle` reads as settled,
+  /// and the screen reports not-found on its way to the content. Waiting on
+  /// the first word costs a bool and does not rest on delivery order.
+  bool _hasHydrationSource = false;
+  bool _hydrationSeen = false;
+
   /// The current user's id, once known. [_identityResolved] separates "not
   /// yet asked" from "asked at least once", and gates only the first paint
   /// — a later re-ask must not put a rendered screen back on a spinner.
   String? _currentUserId;
   bool _identityResolved = false;
   bool _identityInFlight = false;
+  bool _identityRetryWanted = false;
 
   HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
 
@@ -197,7 +221,15 @@ class HouseholdDetailBloc
   /// during the teardown window, and the streams are what report that the
   /// screen is over.
   Future<void> _resolveIdentity() async {
-    if (_identityInFlight) return;
+    if (_identityInFlight) {
+      // Dropping this outright loses the answer. The open query was issued
+      // against an older cache than the roster that just arrived, so it can
+      // legitimately come back null while our row is already written — and
+      // the roster is stable once hydration lands, so nothing would ask
+      // again. Remember the request instead of discarding it.
+      _identityRetryWanted = true;
+      return;
+    }
     _identityInFlight = true;
     String? userId;
     try {
@@ -212,6 +244,12 @@ class HouseholdDetailBloc
     _identityInFlight = false;
     if (isClosed) return;
     add(HouseholdDetailIdentityResolved(userId));
+
+    // Only when this attempt came up empty: an answer ends the question,
+    // and each dropped request is honoured once, so this cannot spin.
+    final retry = _identityRetryWanted;
+    _identityRetryWanted = false;
+    if (userId == null && retry) unawaited(_resolveIdentity());
   }
 
   void _onHouseholdUpdated(
@@ -223,6 +261,7 @@ class HouseholdDetailBloc
     _householdFailed = false;
     _householdAnswered = true;
     _household = event.household;
+    if (event.household != null) _householdEverSeen = true;
     _emitDerived(emit);
   }
 
@@ -294,6 +333,7 @@ class HouseholdDetailBloc
     HouseholdDetailHydrationUpdated event,
     Emitter<HouseholdDetailState> emit,
   ) {
+    _hydrationSeen = true;
     _hydrationState = event.hydration;
     _emitDerived(emit);
   }
@@ -303,6 +343,16 @@ class HouseholdDetailBloc
   /// as still filling.
   bool get _filling =>
       _hydrationState == HouseholdHydrationState.running && !_hydrationDone;
+
+  /// True while the cache could still gain rows — either a pass is running,
+  /// or a hydration stream exists and has not yet said what it is doing.
+  ///
+  /// Bounded at both ends: an absent stream is settled immediately (a
+  /// container with no household client, #137), and a stream that closes
+  /// without ever speaking is settled by [_hydrationDone]. Neither can hold
+  /// the screen on a spinner.
+  bool get _mightStillFill =>
+      _filling || (_hasHydrationSource && !_hydrationSeen && !_hydrationDone);
 
   bool get _refreshFailed => _hydrationState == HouseholdHydrationState.failed;
 
@@ -322,7 +372,15 @@ class HouseholdDetailBloc
     final household = _household;
     if (household == null) {
       // Absent and still filling is unknown, not missing.
-      if (_filling) return emit(const HouseholdDetailLoading());
+      //
+      // Which "still filling" applies depends on whether this household was
+      // ever here. On a first read the status stream may not have spoken
+      // yet, and its `idle` default reads as settled — so wait for its
+      // first word. Once the household has been shown, the cache was warm
+      // and its disappearance is a removal; only a pass actually running
+      // justifies waiting on that.
+      final couldStillArrive = _householdEverSeen ? _filling : _mightStillFill;
+      if (couldStillArrive) return emit(const HouseholdDetailLoading());
       return emit(HouseholdDetailNotFound(refreshFailed: _refreshFailed));
     }
 
@@ -344,7 +402,7 @@ class HouseholdDetailBloc
     // Held only while a pass could still deliver it, the same bound the
     // absent-household branch uses. An empty roster nothing is going to
     // fill gets rendered rather than spun on.
-    if (members.isEmpty && _filling) {
+    if (members.isEmpty && _mightStillFill) {
       return emit(const HouseholdDetailLoading());
     }
 

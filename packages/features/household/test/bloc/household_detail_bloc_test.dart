@@ -383,6 +383,128 @@ void main() {
     });
   });
 
+  group('races the review found', () {
+    test('an absent household before the hydrate has said anything holds, '
+        'rather than reporting not-found', () async {
+      // `watchHouseholds()` is subscribed before the hydration stream, and
+      // both deliver asynchronously. If the cache answers "absent" before
+      // the status stream replays its current value, `_hydrationState` is
+      // still its `idle` default — which reads as settled — and the screen
+      // flashes not-found on its way to the content.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household('other')]);
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailLoading>());
+    });
+
+    test('and reports it once the hydrate does speak', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household('other')]);
+      await settle();
+      hydration.add(HouseholdHydrationState.refreshed);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(isA<HouseholdDetailNotFound>()),
+      );
+    });
+
+    test('a hydration stream that closes without ever speaking still '
+        'settles', () async {
+      // The wait above must not become the spinner it was added to avoid.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household('other')]);
+      await settle();
+      await hydration.close();
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailNotFound>());
+    });
+
+    test('a roster arriving while the identity query is still open is not '
+        'lost to the in-flight guard', () async {
+      // The retry added for the cold-cache path is dropped when the
+      // constructor's query has not returned yet — and since the roster is
+      // stable once hydration lands, nothing asks again. The role goes
+      // missing for the life of the screen, which is the exact symptom the
+      // retry exists to prevent.
+      var calls = 0;
+      final firstQuery = Completer<void>();
+      HouseholdMember? cached;
+      when(() => repository.getCurrentUserMember(_id)).thenAnswer((_) async {
+        calls++;
+        if (calls == 1) {
+          // Ran against the cold cache, and still open when the roster
+          // lands.
+          await firstQuery.future;
+          return null;
+        }
+        return cached;
+      });
+
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add([_member('u-me', role: HouseholdRole.householdOwner)]);
+      await settle();
+
+      // The hydrate has now written our row; the first query returns the
+      // null it read before that.
+      cached = _member('u-me', role: HouseholdRole.householdOwner);
+      firstQuery.complete();
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          isA<HouseholdDetailReady>().having(
+            (s) => s.role,
+            'role',
+            HouseholdRole.householdOwner,
+          ),
+        ),
+      );
+    });
+
+    test(
+      'a dropped retry does not re-ask forever once we are identified',
+      () async {
+        var calls = 0;
+        final firstQuery = Completer<void>();
+        when(() => repository.getCurrentUserMember(_id)).thenAnswer((_) async {
+          calls++;
+          if (calls == 1) {
+            await firstQuery.future;
+            return null;
+          }
+          return _member('u-me');
+        });
+
+        final bloc = build();
+        addTearDown(bloc.close);
+
+        households.add([_household(_id)]);
+        members.add([_member('u-me')]);
+        await settle();
+        firstQuery.complete();
+        await settle();
+        members.add([_member('u-me'), _member('u-2')]);
+        await settle();
+
+        // The dropped retry is honoured once; the later emission asks
+        // nothing because we are identified by then.
+        expect(calls, 2);
+      },
+    );
+  });
+
   group('the roster gate', () {
     test('an empty roster under a visible household holds, rather than '
         'claiming nobody is in it', () async {
