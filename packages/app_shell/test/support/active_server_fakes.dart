@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
@@ -185,10 +186,16 @@ ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
+  HouseholdHydrationStatus? householdHydrationStatus,
   UserSessionScope? userSessionScope,
 }) {
   final container = DependencyContainerImpl()
     ..registerSingleton<AuthRepository>(repo);
+  if (householdHydrationStatus != null) {
+    container.registerSingleton<HouseholdHydrationStatus>(
+      householdHydrationStatus,
+    );
+  }
   if (householdRepository != null) {
     container.registerSingleton<HouseholdRepository>(householdRepository);
   }

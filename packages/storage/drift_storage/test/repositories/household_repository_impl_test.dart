@@ -20,8 +20,9 @@ Future<void> _seedHousehold(
   required String id,
   String name = 'Test Household',
   DateTime? deletedAt,
+  DateTime? createdAt,
 }) async {
-  final now = DateTime.now().toUtc();
+  final now = createdAt ?? DateTime.now().toUtc();
   await db
       .into(db.householdsTable)
       .insert(
@@ -115,6 +116,56 @@ void main() {
           expect(await repo.getHouseholds(), isEmpty);
         },
       );
+
+      // #269 D3. There was no ORDER BY here at all, so the list rendered in
+      // SQLite's natural order and could reshuffle on any upsert — a
+      // list-screen bug independent of which order wins.
+      test('orders by name, case-insensitively', () async {
+        await _seedHousehold(db, id: 'h-1', name: 'banana');
+        await _seedHousehold(db, id: 'h-2', name: 'Apple');
+        await _seedHousehold(db, id: 'h-3', name: 'Cherry');
+        for (final (i, h) in ['h-1', 'h-2', 'h-3'].indexed) {
+          await _seedMember(db, id: 'm-$i', userId: _kUserId, householdId: h);
+        }
+
+        final names = (await repo.getHouseholds()).map((h) => h.name).toList();
+        // Not ['Apple', 'Cherry', 'banana'] — that is what a raw byte-wise
+        // sort gives, and it reads as broken to anyone scanning the list.
+        expect(names, equals(['Apple', 'banana', 'Cherry']));
+      });
+
+      test('breaks a name tie on createdAt, oldest first', () async {
+        // The tiebreak is deliberately NOT the id: a cuid2 sorts by an
+        // opaque token nobody can predict, which is arbitrary order wearing
+        // determinism (#269 D3).
+        await _seedHousehold(
+          db,
+          id: 'h-newer',
+          name: 'Game Night',
+          createdAt: DateTime.utc(2026, 3),
+        );
+        await _seedHousehold(
+          db,
+          id: 'h-older',
+          name: 'Game Night',
+          createdAt: DateTime.utc(2026),
+        );
+        await _seedMember(
+          db,
+          id: 'm-1',
+          userId: _kUserId,
+          householdId: 'h-newer',
+        );
+        await _seedMember(
+          db,
+          id: 'm-2',
+          userId: _kUserId,
+          householdId: 'h-older',
+        );
+
+        final ids = (await repo.getHouseholds()).map((h) => h.id).toList();
+        expect(ids, equals(['h-older', 'h-newer']));
+      });
     });
 
     group('getHousehold()', () {
@@ -679,6 +730,50 @@ void main() {
         await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
 
         await expectLater(repo.watchHouseholds().take(1), emits(isEmpty));
+      });
+
+      // The list screen's reactivity claim, end to end (#269): "create
+      // writes locally, so the list updates with no refetch and no manual
+      // invalidation". Every other watch test seeds rows through the table
+      // directly, which exercises drift's stream but not the path the
+      // create FAB actually takes — the transactional write plus enqueue.
+      test('a local create reaches an open watch, with no refetch', () async {
+        final arrived = expectLater(
+          repo.watchHouseholds(),
+          emitsThrough(
+            predicate<List<Household>>(
+              (households) => households.any(
+                (h) => h.name == 'Sunday Crew' && h.isLocalOnly,
+              ),
+              'contains the locally-created household, flagged local-only',
+            ),
+          ),
+        );
+
+        await repo.create(name: 'Sunday Crew');
+
+        await arrived;
+      });
+
+      // Same order as getHouseholds() — they share one selectable, and a
+      // screen that reads the stream must not disagree with a screen that
+      // reads the future (#269 D3).
+      test('emits in the same order getHouseholds() returns', () async {
+        await _seedHousehold(db, id: 'h-1', name: 'zulu');
+        await _seedHousehold(db, id: 'h-2', name: 'Alpha');
+        await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
+        await _seedMember(db, id: 'm-2', userId: _kUserId, householdId: 'h-2');
+
+        await expectLater(
+          repo.watchHouseholds().take(1),
+          emits(
+            isA<List<Household>>().having(
+              (l) => l.map((h) => h.name).toList(),
+              'names',
+              equals(['Alpha', 'zulu']),
+            ),
+          ),
+        );
       });
     });
 

@@ -1,5 +1,33 @@
 {
   "@@locale": "en",
+  "householdListTitle": "Households",
+  "@householdListTitle": {
+    "description": "Title of the screen listing the households the user belongs to, and the label of the drawer entry that opens it."
+  },
+  "householdListLoading": "Loading your households\u2026",
+  "@householdListLoading": {
+    "description": "Announced and shown while the household list is still being fetched for the first time."
+  },
+  "householdListEmptyTitle": "No households yet",
+  "@householdListEmptyTitle": {
+    "description": "Heading of the empty state shown when the user belongs to no households."
+  },
+  "householdListEmptyBody": "A household is the group you share your games with. Create one to get started.",
+  "@householdListEmptyBody": {
+    "description": "Body of the empty state shown when the user belongs to no households."
+  },
+  "householdListNotSynced": "Not yet synced",
+  "@householdListNotSynced": {
+    "description": "Badge on a household row that exists only on this device, or has local changes the server has not confirmed."
+  },
+  "householdListRefreshFailed": "This list may be out of date \u2014 we couldn't refresh it.",
+  "@householdListRefreshFailed": {
+    "description": "Banner shown when the household list could not be refreshed from the server, for ANY reason: the server was unreachable, or it answered with an error. The cached households are still shown. Deliberately does not name a cause \u2014 the screen does not know which one it was."
+  },
+  "householdListError": "We couldn't open your households.",
+  "@householdListError": {
+    "description": "Shown when the local household list could not be read at all, so no households can be displayed."
+  },
   "createHouseholdTitle": "Create household",
   "@createHouseholdTitle": {
     "description": "Title of the create-household screen."

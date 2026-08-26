@@ -65,7 +65,13 @@ import 'package:models/domain.dart';
 /// members-only rule applies — matching the auth contract the
 /// backend's `HouseholdsService` enforces today.
 abstract class HouseholdRepository {
-  /// Returns all households the current user is a member of.
+  /// Returns all households the current user is a member of, ordered by
+  /// [Household.name] ascending (case-insensitively), oldest
+  /// [Household.createdAt] first on a tie (#269 D3).
+  ///
+  /// The order is part of the contract, not an implementation detail: the
+  /// list screen renders it directly, and [watchHouseholds] must agree
+  /// with it.
   ///
   /// Tombstoned households are excluded.
   Future<List<Household>> getHouseholds();
@@ -168,9 +174,9 @@ abstract class HouseholdRepository {
   /// [cacheMember].
   Future<void> cacheMembers(List<HouseholdMember> members);
 
-  /// Watches all households the current user is a member of.
-  /// Tombstoned households are excluded. Emits a fresh list on every
-  /// membership change or household upsert.
+  /// Watches all households the current user is a member of, in
+  /// [getHouseholds]'s order. Tombstoned households are excluded. Emits a
+  /// fresh list on every membership change or household upsert.
   Stream<List<Household>> watchHouseholds();
 
   /// Watches the member list for [householdId].
