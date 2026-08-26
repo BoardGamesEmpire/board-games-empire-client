@@ -38,6 +38,7 @@ import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
 import 'feedback_review_screen.dart';
 import 'router_back_interceptor.dart';
+import 'session_rehydrate_trigger.dart';
 
 /// The shared application widget.
 ///
@@ -929,6 +930,14 @@ class _BgeAppState extends State<BgeApp> {
       builder: (context, child) {
         final content = child ?? const SizedBox.shrink();
         final reporter = widget.feedbackReporter;
+        // #302: mounted here, above the Navigator, so it survives every
+        // route change. The screens that read a re-hydrated cache (the
+        // household list and detail) are top-level routes outside the auth
+        // ShellRoute, so a trigger inside that shell would be unmounted on
+        // exactly the screen showing "couldn't refresh". The widget tracks
+        // the active server itself; wrapping this subtree in a
+        // StreamBuilder instead would remount the whole app whenever a
+        // server came or went.
         Widget body = reporter == null
             ? content
             : ValueListenableBuilder<FeedbackReport?>(
@@ -1042,6 +1051,15 @@ class _BgeAppState extends State<BgeApp> {
             child: body,
           );
         }
+        // Unconditional, so the tree shape never changes: the widget
+        // handles a null scope and a null connectivity service itself, and
+        // an `if` here would remount everything below it the moment either
+        // arrived.
+        body = SessionRehydrateTrigger(
+          scopeSource: () => widget.bootstrapCubit.activeServerScope,
+          connectivity: _rootConnectivity(),
+          child: body,
+        );
         return MediaQuery.withClampedTextScaling(
           maxScaleFactor: BgeTextScale.maxScaleFactor,
           child: body,

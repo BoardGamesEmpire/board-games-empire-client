@@ -4,6 +4,7 @@ import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -274,5 +275,232 @@ void main() {
       const HouseholdHydrateInstaller().install(bare, _config(), 'user-1'),
       completes,
     );
+  });
+
+  group('re-hydrate registration (#302 D2, D4)', () {
+    /// A container carrying the session rehydrator the leading installer
+    /// registers in production.
+    Future<SessionRehydrator> withRehydrator() async {
+      await const SessionRehydratorInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      return container.get<SessionRehydrator>();
+    }
+
+    test('a failed pass is re-run by a later trigger', () async {
+      final rehydrator = await withRehydrator();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      // The server comes back.
+      reset(remote);
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => _emptyPage());
+
+      await rehydrator.rehydrateStale();
+
+      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+    });
+
+    test(
+      'the re-run drives the same status the screen is already watching',
+      () async {
+        final rehydrator = await withRehydrator();
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenThrow(
+          const HouseholdRemoteTransientException('offline', statusCode: 503),
+        );
+
+        await const HouseholdHydrateInstaller().install(
+          container,
+          _config(),
+          'user-1',
+        );
+        await Future<void>.delayed(Duration.zero);
+        final status = container.get<HouseholdHydrationStatus>();
+        expect(status.state, equals(HouseholdHydrationState.failed));
+
+        final seen = <HouseholdHydrationState>[];
+        final subscription = status.watch().listen(seen.add);
+        addTearDown(subscription.cancel);
+
+        reset(remote);
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async => _emptyPage());
+        await rehydrator.rehydrateStale();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(status.state, equals(HouseholdHydrationState.refreshed));
+        // The banner clears because the same holder moved, with no second
+        // status and nothing for the screen to re-subscribe to (#270 D5).
+        expect(
+          seen,
+          containsAllInOrder(<HouseholdHydrationState>[
+            HouseholdHydrationState.failed,
+            HouseholdHydrationState.running,
+            HouseholdHydrationState.refreshed,
+          ]),
+        );
+      },
+    );
+
+    test(
+      'a pass that succeeded is not stale, so a trigger leaves it alone',
+      () async {
+        final rehydrator = await withRehydrator();
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async => _emptyPage());
+
+        await const HouseholdHydrateInstaller().install(
+          container,
+          _config(),
+          'user-1',
+        );
+        await Future<void>.delayed(Duration.zero);
+        reset(remote);
+
+        await rehydrator.rehydrateStale();
+
+        verifyNever(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        );
+      },
+    );
+
+    test('a trigger arriving during the install-time pass adds no second '
+        'drain', () async {
+      // Pinned here at the seam that actually decides it: `running` is not
+      // stale (#302 D4), so the entry is skipped and the trigger is
+      // dropped rather than joined. The hydrator's own single-flight
+      // (#302 D3) is the backstop for callers that do reach it, and is
+      // pinned in the household package's hydrator tests.
+      final rehydrator = await withRehydrator();
+      final blocked = Completer<PaginatedResult<HouseholdWithMembers>>();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) => blocked.future);
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      // The install-time pass is unawaited and still in flight — the exact
+      // overlap #300 could not settle on its own.
+      final triggered = rehydrator.rehydrateStale();
+      blocked.complete(_emptyPage());
+      await triggered;
+      await Future<void>.delayed(Duration.zero);
+
+      verify(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).called(1);
+    });
+
+    test(
+      'a composition with no rehydrator still installs and drains',
+      () async {
+        // Nothing registers the seam on web (#137), and shell tests compose
+        // containers without it. A throw here would sign the user out.
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async => _emptyPage());
+
+        await expectLater(
+          const HouseholdHydrateInstaller().install(
+            container,
+            _config(),
+            'user-1',
+          ),
+          completes,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+      },
+    );
+
+    test('registers nothing where there is no household client', () async {
+      final bare = DependencyContainerImpl()
+        ..registerSingleton<HouseholdRepository>(repo);
+      addTearDown(bare.dispose);
+      await const SessionRehydratorInstaller().install(
+        bare,
+        _config(),
+        'user-1',
+      );
+
+      await const HouseholdHydrateInstaller().install(
+        bare,
+        _config(),
+        'user-1',
+      );
+      await bare.get<SessionRehydrator>().rehydrateStale();
+
+      verifyNever(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      );
+    });
+
+    test('the rehydrator installer runs before the hydrate that registers '
+        'with it', () {
+      final installers = buildNativeUserScopeInstallers();
+
+      final rehydrator = installers.indexWhere(
+        (i) => i is SessionRehydratorInstaller,
+      );
+      final hydrate = installers.indexWhere(
+        (i) => i is HouseholdHydrateInstaller,
+      );
+
+      expect(rehydrator, isNonNegative);
+      expect(hydrate, greaterThan(rehydrator));
+    });
   });
 }

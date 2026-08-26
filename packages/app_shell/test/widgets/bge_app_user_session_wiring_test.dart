@@ -4,7 +4,11 @@ import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -71,6 +75,30 @@ class _GatedUserSessionScope implements UserSessionScope {
     deactivateStarted = true;
     return deactivateGate.future;
   }
+}
+
+class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+Household _household(String id) => Household(
+  id: id,
+  name: 'Sunday Crew',
+  createdAt: DateTime.utc(2024),
+  updatedAt: DateTime.utc(2024),
+);
+
+/// Counts the passes the shell's trigger asks for.
+class _SpyRehydrator implements SessionRehydrator {
+  int passes = 0;
+
+  @override
+  void register(
+    String key, {
+    required bool Function() isStale,
+    required Future<void> Function() run,
+  }) {}
+
+  @override
+  Future<void> rehydrateStale() async => passes++;
 }
 
 void main() {
@@ -203,5 +231,111 @@ void main() {
     sessionScope.deactivateGate.complete();
     await tester.pumpAndSettle();
     expect(find.byType(AuthScreen), findsOneWidget);
+  });
+
+  group('the #302 re-hydrate trigger', () {
+    testWidgets('an app resume during an active session asks the session '
+        'rehydrator for a pass', (tester) async {
+      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final rehydrator = _SpyRehydrator();
+      final cubit = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(
+          activeServerScope: FakeActiveServerScope(
+            buildActiveServer(repo, sessionRehydrator: rehydrator),
+          ),
+        ),
+        hydratedStorageInitializer: noopHydrated,
+      );
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+      await cubit.initialize();
+      await tester.pumpAndSettle();
+      expect(rehydrator.passes, isZero, reason: 'mounting is not a trigger');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(rehydrator.passes, equals(1));
+    });
+
+    testWidgets('keeps triggering after the app navigates to a route outside '
+        'the auth shell', (tester) async {
+      // The household list and detail are top-level routes, NOT children of
+      // the auth ShellRoute — and the list is the screen showing "couldn't
+      // refresh". A trigger mounted inside that shell would be unmounted
+      // here, so the one screen that needs the re-hydrate would never get
+      // one. It lives above the router for this reason.
+      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final rehydrator = _SpyRehydrator();
+      final households = _MockHouseholdRepository();
+      when(
+        households.watchHouseholds,
+      ).thenAnswer((_) => Stream<List<Household>>.value([_household('h-1')]));
+      final cubit = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(
+          activeServerScope: FakeActiveServerScope(
+            buildActiveServer(
+              repo,
+              householdRepository: households,
+              sessionRehydrator: rehydrator,
+            ),
+          ),
+        ),
+        hydratedStorageInitializer: noopHydrated,
+      );
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+      await cubit.initialize();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.pumpAndSettle();
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
+
+      // The invariant, stated structurally rather than by walking to a
+      // route that drops the shell: the trigger is an ANCESTOR of the
+      // router's Navigator. Mounted inside the auth ShellRoute it would be
+      // a descendant, and every `go` to a top-level route — the detail
+      // screen's own back affordance, a restored route, a deep link —
+      // would unmount it for the rest of the session.
+      expect(
+        find.ancestor(
+          of: find.byType(Navigator).last,
+          matching: find.byType(SessionRehydrateTrigger),
+        ),
+        findsOneWidget,
+      );
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(rehydrator.passes, equals(1));
+    });
+
+    testWidgets('a composition with no rehydrator registered signs in '
+        'normally', (tester) async {
+      // Web registers no session scope (#137), and a resume there must not
+      // fault the shell.
+      final repo = FakeAuthRepository(initialSession: sampleSession());
+      final cubit = buildCubit(repo);
+      addTearDown(cubit.close);
+
+      await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+      await cubit.initialize();
+      await tester.pumpAndSettle();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

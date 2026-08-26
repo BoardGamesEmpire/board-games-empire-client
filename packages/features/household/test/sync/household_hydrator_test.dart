@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -423,5 +425,118 @@ void main() {
         () => remote.fetchHouseholds(page: 2, limit: any(named: 'limit')),
       );
     });
+  });
+
+  group('HouseholdHydrator — one pass at a time (#302 D3)', () {
+    test('a second call while a pass is in flight joins it rather than '
+        'starting a second drain', () async {
+      final gate = Completer<PaginatedResult<HouseholdWithMembers>>();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) => gate.future);
+
+      final hydrator = build();
+      final first = hydrator.hydrate();
+      final second = hydrator.hydrate();
+
+      gate.complete(
+        _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
+      );
+
+      expect(await first, equals(HydrateOutcome.complete));
+      expect(await second, equals(HydrateOutcome.complete));
+      verify(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).called(1);
+    });
+
+    test(
+      'the joined caller is handed the same outcome, failure included',
+      () async {
+        final gate = Completer<PaginatedResult<HouseholdWithMembers>>();
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) => gate.future);
+
+        final hydrator = build();
+        final first = hydrator.hydrate();
+        final second = hydrator.hydrate();
+
+        gate.completeError(StateError('server unreachable'));
+
+        expect(await first, equals(HydrateOutcome.failed));
+        expect(await second, equals(HydrateOutcome.failed));
+      },
+    );
+
+    test(
+      'a call after the previous pass settled starts a fresh drain',
+      () async {
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer(
+          (_) async => _page(
+            ids: ['h-1'],
+            page: 1,
+            limit: 100,
+            total: 1,
+            hasMore: false,
+          ),
+        );
+
+        final hydrator = build();
+        await hydrator.hydrate();
+        await hydrator.hydrate();
+
+        // Single-flight is a concurrency guard, not a cache: the whole point
+        // of #302 is that a later trigger asks the server again.
+        verify(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).called(2);
+      },
+    );
+
+    test(
+      'a pass that failed does not pin the failure for later callers',
+      () async {
+        var call = 0;
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) async {
+          call++;
+          if (call == 1) throw StateError('server unreachable');
+          return _page(
+            ids: ['h-1'],
+            page: 1,
+            limit: 100,
+            total: 1,
+            hasMore: false,
+          );
+        });
+
+        final hydrator = build();
+
+        expect(await hydrator.hydrate(), equals(HydrateOutcome.failed));
+        expect(await hydrator.hydrate(), equals(HydrateOutcome.complete));
+      },
+    );
   });
 }
