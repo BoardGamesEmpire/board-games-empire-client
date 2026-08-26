@@ -40,6 +40,31 @@ void main() {
       );
     });
 
+    test('the template defines the detail screen key surface', () {
+      // #270. The role labels are listed one by one rather than as a
+      // count: a role the switch can reach with no string is a compile
+      // error only because the switch is exhaustive, and these keys are
+      // the other half of that pairing.
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'householdDetailMembers',
+          'householdDetailYourRole',
+          'householdDetailRoleOwner',
+          'householdDetailRoleAdmin',
+          'householdDetailRoleMember',
+          'householdDetailRoleGuest',
+          'householdDetailRoleUnknown',
+          'householdDetailNotFoundTitle',
+          'householdDetailNotFoundBody',
+          'householdDetailNotFoundAction',
+          'householdDetailRefreshFailed',
+          'householdDetailError',
+          'householdDetailLoading',
+        ]),
+      );
+    });
+
     test('every template key carries a translator description', () {
       expect(report.keysMissingDescription, isEmpty, reason: report.describe());
     });

@@ -33,23 +33,30 @@ import '../sync/household_hydration_status.dart';
 /// an emptiness we could not verify. There is no retry here yet; the drain
 /// retries at the next session activate, and a manual one is #300.
 ///
-/// ## Rows do not navigate (#269 D5)
+/// ## Rows navigate when there is somewhere to go (#270)
 ///
-/// There is no household detail route yet, so a row is content, not a
-/// control — a tap target that leads nowhere is worse than none. #301 adds
-/// the detail screen and turns these into controls.
+/// #269 **D5** shipped rows as content rather than controls, because no
+/// household detail route existed and a tap target that leads nowhere is
+/// worse than none. #270 built that route, so a row with [onOpen] is a
+/// control: tappable, keyboard-activatable, and a focus stop.
 ///
-/// Each row is one merged semantics node, so a screen reader reads
-/// "Sunday Crew, Not yet synced" rather than three fragments, and the
-/// count comes from [BgePage.slivers]'s `semanticChildCount` ("item 3 of
-/// 9"). Keyboard operability here is the scroll view's and the two real
-/// controls' (create, back) — deliberately not focus stops on inert rows,
-/// which would be traversal noise announcing nothing actionable.
+/// The inert row is still what a caller gets without [onOpen], and that is
+/// not dead code — it is the same judgement D5 made, now expressed as a
+/// condition instead of an era. A composition that cannot reach the detail
+/// screen should not offer a tap that does nothing.
+///
+/// Each row is one merged semantics node either way, so a screen reader
+/// reads "Sunday Crew, Not yet synced" rather than three fragments, and
+/// the count comes from [BgePage.slivers]'s `semanticChildCount` ("item 3
+/// of 9"). What changes with [onOpen] is that the node becomes a button —
+/// announced as one, and reachable by keyboard traversal, which inert rows
+/// deliberately were not.
 class HouseholdListScreen extends StatelessWidget {
   const HouseholdListScreen({
     required this.repository,
     this.hydration,
     this.onCreate,
+    this.onOpen,
     super.key,
   });
 
@@ -92,20 +99,30 @@ class HouseholdListScreen extends StatelessWidget {
   /// feature package does not know the route table.
   final void Function(BuildContext context)? onCreate;
 
+  /// Opens one household's detail screen (#270), or null where there is no
+  /// detail route to open — in which case rows stay inert content rather
+  /// than becoming controls that do nothing.
+  ///
+  /// Takes the id rather than the [Household]: the destination re-reads it
+  /// from the cache, so handing over the whole row would be offering a
+  /// snapshot the receiver must not trust.
+  final void Function(BuildContext context, String householdId)? onOpen;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<HouseholdListBloc>(
       create: (_) =>
           HouseholdListBloc(repository: repository, hydration: hydration),
-      child: _HouseholdListView(onCreate: onCreate),
+      child: _HouseholdListView(onCreate: onCreate, onOpen: onOpen),
     );
   }
 }
 
 class _HouseholdListView extends StatelessWidget {
-  const _HouseholdListView({this.onCreate});
+  const _HouseholdListView({this.onCreate, this.onOpen});
 
   final void Function(BuildContext context)? onCreate;
+  final void Function(BuildContext context, String householdId)? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -174,7 +191,7 @@ class _HouseholdListView extends StatelessWidget {
               HouseholdListReady(:final households) => SliverList.builder(
                 itemCount: households.length,
                 itemBuilder: (context, index) =>
-                    _HouseholdRow(household: households[index]),
+                    _HouseholdRow(household: households[index], onOpen: onOpen),
               ),
             },
           ],
@@ -184,11 +201,13 @@ class _HouseholdListView extends StatelessWidget {
   }
 }
 
-/// One household. Content, not a control — see [HouseholdListScreen].
+/// One household: a control when it can open something, content when it
+/// cannot — see [HouseholdListScreen].
 class _HouseholdRow extends StatelessWidget {
-  const _HouseholdRow({required this.household});
+  const _HouseholdRow({required this.household, this.onOpen});
 
   final Household household;
+  final void Function(BuildContext context, String householdId)? onOpen;
 
   /// Local work the server has not acknowledged: created offline
   /// ([Household.isLocalOnly]) or edited since ([Household.isDirty]).
@@ -204,11 +223,27 @@ class _HouseholdRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final description = household.description;
     final hasDescription = description != null && description.isNotEmpty;
+    final open = onOpen;
 
-    return Semantics(
+    // MergeSemantics rather than a Semantics container, and it is the tap
+    // target that forces the change. A tappable ListTile builds an InkWell,
+    // and that InkWell publishes its OWN semantics node — so the node
+    // carrying the tap action stopped being the node carrying the name and
+    // the badge, and a screen reader read an unlabelled button followed by
+    // loose text. Merging collapses the pair back into the single node the
+    // row has always been.
+    //
+    // Nothing here declares `button`: the tile is a control exactly when it
+    // has an `onTap`, and letting the InkWell's own semantics say so keeps
+    // one source of truth instead of two that can disagree.
+    return MergeSemantics(
       key: HouseholdListScreen.rowKey(household.id),
-      container: true,
       child: ListTile(
+        // The tap target, the focus stop and the keyboard activation all
+        // come from this one callback — ListTile builds an InkWell when it
+        // has an onTap and nothing when it does not, which is exactly the
+        // inert row #269 D5 wanted.
+        onTap: open == null ? null : () => open(context, household.id),
         title: Text(household.name),
         // The badge sits UNDER the name, not in `ListTile.trailing`.
         //
