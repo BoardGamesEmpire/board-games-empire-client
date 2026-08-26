@@ -28,7 +28,7 @@ Household _household(
 const _emptyTitleCopy = 'No households yet';
 const _notSyncedCopy = 'Not yet synced';
 const _refreshFailedCopy =
-    "This list may be out of date — we couldn't reach the server.";
+    "This list may be out of date — we couldn't refresh it.";
 const _errorCopy = "We couldn't open your households.";
 
 /// Pins the #269 list screen against a mocked repository and a hand-driven

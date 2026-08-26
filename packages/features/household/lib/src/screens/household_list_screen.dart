@@ -145,6 +145,15 @@ class _HouseholdListView extends StatelessWidget {
                     // Warning, not error: the rows below are real, they
                     // may just be old. Error tone here would read as "this
                     // list is broken".
+                    //
+                    // The copy says the refresh failed, NOT that the server
+                    // was unreachable. `HydrateOutcome.failed` collapses
+                    // every failure the drain can hit — an unreachable
+                    // host, a 4xx, an unparseable body — and the first
+                    // real one in the wild was a reachable server
+                    // answering 400. Naming a cause the screen cannot know
+                    // sends people to check their network while the actual
+                    // fault is in the response.
                     tone: BgeBannerTone.warning,
                     message: l10n.householdListRefreshFailed,
                     // Furniture for as long as the refresh stays failed,
