@@ -653,6 +653,23 @@ class _BgeAppState extends State<BgeApp> {
     return CreateHouseholdScreen(
       repository: container.get<HouseholdRepository>(),
       remote: container.get<HouseholdRemoteDataSource>(),
+      // #271: the new household's own screen takes the place of the spent
+      // form, so back can never land on it again (#162).
+      //
+      // `pushReplacement`, not `replace` (#271 D1): both drop the top-most
+      // page, but `replace` reuses its page key and runs no animation —
+      // that is for swapping a route for a variant of itself, not for
+      // substituting an unrelated screen.
+      //
+      // On the drawer path (list → FAB → create) the list route is still
+      // beneath, so back pops onto it. On direct entry the stack is one deep
+      // and go_router degrades this to a plain `go`, making the detail screen
+      // the base location; its own back affordance
+      // (`ctx.go(AppRoutes.household)`, above) is what reaches the list
+      // there. A system back from that state leaves the app, as it already
+      // does for a cold-entered detail route (#271 D3).
+      onCreated: (ctx, householdId) =>
+          ctx.pushReplacement(AppRoutes.householdDetailOf(householdId)),
     );
   }
 

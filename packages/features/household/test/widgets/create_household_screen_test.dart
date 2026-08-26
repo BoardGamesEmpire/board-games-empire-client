@@ -33,8 +33,14 @@ const _errorCopy =
 
 /// Pins the #40 create-household screen end to end over a mocked repository
 /// and remote: the confirmed / still-queued outcomes surface their distinct
-/// localized messages and pop with the right id, a local failure surfaces the
-/// localized error and stays put, and the in-flight state disables submit.
+/// localized messages and report the right id, a local failure surfaces the
+/// localized error and reports nothing, and the in-flight state disables
+/// submit.
+///
+/// Where the created household is *shown* is not this seam's business (#271
+/// D2) — the screen takes an `onCreated` callback and the shell turns it into
+/// a route change. `bge_app_household_create_navigation_test.dart` pins that
+/// half, because only a real router has a back stack to assert against.
 ///
 /// Finders are deliberately scoped by widget (#132): `createHouseholdTitle`
 /// and `createHouseholdSubmit` are the same English string, so a bare
@@ -73,22 +79,29 @@ void main() {
     ).thenAnswer((_) async => _household(id: 'hh_server', localOnly: false));
   });
 
-  /// Hosts the screen behind a pushed route so the pop result is observable.
-  Widget harness({required void Function(Object?) onPopped}) => MaterialApp(
+  /// Hosts the screen behind a pushed route — the shape of the drawer path,
+  /// where a list route sits beneath the form.
+  ///
+  /// What the test observes is the id handed to [onCreated] and the fact that
+  /// the screen does **not** navigate itself (#271 D2): the route change is
+  /// the shell's, so at this seam a success is a callback and nothing else.
+  Widget harness({required void Function(String) onCreated}) => MaterialApp(
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: Builder(
       builder: (context) => Scaffold(
         body: TextButton(
-          onPressed: () async {
-            final result = await Navigator.of(context).push<Object?>(
+          onPressed: () => unawaited(
+            Navigator.of(context).push<void>(
               MaterialPageRoute(
-                builder: (_) =>
-                    CreateHouseholdScreen(repository: repo, remote: remote),
+                builder: (_) => CreateHouseholdScreen(
+                  repository: repo,
+                  remote: remote,
+                  onCreated: (_, householdId) => onCreated(householdId),
+                ),
               ),
-            );
-            onPopped(result);
-          },
+            ),
+          ),
           child: const Text('open'),
         ),
       ),
@@ -141,8 +154,8 @@ void main() {
   /// "announce on success/failure"). The two outcomes use different surfaces
   /// on purpose (#191):
   ///
-  /// Success pops the screen, so its confirmation has to outlive the route.
-  /// That is a [SnackBar], which Flutter wraps in a
+  /// Success replaces the route (#271), so its confirmation has to outlive
+  /// the screen. That is a [SnackBar], which Flutter wraps in a
   /// `Semantics(container: true, liveRegion: true)` — verified in
   /// `snack_bar.dart`, and the reason nothing here adds a live-region wrapper
   /// of its own. Nesting two would make screen readers stutter.
@@ -158,7 +171,7 @@ void main() {
 
   group('CreateHouseholdScreen', () {
     testWidgets('renders the localized title in the app bar', (tester) async {
-      await tester.pumpWidget(harness(onPopped: (_) {}));
+      await tester.pumpWidget(harness(onCreated: (_) {}));
       await openScreen(tester);
 
       expect(
@@ -174,17 +187,17 @@ void main() {
       );
     });
 
-    testWidgets('a server-confirmed create shows the synced message and pops '
-        'with the canonical id', (tester) async {
-      Object? popped;
-      await tester.pumpWidget(harness(onPopped: (r) => popped = r));
+    testWidgets('a server-confirmed create shows the synced message and hands '
+        'the canonical id to onCreated', (tester) async {
+      String? created;
+      await tester.pumpWidget(harness(onCreated: (id) => created = id));
       await openScreen(tester);
 
       await fillAndSubmit(tester);
       await tester.pumpAndSettle();
 
       expect(inSnackBar(_syncedCopy), findsOneWidget);
-      expect(popped, 'hh_server');
+      expect(created, 'hh_server');
       verify(
         () => repo.reconcileCreatedHousehold(
           any(),
@@ -194,8 +207,8 @@ void main() {
       ).called(1);
     });
 
-    testWidgets('a remote failure shows the queued message and pops with the '
-        'local id (the household still exists)', (tester) async {
+    testWidgets('a remote failure shows the queued message and hands the local '
+        'id to onCreated (the household still exists)', (tester) async {
       when(
         () => remote.createHousehold(
           name: any(named: 'name'),
@@ -203,8 +216,8 @@ void main() {
         ),
       ).thenThrow(const HouseholdRemoteTransientException('offline'));
 
-      Object? popped;
-      await tester.pumpWidget(harness(onPopped: (r) => popped = r));
+      String? created;
+      await tester.pumpWidget(harness(onCreated: (id) => created = id));
       await openScreen(tester);
 
       await fillAndSubmit(tester);
@@ -212,7 +225,9 @@ void main() {
 
       expect(inSnackBar(_queuedCopy), findsOneWidget);
       expect(inSnackBar(_syncedCopy), findsNothing);
-      expect(popped, 'hh_local');
+      // The optimistic local id, which is what the shell will put on the
+      // route. A reconcile that later remaps it is #306, not this seam.
+      expect(created, 'hh_local');
       verifyNever(
         () => repo.reconcileCreatedHousehold(
           any(),
@@ -222,8 +237,8 @@ void main() {
       );
     });
 
-    testWidgets('a local failure surfaces the localized error and does not '
-        'pop', (tester) async {
+    testWidgets('a local failure surfaces the localized error and never '
+        'reports a creation', (tester) async {
       when(
         () => repo.create(
           name: any(named: 'name'),
@@ -231,8 +246,8 @@ void main() {
         ),
       ).thenThrow(StateError('db is down'));
 
-      var popped = false;
-      await tester.pumpWidget(harness(onPopped: (_) => popped = true));
+      var created = false;
+      await tester.pumpWidget(harness(onCreated: (_) => created = true));
       await openScreen(tester);
 
       await fillAndSubmit(tester);
@@ -241,7 +256,7 @@ void main() {
       expect(inErrorBanner(_errorCopy), findsOneWidget);
       // Not a SnackBar: the screen stays put, so the error belongs on it.
       expect(find.byType(SnackBar), findsNothing);
-      expect(popped, isFalse);
+      expect(created, isFalse);
       expect(find.byKey(CreateHouseholdForm.submitButtonKey), findsOneWidget);
     });
 
@@ -257,7 +272,7 @@ void main() {
         ),
       ).thenThrow(StateError('db is down'));
 
-      await tester.pumpWidget(harness(onPopped: (_) {}));
+      await tester.pumpWidget(harness(onCreated: (_) {}));
       await openScreen(tester);
 
       await fillAndSubmit(tester);
@@ -284,7 +299,7 @@ void main() {
         ),
       ).thenThrow(StateError('db is down'));
 
-      await tester.pumpWidget(harness(onPopped: (_) {}));
+      await tester.pumpWidget(harness(onCreated: (_) {}));
       await openScreen(tester);
       await fillAndSubmit(tester);
       await tester.pumpAndSettle();
@@ -322,7 +337,7 @@ void main() {
           // Above MaterialApp on purpose: `MediaQuery.fromView` is inserted by
           // `View`, higher still, so this one wins for the subtree below.
           data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-          child: harness(onPopped: (_) {}),
+          child: harness(onCreated: (_) {}),
         ),
       );
       await openScreen(tester);
@@ -371,8 +386,8 @@ void main() {
         return (household: _household(), syncQueueId: 'q1');
       });
 
-      Object? popped;
-      await tester.pumpWidget(harness(onPopped: (r) => popped = r));
+      String? created;
+      await tester.pumpWidget(harness(onCreated: (id) => created = id));
       await openScreen(tester);
 
       await fillAndSubmit(tester, name: 'Game Night HQ');
@@ -386,7 +401,7 @@ void main() {
       await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
       await tester.pumpAndSettle();
 
-      expect(popped, 'hh_server');
+      expect(created, 'hh_server');
       verify(
         () => repo.create(name: 'Game Night HQ', description: null),
       ).called(2);
@@ -402,7 +417,7 @@ void main() {
         ),
       ).thenAnswer((_) => gate.future);
 
-      await tester.pumpWidget(harness(onPopped: (_) {}));
+      await tester.pumpWidget(harness(onCreated: (_) {}));
       await openScreen(tester);
 
       await fillAndSubmit(tester);
@@ -433,7 +448,7 @@ void main() {
     });
 
     testWidgets('a blank name never reaches the repository', (tester) async {
-      await tester.pumpWidget(harness(onPopped: (_) {}));
+      await tester.pumpWidget(harness(onCreated: (_) {}));
       await openScreen(tester);
 
       await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
@@ -448,20 +463,27 @@ void main() {
       );
     });
 
-    testWidgets('direct entry (no route beneath) confirms but cannot pop — '
-        'current behavior, pinned for #162', (tester) async {
+    testWidgets('direct entry (no route beneath) reports the creation like any '
+        'other — the fix for #162', (tester) async {
       // Reachable on web, where /household/create is a real URL that can be
-      // typed or reloaded, and via deep links (#10). `maybePop` no-ops on a
-      // root route, so the user is told the household was created while
-      // still sitting on the submitted form with an enabled submit button.
+      // typed or reloaded, and via deep links (#10). This used to be the
+      // defect: `maybePop` no-ops on a root route, so the user was told the
+      // household was created while still sitting on the submitted form.
       //
-      // This expectation documents the defect rather than endorsing it:
-      // #162 inverts it. Do not "fix" the test — fix the screen.
+      // #271 D2 removes the situation instead of special-casing it. There is
+      // no pop and no "did we arrive here directly?" branch, so this entry is
+      // not a case the screen distinguishes at all — which is exactly what
+      // this test now asserts.
+      String? created;
       await tester.pumpWidget(
         MaterialApp(
           localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
           supportedLocales: HouseholdLocalizations.supportedLocales,
-          home: CreateHouseholdScreen(repository: repo, remote: remote),
+          home: CreateHouseholdScreen(
+            repository: repo,
+            remote: remote,
+            onCreated: (_, householdId) => created = householdId,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -471,11 +493,10 @@ void main() {
 
       expect(inSnackBar(_syncedCopy), findsOneWidget);
       expect(
-        find.byType(CreateHouseholdScreen),
-        findsOneWidget,
-        reason: 'no route beneath: the screen stays (#162)',
+        created,
+        'hh_server',
+        reason: 'no route beneath is not a special case any more (#162)',
       );
-      expect(find.byKey(CreateHouseholdForm.submitButtonKey), findsOneWidget);
     });
   });
 }
