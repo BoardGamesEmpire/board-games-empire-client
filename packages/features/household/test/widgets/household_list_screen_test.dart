@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -54,6 +55,7 @@ void main() {
 
   Widget harness({
     void Function(BuildContext context)? onCreate,
+    void Function(BuildContext context, String householdId)? onOpen,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -66,6 +68,7 @@ void main() {
       repository: repository,
       hydration: hydration.stream,
       onCreate: onCreate,
+      onOpen: onOpen,
     ),
   );
 
@@ -216,6 +219,84 @@ void main() {
         find.byKey(HouseholdListScreen.rowKey('h-1')),
       );
       expect(semantics.label, contains(_notSyncedCopy));
+    });
+
+    testWidgets('opens a household when its row is tapped', (tester) async {
+      // #269 D5 kept rows inert because no detail route existed. #270
+      // built it, so the row is a control.
+      final opened = <String>[];
+      await tester.pumpWidget(harness(onOpen: (_, id) => opened.add(id)));
+      households.add([_household('h-1'), _household('h-2')]);
+      await tester.pump();
+
+      await tester.tap(find.byKey(HouseholdListScreen.rowKey('h-2')));
+      await tester.pump();
+
+      expect(opened, equals(['h-2']));
+    });
+
+    testWidgets('announces a navigating row as a button', (tester) async {
+      await tester.pumpWidget(harness(onOpen: (_, _) {}));
+      households.add([_household('h-1', name: 'Sunday Crew')]);
+      await tester.pump();
+
+      final semantics = tester.getSemantics(
+        find.byKey(HouseholdListScreen.rowKey('h-1')),
+      );
+      expect(semantics, isSemantics(isButton: true));
+      // Still one merged node, not a control plus loose fragments.
+      expect(semantics.label, contains('Sunday Crew'));
+    });
+
+    testWidgets('keeps the badge inside the row control', (tester) async {
+      // The badge was moved out of ListTile.trailing to survive text
+      // scaling (#269); making the row tappable must not have pushed it
+      // back out of the merged node.
+      await tester.pumpWidget(harness(onOpen: (_, _) {}));
+      households.add([_household('h-1', isLocalOnly: true)]);
+      await tester.pump();
+
+      final semantics = tester.getSemantics(
+        find.byKey(HouseholdListScreen.rowKey('h-1')),
+      );
+      expect(semantics, isSemantics(isButton: true));
+      expect(semantics.label, contains(_notSyncedCopy));
+    });
+
+    testWidgets('activates from the keyboard, not just a tap', (tester) async {
+      final opened = <String>[];
+      await tester.pumpWidget(harness(onOpen: (_, id) => opened.add(id)));
+      households.add([_household('h-1')]);
+      await tester.pump();
+
+      final semantics = tester.getSemantics(
+        find.byKey(HouseholdListScreen.rowKey('h-1')),
+      );
+      expect(semantics, isSemantics(hasTapAction: true));
+
+      // The real keyboard path: focus the row, then press Enter.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(opened, equals(['h-1']));
+    });
+
+    testWidgets('stays inert content where no detail route is offered', (
+      tester,
+    ) async {
+      // Not a leftover: a composition that cannot reach the detail screen
+      // should not offer a tap that does nothing (#269 D5's judgement,
+      // now a condition rather than an era).
+      await tester.pumpWidget(harness());
+      households.add([_household('h-1')]);
+      await tester.pump();
+
+      final semantics = tester.getSemantics(
+        find.byKey(HouseholdListScreen.rowKey('h-1')),
+      );
+      expect(semantics, isSemantics(isButton: false, hasTapAction: false));
     });
 
     testWidgets('offers create from the floating action button', (

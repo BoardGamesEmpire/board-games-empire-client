@@ -25,6 +25,29 @@ abstract final class AppRoutes {
   /// `/server/:serverId/household/:householdId/invite/:token` deep link.
   static const household = '/household';
   static const householdCreate = '/household/create';
+
+  /// One household, read-only (#270).
+  ///
+  /// This pattern and [householdCreate] **overlap**: `create` is a legal
+  /// value for `:householdId`, so whichever is declared first wins the
+  /// path `/household/create`. Create is declared first, and this is not a
+  /// style preference — see the route table.
+  ///
+  /// Build a concrete location with [householdDetailOf] rather than
+  /// interpolating: callers that hand-build the string are how a
+  /// `:householdId` ends up URL-unsafe.
+  static const householdDetail = '/household/:householdId';
+
+  /// The id segment of [householdDetail].
+  static const householdIdParam = 'householdId';
+
+  /// The location of one household's detail screen.
+  ///
+  /// Ids are server- or client-assigned cuid2s, which are already
+  /// path-safe; the encode is here for the id that one day is not.
+  static String householdDetailOf(String householdId) =>
+      '$household/${Uri.encodeComponent(householdId)}';
+
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
@@ -129,6 +152,24 @@ typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 /// does: it needs the active server's scoped container, not an `AuthBloc`.
 typedef HouseholdListScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds one household's detail screen (#270) for the
+/// [AppRoutes.householdDetail] route, given the `:householdId` the path
+/// carried. Supplied by [BgeApp]; returns null on the same conditions as
+/// [HouseholdListScreenBuilder] — no resolvable server, or a container
+/// with no `HouseholdRepository` — in which case the route falls back to
+/// [NotYetAvailableScreen].
+///
+/// Guarded on the repository **alone**, like the list and unlike create
+/// (#269 D4): this screen reads the local cache and never calls the
+/// server, so a missing `HouseholdRemoteDataSource` costs it nothing.
+///
+/// The id reaches the builder unvalidated — any string that fits one path
+/// segment. The screen answers an unreadable id with its not-found state,
+/// which is the same answer the repository's membership gate gives, so
+/// there is nothing for the route layer to check.
+typedef HouseholdDetailScreenBuilder =
+    Widget? Function(BuildContext context, String householdId);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -149,6 +190,7 @@ GoRouter buildAppRouter({
   SettingsScreenBuilder? settingsBuilder,
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
+  HouseholdDetailScreenBuilder? householdDetailBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -236,11 +278,23 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
-      // #269: the household list, and the home menu's household
-      // destination. Same placement and reachability as the create route
-      // below; declared before it only for reading order — go_router
-      // matches on the full path, so `/household` never swallows
-      // `/household/create`.
+      // ── The three household routes, and why their order matters ──
+      //
+      // `/household` (#269), `/household/create` (#129) and
+      // `/household/:householdId` (#270) are declared in that order, and
+      // the last two are the pair that cannot be reordered.
+      //
+      // `/household` is safe wherever it sits: go_router matches on the
+      // full path, and one segment never swallows two. But `create` is a
+      // perfectly legal `:householdId`, so `/household/create` matches
+      // BOTH of the routes below. go_router takes the first declared
+      // match, so create must come first or the create flow silently
+      // becomes a detail screen for a household nobody can have.
+      //
+      // The detail screen also answers a literal `create` id with its
+      // not-found state (#270 D6). That is the belt to this ordering's
+      // braces — cheap, and it keeps the failure legible if these are ever
+      // reordered.
       GoRoute(
         path: AppRoutes.household,
         builder: (context, _) =>
@@ -252,11 +306,24 @@ GoRouter buildAppRouter({
       // [CreateHouseholdScreenBuilder]). Reachable only once
       // [AppBootstrapReady] admits non-bootstrap locations; pushed from the
       // list screen's FAB (#269) — until then, from the home menu.
+      //
+      // MUST stay declared above the detail route — see the block above.
       GoRoute(
         path: AppRoutes.householdCreate,
         builder: (context, _) =>
             createHouseholdBuilder?.call(context) ??
             const NotYetAvailableScreen(),
+      ),
+      // #270: one household, read-only. Pushed from a list row, and where
+      // the reserved invite deep link eventually lands — which is why the
+      // id-addressed route exists now rather than later.
+      GoRoute(
+        path: AppRoutes.householdDetail,
+        builder: (context, state) {
+          final id = state.pathParameters[AppRoutes.householdIdParam] ?? '';
+          return householdDetailBuilder?.call(context, id) ??
+              const NotYetAvailableScreen();
+        },
       ),
       GoRoute(
         path: AppRoutes.error,

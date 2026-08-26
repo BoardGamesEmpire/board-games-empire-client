@@ -28,6 +28,63 @@
   "@householdListError": {
     "description": "Shown when the local household list could not be read at all, so no households can be displayed."
   },
+  "householdDetailLoading": "Loading this household\u2026",
+  "@householdDetailLoading": {
+    "description": "Announced and shown while the household detail screen is still reading the local cache, or while the first hydrate pass is still filling it."
+  },
+  "householdDetailMembers": "{count, plural, =0{No members} =1{1 member} other{{count} members}}",
+  "@householdDetailMembers": {
+    "description": "Number of people in the household, shown on the household detail screen. Zero is reachable only transiently, before the member rows are cached.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "householdDetailYourRole": "Your role",
+  "@householdDetailYourRole": {
+    "description": "Label above the current user's own membership role on the household detail screen."
+  },
+  "householdDetailRoleOwner": "Owner",
+  "@householdDetailRoleOwner": {
+    "description": "The current user's role in this household: they own it."
+  },
+  "householdDetailRoleAdmin": "Admin",
+  "@householdDetailRoleAdmin": {
+    "description": "The current user's role in this household: they administer it but do not own it."
+  },
+  "householdDetailRoleMember": "Member",
+  "@householdDetailRoleMember": {
+    "description": "The current user's role in this household: an ordinary member."
+  },
+  "householdDetailRoleGuest": "Guest",
+  "@householdDetailRoleGuest": {
+    "description": "The current user's role in this household: a guest, the most limited role."
+  },
+  "householdDetailRoleUnknown": "A role this app doesn't recognise",
+  "@householdDetailRoleUnknown": {
+    "description": "Shown in place of the current user's role when the server granted a custom role name this client has no translation for. This is real data about the server, NOT a parsing failure \u2014 the wire adapter throws on a malformed role rather than degrading to this."
+  },
+  "householdDetailRefreshFailed": "This may be out of date \u2014 we couldn't refresh it.",
+  "@householdDetailRefreshFailed": {
+    "description": "Banner shown on the household detail screen when the last refresh from the server did not complete, for ANY reason. What is shown is the cached copy. Deliberately does not name a cause \u2014 the screen does not know which one it was."
+  },
+  "householdDetailNotFoundTitle": "We couldn't find this household",
+  "@householdDetailNotFoundTitle": {
+    "description": "Heading shown when the requested household is not readable: it is not cached, the user is not a member, or it has been deleted. The three are deliberately indistinguishable."
+  },
+  "householdDetailNotFoundBody": "It may have been deleted, or you may no longer be a member.",
+  "@householdDetailNotFoundBody": {
+    "description": "Body of the not-found state on the household detail screen. Hedged on purpose: the client cannot tell a deleted household from one the user was removed from, and must not claim either."
+  },
+  "householdDetailNotFoundAction": "Back to households",
+  "@householdDetailNotFoundAction": {
+    "description": "Button on the not-found state that returns the user to the household list."
+  },
+  "householdDetailError": "We couldn't open this household.",
+  "@householdDetailError": {
+    "description": "Shown when the local read for this household failed outright, so nothing about it can be displayed."
+  },
   "createHouseholdTitle": "Create household",
   "@createHouseholdTitle": {
     "description": "Title of the create-household screen."

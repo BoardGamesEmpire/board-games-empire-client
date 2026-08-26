@@ -306,6 +306,7 @@ class _BgeAppState extends State<BgeApp> {
       feedbackBuilder: _buildFeedbackRoute,
       settingsBuilder: _buildSettingsRoute,
       householdListBuilder: _buildHouseholdListRoute,
+      householdDetailBuilder: _buildHouseholdDetailRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
@@ -572,6 +573,49 @@ class _BgeAppState extends State<BgeApp> {
       onCreate: container.isRegistered<HouseholdRemoteDataSource>()
           ? (ctx) => ctx.push(AppRoutes.householdCreate)
           : null,
+      // #270: rows became controls when there was somewhere for them to
+      // go. Unconditional, unlike `onCreate` — the detail route's guard is
+      // this route's own, so any container that can render the list can
+      // render a row's destination.
+      onOpen: (ctx, householdId) =>
+          ctx.push(AppRoutes.householdDetailOf(householdId)),
+    );
+  }
+
+  /// The #270 household-detail wiring. Resolves the same user-session
+  /// [HouseholdRepository] and optional [HouseholdHydrationStatus] as
+  /// [_buildHouseholdListRoute], and guards on the repository alone for
+  /// the same reason (#269 D4): the detail screen reads the local cache
+  /// and never calls the server.
+  ///
+  /// [householdId] arrives from the path, unvalidated. Nothing checks it
+  /// here — an unreadable id is exactly what the screen's not-found state
+  /// is for, and the repository's membership gate makes "malformed",
+  /// "not yours" and "deleted" one answer anyway.
+  ///
+  /// Captured-instance lifetime is the list route's, and so is the
+  /// behaviour when a session ends under it: the scope pop disposes the
+  /// repository, the vended `watch*` streams **close** rather than error,
+  /// and the detail bloc freezes what it had while the auth redirect pops
+  /// the route.
+  Widget? _buildHouseholdDetailRoute(BuildContext context, String householdId) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<HouseholdRepository>()) return null;
+
+    final hydration = container.isRegistered<HouseholdHydrationStatus>()
+        ? container.get<HouseholdHydrationStatus>().watch()
+        : null;
+
+    return HouseholdDetailScreen(
+      householdId: householdId,
+      repository: container.get<HouseholdRepository>(),
+      hydration: hydration,
+      // Not a pop: this route can be entered cold (a restored route, and
+      // the invite deep link later), where there is nothing beneath it.
+      onBack: (ctx) => ctx.go(AppRoutes.household),
     );
   }
 
