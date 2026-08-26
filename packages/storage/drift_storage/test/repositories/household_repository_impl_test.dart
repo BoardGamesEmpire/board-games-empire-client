@@ -732,6 +732,29 @@ void main() {
         await expectLater(repo.watchHouseholds().take(1), emits(isEmpty));
       });
 
+      // The list screen's reactivity claim, end to end (#269): "create
+      // writes locally, so the list updates with no refetch and no manual
+      // invalidation". Every other watch test seeds rows through the table
+      // directly, which exercises drift's stream but not the path the
+      // create FAB actually takes — the transactional write plus enqueue.
+      test('a local create reaches an open watch, with no refetch', () async {
+        final arrived = expectLater(
+          repo.watchHouseholds(),
+          emitsThrough(
+            predicate<List<Household>>(
+              (households) => households.any(
+                (h) => h.name == 'Sunday Crew' && h.isLocalOnly,
+              ),
+              'contains the locally-created household, flagged local-only',
+            ),
+          ),
+        );
+
+        await repo.create(name: 'Sunday Crew');
+
+        await arrived;
+      });
+
       // Same order as getHouseholds() — they share one selectable, and a
       // screen that reads the stream must not disagree with a screen that
       // reads the future (#269 D3).
