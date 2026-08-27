@@ -38,6 +38,7 @@ import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
 import 'feedback_review_screen.dart';
 import 'router_back_interceptor.dart';
+import 'detached_rehydrate.dart';
 import 'session_rehydrate_trigger.dart';
 
 /// The shared application widget.
@@ -554,6 +555,38 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<HouseholdRefresher>().refresh
       : null;
 
+  /// The #300 re-hydrate-on-entry trigger (D1, D13): the session's
+  /// [SessionRehydrator], or null where this composition has no re-hydrate
+  /// seam at all (#137).
+  ///
+  /// **The opposite call from [_householdRetry], on purpose.** A press gets
+  /// the household's own pass, because the rehydrator drops a pass while
+  /// one is running (#302 D4) and "I pressed it and nothing happened" is
+  /// the one outcome a manual affordance cannot afford. An entry gets the
+  /// rehydrator, because that skip is exactly right for something nobody
+  /// pressed, and because the staleness window that decides whether to do
+  /// any work lives in the registry's `isStale` (#300 D8) rather than being
+  /// re-answered here.
+  ///
+  /// Once #121 registers the sync-queue drain, entering the household list
+  /// will drive that too. That is a trigger behaving like a trigger; the
+  /// button deliberately does not (#300 D13).
+  VoidCallback? _householdEntryRefresh(DependencyContainer container) {
+    if (!container.isRegistered<SessionRehydrator>()) return null;
+    final rehydrator = container.get<SessionRehydrator>();
+
+    // Resolved per route build, like the retry above, and the pass itself
+    // goes through the shell's shared guard. That guard is what makes this
+    // safe to call from a `BlocProvider.create` (#300 D14) — it runs during
+    // a build, so nothing here may throw into that frame, and nothing may
+    // emit synchronously either. Neither does: the drain's first status
+    // update is delivered by a broadcast controller.
+    return () => startDetachedRehydrate(
+      trigger: 'household_entry',
+      resolve: () => rehydrator,
+    );
+  }
+
   /// The #269 household-list wiring: resolves the [HouseholdRepository]
   /// (per-user session scope, #135) from the *active server's* scoped
   /// container, plus the optional [HouseholdHydrationStatus] the hydrate
@@ -594,6 +627,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<HouseholdRepository>(),
       hydration: hydration,
       onRetry: _householdRetry(container),
+      onEnter: _householdEntryRefresh(container),
       onCreate: container.isRegistered<HouseholdRemoteDataSource>()
           ? (ctx) => ctx.push(AppRoutes.householdCreate)
           : null,
@@ -693,8 +727,21 @@ class _BgeAppState extends State<BgeApp> {
       // (`ctx.go(AppRoutes.household)`, above) is what reaches the list
       // there. A system back from that state leaves the app, as it already
       // does for a cold-entered detail route (#271 D3).
-      onCreated: (ctx, householdId) =>
-          ctx.pushReplacement(AppRoutes.householdDetailOf(householdId)),
+      onCreated: (ctx, householdId) {
+        // #300 D3/D9: a create makes the local set stale by definition, so
+        // the next entry to the list re-hydrates rather than waiting out
+        // the remaining window. Cleared here, before the navigation, and
+        // not inside the household feature — the invalidation belongs to
+        // *mutation*, and this is where mutations are already wired, which
+        // is what gives #122's membership mutations the same hook.
+        //
+        // Absent on a composition that runs no drain (#137): nothing to
+        // invalidate, and a create must not care.
+        if (container.isRegistered<HouseholdHydrationStatus>()) {
+          container.get<HouseholdHydrationStatus>().markStale();
+        }
+        ctx.pushReplacement(AppRoutes.householdDetailOf(householdId));
+      },
     );
   }
 

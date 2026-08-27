@@ -141,11 +141,11 @@ user-session activate~~, ~~#269 list screen~~, ~~#270 detail screen~~,
 
 Asking the server *again* is deliberately three answers, not one:
 
-- **#302** — event-driven. A `SessionRehydrator` in the user-session scope that
+- **#302** — ~~event-driven. A `SessionRehydrator` in the user-session scope that
   hydrating features register with, driven by a connectivity edge and app
-  resume from the shell. Also the seam #121 can drain the sync queue through.
-- **#300** — user-driven (retry on the refresh banner) and time-driven (a
-  staleness window).
+  resume from the shell. Also the seam #121 can drain the sync queue through.~~
+- **#300** — ~~user-driven (retry on the refresh banner) and time-driven (a
+  staleness window).~~
 - **#311** — failure-driven. A connectivity edge reports device transport, so a
   server that is down while the device stays online produces no trigger at all;
   this is the bounded retry that covers it. Alpha-optional while #300 ships.

@@ -464,4 +464,115 @@ void main() {
       );
     });
   });
+
+  group('a confirmed-empty list survives a re-check (#300 D16)', () {
+    test('an empty list a pass has confirmed stays empty under the next '
+        'pass', () async {
+      // #269 D1 exists to stop "no households yet" rendering over a cache
+      // that is about to fill *for the first time*. Once a pass has landed
+      // `refreshed`, the emptiness is confirmed — and #300 D1 makes a
+      // re-check routine, so re-confirming a known answer must not
+      // un-render the screen on every entry.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      hydration.add(HouseholdHydrationState.refreshed);
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, isA<HouseholdListReady>());
+
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.households, 'households', isEmpty)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse)
+            // Silent: nobody pressed anything (#300 D6).
+            .having((s) => s.refreshing, 'refreshing', isFalse),
+      );
+    });
+
+    test('an empty list only a failure has seen is still unknown', () async {
+      // The half of #269 D1 that does NOT narrow. A failed pass confirms
+      // nothing, so the emptiness is still unverified and a pass over it
+      // is #269 D1's spinner (#300 D12).
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      hydration.add(HouseholdHydrationState.failed);
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, isA<HouseholdListReady>());
+
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state, isA<HouseholdListLoading>());
+    });
+
+    test('a retry over a confirmed-empty list narrates instead of '
+        'spinning', () async {
+      // D12 said an empty list with a pass running is always #269 D1's
+      // spinner. That holds while the emptiness is unverified; once a pass
+      // has confirmed it, the press has a known answer to annotate and
+      // throwing it away to spin would be the same loss D16 removes for
+      // the silent case. The press is still acknowledged — the banner says
+      // so, with a disabled button that keeps its name.
+      final pass = Completer<void>();
+      final bloc = HouseholdListBloc(
+        repository: repository,
+        hydration: hydration.stream,
+        onRetry: () => pass.future,
+      );
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      hydration.add(HouseholdHydrationState.refreshed);
+      await Future<void>.delayed(Duration.zero);
+      hydration.add(HouseholdHydrationState.failed);
+      await Future<void>.delayed(Duration.zero);
+
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.households, 'households', isEmpty)
+            .having((s) => s.refreshing, 'refreshing', isTrue),
+      );
+
+      pass.complete();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test(
+      'rows arriving after a confirmed-empty re-check still render',
+      () async {
+        final bloc = build();
+        addTearDown(bloc.close);
+
+        households.add(const []);
+        hydration.add(HouseholdHydrationState.refreshed);
+        await Future<void>.delayed(Duration.zero);
+
+        hydration.add(HouseholdHydrationState.running);
+        households.add([_household('h-1')]);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          bloc.state,
+          isA<HouseholdListReady>().having(
+            (s) => s.households,
+            'households',
+            hasLength(1),
+          ),
+        );
+      },
+    );
+  });
 }

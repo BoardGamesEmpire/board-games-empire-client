@@ -194,7 +194,7 @@ class HouseholdDetailBloc
   /// both deliver asynchronously. `HouseholdHydrationStatus.watch()` replays
   /// its current value from `onListen`, so in practice it arrives first —
   /// but if the cache answers "absent" before that replay is processed,
-  /// [_hydrationState] is still its `idle` default, `idle` reads as settled,
+  /// the hydration state is still its `idle` default, `idle` reads as settled,
   /// and the screen reports not-found on its way to the content. Waiting on
   /// the first word costs a bool and does not rest on delivery order.
   bool _hasHydrationSource = false;
@@ -208,7 +208,16 @@ class HouseholdDetailBloc
   bool _identityInFlight = false;
   bool _identityRetryWanted = false;
 
-  HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
+  /// What the hydrate is doing, and whether it has ever confirmed an
+  /// answer (#300 D16) — the same memory the list screen keeps, because
+  /// the rule is the same one.
+  ///
+  /// The detail half of it: an absence is *unknown* only while nothing has
+  /// confirmed it. Once a pass has reached `refreshed` without producing
+  /// this household, the absence is an answer, and a later pass
+  /// re-checking it must not put the not-found page back on a spinner —
+  /// #300 D15 makes those re-checks routine.
+  final HouseholdHydrationMemory _hydrationMemory = HouseholdHydrationMemory();
 
   /// Whether a pass **this screen asked for** is still running (#300 D6).
   bool _retrying = false;
@@ -345,7 +354,7 @@ class HouseholdDetailBloc
     Emitter<HouseholdDetailState> emit,
   ) {
     _hydrationSeen = true;
-    _hydrationState = event.hydration;
+    _hydrationMemory.absorb(event.hydration);
     _emitDerived(emit);
   }
 
@@ -382,7 +391,8 @@ class HouseholdDetailBloc
   /// closed status stream can never leave `running`, so it does not count
   /// as still filling.
   bool get _filling =>
-      _hydrationState == HouseholdHydrationState.running && !_hydrationDone;
+      _hydrationMemory.state == HouseholdHydrationState.running &&
+      !_hydrationDone;
 
   /// True while the cache could still gain rows — either a pass is running,
   /// or a hydration stream exists and has not yet said what it is doing.
@@ -394,7 +404,8 @@ class HouseholdDetailBloc
   bool get _mightStillFill =>
       _filling || (_hasHydrationSource && !_hydrationSeen && !_hydrationDone);
 
-  bool get _refreshFailed => _hydrationState == HouseholdHydrationState.failed;
+  bool get _refreshFailed =>
+      _hydrationMemory.state == HouseholdHydrationState.failed;
 
   void _emitDerived(Emitter<HouseholdDetailState> emit) {
     // Holds against everything except fresh rows on the stream that
@@ -419,7 +430,16 @@ class HouseholdDetailBloc
       // first word. Once the household has been shown, the cache was warm
       // and its disappearance is a removal; only a pass actually running
       // justifies waiting on that.
-      final couldStillArrive = _householdEverSeen ? _filling : _mightStillFill;
+      //
+      // On that first read, an absence a completed pass has already
+      // confirmed is an answer rather than a gap (#300 D16): re-checking it
+      // must not return a rendered not-found page to a spinner, and #300
+      // D15 makes those re-checks routine. The seen-then-gone branch keeps
+      // waiting on any running pass regardless — that pass may be
+      // rewriting the very rows this screen is reading.
+      final couldStillArrive = _householdEverSeen
+          ? _filling
+          : _mightStillFill && !_hydrationMemory.everRefreshed;
       if (couldStillArrive) return emit(const HouseholdDetailLoading());
       return emit(HouseholdDetailNotFound(refreshFailed: _refreshFailed));
     }

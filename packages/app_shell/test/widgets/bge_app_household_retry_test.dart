@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
+import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
@@ -18,6 +19,22 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 class _MockStorage extends Mock implements Storage {}
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+/// Counts passes without running any. Registration is a no-op: what these
+/// tests check is who *calls* the seam, not what it holds.
+class _RecordingRehydrator implements SessionRehydrator {
+  int passes = 0;
+
+  @override
+  void register(
+    String key, {
+    required bool Function() isStale,
+    required Future<void> Function() run,
+  }) {}
+
+  @override
+  Future<void> rehydrateStale() async => passes++;
+}
 
 const _id = 'hh_1';
 
@@ -37,13 +54,20 @@ HouseholdMember _member(String userId) => HouseholdMember(
   updatedAt: DateTime.utc(2026),
 );
 
-/// Exercises the #300 retry wiring through the real composition: the route
-/// builders resolving [HouseholdRefresher] off the active server's
-/// container, and the banner button reaching it.
+/// Exercises #300's two screen-facing seams through the real composition:
+/// the **retry** (D5, D10) — route builders resolving [HouseholdRefresher]
+/// off the active server's container, and the banner button reaching it —
+/// and the **entry trigger** (D1, D13, D14), which resolves
+/// [SessionRehydrator] from the same container instead.
+///
+/// Two seams and not one, deliberately. D5 rejected the rehydrator for the
+/// button because it skips an entry a pass is already running for (#302
+/// D4), which is right for a trigger nobody pressed and wrong for a control
+/// someone is waiting on. These tests are where that split is visible.
 ///
 /// The screens' own behaviour is pinned in the household package; what can
-/// only be checked here is that the callback the screens are handed is the
-/// one the session actually registered — and that a container without one
+/// only be checked here is that the callbacks the screens are handed are the
+/// ones the session actually registered — and that a container without them
 /// still renders a working screen (#137).
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -63,6 +87,7 @@ void main() {
   Future<HouseholdHydrationStatus> pumpHome(
     WidgetTester tester, {
     HouseholdRefresher? refresher,
+    SessionRehydrator? rehydrator,
   }) async {
     final repository = _MockHouseholdRepository();
     when(
@@ -87,6 +112,7 @@ void main() {
           householdRepository: repository,
           householdHydrationStatus: status,
           householdRefresher: refresher,
+          sessionRehydrator: rehydrator,
         ),
       ),
     );
@@ -153,6 +179,97 @@ void main() {
 
       expect(find.byKey(HouseholdListScreen.refreshBannerKey), findsOneWidget);
       expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsNothing);
+    });
+  });
+
+  group('BgeApp household entry trigger (#300 D1, D13, D14)', () {
+    testWidgets('opening the list asks the session for a stale pass', (
+      tester,
+    ) async {
+      final rehydrator = _RecordingRehydrator();
+      await pumpHome(tester, rehydrator: rehydrator);
+
+      // Nothing yet: the home screen is not the household list, and the
+      // trigger belongs to entering it.
+      expect(rehydrator.passes, 0);
+
+      await openTheList(tester);
+
+      expect(rehydrator.passes, 1);
+    });
+
+    testWidgets('pushing the detail route does not fire a second pass', (
+      tester,
+    ) async {
+      // The #300 D14 hazard, at the composition it actually happens in.
+      // go_router builds every page in the match stack, so the list route's
+      // builder runs again when the detail route goes on top of it — which
+      // is why the trigger lives in the screen's provider rather than there.
+      final rehydrator = _RecordingRehydrator();
+      await pumpHome(tester, rehydrator: rehydrator);
+      await openTheList(tester);
+      expect(rehydrator.passes, 1);
+
+      await tester.tap(find.byKey(HouseholdListScreen.rowKey(_id)));
+      await tester.pumpAndSettle();
+
+      expect(rehydrator.passes, 1);
+    });
+
+    testWidgets('leaving the household section and coming back fires again', (
+      tester,
+    ) async {
+      // What #300 D1 is for: "navigate away and back" has to mean
+      // something. Whether the pass does any *work* is the registry's
+      // answer via the staleness window, not the screen's.
+      final rehydrator = _RecordingRehydrator();
+      await pumpHome(tester, rehydrator: rehydrator);
+      await openTheList(tester);
+      expect(rehydrator.passes, 1);
+
+      // Back to home, then in again — a fresh list route either way.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await openTheList(tester);
+
+      expect(rehydrator.passes, 2);
+    });
+
+    testWidgets('popping back from the detail screen does not re-fire', (
+      tester,
+    ) async {
+      // Not a gap in "navigate away and back" (#300 D1) — the detail screen
+      // is not away. It reads the same cache through the same repository
+      // and watches the same `HouseholdHydrationStatus`, carrying its own
+      // banner and its own retry over them (#270, #300 D10), so the
+      // household data was never out of view. The list route is still in
+      // the stack throughout, which is why its provider is not rebuilt.
+      //
+      // Leaving the section entirely is the gesture that re-fires, and it
+      // does — see above.
+      final rehydrator = _RecordingRehydrator();
+      await pumpHome(tester, rehydrator: rehydrator);
+      await openTheList(tester);
+      await tester.tap(find.byKey(HouseholdListScreen.rowKey(_id)));
+      await tester.pumpAndSettle();
+
+      // The ordinary pushed path pops, so this is the app bar's own back —
+      // `HouseholdDetailScreen.backKey` is the stranded-entry affordance and
+      // is deliberately absent here.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(rehydrator.passes, 1);
+    });
+
+    testWidgets('a container with no rehydrator still renders the list', (
+      tester,
+    ) async {
+      // The #137 path again: absent seam, working screen.
+      await pumpHome(tester);
+      await openTheList(tester);
+
+      expect(find.byKey(HouseholdListScreen.refreshBannerKey), findsOneWidget);
     });
   });
 }
