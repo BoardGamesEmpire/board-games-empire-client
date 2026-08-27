@@ -532,6 +532,28 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
+  /// The #300 retry, for both household screens: the session-scoped
+  /// [HouseholdRefresher] the hydrate installer registers, or null where
+  /// this composition runs no drain (#137, and any container without a
+  /// household client).
+  ///
+  /// Optional for the same reason `onCreate` is: a screen that cannot
+  /// refresh should say the list may be stale and offer nothing to press,
+  /// rather than a button that does nothing.
+  ///
+  /// Not the [SessionRehydrator] the shell drives on a connectivity edge:
+  /// that seam skips an entry whose pass is already running (#302 D4),
+  /// which is right for a trigger nobody pressed and wrong for a button
+  /// someone is waiting on. Both end at the same pass and the same status.
+  ///
+  /// Resolved per route build, like everything else here — a callback
+  /// captured across a session change would hold a disposed scope's
+  /// hydrator.
+  Future<void> Function()? _householdRetry(DependencyContainer container) =>
+      container.isRegistered<HouseholdRefresher>()
+      ? container.get<HouseholdRefresher>().refresh
+      : null;
+
   /// The #269 household-list wiring: resolves the [HouseholdRepository]
   /// (per-user session scope, #135) from the *active server's* scoped
   /// container, plus the optional [HouseholdHydrationStatus] the hydrate
@@ -571,6 +593,7 @@ class _BgeAppState extends State<BgeApp> {
     return HouseholdListScreen(
       repository: container.get<HouseholdRepository>(),
       hydration: hydration,
+      onRetry: _householdRetry(container),
       onCreate: container.isRegistered<HouseholdRemoteDataSource>()
           ? (ctx) => ctx.push(AppRoutes.householdCreate)
           : null,
@@ -614,6 +637,7 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
       hydration: hydration,
+      onRetry: _householdRetry(container),
       // Not a pop: this route can be entered cold (a restored route, and
       // the invite deep link later), where there is nothing beneath it.
       onBack: (ctx) => ctx.go(AppRoutes.household),

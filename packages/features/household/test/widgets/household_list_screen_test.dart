@@ -31,6 +31,8 @@ const _notSyncedCopy = 'Not yet synced';
 const _refreshFailedCopy =
     "This list may be out of date — we couldn't refresh it.";
 const _errorCopy = "We couldn't open your households.";
+const _retryCopy = 'Try again';
+const _refreshingCopy = 'Refreshing\u2026';
 
 /// Pins the #269 list screen against a mocked repository and a hand-driven
 /// hydration stream — the four surfaces the decisions specify (loading,
@@ -56,6 +58,7 @@ void main() {
   Widget harness({
     void Function(BuildContext context)? onCreate,
     void Function(BuildContext context, String householdId)? onOpen,
+    Future<void> Function()? onRetry,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -69,6 +72,7 @@ void main() {
       hydration: hydration.stream,
       onCreate: onCreate,
       onOpen: onOpen,
+      onRetry: onRetry,
     ),
   );
 
@@ -387,6 +391,183 @@ void main() {
 
       expect(find.text(_refreshFailedCopy), findsNothing);
       expect(find.byKey(HouseholdListScreen.rowKey('h-1')), findsOneWidget);
+    });
+
+    testWidgets('offers a retry where the composition can run one (#300 D5)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness(onRetry: () async {}));
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsOneWidget);
+      expect(find.text(_retryCopy), findsOneWidget);
+    });
+
+    testWidgets('offers none where it cannot (#137)', (tester) async {
+      // A container with no household client has no drain to re-run, and a
+      // button that does nothing is worse than no button (#269 D5's
+      // reasoning, applied to this control).
+      await tester.pumpWidget(harness());
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+      expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsNothing);
+    });
+
+    testWidgets('pressing it runs a pass and says so (#300 D6)', (
+      tester,
+    ) async {
+      final pass = Completer<void>();
+      var calls = 0;
+
+      await tester.pumpWidget(
+        harness(
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        ),
+      );
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(calls, 1);
+      // Two of them: the banner's message, and the disabled button's own
+      // label — it keeps a name rather than becoming a bare spinner
+      // (`BgeSubmitButton`'s contract, #163).
+      expect(find.text(_refreshingCopy), findsNWidgets(2));
+      expect(find.text(_refreshFailedCopy), findsNothing);
+      // The rows it is refreshing stay put underneath.
+      expect(find.byKey(HouseholdListScreen.rowKey('h-1')), findsOneWidget);
+
+      pass.complete();
+      hydration.add(HouseholdHydrationState.refreshed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(_refreshingCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsNothing);
+    });
+
+    testWidgets('a pass nobody asked for is not announced (#300 D6)', (
+      tester,
+    ) async {
+      // #302's triggers re-hydrate on a connectivity edge and on app
+      // resume. The banner clearing is all the user should see of that;
+      // narrating it would put a message on screen for work they did not
+      // ask for.
+      await tester.pumpWidget(harness(onRetry: () async {}));
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(find.text(_refreshingCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsNothing);
+    });
+
+    testWidgets('retrying an empty list shows the spinner, not a banner over '
+        '"no households yet"', (tester) async {
+      final pass = Completer<void>();
+      await tester.pumpWidget(harness(onRetry: () => pass.future));
+      households.add(const []);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+      expect(find.byKey(HouseholdListScreen.emptyKey), findsOneWidget);
+
+      await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      // #269 D1: an empty cache being refilled is unknown, not empty. The
+      // whole surface becomes the spinner rather than an empty state
+      // wearing a "refreshing" banner.
+      expect(find.byKey(HouseholdListScreen.loadingKey), findsOneWidget);
+      expect(find.byKey(HouseholdListScreen.emptyKey), findsNothing);
+      expect(find.text(_refreshingCopy), findsNothing);
+
+      pass.complete();
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(HouseholdListScreen.emptyKey), findsOneWidget);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+    });
+
+    testWidgets('the retry keeps an accessible name while it is disabled', (
+      tester,
+    ) async {
+      // `BgeSubmitButton`'s contract, applied to this button: a control
+      // that keeps its place must also keep saying what it is doing, or a
+      // screen reader announces "Try again, disabled" with no reason.
+      final pass = Completer<void>();
+      await tester.pumpWidget(harness(onRetry: () => pass.future));
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byKey(HouseholdListScreen.refreshRetryKey),
+          matching: find.text(_refreshingCopy),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(HouseholdListScreen.refreshRetryKey))
+            .onPressed,
+        isNull,
+      );
+
+      pass.complete();
+    });
+
+    testWidgets('a retry that fails again puts the banner back', (
+      tester,
+    ) async {
+      final pass = Completer<void>();
+      await tester.pumpWidget(harness(onRetry: () => pass.future));
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+      // Two of them: the banner's message, and the disabled button's own
+      // label — it keeps a name rather than becoming a bare spinner
+      // (`BgeSubmitButton`'s contract, #163).
+      expect(find.text(_refreshingCopy), findsNWidgets(2));
+
+      hydration.add(HouseholdHydrationState.failed);
+      pass.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+      expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsOneWidget);
+      expect(find.text(_refreshingCopy), findsNothing);
     });
 
     testWidgets('qualifies an empty list rather than replacing it', (

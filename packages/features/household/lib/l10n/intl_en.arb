@@ -24,6 +24,14 @@
   "@householdListRefreshFailed": {
     "description": "Banner shown when the household list could not be refreshed from the server, for ANY reason: the server was unreachable, or it answered with an error. The cached households are still shown. Deliberately does not name a cause \u2014 the screen does not know which one it was."
   },
+  "householdRefreshRetry": "Try again",
+  "@householdRefreshRetry": {
+    "description": "Button on the refresh banner that asks the server for the household data again. Shared by the household list and the household detail screen \u2014 both banners run the same pass, and a per-screen wording would be two translations of one action. Kept as a plain retry: the drain reports one undifferentiated failure, so nothing here can promise the next attempt will work."
+  },
+  "householdRefreshInProgress": "Refreshing\u2026",
+  "@householdRefreshInProgress": {
+    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled. Shown ONLY for a user-initiated retry \u2014 a refresh triggered by reconnecting or by resuming the app is not narrated."
+  },
   "householdListError": "We couldn't open your households.",
   "@householdListError": {
     "description": "Shown when the local household list could not be read at all, so no households can be displayed."

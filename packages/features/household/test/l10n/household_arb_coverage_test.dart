@@ -65,6 +65,21 @@ void main() {
       );
     });
 
+    test('the template defines the refresh-retry key surface', () {
+      // #300. Both load-bearing accessible names: the retry button keeps
+      // its label while disabled rather than becoming a bare spinner, and
+      // the in-progress copy is what the banner's live region announces.
+      // They are screen-agnostic on purpose — the list banner and the
+      // detail banner run the same pass, so one wording serves both.
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'householdRefreshRetry',
+          'householdRefreshInProgress',
+        ]),
+      );
+    });
+
     test('every template key carries a translator description', () {
       expect(report.keysMissingDescription, isEmpty, reason: report.describe());
     });

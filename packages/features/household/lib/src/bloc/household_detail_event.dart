@@ -3,12 +3,12 @@ import 'package:models/domain.dart';
 
 import '../sync/household_hydration_status.dart';
 
-/// Internal events of `HouseholdDetailBloc`.
+/// Events of `HouseholdDetailBloc`.
 ///
-/// As on the list (#269 D6), there are no *user* events: the screen shows
-/// what its sources say, and its only control returns to the list. These
-/// exist so the bloc's stream subscriptions have somewhere to land that can
-/// emit.
+/// As on the list (#269 D6), mostly *not* user events: the screen shows
+/// what its sources say, and these exist so the bloc's stream
+/// subscriptions have somewhere to land that can emit. The exception is
+/// [HouseholdDetailRetryRequested] (#300 D10).
 sealed class HouseholdDetailEvent extends Equatable {
   const HouseholdDetailEvent();
 
@@ -100,4 +100,13 @@ final class HouseholdDetailHydrationUpdated extends HouseholdDetailEvent {
 
   @override
   List<Object?> get props => [hydration];
+}
+
+/// The user asked for another hydrate pass (#300 D5, D10).
+///
+/// The same event the list carries, on the screen that shares its banner
+/// and its status. A pass started by a #302 trigger arrives on
+/// [HouseholdDetailHydrationUpdated] instead and is not narrated.
+final class HouseholdDetailRetryRequested extends HouseholdDetailEvent {
+  const HouseholdDetailRetryRequested();
 }

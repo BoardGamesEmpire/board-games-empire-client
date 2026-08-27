@@ -3,12 +3,13 @@ import 'package:models/domain.dart';
 
 import '../sync/household_hydration_status.dart';
 
-/// Internal events of `HouseholdListBloc`.
+/// Events of `HouseholdListBloc`.
 ///
-/// There are no *user* events: the screen shows what two streams say, and
-/// the only action on it (create) is a route push. These exist because a
-/// bloc's stream subscriptions have to land somewhere its handlers can
-/// emit from.
+/// Mostly *not* user events: the screen shows what two streams say, and
+/// these exist because a bloc's stream subscriptions have to land
+/// somewhere its handlers can emit from. The exception is
+/// [HouseholdListRetryRequested] (#300) — creating is still a route push,
+/// but retrying a refresh is an action on this screen's own data.
 sealed class HouseholdListEvent extends Equatable {
   const HouseholdListEvent();
 
@@ -49,4 +50,14 @@ final class HouseholdListHydrationUpdated extends HouseholdListEvent {
 
   @override
   List<Object?> get props => [hydration];
+}
+
+/// The user asked for another hydrate pass (#300 D5).
+///
+/// Distinct from a pass arriving on [HouseholdListHydrationUpdated]: this
+/// one was asked for, which is what licenses the screen to narrate it
+/// (#300 D6). A pass started by a #302 trigger reports through the status
+/// stream like any other and is not announced.
+final class HouseholdListRetryRequested extends HouseholdListEvent {
+  const HouseholdListRetryRequested();
 }

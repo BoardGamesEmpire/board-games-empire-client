@@ -766,4 +766,130 @@ void main() {
     expect(households.hasListener, isFalse);
     expect(members.hasListener, isFalse);
   });
+
+  group('a retry the user asked for (#300 D5, D6, D10)', () {
+    late Completer<void> pass;
+    late int calls;
+
+    setUp(() {
+      pass = Completer<void>();
+      calls = 0;
+    });
+
+    HouseholdDetailBloc buildWithRetry() => HouseholdDetailBloc(
+      householdId: _id,
+      repository: repository,
+      hydration: hydration.stream,
+      onRetry: () {
+        calls++;
+        return pass.future;
+      },
+    );
+
+    test('runs the pass and says a refresh is happening', () async {
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add([_member('u-me')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await settle();
+
+      bloc.add(const HouseholdDetailRetryRequested());
+      hydration.add(HouseholdHydrationState.running);
+      await settle();
+
+      expect(calls, 1);
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>()
+            .having((s) => s.refreshing, 'refreshing', isTrue)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+      );
+
+      pass.complete();
+    });
+
+    test('a pass nobody asked for is not narrated', () async {
+      // #302's triggers produce failed -> running without anyone pressing
+      // anything; the screen stays quiet for those.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add([_member('u-me')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await settle();
+
+      hydration.add(HouseholdHydrationState.running);
+      await settle();
+
+      expect(calls, isZero);
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>().having(
+          (s) => s.refreshing,
+          'refreshing',
+          isFalse,
+        ),
+      );
+    });
+
+    test('an unverified absence can be retried too (#300 D10)', () async {
+      // The surface a retry is worth the most on: a household missing from
+      // a cache whose last pass failed may well exist on the server.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      members.add(const []);
+      hydration.add(HouseholdHydrationState.failed);
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailNotFound>());
+
+      bloc.add(const HouseholdDetailRetryRequested());
+      hydration.add(HouseholdHydrationState.running);
+      await settle();
+
+      expect(calls, 1);
+      // No "refreshing" annotation on this surface, and deliberately so:
+      // #270 already rules that an absence with a pass running is unknown
+      // rather than missing, so the screen stops claiming the household is
+      // gone while it is being looked for.
+      expect(bloc.state, isA<HouseholdDetailLoading>());
+
+      hydration.add(HouseholdHydrationState.failed);
+      pass.complete();
+      await settle();
+
+      expect(
+        bloc.state,
+        isA<HouseholdDetailNotFound>().having(
+          (s) => s.refreshFailed,
+          'refreshFailed',
+          isTrue,
+        ),
+      );
+    });
+
+    test('a second press while one is still running starts nothing', () async {
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add([_member('u-me')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await settle();
+
+      bloc.add(const HouseholdDetailRetryRequested());
+      await settle();
+      bloc.add(const HouseholdDetailRetryRequested());
+      await settle();
+
+      expect(calls, 1);
+
+      pass.complete();
+    });
+  });
 }

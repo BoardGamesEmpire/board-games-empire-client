@@ -8,7 +8,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:household/l10n/household_localizations.dart';
 
 import '../bloc/household_list_bloc.dart';
+import '../bloc/household_list_event.dart';
 import '../bloc/household_list_state.dart';
+import '../widgets/household_refresh_banner.dart';
 import '../sync/household_hydration_status.dart';
 
 /// The household list (#269): every household the signed-in user belongs
@@ -30,8 +32,33 @@ import '../sync/household_hydration_status.dart';
 ///
 /// A failed refresh is a **banner over whatever we have**, not a state of
 /// its own (#269 D2) — including over the empty state, where it qualifies
-/// an emptiness we could not verify. There is no retry here yet; the drain
-/// retries at the next session activate, and a manual one is #300.
+/// an emptiness we could not verify.
+///
+/// ## The retry, and what it does and does not announce (#300)
+///
+/// That banner now carries a retry ([onRetry]), because the only other way
+/// back was the next session activate — sign out and in. The button
+/// dispatches to the bloc rather than calling [onRetry] itself: starting a
+/// pass and saying one is running are the same event, and only the handler
+/// that started it knows the user asked.
+///
+/// While that pass runs the banner **stays**, with refreshing copy and a
+/// disabled button that keeps its name: a control that disappears
+/// mid-interaction moves focus and loses the user's place, which is the
+/// contract `BgeSubmitButton` already holds this package to.
+///
+/// The exception is an **empty** list, where #269 D1 outranks all of this.
+/// An empty cache with a pass running is unknown, not empty, so the whole
+/// surface goes back to the spinner rather than putting "no households
+/// yet" under a refreshing banner — the same answer the detail screen
+/// gives for an absent household (#270). The spinner is the feedback
+/// there, and the banner returns with the rows or with the failure.
+///
+/// A pass **nobody asked for** — the #302 connectivity edge, an app resume
+/// — is not narrated (#300 D6). The banner simply clears when it succeeds,
+/// exactly as it did before. Announcing background work on a screen that
+/// otherwise says nothing is noise, and the user has no decision to make
+/// about it.
 ///
 /// ## Rows navigate when there is somewhere to go (#270)
 ///
@@ -57,6 +84,7 @@ class HouseholdListScreen extends StatelessWidget {
     this.hydration,
     this.onCreate,
     this.onOpen,
+    this.onRetry,
     super.key,
   });
 
@@ -74,6 +102,9 @@ class HouseholdListScreen extends StatelessWidget {
 
   /// Key on the couldn't-refresh banner.
   static const Key refreshBannerKey = Key('household_list.refresh_banner');
+
+  /// Key on the banner's retry button (#300).
+  static const Key refreshRetryKey = Key('household_list.refresh_retry');
 
   /// Key on the failed-read surface.
   static const Key errorKey = Key('household_list.error');
@@ -108,21 +139,39 @@ class HouseholdListScreen extends StatelessWidget {
   /// snapshot the receiver must not trust.
   final void Function(BuildContext context, String householdId)? onOpen;
 
+  /// Runs one more hydrate pass, or null where this composition has none
+  /// to run — the same #137 case that leaves [hydration] null. Absent, the
+  /// banner still reports a failed refresh; it just offers nothing to do
+  /// about it, rather than a button that does nothing.
+  final Future<void> Function()? onRetry;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<HouseholdListBloc>(
-      create: (_) =>
-          HouseholdListBloc(repository: repository, hydration: hydration),
-      child: _HouseholdListView(onCreate: onCreate, onOpen: onOpen),
+      create: (_) => HouseholdListBloc(
+        repository: repository,
+        hydration: hydration,
+        onRetry: onRetry,
+      ),
+      child: _HouseholdListView(
+        onCreate: onCreate,
+        onOpen: onOpen,
+        // The callback itself stays with the bloc; the view only needs to
+        // know whether there is one, to decide whether to draw a button.
+        canRetry: onRetry != null,
+      ),
     );
   }
 }
 
 class _HouseholdListView extends StatelessWidget {
-  const _HouseholdListView({this.onCreate, this.onOpen});
+  const _HouseholdListView({this.onCreate, this.onOpen, this.canRetry = false});
 
   final void Function(BuildContext context)? onCreate;
   final void Function(BuildContext context, String householdId)? onOpen;
+
+  /// Whether this composition can re-run the drain at all (#300 D5).
+  final bool canRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -151,31 +200,25 @@ class _HouseholdListView extends StatelessWidget {
                   label: Text(l10n.createHouseholdTitle),
                 ),
           slivers: [
-            if (state case HouseholdListReady(refreshFailed: true))
+            if (state case HouseholdListReady(
+              :final refreshFailed,
+              :final refreshing,
+            ) when refreshFailed || refreshing)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.only(
                     bottom: BgeTokens.of(context).spaceMd,
                   ),
-                  child: BgeInlineBanner(
+                  child: HouseholdRefreshBanner(
                     key: HouseholdListScreen.refreshBannerKey,
-                    // Warning, not error: the rows below are real, they
-                    // may just be old. Error tone here would read as "this
-                    // list is broken".
-                    //
-                    // The copy says the refresh failed, NOT that the server
-                    // was unreachable. `HydrateOutcome.failed` collapses
-                    // every failure the drain can hit — an unreachable
-                    // host, a 4xx, an unparseable body — and the first
-                    // real one in the wild was a reachable server
-                    // answering 400. Naming a cause the screen cannot know
-                    // sends people to check their network while the actual
-                    // fault is in the response.
-                    tone: BgeBannerTone.warning,
-                    message: l10n.householdListRefreshFailed,
-                    // Furniture for as long as the refresh stays failed,
-                    // and it already sits at the top of the viewport.
-                    reveal: false,
+                    retryKey: HouseholdListScreen.refreshRetryKey,
+                    failedMessage: l10n.householdListRefreshFailed,
+                    refreshing: refreshing,
+                    onRetry: canRetry
+                        ? () => context.read<HouseholdListBloc>().add(
+                            const HouseholdListRetryRequested(),
+                          )
+                        : null,
                   ),
                 ),
               ),

@@ -503,4 +503,126 @@ void main() {
       expect(hydrate, greaterThan(rehydrator));
     });
   });
+
+  group('the retry the screens call (#300 D5)', () {
+    test('registers a refresher that re-runs the drain', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => _emptyPage());
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(container.isRegistered<HouseholdRefresher>(), isTrue);
+
+      await container.get<HouseholdRefresher>().refresh();
+
+      // Once at install, once for the retry: unlike a #302 trigger, a
+      // press is not filtered by staleness — the user asked.
+      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(2);
+    });
+
+    test('a retry drives the status the screens already watch', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final status = container.get<HouseholdHydrationStatus>();
+      expect(status.state, HouseholdHydrationState.failed);
+
+      final seen = <HouseholdHydrationState>[];
+      final watching = status.watch().listen(seen.add);
+      addTearDown(watching.cancel);
+
+      reset(remote);
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => _emptyPage());
+
+      await container.get<HouseholdRefresher>().refresh();
+      await Future<void>.delayed(Duration.zero);
+
+      // The retry is not a second status: the banner the screens are
+      // already watching is what clears (#302 D2's reasoning, and #270 D5).
+      expect(seen, [
+        HouseholdHydrationState.failed,
+        HouseholdHydrationState.running,
+        HouseholdHydrationState.refreshed,
+      ]);
+    });
+
+    test('registers nothing where there is no household client', () async {
+      // Web until #137, and shell tests: the screens read an absent
+      // refresher as "no retry to offer" and render a banner without one.
+      final bare = DependencyContainerImpl()
+        ..registerSingleton<HouseholdRepository>(repo);
+      addTearDown(bare.dispose);
+
+      await const HouseholdHydrateInstaller().install(
+        bare,
+        _config(),
+        'user-1',
+      );
+
+      expect(bare.isRegistered<HouseholdRefresher>(), isFalse);
+    });
+
+    test(
+      'a retry racing the install-time pass drains once (#302 D3)',
+      () async {
+        // The re-entrancy question #300 asked to have recorded rather than
+        // assumed. It is answered by the hydrator's single-flight, and this
+        // is the household-side proof of it: the install-time pass is still
+        // in flight when the retry arrives.
+        final firstPage = Completer<PaginatedResult<HouseholdWithMembers>>();
+        var calls = 0;
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer((_) {
+          calls++;
+          return firstPage.future;
+        });
+
+        await const HouseholdHydrateInstaller().install(
+          container,
+          _config(),
+          'user-1',
+        );
+
+        final retry = container.get<HouseholdRefresher>().refresh();
+        firstPage.complete(_emptyPage());
+        await retry;
+
+        expect(calls, 1);
+        expect(
+          container.get<HouseholdHydrationStatus>().state,
+          HouseholdHydrationState.refreshed,
+        );
+      },
+    );
+  });
 }

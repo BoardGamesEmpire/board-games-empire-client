@@ -60,10 +60,24 @@ import 'household_list_state.dart';
 /// A **null** [hydration] stream means no hydrate exists to wait for
 /// (a container with no household client, #137). That reads as settled,
 /// not as perpetually loading.
+///
+/// ## The retry, and why the bloc runs it (#300 D5)
+///
+/// A null [onRetry] is a composition that cannot re-run the drain — the
+/// same #137 case that leaves [hydration] null — and the screen offers no
+/// retry there rather than a button that does nothing.
+///
+/// The callback is invoked from here rather than straight from the button
+/// because starting a pass and *saying* one is running are the same
+/// event. The screen cannot know the difference between a pass it asked
+/// for and one a #302 trigger started — both arrive as `running` on the
+/// status stream — so the only place that distinction exists is the
+/// handler that started it.
 class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   HouseholdListBloc({
     required HouseholdRepository repository,
     Stream<HouseholdHydrationState>? hydration,
+    this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.list'),
        super(const HouseholdListLoading()) {
@@ -71,6 +85,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     on<HouseholdListCacheFailed>(_onCacheFailed);
     on<HouseholdListCacheEnded>(_onCacheEnded);
     on<HouseholdListHydrationUpdated>(_onHydrationUpdated);
+    on<HouseholdListRetryRequested>(_onRetryRequested);
 
     _cache = repository.watchHouseholds().listen(
       (households) => add(HouseholdListCacheUpdated(households)),
@@ -103,6 +118,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
 
   final BgeLogger _logger;
 
+  /// Runs one hydrate pass, or null where this composition has none.
+  final Future<void> Function()? _onRetry;
+
   late final StreamSubscription<List<Household>> _cache;
   StreamSubscription<HouseholdHydrationState>? _hydration;
 
@@ -116,6 +134,12 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   /// Idle until told otherwise, which is also what an absent hydrate
   /// means.
   HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
+
+  /// Whether a pass **this screen asked for** is still running (#300 D6).
+  ///
+  /// Not derived from [_hydrationState]: `running` says a pass is in
+  /// flight, not who started it.
+  bool _retrying = false;
 
   void _onCacheUpdated(
     HouseholdListCacheUpdated event,
@@ -153,7 +177,46 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     _emitDerived(emit);
   }
 
+  Future<void> _onRetryRequested(
+    HouseholdListRetryRequested event,
+    Emitter<HouseholdListState> emit,
+  ) async {
+    final retry = _onRetry;
+    // Already running one: the hydrator single-flights (#302 D3), so a
+    // second call would join rather than duplicate the drain — but the
+    // button should not queue passes either.
+    if (retry == null || _retrying) return;
+
+    _retrying = true;
+    _emitDerived(emit);
+
+    try {
+      await retry();
+    } on Object catch (error, stackTrace) {
+      // Unreachable by contract — the pass reports failure through the
+      // status stream and swallows the rest (#267). Caught anyway: the
+      // cost of being wrong is a stuck "refreshing" the user cannot
+      // clear.
+      _logger.warn(
+        'Household refresh escaped its own error handling',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    _retrying = false;
+    // The pass has reported its outcome to the status by now, but that
+    // report reaches this bloc as a separate event — so this emit may
+    // land a turn before the banner comes back. That is a frame without
+    // a banner, not a frame claiming success.
+    if (!isClosed) _emitDerived(emit);
+  }
+
   void _emitDerived(Emitter<HouseholdListState> emit) {
+    // Order matters below, and one ordering is load-bearing: the
+    // empty-and-filling check outranks [_retrying]. A retry over an empty
+    // list returns the screen to its spinner rather than annotating an
+    // emptiness no pass has confirmed (#269 D1) — see the screen doc.
     // Holds the error against everything except fresh rows — see the class
     // doc. In particular a hydrate result must not lift it.
     if (_readFailed) return emit(const HouseholdListError());
@@ -170,6 +233,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
       HouseholdListReady(
         households: households,
         refreshFailed: _hydrationState == HouseholdHydrationState.failed,
+        refreshing: _retrying,
       ),
     );
   }
