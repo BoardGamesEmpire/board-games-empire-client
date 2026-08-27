@@ -34,12 +34,26 @@ const _vmOnlyDartLibraries = {
 /// by package rather than by exact URI so a sibling library
 /// (`package:sqlite3/open.dart` beside `package:sqlite3/sqlite3.dart`) cannot
 /// slip through.
+///
+/// `sqlite3` stays here rather than moving to the both-halves treatment
+/// below: `wasm.dart`/`common.dart` genuinely are web-safe (verified against
+/// sqlite3 3.3.4), but this package's own neutral entry point must never
+/// touch `sqlite3` at all — the executor is injected by the caller, and the
+/// wasm executor belongs to `web_storage` (#288), a separate package with
+/// its own future guard. Admitting `sqlite3/wasm.dart` *here* would buy
+/// nothing (nothing in this package legitimately needs it) while quietly
+/// widening the one path this test exists to close. #294 also found
+/// `path_provider_linux` (2.2.2) missing: its main entry point unconditionally
+/// exports `src/path_provider_linux.dart`, which imports `dart:io` directly —
+/// no conditional fallback, unlike `path_provider_windows`, whose entry point
+/// exports behind `if (dart.library.ffi)` and is correctly left off this list.
 const _vmOnlyPackages = {
   'sqlite3',
   'sqlite3_flutter_libs',
   'path_provider',
   'path_provider_foundation',
   'path_provider_android',
+  'path_provider_linux',
 };
 
 /// Packages that ship *both* web-safe and VM-only libraries, listed as the
@@ -47,6 +61,11 @@ const _vmOnlyPackages = {
 /// treated as VM-only — a deny-list would silently miss a native library
 /// added upstream, and a false positive here is one line to fix with the
 /// offending file named.
+///
+/// Every entry below is verified against the package's actual source (pub
+/// cache, matching the pinned version in `pubspec.lock`) — see the
+/// `internal/export_schema.dart` exclusion below for a case where a library
+/// living beside web-safe siblings turned out not to be one.
 const _webSafeLibrariesByPackage = {
   'drift': {
     'drift.dart',
@@ -55,7 +74,15 @@ const _webSafeLibrariesByPackage = {
     'remote.dart',
     'backends.dart',
     'extensions/json1.dart',
+    'extensions/native.dart',
+    'extensions/geopoly.dart',
+    'sqlite_keywords.dart',
     'internal/versioned_schema.dart',
+    'internal/migrations.dart',
+    'internal/modular.dart',
+    // NOT 'internal/export_schema.dart': imports `dart:isolate` directly
+    // (drift 2.34.0, lib/internal/export_schema.dart:2). Genuinely
+    // VM-only, correctly caught as an offender — see the pin below.
   },
 };
 
@@ -278,11 +305,15 @@ void main() {
     });
 
     test('a sibling library of a VM-only package is disqualifying too', () {
-      // Pins the by-package matching rather than the by-URI matching this
-      // check originally had: `sqlite3/sqlite3.dart` was listed and
-      // `sqlite3/open.dart` was not, so a neutral file importing the latter
-      // passed. Same for a VM-only library of an otherwise web-safe package.
+      // `sqlite3` is wholesale VM-only *for this package* (#294): every
+      // library in it is disqualifying here, including `wasm.dart` and
+      // `common.dart` even though those two are genuinely web-safe upstream
+      // — this package's neutral entry must never touch `sqlite3` at all,
+      // by design (see the comment on `_vmOnlyPackages`).
       expect(_vmOnlyReason('package:sqlite3/open.dart'), isNotNull);
+      expect(_vmOnlyReason('package:sqlite3/sqlite3.dart'), isNotNull);
+      expect(_vmOnlyReason('package:sqlite3/wasm.dart'), isNotNull);
+      expect(_vmOnlyReason('package:sqlite3/common.dart'), isNotNull);
       // A drift library that is not on the web-safe list — including one
       // that does not exist today, so a future native `extensions/*` cannot
       // arrive pre-approved.
@@ -291,8 +322,22 @@ void main() {
         _vmOnlyReason('package:drift/extensions/moor_ffi.dart'),
         isNotNull,
       );
+      // Deliberately excluded from the drift allow-list (#294): unlike its
+      // `internal/` siblings, this one imports `dart:isolate` directly and
+      // really is VM-only. Pinned so a future "just add the rest of
+      // internal/*" edit doesn't silently re-admit it.
+      expect(
+        _vmOnlyReason('package:drift/internal/export_schema.dart'),
+        isNotNull,
+      );
       expect(
         _vmOnlyReason('package:sqlite3_flutter_libs/open.dart'),
+        isNotNull,
+      );
+      // `path_provider_linux`'s main entry point unconditionally exports a
+      // file that imports `dart:io` directly (#294).
+      expect(
+        _vmOnlyReason('package:path_provider_linux/path_provider_linux.dart'),
         isNotNull,
       );
       expect(_vmOnlyReason('package:drift/isolate.dart'), isNotNull);
@@ -302,6 +347,24 @@ void main() {
       // allowed, so the guard cannot pass by rejecting everything.
       expect(_vmOnlyReason('package:drift/drift.dart'), isNull);
       expect(_vmOnlyReason('package:drift/wasm.dart'), isNull);
+      // #294 found the drift allow-list incomplete: these four (three real
+      // libraries, plus `internal/*` — a category that resolves to two more
+      // once `export_schema.dart` is excluded above) were wrongly flagged.
+      expect(_vmOnlyReason('package:drift/extensions/native.dart'), isNull);
+      expect(_vmOnlyReason('package:drift/extensions/geopoly.dart'), isNull);
+      expect(_vmOnlyReason('package:drift/sqlite_keywords.dart'), isNull);
+      expect(_vmOnlyReason('package:drift/internal/migrations.dart'), isNull);
+      expect(_vmOnlyReason('package:drift/internal/modular.dart'), isNull);
+      // Unlike its Linux sibling, `path_provider_windows`'s main entry point
+      // exports its FFI-backed implementation behind `if (dart.library.ffi)`
+      // — a stub ships on platforms without it, web included — so it is
+      // correctly *not* on `_vmOnlyPackages` (#294).
+      expect(
+        _vmOnlyReason(
+          'package:path_provider_windows/path_provider_windows.dart',
+        ),
+        isNull,
+      );
       expect(_vmOnlyReason('package:flutter/foundation.dart'), isNull);
       expect(_vmOnlyReason('dart:async'), isNull);
     });
