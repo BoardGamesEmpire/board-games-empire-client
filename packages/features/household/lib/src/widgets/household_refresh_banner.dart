@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:household/l10n/household_localizations.dart';
 
@@ -92,17 +93,24 @@ class HouseholdRefreshBanner extends StatelessWidget {
   }
 }
 
-/// The retry button's in-flight icon: the 16px square `BgeSubmitButton`
-/// uses, and mute to a screen reader — the button's own label is what
+/// The retry button's in-flight icon: the treatment `BgeSubmitButton` gives
+/// its own spinner, and mute to a screen reader — the button's label is what
 /// announces the state.
+///
+/// A `spaceMd` square scaled by the ambient text scaler rather than a fixed
+/// 16. The spinner sits inline with the label and reads as part of it, so a
+/// fixed size shrinks to a speck beside doubled text at the 200% scale the
+/// app guarantees (#32).
 class _RetrySpinner extends StatelessWidget {
   const _RetrySpinner();
 
   @override
-  Widget build(BuildContext context) => const ExcludeSemantics(
+  Widget build(BuildContext context) => ExcludeSemantics(
     child: SizedBox.square(
-      dimension: 16,
-      child: CircularProgressIndicator(strokeWidth: 2),
+      dimension: BgeTextScale.clampedOf(
+        context,
+      ).scale(BgeTokens.of(context).spaceMd),
+      child: const CircularProgressIndicator(strokeWidth: 2),
     ),
   );
 }
