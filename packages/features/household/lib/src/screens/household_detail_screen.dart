@@ -8,7 +8,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:household/l10n/household_localizations.dart';
 
 import '../bloc/household_detail_bloc.dart';
+import '../bloc/household_detail_event.dart';
 import '../bloc/household_detail_state.dart';
+import '../widgets/household_refresh_banner.dart';
 import '../sync/household_hydration_status.dart';
 
 /// One household, read-only (#270): its name, its description, how many
@@ -46,6 +48,7 @@ class HouseholdDetailScreen extends StatelessWidget {
     required this.repository,
     this.hydration,
     this.onBack,
+    this.onRetry,
     super.key,
   });
 
@@ -57,6 +60,11 @@ class HouseholdDetailScreen extends StatelessWidget {
 
   /// Key on the not-found surface's return-to-list button.
   static const Key notFoundBackKey = Key('household_detail.not_found_back');
+
+  /// Key on the refresh banner's retry button (#300 D10). One key for both
+  /// banners — the ready one and the not-found one — because it is one
+  /// control on one screen, in whichever place the screen currently is.
+  static const Key refreshRetryKey = Key('household_detail.refresh_retry');
 
   /// Key on the app-bar back button this screen supplies for itself when the
   /// Navigator has nothing to pop (#271).
@@ -93,6 +101,11 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// `onCreate` — the feature package does not know the route table.
   final void Function(BuildContext context)? onBack;
 
+  /// Runs one more hydrate pass, or null where this composition has none
+  /// (#300 D5, D10). The same callback the list screen takes, driving the
+  /// same status — this screen and that one are two views of one refresh.
+  final Future<void> Function()? onRetry;
+
   /// The reserved create segment. `/household/create` is a route of its
   /// own, declared first; this is the belt to that braces (#270 D6).
   static const String _reservedCreateId = 'create';
@@ -111,16 +124,22 @@ class HouseholdDetailScreen extends StatelessWidget {
         householdId: householdId,
         repository: repository,
         hydration: hydration,
+        onRetry: onRetry,
       ),
-      child: _HouseholdDetailView(onBack: onBack),
+      // The callback stays with the bloc; the view only needs to know
+      // whether there is one, to decide whether to draw a button.
+      child: _HouseholdDetailView(onBack: onBack, canRetry: onRetry != null),
     );
   }
 }
 
 class _HouseholdDetailView extends StatelessWidget {
-  const _HouseholdDetailView({this.onBack});
+  const _HouseholdDetailView({this.onBack, this.canRetry = false});
 
   final void Function(BuildContext context)? onBack;
+
+  /// Whether this composition can re-run the drain at all (#300 D5).
+  final bool canRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -146,8 +165,13 @@ class _HouseholdDetailView extends StatelessWidget {
           HouseholdDetailNotFound(:final refreshFailed) => _NotFoundPage(
             onBack: onBack,
             refreshFailed: refreshFailed,
+            canRetry: canRetry,
           ),
-          HouseholdDetailReady() => _ReadyPage(state: state, onBack: onBack),
+          HouseholdDetailReady() => _ReadyPage(
+            state: state,
+            onBack: onBack,
+            canRetry: canRetry,
+          ),
         };
       },
     );
@@ -156,9 +180,12 @@ class _HouseholdDetailView extends StatelessWidget {
 
 /// The household itself.
 class _ReadyPage extends StatelessWidget {
-  const _ReadyPage({required this.state, this.onBack});
+  const _ReadyPage({required this.state, this.onBack, this.canRetry = false});
 
   final HouseholdDetailReady state;
+
+  /// Whether a retry can be offered — see [HouseholdDetailScreen.onRetry].
+  final bool canRetry;
 
   /// The way out when the app bar cannot imply one — see [build].
   final void Function(BuildContext context)? onBack;
@@ -180,16 +207,11 @@ class _ReadyPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (state.refreshFailed) ...[
-            BgeInlineBanner(
-              key: HouseholdDetailScreen.refreshBannerKey,
-              // Warning, not error, for the list banner's reason: what is
-              // below is real, it may just be old. And the copy does not
-              // name a cause — the screen cannot know which failure the
-              // drain hit.
-              tone: BgeBannerTone.warning,
-              message: l10n.householdDetailRefreshFailed,
-              reveal: false,
+          if (state.refreshFailed || state.refreshing) ...[
+            _refreshBanner(
+              context,
+              canRetry: canRetry,
+              refreshing: state.refreshing,
             ),
             const BgeGap.md(),
           ],
@@ -262,9 +284,23 @@ class _RoleBlock extends StatelessWidget {
 
 /// No readable household at this id — see [HouseholdDetailScreen].
 class _NotFoundPage extends StatelessWidget {
-  const _NotFoundPage({this.onBack, this.refreshFailed = false});
+  const _NotFoundPage({
+    this.onBack,
+    this.refreshFailed = false,
+    this.canRetry = false,
+  });
 
   final void Function(BuildContext context)? onBack;
+
+  /// Whether a retry can be offered. This is the surface where it is worth
+  /// the most (#300 D10): a household absent from a cache whose last pass
+  /// failed may well be on the server, so asking again can change what is
+  /// on screen rather than only how fresh it is.
+  ///
+  /// It carries no in-flight copy of its own. Once the pass reports
+  /// `running`, the bloc stops asserting the absence and this page gives
+  /// way to the spinner — which is the feedback.
+  final bool canRetry;
 
   /// The pass that would have confirmed the absence did not finish. The
   /// screen says both things: we could not find it, and we could not
@@ -286,12 +322,7 @@ class _NotFoundPage extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (refreshFailed) ...[
-            BgeInlineBanner(
-              key: HouseholdDetailScreen.refreshBannerKey,
-              tone: BgeBannerTone.warning,
-              message: l10n.householdDetailRefreshFailed,
-              reveal: false,
-            ),
+            _refreshBanner(context, canRetry: canRetry),
             const BgeGap.lg(),
           ],
           Text(
@@ -321,6 +352,31 @@ class _NotFoundPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// This screen's half of the shared refresh banner (#300 D10): its own
+/// copy and key, and a press routed to its own bloc.
+///
+/// [canRetry] is threaded down rather than the callback itself, because
+/// the dispatch needs a context under the [BlocProvider] — which the
+/// reserved-`create` path deliberately does not have.
+Widget _refreshBanner(
+  BuildContext context, {
+  required bool canRetry,
+  bool refreshing = false,
+}) {
+  final l10n = HouseholdLocalizations.of(context);
+  return HouseholdRefreshBanner(
+    key: HouseholdDetailScreen.refreshBannerKey,
+    retryKey: HouseholdDetailScreen.refreshRetryKey,
+    failedMessage: l10n.householdDetailRefreshFailed,
+    refreshing: refreshing,
+    onRetry: canRetry
+        ? () => context.read<HouseholdDetailBloc>().add(
+            const HouseholdDetailRetryRequested(),
+          )
+        : null,
+  );
 }
 
 /// A centred single message on an otherwise empty page.

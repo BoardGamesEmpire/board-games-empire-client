@@ -78,6 +78,7 @@ class HouseholdDetailBloc
     required String householdId,
     required HouseholdRepository repository,
     Stream<HouseholdHydrationState>? hydration,
+    this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.detail'),
        super(const HouseholdDetailLoading()) {
@@ -88,6 +89,7 @@ class HouseholdDetailBloc
     on<HouseholdDetailReadEnded>(_onReadEnded);
     on<HouseholdDetailHydrationUpdated>(_onHydrationUpdated);
     on<HouseholdDetailHydrationEnded>(_onHydrationEnded);
+    on<HouseholdDetailRetryRequested>(_onRetryRequested);
 
     _households = repository.watchHouseholds().listen(
       (households) => add(
@@ -141,6 +143,12 @@ class HouseholdDetailBloc
   }
 
   final BgeLogger _logger;
+
+  /// Runs one hydrate pass, or null where this composition has none
+  /// (#300 D5). Invoked from the bloc rather than from the button for the
+  /// list bloc's reason: only the handler that started a pass knows the
+  /// user asked for it.
+  final Future<void> Function()? _onRetry;
 
   late final HouseholdRepository _repository;
   late final String _householdId;
@@ -201,6 +209,9 @@ class HouseholdDetailBloc
   bool _identityRetryWanted = false;
 
   HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
+
+  /// Whether a pass **this screen asked for** is still running (#300 D6).
+  bool _retrying = false;
 
   /// Resolves who the current user is, so their row can be found in the
   /// roster.
@@ -338,6 +349,35 @@ class HouseholdDetailBloc
     _emitDerived(emit);
   }
 
+  Future<void> _onRetryRequested(
+    HouseholdDetailRetryRequested event,
+    Emitter<HouseholdDetailState> emit,
+  ) async {
+    final retry = _onRetry;
+    // The hydrator single-flights (#302 D3), so a second call would join
+    // the drain rather than duplicate it — but the button should not queue
+    // passes either.
+    if (retry == null || _retrying) return;
+
+    _retrying = true;
+    _emitDerived(emit);
+
+    try {
+      await retry();
+    } on Object catch (error, stackTrace) {
+      // Unreachable by contract; caught because the cost of being wrong is
+      // a "refreshing" the user cannot clear.
+      _logger.warn(
+        'Household refresh escaped its own error handling',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    _retrying = false;
+    if (!isClosed) _emitDerived(emit);
+  }
+
   /// True while a first answer could still arrive from the server. A
   /// closed status stream can never leave `running`, so it does not count
   /// as still filling.
@@ -414,6 +454,7 @@ class HouseholdDetailBloc
         memberCount: members.length,
         role: _roleOf(members),
         refreshFailed: _refreshFailed,
+        refreshing: _retrying,
       ),
     );
   }

@@ -33,21 +33,33 @@ final class HouseholdDetailLoading extends HouseholdDetailState {
 /// be stale. Orthogonal to everything else here: a household can be shown
 /// and unverified at once, and the screen says both (#269 D2's reasoning,
 /// applied to one household).
+///
+/// [refreshing] says a pass **the user asked for** is running (#300 D6) —
+/// not merely that a pass is running, which the #302 triggers cause
+/// without anyone asking.
 final class HouseholdDetailReady extends HouseholdDetailState {
   const HouseholdDetailReady({
     required this.household,
     required this.memberCount,
     this.role,
     this.refreshFailed = false,
+    this.refreshing = false,
   });
 
   final Household household;
   final int memberCount;
   final HouseholdRole? role;
   final bool refreshFailed;
+  final bool refreshing;
 
   @override
-  List<Object?> get props => [household, memberCount, role, refreshFailed];
+  List<Object?> get props => [
+    household,
+    memberCount,
+    role,
+    refreshFailed,
+    refreshing,
+  ];
 }
 
 /// No readable household at this id.
@@ -62,6 +74,14 @@ final class HouseholdDetailReady extends HouseholdDetailState {
 /// absence did not finish, so the screen says "we couldn't find it" and
 /// "we couldn't check" together rather than presenting an unverified
 /// absence as a settled one.
+///
+/// A retry is offered here too (#300 D10) — this is the surface where
+/// asking again is worth the most, since a household missing from a cache
+/// whose last pass failed may well be on the server. It carries no
+/// `refreshing` flag of its own: once the pass reports `running`, #270's
+/// rule above turns this state into [HouseholdDetailLoading], so the
+/// screen stops claiming the household is gone while it is being looked
+/// for. That spinner *is* the feedback.
 final class HouseholdDetailNotFound extends HouseholdDetailState {
   const HouseholdDetailNotFound({this.refreshFailed = false});
 

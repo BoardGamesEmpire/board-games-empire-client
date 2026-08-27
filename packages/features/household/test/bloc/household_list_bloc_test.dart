@@ -301,4 +301,167 @@ void main() {
     // No emit-after-close error, and the last state stands.
     expect(bloc.state, isA<HouseholdListLoading>());
   });
+
+  group('a retry the user asked for (#300 D5, D6)', () {
+    late Completer<void> pass;
+    late int calls;
+
+    setUp(() {
+      pass = Completer<void>();
+      calls = 0;
+    });
+
+    HouseholdListBloc buildWithRetry() => HouseholdListBloc(
+      repository: repository,
+      hydration: hydration.stream,
+      onRetry: () {
+        calls++;
+        return pass.future;
+      },
+    );
+
+    /// Rows on screen, and the last pass failed — the state the banner and
+    /// its retry are shown in.
+    Future<void> settleOnAFailedRefresh(HouseholdListBloc bloc) async {
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    test('runs the pass and says a refresh is happening', () async {
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+
+      bloc.add(const HouseholdListRetryRequested());
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isTrue)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+      );
+
+      pass.complete();
+    });
+
+    test('a pass nobody asked for is not narrated', () async {
+      // The reason `refreshing` is not simply `failed -> running`: the
+      // #302 triggers (a connectivity edge, an app resume) produce exactly
+      // that transition today, and a banner that announces work the user
+      // did not ask for is noise on a screen that otherwise says nothing.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, isZero);
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isFalse)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+      );
+    });
+
+    test('a retry that fails again puts the banner back', () async {
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+
+      bloc.add(const HouseholdListRetryRequested());
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      hydration.add(HouseholdHydrationState.failed);
+      pass.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isFalse)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
+      );
+    });
+
+    test('a second press while one is still running starts nothing', () async {
+      // `HouseholdHydrator.hydrate()` single-flights (#302 D3), so a second
+      // call would join rather than duplicate the drain — but the button
+      // should not be a way to queue passes either.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+
+      pass.complete();
+    });
+
+    test('a retried EMPTY list goes back to loading, not to a banner over an '
+        'emptiness nobody has confirmed', () async {
+      // #269 D1 outranks the retry treatment here. An empty cache with a
+      // pass running is unknown, not empty — so the screen must not put
+      // "no households yet" under a refreshing banner. The spinner is the
+      // feedback, exactly as it is on the detail screen's absent
+      // household (#270).
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      hydration.add(HouseholdHydrationState.failed);
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, isA<HouseholdListReady>());
+
+      bloc.add(const HouseholdListRetryRequested());
+      hydration.add(HouseholdHydrationState.running);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+      expect(bloc.state, isA<HouseholdListLoading>());
+
+      hydration.add(HouseholdHydrationState.failed);
+      pass.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.households, 'households', isEmpty)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue)
+            .having((s) => s.refreshing, 'refreshing', isFalse),
+      );
+    });
+
+    test('a retry is a no-op where no pass was supplied', () async {
+      // A container with no household client (#137) renders a banner-less
+      // list; nothing should throw if an event reaches the bloc anyway.
+      final bloc = build();
+      addTearDown(bloc.close);
+      households.add([_household('h-1')]);
+      await expectLater(bloc.stream, emitsThrough(isA<HouseholdListReady>()));
+
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>().having(
+          (s) => s.refreshing,
+          'refreshing',
+          isFalse,
+        ),
+      );
+    });
+  });
 }

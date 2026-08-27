@@ -187,6 +187,7 @@ ActiveServer buildActiveServer(
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
   HouseholdHydrationStatus? householdHydrationStatus,
+  HouseholdRefresher? householdRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
 }) {
@@ -199,6 +200,9 @@ ActiveServer buildActiveServer(
   }
   if (householdRepository != null) {
     container.registerSingleton<HouseholdRepository>(householdRepository);
+  }
+  if (householdRefresher != null) {
+    container.registerSingleton<HouseholdRefresher>(householdRefresher);
   }
   if (householdRemoteDataSource != null) {
     container.registerSingleton<HouseholdRemoteDataSource>(

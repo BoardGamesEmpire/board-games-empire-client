@@ -69,6 +69,15 @@ import 'package:observability/observability.dart';
 /// So the hydrator is now kept and registered with the session's
 /// [SessionRehydrator], which a later trigger drives.
 ///
+/// ## The retry the screens call (#300 D5)
+///
+/// The same `pass()` is registered a second time, as a
+/// [HouseholdRefresher], for the retry on the household list's and detail
+/// screen's refresh banners. A press is not a trigger: it is not filtered
+/// by staleness and it is not dropped while a pass is running, because
+/// someone is waiting to see it do something. Overlap is safe because the
+/// hydrator single-flights (#302 D3).
+///
 /// Two things this deliberately does not do. It does not decide **when** to
 /// re-run — a connectivity edge and app resume live in the shell, and the
 /// household feature learns nothing about either. And it does not publish a
@@ -154,6 +163,16 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
     }
 
     _registerRehydrate(container, status, pass);
+
+    // The same pass, reachable by the screens (#300 D5). Registered rather
+    // than routed through the [SessionRehydrator]: that seam skips an
+    // entry a pass is already running for (#302 D4), which is right for a
+    // trigger and wrong for a button someone is waiting on.
+    //
+    // It closes over the same hydrator the rehydrate entry does, so its
+    // single-flight guard (#302 D3) still means something — a second
+    // instance would have its own.
+    container.registerSingleton<HouseholdRefresher>(HouseholdRefresher(pass));
 
     // The hydrator itself is deliberately not registered: nothing resolves
     // one by type, and it holds no resources to dispose. The re-hydrate

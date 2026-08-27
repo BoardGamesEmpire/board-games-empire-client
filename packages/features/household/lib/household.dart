@@ -14,4 +14,5 @@ export 'src/screens/household_detail_screen.dart';
 export 'src/screens/household_list_screen.dart';
 export 'src/sync/household_hydration_status.dart';
 export 'src/sync/household_hydrator.dart';
+export 'src/sync/household_refresher.dart';
 export 'src/widgets/create_household_form.dart';

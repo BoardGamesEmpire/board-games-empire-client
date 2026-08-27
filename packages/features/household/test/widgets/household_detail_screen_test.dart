@@ -38,6 +38,8 @@ HouseholdMember _member(
 
 const _notFoundCopy = "We couldn't find this household";
 const _refreshFailedCopy = "This may be out of date — we couldn't refresh it.";
+const _retryCopy = 'Try again';
+const _refreshingCopy = 'Refreshing\u2026';
 const _errorCopy = "We couldn't open this household.";
 const _unknownRoleCopy = "A role this app doesn't recognise";
 
@@ -73,6 +75,7 @@ void main() {
   Widget harness({
     String householdId = _id,
     void Function(BuildContext context)? onBack,
+    Future<void> Function()? onRetry,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -86,6 +89,7 @@ void main() {
       repository: repository,
       hydration: hydration.stream,
       onBack: onBack,
+      onRetry: onRetry,
     ),
   );
 
@@ -513,5 +517,114 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(HouseholdDetailScreen.memberCountKey), findsOneWidget);
+  });
+
+  group('the retry on the refresh banner (#300 D10)', () {
+    testWidgets('runs a pass and says so, over the household', (tester) async {
+      final pass = Completer<void>();
+      var calls = 0;
+
+      await tester.pumpWidget(
+        harness(
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        ),
+      );
+      hydration.add(HouseholdHydrationState.failed);
+      await settleWith(tester);
+      expect(find.text(_retryCopy), findsOneWidget);
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(calls, 1);
+      // Two of them: the banner's message, and the disabled button's own
+      // label — it keeps a name rather than becoming a bare spinner
+      // (`BgeSubmitButton`'s contract, #163).
+      expect(find.text(_refreshingCopy), findsNWidgets(2));
+      expect(find.text(_refreshFailedCopy), findsNothing);
+      // Annotated, not hidden — the same rule the failed banner follows.
+      expect(find.text('Sunday Crew'), findsOneWidget);
+
+      pass.complete();
+      hydration.add(HouseholdHydrationState.refreshed);
+      await tester.pumpAndSettle();
+
+      expect(find.text(_refreshingCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsNothing);
+    });
+
+    testWidgets('is offered on an unverified absence, where it is worth the '
+        'most (#300 D10)', (tester) async {
+      // A household missing from a cache whose last pass failed may well
+      // exist on the server. This is the one surface where the retry can
+      // change what is on screen rather than only how fresh it is.
+      final pass = Completer<void>();
+      var calls = 0;
+
+      await tester.pumpWidget(
+        harness(
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        ),
+      );
+      hydration.add(HouseholdHydrationState.failed);
+      households.add(const []);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(calls, 1);
+      // #270's rule takes over from here: an absence with a pass running is
+      // unknown rather than missing, so the screen stops asserting it.
+      expect(find.byKey(HouseholdDetailScreen.loadingKey), findsOneWidget);
+      expect(find.text(_notFoundCopy), findsNothing);
+
+      pass.complete();
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+    });
+
+    testWidgets('is not offered where the composition cannot refresh (#137)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness());
+      hydration.add(HouseholdHydrationState.failed);
+      await settleWith(tester);
+
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.refreshRetryKey), findsNothing);
+    });
+
+    testWidgets('a pass nobody asked for is not announced (#300 D6)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness(onRetry: () async {}));
+      hydration.add(HouseholdHydrationState.failed);
+      await settleWith(tester);
+
+      hydration.add(HouseholdHydrationState.running);
+      // Two pumps: the status event reaches the bloc on one microtask turn
+      // and the rebuild lands on the next.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(_refreshingCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsNothing);
+    });
   });
 }
