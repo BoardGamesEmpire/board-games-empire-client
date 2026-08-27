@@ -371,35 +371,33 @@ void main() {
       },
     );
 
-    test(
-      'a pass that succeeded is not stale, so a trigger leaves it alone',
-      () async {
-        final rehydrator = await withRehydrator();
-        when(
-          () => remote.fetchHouseholds(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-          ),
-        ).thenAnswer((_) async => _emptyPage());
+    test('a pass that succeeded inside the window is not stale, so a trigger '
+        'leaves it alone', () async {
+      final rehydrator = await withRehydrator();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => _emptyPage());
 
-        await const HouseholdHydrateInstaller().install(
-          container,
-          _config(),
-          'user-1',
-        );
-        await Future<void>.delayed(Duration.zero);
-        reset(remote);
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+      reset(remote);
 
-        await rehydrator.rehydrateStale();
+      await rehydrator.rehydrateStale();
 
-        verifyNever(
-          () => remote.fetchHouseholds(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-          ),
-        );
-      },
-    );
+      verifyNever(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      );
+    });
 
     test('a trigger arriving during the install-time pass adds no second '
         'drain', () async {
@@ -624,5 +622,176 @@ void main() {
         );
       },
     );
+  });
+
+  group('the staleness window (#300 D1, D2, D8, D15)', () {
+    /// A container carrying the session rehydrator, as in production.
+    Future<SessionRehydrator> withRehydrator() async {
+      await const SessionRehydratorInstaller().install(
+        container,
+        _config(),
+        'user-1',
+      );
+      return container.get<SessionRehydrator>();
+    }
+
+    late DateTime clock;
+
+    setUp(() => clock = DateTime.utc(2026, 8, 27, 12));
+
+    /// Installs with a clock the test drives, so a five-minute window does
+    /// not cost five real minutes.
+    Future<void> installAt() => HouseholdHydrateInstaller(
+      now: () => clock,
+    ).install(container, _config(), 'user-1');
+
+    void answerWithEmptyPage() {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => _emptyPage());
+    }
+
+    void verifyDrained({required bool expected}) {
+      Future<PaginatedResult<HouseholdWithMembers>> call() =>
+          remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          );
+      expected ? verify(call).called(1) : verifyNever(call);
+    }
+
+    test('the window is the five minutes D2 recorded', () {
+      // Pinned so the figure is a decision someone can argue with rather
+      // than a constant to reverse-engineer. D2 recorded it as a guess.
+      expect(
+        HouseholdHydrateInstaller.staleAfter,
+        equals(const Duration(minutes: 5)),
+      );
+    });
+
+    test('a success older than the window is stale again', () async {
+      final rehydrator = await withRehydrator();
+      answerWithEmptyPage();
+
+      await installAt();
+      await Future<void>.delayed(Duration.zero);
+      reset(remote);
+      answerWithEmptyPage();
+
+      clock = clock.add(
+        HouseholdHydrateInstaller.staleAfter + const Duration(seconds: 1),
+      );
+      await rehydrator.rehydrateStale();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyDrained(expected: true);
+    });
+
+    test('a success exactly at the window has aged out', () async {
+      // The boundary is inclusive: at five minutes the answer is five
+      // minutes old, which is what "longer ago than the window" was for.
+      final rehydrator = await withRehydrator();
+      answerWithEmptyPage();
+
+      await installAt();
+      await Future<void>.delayed(Duration.zero);
+      reset(remote);
+      answerWithEmptyPage();
+
+      clock = clock.add(HouseholdHydrateInstaller.staleAfter);
+      await rehydrator.rehydrateStale();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyDrained(expected: true);
+    });
+
+    test('a create clears the window, so the next trigger drains '
+        'inside it (#300 D9)', () async {
+      final rehydrator = await withRehydrator();
+      answerWithEmptyPage();
+
+      await installAt();
+      await Future<void>.delayed(Duration.zero);
+      reset(remote);
+      answerWithEmptyPage();
+
+      // No clock advance at all: the create is what makes the set stale,
+      // not elapsed time.
+      container.get<HouseholdHydrationStatus>().markStale();
+      await rehydrator.rehydrateStale();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyDrained(expected: true);
+    });
+
+    test('a retry that fails inside the window leaves the next trigger '
+        'stale', () async {
+      // The one path that reaches `failed` with a *young* stamp: the manual
+      // retry (#300 D5) runs whatever the window says, so a press a minute
+      // after a success can fail with the successful pass's timestamp still
+      // well inside the window. The status keeps that stamp on purpose --
+      // the rows on screen are that old -- so what has to make this stale
+      // is the state arm, not the age.
+      final rehydrator = await withRehydrator();
+      answerWithEmptyPage();
+
+      await installAt();
+      await Future<void>.delayed(Duration.zero);
+
+      reset(remote);
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+      clock = clock.add(const Duration(minutes: 1));
+      await container.get<HouseholdRefresher>().refresh();
+
+      expect(
+        container.get<HouseholdHydrationStatus>().state,
+        HouseholdHydrationState.failed,
+      );
+      expect(
+        container.get<HouseholdHydrationStatus>().sinceRefresh,
+        equals(const Duration(minutes: 1)),
+      );
+
+      reset(remote);
+      answerWithEmptyPage();
+      await rehydrator.rehydrateStale();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyDrained(expected: true);
+    });
+
+    test('a failed pass is stale regardless of the clock', () async {
+      // `failed` is stale by state (#302 D4). The window only ever makes a
+      // `refreshed` entry stale; it must not make a failed one fresh.
+      final rehydrator = await withRehydrator();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+
+      await installAt();
+      await Future<void>.delayed(Duration.zero);
+      reset(remote);
+      answerWithEmptyPage();
+
+      await rehydrator.rehydrateStale();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyDrained(expected: true);
+    });
   });
 }

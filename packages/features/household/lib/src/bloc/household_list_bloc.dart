@@ -131,13 +131,18 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   /// Set by a failed read, cleared by the next successful one.
   bool _readFailed = false;
 
-  /// Idle until told otherwise, which is also what an absent hydrate
-  /// means.
-  HouseholdHydrationState _hydrationState = HouseholdHydrationState.idle;
+  /// What the hydrate is doing, and whether it has ever confirmed an
+  /// answer (#300 D16). Idle and unconfirmed until told otherwise, which
+  /// is also what an absent hydrate means.
+  ///
+  /// [HouseholdHydrationMemory.everRefreshed] is what makes an empty list
+  /// *confirmed* rather than merely unverified; the detail screen reads
+  /// the same memory for the same reason.
+  final HouseholdHydrationMemory _hydrationMemory = HouseholdHydrationMemory();
 
   /// Whether a pass **this screen asked for** is still running (#300 D6).
   ///
-  /// Not derived from [_hydrationState]: `running` says a pass is in
+  /// Not derived from the hydration state: `running` says a pass is in
   /// flight, not who started it.
   bool _retrying = false;
 
@@ -173,7 +178,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     HouseholdListHydrationUpdated event,
     Emitter<HouseholdListState> emit,
   ) {
-    _hydrationState = event.hydration;
+    _hydrationMemory.absorb(event.hydration);
     _emitDerived(emit);
   }
 
@@ -224,15 +229,22 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     final households = _households;
     if (households == null) return emit(const HouseholdListLoading());
 
+    // "Filling" means the emptiness has never been confirmed, not merely
+    // that a pass is running (#300 D16). #269 D1 exists to stop "no
+    // households yet" rendering over a cache about to fill for the *first*
+    // time; once a pass has landed `refreshed` the answer is known, and
+    // #300 D1 makes re-checking it routine — so re-confirming it must not
+    // un-render the screen on every entry.
     final filling =
         households.isEmpty &&
-        _hydrationState == HouseholdHydrationState.running;
+        _hydrationMemory.state == HouseholdHydrationState.running &&
+        !_hydrationMemory.everRefreshed;
     if (filling) return emit(const HouseholdListLoading());
 
     emit(
       HouseholdListReady(
         households: households,
-        refreshFailed: _hydrationState == HouseholdHydrationState.failed,
+        refreshFailed: _hydrationMemory.state == HouseholdHydrationState.failed,
         refreshing: _retrying,
       ),
     );

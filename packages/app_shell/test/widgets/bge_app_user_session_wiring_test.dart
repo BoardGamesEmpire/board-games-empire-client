@@ -311,11 +311,16 @@ void main() {
         findsOneWidget,
       );
 
+      // A delta rather than a total: this test walks to the household list,
+      // and entering it is itself a trigger now (#300 D13). What is being
+      // pinned here is that the *resume* still reaches the rehydrator from
+      // outside the auth shell, which the absolute count would conflate.
+      final before = rehydrator.passes;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
 
-      expect(rehydrator.passes, equals(1));
+      expect(rehydrator.passes - before, equals(1));
     });
 
     testWidgets('a composition with no rehydrator registered signs in '

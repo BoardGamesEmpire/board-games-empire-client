@@ -892,4 +892,85 @@ void main() {
       pass.complete();
     });
   });
+
+  group('a confirmed-absent household survives a re-check (#300 D16)', () {
+    test('an absence a pass has confirmed stays not-found under the next '
+        'pass', () async {
+      // The detail half of #300 D16. #270's rule is that an absence with a
+      // pass running is *unknown* rather than missing — true while nothing
+      // has confirmed it, and #300 D15 makes re-checks routine enough that
+      // re-confirming a known absence must not flash a spinner over the
+      // not-found page on every resume.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      hydration.add(HouseholdHydrationState.refreshed);
+      households.add([_household('other')]);
+      await settle();
+      expect(bloc.state, isA<HouseholdDetailNotFound>());
+
+      hydration.add(HouseholdHydrationState.running);
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailNotFound>());
+    });
+
+    test('an absence only a failure has seen is still unknown', () async {
+      // Unchanged from #270: a failed pass confirms nothing, so a pass over
+      // an unverified absence is still the spinner.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      hydration.add(HouseholdHydrationState.failed);
+      households.add([_household('other')]);
+      await settle();
+      expect(bloc.state, isA<HouseholdDetailNotFound>());
+
+      hydration.add(HouseholdHydrationState.running);
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailLoading>());
+    });
+
+    test('a household that was shown and then vanished still waits on a '
+        'running pass', () async {
+      // The branch #300 D16 deliberately does NOT touch. Once the household
+      // has been rendered, a pass in flight may be rewriting the very rows
+      // this screen reads, so its disappearance mid-pass is not yet an
+      // answer — #270's reasoning, unchanged.
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      hydration.add(HouseholdHydrationState.refreshed);
+      households.add([_household(_id)]);
+      members.add([_member('u-me', role: HouseholdRole.householdOwner)]);
+      await settle();
+      expect(bloc.state, isA<HouseholdDetailReady>());
+
+      hydration.add(HouseholdHydrationState.running);
+      households.add([_household('other')]);
+      await settle();
+
+      expect(bloc.state, isA<HouseholdDetailLoading>());
+    });
+
+    test(
+      'the household arriving after a confirmed absence still renders',
+      () async {
+        final bloc = build();
+        addTearDown(bloc.close);
+
+        hydration.add(HouseholdHydrationState.refreshed);
+        households.add([_household('other')]);
+        await settle();
+
+        hydration.add(HouseholdHydrationState.running);
+        households.add([_household(_id)]);
+        members.add([_member('u-me', role: HouseholdRole.householdOwner)]);
+        await settle();
+
+        expect(bloc.state, isA<HouseholdDetailReady>());
+      },
+    );
+  });
 }

@@ -88,9 +88,24 @@ import 'package:observability/observability.dart';
 /// Staleness is answered from that same status rather than remembered by
 /// the registry (#302 D4): `failed` or `idle` is worth another pass,
 /// `running` is one already happening, and `refreshed` — including the
-/// admin-scoped truncation, which updated the cache — is not. A registry
-/// holding its own copy of that would be a second answer free to drift
-/// from the one the screen reads.
+/// admin-scoped truncation, which updated the cache — is not, until it
+/// ages out. A registry holding its own copy of that would be a second
+/// answer free to drift from the one the screen reads.
+///
+/// ## The window a refreshed pass ages out of (#300 D1, D2, D8)
+///
+/// [staleAfter] is what lets a `refreshed` entry go stale at all. Without
+/// it a session that hydrated once at sign-in never asked again however
+/// long it ran, which is half of what #300 was filed for; the other half
+/// is the manual retry above.
+///
+/// **This widens what every trigger does, deliberately** (#300 D15). The
+/// registry consults this one closure, so after this an app resume or a
+/// connectivity edge finding a cache that refreshed longer ago than the
+/// window will re-drain it — not only the household list's own entry
+/// trigger. #302 D4's actual constraint is intact: the registry still
+/// holds no staleness state of its own, and the timestamp lives on the
+/// status the screen reads.
 ///
 /// A trigger that lands while a pass is `running` is therefore **dropped,
 /// not queued**. Joining it would change nothing — the joined caller gets
@@ -105,9 +120,28 @@ import 'package:observability/observability.dart';
 /// absent household client: compositions without the seam (web until #137,
 /// shell tests) must still sign in normally.
 class HouseholdHydrateInstaller implements UserScopeInstaller {
-  const HouseholdHydrateInstaller();
+  /// [now] overrides the clock the published [HouseholdHydrationStatus]
+  /// stamps [staleAfter] against. Production leaves it null, which is the
+  /// device clock; a test drives it so a five-minute window does not cost
+  /// five real minutes.
+  const HouseholdHydrateInstaller({this.now});
+
+  /// How long a successful pass stays current (#300 D2).
+  ///
+  /// Long enough that flipping between screens does not hit the network on
+  /// every visit; short enough that "I fixed the server, let me go look"
+  /// works without a restart.
+  ///
+  /// **Recorded as a guess rather than a measurement.** D2 put the figure
+  /// in writing precisely so it would be cheaper to argue with than to
+  /// reverse-engineer from a constant. If it turns out wrong, this is the
+  /// one place it is wrong in.
+  static const Duration staleAfter = Duration(minutes: 5);
 
   static final BgeLogger _log = BgeLogger('bge.household.hydrate.install');
+
+  /// See the constructor. Null is the device clock.
+  final DateTime Function()? now;
 
   @override
   Future<void> install(
@@ -128,7 +162,7 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
       remote: container.get<HouseholdRemoteDataSource>(),
     );
 
-    final status = HouseholdHydrationStatus();
+    final status = HouseholdHydrationStatus(now: now);
     container.registerSingleton<HouseholdHydrationStatus>(
       status,
       // Close-on-teardown, like the repositories this scope registers. A
@@ -207,8 +241,11 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
       'household',
       isStale: () => switch (status.state) {
         HouseholdHydrationState.idle || HouseholdHydrationState.failed => true,
-        HouseholdHydrationState.running ||
-        HouseholdHydrationState.refreshed => false,
+        HouseholdHydrationState.running => false,
+        // The window is this composition's to choose; whether the stamp
+        // has aged past it is the status's own question to answer
+        // (#300 D8).
+        HouseholdHydrationState.refreshed => status.isStaleAfter(staleAfter),
       },
       run: pass,
     );

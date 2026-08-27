@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/services.dart';
-import 'package:observability/observability.dart';
+
+import 'detached_rehydrate.dart';
 
 /// Asks the active session's [SessionRehydrator] for a pass when something
 /// suggests the server is worth trying again (#302 D1).
@@ -106,8 +107,6 @@ class SessionRehydrateTrigger extends StatefulWidget {
 }
 
 class _SessionRehydrateTriggerState extends State<SessionRehydrateTrigger> {
-  static final BgeLogger _log = BgeLogger('bge.shell.session_rehydrate');
-
   StreamSubscription<ConnectivityState>? _connectivitySubscription;
 
   /// Same choice as `AuthLifecycleRevalidationTrigger`: [AppLifecycleListener]
@@ -138,54 +137,29 @@ class _SessionRehydrateTriggerState extends State<SessionRehydrateTrigger> {
     _rehydrate('resume');
   }
 
-  /// Fire-and-forget: no caller is waiting, and the pass reports what it
-  /// achieved through each cache's own status holder.
+  /// Fire-and-forget, through the shared guard both of the shell's
+  /// re-hydrate callers use: no caller is waiting, and the pass reports
+  /// what it achieved through each cache's own status holder.
   ///
   /// Overlapping triggers are the registry's problem, not this widget's —
   /// a pass arriving while one is in flight joins it (#302 D3), so a
   /// flapping connection cannot fan out into concurrent drains.
-  void _rehydrate(String reason) {
-    try {
+  ///
+  /// The scope is read **per trigger** rather than captured: see the class
+  /// doc on [SessionRehydrateTrigger.scopeSource]. A container disposed
+  /// between the last active-server event and this callback refuses use, so
+  /// resolution belongs inside the guard — which is where
+  /// [startDetachedRehydrate] runs it.
+  void _rehydrate(String reason) => startDetachedRehydrate(
+    trigger: reason,
+    resolve: () {
       final container = widget.scopeSource()?.active?.container;
-      if (container == null) return;
-      if (!container.isRegistered<SessionRehydrator>()) return;
-
-      unawaited(
-        container.get<SessionRehydrator>().rehydrateStale().catchError((
-          Object error,
-          StackTrace stackTrace,
-        ) {
-          // Unreachable by contract — rehydrateStale isolates its entries
-          // — but an unhandled async error on this path would raise a
-          // crash-report prompt (#34) for a refresh nobody asked for.
-          _log.warn(
-            'Session re-hydrate escaped its own error handling',
-            error: error,
-            stackTrace: stackTrace,
-            context: {'trigger': reason},
-          );
-        }),
-      );
-    } on Object catch (error, stackTrace) {
-      // Covers both halves, because `catchError` above cannot see either.
-      //
-      // Resolution: a container disposed between the last active-server
-      // event and this callback throws from `isRegistered` itself (the
-      // per-server facade reads through to an inner container that refuses
-      // use once disposed).
-      //
-      // Starting the pass: [SessionRehydrator.rehydrateStale] returns a
-      // future but is not required to be an `async` method — the shipped
-      // one is not — so an implementation that threw before its first
-      // await would throw *here*, past the future's error channel.
-      _log.debug(
-        'Session re-hydrate could not start a pass',
-        error: error,
-        stackTrace: stackTrace,
-        context: {'trigger': reason},
-      );
-    }
-  }
+      if (container == null) return null;
+      return container.isRegistered<SessionRehydrator>()
+          ? container.get<SessionRehydrator>()
+          : null;
+    },
+  );
 
   @override
   void dispose() {

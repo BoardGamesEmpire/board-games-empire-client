@@ -144,7 +144,10 @@ void main() {
     ).thenAnswer((_) async => _household(_serverId));
   });
 
-  Future<void> pumpApp(WidgetTester tester) async {
+  Future<void> pumpApp(
+    WidgetTester tester, {
+    HouseholdHydrationStatus? hydrationStatus,
+  }) async {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
@@ -153,6 +156,7 @@ void main() {
           // The create route's guard needs the remote, unlike the list's and
           // the detail's (#269 D4).
           householdRemoteDataSource: remote,
+          householdHydrationStatus: hydrationStatus,
         ),
       ),
     );
@@ -270,6 +274,79 @@ void main() {
           completedSyncQueueId: any(named: 'completedSyncQueueId'),
         ),
       );
+    });
+  });
+
+  group('a create clears the staleness window (#300 D3, D9)', () {
+    /// A status whose last pass succeeded and has not aged out — the state
+    /// in which the window would otherwise suppress the next entry's pass.
+    HouseholdHydrationStatus freshlyRefreshed() {
+      final status = HouseholdHydrationStatus(
+        now: () => DateTime.utc(2026, 8, 27, 12),
+      )..started();
+      status.finished(HydrateOutcome.complete);
+      addTearDown(status.close);
+      return status;
+    }
+
+    testWidgets('creating a household drops the timestamp', (tester) async {
+      // D3's reasoning: a create makes the local set stale by definition, so
+      // the next entry re-hydrates rather than waiting out the remaining
+      // minutes. The invalidation belongs to *mutation*, and the
+      // composition root is where mutations are already wired (#300 D9) —
+      // which is what gives #122's membership mutations the same hook.
+      final status = freshlyRefreshed();
+      expect(status.sinceRefresh, isNotNull);
+
+      await pumpApp(tester, hydrationStatus: status);
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
+      await tester.pumpAndSettle();
+
+      await submitTheForm(tester);
+
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+      expect(status.sinceRefresh, isNull);
+    });
+
+    testWidgets('the state itself is untouched — the rows we have are still '
+        'the rows we have', (tester) async {
+      final status = freshlyRefreshed();
+
+      await pumpApp(tester, hydrationStatus: status);
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
+      await tester.pumpAndSettle();
+
+      await submitTheForm(tester);
+
+      // Not `running` and not `failed`: nothing is in flight and nothing
+      // failed. Only the claim that the set is current went away.
+      expect(status.state, equals(HouseholdHydrationState.refreshed));
+    });
+
+    testWidgets('a composition with no hydration status still creates', (
+      tester,
+    ) async {
+      // The #137 path: no household client means no status to invalidate,
+      // and a create must not care.
+      await pumpApp(tester);
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HomeScreen.entryKey('households')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
+      await tester.pumpAndSettle();
+
+      await submitTheForm(tester);
+
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
     });
   });
 }

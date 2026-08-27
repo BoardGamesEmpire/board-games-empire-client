@@ -85,6 +85,7 @@ class HouseholdListScreen extends StatelessWidget {
     this.onCreate,
     this.onOpen,
     this.onRetry,
+    this.onEnter,
     super.key,
   });
 
@@ -145,14 +146,38 @@ class HouseholdListScreen extends StatelessWidget {
   /// about it, rather than a button that does nothing.
   final Future<void> Function()? onRetry;
 
+  /// Asks for a hydrate pass when this screen is entered, subject to the
+  /// staleness window (#300 D1, D13). Null where this composition has no
+  /// re-hydrate seam at all — the same #137 case that leaves [onRetry]
+  /// null.
+  ///
+  /// Fire-and-forget by contract: the caller owns the error handling, and
+  /// nothing here waits on it. What it starts is **not narrated** (#300
+  /// D6) — the banner clears if it succeeds, and says nothing while it
+  /// runs, because nobody pressed anything.
+  final VoidCallback? onEnter;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<HouseholdListBloc>(
-      create: (_) => HouseholdListBloc(
-        repository: repository,
-        hydration: hydration,
-        onRetry: onRetry,
-      ),
+      create: (_) {
+        final bloc = HouseholdListBloc(
+          repository: repository,
+          hydration: hydration,
+          onRetry: onRetry,
+        );
+        // #300 D14: here, and not in the route builder. `create` runs once
+        // per provider insertion — which is once per entry — whereas
+        // go_router re-runs a route's builder on every router rebuild and
+        // for every page in the match stack, so the same call there would
+        // fire on rebuilds and on pushing the detail route. That is a poll,
+        // which #300 D1 rejected by name.
+        //
+        // After the bloc, so its subscription is in place before the pass
+        // can report anything.
+        onEnter?.call();
+        return bloc;
+      },
       child: _HouseholdListView(
         onCreate: onCreate,
         onOpen: onOpen,

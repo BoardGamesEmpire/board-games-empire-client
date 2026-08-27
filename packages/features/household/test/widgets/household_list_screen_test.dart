@@ -59,6 +59,7 @@ void main() {
     void Function(BuildContext context)? onCreate,
     void Function(BuildContext context, String householdId)? onOpen,
     Future<void> Function()? onRetry,
+    VoidCallback? onEnter,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -73,6 +74,7 @@ void main() {
       onCreate: onCreate,
       onOpen: onOpen,
       onRetry: onRetry,
+      onEnter: onEnter,
     ),
   );
 
@@ -590,5 +592,64 @@ void main() {
 
     expect(find.byKey(HouseholdListScreen.errorKey), findsOneWidget);
     expect(find.text(_errorCopy), findsOneWidget);
+  });
+
+  group('the entry trigger (#300 D1, D13, D14)', () {
+    testWidgets('asks for a pass once, on entry', (tester) async {
+      var entries = 0;
+      await tester.pumpWidget(harness(onEnter: () => entries++));
+      await tester.pump();
+
+      expect(entries, 1);
+    });
+
+    testWidgets('a rebuild does not ask for a second pass', (tester) async {
+      // The reason this lives here rather than in the route builder (#300
+      // D14). go_router re-runs a route's builder whenever the router
+      // rebuilds, and builds every page in the match stack — so a side
+      // effect there fires on rebuilds and on pushing a child route, which
+      // is a poll rather than an entry. `BlocProvider.create` runs once per
+      // provider insertion, which is what "on entry" actually means.
+      var entries = 0;
+      await tester.pumpWidget(harness(onEnter: () => entries++));
+      await tester.pump();
+
+      households.add([_household('h-1')]);
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.refreshed);
+      await tester.pump();
+      await tester.pumpWidget(harness(onEnter: () => entries++));
+      await tester.pump();
+
+      expect(entries, 1);
+    });
+
+    testWidgets('a composition with no pass to run still renders', (
+      tester,
+    ) async {
+      // The #137 path: absent, like `onRetry`, rather than a callback that
+      // does nothing.
+      await tester.pumpWidget(harness());
+      households.add(const []);
+      hydration.add(HouseholdHydrationState.refreshed);
+      await tester.pump();
+
+      expect(find.byKey(HouseholdListScreen.emptyKey), findsOneWidget);
+    });
+
+    testWidgets('the pass it starts is not narrated', (tester) async {
+      // #300 D6: only a press narrates. An entry is not a press, so the
+      // screen says nothing while the pass it started runs.
+      await tester.pumpWidget(harness(onEnter: () {}));
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(find.text(_refreshingCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsNothing);
+    });
   });
 }
