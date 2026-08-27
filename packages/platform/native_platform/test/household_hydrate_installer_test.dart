@@ -727,6 +727,49 @@ void main() {
       verifyDrained(expected: true);
     });
 
+    test('a retry that fails inside the window leaves the next trigger '
+        'stale', () async {
+      // The one path that reaches `failed` with a *young* stamp: the manual
+      // retry (#300 D5) runs whatever the window says, so a press a minute
+      // after a success can fail with the successful pass's timestamp still
+      // well inside the window. The status keeps that stamp on purpose --
+      // the rows on screen are that old -- so what has to make this stale
+      // is the state arm, not the age.
+      final rehydrator = await withRehydrator();
+      answerWithEmptyPage();
+
+      await installAt();
+      await Future<void>.delayed(Duration.zero);
+
+      reset(remote);
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+      clock = clock.add(const Duration(minutes: 1));
+      await container.get<HouseholdRefresher>().refresh();
+
+      expect(
+        container.get<HouseholdHydrationStatus>().state,
+        HouseholdHydrationState.failed,
+      );
+      expect(
+        container.get<HouseholdHydrationStatus>().sinceRefresh,
+        equals(const Duration(minutes: 1)),
+      );
+
+      reset(remote);
+      answerWithEmptyPage();
+      await rehydrator.rehydrateStale();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyDrained(expected: true);
+    });
+
     test('a failed pass is stale regardless of the clock', () async {
       // `failed` is stale by state (#302 D4). The window only ever makes a
       // `refreshed` entry stale; it must not make a failed one fresh.

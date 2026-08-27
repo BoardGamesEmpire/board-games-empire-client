@@ -148,6 +148,25 @@ void main() {
       expect(stamped.sinceRefresh, isNull);
     });
 
+    test('a failure after a success leaves the earlier stamp alone', () {
+      // The rows on screen are still the ones that success landed, so that
+      // is genuinely how old they are. A failure lands nothing, so it has
+      // nothing to date -- and clearing the stamp would be D19's mistake
+      // applied to the clock: letting a failure un-know what a success
+      // established. `failed` is stale by state instead, which is what
+      // every caller reads first.
+      stamped
+        ..started()
+        ..finished(HydrateOutcome.complete);
+      advance(const Duration(minutes: 2));
+
+      stamped
+        ..started()
+        ..finished(HydrateOutcome.failed);
+
+      expect(stamped.sinceRefresh, equals(const Duration(minutes: 2)));
+    });
+
     test('a second successful pass re-stamps', () {
       stamped
         ..started()
@@ -256,6 +275,23 @@ void main() {
           ..finished(HydrateOutcome.failed);
 
         expect(stamped.isStaleAfter(window), isTrue);
+      });
+
+      test('reports a young age even when the last pass failed', () {
+        // Deliberate, and the reason this method's doc says it answers
+        // about age and nothing else. A failure inside the window leaves a
+        // young stamp; what makes it stale is [state], and the installer's
+        // registry entry reads that first.
+        stamped
+          ..started()
+          ..finished(HydrateOutcome.complete);
+        advance(const Duration(minutes: 1));
+        stamped
+          ..started()
+          ..finished(HydrateOutcome.failed);
+
+        expect(stamped.state, equals(HouseholdHydrationState.failed));
+        expect(stamped.isStaleAfter(window), isFalse);
       });
 
       test('markStale is stale immediately (#300 D9)', () {

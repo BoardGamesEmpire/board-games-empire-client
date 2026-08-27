@@ -107,9 +107,16 @@ class HouseholdHydrationStatus {
 
   /// How long since the last pass that landed rows, or null when none has.
   ///
-  /// Null means "no current answer to age", which covers three cases that
-  /// want the same treatment from a staleness rule: nothing has run, the
-  /// last pass failed, and [markStale] invalidated the last success.
+  /// Null means "no rows to age": nothing has ever landed any, or
+  /// [markStale] invalidated the set that did (#300 D9). Both want the same
+  /// treatment from a staleness rule, which is what [isStaleAfter] gives
+  /// them.
+  ///
+  /// A **failed** pass does not clear this. The rows on screen are still
+  /// the ones the last success landed, and that is genuinely how old they
+  /// are; a failure lands nothing, so it has nothing to date. What makes a
+  /// failure stale is [state] — read first by every caller, and answered
+  /// without consulting age at all.
   Duration? get sinceRefresh {
     final at = _refreshedAt;
     return at == null ? null : _now().difference(at);
@@ -171,9 +178,17 @@ class HouseholdHydrationStatus {
   /// update whose state is unchanged — a detail that would otherwise
   /// silently skip the stamp.
   ///
-  /// Only the refreshed arm stamps. A failed pass leaves the clock null:
-  /// `failed` is already stale by state, and a stamp there would make a
-  /// failure look like a success that has yet to age out.
+  /// Only the refreshed arm stamps. A failed pass lands no rows, so there
+  /// is nothing new to date, and a stamp there would make a failure look
+  /// like a success that has yet to age out.
+  ///
+  /// It does not *clear* the stamp either. After a success and then a
+  /// failure the screen is still showing the successful pass's rows, and
+  /// their age has not changed — so [sinceRefresh] keeps reporting it.
+  /// Clearing it would be #300 D19's mistake moved from the latch to the
+  /// clock: a failure un-knowing what a success established. `failed` is
+  /// stale by state instead, which is how the installer's registry entry
+  /// answers it.
   void finished(HydrateOutcome outcome) {
     if (_closed) return;
 
