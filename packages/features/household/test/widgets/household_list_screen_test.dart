@@ -369,6 +369,26 @@ void main() {
       expect(find.byKey(HouseholdListScreen.rowKey('h-1')), findsOneWidget);
     });
 
+    testWidgets('clears when a re-hydrate refreshes the list, with nothing '
+        'asked of the user (#302)', (tester) async {
+      // The #302 re-run drives the same status holder the screen is
+      // already watching (#270 D5), so the banner going away is the whole
+      // of what the household feature had to do for that issue.
+      await tester.pumpWidget(harness());
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.refreshed);
+      await tester.pump();
+
+      expect(find.text(_refreshFailedCopy), findsNothing);
+      expect(find.byKey(HouseholdListScreen.rowKey('h-1')), findsOneWidget);
+    });
+
     testWidgets('qualifies an empty list rather than replacing it', (
       tester,
     ) async {

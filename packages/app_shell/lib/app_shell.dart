@@ -53,3 +53,4 @@ export 'src/widgets/build_error_view.dart';
 export 'src/widgets/crash_report_prompt.dart';
 export 'src/widgets/feedback_review_screen.dart';
 export 'src/widgets/router_back_interceptor.dart';
+export 'src/widgets/session_rehydrate_trigger.dart';

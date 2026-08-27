@@ -6,6 +6,8 @@ export 'src/dependency_container_impl.dart';
 export 'src/orchestrator_active_server_scope.dart';
 export 'src/server_context_impl.dart';
 export 'src/server_orchestrator_impl.dart';
+export 'src/session/session_rehydrator_impl.dart';
+export 'src/session/session_rehydrator_installer.dart';
 export 'src/unsupported_push_notification_service.dart';
 export 'src/data_export/user_data_export_bundler.dart';
 export 'src/data_export/user_data_export_registry_impl.dart';

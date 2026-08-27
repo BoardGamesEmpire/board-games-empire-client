@@ -66,12 +66,20 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// resources these installers need (the database, clock, and auth
 /// repository) by falling through to the fully installed per-server scope,
 /// which is guaranteed to exist before any user session can activate.
-/// [HouseholdHydrateInstaller] runs last and is ordered, not incidental: it
-/// resolves the [HouseholdRepository] the preceding installer registers, and
-/// starts the #267 household hydrate for the session. It starts that drain
-/// unawaited — activation is the bootstrap gate, and a throw here signs the
-/// user out, so an unreachable server must not reach this list's caller.
+/// Order is structural at both ends of this list.
+///
+/// [SessionRehydratorInstaller] runs **first**: it registers the #302
+/// re-hydrate seam that the hydrating installers after it register
+/// themselves with, and an installer can only resolve what a predecessor
+/// registered.
+///
+/// [HouseholdHydrateInstaller] runs **last**: it resolves the
+/// [HouseholdRepository] the storage installer registers, and starts the
+/// #267 household hydrate for the session. It starts that drain unawaited
+/// — activation is the bootstrap gate, and a throw here signs the user
+/// out, so an unreachable server must not reach this list's caller.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
+  SessionRehydratorInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
 ];

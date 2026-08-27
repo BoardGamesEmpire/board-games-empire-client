@@ -188,6 +188,7 @@ ActiveServer buildActiveServer(
   HouseholdRemoteDataSource? householdRemoteDataSource,
   HouseholdHydrationStatus? householdHydrationStatus,
   UserSessionScope? userSessionScope,
+  SessionRehydrator? sessionRehydrator,
 }) {
   final container = DependencyContainerImpl()
     ..registerSingleton<AuthRepository>(repo);
@@ -206,6 +207,9 @@ ActiveServer buildActiveServer(
   }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);
+  }
+  if (sessionRehydrator != null) {
+    container.registerSingleton<SessionRehydrator>(sessionRehydrator);
   }
   return ActiveServer(
     serverId: 'server-uuid-1',

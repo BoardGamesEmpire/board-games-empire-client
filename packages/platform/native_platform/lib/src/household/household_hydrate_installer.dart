@@ -60,6 +60,41 @@ import 'package:observability/observability.dart';
 /// window, and an idle status there would render "no households yet" over
 /// a cache that is about to fill — the exact flash this decision exists to
 /// prevent.
+///
+/// ## Registering to be re-run (#302 D2)
+///
+/// The install-time pass used to be the only one there would ever be: a
+/// session that started while the server was unreachable never asked
+/// again, and the user's only route back was signing out and in (#302).
+/// So the hydrator is now kept and registered with the session's
+/// [SessionRehydrator], which a later trigger drives.
+///
+/// Two things this deliberately does not do. It does not decide **when** to
+/// re-run — a connectivity edge and app resume live in the shell, and the
+/// household feature learns nothing about either. And it does not publish a
+/// second status: the re-run drives the same [HouseholdHydrationStatus] the
+/// list is already watching, so the banner clears with nothing added to any
+/// screen (#270 D5).
+///
+/// Staleness is answered from that same status rather than remembered by
+/// the registry (#302 D4): `failed` or `idle` is worth another pass,
+/// `running` is one already happening, and `refreshed` — including the
+/// admin-scoped truncation, which updated the cache — is not. A registry
+/// holding its own copy of that would be a second answer free to drift
+/// from the one the screen reads.
+///
+/// A trigger that lands while a pass is `running` is therefore **dropped,
+/// not queued**. Joining it would change nothing — the joined caller gets
+/// the doomed pass's own outcome, not a fresh request — so the case worth
+/// naming is a slow failure: a drain hanging on a socket timeout can
+/// swallow the one connectivity edge the transport produces, and the list
+/// stays at `failed` afterwards with nothing left to re-trigger it. That
+/// is a failure-driven retry (#311), not something a staleness rule can
+/// answer; #300's manual retry covers it in the meantime.
+///
+/// An absent [SessionRehydrator] is a no-op, on the same reasoning as an
+/// absent household client: compositions without the seam (web until #137,
+/// shell tests) must still sign in normally.
 class HouseholdHydrateInstaller implements UserScopeInstaller {
   const HouseholdHydrateInstaller();
 
@@ -94,30 +129,69 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
       dispose: (s) => s.close(),
     );
 
-    // Before the drain's first turn, not inside it: a screen built in that
-    // window must not read idle.
-    status.started();
+    /// One pass: drive the status around the drain, and never throw.
+    ///
+    /// Shared by the install-time call below and every #302 re-run, so a
+    /// triggered pass cannot report differently from the first one.
+    Future<void> pass() async {
+      status.started();
+      final outcome = await hydrator.hydrate().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        // Unreachable by contract — hydrate() reports failure in its
+        // return value. Kept because the cost of being wrong is a
+        // sign-out.
+        _log.error(
+          'Household hydrate escaped its own error handling',
+          error: error,
+          stackTrace: stackTrace,
+          context: {'serverId': config.bgeServerId},
+        );
+        return HydrateOutcome.failed;
+      });
+      status.finished(outcome);
+    }
+
+    _registerRehydrate(container, status, pass);
 
     // The hydrator itself is deliberately not registered: nothing resolves
-    // one, and it holds no resources to dispose. The drain is bounded by
-    // the scope anyway — once the session pops, the repository it writes
-    // through is disposed and the next write ends the pass.
-    unawaited(
-      hydrator
-          .hydrate()
-          .catchError((Object error, StackTrace stackTrace) {
-            // Unreachable by contract — hydrate() reports failure in its
-            // return value. Kept because the cost of being wrong is a
-            // sign-out.
-            _log.error(
-              'Household hydrate escaped its own error handling',
-              error: error,
-              stackTrace: stackTrace,
-              context: {'serverId': config.bgeServerId},
-            );
-            return HydrateOutcome.failed;
-          })
-          .then(status.finished),
+    // one by type, and it holds no resources to dispose. The re-hydrate
+    // entry above closes over it instead, which keeps its single-flight
+    // guard (#302 D3) meaningful — a second instance would have its own.
+    //
+    // The drain is bounded by the scope anyway — once the session pops, the
+    // repository it writes through is disposed and the next write ends the
+    // pass.
+    //
+    // The #269 D1 window is unchanged by moving `status.started()` into
+    // `pass()`: an async function body runs synchronously up to its first
+    // await, so the status is running before this method returns — before
+    // the drain's first turn, not inside it. A screen built in that window
+    // must not read idle.
+    unawaited(pass());
+  }
+
+  /// Registers the household drain as re-runnable for this session (#302).
+  ///
+  /// A composition without the seam is a no-op rather than a resolution
+  /// failure, for the same reason a missing household client is: a throw
+  /// here aborts activation, and the shell converges that to a sign-out.
+  static void _registerRehydrate(
+    DependencyContainer container,
+    HouseholdHydrationStatus status,
+    Future<void> Function() pass,
+  ) {
+    if (!container.isRegistered<SessionRehydrator>()) return;
+
+    container.get<SessionRehydrator>().register(
+      'household',
+      isStale: () => switch (status.state) {
+        HouseholdHydrationState.idle || HouseholdHydrationState.failed => true,
+        HouseholdHydrationState.running ||
+        HouseholdHydrationState.refreshed => false,
+      },
+      run: pass,
     );
   }
 }
