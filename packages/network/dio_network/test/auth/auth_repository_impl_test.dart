@@ -287,6 +287,100 @@ void main() {
       });
     });
 
+    // #291 made `AuthResponse.token` nullable so web can stop carrying a
+    // credential it never reads. Native does read it, and this is the
+    // envelope BetterAuth documents when email verification is required or
+    // `autoSignIn` is off — so on native it is a grant that cannot be
+    // acted on.
+    //
+    // Before the field was nullable this shape failed inside `fromJson`,
+    // and a raw parse error slips past every `on AuthException` clause in
+    // AuthBloc and strands the form on AuthLoading. The guard below is
+    // what keeps that from becoming a *silent* failure now that the shape
+    // parses: it has to leave as a modelled AuthException, and nothing may
+    // be persisted on the way out.
+    group('a grant envelope with no token', () {
+      Map<String, dynamic> tokenlessGrant() => {
+        ..._signInJson(),
+        'token': null,
+      };
+
+      void verifyNothingPersisted() {
+        verifyNever(
+          () => mockStorage.store(
+            token: any(named: 'token'),
+            expiresAt: any(named: 'expiresAt'),
+            persistedAt: any(named: 'persistedAt'),
+            user: any(named: 'user'),
+          ),
+        );
+      }
+
+      test('fails sign-in as a server fault, persisting nothing', () async {
+        stubStore();
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok(tokenlessGrant()));
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(isA<AuthServerException>()),
+        );
+        verifyNothingPersisted();
+      });
+
+      test('fails sign-up as a server fault, persisting nothing', () async {
+        stubStore();
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok(tokenlessGrant()));
+
+        await expectLater(
+          repo.signUp(email: 'a@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthServerException>()),
+        );
+        verifyNothingPersisted();
+      });
+
+      test('leaves the auth state untouched', () async {
+        stubStore();
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok(tokenlessGrant()));
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(isA<AuthServerException>()),
+        );
+        expect(repo.currentAuthState, isA<AuthStateUnknown>());
+      });
+
+      test('never reaches the session endpoint', () async {
+        stubStore();
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok(tokenlessGrant()));
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(isA<AuthServerException>()),
+        );
+        verifyNever(() => mockDio.get<Map<String, dynamic>>(any()));
+      });
+    });
+
     group('getSession()', () {
       test(
         'returns null and emits unauthenticated when no stored token',

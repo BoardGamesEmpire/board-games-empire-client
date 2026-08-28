@@ -246,16 +246,21 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
     final auth = AuthResponse(
-      // Web authenticates via the browser-managed httpOnly cookie, never
-      // this field — nothing on web reads `AuthResponse.token` as a
-      // credential. It is carried for shape parity with native.
+      // Dropped, deliberately (#291). `sessionResponse.session.token` IS
+      // the real bearer credential — the same opaque string BetterAuth
+      // issues to native — and web authenticates with the browser's
+      // httpOnly cookie instead, so nothing here ever reads it. Carrying
+      // it for shape parity put a live credential in the long-lived
+      // authenticated state below, which is what a log line, a breadcrumb
+      // or a feedback report could then take off the device. That partly
+      // undid the point of the cookie being httpOnly at all.
       //
-      // Note this IS the real session token, not an opaque identifier: an
-      // earlier comment here claimed it was the session id, which it never
-      // was. That makes it a live credential sitting in Dart-reachable
-      // memory on web, which partly undoes the point of the httpOnly
-      // cookie. Tracked separately (#144); do not persist or log it.
-      token: sessionResponse.session.token,
+      // Note the bound this does NOT reach: the token still arrives in the
+      // response body and is parsed into `sessionResponse` above. What is
+      // removed is its RETENTION, not its presence in memory — the server
+      // would have to stop vending it to cookie clients for that
+      // (backend#407).
+      token: null,
       user: sessionResponse.user,
       expiresAt: sessionResponse.session.expiresAt,
     );
@@ -379,11 +384,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// Parses the grant envelope BetterAuth returns from sign-in / sign-up, or
   /// null when it cannot be read.
   ///
-  /// Web never sends this token anywhere — the browser holds the httpOnly
-  /// cookie that actually authorises requests, and nothing here reads
-  /// [AuthResponse.token] as a credential. What the envelope is wanted for is
-  /// the **user identity**: an authenticated state without a real `user.id`
-  /// cannot activate the per-(server, user) scope (#135).
+  /// The returned response never carries a token (#291). The browser holds
+  /// the httpOnly cookie that actually authorises requests, so the
+  /// credential in this envelope is one web has no use for. What the
+  /// envelope is wanted for is the **user identity**: an authenticated state
+  /// without a real `user.id` cannot activate the per-(server, user) scope
+  /// (#135).
   ///
   /// Nullable on purpose, and this is where web has to diverge from native.
   /// Native needs the token — it persists it and every later request carries
@@ -391,11 +397,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// only ever a FALLBACK for an indeterminate reconcile: on the happy path
   /// [_reconcileCredentialGrant] adopts the confirmed session and discards
   /// this one untouched. Failing here would therefore reject sign-ins the
-  /// session endpoint was about to confirm — including BetterAuth's
-  /// documented `token: null` envelope (email verification required, or
-  /// `autoSignIn: false`), a null the DTO's `required String token` cannot
-  /// hold. Whether the sign-in stands is the reconcile's call, and the
-  /// reconcile is the authority regardless.
+  /// session endpoint was about to confirm. Whether the sign-in stands is
+  /// the reconcile's call, and the reconcile is the authority regardless.
+  ///
+  /// Returns null for three shapes: no body, a body that will not parse,
+  /// and BetterAuth's documented `token: null` envelope — a server that
+  /// granted no session, which is not something to adopt on a reconcile
+  /// that cannot reach the server to disagree.
   AuthResponse? _grantOrNull(
     Response<Map<String, dynamic>> response, {
     required String context,
@@ -410,8 +418,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       return null;
     }
 
+    final AuthResponse granted;
     try {
-      return AuthResponse.fromJson(data);
+      granted = AuthResponse.fromJson(data);
     } on Object catch (error, stackTrace) {
       // Native reaches straight for `response.data!` and lets a malformed
       // body escape as a raw parse error, which slips past every
@@ -426,6 +435,52 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
       return null;
     }
+
+    // BetterAuth's documented no-session envelope: `token: null`, returned
+    // when email verification is required or `autoSignIn` is off. The
+    // server accepted the credentials and deliberately granted no session,
+    // so there is nothing here to adopt — decline it and let the reconcile
+    // be the authority.
+    //
+    // Checked explicitly, and it has to be. This used to hold by accident:
+    // `AuthResponse.token` was `required String`, so the envelope failed
+    // inside `fromJson` and fell into the catch above. #291 made the field
+    // nullable — the parse now SUCCEEDS, and without this check the
+    // envelope would become an adoptable grant, signing in a user the
+    // server had just declined to grant a session to on any reconcile that
+    // could not reach the server to say otherwise.
+    //
+    // Checked AFTER the parse, not before it. A guard reading
+    // `data['token']` directly cannot tell "the server granted no session"
+    // from "this body is broken and happens to have no token key" — it
+    // would file the second as the first and discard the parse error and
+    // its stack trace, which is the only diagnostic either branch has.
+    //
+    // Forward hazard, tracked on backend#407: if the server stops vending
+    // `token` to cookie clients, an absent token stops meaning "no session
+    // granted" and this branch would decline every successful web sign-in
+    // — losing the fallback that keeps a sign-in alive through an
+    // indeterminate reconcile. The pre-emptive client release named there
+    // has to give this check a different discriminator, not just make
+    // `BgeSession.token` nullable.
+    if (granted.token == null) {
+      _log.warn(
+        'No session granted on a successful $context; the session endpoint '
+        'has to confirm this $context unaided',
+        context: {'status': response.statusCode},
+      );
+      return null;
+    }
+
+    // The token in this envelope is the same live credential the session
+    // endpoint vends, and web has no use for it either (#291) — keep the
+    // user identity, which is the only part that makes a granted session
+    // adoptable, and leave the credential behind.
+    return AuthResponse(
+      token: null,
+      user: granted.user,
+      expiresAt: granted.expiresAt,
+    );
   }
 
   /// Reconciles a freshly granted credential against the session endpoint.

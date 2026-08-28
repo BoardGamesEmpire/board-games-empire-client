@@ -117,7 +117,11 @@ void main() {
 
           final result = await repo.signIn(email: 'a@b.com', password: 'pass');
 
-          expect(result.token, 'session-tok-web');
+          // #291: web returns no token. The browser holds the httpOnly
+          // cookie; the server-vended token used to be carried here for
+          // shape parity, which put a live credential in Dart-reachable
+          // memory that nothing read.
+          expect(result.token, isNull);
           expect(result.user.username, 'webuser');
           expect(result.expiresAt, isNotNull);
         },
@@ -274,14 +278,34 @@ void main() {
     });
 
     group('getSession()', () {
-      test('returns AuthResponse with token and user on 200', () async {
+      test('returns AuthResponse with user, and no token, on 200', () async {
         when(() => mockDio.get<Map<String, dynamic>>(any()))
             .thenAnswer((_) async => _ok(_sessionJson()));
 
         final result = await repo.getSession();
 
-        expect(result?.token, 'session-tok-web');
+        // #291: the session endpoint vends the real bearer token in
+        // `session.token`, and this repository deliberately drops it. Web
+        // authenticates with the browser's httpOnly cookie, so retaining
+        // the credential here only widened what a log or a feedback report
+        // could carry off the device.
+        expect(result?.token, isNull);
         expect(result?.user.username, 'webuser');
+      });
+
+      test('does not retain the token the session endpoint vended', () async {
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final result = await repo.getSession();
+
+        // The state emitted to every `watchAuthState` subscriber is the
+        // long-lived holder — it is what makes retention a problem rather
+        // than a transient parse.
+        final state = repo.currentAuthState;
+        expect(state, isA<AuthStateAuthenticated>());
+        expect((state as AuthStateAuthenticated).session.token, isNull);
+        expect(result.toString(), isNot(contains('session-tok-web')));
       });
 
       test('returns null and emits unauthenticated on 401', () async {
@@ -456,6 +480,25 @@ void main() {
         expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
       });
 
+      // #291: the grant envelope carries the same real token the session
+      // endpoint does, so this is the SECOND producer of a token-bearing
+      // AuthResponse on web — and the only one whose object survives, since
+      // this branch is where a granted session is adopted and emitted.
+      // Dropping the token in getSession alone would have left it here.
+      test('the kept grant carries no token either', () async {
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
+
+        final result = await repo.signIn(email: 'a@b.com', password: 'p');
+
+        expect(result.token, isNull);
+        expect(result.toString(), isNot(contains('grant-tok-web')));
+        expect(
+          (repo.currentAuthState as AuthStateAuthenticated).session.token,
+          isNull,
+        );
+      });
+
       test('a transport failure during the reconcile also keeps the granted '
           'session', () async {
         when(() => mockDio.get<Map<String, dynamic>>(any())).thenThrow(
@@ -551,9 +594,17 @@ void main() {
       );
 
       // BetterAuth's documented shape when email verification is required or
-      // `autoSignIn` is off. `AuthResponse.token` is `required String`, so
-      // this envelope cannot be parsed at all — and on web it does not need
-      // to be, because nothing here uses that token as a credential.
+      // `autoSignIn` is off. On web it does not fail the sign-in, because
+      // nothing here uses that token as a credential — the session endpoint
+      // is the authority, and it confirms this one.
+      //
+      // This used to hold by accident: `AuthResponse.token` was
+      // `required String`, so the envelope could not be parsed and
+      // `_grantOrNull` returned null via its catch. #291 made the field
+      // nullable, which would have made the envelope parse cleanly and
+      // become an *adoptable* grant — signing in a user the server had
+      // explicitly declined to grant a session to. `_grantOrNull` now
+      // rejects it deliberately; the test below pins that.
       test(
         "BetterAuth's token:null envelope does not fail the sign-in",
         () async {
@@ -570,6 +621,33 @@ void main() {
 
           expect(result.user.id, 'user-1');
           expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+        },
+      );
+
+      // The other half of the same shape, and the one that would regress
+      // silently: a server that granted no session AND a reconcile that
+      // cannot confirm one. There is nothing adoptable on either side, so
+      // the reconcile's own failure must surface. If `_grantOrNull` ever
+      // starts treating a token:null envelope as readable, this adopts a
+      // session for a user who was never signed in, and only this test
+      // says so.
+      test(
+        "BetterAuth's token:null envelope is not an adoptable grant",
+        () async {
+          when(
+            () => mockDio.post<Map<String, dynamic>>(
+              '$_kAuthBase/sign-in/email',
+              data: any(named: 'data'),
+            ),
+          ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
+
+          await expectLater(
+            repo.signIn(email: 'a@b.com', password: 'p'),
+            throwsA(isA<AuthServerException>()),
+          );
+          expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
         },
       );
 
@@ -691,6 +769,71 @@ void main() {
         );
         expect(warning.message, contains('sign-up'));
         expect(warning.message, isNot(contains('sign-in')));
+      });
+
+      // The two null-returning branches are told apart ONLY by their log
+      // line, so misfiling one costs the whole signal. A body missing its
+      // `token` key is not the same event as a server that answered
+      // `token: null`: the first is a broken envelope worth a stack trace,
+      // the second is a documented, routine outcome.
+      //
+      // The fixture above keeps a `token` key, so it cannot catch a
+      // no-session check that runs ahead of the parse — this one has no
+      // token key AND no readable user.
+      test('an unparseable body with no token key is unreadable, not '
+          '"no session granted"', () async {
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok({'user': 'not-an-object'}));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await register();
+
+        final warning = records.singleWhere(
+          (r) => r.message.contains('Unreadable'),
+        );
+        expect(
+          warning.error,
+          isNotNull,
+          reason: 'the parse failure is the diagnostic; it must survive',
+        );
+        expect(warning.stackTrace, isNotNull);
+        expect(
+          records.where((r) => r.message.contains('No session granted')),
+          isEmpty,
+        );
+      });
+
+      // The converse, so the two stay distinguishable from both sides: a
+      // well-formed envelope the server deliberately granted no session on
+      // is routine, and must not be dressed up as a server fault.
+      test('a well-formed token:null envelope is "no session granted", not '
+          'unreadable', () async {
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await register();
+
+        final warning = records.singleWhere(
+          (r) => r.message.contains('No session granted'),
+        );
+        expect(warning.message, contains('sign-up'));
+        expect(
+          warning.error,
+          isNull,
+          reason: 'nothing failed — the server answered as documented',
+        );
+        expect(records.where((r) => r.message.contains('Unreadable')), isEmpty);
       });
 
       test('a grant response with no body does not fail the sign-up', () async {
