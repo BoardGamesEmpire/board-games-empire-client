@@ -160,9 +160,8 @@ void main() {
     ) async {
       await pumpReview(tester);
 
-      final display = FeedbackReportPreview.fromReport(
-        buildReport(),
-      ).displayJson();
+      final display = FeedbackReportPreview.fromReport(buildReport())
+          .displayJson();
       for (final field in FeedbackReportPreview.redactableTopLevelFields) {
         if (display[field] != null) {
           expect(

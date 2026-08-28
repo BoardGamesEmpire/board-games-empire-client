@@ -133,9 +133,8 @@ class _AuthScreenState extends State<AuthScreen> {
               Flexible(
                 child: Text(
                   widget.serverDisplayName,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: colorScheme.onSurfaceVariant),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -153,9 +152,8 @@ class _AuthScreenState extends State<AuthScreen> {
           liveRegion: true,
           child: Text(
             _isSignIn ? l10n.authSignInTitle : l10n.authRegisterTitle,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+            style: Theme.of(context).textTheme.headlineMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
       ],

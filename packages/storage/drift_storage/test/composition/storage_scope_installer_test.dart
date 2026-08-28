@@ -247,9 +247,8 @@ void main() {
       );
 
       await expectLater(
-        makeInstaller(
-          overrideFactory: alwaysFailing,
-        ).install(container, config),
+        makeInstaller(overrideFactory: alwaysFailing)
+            .install(container, config),
         throwsA(isA<DatabaseKeyError>()),
       );
       expect(container.isRegistered<ServerDatabase>(), isFalse);

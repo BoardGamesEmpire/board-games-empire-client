@@ -56,18 +56,20 @@ void main() {
     });
 
     test('unredactField removes a previously redacted path', () {
-      final preview = FeedbackReportPreview(
-        report: _report(),
-      ).redactField('platform').redactField('locale').unredactField('platform');
+      final preview = FeedbackReportPreview(report: _report())
+          .redactField('platform')
+          .redactField('locale')
+          .unredactField('platform');
       expect(preview.userRedactedFields, {'locale'});
     });
   });
 
   group('displayJson', () {
     test('marks redacted fields visibly instead of removing them', () {
-      final json = FeedbackReportPreview(
-        report: _report(),
-      ).redactField('platform').redactField('deviceInfo.model').displayJson();
+      final json = FeedbackReportPreview(report: _report())
+          .redactField('platform')
+          .redactField('deviceInfo.model')
+          .displayJson();
       expect(json['platform'], FeedbackReportPreview.redactedMarker);
       expect(
         (json['deviceInfo'] as Map<String, dynamic>)['model'],
@@ -82,9 +84,9 @@ void main() {
       'userRedactedFields reflects the preview, not the underlying report',
       () {
         final report = _report().copyWith(userRedactedFields: ['title']);
-        final json = FeedbackReportPreview(
-          report: report,
-        ).redactField('platform').displayJson();
+        final json = FeedbackReportPreview(report: report)
+            .redactField('platform')
+            .displayJson();
         expect(json['userRedactedFields'], equals(['platform']));
       },
     );
@@ -95,9 +97,9 @@ void main() {
         message: 'm',
         deviceInfo: const {'model': null, 'osVersion': '16'},
       );
-      final json = FeedbackReportPreview(
-        report: report,
-      ).redactField('deviceInfo.model').displayJson();
+      final json = FeedbackReportPreview(report: report)
+          .redactField('deviceInfo.model')
+          .displayJson();
       final device = json['deviceInfo'] as Map<String, dynamic>;
       expect(device['model'], isNull);
       expect(device['osVersion'], '16');
@@ -126,9 +128,9 @@ void main() {
       'fromReport seeds userRedactedFields so seeded paths survive submit',
       () {
         final report = _report().copyWith(userRedactedFields: ['title']);
-        final submittable = FeedbackReportPreview.fromReport(
-          report,
-        ).redactField('platform').toSubmittableReport();
+        final submittable = FeedbackReportPreview.fromReport(report)
+            .redactField('platform')
+            .toSubmittableReport();
         expect(submittable.userRedactedFields.toSet(), {'title', 'platform'});
         // Seeded path's value is also masked at submit time.
         expect(submittable.title, FeedbackReportPreview.redactedMarker);
@@ -137,9 +139,9 @@ void main() {
 
     test('unredactField undoes a path seeded from the report', () {
       final report = _report().copyWith(userRedactedFields: ['title']);
-      final submittable = FeedbackReportPreview.fromReport(
-        report,
-      ).unredactField('title').toSubmittableReport();
+      final submittable = FeedbackReportPreview.fromReport(report)
+          .unredactField('title')
+          .toSubmittableReport();
       expect(submittable.userRedactedFields, isEmpty);
       expect(submittable.title, equals('Add crash'));
     });
@@ -148,9 +150,8 @@ void main() {
       'bare constructor with a marked report overrides the report\'s marks',
       () {
         final report = _report().copyWith(userRedactedFields: ['title']);
-        final submittable = FeedbackReportPreview(
-          report: report,
-        ).toSubmittableReport();
+        final submittable = FeedbackReportPreview(report: report)
+            .toSubmittableReport();
         expect(submittable.userRedactedFields, isEmpty);
         expect(submittable.title, equals('Add crash'));
       },
@@ -158,9 +159,8 @@ void main() {
 
     test('no user redactions returns an equivalent report', () {
       final report = _report();
-      final submittable = FeedbackReportPreview(
-        report: report,
-      ).toSubmittableReport();
+      final submittable = FeedbackReportPreview(report: report)
+          .toSubmittableReport();
       expect(submittable, report);
     });
 
@@ -169,9 +169,9 @@ void main() {
         category: FeedbackCategory.featureRequest,
         message: 'm',
       );
-      final submittable = FeedbackReportPreview(
-        report: report,
-      ).redactField('title').toSubmittableReport();
+      final submittable = FeedbackReportPreview(report: report)
+          .redactField('title')
+          .toSubmittableReport();
       expect(submittable.title, isNull);
     });
 
@@ -181,9 +181,9 @@ void main() {
         message: 'm',
         deviceInfo: const {'model': null, 'osVersion': '16'},
       );
-      final submittable = FeedbackReportPreview(
-        report: report,
-      ).redactField('deviceInfo.model').toSubmittableReport();
+      final submittable = FeedbackReportPreview(report: report)
+          .redactField('deviceInfo.model')
+          .toSubmittableReport();
       expect(submittable.deviceInfo!['model'], isNull);
       expect(submittable.deviceInfo!['osVersion'], '16');
     });

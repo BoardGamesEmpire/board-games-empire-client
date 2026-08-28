@@ -56,9 +56,9 @@ void main() {
     originProvider: () => _kOrigin,
   );
 
-  void stubFetchSuccess() => when(
-    () => wellKnownClient.fetchIdentity(any()),
-  ).thenAnswer((_) async => _identity());
+  void stubFetchSuccess() =>
+      when(() => wellKnownClient.fetchIdentity(any()))
+          .thenAnswer((_) async => _identity());
 
   group('bootstrapWebServerScope', () {
     test('fetches the origin identity and returns a scope with a non-null '

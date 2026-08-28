@@ -212,33 +212,30 @@ void main() {
     });
 
     group('getMembers()', () {
-      test(
-        'returns all members when the current user is a member of the household',
-        () async {
-          await _seedHousehold(db, id: 'h-1');
-          await _seedMember(
-            db,
-            id: 'm-1',
-            userId: _kUserId,
-            householdId: 'h-1',
-            roleName: 'HouseholdOwner',
-          );
-          await _seedMember(
-            db,
-            id: 'm-2',
-            userId: _kOtherUserId,
-            householdId: 'h-1',
-            roleName: 'HouseholdMember',
-          );
+      test('returns all members when the current user is a member of the household', () async {
+        await _seedHousehold(db, id: 'h-1');
+        await _seedMember(
+          db,
+          id: 'm-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-2',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdMember',
+        );
 
-          final members = await repo.getMembers('h-1');
-          expect(members, hasLength(2));
-          expect(
-            members.map((m) => m.userId),
-            unorderedEquals([_kUserId, _kOtherUserId]),
-          );
-        },
-      );
+        final members = await repo.getMembers('h-1');
+        expect(members, hasLength(2));
+        expect(
+          members.map((m) => m.userId),
+          unorderedEquals([_kUserId, _kOtherUserId]),
+        );
+      });
 
       test(
         'returns empty when the current user is NOT a member of the household '
@@ -268,28 +265,25 @@ void main() {
         expect(await repo.getMembers('nonexistent'), isEmpty);
       });
 
-      test(
-        'returns empty for a tombstoned household even when the current user is a member',
-        () async {
-          final now = DateTime.now().toUtc();
-          await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
-          await _seedMember(
-            db,
-            id: 'm-1',
-            userId: _kUserId,
-            householdId: 'h-1',
-            roleName: 'HouseholdOwner',
-          );
-          await _seedMember(
-            db,
-            id: 'm-2',
-            userId: _kOtherUserId,
-            householdId: 'h-1',
-          );
+      test('returns empty for a tombstoned household even when the current user is a member', () async {
+        final now = DateTime.now().toUtc();
+        await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
+        await _seedMember(
+          db,
+          id: 'm-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-2',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+        );
 
-          expect(await repo.getMembers('h-1'), isEmpty);
-        },
-      );
+        expect(await repo.getMembers('h-1'), isEmpty);
+      });
     });
 
     group('getCurrentUserMember()', () {
@@ -819,28 +813,25 @@ void main() {
         },
       );
 
-      test(
-        'emits an empty list for a tombstoned household even when the current user is a member',
-        () async {
-          final now = DateTime.now().toUtc();
-          await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
-          await _seedMember(
-            db,
-            id: 'm-1',
-            userId: _kUserId,
-            householdId: 'h-1',
-            roleName: 'HouseholdOwner',
-          );
-          await _seedMember(
-            db,
-            id: 'm-2',
-            userId: _kOtherUserId,
-            householdId: 'h-1',
-          );
+      test('emits an empty list for a tombstoned household even when the current user is a member', () async {
+        final now = DateTime.now().toUtc();
+        await _seedHousehold(db, id: 'h-1', name: 'Removed', deletedAt: now);
+        await _seedMember(
+          db,
+          id: 'm-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-2',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+        );
 
-          await expectLater(repo.watchMembers('h-1').take(1), emits(isEmpty));
-        },
-      );
+        await expectLater(repo.watchMembers('h-1').take(1), emits(isEmpty));
+      });
 
       test(
         'transitions from empty to full list when the current user joins',

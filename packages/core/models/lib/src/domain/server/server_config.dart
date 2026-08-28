@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import 'connection_state.dart';
 import 'server_identity.dart';
 

@@ -90,15 +90,13 @@ void main() {
     SessionRehydrator? rehydrator,
   }) async {
     final repository = _MockHouseholdRepository();
-    when(
-      repository.watchHouseholds,
-    ).thenAnswer((_) => Stream<List<Household>>.value([_household(_id)]));
+    when(repository.watchHouseholds)
+        .thenAnswer((_) => Stream<List<Household>>.value([_household(_id)]));
     when(
       () => repository.watchMembers(any()),
     ).thenAnswer((_) => Stream<List<HouseholdMember>>.value([_member('u-me')]));
-    when(
-      () => repository.getCurrentUserMember(any()),
-    ).thenAnswer((_) async => _member('u-me'));
+    when(() => repository.getCurrentUserMember(any()))
+        .thenAnswer((_) async => _member('u-me'));
 
     final status = HouseholdHydrationStatus()
       ..started()

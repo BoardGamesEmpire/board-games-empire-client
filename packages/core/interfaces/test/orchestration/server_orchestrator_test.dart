@@ -36,9 +36,8 @@ void main() {
       when(() => orchestrator.maxMonitoringCapacity).thenReturn(5);
       when(() => orchestrator.currentConnectedCount).thenReturn(3);
       when(() => orchestrator.canConnect()).thenReturn(true);
-      when(
-        () => orchestrator.connectServer('server_4'),
-      ).thenAnswer((_) async {});
+      when(() => orchestrator.connectServer('server_4'))
+          .thenAnswer((_) async {});
 
       expect(orchestrator.canConnect(), isTrue);
       await expectLater(orchestrator.connectServer('server_4'), completes);
@@ -71,12 +70,11 @@ void main() {
 
       when(() => orchestrator.activeServerId).thenReturn('server_1');
       when(() => orchestrator.getActiveContext()).thenReturn(originalActive);
-      when(() => orchestrator.switchActiveServer('server_2')).thenAnswer((
-        _,
-      ) async {
-        await originalActive.suspend();
-        await newActive.activate();
-      });
+      when(() => orchestrator.switchActiveServer('server_2'))
+          .thenAnswer((_) async {
+            await originalActive.suspend();
+            await newActive.activate();
+          });
 
       await orchestrator.switchActiveServer('server_2');
 
@@ -89,9 +87,8 @@ void main() {
       () async {
         when(() => orchestrator.activeServerId).thenReturn('server_1');
         when(() => orchestrator.currentConnectedCount).thenReturn(2);
-        when(
-          () => orchestrator.disconnectServer('server_1'),
-        ).thenAnswer((_) async {});
+        when(() => orchestrator.disconnectServer('server_1'))
+            .thenAnswer((_) async {});
 
         await expectLater(orchestrator.disconnectServer('server_1'), completes);
       },
@@ -99,9 +96,8 @@ void main() {
 
     test('prevents operations on uninitialized orchestrator', () {
       when(() => orchestrator.isInitialized).thenReturn(false);
-      when(
-        () => orchestrator.connectServer('server_1'),
-      ).thenThrow(StateError('Orchestrator not initialized'));
+      when(() => orchestrator.connectServer('server_1'))
+          .thenThrow(StateError('Orchestrator not initialized'));
 
       expect(orchestrator.isInitialized, isFalse);
       expect(() => orchestrator.connectServer('server_1'), throwsStateError);
@@ -146,18 +142,16 @@ void main() {
 
     test('prevents operations during transitioning state', () {
       when(() => context.state).thenReturn(ServerContextState.transitioning);
-      when(
-        () => context.activate(),
-      ).thenThrow(StateError('Cannot activate during transition'));
+      when(() => context.activate())
+          .thenThrow(StateError('Cannot activate during transition'));
 
       expect(() => context.activate(), throwsStateError);
     });
 
     test('prevents operations on disposed context', () {
       when(() => context.state).thenReturn(ServerContextState.disposed);
-      when(
-        () => context.activate(),
-      ).thenThrow(StateError('Cannot activate disposed context'));
+      when(() => context.activate())
+          .thenThrow(StateError('Cannot activate disposed context'));
 
       expect(() => context.activate(), throwsStateError);
     });
@@ -178,17 +172,15 @@ void main() {
     });
 
     test('throws when retrieving unregistered dependency', () {
-      when(
-        () => container.get<int>(),
-      ).thenThrow(StateError('Type int is not registered'));
+      when(() => container.get<int>())
+          .thenThrow(StateError('Type int is not registered'));
 
       expect(() => container.get<int>(), throwsStateError);
     });
 
     test('registers and retrieves singletons', () {
-      when(
-        () => container.registerSingleton('singleton_instance'),
-      ).thenReturn(null);
+      when(() => container.registerSingleton('singleton_instance'))
+          .thenReturn(null);
       when(() => container.get<String>()).thenReturn('singleton_instance');
 
       container.registerSingleton('singleton_instance');

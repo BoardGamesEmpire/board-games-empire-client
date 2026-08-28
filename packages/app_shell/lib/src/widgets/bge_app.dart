@@ -1044,9 +1044,8 @@ class _BgeAppState extends State<BgeApp> {
                               // brightness or high contrast — every scheme
                               // authors the same value, and the alpha below is
                               // fixed — so do not read more into it than that.
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.scrim.withValues(alpha: 0.54),
+                              color: Theme.of(context).colorScheme.scrim
+                                  .withValues(alpha: 0.54),
                             ),
                             // The builder slot sits ABOVE the router's
                             // Navigator, so the Navigator's Overlay is not

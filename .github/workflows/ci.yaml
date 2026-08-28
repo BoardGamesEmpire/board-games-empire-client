@@ -168,7 +168,7 @@ jobs:
             (cd "$pkg" && flutter gen-l10n)
           done < <(find packages apps -name l10n.yaml -not -path '*/.dart_tool/*' -print0)
       - name: Codegen must succeed (single workspace pass)
-        run: flutter pub run build_runner build --workspace --delete-conflicting-outputs
+        run: flutter pub run build_runner build --workspace
       - name: Schema snapshots must be fresh
         working-directory: packages/storage/drift_storage
         run: |

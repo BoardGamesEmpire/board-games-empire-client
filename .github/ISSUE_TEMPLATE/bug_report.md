@@ -19,7 +19,7 @@ assignees: ''
 ## Environment
 
 - Target: <!-- mobile / desktop-macos / desktop-linux / desktop-windows / browser -->
-- Flutter version: <!-- `flutter --version`; should be 3.44.4 exactly -->
+- Flutter version: <!-- `flutter --version`; should be 3.47.1 exactly -->
 - Package(s): <!-- e.g. packages/storage/drift_storage -->
 
 ## Impact

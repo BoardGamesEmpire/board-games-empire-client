@@ -641,9 +641,9 @@ void main() {
 
     /// Installs with a clock the test drives, so a five-minute window does
     /// not cost five real minutes.
-    Future<void> installAt() => HouseholdHydrateInstaller(
-      now: () => clock,
-    ).install(container, _config(), 'user-1');
+    Future<void> installAt() =>
+        HouseholdHydrateInstaller(now: () => clock)
+            .install(container, _config(), 'user-1');
 
     void answerWithEmptyPage() {
       when(

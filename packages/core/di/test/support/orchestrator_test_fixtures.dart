@@ -72,8 +72,7 @@ MockServerContext mockServerContext(
   when(() => ctx.dispose()).thenAnswer((_) async {
     when(() => ctx.state).thenReturn(ServerContextState.disposed);
   });
-  when(
-    () => ctx.watchState(),
-  ).thenAnswer((_) => Stream.value(ServerContextState.active));
+  when(() => ctx.watchState())
+      .thenAnswer((_) => Stream.value(ServerContextState.active));
   return ctx;
 }

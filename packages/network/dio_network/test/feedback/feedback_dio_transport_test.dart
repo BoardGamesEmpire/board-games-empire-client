@@ -52,9 +52,9 @@ void main() {
   DioException typedError(DioExceptionType type) =>
       DioException(requestOptions: options(), type: type);
 
-  void stubThrow(Object error) => when(
-    () => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')),
-  ).thenThrow(error);
+  void stubThrow(Object error) =>
+      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
+          .thenThrow(error);
 
   Future<void> send() => FeedbackDioTransport(dio).send(report);
 
@@ -65,9 +65,8 @@ void main() {
 
     test('POSTs the report JSON to /api/feedback/reports and completes on '
         '201', () async {
-      when(
-        () => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')),
-      ).thenAnswer((_) async => response(201));
+      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
+          .thenAnswer((_) async => response(201));
 
       await send();
 
@@ -175,9 +174,8 @@ void main() {
     test('classifies a non-2xx status surfaced by a permissive '
         'validateStatus instead of treating it as sent — a rejection '
         'must never look like success', () async {
-      when(
-        () => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')),
-      ).thenAnswer((_) async => response(403));
+      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
+          .thenAnswer((_) async => response(403));
 
       await expectLater(
         send(),
@@ -211,9 +209,8 @@ void main() {
 
     test('a permissive-validateStatus 5xx classifies transient the same '
         'as the exception path', () async {
-      when(
-        () => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')),
-      ).thenAnswer((_) async => response(503));
+      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
+          .thenAnswer((_) async => response(503));
 
       await expectLater(
         send(),

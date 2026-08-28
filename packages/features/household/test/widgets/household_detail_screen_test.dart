@@ -58,12 +58,10 @@ void main() {
     members = StreamController<List<HouseholdMember>>.broadcast();
     hydration = StreamController<HouseholdHydrationState>.broadcast();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
-    when(
-      () => repository.watchMembers(any()),
-    ).thenAnswer((_) => members.stream);
-    when(
-      () => repository.getCurrentUserMember(any()),
-    ).thenAnswer((_) async => _member('u-me'));
+    when(() => repository.watchMembers(any()))
+        .thenAnswer((_) => members.stream);
+    when(() => repository.getCurrentUserMember(any()))
+        .thenAnswer((_) async => _member('u-me'));
   });
 
   tearDown(() {
@@ -212,9 +210,8 @@ void main() {
       // cold, the hydrate lands the roster, and "Your role" was never
       // shown because the first (correct) answer to "who are you" was null.
       HouseholdMember? cached;
-      when(
-        () => repository.getCurrentUserMember(any()),
-      ).thenAnswer((_) async => cached);
+      when(() => repository.getCurrentUserMember(any()))
+          .thenAnswer((_) async => cached);
 
       await tester.pumpWidget(harness());
       hydration.add(HouseholdHydrationState.running);
@@ -243,9 +240,8 @@ void main() {
     testWidgets('omits it when the current user could not be identified', (
       tester,
     ) async {
-      when(
-        () => repository.getCurrentUserMember(any()),
-      ).thenAnswer((_) async => null);
+      when(() => repository.getCurrentUserMember(any()))
+          .thenAnswer((_) async => null);
 
       await tester.pumpWidget(harness());
       await settleWith(tester, roster: [_member('u-other')]);

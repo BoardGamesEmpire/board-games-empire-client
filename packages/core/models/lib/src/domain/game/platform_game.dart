@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import 'time_measure.dart';
 
 part 'platform_game.freezed.dart';

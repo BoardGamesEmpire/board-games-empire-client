@@ -124,9 +124,8 @@ void main() {
     group('initialize()', () {
       test('reports no server for an empty registry and returns the '
           'initialized orchestrator', () async {
-        when(
-          () => serverRepository.getAllServers(),
-        ).thenAnswer((_) async => const []);
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => const []);
         final bootstrap = buildBootstrap();
 
         final result = await bootstrap.initialize();
@@ -139,9 +138,8 @@ void main() {
       });
 
       test('reports a server when the registry is non-empty', () async {
-        when(
-          () => serverRepository.getAllServers(),
-        ).thenAnswer((_) async => [_MockServerConfig()]);
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => [_MockServerConfig()]);
         final bootstrap = buildBootstrap();
 
         final result = await bootstrap.initialize();
@@ -152,9 +150,8 @@ void main() {
 
       test('a failed attempt rethrows and a subsequent attempt can '
           'succeed (retry path)', () async {
-        when(
-          () => serverRepository.getAllServers(),
-        ).thenAnswer((_) async => const []);
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => const []);
         var attempts = 0;
         final bootstrap = buildBootstrap(
           orchestratorFactory:
@@ -223,12 +220,11 @@ void main() {
         when(() => failingOrchestrator.initialize()).thenThrow(primaryError);
         when(() => failingOrchestrator.dispose()).thenThrow(secondaryError);
         final bootstrap = buildBootstrap(
-          orchestratorFactory:
-              ({
-                required ServerRepository serverRepository,
-                required DevicePreferencesRepository preferencesRepository,
-                required contextFactory,
-              }) => failingOrchestrator,
+          orchestratorFactory: ({
+            required ServerRepository serverRepository,
+            required DevicePreferencesRepository preferencesRepository,
+            required contextFactory,
+          }) => failingOrchestrator,
         );
 
         await expectLater(bootstrap.initialize(), throwsA(same(primaryError)));

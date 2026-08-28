@@ -86,9 +86,8 @@ void main() {
   blocTest<AuthBloc, AuthBlocState>(
     'warns when a session check cannot complete (network) — indeterminate',
     build: () {
-      when(
-        () => repo.getSession(),
-      ).thenThrow(const AuthNetworkException(message: 'offline'));
+      when(() => repo.getSession())
+          .thenThrow(const AuthNetworkException(message: 'offline'));
       return AuthBloc(authRepository: repo);
     },
     act: (b) => b.add(const AuthSessionCheckRequested()),

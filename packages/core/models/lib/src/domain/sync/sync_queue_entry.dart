@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import 'sync_operation.dart';
 import 'sync_status.dart';
 

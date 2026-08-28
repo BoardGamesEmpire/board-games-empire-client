@@ -225,10 +225,9 @@ class _HouseholdListView extends StatelessWidget {
                   label: Text(l10n.createHouseholdTitle),
                 ),
           slivers: [
-            if (state case HouseholdListReady(
-              :final refreshFailed,
-              :final refreshing,
-            ) when refreshFailed || refreshing)
+            if (state
+                case HouseholdListReady(:final refreshFailed, :final refreshing)
+                when refreshFailed || refreshing)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.only(
@@ -366,9 +365,8 @@ class _PendingBadge extends StatelessWidget {
           // Scales with its label: an icon pinned to a fixed size beside
           // 200%-scaled text stops reading as part of the same badge.
           BgeStatusColors.iconFor(BgeStatus.pending),
-          size: MediaQuery.textScalerOf(
-            context,
-          ).scale(theme.textTheme.labelMedium?.fontSize ?? 0),
+          size: MediaQuery.textScalerOf(context)
+              .scale(theme.textTheme.labelMedium?.fontSize ?? 0),
           color: color,
         ),
         const BgeGap.xs(axis: Axis.horizontal),

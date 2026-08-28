@@ -22,18 +22,16 @@ void main() {
 
   group('ServerRepositoryKnownServerLookup', () {
     test('a registered serverId is known', () async {
-      when(
-        () => repository.getServer('known-id'),
-      ).thenAnswer((_) async => _FakeServerConfig());
+      when(() => repository.getServer('known-id'))
+          .thenAnswer((_) async => _FakeServerConfig());
 
       await expectLater(lookup.isKnownServer('known-id'), completion(isTrue));
       verify(() => repository.getServer('known-id')).called(1);
     });
 
     test('an unregistered serverId is not known', () async {
-      when(
-        () => repository.getServer('unknown-id'),
-      ).thenAnswer((_) async => null);
+      when(() => repository.getServer('unknown-id'))
+          .thenAnswer((_) async => null);
 
       await expectLater(
         lookup.isKnownServer('unknown-id'),

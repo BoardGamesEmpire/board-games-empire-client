@@ -134,9 +134,9 @@ void main() {
       // OutlineInputBorder while server-onboarding did not, so the same
       // control looked like two different controls depending on the screen.
       final field = tester.widget<TextField>(find.byType(TextField));
-      final themeBorder = Theme.of(
-        tester.element(find.byType(TextField)),
-      ).inputDecorationTheme.border;
+      final themeBorder = Theme.of(tester.element(find.byType(TextField)))
+          .inputDecorationTheme
+          .border;
 
       expect(themeBorder, isA<OutlineInputBorder>());
       expect(field.decoration!.border, themeBorder);

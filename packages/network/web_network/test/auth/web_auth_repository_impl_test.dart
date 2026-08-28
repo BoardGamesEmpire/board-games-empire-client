@@ -133,9 +133,8 @@ void main() {
             ),
           ).thenAnswer((_) async => _ok(_grantJson()));
 
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _status(401));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _status(401));
 
           expect(
             () => repo.signIn(email: 'a@b.com', password: 'pass'),
@@ -276,9 +275,8 @@ void main() {
 
     group('getSession()', () {
       test('returns AuthResponse with token and user on 200', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         final result = await repo.getSession();
 
@@ -287,9 +285,8 @@ void main() {
       });
 
       test('returns null and emits unauthenticated on 401', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(401));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(401));
 
         final future = expectLater(
           repo.watchAuthState().take(2),
@@ -304,9 +301,8 @@ void main() {
       });
 
       test('emits AuthStateAuthenticated on success', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         final future = expectLater(
           repo.watchAuthState().take(2),
@@ -333,9 +329,8 @@ void main() {
     group('getSession() definitive vs indeterminate', () {
       test('a 5xx THROWS rather than returning null — a transient server '
           'fault must not read as a definitive "no session" (#98)', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
 
         await expectLater(
           repo.getSession(),
@@ -347,9 +342,8 @@ void main() {
       test('a non-2xx with an EMPTY body throws: the null-body check must '
           'not outrank the status check, or a bodiless 502 signs the user '
           'out for a proxy hiccup', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(502));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(502));
 
         final states = <AuthState>[];
         final sub = repo.watchAuthState().listen(states.add);
@@ -382,9 +376,8 @@ void main() {
 
       test('BetterAuth\'s 200-with-null-body is a definitive "no session": '
           'returns null and emits unauthenticated', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(200));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(200));
 
         expect(await repo.getSession(), isNull);
         expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
@@ -392,9 +385,8 @@ void main() {
 
       test('a 204 — a 2xx that is not the documented 200 shape — is '
           'indeterminate and throws', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(204));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(204));
 
         await expectLater(
           repo.getSession(),
@@ -406,9 +398,8 @@ void main() {
         'a 200 whose body is not the documented session shape is a '
         'server fault, not a raw parse error escaping the contract',
         () async {
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _status(200, {'unexpected': 'shape'}));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _status(200, {'unexpected': 'shape'}));
 
           // AuthRepository admits only AuthException subtypes out of
           // getSession. A bare CheckedFromJsonException here would slip past
@@ -455,9 +446,8 @@ void main() {
       test('an INDETERMINATE reconcile keeps the granted session — the '
           'credential grant genuinely succeeded, and failing here would '
           'show "connection failed" for a sign-in that worked', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
 
         final result = await repo.signIn(email: 'a@b.com', password: 'p');
 
@@ -484,9 +474,8 @@ void main() {
       test('a DEFINITIVE "no session" after a successful grant throws — the '
           'server accepted the credential and then disowned the session, '
           'which is a contract violation, not a network condition', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(401));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(401));
 
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'p'),
@@ -505,12 +494,11 @@ void main() {
 
         // A sign-out lands while the reconcile GET is in flight; the
         // response that follows describes a session the user just ended.
-        when(() => mockDio.get<Map<String, dynamic>>(any())).thenAnswer((
-          _,
-        ) async {
-          await repo.signOut();
-          return _ok(_sessionJson());
-        });
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async {
+              await repo.signOut();
+              return _ok(_sessionJson());
+            });
 
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'p'),
@@ -522,9 +510,8 @@ void main() {
       test('an unreadable session body is indeterminate, so the reconcile '
           'keeps the granted session rather than failing a sign-in whose '
           'credentials the server accepted', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(200, {'unexpected': 'shape'}));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(200, {'unexpected': 'shape'}));
 
         // The value of the getSession-side guard is that this arrives as an
         // AuthException at all: a bare parse error would escape the
@@ -552,9 +539,8 @@ void main() {
               data: any(named: 'data'),
             ),
           ).thenAnswer((_) async => _status(200));
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _ok(_sessionJson()));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _ok(_sessionJson()));
 
           final result = await repo.signIn(email: 'a@b.com', password: 'p');
 
@@ -577,9 +563,8 @@ void main() {
               data: any(named: 'data'),
             ),
           ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _ok(_sessionJson()));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _ok(_sessionJson()));
 
           final result = await repo.signIn(email: 'a@b.com', password: 'p');
 
@@ -674,9 +659,8 @@ void main() {
               data: any(named: 'data'),
             ),
           ).thenAnswer((_) async => _status(200));
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _ok(_sessionJson()));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _ok(_sessionJson()));
 
           await register();
 
@@ -697,9 +681,8 @@ void main() {
         ).thenAnswer(
           (_) async => _ok({'token': 'tok', 'user': 'not-an-object'}),
         );
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         await register();
 
@@ -717,9 +700,8 @@ void main() {
             data: any(named: 'data'),
           ),
         ).thenAnswer((_) async => _status(200));
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         expect((await register()).user.id, 'user-1');
         expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
@@ -735,9 +717,8 @@ void main() {
               data: any(named: 'data'),
             ),
           ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _ok(_sessionJson()));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _ok(_sessionJson()));
 
           expect((await register()).user.id, 'user-1');
         },
@@ -750,9 +731,8 @@ void main() {
             data: any(named: 'data'),
           ),
         ).thenAnswer((_) async => _ok(_grantJson()));
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _status(503, {'error': 'unavailable'}));
 
         final result = await register();
 
@@ -770,9 +750,8 @@ void main() {
               data: any(named: 'data'),
             ),
           ).thenAnswer((_) async => _ok(_grantJson()));
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _status(401));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _status(401));
 
           await expectLater(register(), throwsA(isA<AuthServerException>()));
         },
@@ -816,9 +795,8 @@ void main() {
 
     group('getCachedSession()', () {
       test('delegates to getSession() — always makes a network call', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         await repo.getCachedSession();
 
@@ -874,9 +852,8 @@ void main() {
       test('subscribers are notified AFTER an awaiting caller resumes, which '
           'is what makes the reconcile success path safe without a '
           'recheck', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         final order = <String>[];
         final sub = repo.watchAuthState().listen((state) {

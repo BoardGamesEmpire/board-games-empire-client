@@ -7,8 +7,9 @@ import '../deep_links/deep_link_source.dart';
 /// Initializes `HydratedBloc.storage`. Injectable so cubit tests can supply
 /// a no-op or counting fake; production wiring builds the real
 /// [HydratedStorage] from [PlatformBootstrap.hydratedStorageDirectory].
-typedef HydratedStorageInitializer =
-    Future<void> Function(PlatformBootstrap bootstrap);
+typedef HydratedStorageInitializer = Future<void> Function(
+  PlatformBootstrap bootstrap,
+);
 
 /// Outcome of a successful [PlatformBootstrap.initialize] run.
 class BootstrapResult {

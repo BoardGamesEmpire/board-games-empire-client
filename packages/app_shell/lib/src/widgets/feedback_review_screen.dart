@@ -389,9 +389,8 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
             // information — so this legitimately sits outside the type scale.
             // It still derives from it: bodySmall supplies the size and the
             // scheme supplies the color, and only the family is overridden.
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              fontFamily: BgeTypography.monospaceFamily,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(fontFamily: BgeTypography.monospaceFamily),
           ),
         ],
       );

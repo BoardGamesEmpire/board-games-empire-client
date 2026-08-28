@@ -23,12 +23,11 @@ import 'logging/rotating_file_log_sink.dart';
 import 'native_root_module.dart';
 
 /// Builds the orchestrator; injectable so tests can substitute a fake.
-typedef NativeOrchestratorFactory =
-    ServerOrchestrator Function({
-      required ServerRepository serverRepository,
-      required DevicePreferencesRepository preferencesRepository,
-      required ServerContextFactory contextFactory,
-    });
+typedef NativeOrchestratorFactory = ServerOrchestrator Function({
+  required ServerRepository serverRepository,
+  required DevicePreferencesRepository preferencesRepository,
+  required ServerContextFactory contextFactory,
+});
 
 /// The per-server scope installers, in activation order: encrypted drift
 /// storage (DB open with one-shot key-recovery), then dio network. Also the

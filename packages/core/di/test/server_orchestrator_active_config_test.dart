@@ -44,9 +44,8 @@ void main() {
   tearDown(() async => orchestrator.dispose());
 
   void stubGetServer(String id) {
-    when(
-      () => repo.getServer(id),
-    ).thenAnswer((_) async => testServerConfig(id: id));
+    when(() => repo.getServer(id))
+        .thenAnswer((_) async => testServerConfig(id: id));
   }
 
   group('activeConfig', () {

@@ -28,9 +28,8 @@ void main() {
 
   setUp(() {
     mockRepo = MockAuthRepository();
-    when(
-      () => mockRepo.watchAuthState(),
-    ).thenAnswer((_) => const Stream.empty());
+    when(() => mockRepo.watchAuthState())
+        .thenAnswer((_) => const Stream.empty());
     // #98: the indeterminate session-check paths now consult the cached
     // session before falling back to the retry view. Default to "nothing
     // cached" so these suites keep asserting the pre-#98 behaviour; the
@@ -105,9 +104,8 @@ void main() {
         'emits [session check in progress, session check failed] on a '
         'network error — indeterminate, never the sign-in form (#37)',
         build: () {
-          when(
-            () => mockRepo.getSession(),
-          ).thenThrow(const AuthNetworkException(message: 'offline'));
+          when(() => mockRepo.getSession())
+              .thenThrow(const AuthNetworkException(message: 'offline'));
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -145,9 +143,8 @@ void main() {
         'session (403 → invalid-credentials) — gone, not indeterminate; '
         'goes to the form, never the retry view (#37 review)',
         build: () {
-          when(
-            () => mockRepo.getSession(),
-          ).thenThrow(const AuthInvalidCredentialsException());
+          when(() => mockRepo.getSession())
+              .thenThrow(const AuthInvalidCredentialsException());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -162,9 +159,8 @@ void main() {
         'unexpected non-auth fault (e.g. locked keychain) — indeterminate, '
         'never an endless splash (#37 review)',
         build: () {
-          when(
-            () => mockRepo.getSession(),
-          ).thenThrow(StateError('keychain locked'));
+          when(() => mockRepo.getSession())
+              .thenThrow(StateError('keychain locked'));
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -398,9 +394,8 @@ void main() {
         'sign-out is intent-to-leave, so the gate must flip regardless; '
         'the error is surfaced via addError (#37 review)',
         build: () {
-          when(
-            () => mockRepo.signOut(),
-          ).thenThrow(StateError('unexpected in signOut path'));
+          when(() => mockRepo.signOut())
+              .thenThrow(StateError('unexpected in signOut path'));
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSignOutRequested()),

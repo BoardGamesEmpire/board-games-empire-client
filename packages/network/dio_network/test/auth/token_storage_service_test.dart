@@ -267,9 +267,8 @@ void main() {
     test('retrieve returns null after clear, even if the payload physically '
         'survives a failed delete', () async {
       when(() => secure.read(key: key)).thenAnswer((_) async => v2Payload());
-      when(
-        () => secure.delete(key: any(named: 'key')),
-      ).thenThrow(StateError('keychain unavailable'));
+      when(() => secure.delete(key: any(named: 'key')))
+          .thenThrow(StateError('keychain unavailable'));
 
       // Material is present before sign-out.
       expect(await storage.retrieve(), isNotNull);

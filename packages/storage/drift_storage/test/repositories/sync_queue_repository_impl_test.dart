@@ -151,15 +151,12 @@ void main() {
         expect(await repo.getPendingEntries(), isEmpty);
       });
 
-      test(
-        'excludes inProgress entries (they go through resetStaleInProgress first)',
-        () async {
-          final entry = await repo.enqueue(_kOperation);
-          await repo.markInProgress(entry.id);
+      test('excludes inProgress entries (they go through resetStaleInProgress first)', () async {
+        final entry = await repo.enqueue(_kOperation);
+        await repo.markInProgress(entry.id);
 
-          expect(await repo.getPendingEntries(), isEmpty);
-        },
-      );
+        expect(await repo.getPendingEntries(), isEmpty);
+      });
     });
 
     group('markInProgress()', () {
@@ -220,29 +217,26 @@ void main() {
     });
 
     group('resetStaleInProgress()', () {
-      test(
-        'resets all inProgress entries to pending and returns the affected count',
-        () async {
-          final a = await repo.enqueue(_kOperation);
-          final b = await repo.enqueue(
-            const UpdateCollectionOperation(collectionId: 'col-1'),
-          );
-          await repo.markInProgress(a.id);
-          await repo.markInProgress(b.id);
+      test('resets all inProgress entries to pending and returns the affected count', () async {
+        final a = await repo.enqueue(_kOperation);
+        final b = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'col-1'),
+        );
+        await repo.markInProgress(a.id);
+        await repo.markInProgress(b.id);
 
-          final pre = await repo.getAllEntries();
-          expect(
-            pre.where((e) => e.status == SyncStatus.inProgress),
-            hasLength(2),
-          );
+        final pre = await repo.getAllEntries();
+        expect(
+          pre.where((e) => e.status == SyncStatus.inProgress),
+          hasLength(2),
+        );
 
-          final reset = await repo.resetStaleInProgress();
+        final reset = await repo.resetStaleInProgress();
 
-          expect(reset, equals(2));
-          final post = await repo.getAllEntries();
-          expect(post.every((e) => e.status == SyncStatus.pending), isTrue);
-        },
-      );
+        expect(reset, equals(2));
+        final post = await repo.getAllEntries();
+        expect(post.every((e) => e.status == SyncStatus.pending), isTrue);
+      });
 
       test(
         'returns 0 and writes nothing when no entries are inProgress',
@@ -327,9 +321,9 @@ void main() {
 
           final updated = (await repo.getAllEntries()).single;
           expect(updated.id, equals(entry.id));
-          final op =
-              SyncOperation.deserialize(updated.payload)
-                  as UpdateCollectionOperation;
+          final op = SyncOperation.deserialize(
+            updated.payload,
+          ) as UpdateCollectionOperation;
           expect(op.collectionId, equals('server-99'));
           // Other fields preserved.
           expect(op.rating, equals(9));
@@ -350,11 +344,9 @@ void main() {
           );
           expect(remapped, equals(1));
 
-          final op =
-              SyncOperation.deserialize(
-                    (await repo.getAllEntries()).single.payload,
-                  )
-                  as RemoveFromCollectionOperation;
+          final op = SyncOperation.deserialize(
+            (await repo.getAllEntries()).single.payload,
+          ) as RemoveFromCollectionOperation;
           expect(op.collectionId, equals('server-99'));
         },
       );
@@ -382,11 +374,9 @@ void main() {
           );
           expect(remapped, equals(1));
 
-          final op =
-              SyncOperation.deserialize(
-                    (await repo.getAllEntries()).single.payload,
-                  )
-                  as AddToCollectionOperation;
+          final op = SyncOperation.deserialize(
+            (await repo.getAllEntries()).single.payload,
+          ) as AddToCollectionOperation;
           expect(op.localId, equals('server-99'));
           expect(op.platformGameId, equals('pg-7'));
           expect(op.medium, equals('Digital'));
@@ -484,11 +474,9 @@ void main() {
         );
         expect(remapped, equals(0));
 
-        final op =
-            SyncOperation.deserialize(
-                  (await repo.getAllEntries()).single.payload,
-                )
-                as UpdateCollectionOperation;
+        final op = SyncOperation.deserialize(
+          (await repo.getAllEntries()).single.payload,
+        ) as UpdateCollectionOperation;
         expect(op.collectionId, equals('local-1'));
       });
 
@@ -508,11 +496,9 @@ void main() {
         );
         expect(remapped, equals(0));
 
-        final op =
-            SyncOperation.deserialize(
-                  (await repo.getAllEntries()).single.payload,
-                )
-                as RemoveFromCollectionOperation;
+        final op = SyncOperation.deserialize(
+          (await repo.getAllEntries()).single.payload,
+        ) as RemoveFromCollectionOperation;
         expect(op.collectionId, equals('local-1'));
       });
 
@@ -534,11 +520,9 @@ void main() {
         );
         expect(remapped, equals(0));
 
-        final op =
-            SyncOperation.deserialize(
-                  (await repo.getAllEntries()).single.payload,
-                )
-                as UpdateCollectionOperation;
+        final op = SyncOperation.deserialize(
+          (await repo.getAllEntries()).single.payload,
+        ) as UpdateCollectionOperation;
         expect(op.collectionId, equals('local-1'));
       });
 
@@ -561,11 +545,9 @@ void main() {
           );
           expect(remapped, equals(1));
 
-          final op =
-              SyncOperation.deserialize(
-                    (await repo.getAllEntries()).single.payload,
-                  )
-                  as UpdateCollectionOperation;
+          final op = SyncOperation.deserialize(
+            (await repo.getAllEntries()).single.payload,
+          ) as UpdateCollectionOperation;
           expect(op.collectionId, equals('server-99'));
         },
       );
@@ -802,9 +784,9 @@ void main() {
           favorite: true,
           lastPlayed: null,
         );
-        final restored =
-            SyncOperation.deserialize(op.serialized)
-                as UpdateCollectionOperation;
+        final restored = SyncOperation.deserialize(
+          op.serialized,
+        ) as UpdateCollectionOperation;
 
         expect(restored.favorite, isTrue);
         expect(restored.lastPlayed, isNull);
@@ -812,9 +794,9 @@ void main() {
 
       test('RemoveFromCollectionOperation round-trips', () {
         const op = RemoveFromCollectionOperation(collectionId: 'col-2');
-        final restored =
-            SyncOperation.deserialize(op.serialized)
-                as RemoveFromCollectionOperation;
+        final restored = SyncOperation.deserialize(
+          op.serialized,
+        ) as RemoveFromCollectionOperation;
 
         expect(restored.collectionId, 'col-2');
       });

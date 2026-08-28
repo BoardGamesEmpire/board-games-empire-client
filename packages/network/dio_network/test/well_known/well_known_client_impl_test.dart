@@ -91,9 +91,8 @@ void main() {
 
     group('happy path', () {
       setUp(() {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeResponse(_validIdentityJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeResponse(_validIdentityJson()));
       });
 
       test('returns ServerIdentity on 200 with valid body', () async {
@@ -117,9 +116,8 @@ void main() {
         final json = _validIdentityJson();
         json['bge_min_client_version'] = '0.1.0';
         json['bge_max_client_version'] = '3.0.0';
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeResponse(json));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeResponse(json));
 
         final identity = await client.fetchIdentity(_kServerUrl);
 
@@ -151,9 +149,8 @@ void main() {
             'sign_up_endpoint': '/api/auth/sign-up/email',
           },
         ];
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeResponse(json));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeResponse(json));
 
         final identity = await client.fetchIdentity(_kServerUrl);
 
@@ -165,9 +162,8 @@ void main() {
 
     group('404 response', () {
       setUp(() {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeEmptyResponse(statusCode: 404));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeEmptyResponse(statusCode: 404));
       });
 
       test('throws WellKnownNotFoundException', () async {
@@ -189,9 +185,8 @@ void main() {
 
     group('non-200/404 response', () {
       test('throws WellKnownInvalidResponseException for 500', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeEmptyResponse(statusCode: 500));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeEmptyResponse(statusCode: 500));
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
@@ -206,9 +201,8 @@ void main() {
       });
 
       test('throws WellKnownInvalidResponseException for 401', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeEmptyResponse(statusCode: 401));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeEmptyResponse(statusCode: 401));
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
@@ -219,9 +213,8 @@ void main() {
 
     group('empty body on 200', () {
       test('throws WellKnownInvalidResponseException', () async {
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _makeEmptyResponse(statusCode: 200));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _makeEmptyResponse(statusCode: 200));
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
@@ -266,9 +259,8 @@ void main() {
             type: DioExceptionType.connectionError,
             requestOptions: RequestOptions(path: ''),
           );
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenThrow(dioError);
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenThrow(dioError);
 
           try {
             await client.fetchIdentity(_kServerUrl);
