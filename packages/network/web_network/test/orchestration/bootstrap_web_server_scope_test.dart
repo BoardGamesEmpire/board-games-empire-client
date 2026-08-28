@@ -49,11 +49,14 @@ void main() {
     await scope?.active?.container.dispose();
   });
 
-  Future<ActiveServerScope> bootstrap() => bootstrapWebServerScope(
+  Future<ActiveServerScope> bootstrap({
+    WebServerScopeInstall? installStorage,
+  }) => bootstrapWebServerScope(
     wellKnownClient: wellKnownClient,
     // Uri.base has no origin on the VM, so the origin is injected; production
     // defaults to WebDioFactory.currentOrigin (the browser address bar).
     originProvider: () => _kOrigin,
+    installStorage: installStorage,
   );
 
   void stubFetchSuccess() =>
@@ -130,4 +133,92 @@ void main() {
       },
     );
   });
+
+  // #288: the seam `web_platform` uses to register the drift/wasm data
+  // layer without this package depending on a browser-only library. The
+  // storage side is tested in `web_storage`; what matters here is the
+  // contract — what it is handed, when, and what happens when it fails.
+  group('bootstrapWebServerScope storage seam (#288)', () {
+    test(
+      'is omitted by default — the storage-less scope still builds',
+      () async {
+        stubFetchSuccess();
+
+        scope = await bootstrap();
+
+        expect(scope!.active, isNotNull);
+      },
+    );
+
+    test(
+      'runs with the identity, and with the network stack already registered',
+      () async {
+        stubFetchSuccess();
+        ServerIdentity? seenIdentity;
+        Dio? resolvedDuringInstall;
+
+        scope = await bootstrap(
+          installStorage: (container, identity) async {
+            seenIdentity = identity;
+            // The web installer derives its database name from the identity
+            // and resolves per-server resources from this container, so both
+            // must already be usable at this point.
+            resolvedDuringInstall = container.get<Dio>();
+          },
+        );
+
+        expect(seenIdentity, _identity());
+        expect(resolvedDuringInstall, isNotNull);
+        expect(scope!.active!.container.get<Dio>(), resolvedDuringInstall);
+      },
+    );
+
+    test('can register into the scope the caller then receives', () async {
+      stubFetchSuccess();
+
+      scope = await bootstrap(
+        installStorage: (container, identity) async =>
+            container.registerSingleton<_FakeDatabase>(const _FakeDatabase()),
+      );
+
+      expect(scope!.active!.container.get<_FakeDatabase>(), isNotNull);
+    });
+
+    test('a storage failure propagates, and disposes what the network '
+        'registration had already put in the container', () async {
+      stubFetchSuccess();
+      var disposed = false;
+
+      await expectLater(
+        bootstrap(
+          installStorage: (container, identity) async {
+            // Stands in for a resource registered before the failure — the
+            // real leak this guard exists for is the Dio and the clock.
+            container.registerSingleton<_FakeDatabase>(
+              const _FakeDatabase(),
+              dispose: (_) => disposed = true,
+            );
+            throw StateError('no storage for you');
+          },
+        ),
+        throwsStateError,
+      );
+
+      expect(
+        disposed,
+        isTrue,
+        reason:
+            'the caller discards the scope on a failed bootstrap, so the '
+            'partial container has to be disposed here or it leaks',
+      );
+      // Nothing was returned, so tearDown has nothing to dispose.
+      expect(scope, isNull);
+    });
+  });
+}
+
+/// Stands in for the `ServerDatabase` the real seam registers; this package
+/// cannot see that type, which is the entire point of the seam.
+class _FakeDatabase {
+  const _FakeDatabase();
 }

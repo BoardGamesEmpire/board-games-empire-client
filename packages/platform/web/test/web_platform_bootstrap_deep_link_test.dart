@@ -1,3 +1,10 @@
+// Runs on the VM: this suite exercises the platform-neutral half of the
+// composition root (`web.dart`). Tagged explicitly since #288 added a
+// browser-only suite beside it — `melos run test:web` runs Chrome over the
+// whole package, and a widget test has no business being re-run there.
+@TestOn('vm')
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web_platform/web.dart';
 

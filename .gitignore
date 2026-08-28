@@ -60,3 +60,15 @@ app.*.map.json
 **/test/**/goldens/macos/
 **/test/**/goldens/linux/
 **/test/**/goldens/windows/
+
+# Drift/wasm runtime assets (#288): sqlite3.wasm + drift_worker.js are
+# versioned artifacts of the `drift` release, fetched by
+# `melos run web:assets` (tool/fetch_web_assets.dart), never committed — a
+# checked-in copy drifts against pubspec.lock in silence.
+**/sqlite3.wasm
+**/drift_worker.js
+**/.drift-web-assets
+# Staging file for an in-flight fetch. The tool clears it on every failure
+# path and before each run, but a signal kills it mid-transfer without
+# running anything, and `flutter build web` copies all of `web/`.
+**/*.part

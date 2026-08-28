@@ -1,5 +1,5 @@
 name: web_storage
-description: "IndexedDB storage for web"
+description: "Drift/wasm query executor and web install path for the shared repositories (#288, #63)"
 version: 1.0.0
 publish_to: none
 
@@ -12,63 +12,32 @@ dependencies:
   flutter:
     sdk: flutter
 
-  storage_interface:
-    path: ../storage_interface
+  # The platform-neutral half of the drift layer (#287): the databases as
+  # executor-agnostic classes plus every repository. This package supplies
+  # the executor those take, and nothing else — deliberately NOT
+  # `drift_storage_native.dart`, which carries the dart:io surface.
+  drift_storage:
+    path: ../drift_storage
+  interfaces:
+    path: ../../core/interfaces
   models:
     path: ../../core/models
+
+  # Bumped with the workspace to the analyzer-13 tier: 2.34.2 is the first
+  # release whose assets include sqlite3.wasm, which is what lets
+  # `tool/fetch_web_assets.dart` derive the release from the resolved
+  # version instead of pinning one.
+  drift: ^2.34.3
+
+dev_dependencies:
+  # Browser suites install into a real container, the same implementation the
+  # web bootstrap uses.
   di:
     path: ../../core/di
 
-  # Web storage
-  drift: ^2.34.3
-  idb_shim: ^2.9.8
-
-  # DI
-  get_it: ^9.2.1
-  injectable: ^3.0.0
-
-dev_dependencies:
   flutter_lints: ^6.0.0
-  build_runner: ^2.16.0
-  drift_dev: 2.34.5
-  injectable_generator: ^3.1.3
   flutter_test:
     sdk: flutter
   very_good_analysis: ^10.2.0
 
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
-
-  # To add assets to your package, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
-  #
-  # For details regarding assets in packages, see
-  # https://flutter.dev/to/asset-from-package
-  #
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # To add custom fonts to your package, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts in packages, see
-  # https://flutter.dev/to/font-from-package

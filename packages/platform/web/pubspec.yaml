@@ -28,12 +28,25 @@ dependencies:
   web_network:
     path: ../../network/web_network
 
+  # The web data layer (#288): this package is where the drift/wasm executor
+  # and the network scope are composed, because `web_network` must not depend
+  # on a browser-only library (see `WebServerScopeInstall`).
+  web_storage:
+    path: ../../storage/web_storage
+
   # Web-specific
   url_strategy: ^0.3.0
   hydrated_bloc: ^11.0.0
   package_info_plus: ^10.2.1
 
 dev_dependencies:
+  # Browser-only suite for the storage composition (#288): asserts the log
+  # level the storage report emits, and needs drift's storage enum to build
+  # the cases.
+  drift: ^2.34.3
+  logging: ^1.2.0
+  mocktail: ^1.0.5
+
   network_interface:
     path: ../../network/network_interface
   auth:

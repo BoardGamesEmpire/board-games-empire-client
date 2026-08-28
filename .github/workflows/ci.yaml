@@ -299,3 +299,70 @@ jobs:
       - name: flutter test
         working-directory: ${{ matrix.package }}
         run: flutter test --exclude-tags golden --test-randomize-ordering-seed random
+
+  # ── Browser tests (#288) ─────────────────────────────────────
+  # Some suites cannot run on the VM at all: `package:drift/wasm.dart`
+  # reaches `dart:js_interop`, so `web_storage`'s entire lib — and
+  # `web_platform`'s storage composition — is uncompilable there. Those
+  # files carry `@TestOn('browser')`, which means the `test` job above
+  # SKIPS them (a platform-mismatched file is excluded before compile);
+  # this job is where they actually run.
+  #
+  # Note the packages are listed rather than discovered. `discover-tests`
+  # finds test *directories*, and every package here also has VM suites in
+  # the same directory — so this is not "the packages the other job
+  # can't do", it is "the packages that additionally need a browser".
+  # Add one when it grows its first browser suite.
+  #
+  # Mirrors `melos run test:web`. Kept as its own job (not a matrix
+  # dimension of `test`) because it needs Chrome and the fetched wasm
+  # assets, and neither belongs in the 28-package matrix.
+  test-web:
+    name: Browser test ${{ matrix.package }}
+    needs: generate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - packages/storage/web_storage
+          - packages/platform/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: generated-sources
+          path: ${{ runner.temp }}
+      - name: Restore generated sources
+        run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: pubspec.yaml
+          channel: stable
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      # The wasm binaries are versioned artifacts of the drift release and
+      # are gitignored (#288), so CI fetches them like a developer does.
+      # Runs before the test, and fails the job if the pinned release no
+      # longer matches the resolved `drift` version.
+      - name: Fetch drift/wasm assets
+        run: dart run tool/fetch_web_assets.dart
+      # `flutter test --platform chrome` needs a browser and does not
+      # install one. GitHub's ubuntu image ships Chrome, but naming a path
+      # blindly turns a missing browser into a confusing driver error, so
+      # resolve it here and fail with a sentence instead.
+      - name: Locate Chrome
+        run: |
+          set -euo pipefail
+          for candidate in google-chrome google-chrome-stable chromium-browser chromium; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              echo "CHROME_EXECUTABLE=$(command -v "$candidate")" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "::error::No Chrome/Chromium on this runner. The browser suites (#288) need one; install it in this job or pin a runner image that ships it."
+          exit 1
+      - name: flutter test --platform chrome
+        working-directory: ${{ matrix.package }}
+        run: flutter test --platform chrome --test-randomize-ordering-seed random

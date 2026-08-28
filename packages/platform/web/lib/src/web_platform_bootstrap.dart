@@ -19,9 +19,12 @@ void configureWebUrlStrategy() => setPathUrlStrategy();
 /// present by construction, there is no MetaDB, no server switching, and no
 /// orchestration (confirmed #31 design). Auth is cookie-owned via
 /// `web_network`; [initialize] fetches the origin's [ServerIdentity] from
-/// its well-known document and assembles the single-origin scope (#96). A
-/// local data layer for web (drift/wasm via `web_storage`) is designed
-/// separately in #63.
+/// its well-known document and assembles the single-origin scope (#96).
+///
+/// Since #288 the production scope also carries a `ServerDatabase` over
+/// `web_storage`'s drift/wasm executor, but that composition is injected
+/// rather than built here — see [bgeWebPlatformBootstrap] in
+/// `web_storage_composition.dart` and the note on [_serverScopeBuilder].
 class WebPlatformBootstrap implements PlatformBootstrap {
   const WebPlatformBootstrap({this._rootModule, this._serverScopeBuilder});
 
@@ -30,11 +33,20 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// const for production callers.
   final Future<void> Function(DependencyContainer container)? _rootModule;
 
-  /// Injectable web-server-scope seam (#96); null → [bootstrapWebServerScope].
+  /// Injectable web-server-scope seam (#96); null → the storage-less
+  /// [bootstrapWebServerScope].
+  ///
   /// Nullable rather than defaulted so the constructor stays const for
   /// production callers, and so bootstrap/cubit tests can supply a fake scope
   /// without the live same-origin well-known fetch (`Uri.base` has no origin
   /// on the VM).
+  ///
+  /// **The default is storage-less on purpose** (#288). Composing the
+  /// drift/wasm data layer in here would drag `dart:js_interop` into this
+  /// library and make this package — and its whole test suite — browser-only.
+  /// The composed builder lives in `web_storage_composition.dart`; the
+  /// browser app gets it from [bgeWebPlatformBootstrap], and that is the
+  /// only production caller.
   final Future<ActiveServerScope> Function()? _serverScopeBuilder;
 
   /// Builds the web root container (#72): a fresh, isolated
@@ -98,9 +110,11 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// Web has exactly one server — the origin in the address bar — so there
   /// is no MetaDB to open and no orchestrator to construct: [hasServer] is
   /// always `true` and `orchestrator` is always `null`. The scope comes from
-  /// [_serverScopeBuilder] (production: [bootstrapWebServerScope], which
-  /// fetches `/.well-known/bge-identity` from the origin and wires the
-  /// cookie-based network stack).
+  /// [_serverScopeBuilder] — for the browser app, `buildWebServerScope` from
+  /// `web_storage_composition.dart`, which fetches
+  /// `/.well-known/bge-identity` from the origin, wires the cookie-based
+  /// network stack, and opens the web database. Defaulted here to the
+  /// storage-less [bootstrapWebServerScope]; see the field's docs.
   ///
   /// A well-known fetch failure propagates unchanged;
   /// `runBgeApp`/`AppBootstrapCubit` surface it as the shared retryable
