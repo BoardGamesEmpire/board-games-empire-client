@@ -37,7 +37,7 @@ const _vmOnlyDartLibraries = {
 ///
 /// `sqlite3` stays here rather than moving to the both-halves treatment
 /// below: `wasm.dart`/`common.dart` genuinely are web-safe (verified against
-/// sqlite3 3.3.4), but this package's own neutral entry point must never
+/// sqlite3 3.5.2), but this package's own neutral entry point must never
 /// touch `sqlite3` at all — the executor is injected by the caller, and the
 /// wasm executor belongs to `web_storage` (#288), a separate package with
 /// its own future guard. Admitting `sqlite3/wasm.dart` *here* would buy
@@ -81,7 +81,7 @@ const _webSafeLibrariesByPackage = {
     'internal/migrations.dart',
     'internal/modular.dart',
     // NOT 'internal/export_schema.dart': imports `dart:isolate` directly
-    // (drift 2.34.0, lib/internal/export_schema.dart:2). Genuinely
+    // (drift 2.34.3, lib/internal/export_schema.dart:2). Genuinely
     // VM-only, correctly caught as an offender — see the pin below.
   },
 };
@@ -310,6 +310,11 @@ void main() {
       // `common.dart` even though those two are genuinely web-safe upstream
       // — this package's neutral entry must never touch `sqlite3` at all,
       // by design (see the comment on `_vmOnlyPackages`).
+      // `open.dart` no longer exists in sqlite3 (the manual library-loading
+      // API went away with the build hooks this repo already uses). Kept as
+      // a case on purpose: a package-level rule must refuse a name it has
+      // never heard of, so a library added upstream cannot arrive
+      // pre-approved.
       expect(_vmOnlyReason('package:sqlite3/open.dart'), isNotNull);
       expect(_vmOnlyReason('package:sqlite3/sqlite3.dart'), isNotNull);
       expect(_vmOnlyReason('package:sqlite3/wasm.dart'), isNotNull);

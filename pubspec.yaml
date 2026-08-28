@@ -120,6 +120,19 @@ melos:
       run: melos exec -c 1 --scope="drift_storage" -- "flutter pub run drift_dev make-migrations"
       description: Generate step-by-step migration scaffolding + schema tests for all databases registered in build.yaml.
 
+    # ── Web runtime assets (#288 D2) ───────────────────────────────
+    # `sqlite3.wasm` + `drift_worker.js` are versioned artifacts of the
+    # `drift` release and are NOT committed — a checked-in copy drifts
+    # against pubspec.lock in silence. Run this once before `melos run web`
+    # or `melos run test:web`; it is idempotent and skips a current copy.
+    web:assets:
+      run: dart run tool/fetch_web_assets.dart
+      description: Fetch the drift/wasm runtime assets (sqlite3.wasm, drift_worker.js) for the browser app and the web_storage browser tests.
+
+    web:assets:check:
+      run: dart run tool/fetch_web_assets.dart --check
+      description: Verify the drift/wasm assets are present and match the pinned drift release. Exits 1 if not.
+
     # ── Toolchain constraint consistency (#153) ────────────────────
     # Guards against the drift this repo already had: `flutter: ">=3.0.0"`
     # left over from `flutter create` in 17 packages. pub can't catch it,
@@ -204,6 +217,31 @@ melos:
       packageFilters:
         dirExists: test
 
+    # ── Browser tests (#288 D1) ────────────────────────────────────
+    # Some suites can only run in a browser: `package:drift/wasm.dart`
+    # reaches `dart:js_interop`, so the whole of `web_storage`'s lib — and
+    # `web_platform`'s storage composition — is uncompilable on the VM.
+    # Those files carry `@TestOn('browser')` and are therefore SKIPPED by
+    # the `test` script above; this is where they run.
+    #
+    # Scoped explicitly rather than filtered: melos has no "package with
+    # browser tests" filter, and the alternative (every package, chrome)
+    # would spend a browser boot per package to run nothing. Add a package
+    # here when it grows its first `@TestOn('browser')` suite.
+    #
+    # No --coverage: the chrome platform does not produce lcov here, and a
+    # silent empty coverage file is worse than none.
+    #
+    # Needs `melos run web:assets` first — the wasm binaries are fetched,
+    # not committed.
+    test:web:
+      run: melos exec -c 1 -- "flutter test --platform chrome --test-randomize-ordering-seed random"
+      description: Run the browser-only (@TestOn('browser')) suites in Chrome. Run `melos run web:assets` first.
+      packageFilters:
+        scope:
+          - web_storage
+          - web_platform
+
     # ── Golden baselines (#32) ─────────────────────────────────────
     # Only test/**/goldens/ci/ is committed (Ahem-rendered, renderer
     # stable). The per-host test/**/goldens/<platform>/ variant is
@@ -253,8 +291,13 @@ melos:
       description: Delete all generated .g.dart / .freezed.dart / .config.dart files and generated localizations
 
     # Individual app runners
+    # Fetches the wasm assets first (#288 D2): they are gitignored, so a
+    # clean checkout has none, and the app's bootstrap opens a drift/wasm
+    # database during boot — a missing sqlite3.wasm is a hard boot failure,
+    # not a degraded mode. The fetch is idempotent and near-instant once the
+    # files are current.
     web:
-      run: melos exec -c 1 --scope="browser" -- "flutter run -d web-server --web-hostname=localhost --web-port=${BGE_WEB_PORT:-5000} --no-dds"
+      run: melos run web:assets && melos exec -c 1 --scope="browser" -- "flutter run -d web-server --web-hostname=localhost --web-port=${BGE_WEB_PORT:-5000} --no-dds"
       description: "Serve the web app on a fixed port for the dev proxy (override with BGE_WEB_PORT; open the proxy origin, not this port)."
 
     web:proxy:
@@ -290,11 +333,13 @@ melos:
         scope: "desktop"
 
       # Build commands for CI/CD
+    # Same reason as `web` above: the wasm assets are fetched, not
+    # committed (#288 D2), and `flutter build web` copies whatever is in
+    # `web/` into the build output. Without this, a release build ships a
+    # web app that cannot open its own database.
     build-web:
-      run: melos exec -c 1 -- flutter build web --release --wasm
+      run: melos run web:assets && melos exec -c 1 --scope="browser" -- "flutter build web --release --wasm"
       description: Build the web application for production
-      packageFilters:
-        scope: "browser"
 
     build-mobile-android:
       run: melos exec -c 1 -- flutter build apk --release

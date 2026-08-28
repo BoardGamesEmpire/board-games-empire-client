@@ -64,7 +64,9 @@ part 'server_database.g.dart';
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
 /// `SchemaDowngradeError`, runs the `steps` dispatcher on upgrade, and applies
-/// the standard PRAGMAs (FK enforcement + WAL) after any migration.
+/// the standard PRAGMAs after any migration — FK enforcement always, WAL
+/// journalling only where the platform supports it (`enableWriteAheadLog`,
+/// #288 D4).
 ///
 /// Both steps are hand-written [OnUpgrade] closures using the live table
 /// definitions — sufficient and safe for a purely-additive column change
@@ -88,7 +90,17 @@ part 'server_database.g.dart';
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
-  ServerDatabase(super.executor);
+  /// Creates the database over a caller-supplied [executor].
+  ///
+  /// [enableWriteAheadLog] must be `false` for a drift/wasm executor
+  /// (#288 D4): sqlite3-wasm does not support WAL journalling. It defaults
+  /// to `true` for the native SQLCipher executor, which does. See
+  /// `BgeMigrationDefaults.applyStandardPragmas` for why this is the
+  /// caller's decision and not a runtime probe.
+  ServerDatabase(super.executor, {this.enableWriteAheadLog = true});
+
+  /// Whether `beforeOpen` asks for WAL journalling; see the constructor.
+  final bool enableWriteAheadLog;
 
   // No `.memory()` constructor here (#287): `NativeDatabase.memory()` is
   // `dart:ffi`-backed, and naming it in this file would pull the whole
@@ -102,6 +114,7 @@ class ServerDatabase extends _$ServerDatabase {
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
+    enableWriteAheadLog: enableWriteAheadLog,
     steps: (Migrator m, int from, int to) async {
       // Every block is bounded on BOTH ends: `from < N` (the classic
       // guard) AND `to >= N`. In production `to` is always
