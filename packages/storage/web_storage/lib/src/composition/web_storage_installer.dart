@@ -12,7 +12,7 @@ import '../databases/wasm_executor_factory.dart';
 typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 
 /// Opens the web [ServerDatabase] and registers it into the server scope
-/// (#288, #63 **D1**/**D3**).
+/// (#288, #63).
 ///
 /// The web counterpart of `StorageScopeInstaller`, and the same shape where
 /// the shapes can be the same:
@@ -41,7 +41,7 @@ typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 ///
 /// `StorageScopeInstaller`'s one-shot key-loss recovery (delete key, delete
 /// file, reopen, report) has no analogue here, because there is no key:
-/// web databases are plaintext by decision (#63 **D3**, documented at
+/// web databases are plaintext by decision (#63, documented at
 /// [WebWasmExecutorFactory]). A corrupt web database is not a key mismatch
 /// and must not be silently deleted, so nothing is deleted here.
 class WebStorageInstaller {
@@ -71,7 +71,7 @@ class WebStorageInstaller {
   ) async {
     final opening = await _factory.serverDatabase(identity.serverId);
 
-    // WAL off (#288 D4): sqlite3-wasm does not support it. Measured as a
+    // WAL off (#288): sqlite3-wasm does not support it. Measured as a
     // silent no-op rather than a throw, so this is explicitness, not a
     // crash fix — see `BgeMigrationDefaults.applyStandardPragmas`.
     final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);

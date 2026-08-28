@@ -1,4 +1,4 @@
-// The web counterpart of `drift_storage`'s platform-boundary guard (#288 D5).
+// The web counterpart of `drift_storage`'s platform-boundary guard (#288).
 //
 // This package is browser-only, and its whole reason to exist is that the
 // shared repositories can run there. A single `dart:io` import — or one
@@ -25,7 +25,7 @@
 //
 // If a third guard appears, extract it — do not make a third copy.
 //
-// ## The sqlite3 carve-out this file owns (#288 D5, from #294)
+// ## The sqlite3 carve-out this file owns (#288, from #294)
 //
 // `drift_storage`'s guard treats **all** of `package:sqlite3` as VM-only,
 // deliberately: its platform-neutral half must never touch sqlite3 at all.
@@ -262,7 +262,7 @@ String _normalize(String path) {
 }
 
 void main() {
-  group('platform boundary (#288 D5)', () {
+  group('platform boundary (#288)', () {
     test('web_storage.dart names nothing a browser lacks', () {
       final closure = _walk('web_storage.dart');
 

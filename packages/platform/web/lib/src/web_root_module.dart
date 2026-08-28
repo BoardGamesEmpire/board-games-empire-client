@@ -37,8 +37,11 @@ import 'build_info/package_info_build_info_reader.dart';
 ///
 /// Registrations: [BuildInfo] (read from Flutter's generated
 /// `version.json`, #35), the **in-memory stand-in** [FeedbackSink] —
-/// web has no durable storage layer until #63 (an approved-but-unsent
-/// report is lost on reload; the prompt tells the user so) — the
+/// still RAM, though since #288 no longer for want of storage: web has a
+/// drift/wasm database now, but it is registered in the *server* scope
+/// and this builds the *root* container, so a durable web sink is its own
+/// piece of work (#292). An approved-but-unsent report is still lost on
+/// reload, and the prompt still tells the user so — the
 /// device-global [ConnectivityService] (#9), disposed via its
 /// [Disposable] conformance when the root container tears down, and the
 /// #15 [PushNotificationService] null object

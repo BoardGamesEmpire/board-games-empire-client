@@ -1,5 +1,5 @@
 name: web_storage
-description: "Drift/wasm query executor and web install path for the shared repositories (#288, #63 D1/D3)"
+description: "Drift/wasm query executor and web install path for the shared repositories (#288, #63)"
 version: 1.0.0
 publish_to: none
 

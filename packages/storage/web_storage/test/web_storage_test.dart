@@ -5,7 +5,7 @@
 //   * a degraded browser is classified and reported, not swallowed.
 //
 // Needs `sqlite3.wasm` and `drift_worker.js` beside this file — fetch them
-// with `melos run web:assets` (they are gitignored; see #288 D2). Run with
+// with `melos run web:assets` (they are gitignored; see #288). Run with
 // `melos run test:web`, or `flutter test --platform chrome` in this package.
 //
 // ## About OPFS in this harness
@@ -162,9 +162,10 @@ void main() {
     });
 
     test('WAL is off, and foreign keys are still on', () async {
-      // #288 D4 from the web side. `journal_mode = WAL` is a silent no-op on
-      // sqlite3-wasm rather than an error, so the only way to know the
-      // parameter is doing what it claims is to read the mode back.
+      // The WAL decision (#288), from the web side. `journal_mode = WAL` is
+      // a silent no-op on sqlite3-wasm rather than an error, so the only way
+      // to know the parameter is doing what it claims is to read the mode
+      // back.
       final opening = await const WebWasmExecutorFactory().serverDatabase(
         _uniqueServerId(),
       );

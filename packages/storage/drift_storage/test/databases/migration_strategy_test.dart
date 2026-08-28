@@ -58,12 +58,12 @@ void main() {
     });
   });
 
-  // #288 D4: WAL is not supported by sqlite3-wasm, so the shared PRAGMA
+  // #288: WAL is not supported by sqlite3-wasm, so the shared PRAGMA
   // block takes it as a parameter instead of asserting it for every
   // platform. File-backed rather than in-memory on purpose — a memory
   // database reports `journal_mode: memory` whatever it is asked for, so
   // it cannot tell the two branches apart.
-  group('applyStandardPragmas journal mode (#288 D4)', () {
+  group('applyStandardPragmas journal mode (#288)', () {
     late Directory dir;
 
     setUp(() {

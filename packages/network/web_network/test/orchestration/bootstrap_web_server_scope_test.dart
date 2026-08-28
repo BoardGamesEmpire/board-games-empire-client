@@ -134,11 +134,11 @@ void main() {
     );
   });
 
-  // #288 D3: the seam `web_platform` uses to register the drift/wasm data
+  // #288: the seam `web_platform` uses to register the drift/wasm data
   // layer without this package depending on a browser-only library. The
   // storage side is tested in `web_storage`; what matters here is the
   // contract — what it is handed, when, and what happens when it fails.
-  group('bootstrapWebServerScope storage seam (#288 D3)', () {
+  group('bootstrapWebServerScope storage seam (#288)', () {
     test(
       'is omitted by default — the storage-less scope still builds',
       () async {

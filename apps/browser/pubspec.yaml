@@ -11,7 +11,7 @@ resolution: workspace
 
 # Apps are thin wrappers: all composition lives in the platform package
 # (which owns the concrete network dependencies) and the shared shell.
-# That includes the web data layer — drift/wasm via web_storage (#63 D1,
+# That includes the web data layer — drift/wasm via web_storage (#63,
 # #288) — which arrives through web_platform's browser-only entry point,
 # `web_storage_composition.dart`. Hence still no storage dependency here.
 dependencies:

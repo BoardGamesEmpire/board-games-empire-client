@@ -300,7 +300,7 @@ jobs:
         working-directory: ${{ matrix.package }}
         run: flutter test --exclude-tags golden --test-randomize-ordering-seed random
 
-  # ── Browser tests (#288 D1) ─────────────────────────────────────
+  # ── Browser tests (#288) ─────────────────────────────────────
   # Some suites cannot run on the VM at all: `package:drift/wasm.dart`
   # reaches `dart:js_interop`, so `web_storage`'s entire lib — and
   # `web_platform`'s storage composition — is uncompilable there. Those
@@ -343,7 +343,7 @@ jobs:
       - name: Resolve workspace
         run: flutter pub get
       # The wasm binaries are versioned artifacts of the drift release and
-      # are gitignored (#288 D2), so CI fetches them like a developer does.
+      # are gitignored (#288), so CI fetches them like a developer does.
       # Runs before the test, and fails the job if the pinned release no
       # longer matches the resolved `drift` version.
       - name: Fetch drift/wasm assets

@@ -6,7 +6,7 @@ import 'package:web_storage/web_storage.dart';
 import 'web_platform_bootstrap.dart';
 
 /// The production web server scope: the cookie-based network stack **and**
-/// the drift/wasm data layer (#288 **D3**).
+/// the drift/wasm data layer (#288).
 ///
 /// This is the composition `bootstrapWebServerScope` deliberately cannot do
 /// for itself. `web_network` owns the scope's assembly but must not depend on

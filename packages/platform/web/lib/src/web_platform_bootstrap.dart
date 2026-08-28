@@ -41,7 +41,7 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// without the live same-origin well-known fetch (`Uri.base` has no origin
   /// on the VM).
   ///
-  /// **The default is storage-less on purpose** (#288 D3). Composing the
+  /// **The default is storage-less on purpose** (#288). Composing the
   /// drift/wasm data layer in here would drag `dart:js_interop` into this
   /// library and make this package — and its whole test suite — browser-only.
   /// The composed builder lives in `web_storage_composition.dart`; the

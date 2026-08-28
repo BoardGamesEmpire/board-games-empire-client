@@ -1,4 +1,4 @@
-/// The browser-only half of the web composition root (#288 **D3**).
+/// The browser-only half of the web composition root (#288).
 ///
 /// The complement of `web.dart`, and split from it for the same reason
 /// `drift_storage_native.dart` is split from `drift_storage.dart` (#287): the

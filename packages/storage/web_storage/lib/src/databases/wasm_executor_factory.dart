@@ -63,7 +63,7 @@ typedef DriftWasmOpen = Future<WasmDatabaseResult> Function({
   required Uri driftWorkerUri,
 });
 
-/// Opens drift/wasm databases for the browser (#288, #63 **D1**).
+/// Opens drift/wasm databases for the browser (#288, #63).
 ///
 /// The web counterpart of `EncryptedExecutorFactory`, and deliberately the
 /// same shape: databases obtain their executor from a factory rather than
@@ -74,7 +74,7 @@ typedef DriftWasmOpen = Future<WasmDatabaseResult> Function({
 /// repository is shared, platform-neutral code in `drift_storage` (#287);
 /// there is no web-specific query anywhere.
 ///
-/// ## NO AT-REST ENCRYPTION ON WEB — divergence from #16 (#63 **D3**)
+/// ## NO AT-REST ENCRYPTION ON WEB — divergence from #16 (#63)
 ///
 /// Every native database is encrypted with SQLCipher, keyed per server from
 /// the platform keychain. **Web databases are plaintext**, and that is a

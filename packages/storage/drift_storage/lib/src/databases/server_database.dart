@@ -66,7 +66,7 @@ part 'server_database.g.dart';
 /// `SchemaDowngradeError`, runs the `steps` dispatcher on upgrade, and applies
 /// the standard PRAGMAs after any migration — FK enforcement always, WAL
 /// journalling only where the platform supports it (`enableWriteAheadLog`,
-/// #288 D4).
+/// #288).
 ///
 /// Both steps are hand-written [OnUpgrade] closures using the live table
 /// definitions — sufficient and safe for a purely-additive column change
@@ -93,7 +93,7 @@ class ServerDatabase extends _$ServerDatabase {
   /// Creates the database over a caller-supplied [executor].
   ///
   /// [enableWriteAheadLog] must be `false` for a drift/wasm executor
-  /// (#288 D4): sqlite3-wasm does not support WAL journalling. It defaults
+  /// (#288): sqlite3-wasm does not support WAL journalling. It defaults
   /// to `true` for the native SQLCipher executor, which does. See
   /// `BgeMigrationDefaults.applyStandardPragmas` for why this is the
   /// caller's decision and not a runtime probe.

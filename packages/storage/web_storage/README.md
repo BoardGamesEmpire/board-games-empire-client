@@ -2,7 +2,7 @@
 
 The web half of the Board Games Empire data layer: a drift/wasm
 `QueryExecutor` and the install path that registers a `ServerDatabase` over
-it (#288, decided as #63 **D1** and **D3**).
+it (#288, designed in #63).
 
 This package supplies an **executor and nothing more**. The databases and all
 seven repositories are shared, platform-neutral code in `drift_storage`
@@ -23,7 +23,7 @@ any query.
 - **`WebStorageInstaller`** — mirrors `StorageScopeInstaller`'s role on
   native: opens the database and registers it into the web server scope.
 
-## No at-rest encryption on web (#63 D3)
+## No at-rest encryption on web (#63)
 
 Deliberate, and documented at the point the executor is built
 (`wasm_executor_factory.dart`) as well as here. The browser origin sandbox is

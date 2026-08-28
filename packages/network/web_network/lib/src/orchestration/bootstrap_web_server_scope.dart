@@ -9,7 +9,7 @@ import '../network/web_dio_factory.dart';
 import 'web_active_server_scope.dart';
 
 /// Installs additional per-server resources into the web server scope once
-/// the network stack is registered (#288 **D3**).
+/// the network stack is registered (#288).
 ///
 /// Exists so the web data layer can be registered without this package
 /// depending on it: `web_storage` reaches `package:drift/wasm.dart`, and a

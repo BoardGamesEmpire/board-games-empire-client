@@ -1,4 +1,4 @@
-// Fetches the two binary assets drift/wasm needs at runtime (#288 D2):
+// Fetches the two binary assets drift/wasm needs at runtime (#288):
 //
 //   * `sqlite3.wasm`     — the sqlite3 build the database runs on
 //   * `drift_worker.js`  — the worker drift hosts the database in
@@ -26,7 +26,7 @@
 //
 // Drift also publishes `sqlite3mc.wasm`, the SQLite3MultipleCiphers
 // build that provides encryption at rest — the same cipher the native
-// executor uses (#16). Web deliberately does NOT use it: per #63 D3 the
+// executor uses (#16). Web deliberately does NOT use it: per #63, the
 // browser origin sandbox is the security boundary, and any key the page
 // can read, page-injected JavaScript can read too. Fetching the plain
 // build is that decision, expressed where the artifact is chosen.

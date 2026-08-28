@@ -61,7 +61,7 @@ app.*.map.json
 **/test/**/goldens/linux/
 **/test/**/goldens/windows/
 
-# Drift/wasm runtime assets (#288 D2): sqlite3.wasm + drift_worker.js are
+# Drift/wasm runtime assets (#288): sqlite3.wasm + drift_worker.js are
 # versioned artifacts of the `drift` release, fetched by
 # `melos run web:assets` (tool/fetch_web_assets.dart), never committed — a
 # checked-in copy drifts against pubspec.lock in silence.

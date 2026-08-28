@@ -1,4 +1,4 @@
-// The browser-only half of the composition root (#288 D3).
+// The browser-only half of the composition root (#288).
 //
 // Browser-only because that is what it *is*: this file imports
 // `web_storage_composition.dart`, which reaches `dart:js_interop`. That is

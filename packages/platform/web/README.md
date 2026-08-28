@@ -35,8 +35,8 @@ this package browser-only.
 
 - The data layer is composed here, not in `web_network`: that package assembles
   the server scope but must not depend on a browser-only library, so it takes a
-  `WebServerScopeInstall` seam instead (#288 D3).
-- No at-rest encryption on web (#63 D3) — the browser origin sandbox is the
+  `WebServerScopeInstall` seam instead (#288).
+- No at-rest encryption on web (#63) — the browser origin sandbox is the
   security boundary. The reasoning lives on `WebWasmExecutorFactory`.
 - The per-user session scope (repositories keyed to the signed-in user) is
   **not** here yet: that is #137, over #289's scope primitive. This package

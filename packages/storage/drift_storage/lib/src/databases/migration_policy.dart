@@ -29,7 +29,7 @@ extension BgeMigrationDefaults on GeneratedDatabase {
   /// (see `MIGRATIONS.md`), and re-enabling them here is the single, shared
   /// place that invariant is honoured.
   ///
-  /// ## Why WAL is a parameter (#288 D4)
+  /// ## Why WAL is a parameter (#288)
   ///
   /// **sqlite3-wasm does not support WAL**, so a web database must not ask
   /// for it. Measured against drift 2.34 on `sharedIndexedDb`, the statement

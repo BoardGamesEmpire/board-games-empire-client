@@ -1,4 +1,4 @@
-/// The web half of the BGE data layer (#288, #63 D1/D3): a drift/wasm
+/// The web half of the BGE data layer (#288, #63): a drift/wasm
 /// `QueryExecutor` and the install path that registers a `ServerDatabase`
 /// over it.
 ///
@@ -14,7 +14,7 @@
 /// the same way: `test/platform_boundary_test.dart` walks this package's
 /// source closure and fails on a library that is not web-safe.
 ///
-/// No at-rest encryption, deliberately (#63 D3) — see
+/// No at-rest encryption, deliberately (#63) — see
 /// [WebWasmExecutorFactory], which carries the full reasoning at the point
 /// the executor is built.
 library;

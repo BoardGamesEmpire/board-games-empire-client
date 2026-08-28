@@ -120,7 +120,7 @@ melos:
       run: melos exec -c 1 --scope="drift_storage" -- "flutter pub run drift_dev make-migrations"
       description: Generate step-by-step migration scaffolding + schema tests for all databases registered in build.yaml.
 
-    # ── Web runtime assets (#288 D2) ───────────────────────────────
+    # ── Web runtime assets (#288) ───────────────────────────────
     # `sqlite3.wasm` + `drift_worker.js` are versioned artifacts of the
     # `drift` release and are NOT committed — a checked-in copy drifts
     # against pubspec.lock in silence. Run this once before `melos run web`
@@ -217,7 +217,7 @@ melos:
       packageFilters:
         dirExists: test
 
-    # ── Browser tests (#288 D1) ────────────────────────────────────
+    # ── Browser tests (#288) ────────────────────────────────────
     # Some suites can only run in a browser: `package:drift/wasm.dart`
     # reaches `dart:js_interop`, so the whole of `web_storage`'s lib — and
     # `web_platform`'s storage composition — is uncompilable on the VM.
@@ -291,7 +291,7 @@ melos:
       description: Delete all generated .g.dart / .freezed.dart / .config.dart files and generated localizations
 
     # Individual app runners
-    # Fetches the wasm assets first (#288 D2): they are gitignored, so a
+    # Fetches the wasm assets first (#288): they are gitignored, so a
     # clean checkout has none, and the app's bootstrap opens a drift/wasm
     # database during boot — a missing sqlite3.wasm is a hard boot failure,
     # not a degraded mode. The fetch is idempotent and near-instant once the
@@ -334,7 +334,7 @@ melos:
 
       # Build commands for CI/CD
     # Same reason as `web` above: the wasm assets are fetched, not
-    # committed (#288 D2), and `flutter build web` copies whatever is in
+    # committed (#288), and `flutter build web` copies whatever is in
     # `web/` into the build output. Without this, a release build ships a
     # web app that cannot open its own database.
     build-web:
