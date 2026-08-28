@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -134,6 +136,30 @@ void main() {
 
       expect(order, ['first', 'second']);
       expect(host.scope!.get<double>(), 1.5);
+    });
+
+    test('the child attaches before the installer is invoked', () async {
+      // `open` is async, but a Dart async body runs synchronously up to its
+      // first `await` — so the child is attached before `install` is even
+      // called, and stays observable while it runs. Native's `get<T>()`
+      // fall-through is not on the serialized scope-op chain, so a
+      // resolution racing an in-flight activation depends on this: it must
+      // see the child being installed, not fall through to the parent.
+      bool? activeInsideInstaller;
+      final gate = Completer<void>();
+
+      final pending = host.open((_) {
+        activeInsideInstaller = host.isActive;
+        return gate.future;
+      });
+
+      // Observed from outside, with the installer still in flight.
+      expect(host.isActive, isTrue);
+
+      gate.complete();
+      await pending;
+
+      expect(activeInsideInstaller, isTrue);
     });
 
     test('the view refuses disposal — the host owns the lifecycle', () async {
