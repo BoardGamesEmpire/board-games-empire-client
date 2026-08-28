@@ -4,6 +4,7 @@ export 'src/clock/local_clock_service.dart';
 export 'src/clock/server_skew_clock_service.dart';
 export 'src/dependency_container_impl.dart';
 export 'src/orchestrator_active_server_scope.dart';
+export 'src/scope/user_scope_host.dart';
 export 'src/server_context_impl.dart';
 export 'src/server_orchestrator_impl.dart';
 export 'src/session/session_rehydrator_impl.dart';

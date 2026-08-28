@@ -5,6 +5,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
 import 'dependency_container_impl.dart';
+import 'scope/user_scope_host.dart';
 
 /// Concrete [ServerContext] implementation.
 ///
@@ -77,6 +78,7 @@ class ServerContextImpl implements ServerContext {
        _config = config,
        _container = _SwappableContainer(
          containerFactory ?? DependencyContainerImpl.new,
+         label: 'ServerContext(${config.id})',
        ),
        _state = ServerContextState.initializing,
        _stateController = StreamController<ServerContextState>.broadcast();
@@ -358,29 +360,15 @@ class ServerContextImpl implements ServerContext {
       // deactivation. Tear it down before building the new one.
       await _teardownUserScope();
 
-      final view = _container.beginUserScope();
-      try {
+      // The mechanism — open the child scope, hand installers a
+      // fall-through view, discard the partial scope if one throws — lives
+      // in [UserScopeHost] (#289) so web can host a user scope over its
+      // origin-scoped container without a second copy of this lifecycle.
+      await _container.openUserScope((view) async {
         for (final installer in _userInstallers) {
           await installer.install(view, _config, userId);
         }
-      } catch (_) {
-        // Discard the partial user scope so a retry starts clean; the
-        // per-server scope is untouched. Guarded so a throwing dispose
-        // callback cannot mask the real installer error.
-        try {
-          await _container.endUserScope();
-        } catch (teardownError) {
-          assert(() {
-            debugPrint(
-              'ServerContext($serverId): user-scope reset after a failed '
-              'session activation threw (suppressed in favor of the '
-              'original installer error): $teardownError',
-            );
-            return true;
-          }());
-        }
-        rethrow;
-      }
+      });
       _activeUserId = userId;
     });
   }
@@ -520,22 +508,31 @@ class ServerContextImpl implements ServerContext {
 /// per context" contract for external holders while still giving each
 /// activation a clean scope.
 class _SwappableContainer implements DependencyContainer {
-  _SwappableContainer(this._factory) : _inner = null;
+  _SwappableContainer(this._factory, {required this._label}) : _inner = null;
 
   final DependencyContainer Function() _factory;
+
+  /// Prefixed onto the diagnostics [_userScope] emits.
+  final String _label;
 
   /// Lazily created so the first activation and every post-suspend
   /// activation follow the identical code path.
   DependencyContainer? _inner;
 
-  /// The per-user child scope (#135), or null when no user session is
-  /// active. Resolution through this facade checks the user scope first,
-  /// then falls through to the base scope, so per-user registrations are
-  /// visible through the one stable `context.container` handle without any
-  /// change to the [DependencyContainer] interface. Registrations made
-  /// *through the facade* still land in the base scope — the user scope is
-  /// only written via the view [beginUserScope] hands to user installers.
-  DependencyContainer? _userScope;
+  /// The per-user child scope host (#135, #289). Resolution through this
+  /// facade checks the open user scope first, then falls through to the
+  /// base scope, so per-user registrations are visible through the one
+  /// stable `context.container` handle without any change to the
+  /// [DependencyContainer] interface. Registrations made *through the
+  /// facade* still land in the base scope — the user scope is only written
+  /// via the view the host hands to user installers.
+  ///
+  /// `late` because its parent closure reads [_current], which needs `this`.
+  late final UserScopeHost _userScope = UserScopeHost(
+    parent: () => _current,
+    childFactory: _factory,
+    label: _label,
+  );
 
   bool _disposed = false;
 
@@ -549,38 +546,32 @@ class _SwappableContainer implements DependencyContainer {
   }
 
   /// Whether a user-session scope is currently active (#135).
-  bool get hasUserScope => _userScope != null;
+  bool get hasUserScope => _userScope.isActive;
 
-  /// Opens the per-user child scope and returns the container **view** to
-  /// hand to user installers: registrations land in the user scope while
-  /// resolution falls through to the base scope (#135).
+  /// Opens the per-user child scope and runs [install] against the
+  /// container **view**: registrations land in the user scope while
+  /// resolution falls through to the base scope (#135). On failure the
+  /// partial scope is discarded and the error propagates (#289).
   ///
   /// Throws [StateError] if a user scope is already open (the context
   /// tears the previous one down first) or the facade is disposed.
-  DependencyContainer beginUserScope() {
+  Future<void> openUserScope(
+    Future<void> Function(DependencyContainer view) install,
+  ) async {
+    // `async` so both rejections — disposed here, already-open from the
+    // host — reach the caller through the returned future rather than one
+    // synchronously and one not.
     if (_disposed) {
       throw StateError(
         'DependencyContainer has been disposed and cannot be used.',
       );
     }
-    if (_userScope != null) {
-      throw StateError(
-        'A user-session scope is already active; deactivate it before '
-        'activating another.',
-      );
-    }
-    final child = _factory();
-    _userScope = child;
-    return _UserScopeView(user: child, base: () => _current);
+    return _userScope.open(install);
   }
 
   /// Disposes the current user scope (running every registration's dispose
   /// callback) and detaches it. No-op when none is active (#135).
-  Future<void> endUserScope() async {
-    final user = _userScope;
-    _userScope = null;
-    if (user != null) await user.dispose();
-  }
+  Future<void> endUserScope() => _userScope.close();
 
   /// Disposes the current inner container (running every registration's
   /// dispose callback) and prepares a fresh one for subsequent use. The
@@ -589,20 +580,16 @@ class _SwappableContainer implements DependencyContainer {
   /// the base scope (the per-server DB), so they must release before it.
   /// Both disposals always run; the first error, if any, is rethrown.
   Future<void> replaceInner() async {
-    final user = _userScope;
-    _userScope = null;
     final old = _inner;
     _inner = null;
 
     Object? firstError;
     StackTrace? firstStackTrace;
-    if (user != null) {
-      try {
-        await user.dispose();
-      } catch (e, s) {
-        firstError = e;
-        firstStackTrace = s;
-      }
+    try {
+      await _userScope.close();
+    } catch (e, s) {
+      firstError = e;
+      firstStackTrace = s;
     }
     if (old != null) {
       try {
@@ -619,7 +606,7 @@ class _SwappableContainer implements DependencyContainer {
 
   @override
   T get<T extends Object>() {
-    final user = _userScope;
+    final user = _userScope.scope;
     if (user != null && user.isRegistered<T>()) return user.get<T>();
     return _current.get<T>();
   }
@@ -642,7 +629,8 @@ class _SwappableContainer implements DependencyContainer {
 
   @override
   bool isRegistered<T extends Object>() =>
-      (_userScope?.isRegistered<T>() ?? false) || _current.isRegistered<T>();
+      (_userScope.scope?.isRegistered<T>() ?? false) ||
+      _current.isRegistered<T>();
 
   @override
   Future<void> dispose() async {
@@ -652,20 +640,16 @@ class _SwappableContainer implements DependencyContainer {
     // [replaceInner]; both disposals always run.
     if (_disposed) return;
     _disposed = true;
-    final user = _userScope;
-    _userScope = null;
     final old = _inner;
     _inner = null;
 
     Object? firstError;
     StackTrace? firstStackTrace;
-    if (user != null) {
-      try {
-        await user.dispose();
-      } catch (e, s) {
-        firstError = e;
-        firstStackTrace = s;
-      }
+    try {
+      await _userScope.close();
+    } catch (e, s) {
+      firstError = e;
+      firstStackTrace = s;
     }
     if (old != null) {
       try {
@@ -678,55 +662,6 @@ class _SwappableContainer implements DependencyContainer {
     if (firstError != null) {
       Error.throwWithStackTrace(firstError, firstStackTrace!);
     }
-  }
-}
-
-/// The container view handed to [UserScopeInstaller]s (#135): registrations
-/// land in the user-session scope; resolution checks the user scope first,
-/// then falls through to the base (per-server) scope, so an installer can
-/// resolve server-lifetime resources and services a preceding user
-/// installer registered through one handle.
-///
-/// Lifecycle is owned by the context — the view exposes no teardown.
-class _UserScopeView implements DependencyContainer {
-  _UserScopeView({required this._user, required this._base});
-
-  final DependencyContainer _user;
-
-  /// Getter rather than a captured reference: the base is the swappable
-  /// inner container, resolved at call time.
-  final DependencyContainer Function() _base;
-
-  @override
-  T get<T extends Object>() =>
-      _user.isRegistered<T>() ? _user.get<T>() : _base().get<T>();
-
-  @override
-  bool isRegistered<T extends Object>() =>
-      _user.isRegistered<T>() || _base().isRegistered<T>();
-
-  @override
-  void registerSingleton<T extends Object>(
-    T instance, {
-    FutureOr<void> Function(T instance)? dispose,
-  }) => _user.registerSingleton<T>(instance, dispose: dispose);
-
-  @override
-  void registerLazySingleton<T extends Object>(
-    T Function() factory, {
-    FutureOr<void> Function(T instance)? dispose,
-  }) => _user.registerLazySingleton<T>(factory, dispose: dispose);
-
-  @override
-  void registerFactory<T extends Object>(T Function() factory) =>
-      _user.registerFactory<T>(factory);
-
-  @override
-  Future<void> dispose() {
-    throw UnsupportedError(
-      'The user-scope view must not be disposed by installers; the '
-      'user-session scope lifecycle is owned by the ServerContext (#135).',
-    );
   }
 }
 
