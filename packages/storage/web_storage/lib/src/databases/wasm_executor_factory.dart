@@ -98,11 +98,20 @@ typedef DriftWasmOpen = Future<WasmDatabaseResult> Function({
 /// ## Storage implementation
 ///
 /// [WasmDatabase.open] probes the browser and picks the most reliable
-/// mechanism available — OPFS, then IndexedDB, then in-memory — and also
-/// migrates an existing IndexedDB database to OPFS if the browser has since
-/// gained support. That last part is why this calls `open` rather than
-/// driving `probe` + `WasmProbeResult.open` by hand for finer control: a
-/// user whose browser improves should keep their data.
+/// mechanism available — OPFS, then IndexedDB, then in-memory — and, because
+/// this passes `moveExistingIndexedDbToOpfs: true`, migrates an existing
+/// IndexedDB database to OPFS once the browser gains support. That last part
+/// is why this calls `open` rather than driving `probe` +
+/// `WasmProbeResult.open` by hand for finer control: a user whose browser
+/// improves should keep their data. The flag is **not** drift's default; see
+/// `_openWithDrift` for why the default would strand every existing user on
+/// IndexedDB.
+///
+/// Which mechanism a given browser actually reaches is a live question
+/// rather than a settled one: Firefox is the only browser that can host the
+/// database in a shared worker over OPFS today, and the cross-origin
+/// isolation that would unlock the other OPFS mode for Chrome is not served
+/// anywhere yet. See #323 and #320.
 ///
 /// What it does *not* do is decide whether the answer is good enough. That
 /// is [WebDatabaseOpening.persistence], and the caller's call.
@@ -183,6 +192,16 @@ class WebWasmExecutorFactory {
       databaseName: databaseName,
       sqlite3Uri: sqlite3Uri,
       driftWorkerUri: driftWorkerUri,
+      // Drift defaults this to `false`, and the default is a trap for a
+      // deployment that expects to reach OPFS later (#323): once an
+      // IndexedDB database exists, `open` pins the storage API to whatever
+      // that database already uses, so a browser that *gains* OPFS keeps
+      // being served IndexedDB forever. Every existing user would have to
+      // clear site data to benefit.
+      //
+      // Safe by construction: drift attempts the move and, on any failure,
+      // keeps the old database and carries on.
+      moveExistingIndexedDbToOpfs: true,
     );
   }
 }
