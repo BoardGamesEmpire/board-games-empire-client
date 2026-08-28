@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+
 import 'game_table.dart';
 
 /// Index on [PlatformGamesTable.gameId] backs the

@@ -64,9 +64,8 @@ void main() {
   }) async {
     final repository = _MockHouseholdRepository();
     // The list screen's bloc subscribes as soon as the route builds.
-    when(
-      repository.watchHouseholds,
-    ).thenAnswer((_) => Stream<List<Household>>.value(const []));
+    when(repository.watchHouseholds)
+        .thenAnswer((_) => Stream<List<Household>>.value(const []));
 
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(

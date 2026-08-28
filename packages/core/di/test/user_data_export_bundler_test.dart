@@ -102,12 +102,10 @@ void main() {
         );
 
     void stubAuthenticated() {
-      when(
-        () => authRepository.getCachedSession(),
-      ).thenAnswer((_) async => _session);
-      when(
-        () => serverRepository.getServer(_localServerId),
-      ).thenAnswer((_) async => _serverConfig());
+      when(() => authRepository.getCachedSession())
+          .thenAnswer((_) async => _session);
+      when(() => serverRepository.getServer(_localServerId))
+          .thenAnswer((_) async => _serverConfig());
     }
 
     _MockUserDataExporter exporterReturning(
@@ -193,9 +191,8 @@ void main() {
 
     test('a null cached session throws ExportNotAuthenticatedException '
         'before any server lookup or exporter runs', () async {
-      when(
-        () => authRepository.getCachedSession(),
-      ).thenAnswer((_) async => null);
+      when(() => authRepository.getCachedSession())
+          .thenAnswer((_) async => null);
       final exporter = exporterReturning('profile', {'a': 1});
       registry.register(exporter);
 
@@ -212,9 +209,8 @@ void main() {
         'ExportSessionUnavailableException (web-offline path) with the '
         'cause preserved and no server lookup or exporter runs', () async {
       const authFailure = AuthNetworkException(message: 'No connection.');
-      when(
-        () => authRepository.getCachedSession(),
-      ).thenAnswer((_) async => throw authFailure);
+      when(() => authRepository.getCachedSession())
+          .thenAnswer((_) async => throw authFailure);
       final exporter = exporterReturning('profile', {'a': 1});
       registry.register(exporter);
 
@@ -235,12 +231,10 @@ void main() {
 
     test('a null server config throws ExportUnknownServerException '
         'with the unresolved id, a null cause, and no exporter runs', () async {
-      when(
-        () => authRepository.getCachedSession(),
-      ).thenAnswer((_) async => _session);
-      when(
-        () => serverRepository.getServer(_localServerId),
-      ).thenAnswer((_) async => null);
+      when(() => authRepository.getCachedSession())
+          .thenAnswer((_) async => _session);
+      when(() => serverRepository.getServer(_localServerId))
+          .thenAnswer((_) async => null);
       final exporter = exporterReturning('profile', {'a': 1});
       registry.register(exporter);
 
@@ -259,16 +253,14 @@ void main() {
     test('a CorruptedServerIdentityException is wrapped as '
         'ExportUnknownServerException with the cause preserved and no '
         'exporter runs', () async {
-      when(
-        () => authRepository.getCachedSession(),
-      ).thenAnswer((_) async => _session);
+      when(() => authRepository.getCachedSession())
+          .thenAnswer((_) async => _session);
       final corruption = CorruptedServerIdentityException(
         _localServerId,
         const FormatException('bad identity blob'),
       );
-      when(
-        () => serverRepository.getServer(_localServerId),
-      ).thenAnswer((_) async => throw corruption);
+      when(() => serverRepository.getServer(_localServerId))
+          .thenAnswer((_) async => throw corruption);
       final exporter = exporterReturning('profile', {'a': 1});
       registry.register(exporter);
 
@@ -288,9 +280,8 @@ void main() {
       stubAuthenticated();
       final failing = _MockUserDataExporter();
       when(() => failing.key).thenReturn('failing');
-      when(
-        () => failing.export(context),
-      ).thenAnswer((_) async => throw StateError('boom'));
+      when(() => failing.export(context))
+          .thenAnswer((_) async => throw StateError('boom'));
       final later = exporterReturning('later', {'a': 1});
       registry
         ..register(failing)

@@ -61,9 +61,8 @@ MockServerContext _mockContext(String serverId) {
   when(() => ctx.dispose()).thenAnswer((_) async {
     when(() => ctx.state).thenReturn(ServerContextState.disposed);
   });
-  when(
-    () => ctx.watchState(),
-  ).thenAnswer((_) => Stream.value(ServerContextState.active));
+  when(() => ctx.watchState())
+      .thenAnswer((_) => Stream.value(ServerContextState.active));
   return ctx;
 }
 
@@ -114,15 +113,13 @@ void main() {
   }
 
   void stubUpdateLastActive() {
-    when(
-      () => mockRepo.updateLastActive(any(), any()),
-    ).thenAnswer((_) async {});
+    when(() => mockRepo.updateLastActive(any(), any()))
+        .thenAnswer((_) async {});
   }
 
   void stubGetServer(String id, {ServerConfig? config}) {
-    when(
-      () => mockRepo.getServer(id),
-    ).thenAnswer((_) async => config ?? _config(id: id));
+    when(() => mockRepo.getServer(id))
+        .thenAnswer((_) async => config ?? _config(id: id));
   }
 
   group('ServerOrchestratorImpl', () {
@@ -174,9 +171,8 @@ void main() {
 
         expect(orchestrator.activeServerId, 'server-a');
         expect(orchestrator.currentConnectedCount, 1);
-        verify(
-          () => mockContexts['server-a']!.activate(),
-        ).called(greaterThan(0));
+        verify(() => mockContexts['server-a']!.activate())
+            .called(greaterThan(0));
       });
 
       test(
@@ -402,9 +398,8 @@ void main() {
         );
 
         expect(orchestrator.activeServerId, 'new');
-        verify(
-          () => mockContexts['existing']!.background(),
-        ).called(greaterThan(0));
+        verify(() => mockContexts['existing']!.background())
+            .called(greaterThan(0));
       });
     });
 
@@ -541,15 +536,13 @@ void main() {
 
       test('activates the target server', () async {
         // server-b is monitoring after connect; reset to verify activate
-        when(
-          () => mockContexts['server-b']!.state,
-        ).thenReturn(ServerContextState.monitoring);
+        when(() => mockContexts['server-b']!.state)
+            .thenReturn(ServerContextState.monitoring);
 
         await orchestrator.switchActiveServer('server-b');
 
-        verify(
-          () => mockContexts['server-b']!.activate(),
-        ).called(greaterThan(0));
+        verify(() => mockContexts['server-b']!.activate())
+            .called(greaterThan(0));
       });
 
       // The documented contract is an idempotent no-op, not a throw:

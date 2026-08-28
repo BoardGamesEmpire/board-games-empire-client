@@ -272,9 +272,8 @@ void main() {
       // leaves "Your role" silently missing even after the hydrate lands
       // the roster with our row in it.
       HouseholdMember? cached;
-      when(
-        () => repository.getCurrentUserMember(_id),
-      ).thenAnswer((_) async => cached);
+      when(() => repository.getCurrentUserMember(_id))
+          .thenAnswer((_) async => cached);
 
       final bloc = build();
       addTearDown(bloc.close);
@@ -305,9 +304,8 @@ void main() {
       // Bounded: the retry is driven by roster emissions and stops the
       // moment an answer arrives, so it cannot become a query per tick.
       HouseholdMember? cached;
-      when(
-        () => repository.getCurrentUserMember(_id),
-      ).thenAnswer((_) async => cached);
+      when(() => repository.getCurrentUserMember(_id))
+          .thenAnswer((_) async => cached);
 
       final bloc = build();
       addTearDown(bloc.close);
@@ -344,9 +342,8 @@ void main() {
     test(
       'survives getCurrentUserMember returning null — the screen still renders',
       () async {
-        when(
-          () => repository.getCurrentUserMember(_id),
-        ).thenAnswer((_) async => null);
+        when(() => repository.getCurrentUserMember(_id))
+            .thenAnswer((_) async => null);
         final bloc = build();
         addTearDown(bloc.close);
 
@@ -365,9 +362,8 @@ void main() {
     );
 
     test('survives getCurrentUserMember throwing', () async {
-      when(
-        () => repository.getCurrentUserMember(_id),
-      ).thenThrow(StateError('disposed'));
+      when(() => repository.getCurrentUserMember(_id))
+          .thenThrow(StateError('disposed'));
       final bloc = build();
       addTearDown(bloc.close);
 

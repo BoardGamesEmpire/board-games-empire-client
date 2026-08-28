@@ -7,16 +7,18 @@ plugins {
 
 android {
     namespace = "com.boardgamesempire.mobile.mobile"
-    compileSdk = flutter.compileSdkVersion
+
+    // Pinned ahead of `flutter.compileSdkVersion`, which is still 36 on
+    // Flutter 3.47.1. flutter_secure_storage 11 compiles its own Android
+    // library at 37, and Gradle fails a build whose app compileSdk is
+    // lower than a dependency's. Drop this line and go back to the
+    // Flutter default once a Flutter release raises it to 37 or higher.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
@@ -36,6 +38,16 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+// Kotlin 2.4 removed the `kotlinOptions { jvmTarget = <String> }` DSL that used
+// to live in the `android` block above — setting it there is now a hard error,
+// not a deprecation. The replacement is typed (`JvmTarget`) and hangs off the
+// top-level `kotlin` extension rather than off `android`.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
     }
 }
 

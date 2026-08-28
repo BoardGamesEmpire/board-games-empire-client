@@ -196,12 +196,10 @@ void main() {
       // filesystem timestamp resolution.
       await sink.persist(record('zzz-oldest'));
       await sink.persist(record('aaa-newest'));
-      await File(
-        '${tempDir.path}/zzz-oldest.json',
-      ).setLastModified(DateTime(2026, 1, 1));
-      await File(
-        '${tempDir.path}/aaa-newest.json',
-      ).setLastModified(DateTime(2026, 1, 2));
+      await File('${tempDir.path}/zzz-oldest.json')
+          .setLastModified(DateTime(2026, 1, 1));
+      await File('${tempDir.path}/aaa-newest.json')
+          .setLastModified(DateTime(2026, 1, 2));
 
       final pending = await sink.pending();
 

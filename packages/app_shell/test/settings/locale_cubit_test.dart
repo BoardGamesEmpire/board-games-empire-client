@@ -62,18 +62,16 @@ void main() {
     });
 
     test('hydrates a language+region tag', () {
-      when(
-        () => storage.read('LocaleCubit'),
-      ).thenReturn({'languageTag': 'de-DE'});
+      when(() => storage.read('LocaleCubit'))
+          .thenReturn({'languageTag': 'de-DE'});
       final cubit = LocaleCubit();
       addTearDown(cubit.close);
       expect(cubit.state, const Locale('de', 'DE'));
     });
 
     test('hydrates a language+script tag', () {
-      when(
-        () => storage.read('LocaleCubit'),
-      ).thenReturn({'languageTag': 'zh-Hant'});
+      when(() => storage.read('LocaleCubit'))
+          .thenReturn({'languageTag': 'zh-Hant'});
       final cubit = LocaleCubit();
       addTearDown(cubit.close);
       expect(cubit.state?.languageCode, 'zh');
@@ -91,9 +89,8 @@ void main() {
     test('treats a corrupt stored tag as follow-system instead of throwing '
         'or minting an invalid locale', () {
       for (final corrupt in ['-US', '123', '@@', 'e', 'toolonglang']) {
-        when(
-          () => storage.read('LocaleCubit'),
-        ).thenReturn({'languageTag': corrupt});
+        when(() => storage.read('LocaleCubit'))
+            .thenReturn({'languageTag': corrupt});
         final cubit = LocaleCubit();
         addTearDown(cubit.close);
         expect(

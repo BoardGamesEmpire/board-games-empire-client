@@ -123,45 +123,42 @@ void main() {
     });
 
     group('addToCollection() — duplicate triplet', () {
-      test(
-        'resurrects a tombstoned row (clears deletedAt, keeps id, overwrites fields)',
-        () async {
-          final first = await repo.addToCollection(
+      test('resurrects a tombstoned row (clears deletedAt, keeps id, overwrites fields)', () async {
+        final first = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          rating: 5,
+        );
+        await repo.removeFromCollection(first.id);
+
+        // Sanity: getCollectionEntry must hide the tombstone.
+        expect(
+          await repo.getCollectionEntry(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-            rating: 5,
-          );
-          await repo.removeFromCollection(first.id);
+          ),
+          isNull,
+        );
 
-          // Sanity: getCollectionEntry must hide the tombstone.
-          expect(
-            await repo.getCollectionEntry(
-              platformGameId: kFixturePlatformGameId,
-              medium: _kMedium,
-            ),
-            isNull,
-          );
+        final second = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: 1,
+          rating: 9,
+        );
 
-          final second = await repo.addToCollection(
-            platformGameId: kFixturePlatformGameId,
-            medium: _kMedium,
-            quantity: 1,
-            rating: 9,
-          );
+        expect(second.id, equals(first.id));
+        expect(second.deletedAt, isNull);
+        expect(second.rating, equals(9));
+        expect(second.quantity, equals(1));
+        expect(second.isDirty, isTrue);
+        expect(second.isLocalOnly, isTrue);
 
-          expect(second.id, equals(first.id));
-          expect(second.deletedAt, isNull);
-          expect(second.rating, equals(9));
-          expect(second.quantity, equals(1));
-          expect(second.isDirty, isTrue);
-          expect(second.isLocalOnly, isTrue);
-
-          // The collection now shows exactly one live entry.
-          final collection = await repo.getCollection();
-          expect(collection, hasLength(1));
-          expect(collection.single.id, equals(first.id));
-        },
-      );
+        // The collection now shows exactly one live entry.
+        final collection = await repo.getCollection();
+        expect(collection, hasLength(1));
+        expect(collection.single.id, equals(first.id));
+      });
 
       test('increments quantity on a live duplicate', () async {
         final first = await repo.addToCollection(
@@ -204,66 +201,63 @@ void main() {
         },
       );
 
-      test(
-        'resurrects the MOST RECENT tombstone when multiple coexist for the triplet',
-        () async {
-          final now = DateTime.now().toUtc();
-          final older = now.subtract(const Duration(hours: 1));
+      test('resurrects the MOST RECENT tombstone when multiple coexist for the triplet', () async {
+        final now = DateTime.now().toUtc();
+        final older = now.subtract(const Duration(hours: 1));
 
-          await db
-              .into(db.gameCollectionsTable)
-              .insert(
-                GameCollectionsTableCompanion.insert(
-                  id: 'old-tomb',
-                  userId: _kUserId,
-                  platformGameId: kFixturePlatformGameId,
-                  medium: 'Physical',
-                  quantity: const Value(2),
-                  rating: const Value(5),
-                  deletedAt: Value(older),
-                  isDirty: const Value(true),
-                  createdAt: older,
-                  updatedAt: older,
-                ),
-              );
-          await db
-              .into(db.gameCollectionsTable)
-              .insert(
-                GameCollectionsTableCompanion.insert(
-                  id: 'new-tomb',
-                  userId: _kUserId,
-                  platformGameId: kFixturePlatformGameId,
-                  medium: 'Physical',
-                  quantity: const Value(3),
-                  rating: const Value(8),
-                  deletedAt: Value(now),
-                  isDirty: const Value(true),
-                  createdAt: now,
-                  updatedAt: now,
-                ),
-              );
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'old-tomb',
+                userId: _kUserId,
+                platformGameId: kFixturePlatformGameId,
+                medium: 'Physical',
+                quantity: const Value(2),
+                rating: const Value(5),
+                deletedAt: Value(older),
+                isDirty: const Value(true),
+                createdAt: older,
+                updatedAt: older,
+              ),
+            );
+        await db
+            .into(db.gameCollectionsTable)
+            .insert(
+              GameCollectionsTableCompanion.insert(
+                id: 'new-tomb',
+                userId: _kUserId,
+                platformGameId: kFixturePlatformGameId,
+                medium: 'Physical',
+                quantity: const Value(3),
+                rating: const Value(8),
+                deletedAt: Value(now),
+                isDirty: const Value(true),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
 
-          expect(await db.select(db.gameCollectionsTable).get(), hasLength(2));
+        expect(await db.select(db.gameCollectionsTable).get(), hasLength(2));
 
-          final entry = await repo.addToCollection(
-            platformGameId: kFixturePlatformGameId,
-            medium: _kMedium,
-            quantity: 1,
-            rating: 9,
-          );
+        final entry = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: 1,
+          rating: 9,
+        );
 
-          expect(entry.id, equals('new-tomb'));
-          expect(entry.deletedAt, isNull);
-          expect(entry.rating, equals(9));
-          expect(entry.quantity, equals(1));
+        expect(entry.id, equals('new-tomb'));
+        expect(entry.deletedAt, isNull);
+        expect(entry.rating, equals(9));
+        expect(entry.quantity, equals(1));
 
-          final old = await (db.select(
-            db.gameCollectionsTable,
-          )..where((t) => t.id.equals('old-tomb'))).getSingle();
-          expect(old.deletedAt, isNotNull);
-          expect(old.rating, equals(5));
-        },
-      );
+        final old = await (db.select(
+          db.gameCollectionsTable,
+        )..where((t) => t.id.equals('old-tomb'))).getSingle();
+        expect(old.deletedAt, isNotNull);
+        expect(old.rating, equals(5));
+      });
 
       test('rowId tiebreaker resurrects the LATER-INSERTED tombstone when two '
           'share the same updatedAt', () async {
@@ -472,16 +466,13 @@ void main() {
         },
       );
 
-      test(
-        'does NOT enqueue a sync op when the entry is not found (transaction rolled back)',
-        () async {
-          await expectLater(
-            () => repo.updateCollectionEntry(id: 'nonexistent', rating: 1),
-            throwsStateError,
-          );
-          verifyNever(() => mockSync.enqueue(any()));
-        },
-      );
+      test('does NOT enqueue a sync op when the entry is not found (transaction rolled back)', () async {
+        await expectLater(
+          () => repo.updateCollectionEntry(id: 'nonexistent', rating: 1),
+          throwsStateError,
+        );
+        verifyNever(() => mockSync.enqueue(any()));
+      });
 
       test('throws StateError when the target entry is tombstoned', () async {
         final entry = await repo.addToCollection(
@@ -585,28 +576,25 @@ void main() {
         },
       );
 
-      test(
-        'updateCollectionEntry accepts null quantity (leave-unchanged semantic)',
-        () async {
-          // Sanity: the validation only fires on non-null negatives.
-          // null means "don't touch this field" by API contract, which
-          // is the path callers use to update other fields without
-          // affecting quantity.
-          final entry = await repo.addToCollection(
-            platformGameId: kFixturePlatformGameId,
-            medium: _kMedium,
-            quantity: 5,
-          );
+      test('updateCollectionEntry accepts null quantity (leave-unchanged semantic)', () async {
+        // Sanity: the validation only fires on non-null negatives.
+        // null means "don't touch this field" by API contract, which
+        // is the path callers use to update other fields without
+        // affecting quantity.
+        final entry = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: 5,
+        );
 
-          final updated = await repo.updateCollectionEntry(
-            id: entry.id,
-            rating: 9,
-          );
+        final updated = await repo.updateCollectionEntry(
+          id: entry.id,
+          rating: 9,
+        );
 
-          expect(updated.quantity, equals(5));
-          expect(updated.rating, equals(9));
-        },
-      );
+        expect(updated.quantity, equals(5));
+        expect(updated.rating, equals(9));
+      });
     });
 
     group('removeFromCollection()', () {
@@ -710,9 +698,8 @@ void main() {
       test(
         'addToCollection rolls back the local insert when enqueue throws',
         () async {
-          when(
-            () => mockSync.enqueue(any()),
-          ).thenThrow(Exception('queue offline'));
+          when(() => mockSync.enqueue(any()))
+              .thenThrow(Exception('queue offline'));
 
           await expectLater(
             () => repo.addToCollection(
@@ -736,9 +723,8 @@ void main() {
             medium: _kMedium,
           );
 
-          when(
-            () => mockSync.enqueue(any()),
-          ).thenThrow(Exception('queue offline'));
+          when(() => mockSync.enqueue(any()))
+              .thenThrow(Exception('queue offline'));
 
           await expectLater(
             () => repo.removeFromCollection(entry.id),

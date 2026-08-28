@@ -68,9 +68,10 @@ void main() {
 
     final debug = records.where((r) => r.level == Level.FINE).toList();
     expect(debug, isNotEmpty);
-    final uris = contextsOf(
-      debug,
-    ).map((c) => c['uri']).whereType<String>().toList();
+    final uris = contextsOf(debug)
+        .map((c) => c['uri'])
+        .whereType<String>()
+        .toList();
     expect(uris, contains('https://api.test/session'));
     // The query secret is never present in any logged context.
     expect(contextsOf(records).toString(), isNot(contains('secret')));

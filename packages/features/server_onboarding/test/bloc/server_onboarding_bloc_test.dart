@@ -57,9 +57,8 @@ void main() {
     orchestrator = _MockServerOrchestrator();
 
     when(() => connectivity.current).thenReturn(ConnectivityState.online);
-    when(
-      () => wellKnown.fetchIdentity(any()),
-    ).thenAnswer((_) async => _identity());
+    when(() => wellKnown.fetchIdentity(any()))
+        .thenAnswer((_) async => _identity());
     when(
       () => negotiator.negotiate(
         buildInfo: any(named: 'buildInfo'),
@@ -159,9 +158,9 @@ void main() {
       blocTest<ServerOnboardingBloc, ServerOnboardingState>(
         'surfaces offline before any fetch',
         build: build,
-        setUp: () => when(
-          () => connectivity.current,
-        ).thenReturn(ConnectivityState.offline),
+        setUp: () =>
+            when(() => connectivity.current)
+                .thenReturn(ConnectivityState.offline),
         act: (bloc) => bloc.add(const ServerOnboardingSubmitted(url: _kUrl)),
         expect: () => const [
           ServerOnboardingInProgress(),

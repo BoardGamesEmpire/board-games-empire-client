@@ -57,9 +57,8 @@ void main() {
     setUp(() {
       orchestrator = _MockServerOrchestrator();
       activeContextController = StreamController<ServerContext?>.broadcast();
-      when(
-        () => orchestrator.watchActiveContext(),
-      ).thenAnswer((_) => activeContextController.stream);
+      when(() => orchestrator.watchActiveContext())
+          .thenAnswer((_) => activeContextController.stream);
       when(() => orchestrator.getActiveContext()).thenReturn(null);
       scope = OrchestratorActiveServerScope(orchestrator: orchestrator);
     });
@@ -201,9 +200,8 @@ void main() {
     tearDown(() async => orchestrator.dispose());
 
     void stubGetServer(String id) {
-      when(
-        () => repo.getServer(id),
-      ).thenAnswer((_) async => testServerConfig(id: id));
+      when(() => repo.getServer(id))
+          .thenAnswer((_) async => testServerConfig(id: id));
     }
 
     test('a late subscriber (post-connect) receives the active server via '

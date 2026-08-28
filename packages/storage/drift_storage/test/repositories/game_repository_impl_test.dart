@@ -153,29 +153,26 @@ void main() {
         expect(found.contentType, ContentType.expansion);
       });
 
-      test(
-        'round-trips denormalized list fields (categories/mechanics/designers/publishers)',
-        () async {
-          await repo.cacheGame(
-            _makeGame(
-              id: 'g-lists',
-              categories: ['Strategy', 'Economic'],
-              mechanics: ['Hand Management', 'Worker Placement'],
-              designers: ['Klaus Teuber'],
-              publishers: ['Asmodee'],
-            ),
-          );
+      test('round-trips denormalized list fields (categories/mechanics/designers/publishers)', () async {
+        await repo.cacheGame(
+          _makeGame(
+            id: 'g-lists',
+            categories: ['Strategy', 'Economic'],
+            mechanics: ['Hand Management', 'Worker Placement'],
+            designers: ['Klaus Teuber'],
+            publishers: ['Asmodee'],
+          ),
+        );
 
-          final found = (await repo.getGame('g-lists'))!;
-          expect(found.categories, equals(['Strategy', 'Economic']));
-          expect(
-            found.mechanics,
-            equals(['Hand Management', 'Worker Placement']),
-          );
-          expect(found.designers, equals(['Klaus Teuber']));
-          expect(found.publishers, equals(['Asmodee']));
-        },
-      );
+        final found = (await repo.getGame('g-lists'))!;
+        expect(found.categories, equals(['Strategy', 'Economic']));
+        expect(
+          found.mechanics,
+          equals(['Hand Management', 'Worker Placement']),
+        );
+        expect(found.designers, equals(['Klaus Teuber']));
+        expect(found.publishers, equals(['Asmodee']));
+      });
 
       test(
         '(playingTime / totalPlayCount / tags / visibility / createdById)',

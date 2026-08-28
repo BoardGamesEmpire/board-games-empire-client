@@ -8,15 +8,14 @@ import 'log_sink.dart';
 /// The `dart:developer` [developer.log] signature, extracted so tests can
 /// inject a spy in place of the real (side-effecting, hard-to-capture)
 /// call.
-typedef DeveloperLogFn =
-    void Function(
-      String message, {
-      DateTime? time,
-      int level,
-      String name,
-      Object? error,
-      StackTrace? stackTrace,
-    });
+typedef DeveloperLogFn = void Function(
+  String message, {
+  DateTime? time,
+  int level,
+  String name,
+  Object? error,
+  StackTrace? stackTrace,
+});
 
 /// A [LogSink] that forwards records to `dart:developer`'s `log()` — the
 /// native console sink (issue #100).

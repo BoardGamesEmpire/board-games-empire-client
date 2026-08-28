@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import 'game_medium.dart';
 
 part 'game_collection.freezed.dart';

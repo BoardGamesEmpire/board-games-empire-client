@@ -125,27 +125,23 @@ void main() {
   }
 
   void stubPost(Response<Object?> response) {
-    when(
-      () => mockDio.post<Object?>(any(), data: any(named: 'data')),
-    ).thenAnswer((_) async => response);
+    when(() => mockDio.post<Object?>(any(), data: any(named: 'data')))
+        .thenAnswer((_) async => response);
   }
 
   void stubPostThrows(Object error) {
-    when(
-      () => mockDio.post<Object?>(any(), data: any(named: 'data')),
-    ).thenThrow(error);
+    when(() => mockDio.post<Object?>(any(), data: any(named: 'data')))
+        .thenThrow(error);
   }
 
   void stubPatch(Response<Object?> response) {
-    when(
-      () => mockDio.patch<Object?>(any(), data: any(named: 'data')),
-    ).thenAnswer((_) async => response);
+    when(() => mockDio.patch<Object?>(any(), data: any(named: 'data')))
+        .thenAnswer((_) async => response);
   }
 
   void stubPatchThrows(Object error) {
-    when(
-      () => mockDio.patch<Object?>(any(), data: any(named: 'data')),
-    ).thenThrow(error);
+    when(() => mockDio.patch<Object?>(any(), data: any(named: 'data')))
+        .thenThrow(error);
   }
 
   void stubDelete(Response<Object?> response) {
@@ -423,24 +419,21 @@ void main() {
       });
     });
 
-    test(
-      'a 2xx whose body is not a JSON object is permanent, not transient',
-      () {
-        // Dio would cast the body to Map itself if we asked it for a typed
-        // Response, and the TypeError would surface as a status-less transient
-        // failure that retries forever. A captive-portal HTML page served with a
-        // 200 is the realistic shape of this.
-        stubGet(_resp2('<html>Sign in to continue</html>'));
-        expect(
-          () => remote.fetchCollectionPage(),
-          throwsA(
-            isA<GameCollectionRemotePermanentException>()
-                .having((e) => e.statusCode, 'statusCode', 200)
-                .having((e) => e.isRetryable, 'isRetryable', isFalse),
-          ),
-        );
-      },
-    );
+    test('a 2xx whose body is not a JSON object is permanent, not transient', () {
+      // Dio would cast the body to Map itself if we asked it for a typed
+      // Response, and the TypeError would surface as a status-less transient
+      // failure that retries forever. A captive-portal HTML page served with a
+      // 200 is the realistic shape of this.
+      stubGet(_resp2('<html>Sign in to continue</html>'));
+      expect(
+        () => remote.fetchCollectionPage(),
+        throwsA(
+          isA<GameCollectionRemotePermanentException>()
+              .having((e) => e.statusCode, 'statusCode', 200)
+              .having((e) => e.isRetryable, 'isRetryable', isFalse),
+        ),
+      );
+    });
 
     test('a 2xx whose body is a bare array is permanent', () {
       stubGet(_resp2([<String, dynamic>{}]));
@@ -598,9 +591,8 @@ void main() {
         medium: GameMedium.physical,
       );
 
-      verify(
-        () => mockDio.post<Object?>(_path, data: any(named: 'data')),
-      ).called(1);
+      verify(() => mockDio.post<Object?>(_path, data: any(named: 'data')))
+          .called(1);
     });
 
     test('sends only the identity when optionals are omitted', () async {

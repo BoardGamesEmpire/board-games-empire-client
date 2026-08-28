@@ -126,9 +126,8 @@ void main() {
 
       await _suspendAndResume(tester);
 
-      verify(
-        () => mockBloc.add(const AuthSessionRevalidationRequested()),
-      ).called(1);
+      verify(() => mockBloc.add(const AuthSessionRevalidationRequested()))
+          .called(1);
       // Revalidation, never the startup check — that one owns the gate's
       // splash and would yank a working user back to it (#98).
       verifyNever(() => mockBloc.add(const AuthSessionCheckRequested()));
@@ -142,9 +141,8 @@ void main() {
       await _suspendAndResume(tester);
       await _suspendAndResume(tester);
 
-      verify(
-        () => mockBloc.add(const AuthSessionRevalidationRequested()),
-      ).called(2);
+      verify(() => mockBloc.add(const AuthSessionRevalidationRequested()))
+          .called(2);
     });
 
     testWidgets('dispatches nothing while backgrounding — inactive, hidden '
@@ -171,16 +169,14 @@ void main() {
     group('dispatch is unconditional (the bloc owns eligibility)', () {
       testWidgets('dispatches for a verified session — the handler no-ops, '
           'not this widget', (tester) async {
-        when(
-          () => mockBloc.state,
-        ).thenReturn(AuthAuthenticated(session: _session()));
+        when(() => mockBloc.state)
+            .thenReturn(AuthAuthenticated(session: _session()));
         await pumpTrigger(tester);
 
         await _suspendAndResume(tester);
 
-        verify(
-          () => mockBloc.add(const AuthSessionRevalidationRequested()),
-        ).called(1);
+        verify(() => mockBloc.add(const AuthSessionRevalidationRequested()))
+            .called(1);
       });
 
       testWidgets('dispatches when signed out', (tester) async {
@@ -189,9 +185,8 @@ void main() {
 
         await _suspendAndResume(tester);
 
-        verify(
-          () => mockBloc.add(const AuthSessionRevalidationRequested()),
-        ).called(1);
+        verify(() => mockBloc.add(const AuthSessionRevalidationRequested()))
+            .called(1);
       });
 
       testWidgets('dispatches for an unverified session — the case the '
@@ -206,9 +201,8 @@ void main() {
 
         await _suspendAndResume(tester);
 
-        verify(
-          () => mockBloc.add(const AuthSessionRevalidationRequested()),
-        ).called(1);
+        verify(() => mockBloc.add(const AuthSessionRevalidationRequested()))
+            .called(1);
       });
     });
   });

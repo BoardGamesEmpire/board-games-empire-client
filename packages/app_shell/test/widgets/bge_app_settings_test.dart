@@ -102,9 +102,8 @@ void main() {
     });
 
     testWidgets('a persisted theme-mode overrides the seed', (tester) async {
-      when(
-        () => storage.read('ThemeModeCubit'),
-      ).thenReturn({'themeMode': 'light'});
+      when(() => storage.read('ThemeModeCubit'))
+          .thenReturn({'themeMode': 'light'});
 
       await pumpBooting(tester, themeMode: ThemeMode.dark);
 

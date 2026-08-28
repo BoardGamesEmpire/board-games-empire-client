@@ -20,12 +20,12 @@ One codebase, three targets, built in parallel from day one:
 
 ## Quick start
 
-Requires **Flutter 3.44.4 exactly** — the pin is deliberate and any other
+Requires **Flutter 3.47.1 exactly** — the pin is deliberate and any other
 version fails to resolve. See [CONTRIBUTING.md](CONTRIBUTING.md#prerequisites)
 for why, and how to bump it.
 
 ```bash
-dart pub global activate melos ^7.5.1   # match the pinned version, see CONTRIBUTING.md
+dart pub global activate melos ^8.5.0   # match the pinned version, see CONTRIBUTING.md
 flutter pub get
 melos run generate               # required — generated code is gitignored
 melos run test --no-select       # all 22 packages with tests

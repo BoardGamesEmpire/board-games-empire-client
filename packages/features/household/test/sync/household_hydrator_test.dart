@@ -92,9 +92,8 @@ void main() {
 
       await build().hydrate();
 
-      final cached = verify(
-        () => repo.cacheHousehold(captureAny()),
-      ).captured.cast<Household>();
+      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
+          .cast<Household>();
       expect(cached.map((h) => h.id), equals(['h-1', 'h-2']));
     });
 
@@ -111,9 +110,8 @@ void main() {
 
       await build().hydrate();
 
-      final cached = verify(
-        () => repo.cacheMembers(captureAny()),
-      ).captured.cast<List<HouseholdMember>>();
+      final cached = verify(() => repo.cacheMembers(captureAny())).captured
+          .cast<List<HouseholdMember>>();
       expect(cached.single.single.id, equals('m-h-1'));
       expect(cached.single.single.householdId, equals('h-1'));
     });
@@ -165,9 +163,8 @@ void main() {
 
       await build(limit: 2).hydrate();
 
-      final cached = verify(
-        () => repo.cacheHousehold(captureAny()),
-      ).captured.cast<Household>();
+      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
+          .cast<Household>();
       expect(
         cached.map((h) => h.id),
         equals(['h-1', 'h-2', 'h-3', 'h-4', 'h-5']),
@@ -388,9 +385,8 @@ void main() {
 
       expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.failed));
 
-      final cached = verify(
-        () => repo.cacheHousehold(captureAny()),
-      ).captured.cast<Household>();
+      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
+          .cast<Household>();
       expect(cached.map((h) => h.id), equals(['h-1', 'h-2']));
     });
 
@@ -403,9 +399,8 @@ void main() {
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
-      when(
-        () => repo.cacheHousehold(any()),
-      ).thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
+      when(() => repo.cacheHousehold(any()))
+          .thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
 
       expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.failed));
     });
@@ -415,9 +410,8 @@ void main() {
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
-      when(
-        () => repo.cacheHousehold(any()),
-      ).thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
+      when(() => repo.cacheHousehold(any()))
+          .thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
 
       await build(limit: 2).hydrate();
 

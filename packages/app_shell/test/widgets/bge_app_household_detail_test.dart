@@ -67,15 +67,13 @@ void main() {
     bool withRepository = true,
   }) async {
     final repository = _MockHouseholdRepository();
-    when(
-      repository.watchHouseholds,
-    ).thenAnswer((_) => Stream<List<Household>>.value([_household(_id)]));
+    when(repository.watchHouseholds)
+        .thenAnswer((_) => Stream<List<Household>>.value([_household(_id)]));
     when(
       () => repository.watchMembers(any()),
     ).thenAnswer((_) => Stream<List<HouseholdMember>>.value([_member('u-me')]));
-    when(
-      () => repository.getCurrentUserMember(any()),
-    ).thenAnswer((_) async => _member('u-me'));
+    when(() => repository.getCurrentUserMember(any()))
+        .thenAnswer((_) async => _member('u-me'));
 
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(

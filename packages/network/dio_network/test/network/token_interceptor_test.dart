@@ -198,16 +198,14 @@ void main() {
             ..httpClientAdapter = latchAdapter
             ..interceptors.add(TokenInterceptor(tokenStorage: realStorage));
 
-      when(
-        () => secure.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => validPayload);
+      when(() => secure.read(key: any(named: 'key')))
+          .thenAnswer((_) async => validPayload);
     });
 
     test('stops attaching a surviving token after a failed clear', () async {
       // The persisted delete fails, so the token physically survives on disk.
-      when(
-        () => secure.delete(key: any(named: 'key')),
-      ).thenThrow(StateError('keychain unavailable'));
+      when(() => secure.delete(key: any(named: 'key')))
+          .thenThrow(StateError('keychain unavailable'));
 
       // Sanity: before sign-out the interceptor attaches the bearer token.
       await latchDio.get<dynamic>('/protected');

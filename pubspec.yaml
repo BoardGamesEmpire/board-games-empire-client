@@ -9,10 +9,10 @@ publish_to: none
 # package in the workspace declares `flutter: ">=<this version>"`, and
 # `melos run check:constraints` fails the build if any drifts.
 #
-# `sdk:` is the Dart floor that pairs with it — Flutter 3.44.4 bundles
-# Dart 3.12.2, and 3.44.0 was the first stable to ship Dart 3.12. The
+# `sdk:` is the Dart floor that pairs with it — Flutter 3.47.1 bundles
+# Dart 3.13.1, and 3.47.0 was the first stable to ship Dart 3.13. The
 # Flutter constraint is deliberately the tighter of the two so it does
-# real work: `sdk: ^3.12.0` alone would still admit Flutter 3.44.0-.3.
+# real work: `sdk: ^3.13.0` alone would still admit Flutter 3.47.0.
 #
 # To bump, edit both values here and run
 #   dart run tool/check_sdk_constraints.dart --fix
@@ -24,11 +24,8 @@ publish_to: none
 # Flutter version, newer stables included. That is the point — it makes
 # toolchain moves deliberate rather than silent.
 environment:
-  sdk: ^3.12.0
-  flutter: 3.44.4
-
-dependency_overrides:
-  analyzer: 10.2.0
+  sdk: ^3.13.0
+  flutter: 3.47.1
 
 # Selects the SQLite3MultipleCiphers build of SQLite for the entire
 # workspace (apps *and* `flutter test` runs) via the sqlite3 3.x build hook.
@@ -41,10 +38,10 @@ hooks:
       source: sqlite3mc
 
 dev_dependencies:
-  melos: ^7.5.1
+  melos: ^8.5.0
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
-  build_runner: ^2.14.1
+  build_runner: ^2.16.0
   # Read-only pubspec parsing for tool/check_sdk_constraints.dart (#153).
   yaml: ^3.1.2
   # tool/derive_palette.dart shares the OKLCH hue math, the sRGB transfer
@@ -107,8 +104,11 @@ melos:
       packageFilters:
         fileExists: l10n.yaml
 
+    # `--delete-conflicting-outputs` was removed in build_runner 2.16 —
+    # passing it now only earns a "these options have been removed" warning.
+    # The new build_runner deletes conflicting outputs on its own.
     generate:build:
-      run: dart run build_runner build --workspace --delete-conflicting-outputs
+      run: dart run build_runner build --workspace
       description: Run build_runner once across the entire workspace (single builder compile, parallel across packages).
 
     # ── Drift schema tooling (issues #52, #7) ──────────────────────

@@ -28,9 +28,8 @@ void main() {
 
   group('getOrCreateServerKey', () {
     test('generates a 64-char lowercase hex key when none is stored', () async {
-      when(
-        () => storage.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => null);
+      when(() => storage.read(key: any(named: 'key')))
+          .thenAnswer((_) async => null);
 
       final key = await service.getOrCreateServerKey('srv_1');
 
@@ -38,22 +37,19 @@ void main() {
     });
 
     test('persists a newly generated key before returning it', () async {
-      when(
-        () => storage.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => null);
+      when(() => storage.read(key: any(named: 'key')))
+          .thenAnswer((_) async => null);
 
       final key = await service.getOrCreateServerKey('srv_1');
 
-      verify(
-        () => storage.write(key: 'encryption_key:srv_1', value: key),
-      ).called(1);
+      verify(() => storage.write(key: 'encryption_key:srv_1', value: key))
+          .called(1);
     });
 
     test('returns the stored key without regenerating', () async {
       final stored = 'a' * 64;
-      when(
-        () => storage.read(key: 'encryption_key:srv_1'),
-      ).thenAnswer((_) async => stored);
+      when(() => storage.read(key: 'encryption_key:srv_1'))
+          .thenAnswer((_) async => stored);
 
       final key = await service.getOrCreateServerKey('srv_1');
 
@@ -67,9 +63,8 @@ void main() {
     });
 
     test('namespaces keys per server id', () async {
-      when(
-        () => storage.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => null);
+      when(() => storage.read(key: any(named: 'key')))
+          .thenAnswer((_) async => null);
 
       await service.getOrCreateServerKey('srv_1');
       await service.getOrCreateServerKey('srv_2');
@@ -89,9 +84,8 @@ void main() {
     });
 
     test('generated keys differ between servers', () async {
-      when(
-        () => storage.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => null);
+      when(() => storage.read(key: any(named: 'key')))
+          .thenAnswer((_) async => null);
 
       final a = await service.getOrCreateServerKey('srv_1');
       final b = await service.getOrCreateServerKey('srv_2');
@@ -116,23 +110,20 @@ void main() {
 
   group('getOrCreateMetaKey', () {
     test('uses the reserved meta storage entry', () async {
-      when(
-        () => storage.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => null);
+      when(() => storage.read(key: any(named: 'key')))
+          .thenAnswer((_) async => null);
 
       final key = await service.getOrCreateMetaKey();
 
       expect(key, matches(keyPattern));
-      verify(
-        () => storage.write(key: 'encryption_key:meta', value: key),
-      ).called(1);
+      verify(() => storage.write(key: 'encryption_key:meta', value: key))
+          .called(1);
     });
 
     test('returns the stored meta key without regenerating', () async {
       final stored = 'b' * 64;
-      when(
-        () => storage.read(key: 'encryption_key:meta'),
-      ).thenAnswer((_) async => stored);
+      when(() => storage.read(key: 'encryption_key:meta'))
+          .thenAnswer((_) async => stored);
 
       expect(await service.getOrCreateMetaKey(), stored);
       verifyNever(
@@ -160,12 +151,10 @@ void main() {
     test('a fresh key is generated after deletion', () async {
       // Simulate storage that forgets after delete.
       String? held = 'c' * 64;
-      when(
-        () => storage.read(key: 'encryption_key:srv_1'),
-      ).thenAnswer((_) async => held);
-      when(
-        () => storage.delete(key: 'encryption_key:srv_1'),
-      ).thenAnswer((_) async => held = null);
+      when(() => storage.read(key: 'encryption_key:srv_1'))
+          .thenAnswer((_) async => held);
+      when(() => storage.delete(key: 'encryption_key:srv_1'))
+          .thenAnswer((_) async => held = null);
 
       final before = await service.getOrCreateServerKey('srv_1');
       await service.deleteServerKey('srv_1');
@@ -177,9 +166,8 @@ void main() {
 
   group('key generation', () {
     test('consumes the injected random source', () async {
-      when(
-        () => storage.read(key: any(named: 'key')),
-      ).thenAnswer((_) async => null);
+      when(() => storage.read(key: any(named: 'key')))
+          .thenAnswer((_) async => null);
 
       // A seeded Random makes generation deterministic and proves the
       // injected source is the one being consumed.

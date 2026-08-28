@@ -96,9 +96,8 @@ void main() {
     mockDio = MockDio();
     // The repository's TEMP #101 diagnostics read options.baseUrl on
     // failure paths.
-    when(
-      () => mockDio.options,
-    ).thenReturn(BaseOptions(baseUrl: 'https://api.example.com'));
+    when(() => mockDio.options)
+        .thenReturn(BaseOptions(baseUrl: 'https://api.example.com'));
     mockStorage = MockTokenStorage();
     repo = AuthRepositoryImpl(
       identity: _identity(),
@@ -141,9 +140,8 @@ void main() {
           ),
         ).thenAnswer((_) async => _ok(_signInJson()));
         stubRetrieve();
-        when(
-          () => mockDio.get<Map<String, dynamic>>('$_kAuthBase/get-session'),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>('$_kAuthBase/get-session'))
+            .thenAnswer((_) async => _ok(_sessionJson()));
 
         final result = await repo.signIn(email: 'a@b.com', password: 'pass');
         expect(
@@ -313,9 +311,8 @@ void main() {
         () async {
           stubRetrieve();
           stubClear();
-          when(
-            () => mockDio.get<Map<String, dynamic>>(any()),
-          ).thenAnswer((_) async => _status(401));
+          when(() => mockDio.get<Map<String, dynamic>>(any()))
+              .thenAnswer((_) async => _status(401));
 
           expect(await repo.getSession(), isNull);
           verify(() => mockStorage.clear()).called(1);
@@ -324,9 +321,8 @@ void main() {
 
       test('updates stored expiry from session response', () async {
         stubRetrieve();
-        when(
-          () => mockDio.get<Map<String, dynamic>>(any()),
-        ).thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
         stubStore();
 
         await repo.getSession();
@@ -349,14 +345,13 @@ void main() {
         // signOut() reads the token to authenticate the best-effort POST
         // before latching; none stored here.
         when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
-        when(
-          () => mockDio.post<void>(any(), options: any(named: 'options')),
-        ).thenThrow(
-          DioException(
-            type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
-          ),
-        );
+        when(() => mockDio.post<void>(any(), options: any(named: 'options')))
+            .thenThrow(
+              DioException(
+                type: DioExceptionType.connectionError,
+                requestOptions: RequestOptions(path: ''),
+              ),
+            );
 
         await repo.signOut();
         verify(() => mockStorage.clear()).called(1);

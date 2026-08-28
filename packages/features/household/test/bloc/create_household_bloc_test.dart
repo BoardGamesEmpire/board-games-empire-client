@@ -255,9 +255,8 @@ void main() {
       ],
       verify: (_) {
         verify(() => repo.create(name: 'HQ', description: null)).called(1);
-        verify(
-          () => remote.createHousehold(name: 'HQ', description: null),
-        ).called(1);
+        verify(() => remote.createHousehold(name: 'HQ', description: null))
+            .called(1);
       },
     );
 

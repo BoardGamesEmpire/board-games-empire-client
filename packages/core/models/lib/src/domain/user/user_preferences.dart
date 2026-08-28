@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import '../common/visibility.dart';
 
 part 'user_preferences.freezed.dart';

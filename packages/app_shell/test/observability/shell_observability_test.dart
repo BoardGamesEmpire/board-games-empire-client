@@ -20,9 +20,8 @@ void main() {
       expect(ShellObservability.isInitialized, isTrue);
       expect(ShellObservability.breadcrumbs.isAttached, isTrue);
 
-      BgeLogger(
-        'bge.test.shell_observability',
-      ).error('boom', context: {'answer': 42});
+      BgeLogger('bge.test.shell_observability')
+          .error('boom', context: {'answer': 42});
 
       final crumbs = ShellObservability.breadcrumbs.snapshot();
       expect(crumbs, isNotEmpty);

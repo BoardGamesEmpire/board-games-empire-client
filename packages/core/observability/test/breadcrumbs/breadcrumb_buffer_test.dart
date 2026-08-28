@@ -127,9 +127,8 @@ void main() {
     test('sanitizes default-redacted keys from a context map', () {
       final buffer = BreadcrumbBuffer(capacity: 5)..attach();
       addTearDown(buffer.detach);
-      BgeLogger(
-        'bge.test.ctx',
-      ).info('auth attempt', context: {'password': 'hunter2', 'attempt': 2});
+      BgeLogger('bge.test.ctx')
+          .info('auth attempt', context: {'password': 'hunter2', 'attempt': 2});
       final crumb = buffer.snapshot().single;
       expect(crumb.sanitizedContext, {'password': '<redacted>', 'attempt': 2});
     });

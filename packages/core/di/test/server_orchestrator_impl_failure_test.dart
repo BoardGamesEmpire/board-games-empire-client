@@ -94,9 +94,8 @@ void main() {
         isDesktop: any(named: 'isDesktop'),
       ),
     ).thenReturn(300);
-    when(
-      () => preferencesRepository.get(),
-    ).thenAnswer((_) async => preferences);
+    when(() => preferencesRepository.get())
+        .thenAnswer((_) async => preferences);
     when(
       () => serverRepository.updateConnectionState(
         serverId: any(named: 'serverId'),
@@ -108,9 +107,8 @@ void main() {
         connectionState: i.namedArguments[#newState] as ConnectionState,
       ),
     );
-    when(
-      () => serverRepository.updateLastActive(any(), any()),
-    ).thenAnswer((_) async {});
+    when(() => serverRepository.updateLastActive(any(), any()))
+        .thenAnswer((_) async {});
 
     orchestrator = ServerOrchestratorImpl(
       serverRepository: serverRepository,
@@ -134,9 +132,8 @@ void main() {
       );
       installersById['a'] = _CountedInstaller();
       installersById['b'] = _CountedInstaller(failOnCalls: {1});
-      when(
-        () => serverRepository.getConnectedServers(),
-      ).thenAnswer((_) async => [good, bad]);
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => [good, bad]);
 
       await orchestrator.initialize();
 
@@ -167,9 +164,8 @@ void main() {
         );
         installersById['a'] = _CountedInstaller(failOnCalls: {1});
         installersById['b'] = _CountedInstaller();
-        when(
-          () => serverRepository.getConnectedServers(),
-        ).thenAnswer((_) async => [bad, good]);
+        when(() => serverRepository.getConnectedServers())
+            .thenAnswer((_) async => [bad, good]);
 
         await orchestrator.initialize();
 
@@ -182,9 +178,8 @@ void main() {
 
   group('connectServer()', () {
     setUp(() {
-      when(
-        () => serverRepository.getConnectedServers(),
-      ).thenAnswer((_) async => []);
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
     });
 
     test(
@@ -192,9 +187,8 @@ void main() {
       () async {
         final config = _makeConfig(id: 'x');
         installersById['x'] = _CountedInstaller(failOnCalls: {1});
-        when(
-          () => serverRepository.getServer('x'),
-        ).thenAnswer((_) async => config);
+        when(() => serverRepository.getServer('x'))
+            .thenAnswer((_) async => config);
         await orchestrator.initialize();
 
         await expectLater(
@@ -272,9 +266,8 @@ void main() {
 
   group('switchActiveServer()', () {
     setUp(() {
-      when(
-        () => serverRepository.getConnectedServers(),
-      ).thenAnswer((_) async => []);
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
     });
 
     Future<void> connectPair({required Set<int> targetFailures}) async {
@@ -356,9 +349,8 @@ void main() {
 
   group('disconnectServer()', () {
     setUp(() {
-      when(
-        () => serverRepository.getConnectedServers(),
-      ).thenAnswer((_) async => []);
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
     });
 
     test(

@@ -218,39 +218,37 @@ void main() {
           user: any(named: 'user'),
         ),
       ).thenAnswer((_) async {});
-      when(
-        () => mockDio.get<Map<String, dynamic>>('$_kAuthBase/get-session'),
-      ).thenAnswer(
-        (_) async => Response(
-          data: {
-            'session': {
-              'id': 'sess-1',
-              'token': 'session-tok-abc',
-              'expiresAt': '2099-01-01T00:00:00.000Z',
-              'userId': 'user-1',
-              'createdAt': '2026-01-01T00:00:00.000Z',
-              'updatedAt': '2026-01-01T00:00:00.000Z',
-            },
-            'user': {
-              'id': 'user-1',
-              'name': 'testuser',
-              'email': 'testuser@example.com',
-              'emailVerified': true,
-              'createdAt': '2026-01-01T00:00:00.000Z',
-              'updatedAt': '2026-01-01T00:00:00.000Z',
-            },
-          },
-          statusCode: 200,
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
+      when(() => mockDio.get<Map<String, dynamic>>('$_kAuthBase/get-session'))
+          .thenAnswer(
+            (_) async => Response(
+              data: {
+                'session': {
+                  'id': 'sess-1',
+                  'token': 'session-tok-abc',
+                  'expiresAt': '2099-01-01T00:00:00.000Z',
+                  'userId': 'user-1',
+                  'createdAt': '2026-01-01T00:00:00.000Z',
+                  'updatedAt': '2026-01-01T00:00:00.000Z',
+                },
+                'user': {
+                  'id': 'user-1',
+                  'name': 'testuser',
+                  'email': 'testuser@example.com',
+                  'emailVerified': true,
+                  'createdAt': '2026-01-01T00:00:00.000Z',
+                  'updatedAt': '2026-01-01T00:00:00.000Z',
+                },
+              },
+              statusCode: 200,
+              requestOptions: RequestOptions(path: ''),
+            ),
+          );
       await repo.getSession();
       expect(await repo.watchAuthState().first, isA<AuthStateAuthenticated>());
 
       stubSignOutPostOk();
-      when(
-        () => mockStorage.clear(),
-      ).thenThrow(StateError('keychain unavailable'));
+      when(() => mockStorage.clear())
+          .thenThrow(StateError('keychain unavailable'));
 
       final emissions = <AuthState>[];
       final sub = repo.watchAuthState().listen(emissions.add);

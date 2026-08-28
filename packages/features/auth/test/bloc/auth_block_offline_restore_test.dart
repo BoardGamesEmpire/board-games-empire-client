@@ -100,9 +100,8 @@ void main() {
       'already reports offline',
       build: () {
         connectivity.emit(ConnectivityState.offline);
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -147,13 +146,11 @@ void main() {
       build: () {
         // Connectivity says online (the optimistic seed at cold start).
         when(() => repo.getCachedSession()).thenAnswer((_) async => _session());
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         // The check never resolves within the test — a dead network.
-        when(
-          () => repo.getSession(),
-        ).thenAnswer((_) => Completer<AuthResponse?>().future);
+        when(() => repo.getSession())
+            .thenAnswer((_) => Completer<AuthResponse?>().future);
         return build(restoreBudget: const Duration(milliseconds: 20));
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -194,9 +191,8 @@ void main() {
       'is not absent, so the attempt is still worth making',
       build: () {
         connectivity.emit(ConnectivityState.unknown);
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         when(() => repo.getSession()).thenAnswer((_) async => _session());
         return build();
       },
@@ -213,12 +209,10 @@ void main() {
     blocTest<AuthBloc, AuthBlocState>(
       'enters on the cached session when the check comes back indeterminate',
       build: () {
-        when(
-          () => repo.getSession(),
-        ).thenThrow(const AuthNetworkException(message: 'offline'));
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.getSession())
+            .thenThrow(const AuthNetworkException(message: 'offline'));
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -235,9 +229,8 @@ void main() {
       'falls back to the retry view when nothing is cached — #98 narrows '
       'AuthSessionCheckFailed, it does not remove it',
       build: () {
-        when(
-          () => repo.getSession(),
-        ).thenThrow(const AuthNetworkException(message: 'offline'));
+        when(() => repo.getSession())
+            .thenThrow(const AuthNetworkException(message: 'offline'));
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -255,9 +248,8 @@ void main() {
       'an unexpected non-auth fault also tries the cached session',
       build: () {
         when(() => repo.getSession()).thenThrow(StateError('locked keychain'));
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -274,12 +266,10 @@ void main() {
       'a failing restore preserves the ORIGINAL cause — a storage hiccup '
       'must not be substituted for the real network diagnosis',
       build: () {
-        when(
-          () => repo.getSession(),
-        ).thenThrow(const AuthNetworkException(message: 'offline'));
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenThrow(StateError('keychain unavailable'));
+        when(() => repo.getSession())
+            .thenThrow(const AuthNetworkException(message: 'offline'));
+        when(() => repo.restoreCachedSession())
+            .thenThrow(StateError('keychain unavailable'));
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -316,9 +306,8 @@ void main() {
       'server confirms the session',
       build: () {
         connectivity.emit(ConnectivityState.offline);
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         when(() => repo.getSession()).thenAnswer((_) async => _session());
         return build();
       },
@@ -343,9 +332,8 @@ void main() {
       'signs the user out when revalidation finds the session gone',
       build: () {
         connectivity.emit(ConnectivityState.offline);
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         when(() => repo.getSession()).thenAnswer((_) async => null);
         return build();
       },
@@ -369,12 +357,10 @@ void main() {
       'nothing about the user situation changed, so no transition',
       build: () {
         connectivity.emit(ConnectivityState.offline);
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
-        when(
-          () => repo.getSession(),
-        ).thenThrow(const AuthNetworkException(message: 'still offline'));
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
+        when(() => repo.getSession())
+            .thenThrow(const AuthNetworkException(message: 'still offline'));
         return build();
       },
       act: (b) async {
@@ -423,9 +409,8 @@ void main() {
     blocTest<AuthBloc, AuthBlocState>(
       'going offline does not trigger revalidation',
       build: () {
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         when(() => repo.getSession()).thenAnswer((_) async => _session());
         return build();
       },
@@ -510,9 +495,8 @@ void main() {
           }
           return _session();
         });
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         return build(revalidationInterval: const Duration(milliseconds: 20));
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -539,9 +523,8 @@ void main() {
           }
           return _session();
         });
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         return build(revalidationInterval: const Duration(milliseconds: 15));
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -561,14 +544,12 @@ void main() {
       'with nothing to ever clear it',
       build: () {
         connectivity.emit(ConnectivityState.offline);
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         // The repository never downgrades: it still holds the session as
         // verified and reports so.
-        when(
-          () => repo.currentAuthState,
-        ).thenReturn(AuthStateAuthenticated(session: _session()));
+        when(() => repo.currentAuthState)
+            .thenReturn(AuthStateAuthenticated(session: _session()));
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -584,12 +565,10 @@ void main() {
       'the indeterminate fallback still works; only the fast path and '
       'automatic revalidation are absent',
       build: () {
-        when(
-          () => repo.getSession(),
-        ).thenThrow(const AuthNetworkException(message: 'offline'));
-        when(
-          () => repo.restoreCachedSession(),
-        ).thenAnswer((_) async => _session());
+        when(() => repo.getSession())
+            .thenThrow(const AuthNetworkException(message: 'offline'));
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => _session());
         return AuthBloc(authRepository: repo);
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),

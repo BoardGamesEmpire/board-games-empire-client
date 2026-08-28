@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+
 import 'platform_game_table.dart';
 
 @TableIndex(name: 'game_collections_user_idx', columns: {#userId})

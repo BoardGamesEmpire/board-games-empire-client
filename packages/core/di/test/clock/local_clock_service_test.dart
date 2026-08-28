@@ -33,11 +33,9 @@ void main() {
       final stream = clock.watchSkew();
 
       expect(await stream.toList(), [null]);
-      expect(
-        await stream.toList(),
-        [null],
-        reason: 'must be re-listenable like ServerSkewClockService (LSP)',
-      );
+      expect(await stream.toList(), [
+        null,
+      ], reason: 'must be re-listenable like ServerSkewClockService (LSP)');
     });
   });
 }

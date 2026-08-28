@@ -167,8 +167,10 @@ typedef HouseholdListScreenBuilder = Widget? Function(BuildContext context);
 /// segment. The screen answers an unreadable id with its not-found state,
 /// which is the same answer the repository's membership gate gives, so
 /// there is nothing for the route layer to check.
-typedef HouseholdDetailScreenBuilder =
-    Widget? Function(BuildContext context, String householdId);
+typedef HouseholdDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
 
 /// Builds the application router.
 ///

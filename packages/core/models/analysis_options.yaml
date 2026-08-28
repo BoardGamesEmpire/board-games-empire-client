@@ -25,6 +25,14 @@ analyzer:
     # for this package. See:
     # https://github.com/google/json_serializable.dart/issues/958
     invalid_annotation_target: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 # For more information about the core and recommended set of lints, see
 # https://dart.dev/go/core-lints

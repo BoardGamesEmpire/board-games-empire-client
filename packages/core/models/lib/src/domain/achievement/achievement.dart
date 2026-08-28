@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import 'achievement_type.dart';
 
 part 'achievement.freezed.dart';

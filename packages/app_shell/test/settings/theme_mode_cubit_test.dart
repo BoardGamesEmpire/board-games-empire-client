@@ -39,9 +39,8 @@ void main() {
     );
 
     test('hydrates a stored value', () {
-      when(
-        () => storage.read('ThemeModeCubit'),
-      ).thenReturn({'themeMode': 'light'});
+      when(() => storage.read('ThemeModeCubit'))
+          .thenReturn({'themeMode': 'light'});
       final cubit = ThemeModeCubit();
       addTearDown(cubit.close);
       expect(cubit.state, ThemeMode.light);
@@ -49,9 +48,8 @@ void main() {
 
     test('falls back to system on an unknown stored value (e.g. a removed '
         'mode from an older build)', () {
-      when(
-        () => storage.read('ThemeModeCubit'),
-      ).thenReturn({'themeMode': 'highContrast'});
+      when(() => storage.read('ThemeModeCubit'))
+          .thenReturn({'themeMode': 'highContrast'});
       final cubit = ThemeModeCubit();
       addTearDown(cubit.close);
       expect(cubit.state, ThemeMode.system);

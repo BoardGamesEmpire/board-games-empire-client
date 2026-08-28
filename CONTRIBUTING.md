@@ -8,14 +8,14 @@ Everything below is the operational knowledge you need to get a green checkout.
 
 ## Prerequisites
 
-### Flutter 3.44.4 — exactly
+### Flutter 3.47.1 — exactly
 
 The root [pubspec.yaml](pubspec.yaml) pins an exact Flutter version, not a range:
 
 ```yaml
 environment:
-  sdk: ^3.12.0
-  flutter: 3.44.4
+  sdk: ^3.13.0
+  flutter: 3.47.1
 ```
 
 **This means `flutter pub get` fails on any other version, newer stables
@@ -24,7 +24,7 @@ value (`flutter-version-file: pubspec.yaml`), so a moving constraint would let
 local and CI silently diverge. A resolve error here is the pin working, not a
 bug — check `flutter --version` first.
 
-Use [fvm](https://fvm.app) or your own version manager to keep 3.44.4 available.
+Use [fvm](https://fvm.app) or your own version manager to keep 3.47.1 available.
 
 ### Bumping the toolchain
 
@@ -52,14 +52,20 @@ the constraint is inert. 17 packages had drifted that way before #153.
 ### melos
 
 ```bash
-dart pub global activate melos ^7.5.1
+dart pub global activate melos ^8.5.0
 ```
 
 **Pass the constraint.** A bare `dart pub global activate melos` installs the
-current latest, which is 8.x — while the root declares `melos: ^7.5.1`. Melos 8
-changed how `exec` scripts are configured, and this workspace has not been
-migrated, so keep the globally activated CLI on the same major as the declared
-dev dependency.
+current latest, which may be a major ahead of the root's `melos: ^8.5.0`. Keep
+the globally activated CLI on the same major as the declared dev dependency —
+melos relaunches the workspace-local version, but a mismatched global CLI is
+still the first thing to check when a script behaves oddly.
+
+Melos 8 made `run` and `exec` mutually exclusive in a script: the command for
+an exec script now lives under `exec.command`. No script here needs that
+migration — every one uses `run:` with an explicit `melos exec` invocation and
+`packageFilters`, never an `exec:` key, and melos only rejects the combination
+when both are present.
 
 Configuration lives under the `melos:` key in the root `pubspec.yaml` — there is
 no `melos.yaml`.

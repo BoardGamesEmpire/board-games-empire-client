@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+
 import 'dart:convert';
 
 @DataClassName('ServerConfigData')

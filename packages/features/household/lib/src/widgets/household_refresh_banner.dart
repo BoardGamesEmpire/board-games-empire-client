@@ -107,9 +107,8 @@ class _RetrySpinner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
     child: SizedBox.square(
-      dimension: BgeTextScale.clampedOf(
-        context,
-      ).scale(BgeTokens.of(context).spaceMd),
+      dimension: BgeTextScale.clampedOf(context)
+          .scale(BgeTokens.of(context).spaceMd),
       child: const CircularProgressIndicator(strokeWidth: 2),
     ),
   );

@@ -1,4 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
 import 'auth_strategy.dart';
 
 part 'user_authentication.freezed.dart';

@@ -220,9 +220,9 @@ void main() {
       await db.customSelect('SELECT 1').get();
       await db.close();
 
-      final header = File(
-        p.join(tempDir.path, 'meta', 'servers.db'),
-      ).openSync().readSync(16);
+      final header = File(p.join(tempDir.path, 'meta', 'servers.db'))
+          .openSync()
+          .readSync(16);
       expect(
         String.fromCharCodes(header),
         isNot(startsWith('SQLite format 3')),

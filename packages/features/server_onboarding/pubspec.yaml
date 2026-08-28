@@ -3,8 +3,8 @@ description: "Server onboarding feature (#36) — discovery, negotiation, persis
 publish_to: none
 
 environment:
-  sdk: ^3.12.0
-  flutter: ">=3.44.4"
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
 resolution: workspace
 
 dependencies:
@@ -23,7 +23,7 @@ dependencies:
     path: ../../core/observability
 
   flutter_bloc: ^9.1.1
-  equatable: ^2.0.6
+  equatable: ^2.1.0
   reactive_forms: ^18.1.1
   intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
