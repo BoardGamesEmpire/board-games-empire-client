@@ -111,4 +111,79 @@ void main() {
       expect(session().toString(), contains('user123'));
     });
   });
+
+  // #291 disabled freezed's generated `toString` on both classes, which
+  // means their field lists are now maintained BY HAND. Nothing else fails
+  // when the two drift, and the drift is silent in the direction that
+  // matters: add a field, forget the `toString`, and it simply stops being
+  // logged. `BgeSession` mirrors BetterAuth's session record, so it is
+  // exactly the class that grows when the server's does — and the next
+  // credential-shaped field to land on it would go unredacted by default.
+  //
+  // `toJson()` is the oracle: json_serializable emits every field, so its
+  // key set is the field set. Reflection is not an option — `dart:mirrors`
+  // is unavailable under Flutter.
+  //
+  // This works because neither class carries a `@JsonKey` rename, so the
+  // wire key equals the Dart field name (BgeSession's own doc says so).
+  // `AuthUser` renames `username` to `name` and would need a different
+  // approach.
+  group('a hand-written toString stays in step with its fields', () {
+    void expectEveryFieldNamed(
+      String rendered,
+      Map<String, dynamic> json, {
+      required Set<String> redacted,
+    }) {
+      for (final key in json.keys) {
+        expect(
+          rendered,
+          contains('$key:'),
+          reason:
+              '`$key` is a field but does not appear in toString(). Add it '
+              '— or, if it is credential-shaped, redact it and name it here.',
+        );
+      }
+      for (final key in redacted) {
+        expect(
+          json.containsKey(key),
+          isTrue,
+          reason: '`$key` is listed as redacted but is no longer a field',
+        );
+        expect(rendered, contains('$key: <redacted>'));
+      }
+    }
+
+    test('AuthResponse names every field', () {
+      final response = AuthResponse(
+        user: _user(),
+        token: 'sess-tok-secret',
+        expiresAt: DateTime.utc(2024, 1, 2),
+      );
+
+      expectEveryFieldNamed(
+        response.toString(),
+        response.toJson(),
+        redacted: {'token'},
+      );
+    });
+
+    test('BgeSession names every field, including the nullable ones', () {
+      final full = BgeSession(
+        id: 'sess-1',
+        token: 'sess-tok-secret',
+        expiresAt: DateTime.utc(2099),
+        userId: 'user123',
+        ipAddress: '198.51.100.7',
+        userAgent: 'test-agent',
+        createdAt: DateTime.utc(2024, 1, 1),
+        updatedAt: DateTime.utc(2024, 1, 2),
+      );
+
+      expectEveryFieldNamed(
+        full.toString(),
+        full.toJson(),
+        redacted: {'token'},
+      );
+    });
+  });
 }
