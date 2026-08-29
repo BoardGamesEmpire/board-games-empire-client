@@ -201,6 +201,29 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     AuthResponse granted, {
     required String context,
   }) async {
+    // `AuthResponse.token` is nullable so web can decline to carry a
+    // credential it never reads (#291). Native reads it, so here a null is
+    // a grant that cannot be acted on: it is BetterAuth's documented
+    // no-session envelope (email verification required, or `autoSignIn`
+    // off), which this platform has no way to complete a sign-in from.
+    //
+    // Checked BEFORE the epoch capture and before any await, so the whole
+    // method is unreachable on this shape — nothing is persisted, no
+    // reconcile goes out, and the auth state is never moved.
+    //
+    // This must throw a modelled AuthException rather than let a null
+    // reach `TokenStorageService.store`. Before the field was nullable the
+    // same envelope failed inside `AuthResponse.fromJson`, and a raw parse
+    // error slips past every `on AuthException` clause in AuthBloc and
+    // strands the form on AuthLoading — the failure this replaces.
+    final token = granted.token;
+    if (token == null) {
+      throw AuthServerException(
+        message:
+            'The server accepted the $context but granted no session token.',
+      );
+    }
+
     // Captured before the first await, like getSession's own capture: every
     // suspension in this method (the store, the reconcile) is a window a
     // sign-out can land in, and each outcome below must be able to tell
@@ -208,7 +231,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     final epoch = _sessionEpoch;
 
     await _tokenStorage.store(
-      token: granted.token,
+      token: token,
       expiresAt: null,
       persistedAt: _deviceNowUtc(),
       user: granted.user,

@@ -143,7 +143,10 @@ ServerIdentity _identity() => ServerIdentity(
 );
 
 AuthResponse _sampleSession() => AuthResponse(
-  token: 'tok-abc',
+  // Null, like the real web path (#291): the browser holds the httpOnly
+  // cookie, so a web session carries no bearer credential. A fake that
+  // handed one back would model a shape this platform cannot produce.
+  token: null,
   user: AuthUser(
     id: 'u1',
     username: 'tester',
