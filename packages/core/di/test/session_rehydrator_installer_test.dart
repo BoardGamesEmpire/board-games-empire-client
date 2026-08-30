@@ -34,6 +34,10 @@ ServerConfig _config() => ServerConfig(
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 
+/// The narrowed user-scope seam value (#137), derived from the same
+/// fixture the config came from.
+ScopedServer _server() => ScopedServer.fromConfig(_config());
+
 void main() {
   late DependencyContainerImpl container;
 
@@ -42,7 +46,7 @@ void main() {
   test('install registers a SessionRehydrator for the session', () async {
     await const SessionRehydratorInstaller().install(
       container,
-      _config(),
+      _server(),
       'user-1',
     );
 
@@ -52,7 +56,7 @@ void main() {
   test('the registered rehydrator runs a registered hydrate', () async {
     await const SessionRehydratorInstaller().install(
       container,
-      _config(),
+      _server(),
       'user-1',
     );
 
@@ -71,7 +75,7 @@ void main() {
       'runs nothing', () async {
     await const SessionRehydratorInstaller().install(
       container,
-      _config(),
+      _server(),
       'user-1',
     );
     final rehydrator = container.get<SessionRehydrator>();

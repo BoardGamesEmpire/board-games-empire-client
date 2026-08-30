@@ -61,7 +61,7 @@ void main() {
 
     test('starts with no active scope', () {
       expect(host.isActive, isFalse);
-      expect(host.scope, isNull);
+      expect(host.maybeGet<Probe>(), isNull);
     });
 
     test('open hands install a view that writes to the child scope', () async {
@@ -76,12 +76,37 @@ void main() {
 
       expect(host.isActive, isTrue);
       // The registration landed in the child, not the parent.
-      expect(host.scope!.isRegistered<int>(), isTrue);
+      expect(host.scopeHasRegistration<int>(), isTrue);
       expect(parent.isRegistered<int>(), isFalse);
       // Resolution through the view falls through to the parent.
       expect(view.get<Probe>(), same(base));
       expect(view.get<int>(), 7);
       expect(view.isRegistered<Probe>(), isTrue);
+    });
+
+    test('the typed lookups read the child only, never the parent', () async {
+      // The host's read half answers "is this in the *user* scope", which is
+      // what makes an owner facade's child-first fall-through correct: the
+      // facade asks here, and consults its own parent itself. A lookup that
+      // fell through would make the facade's `??` unreachable and hide a
+      // parent registration behind a scope that does not hold one.
+      final base = Probe('base');
+      parent.registerSingleton<Probe>(base);
+
+      await host.open((v) async => v.registerSingleton<int>(7));
+
+      expect(host.maybeGet<int>(), 7);
+      expect(host.scopeHasRegistration<int>(), isTrue);
+      expect(host.maybeGet<Probe>(), isNull, reason: 'parent-only');
+      expect(host.scopeHasRegistration<Probe>(), isFalse);
+    });
+
+    test('the typed lookups answer for a closed scope, not throw', () async {
+      await host.open((v) async => v.registerSingleton<int>(7));
+      await host.close();
+
+      expect(host.maybeGet<int>(), isNull);
+      expect(host.scopeHasRegistration<int>(), isFalse);
     });
 
     test('the view resolves the parent at call time, not at open', () async {
@@ -135,7 +160,7 @@ void main() {
       });
 
       expect(order, ['first', 'second']);
-      expect(host.scope!.get<double>(), 1.5);
+      expect(host.maybeGet<double>(), 1.5);
     });
 
     test('the child attaches before the installer is invoked', () async {
@@ -188,7 +213,7 @@ void main() {
 
       expect(probe.disposed, isTrue);
       expect(host.isActive, isFalse);
-      expect(host.scope, isNull);
+      expect(host.maybeGet<Probe>(), isNull);
     });
 
     test('close is a no-op when no scope is active', () async {
@@ -240,7 +265,7 @@ void main() {
 
       await host.open((v) async => v.registerSingleton<int>(2));
 
-      expect(host.scope!.get<int>(), 2);
+      expect(host.maybeGet<int>(), 2);
     });
 
     test(
@@ -271,7 +296,7 @@ void main() {
       await host.close();
       await host.open((v) async => v.registerSingleton<int>(2));
 
-      expect(host.scope!.get<int>(), 2);
+      expect(host.maybeGet<int>(), 2);
     });
 
     test(
@@ -293,7 +318,7 @@ void main() {
           );
         });
 
-        expect(webHost.scope!.get<Probe>(), same(perUser));
+        expect(webHost.maybeGet<Probe>(), same(perUser));
 
         await webHost.close();
 

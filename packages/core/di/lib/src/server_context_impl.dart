@@ -364,9 +364,13 @@ class ServerContextImpl implements ServerContext {
       // fall-through view, discard the partial scope if one throws — lives
       // in [UserScopeHost] (#289) so web can host a user scope over its
       // origin-scoped container without a second copy of this lifecycle.
+      // #137: installers take the two values they actually read rather than
+      // the whole config, so the same installer list serves web, which has
+      // no `ServerConfig` to give them.
+      final scopedServer = ScopedServer.fromConfig(_config);
       await _container.openUserScope((view) async {
         for (final installer in _userInstallers) {
-          await installer.install(view, _config, userId);
+          await installer.install(view, scopedServer, userId);
         }
       });
       _activeUserId = userId;
@@ -605,11 +609,7 @@ class _SwappableContainer implements DependencyContainer {
   }
 
   @override
-  T get<T extends Object>() {
-    final user = _userScope.scope;
-    if (user != null && user.isRegistered<T>()) return user.get<T>();
-    return _current.get<T>();
-  }
+  T get<T extends Object>() => _userScope.maybeGet<T>() ?? _current.get<T>();
 
   @override
   void registerSingleton<T extends Object>(
@@ -629,8 +629,7 @@ class _SwappableContainer implements DependencyContainer {
 
   @override
   bool isRegistered<T extends Object>() =>
-      (_userScope.scope?.isRegistered<T>() ?? false) ||
-      _current.isRegistered<T>();
+      _userScope.scopeHasRegistration<T>() || _current.isRegistered<T>();
 
   @override
   Future<void> dispose() async {

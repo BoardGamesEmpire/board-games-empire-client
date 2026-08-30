@@ -25,7 +25,7 @@ class SessionRehydratorInstaller implements UserScopeInstaller {
   @override
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   ) async {
     final rehydrator = SessionRehydratorImpl();

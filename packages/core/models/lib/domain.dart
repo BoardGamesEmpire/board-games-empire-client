@@ -27,6 +27,7 @@ export 'src/domain/push/push_registration.dart';
 
 export 'src/domain/server/connection_state.dart';
 export 'src/domain/server/notification_summary.dart';
+export 'src/domain/server/scoped_server.dart';
 export 'src/domain/server/server_auth_strategy.dart';
 export 'src/domain/server/server_capacity_exceeded_exception.dart';
 export 'src/domain/server/server_config.dart';

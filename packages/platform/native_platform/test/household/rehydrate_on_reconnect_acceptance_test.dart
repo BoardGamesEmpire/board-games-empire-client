@@ -96,6 +96,10 @@ ServerConfig _config() => ServerConfig(
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 
+/// The narrowed user-scope seam value (#137), derived from the same
+/// fixture the config came from.
+ScopedServer _server() => ScopedServer.fromConfig(_config());
+
 PaginatedResult<HouseholdWithMembers> _page(List<String> ids) =>
     PaginatedResult(
       items: [
@@ -174,12 +178,12 @@ void main() {
   Future<void> activateSession(WidgetTester tester) async {
     await const SessionRehydratorInstaller().install(
       container,
-      _config(),
+      _server(),
       'user-1',
     );
     await const HouseholdHydrateInstaller().install(
       container,
-      _config(),
+      _server(),
       'user-1',
     );
     await tester.pump();

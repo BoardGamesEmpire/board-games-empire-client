@@ -21,8 +21,20 @@ import 'dependency_container.dart';
 /// This mirrors [ServerScopeInstaller]'s seam role: implementations live
 /// beside the concretes they wire (e.g. `UserSessionScopeInstaller` in
 /// `drift_storage`), and the platform app composes the list it hands to
-/// `ServerContextImpl` — the `di` package stays free of storage and network
-/// dependencies.
+/// its composition root — `ServerContextImpl` on native,
+/// `bootstrapWebServerScope` on web (#137). The `di` package stays free of
+/// storage and network dependencies either way.
+///
+/// ## Why [ScopedServer] and not `ServerConfig` (#137)
+///
+/// This seam took the whole `ServerConfig` until #137, which made it
+/// native-only: web has no persisted config by construction, so the one
+/// platform that most needed the seam could not satisfy it. Every installer
+/// in the tree reads exactly two values off it — a server id and a name,
+/// both for diagnostics — so it now asks for a [ScopedServer], which native
+/// builds from its `ServerConfig` and web from the `ServerIdentity` it
+/// fetched at bootstrap. Installers needing more than that should resolve it
+/// from [container], which is where per-server resources already live.
 ///
 /// ## Contract
 ///
@@ -44,10 +56,10 @@ import 'dependency_container.dart';
 ///   their own partial registrations.
 abstract interface class UserScopeInstaller {
   /// Wires this installer's per-user services for [userId] on the server
-  /// described by [config] into [container].
+  /// described by [server] into [container].
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   );
 }

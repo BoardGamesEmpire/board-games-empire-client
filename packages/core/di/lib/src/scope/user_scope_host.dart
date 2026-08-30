@@ -21,8 +21,8 @@ import '../dependency_container_impl.dart';
 /// - `ServerContextImpl` keeps its context-state machine, its serialized
 ///   scope-operation chain, and the `UserSessionScope` adapter it registers,
 ///   and delegates the mechanism here;
-/// - web's holder over its single origin-scoped container (#137) is a thin
-///   wrapper for the same reason.
+/// - [ContainerUserSessionScope] does the same over a fixed parent, which is
+///   the shape web's origin-scoped container needs (#137).
 ///
 /// Two copies of this lifecycle is exactly what #289 exists to prevent: the
 /// contract is subtle enough — partial scope discarded on installer failure,
@@ -38,10 +38,12 @@ import '../dependency_container_impl.dart';
 /// session, never the host, and an [open] after the owner has torn itself
 /// down would build a child scope nothing will ever dispose. Rejecting that
 /// is the owner's job, and the owner is the only thing that knows it has
-/// been torn down — `ServerContextImpl` guards it on the facade, before
-/// delegating here. A second host (#137) needs its own guard; see #327,
-/// which weighs giving this class a disposed state once there are two
-/// consumers to design against.
+/// been torn down. Both owners now do it, in about three lines each:
+/// `ServerContextImpl` guards on its container facade before delegating
+/// here, and [ContainerUserSessionScope] — web's holder (#137) — refuses
+/// once its own `dispose` has run. #327 weighed moving the guard in here and
+/// the second implementation argued against it: the owners are where the
+/// knowledge is, and neither wanted the primitive to hold it.
 class UserScopeHost {
   UserScopeHost({
     required this._parent,
@@ -62,13 +64,33 @@ class UserScopeHost {
 
   DependencyContainer? _scope;
 
-  /// The open user-session scope, or null when none is. Exposed so an owner
-  /// facade can consult it for fall-through resolution — reads only; the
-  /// lifecycle is this host's.
-  DependencyContainer? get scope => _scope;
-
   /// Whether a user-session scope is currently open.
   bool get isActive => _scope != null;
+
+  /// Resolves [T] from the open user-session scope, or null when no scope is
+  /// open or the open one holds no registration for [T].
+  ///
+  /// This and [scopeHasRegistration] are the read half an owner's container
+  /// facade needs to resolve child-first and fall through to its own parent.
+  /// Both owners want exactly this — `ServerContextImpl`'s swappable
+  /// container and web's holder over its origin scope (#137) — which is why
+  /// the fall-through is expressed here once rather than written out at each
+  /// facade (#327).
+  ///
+  /// Typed lookups rather than a getter returning the child container: a
+  /// holder given the container could register into it or dispose it behind
+  /// this host's back, leaving the host believing a scope is open that has
+  /// already been torn down. The lifecycle is this host's alone.
+  T? maybeGet<T extends Object>() {
+    final scope = _scope;
+    if (scope == null || !scope.isRegistered<T>()) return null;
+    return scope.get<T>();
+  }
+
+  /// Whether the open user-session scope holds a registration for [T].
+  /// False when no scope is open.
+  bool scopeHasRegistration<T extends Object>() =>
+      _scope?.isRegistered<T>() ?? false;
 
   /// Opens a fresh user-session scope and runs [install] against a container
   /// **view**: registrations land in the new child scope while resolution

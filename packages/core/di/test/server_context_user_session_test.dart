@@ -40,16 +40,16 @@ class BaseInstaller implements ServerScopeInstaller {
 /// [UserScopeInstaller] that records every install call and registers a
 /// fresh [UserProbe] with a teardown callback.
 class RecordingUserInstaller implements UserScopeInstaller {
-  final installs = <(ServerConfig, String)>[];
+  final installs = <(ScopedServer, String)>[];
   final probes = <UserProbe>[];
 
   @override
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   ) async {
-    installs.add((config, userId));
+    installs.add((server, userId));
     final probe = UserProbe(userId);
     probes.add(probe);
     container.registerSingleton<UserProbe>(
@@ -67,7 +67,7 @@ class BaseResolvingUserInstaller implements UserScopeInstaller {
   @override
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   ) async {
     resolvedBase = container.get<BaseProbe>();
@@ -82,7 +82,7 @@ class FailingUserInstaller implements UserScopeInstaller {
   @override
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   ) async {
     calls++;
@@ -139,7 +139,7 @@ void main() {
   });
 
   group('activateUserSession', () {
-    test('runs user installers with the config and user id, and the '
+    test('runs user installers with the scoped server and user id, and the '
         'registered services resolve through context.container', () async {
       final installer = RecordingUserInstaller();
       final config = _makeConfig();
@@ -152,7 +152,11 @@ void main() {
 
       await context.activateUserSession('user-a');
 
-      expect(installer.installs, [(config, 'user-a')]);
+      // #137: installers are handed the two values they read, not the whole
+      // config — and the id is the *server-vended* one, so a diagnostic
+      // written here means the same thing it would on web.
+      expect(installer.installs, [(ScopedServer.fromConfig(config), 'user-a')]);
+      expect(installer.installs.single.$1.serverId, config.bgeServerId);
       expect(context.activeUserId, 'user-a');
       expect(context.container.get<UserSessionScope>().activeUserId, 'user-a');
       expect(context.container.isRegistered<UserProbe>(), isTrue);
