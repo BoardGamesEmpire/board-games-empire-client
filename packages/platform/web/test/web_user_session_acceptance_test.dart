@@ -133,14 +133,25 @@ void main() {
   late WebServerScopeContainer container;
   late ContainerUserSessionScope session;
   late ServerDatabase database;
+  var databaseSeq = 0;
 
   setUp(() async {
     auth = _FakeAuthRepository(const AuthStateUnknown());
 
     // A fresh database name per test: the browser's IndexedDB outlives the
     // test that opened it, so a shared name would leak rows between tests.
+    //
+    // A counter AND a timestamp, because neither alone is enough. On the web
+    // `DateTime.now()` is a JavaScript `Date` — millisecond resolution, so
+    // `microsecondsSinceEpoch` ends in `000` and two `setUp`s landing in the
+    // same millisecond would reopen one database; the counter is what makes
+    // that impossible rather than merely unlikely. The timestamp is what
+    // keeps a later run of this suite off the databases this one leaves
+    // behind, which a counter restarting at zero would walk straight back
+    // into.
+    databaseSeq += 1;
     final opening = await const WebWasmExecutorFactory().serverDatabase(
-      'web-session-${DateTime.now().microsecondsSinceEpoch}',
+      'web-session-${DateTime.now().microsecondsSinceEpoch}-$databaseSeq',
     );
     database = ServerDatabase(opening.executor, enableWriteAheadLog: false);
 
