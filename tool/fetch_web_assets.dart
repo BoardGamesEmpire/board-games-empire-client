@@ -53,9 +53,14 @@ const _assets = <String>['sqlite3.wasm', 'drift_worker.js'];
 ///     chrome` serves the package under test, and a browser suite resolves
 ///     these URIs relative to its own location, so the files must sit
 ///     beside the test that loads them.
+///   * `packages/platform/web/test/` — same reason, for the #137 user-session
+///     acceptance suite, which drives the real repositories over a real wasm
+///     database. Every package with a browser suite that opens a database
+///     needs its own copy; there is no shared serving root.
 const _destinations = <String>[
   'apps/browser/web',
   'packages/storage/web_storage/test',
+  'packages/platform/web/test',
 ];
 
 /// Records which release the files in a destination came from, so a stale

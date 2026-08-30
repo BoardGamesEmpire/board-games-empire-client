@@ -119,7 +119,7 @@ class HouseholdListScreen extends StatelessWidget {
   final HouseholdRepository repository;
 
   /// What the hydrate is doing, when this composition runs one. Null where
-  /// no household client exists (#137), which reads as settled rather than
+  /// no household client exists (#125), which reads as settled rather than
   /// as forever-loading.
   final Stream<HouseholdHydrationState>? hydration;
 
@@ -141,14 +141,14 @@ class HouseholdListScreen extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onOpen;
 
   /// Runs one more hydrate pass, or null where this composition has none
-  /// to run — the same #137 case that leaves [hydration] null. Absent, the
+  /// to run — the same #125 case that leaves [hydration] null. Absent, the
   /// banner still reports a failed refresh; it just offers nothing to do
   /// about it, rather than a button that does nothing.
   final Future<void> Function()? onRetry;
 
   /// Asks for a hydrate pass when this screen is entered, subject to the
   /// staleness window (#300 D1, D13). Null where this composition has no
-  /// re-hydrate seam at all — the same #137 case that leaves [onRetry]
+  /// re-hydrate seam at all — the same #125 case that leaves [onRetry]
   /// null.
   ///
   /// Fire-and-forget by contract: the caller owns the error handling, and

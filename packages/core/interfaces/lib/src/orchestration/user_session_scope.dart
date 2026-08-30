@@ -21,10 +21,13 @@
 /// - **Native**: registered by `ServerContextImpl` during context
 ///   activation; [activate] pushes the user scope and runs the composed
 ///   `UserScopeInstaller`s, [deactivate] disposes it.
-/// - **Web** (#137): the web composition root registers its own backing over
-///   the single origin-scoped container. Until it does, the shell treats an
-///   unregistered [UserSessionScope] as "no per-user services on this
-///   platform" and skips the scope step.
+/// - **Web** (#137): `bootstrapWebServerScope` registers a
+///   `ContainerUserSessionScope` over the single origin-scoped container,
+///   driving the same `UserScopeHost` its container facade resolves through.
+///
+/// A composition that registers no [UserSessionScope] — one with no per-user
+/// services to install, and shell tests that provide none — is read by the
+/// shell as "no per-user services here", and the scope step is skipped.
 ///
 /// The shell's auth listener is the single intended caller: it activates on
 /// any transition into the authenticated state and deactivates on any

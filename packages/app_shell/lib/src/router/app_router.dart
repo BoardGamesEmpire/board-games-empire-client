@@ -140,8 +140,9 @@ typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the household list (#269) for the [AppRoutes.household] route.
 /// Supplied by [BgeApp]; returns null at navigation time when no active
 /// server is resolvable or its container carries no `HouseholdRepository`
-/// (tests without a container; web until its user tier lands, #137), in
-/// which case the route falls back to [NotYetAvailableScreen].
+/// (tests without a container; no active user session on either platform,
+/// since #137 gave web the same user tier), in which case the route falls
+/// back to [NotYetAvailableScreen].
 ///
 /// Guarded on the repository **alone**, unlike
 /// [CreateHouseholdScreenBuilder]: the list reads the local cache and needs

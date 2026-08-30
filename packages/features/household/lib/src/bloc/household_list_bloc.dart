@@ -58,13 +58,13 @@ import 'household_list_state.dart';
 /// letting it lift the error would show a list nobody could read.
 ///
 /// A **null** [hydration] stream means no hydrate exists to wait for
-/// (a container with no household client, #137). That reads as settled,
+/// (a container with no household client, #125). That reads as settled,
 /// not as perpetually loading.
 ///
 /// ## The retry, and why the bloc runs it (#300 D5)
 ///
 /// A null [onRetry] is a composition that cannot re-run the drain — the
-/// same #137 case that leaves [hydration] null — and the screen offers no
+/// same #125 case that leaves [hydration] null — and the screen offers no
 /// retry there rather than a button that does nothing.
 ///
 /// The callback is invoked from here rather than straight from the button

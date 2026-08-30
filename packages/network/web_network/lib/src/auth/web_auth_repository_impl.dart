@@ -517,8 +517,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // (`home_placeholder_screen.dart:93`, `bge_app.dart:522`), reachable
     // only from an authenticated shell. The one programmatic dispatcher
     // (`bge_app.dart:1117`) fires when `UserSessionScope.activate` fails,
-    // which cannot run until this reconcile has already emitted — and web
-    // registers no `UserSessionScope` at all until #137.
+    // which cannot run until this reconcile has already emitted. (Web has
+    // registered a `UserSessionScope` since #137; the bound above is what
+    // holds, not its absence.)
     //
     // Widening the capture would therefore guard a race no caller can
     // produce, and it would guard it incompletely: the late credential

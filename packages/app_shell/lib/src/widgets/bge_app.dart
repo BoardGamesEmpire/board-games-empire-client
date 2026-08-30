@@ -489,13 +489,27 @@ class _BgeAppState extends State<BgeApp> {
     // NotYetAvailableScreen. Post-#135 the household repository lives in
     // the per-USER session scope, so on native this is true exactly while
     // a user session is active — which home's own auth gating already
-    // implies — and false on web until its user tier lands (#137/#125).
+    // implies. Web's user tier lands the same repository (#137), so the
+    // same "exactly while a session is active" reading holds there.
     //
     // The repository ALONE (#269 D4): this entry opens the list, which
     // renders from the local cache. A missing HouseholdRemoteDataSource
     // costs the list its create affordance, not its existence — so gating
     // the entry on it, as the create entry this replaces had to, would
     // hide a screen that works.
+    //
+    // Web is the first composition where that reading bites. Since #137 it
+    // registers the repository and no household client, and nothing on web
+    // can write the household cache until #125 — so on web this entry opens
+    // a list that is empty by construction, with no create affordance and
+    // no refresh.
+    //
+    // The gate is left as #269 set it. Narrowing it to require a client
+    // would be this change reversing that decision rather than the issue
+    // that owns it, and it would buy native nothing: registerServerNetwork
+    // registers the client unconditionally, so native never reaches the
+    // case. Whether the entry should wait for #125 on web is #269's
+    // question to reopen.
     final container = active.container;
     final canReadHouseholds = container.isRegistered<HouseholdRepository>();
 
@@ -535,8 +549,8 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The #300 retry, for both household screens: the session-scoped
   /// [HouseholdRefresher] the hydrate installer registers, or null where
-  /// this composition runs no drain (#137, and any container without a
-  /// household client).
+  /// this composition runs no drain (any container without a household
+  /// client — web until #125).
   ///
   /// Optional for the same reason `onCreate` is: a screen that cannot
   /// refresh should say the list may be stale and offer nothing to press,
@@ -557,7 +571,8 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The #300 re-hydrate-on-entry trigger (D1, D13): the session's
   /// [SessionRehydrator], or null where this composition has no re-hydrate
-  /// seam at all (#137).
+  /// seam at all. Both platforms compose one now (#302 native, #137 web);
+  /// shell tests without a user scope do not.
   ///
   /// **The opposite call from [_householdRetry], on purpose.** A press gets
   /// the household's own pass, because the rehydrator drops a pass while
@@ -592,8 +607,8 @@ class _BgeAppState extends State<BgeApp> {
   /// container, plus the optional [HouseholdHydrationStatus] the hydrate
   /// installer publishes (#267/#269 D1). Null (→ [NotYetAvailableScreen])
   /// when no active server is resolvable or its container carries no
-  /// repository (tests without a scope; no active user session; web until
-  /// its user tier lands, #137).
+  /// repository (tests without a scope; no active user session — on either
+  /// platform, since #137 gave web the same user tier).
   ///
   /// Two things are deliberately *optional* here where the create route
   /// requires them:
@@ -683,8 +698,9 @@ class _BgeAppState extends State<BgeApp> {
   /// (per-server scope) from the *active server's* scoped container — not
   /// [BgeApp.rootContainer]. Null (→ [NotYetAvailableScreen]) when no
   /// active server is resolvable or its container lacks either dependency
-  /// (tests without a scope; no active user session; web until its user
-  /// tier lands, #137).
+  /// (tests without a scope; no active user session; web until it registers
+  /// a household client, #125 — #137 gave it the repository, not the
+  /// remote).
   ///
   /// ## Captured-repository lifetime (#135)
   ///
@@ -735,8 +751,8 @@ class _BgeAppState extends State<BgeApp> {
         // *mutation*, and this is where mutations are already wired, which
         // is what gives #122's membership mutations the same hook.
         //
-        // Absent on a composition that runs no drain (#137): nothing to
-        // invalidate, and a create must not care.
+        // Absent on a composition that runs no drain (#125 on web):
+        // nothing to invalidate, and a create must not care.
         if (container.isRegistered<HouseholdHydrationStatus>()) {
           container.get<HouseholdHydrationStatus>().markStale();
         }
@@ -1184,8 +1200,9 @@ class _BgeAppState extends State<BgeApp> {
 /// and no live widget can dispatch into a disposed service; the pop still
 /// closes vended streams regardless of UI disposal, which is what the
 /// #135 acceptance relies on. A container with no registered
-/// [UserSessionScope] (web until #137; shell tests that don't provide
-/// one) skips the scope step entirely, keeping the prior behavior.
+/// [UserSessionScope] (shell tests that don't provide one; any composition
+/// with no per-user services) skips the scope step entirely, keeping the
+/// prior behavior.
 class _AuthScope extends StatelessWidget {
   const _AuthScope({
     required this.scope,
@@ -1282,7 +1299,9 @@ class _AuthScope extends StatelessWidget {
   }
 
   /// Resolves the per-server [UserSessionScope], or null where the
-  /// platform composition hasn't registered one (web until #137).
+  /// platform composition hasn't registered one. Both platforms register one
+  /// now (#135 native, #137 web); a composition without per-user services
+  /// still legitimately has none.
   UserSessionScope? _userSessionScopeOf(ActiveServer active) =>
       active.container.isRegistered<UserSessionScope>()
       ? active.container.get<UserSessionScope>()

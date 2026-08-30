@@ -43,7 +43,7 @@ import 'household_detail_state.dart';
 /// unverified absence as a settled one.
 ///
 /// An **absent** hydration stream reads as settled, exactly as it does on
-/// the list — a container with no household client (#137) must not hang.
+/// the list — a container with no household client (#125) must not hang.
 ///
 /// ## Why the roster is a gate, not a decoration
 ///
@@ -398,7 +398,7 @@ class HouseholdDetailBloc
   /// or a hydration stream exists and has not yet said what it is doing.
   ///
   /// Bounded at both ends: an absent stream is settled immediately (a
-  /// container with no household client, #137), and a stream that closes
+  /// container with no household client, #125), and a stream that closes
   /// without ever speaking is settled by [_hydrationDone]. Neither can hold
   /// the screen on a spinner.
   bool get _mightStillFill =>
