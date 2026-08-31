@@ -107,6 +107,10 @@ ServerConfig _config() => ServerConfig(
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 
+/// The narrowed user-scope seam value (#137), derived from the same
+/// fixture the config came from.
+ScopedServer _server() => ScopedServer.fromConfig(_config());
+
 /// Builds a scope container carrying the three resources the installer
 /// resolves — the [ServerDatabase], the [ClockService] and the
 /// [AuthRepository] — mirroring what `StorageScopeInstaller` /
@@ -146,8 +150,8 @@ Future<({DependencyContainer a, DependencyContainer b})> _siblingScopes(
     await db.close();
   });
 
-  await installer.install(scopeA, _config(), userA);
-  await installer.install(scopeB, _config(), userB);
+  await installer.install(scopeA, _server(), userA);
+  await installer.install(scopeB, _server(), userB);
   return (a: scopeA, b: scopeB);
 }
 
@@ -163,7 +167,7 @@ void main() {
 
     // An eager session read would throw here; the lazy provider defers
     // resolution, so install succeeds regardless of the live auth state.
-    await installer.install(container, _config(), _kUserId);
+    await installer.install(container, _server(), _kUserId);
 
     expect(container.isRegistered<HouseholdRepository>(), isTrue);
     expect(container.isRegistered<SyncQueueRepository>(), isTrue);
@@ -177,7 +181,7 @@ void main() {
         _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
 
       final repo = container.get<HouseholdRepository>();
 
@@ -194,7 +198,7 @@ void main() {
         _FakeAuthRepository(const AuthStateUnauthenticated()),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
 
       final repo = container.get<HouseholdRepository>();
 
@@ -208,7 +212,7 @@ void main() {
     );
     final container = _scopeContainer(auth);
     addTearDown(container.dispose);
-    await installer.install(container, _config(), _kUserId);
+    await installer.install(container, _server(), _kUserId);
     final repo = container.get<HouseholdRepository>();
 
     await expectLater(repo.getHouseholds(), completion(isEmpty));
@@ -229,7 +233,7 @@ void main() {
       );
       final container = _scopeContainer(auth);
       addTearDown(container.dispose);
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
       final repo = container.get<HouseholdRepository>();
 
       // A different user authenticates while the old user scope is somehow
@@ -249,7 +253,7 @@ void main() {
         _FakeAuthRepository(const AuthStateUnauthenticated()),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
       final repo = container.get<HouseholdRepository>();
 
       // Invoking the watch methods must not throw synchronously; the
@@ -268,7 +272,7 @@ void main() {
     final container = _scopeContainer(
       _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
     );
-    await installer.install(container, _config(), _kUserId);
+    await installer.install(container, _server(), _kUserId);
     final repo = container.get<HouseholdRepository>();
 
     var done = false;
@@ -291,7 +295,7 @@ void main() {
     final container = _scopeContainer(
       _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
     );
-    await installer.install(container, _config(), _kUserId);
+    await installer.install(container, _server(), _kUserId);
     final queue = container.get<SyncQueueRepository>();
 
     var done = false;
@@ -346,7 +350,7 @@ void main() {
       final container = _scopeContainer(
         _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
       );
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
       final collections = container.get<GameCollectionRepository>();
 
       var done = false;
@@ -375,7 +379,7 @@ void main() {
       final container = _scopeContainer(
         _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
       );
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
       final collections = container.get<GameCollectionRepository>();
 
       await expectLater(collections.getCollection(), completion(isEmpty));
@@ -436,7 +440,7 @@ void main() {
         _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
       );
       addTearDown(container.dispose);
-      await installer.install(container, _config(), _kUserId);
+      await installer.install(container, _server(), _kUserId);
       await seedPlatformGame(container.get<ServerDatabase>());
 
       await container.get<GameCollectionRepository>().addToCollection(

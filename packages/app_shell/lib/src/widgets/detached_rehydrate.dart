@@ -15,10 +15,10 @@ final BgeLogger _log = BgeLogger('bge.shell.session_rehydrate');
 /// would be two places to get it wrong.
 ///
 /// [resolve] returns the session's [SessionRehydrator], or null where this
-/// composition has no re-hydrate seam at all (#137) or the scope it would
-/// come from is gone. It runs **inside** the guard, so a caller resolving
-/// from a container disposed since the last active-server event is logged
-/// rather than thrown from.
+/// composition has no re-hydrate seam at all (shell tests) or the scope it
+/// would come from is gone. It runs **inside** the guard, so a caller
+/// resolving from a container disposed since the last active-server event
+/// is logged rather than thrown from.
 ///
 /// [trigger] names the caller in the logs and does nothing else. The
 /// registry decides what work a pass does, and a pass arriving while one is

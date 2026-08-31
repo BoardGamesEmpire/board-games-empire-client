@@ -39,8 +39,15 @@ class _MockHouseholdRemoteDataSource extends Mock
 ///
 /// "Repository registered, remote absent" is the case that separates the
 /// old gate from the new one: under #129's rule the entry vanished, under
-/// #269's it stays and the list simply offers no create affordance. Web has
-/// neither until its user tier lands (#137).
+/// #269's it stays and the list simply offers no create affordance.
+///
+/// Since #137 that case is no longer hypothetical: web's user tier registers
+/// the repository and its server scope registers no household client until
+/// #125, so web is the one composition that actually reaches it. Native does
+/// not — `registerServerNetwork` registers the client unconditionally. The
+/// consequence on web (an entry onto a permanently empty list) is recorded
+/// at the gate in `bge_app.dart`; it is #269's decision to revisit, not this
+/// file's to quietly change.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late Storage storage;
@@ -117,8 +124,9 @@ void main() {
       expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
     });
 
-    testWidgets('hides the households entry when neither is registered — web '
-        'until its user tier lands (#137)', (tester) async {
+    testWidgets('hides the households entry when neither is registered — the '
+        'web signed-out state, which carries no household client either '
+        '(#137)', (tester) async {
       await pumpHomeDrawer(tester, withRepository: false, withRemote: false);
 
       expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);

@@ -34,8 +34,8 @@ import 'package:observability/observability.dart';
 ///   reactively off the local cache, so hydration is a refresh, not a
 ///   precondition for the screen;
 /// - a missing [HouseholdRemoteDataSource] is a no-op rather than a
-///   resolution failure. Web registers no household client (#137), and a
-///   composition without one should sign in normally with a
+///   resolution failure. Web registers no household client until #125, and
+///   a composition without one should sign in normally with a
 ///   local-cache-only list.
 ///
 /// The hydrator swallows its own failures; the `unawaited` here is
@@ -117,8 +117,8 @@ import 'package:observability/observability.dart';
 /// answer; #300's manual retry covers it in the meantime.
 ///
 /// An absent [SessionRehydrator] is a no-op, on the same reasoning as an
-/// absent household client: compositions without the seam (web until #137,
-/// shell tests) must still sign in normally.
+/// absent household client: a composition without the seam must still sign
+/// in normally.
 class HouseholdHydrateInstaller implements UserScopeInstaller {
   /// [now] overrides the clock the published [HouseholdHydrationStatus]
   /// stamps [staleAfter] against. Production leaves it null, which is the
@@ -146,13 +146,13 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
   @override
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   ) async {
     if (!container.isRegistered<HouseholdRemoteDataSource>()) {
       _log.debug(
         'No household client on this server; skipping hydrate',
-        context: {'serverId': config.bgeServerId},
+        context: {'serverId': server.serverId},
       );
       return;
     }
@@ -189,7 +189,7 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
           'Household hydrate escaped its own error handling',
           error: error,
           stackTrace: stackTrace,
-          context: {'serverId': config.bgeServerId},
+          context: {'serverId': server.serverId},
         );
         return HydrateOutcome.failed;
       });

@@ -65,7 +65,7 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
   @override
   Future<void> install(
     DependencyContainer container,
-    ServerConfig config,
+    ScopedServer server,
     String userId,
   ) async {
     final db = container.get<ServerDatabase>();
@@ -89,7 +89,7 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
 
     final households = HouseholdRepositoryImpl(
       db: db,
-      currentUserId: () => _resolveUserId(authRepository, config, userId),
+      currentUserId: () => _resolveUserId(authRepository, server, userId),
       syncQueue: syncQueue,
       clock: clock,
     );
@@ -165,7 +165,7 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
   /// state.
   static String _resolveUserId(
     AuthRepository authRepository,
-    ServerConfig config,
+    ScopedServer server,
     String scopeUserId,
   ) {
     final state = authRepository.currentAuthState;
@@ -173,7 +173,7 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
       final id = state.session.user.id;
       if (id != scopeUserId) {
         throw StateError(
-          'A household action ran for server "${config.bgeServerId}" under '
+          'A household action ran for server "${server.serverId}" under '
           'a user-session scope built for "$scopeUserId", but the '
           'authenticated user is now "$id". The scope must be deactivated '
           'on every authentication transition (#135).',
@@ -182,7 +182,7 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
       return id;
     }
     throw StateError(
-      'A household action ran for server "${config.bgeServerId}" without an '
+      'A household action ran for server "${server.serverId}" without an '
       'authenticated session. Household actions are only reachable behind '
       'the auth gate; the current user id is resolved lazily at call time.',
     );

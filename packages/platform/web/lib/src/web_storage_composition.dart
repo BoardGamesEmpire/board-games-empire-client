@@ -4,9 +4,10 @@ import 'package:web_network/web_network.dart';
 import 'package:web_storage/web_storage.dart';
 
 import 'web_platform_bootstrap.dart';
+import 'web_user_scope_installers.dart';
 
-/// The production web server scope: the cookie-based network stack **and**
-/// the drift/wasm data layer (#288).
+/// The production web server scope: the cookie-based network stack, the
+/// drift/wasm data layer (#288), and the per-user session tier (#137).
 ///
 /// This is the composition `bootstrapWebServerScope` deliberately cannot do
 /// for itself. `web_network` owns the scope's assembly but must not depend on
@@ -23,6 +24,10 @@ import 'web_platform_bootstrap.dart';
 Future<ActiveServerScope> buildWebServerScope() {
   return bootstrapWebServerScope(
     installStorage: WebStorageInstaller(onReport: reportWebStorage).install,
+    // #137: the per-user tier, over the database the line above registers.
+    // The list itself is VM-compilable and lives in `web.dart`, so what web
+    // installs per user is assertable without a browser.
+    userInstallers: buildWebUserScopeInstallers(),
   );
 }
 

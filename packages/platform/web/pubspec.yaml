@@ -34,6 +34,13 @@ dependencies:
   web_storage:
     path: ../../storage/web_storage
 
+  # The platform-neutral half of the data layer (#287), for the shared
+  # `UserSessionScopeInstaller` web's per-user tier runs (#137). A direct
+  # dependency rather than a transitive one through `web_storage`: this
+  # package names the symbol.
+  drift_storage:
+    path: ../../storage/drift_storage
+
   # Web-specific
   url_strategy: ^0.3.0
   hydrated_bloc: ^11.0.0

@@ -47,6 +47,10 @@ ServerConfig _config() => ServerConfig(
   lastIdentityFetchedAt: DateTime.utc(2024),
 );
 
+/// The narrowed user-scope seam value (#137), derived from the same
+/// fixture the config came from.
+ScopedServer _server() => ScopedServer.fromConfig(_config());
+
 PaginatedResult<HouseholdWithMembers> _emptyPage() => PaginatedResult(
   items: const [],
   meta: const PaginationMeta(
@@ -101,7 +105,7 @@ void main() {
 
     await const HouseholdHydrateInstaller().install(
       container,
-      _config(),
+      _server(),
       'user-1',
     );
     // The drain is unawaited, so let its first turn run.
@@ -123,7 +127,7 @@ void main() {
     ).thenAnswer((_) => blocked.future);
 
     await const HouseholdHydrateInstaller()
-        .install(container, _config(), 'user-1')
+        .install(container, _server(), 'user-1')
         .timeout(const Duration(seconds: 1));
 
     expect(blocked.isCompleted, isFalse);
@@ -144,7 +148,7 @@ void main() {
     );
 
     await expectLater(
-      const HouseholdHydrateInstaller().install(container, _config(), 'user-1'),
+      const HouseholdHydrateInstaller().install(container, _server(), 'user-1'),
       completes,
     );
     await Future<void>.delayed(Duration.zero);
@@ -161,7 +165,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
 
@@ -179,7 +183,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       final status = container.get<HouseholdHydrationStatus>();
@@ -208,7 +212,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       await Future<void>.delayed(Duration.zero);
@@ -228,7 +232,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         bare,
-        _config(),
+        _server(),
         'user-1',
       );
 
@@ -249,7 +253,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       final status = container.get<HouseholdHydrationStatus>();
@@ -272,7 +276,7 @@ void main() {
     addTearDown(bare.dispose);
 
     await expectLater(
-      const HouseholdHydrateInstaller().install(bare, _config(), 'user-1'),
+      const HouseholdHydrateInstaller().install(bare, _server(), 'user-1'),
       completes,
     );
   });
@@ -283,7 +287,7 @@ void main() {
     Future<SessionRehydrator> withRehydrator() async {
       await const SessionRehydratorInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       return container.get<SessionRehydrator>();
@@ -302,7 +306,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       await Future<void>.delayed(Duration.zero);
@@ -336,7 +340,7 @@ void main() {
 
         await const HouseholdHydrateInstaller().install(
           container,
-          _config(),
+          _server(),
           'user-1',
         );
         await Future<void>.delayed(Duration.zero);
@@ -383,7 +387,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       await Future<void>.delayed(Duration.zero);
@@ -417,7 +421,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       // The install-time pass is unawaited and still in flight — the exact
@@ -450,7 +454,7 @@ void main() {
         await expectLater(
           const HouseholdHydrateInstaller().install(
             container,
-            _config(),
+            _server(),
             'user-1',
           ),
           completes,
@@ -467,13 +471,13 @@ void main() {
       addTearDown(bare.dispose);
       await const SessionRehydratorInstaller().install(
         bare,
-        _config(),
+        _server(),
         'user-1',
       );
 
       await const HouseholdHydrateInstaller().install(
         bare,
-        _config(),
+        _server(),
         'user-1',
       );
       await bare.get<SessionRehydrator>().rehydrateStale();
@@ -513,7 +517,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       await Future<void>.delayed(Duration.zero);
@@ -538,7 +542,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       await Future<void>.delayed(Duration.zero);
@@ -579,7 +583,7 @@ void main() {
 
       await const HouseholdHydrateInstaller().install(
         bare,
-        _config(),
+        _server(),
         'user-1',
       );
 
@@ -607,7 +611,7 @@ void main() {
 
         await const HouseholdHydrateInstaller().install(
           container,
-          _config(),
+          _server(),
           'user-1',
         );
 
@@ -629,7 +633,7 @@ void main() {
     Future<SessionRehydrator> withRehydrator() async {
       await const SessionRehydratorInstaller().install(
         container,
-        _config(),
+        _server(),
         'user-1',
       );
       return container.get<SessionRehydrator>();
@@ -643,7 +647,7 @@ void main() {
     /// not cost five real minutes.
     Future<void> installAt() =>
         HouseholdHydrateInstaller(now: () => clock)
-            .install(container, _config(), 'user-1');
+            .install(container, _server(), 'user-1');
 
     void answerWithEmptyPage() {
       when(

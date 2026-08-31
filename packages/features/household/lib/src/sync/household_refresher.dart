@@ -28,9 +28,9 @@
 /// it rather than starting a second drain — the question #300 asked to
 /// have answered rather than assumed.
 ///
-/// Absent from a container that runs no drain at all (#137), which the
-/// screens read as "no retry to offer" rather than offering a button that
-/// does nothing.
+/// Absent from a container that runs no drain at all (web until #125),
+/// which the screens read as "no retry to offer" rather than offering a
+/// button that does nothing.
 class HouseholdRefresher {
   /// Wraps [pass] — the same closure the installer hands the
   /// `SessionRehydrator`, so a pressed refresh and a triggered one cannot
