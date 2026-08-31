@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
+import '../support/scheme_surfaces.dart';
+
 /// The authored on-role/role pairs the contrast guarantee covers.
 Map<String, (Color foreground, Color background)> _authoredPairs(
   ColorScheme s,
@@ -42,33 +44,12 @@ void _expectContrast(ColorScheme scheme, {required double minimum}) {
   }
 }
 
-/// Every background a body-text color can legitimately land on.
-///
-/// The authored-pair table above checks `onSurface` against `surface` only.
-/// That is not the whole story: cards, sheets and banners paint one of the
-/// surface-container roles, and text sits on those just as often. Solving the
-/// on-roles against the bare surface alone left the top containers failing
-/// while the pair test still reported green.
-List<(String, Color)> _surfaceFamily(ColorScheme s) => [
-  ('surface', s.surface),
-  ('surfaceDim', s.surfaceDim),
-  ('surfaceBright', s.surfaceBright),
-  ('surfaceContainerLowest', s.surfaceContainerLowest),
-  ('surfaceContainerLow', s.surfaceContainerLow),
-  ('surfaceContainer', s.surfaceContainer),
-  ('surfaceContainerHigh', s.surfaceContainerHigh),
-  ('surfaceContainerHighest', s.surfaceContainerHighest),
-];
-
 void _expectSurfaceFamilyContrast(
   ColorScheme scheme, {
   required double minimum,
 }) {
-  for (final (name, background) in _surfaceFamily(scheme)) {
-    for (final (fgName, foreground) in [
-      ('onSurface', scheme.onSurface),
-      ('onSurfaceVariant', scheme.onSurfaceVariant),
-    ]) {
+  for (final (name, background) in surfaceFamily(scheme)) {
+    for (final (fgName, foreground) in bodyTextRoles(scheme)) {
       final ratio = Wcag.contrastRatio(foreground, background);
       expect(
         ratio,

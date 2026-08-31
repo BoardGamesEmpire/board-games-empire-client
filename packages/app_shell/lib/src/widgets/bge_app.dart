@@ -286,6 +286,11 @@ class _BgeAppState extends State<BgeApp> {
   @override
   void initState() {
     super.initState();
+    // See [_selectable]: the region must not mount on the first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectionRegionReady) return;
+      setState(() => _selectionRegionReady = true);
+    });
     _refreshListenable = BootstrapStreamListenable(
       widget.bootstrapCubit.stream,
     );
@@ -1001,7 +1006,111 @@ class _BgeAppState extends State<BgeApp> {
     );
   }
 
+  /// The app-wide text-selection region (#322), on the platforms that get one.
+  ///
+  /// Wraps the router's content — so every route, dialog and SnackBar inside
+  /// it is selectable — rather than the whole builder output, which would
+  /// also swallow the crash overlay. That overlay keeps its own opt-in; see
+  /// [FeedbackReviewScreen].
+  ///
+  /// **The `Overlay.wrap` is load-bearing, and the order is too.** The reason
+  /// is the one already written out below, at the crash overlay: this slot
+  /// sits above the router's Navigator, so there is no Overlay ancestor here.
+  /// `SelectableRegion.build` asserts `debugCheckHasOverlay`, so a bare
+  /// `SelectionArea` throws on the first frame — and `SelectionArea` wrapped
+  /// *around* `Overlay.wrap` throws for the same reason, since the region
+  /// still has no Overlay above it. It has to be this way round.
+  ///
+  /// ## Why it waits a frame
+  ///
+  /// Mounting the region on the first frame crashed the web app on load,
+  /// every load, before any interaction (#322 follow-up). The sequence:
+  /// `SelectableRegion` registers a focus node → `applyFocusChangesIfNeeded`
+  /// notifies `View`'s scope listener → the web engine calls
+  /// `requestViewFocusChange` → the browser fires focus **synchronously** →
+  /// `didChangeViewFocus` → `findFirstFocus` → the traversal policy sorts
+  /// every focus node and reads `FocusNode.rect` on each. That runs during
+  /// the build phase, before layout, so `rect` asserts `hasSize` on a render
+  /// object that has not been laid out — and the region's own node is the
+  /// one it hits, because the nearest render object below its `Focus` is
+  /// inside `SelectableRegion` itself.
+  ///
+  /// It only bites on the *first* view-focus acquisition, which is why one
+  /// post-frame callback is enough: by the second frame the view already
+  /// holds focus, so registering the node no longer triggers a view-focus
+  /// change, and the subtree is laid out anyway.
+  ///
+  /// Deferred on every platform rather than just web. The bug is web-only,
+  /// but one code path is worth more here than a platform branch nobody
+  /// tests — and the cost is a single extra rebuild while the splash screen
+  /// is up. `bge_app_selection_test.dart` pins both halves.
+  ///
+  /// Arguably a framework bug — reading `rect` mid-build is not something a
+  /// caller can defend against — and worth removing if Flutter guards it.
+  ///
+  /// ## Platform gating
+  ///
+  /// Unlike the rest of this builder, the tree shape here does depend on a
+  /// condition — and the gate reads the *resolved* theme, which `MaterialApp`
+  /// swaps on a brightness or high-contrast change. Four themes that
+  /// disagreed on `platform` would therefore flip this mid-session and
+  /// remount the whole router subtree, discarding Navigator stack, form input
+  /// and scroll positions on an OS appearance change.
+  ///
+  /// [_debugThemePlatformsAgree] rules that out rather than trusting it: all
+  /// four are built by `BgeTheme` from one `_build` and agree by
+  /// construction, and an embedder that hand-rolls them and gets it wrong
+  /// fails loudly in debug instead of shipping an intermittent remount.
+  ///
+  /// One further consequence of that `Overlay.wrap`, easy to miss because it
+  /// is invisible today: it is now the app's **root** overlay. Before this,
+  /// the router's Navigator owned the outermost one, so
+  /// `Overlay.of(context, rootOverlay: true)` resolved there and its entries
+  /// came down with a route pop. They now resolve above the Navigator and
+  /// survive it — so a `MenuAnchor(useRootOverlay: true)`, or anything else
+  /// reaching for the root overlay to host a layer, would strand its entry
+  /// over the next screen. Nothing in the app does that yet.
+  ///
+  /// Anything drag-interactive added below this — a reorderable collection
+  /// list is the likely first one — must wrap itself in
+  /// `SelectionContainer.disabled`, or its drag and the selection drag will
+  /// fight over the same gesture. Nothing enforces that rule yet; #338
+  /// tracks giving it a mechanism.
+  /// Whether a frame has been laid out, so the region may mount. See
+  /// [_selectable] — this is not a readiness nicety, it is a crash fix.
+  bool _selectionRegionReady = false;
+
+  Widget _selectable(BuildContext context, Widget content) {
+    if (!BgeSelection.isEnabledOn(Theme.of(context).platform)) return content;
+    if (!_selectionRegionReady) return content;
+    return Overlay.wrap(child: SelectionArea(child: content));
+  }
+
+  /// Whether every theme this app can resolve reports the same `platform`.
+  ///
+  /// Debug-only, and it exists for [_selectable]: that gate reads the
+  /// resolved theme, so a disagreement here is not a cosmetic inconsistency
+  /// but a mid-session remount of everything below the router. Cheap to
+  /// assert, effectively impossible to notice otherwise.
+  bool _debugThemePlatformsAgree() {
+    final platforms = <TargetPlatform>{
+      (widget.theme ?? BgeTheme.light()).platform,
+      (widget.darkTheme ?? BgeTheme.dark()).platform,
+      (widget.highContrastTheme ?? BgeTheme.highContrastLight()).platform,
+      (widget.highContrastDarkTheme ?? BgeTheme.highContrastDark()).platform,
+    };
+    return platforms.length == 1;
+  }
+
   Widget _buildMaterialApp({required ThemeMode themeMode, Locale? locale}) {
+    assert(
+      _debugThemePlatformsAgree(),
+      'BgeApp was given themes that disagree on ThemeData.platform. The '
+      'text-selection region (#322) is gated on the resolved theme, so the '
+      'app would gain or lose it — remounting the entire router subtree — '
+      'the moment the OS switched appearance. Override all four themes or '
+      'none.',
+    );
     return MaterialApp.router(
       onGenerateTitle: (context) =>
           ShellLocalizations.of(context).shellAppTitle,
@@ -1015,7 +1124,7 @@ class _BgeAppState extends State<BgeApp> {
       locale: locale,
       routerConfig: _router,
       builder: (context, child) {
-        final content = child ?? const SizedBox.shrink();
+        final content = _selectable(context, child ?? const SizedBox.shrink());
         final reporter = widget.feedbackReporter;
         // #302: mounted here, above the Navigator, so it survives every
         // route change. The screens that read a re-hydrated cache (the
@@ -1074,6 +1183,13 @@ class _BgeAppState extends State<BgeApp> {
                             // capture the throw, and the refilled draft
                             // slot re-summons the flow — making it
                             // undismissable.
+                            //
+                            // The selection region in [_selectable] wraps
+                            // itself for the same reason, one level up. It
+                            // is a separate Overlay on purpose: this one
+                            // must unmount with the crash flow, and the
+                            // content below must stay selectable whether or
+                            // not a draft is pending.
                             if (reviewPreview == null)
                               // #69 compact "ask each time" prompt.
                               Overlay.wrap(

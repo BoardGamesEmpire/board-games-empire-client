@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -74,6 +75,204 @@ void main() {
   }
 
   const redacted = FeedbackReportPreview.redactedMarker;
+
+  group('FeedbackReviewScreen copy affordance (#322)', () {
+    late List<String> copied;
+
+    setUp(() {
+      copied = [];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied.add((call.arguments as Map)['text'] as String);
+            }
+            return null;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    testWidgets('lifts the whole reviewed report, not a dragged fragment', (
+      tester,
+    ) async {
+      await pumpReview(tester);
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(copied, hasLength(1));
+      // The fields the user is looking at, in a form that survives a paste
+      // into a bug report — which is the whole point of #322 on a platform
+      // with no selection region.
+      expect(copied.single, contains('StateError: bad state'));
+      expect(copied.single, contains('#0 main (file.dart:1)'));
+      expect(copied.single, contains('0.4.1'));
+    });
+
+    testWidgets('honours redaction — a redacted field is not copied', (
+      tester,
+    ) async {
+      await pumpReview(tester);
+
+      await tester.tap(
+        find.byKey(FeedbackReviewScreen.redactToggleKey('message')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pumpAndSettle();
+
+      // The #34 privacy contract reaches the clipboard too. Copying what is
+      // displayed rather than the submittable report is what makes this
+      // hold; if the copy ever switches to toSubmittableReport() this fails.
+      expect(copied.single, isNot(contains('StateError: bad state')));
+      expect(copied.single, contains(redacted));
+    });
+
+    testWidgets('confirms the copy, so it is not a silent no-op', (
+      tester,
+    ) async {
+      await pumpReview(tester);
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pump();
+
+      expect(find.byType(SnackBar), findsOneWidget);
+    });
+
+    // The two classifications that are neither obvious nor symmetrical, and
+    // the reason `_copyable` is not simply `!_terminal`. A refactor that
+    // reuses `_terminal` for the gate passes every other test in this group
+    // while silently removing the copy from `rejected`.
+    testWidgets('repeated taps do not stack confirmations', (tester) async {
+      await pumpReview(tester);
+
+      // Natural behaviour: `Clipboard.setData` is an async platform
+      // round-trip, so a user taps again when the first tap looks inert.
+      // Queued SnackBars would replay the same banner for ~12 seconds.
+      for (var i = 0; i < 3; i++) {
+        await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+        await tester.pump();
+      }
+
+      expect(find.byType(SnackBar), findsOneWidget);
+    });
+
+    testWidgets('a clipboard failure says so instead of failing silently', (
+      tester,
+    ) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method == 'Clipboard.setData') {
+              throw PlatformException(code: 'no-clipboard');
+            }
+            return null;
+          });
+      await pumpReview(tester);
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(copied, isEmpty);
+      expect(find.byType(SnackBar), findsOneWidget);
+      // Swallowed rather than rethrown on purpose: an escaping error would
+      // reach PlatformDispatcher.onError, which the global hooks turn into a
+      // crash report — a failed copy must not summon a crash prompt on top
+      // of the crash being reported.
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('is gone once the report is queued to send later', (
+      tester,
+    ) async {
+      await pumpReview(
+        tester,
+        onSubmit: (_) async => FeedbackSubmitResult.queued,
+      );
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pumpAndSettle();
+
+      // Saved on the device and it will go out on its own — not lost, so
+      // nothing to salvage.
+      expect(
+        find.byKey(FeedbackReviewScreen.queuedConfirmationKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(FeedbackReviewScreen.copyButtonKey), findsNothing);
+    });
+
+    testWidgets('survives a permanent rejection, which is not queued', (
+      tester,
+    ) async {
+      await pumpReview(
+        tester,
+        onSubmit: (_) async => throw const FeedbackPermanentSubmissionException(
+          'server said no',
+          statusCode: 422,
+        ),
+      );
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(FeedbackReviewScreen.submissionRejectedKey),
+        findsOneWidget,
+      );
+
+      // The server refused it and nothing was saved. Close is the only other
+      // affordance, and it drops the report.
+      expect(find.byKey(FeedbackReviewScreen.copyButtonKey), findsOneWidget);
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(copied.single, contains('StateError: bad state'));
+    });
+
+    testWidgets('is gone once the report has actually been sent', (
+      tester,
+    ) async {
+      await pumpReview(tester);
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pumpAndSettle();
+
+      // Delivered — it is out of the user's hands, so there is nothing left
+      // to salvage.
+      expect(
+        find.byKey(FeedbackReviewScreen.sentConfirmationKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(FeedbackReviewScreen.copyButtonKey), findsNothing);
+    });
+
+    testWidgets('survives a failed submission — the one state where the '
+        'report is about to be lost', (tester) async {
+      await pumpReview(
+        tester,
+        onSubmit: (_) async =>
+            throw const FeedbackPersistenceException('everything failed'),
+      );
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(FeedbackReviewScreen.submissionFailedKey),
+        findsOneWidget,
+      );
+
+      // Not sent and not queued: the only other affordance here is Close,
+      // which drops the draft. Taking the copy away on this state would
+      // strand the user exactly when the report became unrecoverable.
+      expect(find.byKey(FeedbackReviewScreen.copyButtonKey), findsOneWidget);
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(copied.single, contains('StateError: bad state'));
+    });
+  });
 
   group('FeedbackReviewScreen layout', () {
     testWidgets('caps the content column at the form measure', (tester) async {

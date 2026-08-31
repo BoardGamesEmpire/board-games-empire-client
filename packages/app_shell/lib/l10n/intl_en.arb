@@ -188,6 +188,18 @@
   "@feedbackReviewBreadcrumbs": {
     "description": "Header for the collapsible, view-only breadcrumb-trail section on the review screen"
   },
+  "feedbackReviewCopy": "Copy report",
+  "@feedbackReviewCopy": {
+    "description": "Tooltip and accessible name of the review screen's copy action, which puts the reviewed report on the clipboard with redactions applied (#322)"
+  },
+  "feedbackReviewCopyFailed": "Couldn't copy the report",
+  "@feedbackReviewCopyFailed": {
+    "description": "Shown when the review screen's copy action fails, e.g. the platform refuses clipboard access (#322)"
+  },
+  "feedbackReviewCopied": "Report copied",
+  "@feedbackReviewCopied": {
+    "description": "Confirmation shown after the review screen's copy action succeeds (#322)"
+  },
   "feedbackReviewSend": "Send report",
   "@feedbackReviewSend": {
     "description": "Label of the review screen's send button"
