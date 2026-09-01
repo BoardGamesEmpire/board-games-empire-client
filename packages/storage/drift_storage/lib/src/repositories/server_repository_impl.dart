@@ -1,14 +1,12 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
-import 'package:injectable/injectable.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:cuid2/cuid2.dart';
 
 import '../databases/meta_database.dart';
 
-@LazySingleton(as: ServerRepository)
 class ServerRepositoryImpl implements ServerRepository {
   ServerRepositoryImpl(this._database);
 

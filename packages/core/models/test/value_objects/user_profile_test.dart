@@ -94,6 +94,157 @@ void main() {
       expect(profile.friendCount, 2);
     });
 
+    // ── #183: short and empty name fields ───────────────────────────────
+    //
+    // Every case below is data the backend accepts. Before #183 the first
+    // three threw RangeError and the fourth returned an empty string.
+
+    group('initials on short or empty name material (#183)', () {
+      test('one-character first and last name yield one initial each', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: 'J', lastName: 'D'),
+        );
+        expect(profile.initials, 'JD');
+      });
+
+      test('one-character first name alone yields a single initial', () {
+        final profile = UserProfile(user: buildUser(firstName: 'J'));
+        expect(profile.initials, 'J');
+      });
+
+      test('one-character username alone yields a single initial', () {
+        final profile = UserProfile(user: buildUser(username: 'j'));
+        expect(profile.initials, 'J');
+      });
+
+      test('empty first name falls through to the username', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', username: 'jay'),
+        );
+        expect(profile.initials, 'JA');
+      });
+
+      test('empty first name with a last name uses the last name', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', lastName: 'Doe', username: 'jay'),
+        );
+        expect(profile.initials, 'DO');
+      });
+
+      test('last name alone uses the last name, not the username', () {
+        final profile = UserProfile(
+          user: buildUser(lastName: 'Doe', username: 'jay'),
+        );
+        expect(profile.initials, 'DO');
+      });
+
+      test('whitespace-only names are treated as absent', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '   ', lastName: '  ', username: 'jay'),
+        );
+        expect(profile.initials, 'JA');
+      });
+
+      test('no name material at all yields the placeholder, never a throw', () {
+        final profile = UserProfile(user: buildUser(username: ''));
+        expect(profile.initials, UserProfile.initialsPlaceholder);
+      });
+
+      test('surrounding whitespace does not become an initial', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '  John', lastName: '  Doe'),
+        );
+        expect(profile.initials, 'JD');
+      });
+    });
+
+    // ── Supplementary-plane names (found at merge, #347 review) ────────
+    //
+    // `String[]` and `substring` index UTF-16 code UNITS. A character
+    // outside the BMP occupies two of them, so taking one or two units off
+    // the front of such a name used to slice a surrogate pair in half and
+    // hand back a string that is not valid text — mojibake in an avatar
+    // chip rather than a crash, which is the harder kind to notice.
+
+    group('initials on supplementary-plane names (#347)', () {
+      test('an emoji first name yields the whole emoji, not half of it', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '👍lara', lastName: 'Doe'),
+        );
+        expect(profile.initials, '👍D');
+      });
+
+      test('a single-emoji name is one initial, not a broken pair', () {
+        final profile = UserProfile(user: buildUser(firstName: '👍'));
+        expect(profile.initials, '👍');
+      });
+
+      test('two leading emoji give two whole characters', () {
+        final profile = UserProfile(user: buildUser(firstName: '👍👎x'));
+        expect(profile.initials, '👍👎');
+      });
+
+      test('a supplementary-plane username is not split', () {
+        final profile = UserProfile(user: buildUser(username: '𐐀𐐁c'));
+        expect(profile.initials, '𐐀𐐁'.toUpperCase());
+      });
+
+      test('every initials result is valid UTF-16', () {
+        for (final name in ['👍lara', '👍', '𐐀𐐁c', 'Jo', 'J']) {
+          final initials = UserProfile(user: buildUser(firstName: name))
+              .initials;
+          expect(
+            initials.runes.every((r) => r < 0xD800 || r > 0xDFFF),
+            isTrue,
+            reason: 'unpaired surrogate in initials for "$name"',
+          );
+        }
+      });
+
+      test('BMP behaviour is unchanged', () {
+        expect(UserProfile(user: buildUser(firstName: 'John')).initials, 'JO');
+        expect(
+          UserProfile(
+            user: buildUser(firstName: 'John', lastName: 'Doe'),
+          ).initials,
+          'JD',
+        );
+      });
+    });
+
+    group('displayName on short or empty name material (#183)', () {
+      test('empty first name with a null last name falls back to username', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', username: 'jay'),
+        );
+        expect(profile.displayName, 'jay');
+      });
+
+      test('empty first name with a real last name uses the last name', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', lastName: 'Doe', username: 'jay'),
+        );
+        expect(profile.displayName, 'Doe');
+      });
+
+      test('whitespace-only names fall back to username', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '  ', lastName: '   ', username: 'jay'),
+        );
+        expect(profile.displayName, 'jay');
+      });
+
+      test('a one-character name is a legal display name', () {
+        final profile = UserProfile(user: buildUser(firstName: 'J'));
+        expect(profile.displayName, 'J');
+      });
+
+      test('null names fall back to username (unchanged)', () {
+        final profile = UserProfile(user: buildUser(username: 'jay'));
+        expect(profile.displayName, 'jay');
+      });
+    });
+
     test('maintains equality', () {
       final user = buildUser();
       final preferences = UserPreferences(id: 'pref123', userId: 'user123');

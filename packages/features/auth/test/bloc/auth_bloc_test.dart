@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -23,10 +25,14 @@ AuthResponse _session() => AuthResponse(
   expiresAt: DateTime(2099).toUtc(),
 );
 
+/// Lets a `blocTest` `build` hand its sign-out gate to `act` (#280 D1).
+Completer<void>? _signOutGate;
+
 void main() {
   late MockAuthRepository mockRepo;
 
   setUp(() {
+    _signOutGate = null;
     mockRepo = MockAuthRepository();
     when(() => mockRepo.watchAuthState())
         .thenAnswer((_) => const Stream.empty());
@@ -428,6 +434,98 @@ void main() {
         },
         expect: () => isNot(contains(isA<AuthAuthenticated>())),
         errors: () => [isA<AuthSignOutPersistenceException>()],
+        verify: (b) => expect(b.state, const AuthUnauthenticated()),
+      );
+
+      // ── #280 D1: the terminal emit must not clobber a live session ──
+      //
+      // `_onSignIn` and `_onSignOut` are separate droppable handlers, so
+      // they interleave freely. Both repositories publish unauthenticated
+      // BEFORE signOut() resolves, so the gate shows the sign-in form
+      // while the sign-out is still in flight — on web, for as long as the
+      // revocation POST takes (up to the 10s receiveTimeout). A sign-in
+      // completing inside that window used to be undone by the sign-out's
+      // unconditional terminal emit.
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'a sign-in that completes while the sign-out is in flight is NOT '
+        'clobbered by the terminal emit (#280 D1)',
+        build: () {
+          final signOutGate = Completer<void>();
+          when(() => mockRepo.signOut()).thenAnswer((_) => signOutGate.future);
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenAnswer((_) async => _session());
+          // Handed to `act` through the closure below.
+          _signOutGate = signOutGate;
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) async {
+          b.add(const AuthSignOutRequested());
+          await Future<void>.delayed(Duration.zero);
+          // The user is looking at the sign-in form now, because both
+          // repositories publish unauthenticated before signOut() resolves.
+          b.add(
+            const AuthSignInRequested(
+              email: 'u1@example.com',
+              password: 'securepassword',
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          // Only now does the revocation POST come back.
+          _signOutGate!.complete();
+          await Future<void>.delayed(Duration.zero);
+        },
+        verify: (b) => expect(b.state, isA<AuthAuthenticated>()),
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'the guard is narrow: with no sign-in in the window the sign-out '
+        'still lands on unauthenticated (#280 D1)',
+        build: () {
+          final signOutGate = Completer<void>();
+          when(() => mockRepo.signOut()).thenAnswer((_) => signOutGate.future);
+          _signOutGate = signOutGate;
+          return AuthBloc(authRepository: mockRepo);
+        },
+        seed: () => AuthAuthenticated(session: _session()),
+        act: (b) async {
+          b.add(const AuthSignOutRequested());
+          await Future<void>.delayed(Duration.zero);
+          _signOutGate!.complete();
+          await Future<void>.delayed(Duration.zero);
+        },
+        expect: () => [const AuthLoading(), const AuthUnauthenticated()],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'a failed sign-in in the window does not block the sign-out from '
+        'landing (#280 D1)',
+        build: () {
+          final signOutGate = Completer<void>();
+          when(() => mockRepo.signOut()).thenAnswer((_) => signOutGate.future);
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(const AuthInvalidCredentialsException());
+          _signOutGate = signOutGate;
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) async {
+          b.add(const AuthSignOutRequested());
+          await Future<void>.delayed(Duration.zero);
+          b.add(
+            const AuthSignInRequested(email: 'u1@example.com', password: 'x'),
+          );
+          await Future<void>.delayed(Duration.zero);
+          _signOutGate!.complete();
+          await Future<void>.delayed(Duration.zero);
+        },
         verify: (b) => expect(b.state, const AuthUnauthenticated()),
       );
     });

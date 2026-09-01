@@ -97,7 +97,23 @@ abstract class AuthRepository {
   /// as-is, so a signed-in caller is never told "not authenticated" merely
   /// because the persisted expiry was never confirmed.
   ///
-  /// On web, delegates to [getSession] since httpOnly cookies are opaque.
+  /// ## The purity clause binds every platform (#275)
+  ///
+  /// This used to carry a sanction of web delegating the whole method to
+  /// [getSession], which contradicted the two clauses above: [getSession]
+  /// takes a network call and mutates the in-memory auth state on every
+  /// outcome. The sanction is gone and the clauses stand — a "pure read
+  /// without a network call" means that everywhere.
+  ///
+  /// What differs by platform is only how much *persisted* material there
+  /// is to read. Web has none: httpOnly cookies are opaque to Dart, so
+  /// every bullet in the list above is vacuous there and only the in-memory
+  /// clause has anything to return. That is a narrower answer, not a
+  /// different contract.
+  ///
+  /// Null therefore keeps its documented meaning — "no session this device
+  /// can vouch for offline" — which is **not** the same as "no session
+  /// exists". A caller needing the server's answer must call [getSession].
   Future<AuthResponse?> getCachedSession();
 
   /// Attempts an optimistic offline restore (#98): reads the cached

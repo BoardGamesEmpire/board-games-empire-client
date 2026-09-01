@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:injectable/injectable.dart';
 import 'package:http_status/http_status.dart';
 
 import 'package:models/domain.dart';
@@ -11,7 +10,6 @@ import 'package:network_interface/network_interface.dart';
 /// Uses a dedicated [Dio] instance with no auth interceptors — the
 /// /.well-known/bge-identity endpoint is intentionally unauthenticated and
 /// must remain so. Never share this instance with authenticated API clients.
-@LazySingleton(as: WellKnownClient)
 class WellKnownClientImpl implements WellKnownClient {
   WellKnownClientImpl() : _dio = _buildDio();
 

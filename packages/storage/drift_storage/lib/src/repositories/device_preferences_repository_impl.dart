@@ -1,12 +1,10 @@
 import 'package:drift/drift.dart';
-import 'package:injectable/injectable.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import '../databases/meta_database.dart';
 import '../tables/device_preferences_table.dart';
 
-@LazySingleton(as: DevicePreferencesRepository)
 class DevicePreferencesRepositoryImpl implements DevicePreferencesRepository {
   DevicePreferencesRepositoryImpl(this._database);
 

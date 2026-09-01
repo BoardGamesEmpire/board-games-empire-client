@@ -43,13 +43,29 @@ typedef HouseholdWithMembers = ({
 ///   every other 4xx, and a 2xx whose body doesn't carry a parseable
 ///   household — retrying cannot succeed.
 ///
-/// One documented exception to "every other 4xx": a **404 from
-/// [fetchHouseholds] is transient**. The list route always exists in a
-/// deployed server, so a 404 on it reports a routing or deployment fault —
-/// a misrouted path prefix, an API not yet deployed — rather than an answer
-/// about households. Classifying it permanent would end a hydrate for the
-/// life of the process, including after the server is fixed. The same
-/// reasoning governs the collection list route (#253 D6).
+/// One documented exception to "every other 4xx": **no 404 from any
+/// household route is permanent** (#297). Every household route is fixed
+/// server-side, so a 404 reports a routing or deployment fault — a misrouted
+/// path prefix, an API not yet deployed, a proxy answering for it — rather
+/// than an answer about households. There is no household route whose 404
+/// could mean "this row is gone".
+///
+/// On [fetchHouseholds] the cost of getting this wrong is a hydrate that
+/// ends for the life of the process, including after the server is fixed
+/// (#266). On [createHousehold] it is worse, and is why the rule is not
+/// per-route: once #121 owns cancel semantics, a permanent classification
+/// cancels the queue entry and **discards the user's household** for a
+/// failure a later retry would have survived.
+///
+/// Implementations must not gate this on the API's own error envelope.
+/// A 404 needs that envelope before it can be read as a statement about a
+/// *row* (see [GameCollectionRemoteDataSource]), but no household route has
+/// such a reading, and Nest answers an unmatched route with the same
+/// envelope — so an envelope-gated rule would still call a partial deploy a
+/// rejection. The membership mutations in #122 add the first household routes
+/// whose 404 can carry row semantics — a member or household the request names
+/// and the server says is gone — and that is when this contract grows a
+/// per-route clause and the envelope requirement with it.
 abstract class HouseholdRemoteDataSource {
   /// The server's `limit` ceiling for the household list. A larger `limit`
   /// is **rejected with a 400**, not clamped.

@@ -40,6 +40,7 @@ import 'package:drift/wasm.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:web_storage/web_storage.dart';
 
@@ -262,6 +263,58 @@ void main() {
       await container.dispose();
 
       await expectLater(db.customSelect('SELECT 1').get(), throwsA(anything));
+    });
+
+    // ── #251 D1: the same repository, registered on web too ─────────────
+    //
+    // Web runs no `ServerScopeInstaller` (see the installer's class doc), so
+    // native's registration in `StorageScopeInstaller` does not reach here.
+    // Without this, #42/#43 would resolve the repository on native and
+    // fail on web.
+
+    test('registers GameRepository against the same ServerDatabase', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await const WebStorageInstaller().install(
+        container,
+        _identity(_uniqueServerId()),
+      );
+
+      final repository = container.get<GameRepository>();
+      await repository.cacheGame(_game(title: 'Reachable on web'));
+
+      expect((await repository.getGame('g-1'))?.title, 'Reachable on web');
+      // The same instance's database, not a second one.
+      expect(
+        (await GameRepositoryImpl(container.get<ServerDatabase>())
+                .getGame('g-1'))
+            ?.title,
+        'Reachable on web',
+      );
+    });
+
+    test('GameRepository streams close when the scope is disposed', () async {
+      final container = DependencyContainerImpl();
+      await const WebStorageInstaller().install(
+        container,
+        _identity(_uniqueServerId()),
+      );
+      final repository = container.get<GameRepository>();
+
+      var closed = false;
+      final subscription = repository.watchGames().listen(
+        (_) {},
+        onDone: () => closed = true,
+        onError: (Object _) {},
+      );
+      addTearDown(subscription.cancel);
+      await pumpEventQueue();
+
+      await container.dispose();
+      await pumpEventQueue();
+
+      expect(closed, isTrue);
     });
 
     test('reports the storage it got', () async {

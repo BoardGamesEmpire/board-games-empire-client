@@ -212,6 +212,119 @@ void main() {
     });
   });
 
+  // ── #231 D1: the footer/FAB exclusion is a real runtime guard ──────
+  //
+  // It used to be an `assert`, which compiles away outside debug — so the
+  // invariant was unenforced in exactly the builds users run. It is now a
+  // throw on the build path, which fires in every build mode.
+  //
+  // Every invocation below is deliberately **non-const**. A `const`
+  // invocation evaluates a constructor `assert` at compile time, so the
+  // old check did hold for those — in every build mode, as a compile
+  // error. The gap was only ever the non-const call, which is also the
+  // shape a real screen uses (`household_list_screen.dart` builds its FAB
+  // from widget state). A const invocation could not reach the runtime
+  // path being tested here at all.
+  //
+  // These tests cannot themselves prove the release-mode behaviour: a
+  // `flutter test` run always has asserts enabled. What they pin is that
+  // the check is reached from `build()` rather than from the constructor,
+  // which is what makes it survive to release — the `returnsNormally`
+  // case fails if it ever reverts to a constructor assert.
+
+  group('BgePage footer/floatingActionButton exclusion (#231)', () {
+    testWidgets('the box constructor rejects both at once', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage(
+            footer: const SizedBox(height: 40),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () {},
+              child: const Icon(Icons.add),
+            ),
+            child: const Text('body'),
+          ),
+        ),
+      );
+
+      final error = tester.takeException();
+      expect(error, isA<FlutterError>());
+      expect(error.toString(), contains('Pick one'));
+    });
+
+    testWidgets('the slivers constructor rejects both at once', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          tester,
+          BgePage.slivers(
+            footer: const SizedBox(height: 40),
+            floatingActionButton: FloatingActionButton(
+              onPressed: () {},
+              child: const Icon(Icons.add),
+            ),
+            slivers: const [SliverToBoxAdapter(child: Text('body'))],
+          ),
+        ),
+      );
+
+      final error = tester.takeException();
+      expect(error, isA<FlutterError>());
+      expect(error.toString(), contains('Pick one'));
+    });
+
+    test('constructing the widget does not throw — the guard is on build', () {
+      // If the check were still a constructor `assert`, this would throw
+      // here and the test would fail. Construction has to stay total so the
+      // guard can be a release-mode one on the build path.
+      expect(
+        () => BgePage(
+          footer: const SizedBox(height: 40),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () {},
+            child: const Icon(Icons.add),
+          ),
+          child: const Text('body'),
+        ),
+        returnsNormally,
+      );
+    });
+
+    testWidgets('a footer alone still builds', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          tester,
+          const BgePage(
+            footer: SizedBox(key: Key('f'), height: 40),
+            child: Text('body'),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('f')), findsOneWidget);
+    });
+
+    testWidgets('a floatingActionButton alone still builds', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          tester,
+          const BgePage(
+            floatingActionButton: FloatingActionButton(
+              key: Key('fab'),
+              onPressed: null,
+              child: Icon(Icons.add),
+            ),
+            child: Text('body'),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('fab')), findsOneWidget);
+    });
+  });
+
   group('BgePage footer', () {
     testWidgets('pins the footer while the content scrolls', (tester) async {
       await tester.pumpWidget(
