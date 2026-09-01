@@ -1,11 +1,9 @@
 import 'package:drift/drift.dart';
-import 'package:injectable/injectable.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import '../databases/meta_database.dart';
 
-@LazySingleton(as: NotificationSummaryRepository)
 class NotificationSummaryRepositoryImpl
     implements NotificationSummaryRepository {
   NotificationSummaryRepositoryImpl(this._database);
