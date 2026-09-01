@@ -30,8 +30,6 @@ class LoginForm extends StatefulWidget {
 }
 
 class _LoginFormState extends State<LoginForm> {
-  static const _kMinPasswordLength = 8;
-
   late final FormGroup _form;
   StreamSubscription<Object?>? _editSubscription;
 
@@ -43,12 +41,14 @@ class _LoginFormState extends State<LoginForm> {
         value: '',
         validators: [Validators.required, Validators.email],
       ),
+      // `required` only, deliberately: length policy belongs to
+      // registration, and at sign-in the server is the only authority on
+      // whether a credential is valid (#187). See
+      // `kMinRegistrationPasswordLength` for why this must not grow a
+      // minLength validator.
       'password': FormControl<String>(
         value: '',
-        validators: [
-          Validators.required,
-          Validators.minLength(_kMinPasswordLength),
-        ],
+        validators: [Validators.required],
       ),
     });
     _editSubscription = _form.valueChanges.listen(_retireFailureOnEdit);
@@ -139,10 +139,6 @@ class _LoginFormState extends State<LoginForm> {
                   onSubmitted: () => _submit(context),
                   validationMessages: {
                     ValidationMessage.required: (_) => l10n.authErrorRequired,
-                    ValidationMessage.minLength: (e) =>
-                        l10n.authErrorPasswordTooShort(
-                          (e as Map)['requiredLength'] as int,
-                        ),
                   },
                 ),
                 const BgeGap.lg(),

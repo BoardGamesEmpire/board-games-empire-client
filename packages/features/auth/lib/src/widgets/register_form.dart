@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 
 import '../../l10n/auth_localizations.dart';
+import '../password_policy.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_bloc_state.dart';
@@ -28,7 +29,6 @@ class RegisterForm extends StatefulWidget {
 }
 
 class _RegisterFormState extends State<RegisterForm> {
-  static const _kMinPasswordLength = 8;
   static const _kMinUsernameLength = 3;
 
   late final FormGroup _form;
@@ -53,7 +53,7 @@ class _RegisterFormState extends State<RegisterForm> {
         value: '',
         validators: [
           Validators.required,
-          Validators.minLength(_kMinPasswordLength),
+          Validators.minLength(kMinRegistrationPasswordLength),
         ],
       ),
       'firstName': FormControl<String>(value: ''),

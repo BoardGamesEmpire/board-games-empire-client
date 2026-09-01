@@ -109,6 +109,74 @@ void main() {
       ).called(1);
     });
 
+    // ── #187: sign-in must not enforce a length policy ──────────────
+    //
+    // Length policy is a registration rule. At sign-in the server is the
+    // only authority on whether a credential is valid, and this product is
+    // self-hosted: a hoster running a shorter minimum, an older policy or
+    // an admin-provisioned account must still be able to sign in.
+
+    testWidgets('submits a password shorter than the registration minimum', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(const LoginForm(), mockBloc));
+
+      await tester.enterText(
+        find.bySemanticsLabel(RegExp('Email', caseSensitive: false)).first,
+        'user@example.com',
+      );
+      await tester.enterText(
+        find.bySemanticsLabel(RegExp('Password', caseSensitive: false)).first,
+        'short',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign In'));
+      await tester.pump();
+
+      verify(
+        () => mockBloc.add(
+          const AuthSignInRequested(
+            email: 'user@example.com',
+            password: 'short',
+          ),
+        ),
+      ).called(1);
+    });
+
+    testWidgets('never shows a too-short message on the password field', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(const LoginForm(), mockBloc));
+
+      await tester.enterText(
+        find.bySemanticsLabel(RegExp('Email', caseSensitive: false)).first,
+        'user@example.com',
+      );
+      await tester.enterText(
+        find.bySemanticsLabel(RegExp('Password', caseSensitive: false)).first,
+        'a',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign In'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('at least', findRichText: true),
+        findsNothing,
+      );
+    });
+
+    testWidgets('still requires a non-empty password', (tester) async {
+      await tester.pumpWidget(_wrap(const LoginForm(), mockBloc));
+
+      await tester.enterText(
+        find.bySemanticsLabel(RegExp('Email', caseSensitive: false)).first,
+        'user@example.com',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign In'));
+      await tester.pump();
+
+      verifyNever(() => mockBloc.add(any()));
+    });
+
     testWidgets('shows switch-to-register link when callback provided', (
       tester,
     ) async {
