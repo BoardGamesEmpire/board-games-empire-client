@@ -50,10 +50,16 @@ import 'package:models/dto.dart';
 /// [UserDataExportException] hierarchy that #93's UI switches on:
 /// - No session ([AuthRepository.getCachedSession] returns null) →
 ///   [ExportNotAuthenticatedException].
-/// - The session read itself fails (e.g. `AuthNetworkException` when a
-///   web client is offline — the cached-session read delegates to the
-///   network on web) → [ExportSessionUnavailableException], wrapping the
-///   originating `AuthException`.
+/// - The session read itself fails (an `AuthException` — e.g. an
+///   unreadable secure store) → [ExportSessionUnavailableException],
+///   wrapping the originating `AuthException`.
+///
+///   No longer reachable via web being offline: `getCachedSession` was a
+///   network call on web until #284, and is now the pure local read the
+///   contract always specified. Both platforms serve it from the in-memory
+///   session when there is one, so a signed-in user's export does not
+///   depend on connectivity — which is the right answer for a portability
+///   right (#11), since the bundle is assembled from local data.
 /// - No server config, or an unreadable cached identity
 ///   (`CorruptedServerIdentityException`), for
 ///   [ServerContext.serverId] → [ExportUnknownServerException].

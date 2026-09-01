@@ -18,8 +18,8 @@ import 'package:http_status/http_status.dart';
 /// Differences from the mobile/desktop [AuthRepositoryImpl]:
 /// - No `TokenStorageService` — the browser keychain is the cookie jar
 /// - No Authorization header interceptor
-/// - [getCachedSession] delegates to [getSession] since httpOnly cookies
-///   are opaque to Dart code
+/// - [getCachedSession] serves the in-memory session only: httpOnly cookies
+///   are opaque to Dart, so there is no *persisted* material to read (#284).
 /// - Single server only — no orchestrator or context switching
 ///
 /// The [Dio] instance is built and owned by the per-server `WebDioFactory` and
@@ -56,7 +56,45 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// second exists to unwind its own `TokenStorageService.store`; web
   /// persists nothing, and no await separates its guard from the state
   /// emission it protects.
+  ///
+  /// ## What the epoch does NOT bound (#285)
+  ///
+  /// It bounds responses, not requests. A [getSession] **started after** the
+  /// bump captures the new epoch, so the re-comparison matches and no guard
+  /// fires. That gap is [_signOutInFlight]'s job, not this counter's.
   int _sessionEpoch = 0;
+
+  /// True from the first statement of [signOut] until its revocation POST
+  /// resolves — the window in which a session request must not be made
+  /// (#285).
+  ///
+  /// [_sessionEpoch] cannot cover this. It answers "did this response
+  /// outlive its intent?"; the question here is "should this request have
+  /// been made at all?", and a call starting inside the window captures the
+  /// already-bumped epoch, so the guard is inert for it.
+  ///
+  /// The window is reachable on web and not on native, for the reason web
+  /// has no local credential to clear: the session cookie stays live until
+  /// the server's `Set-Cookie: Max-Age=0` comes back, so a [getSession]
+  /// inside it gets a **real** session and would re-assert
+  /// [AuthStateAuthenticated] behind a gate that has already shown the
+  /// sign-in form. Native's `_tokenStorage.clear()` runs first, so
+  /// `retrieve()` returns null and its `getSession` early-returns without
+  /// asking. Window size is the POST's full duration — up to the 10s
+  /// `receiveTimeout` against an unreachable server.
+  ///
+  /// No dispatcher reached this window when #285 was filed. That was a
+  /// property of *other* components rather than of this class, and #144 is
+  /// about to remove it: an optimistic offline entry that revalidates is
+  /// `unverifiedOffline`, which arms `AuthBloc`'s periodic revalidation
+  /// timer — a wall-clock dispatcher needing no user action to land inside
+  /// the window. Fixed ahead of that rather than after it.
+  ///
+  /// Deliberately a plain bool, not a counter: concurrent sign-outs are
+  /// idempotent in intent, and the last one to resolve releasing the latch
+  /// is the correct behaviour — there is nothing left to protect once no
+  /// revocation is outstanding.
+  bool _signOutInFlight = false;
 
   @override
   AuthState get currentAuthState => _currentState;
@@ -135,6 +173,41 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
   @override
   Future<AuthResponse?> getSession() async {
+    // Refuse rather than ask (#285). A sign-out is outstanding, so the
+    // user's intent is already "no session" — and the cookie backing this
+    // request is one the server is in the middle of revoking, so a success
+    // here would re-assert authenticated behind a gate that has already
+    // shown the sign-in form. Null is the honest answer and the one the
+    // epoch guard gives for the same situation one step later.
+    //
+    // Ahead of the epoch capture because it is a statement about the
+    // request, not the response: there is nothing to compare afterwards.
+    //
+    // On the PUBLIC entry point only. `_reconcileCredentialGrant` calls
+    // [_getSessionUnlatched] instead: its session read serves a credential
+    // grant the server has just accepted, which is the user's *newer*
+    // intent than the sign-out and must be allowed to win. Refusing it
+    // turned a successful sign-in inside the window into an
+    // `AuthServerException` — the reconcile's `confirmed == null` branch
+    // reads a latched null as "the server reported no session", and its
+    // epoch was captured after the bump so the supersession branch does not
+    // fire. Ordering between a sign-out and a sign-in is #146's job, via
+    // the epoch and `AuthSupersededException`; this latch is only about not
+    // *asking* on behalf of a caller polling for a session.
+    if (_signOutInFlight) {
+      _log.warn('Refusing a session request while a sign-out is in flight');
+      return null;
+    }
+
+    return _getSessionUnlatched();
+  }
+
+  /// [getSession] without the #285 sign-out latch.
+  ///
+  /// Only for `_reconcileCredentialGrant` — see the latch's rationale in
+  /// [getSession]. The [_sessionEpoch] guards below still apply, so a
+  /// sign-out that lands *during* this read is still honoured.
+  Future<AuthResponse?> _getSessionUnlatched() async {
     // Captured in the synchronous prologue, before ANY await — see
     // [_sessionEpoch].
     final epoch = _sessionEpoch;
@@ -306,6 +379,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // receiveTimeout against an unreachable server, with the caller — and
     // the gate — sitting on AuthLoading for all of it.
     _sessionEpoch += 1;
+    _signOutInFlight = true;
     _setState(const AuthStateUnauthenticated());
 
     try {
@@ -335,13 +409,52 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         error: error,
         stackTrace: stackTrace,
       );
+    } finally {
+      // In a `finally` so a thrown POST cannot leave the latch raised for
+      // the life of the process — that would turn a transient network fault
+      // into "this client can never read a session again" (#285).
+      _signOutInFlight = false;
     }
   }
 
-  /// On web, httpOnly cookies are opaque to Dart — we cannot inspect them
-  /// without a network round-trip. Delegates to [getSession].
+  /// The in-memory session if there is one, otherwise `null` — never a
+  /// network call (#284).
+  ///
+  /// This used to delegate to [getSession], which broke both halves of the
+  /// contract's "pure read, no network call" clause: [getSession] takes a
+  /// round trip and calls `_setState` on every outcome, so the documented
+  /// pure read emitted on [watchAuthState] and could adopt a session before
+  /// the caller had decided anything. It also cost a second full round trip
+  /// on every cold-start session check, because `AuthBloc` calls this first
+  /// as a cheap local *probe* — only to decide whether a restore budget
+  /// applies — and then makes the real call. Paying a network request to
+  /// decide whether to bound a network request is self-defeating.
+  ///
+  /// What remains is the contract's own in-memory clause: *"an in-memory
+  /// authenticated session takes precedence and is returned as-is, so a
+  /// signed-in caller is never told 'not authenticated' merely because the
+  /// persisted expiry was never confirmed."* `AuthRepositoryImpl` has always
+  /// implemented that; web's delegation obscured it. So this is the same
+  /// rule, with web's persisted half simply empty.
+  ///
+  /// Empty is permanent for now, and that is the platform, not a gap:
+  /// httpOnly cookies are opaque to Dart, so there is no *persisted* session
+  /// material to read without asking the server. At cold start — before any
+  /// [getSession] — this therefore returns null, which is the honest answer
+  /// and the same one [restoreCachedSession] gives. The probe reads that as
+  /// "no budget applies" and waits out the full attempt, which is the
+  /// documented cost.
+  ///
+  /// If #144 lands a readable, non-httpOnly expiry-hint cookie, web gains a
+  /// persisted signal too — though the better shape then is a narrowed
+  /// interface method asking what the probe actually wants ("is a bounded
+  /// check worthwhile?") rather than asking for a session.
   @override
-  Future<AuthResponse?> getCachedSession() => getSession();
+  Future<AuthResponse?> getCachedSession() async =>
+      switch (_currentState) {
+        AuthStateAuthenticated(:final session) => session,
+        _ => null,
+      };
 
   /// Always null: web never restores optimistically (#98, decision D10).
   ///
@@ -531,7 +644,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
     final AuthResponse? confirmed;
     try {
-      confirmed = await getSession();
+      confirmed = await _getSessionUnlatched();
     } on AuthException catch (error, stackTrace) {
       if (epoch != _sessionEpoch) {
         // The reconcile failed AND a sign-out landed meanwhile: do not adopt

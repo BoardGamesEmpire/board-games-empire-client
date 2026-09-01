@@ -937,14 +937,70 @@ void main() {
     });
 
     group('getCachedSession()', () {
-      test('delegates to getSession() — always makes a network call', () async {
+      // #284 D1. It used to delegate to getSession(), which broke both
+      // halves of the interface's contract — "no network call" and "a pure
+      // read that never mutates the in-memory auth state" — and cost a
+      // second full round trip on every cold-start check, because
+      // AuthBloc uses it as a cheap local probe before the real call.
+      //
+      // httpOnly cookies are opaque to Dart, so web has nothing it can
+      // vouch for without a request. Null is the honest answer, and the
+      // same one restoreCachedSession already gives for the same reason.
+
+      test('returns null at cold start, without making a network call',
+          () async {
         when(() => mockDio.get<Map<String, dynamic>>(any()))
             .thenAnswer((_) async => _ok(_sessionJson()));
 
-        await repo.getCachedSession();
+        expect(await repo.getCachedSession(), isNull);
 
-        verify(() => mockDio.get<Map<String, dynamic>>(any())).called(1);
+        verifyNever(() => mockDio.get<Map<String, dynamic>>(any()));
       });
+
+      test('serves the in-memory session once there is one, still without a '
+          'network call — the contract\'s in-memory clause', () async {
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+        final live = await repo.getSession();
+        clearInteractions(mockDio);
+
+        expect(await repo.getCachedSession(), same(live));
+
+        verifyNever(() => mockDio.get<Map<String, dynamic>>(any()));
+      });
+
+      test('returns null again after a sign-out', () async {
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+        when(() => mockDio.post<void>(any())).thenAnswer(
+          (_) async => Response(
+            statusCode: 200,
+            requestOptions: RequestOptions(path: ''),
+          ),
+        );
+        await repo.getSession();
+        await repo.signOut();
+
+        expect(await repo.getCachedSession(), isNull);
+      });
+
+      test('does not emit on the auth state stream — it is a pure read',
+          () async {
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+        final emissions = <AuthState>[];
+        final subscription = repo.watchAuthState().listen(emissions.add);
+        addTearDown(subscription.cancel);
+        await pumpEventQueue();
+        emissions.clear();
+
+        await repo.getCachedSession();
+        await pumpEventQueue();
+
+        expect(emissions, isEmpty);
+      });
+
+
     });
 
     group('signOut()', () {
@@ -980,7 +1036,157 @@ void main() {
 
         verify(() => mockDio.post<void>('$_kAuthBase/sign-out')).called(1);
       });
+
+      // ── #285 D1: the epoch does not bound a LATER getSession ──────────
+      //
+      // The epoch answers "did this response outlive its intent?" — it
+      // discards a session response that was already in flight when the
+      // sign-out bumped it. It says nothing about a getSession *started
+      // after* the bump: that call captures the new epoch, so the
+      // re-comparison matches and no guard fires.
+      //
+      // On web that gap is reachable, because there is no local credential
+      // to clear: the cookie stays live until the server's
+      // `Set-Cookie: Max-Age=0` comes back, so a getSession inside the
+      // sign-out window gets a REAL session and would sign the user back
+      // in behind a gate that has already shown the sign-in form. Native
+      // is structurally immune — `_tokenStorage.clear()` runs first, so
+      // `retrieve()` returns null and getSession never asks.
+      //
+      // Window size is the sign-out POST's full duration, up to the 10s
+      // receiveTimeout. #144 will arm a periodic revalidation timer on
+      // web, which needs no user action to land inside it.
+
+      test('a getSession STARTED after the sign-out bump is refused, and '
+          'makes no request (#285 D1)', () async {
+        final signOutGate = Completer<Response<void>>();
+        when(
+          () => mockDio.post<void>('$_kAuthBase/sign-out'),
+        ).thenAnswer((_) => signOutGate.future);
+        // The cookie is still live, so the server would answer with a real
+        // session if we asked.
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        expect(await repo.getSession(), isNull);
+        verifyNever(() => mockDio.get<Map<String, dynamic>>(any()));
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+
+        signOutGate.complete(
+          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+        );
+        await signOut;
+      });
+
+      test('the refusal does not re-assert authenticated on the state '
+          'stream (#285 D1)', () async {
+        final signOutGate = Completer<Response<void>>();
+        when(
+          () => mockDio.post<void>('$_kAuthBase/sign-out'),
+        ).thenAnswer((_) => signOutGate.future);
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final seen = <AuthState>[];
+        final sub = repo.watchAuthState().listen(seen.add);
+        addTearDown(sub.cancel);
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+        await repo.getSession();
+        await pumpEventQueue();
+
+        expect(seen.whereType<AuthStateAuthenticated>(), isEmpty);
+
+        signOutGate.complete(
+          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+        );
+        await signOut;
+      });
+
+      // The latch must not reach signIn's own reconcile. A credential grant
+      // the server has just accepted is the user's NEWER intent than the
+      // outstanding sign-out, so it has to win — ordering between the two is
+      // the epoch's job (#146, AuthSupersededException), not this latch's.
+      //
+      // Caught in review: latching the reconcile's session read made it see
+      // `confirmed == null`, and because its epoch is captured AFTER the
+      // sign-out's bump the supersession branch does not fire — so a
+      // successful sign-in surfaced as AuthServerException("the server
+      // reported no session"). It also made #280's AuthBloc guard dead on
+      // web, since the authenticated state it protects became unreachable.
+      test('a sign-in inside the sign-out window still succeeds (#285 D1 / '
+          '#280)', () async {
+        final signOutGate = Completer<Response<void>>();
+        when(
+          () => mockDio.post<void>('$_kAuthBase/sign-out'),
+        ).thenAnswer((_) => signOutGate.future);
+        when(
+          () => mockDio.post<Map<String, dynamic>>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        final session = await repo.signIn(
+          email: 'web@example.com',
+          password: 'securepassword',
+        );
+
+        expect(session.user.id, 'user-1');
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+
+        signOutGate.complete(
+          Response(statusCode: 200, requestOptions: RequestOptions(path: '')),
+        );
+        await signOut;
+
+        // And the sign-in survives the sign-out resolving afterwards.
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+      });
+
+      test('the latch is released once the sign-out resolves — a later '
+          'getSession works normally (#285 D1)', () async {
+        when(() => mockDio.post<void>(any())).thenAnswer(
+          (_) async => Response(
+            statusCode: 200,
+            requestOptions: RequestOptions(path: ''),
+          ),
+        );
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
+        expect(await repo.getSession(), isNotNull);
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+      });
+
+      test('the latch is released even when the sign-out POST throws '
+          '(#285 D1)', () async {
+        when(() => mockDio.post<void>(any())).thenThrow(
+          DioException(
+            type: DioExceptionType.connectionError,
+            requestOptions: RequestOptions(path: ''),
+          ),
+        );
+        when(() => mockDio.get<Map<String, dynamic>>(any()))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
+        expect(await repo.getSession(), isNotNull);
+      });
     });
+
 
     // Pins the premise that bounds `_reconcileCredentialGrant`'s success
     // path. That branch does not recheck the epoch, which is only safe
