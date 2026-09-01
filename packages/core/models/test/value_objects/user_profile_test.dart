@@ -94,6 +94,103 @@ void main() {
       expect(profile.friendCount, 2);
     });
 
+    // ── #183: short and empty name fields ───────────────────────────────
+    //
+    // Every case below is data the backend accepts. Before #183 the first
+    // three threw RangeError and the fourth returned an empty string.
+
+    group('initials on short or empty name material (#183)', () {
+      test('one-character first and last name yield one initial each', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: 'J', lastName: 'D'),
+        );
+        expect(profile.initials, 'JD');
+      });
+
+      test('one-character first name alone yields a single initial', () {
+        final profile = UserProfile(user: buildUser(firstName: 'J'));
+        expect(profile.initials, 'J');
+      });
+
+      test('one-character username alone yields a single initial', () {
+        final profile = UserProfile(user: buildUser(username: 'j'));
+        expect(profile.initials, 'J');
+      });
+
+      test('empty first name falls through to the username', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', username: 'jay'),
+        );
+        expect(profile.initials, 'JA');
+      });
+
+      test('empty first name with a last name uses the last name', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', lastName: 'Doe', username: 'jay'),
+        );
+        expect(profile.initials, 'DO');
+      });
+
+      test('last name alone uses the last name, not the username', () {
+        final profile = UserProfile(
+          user: buildUser(lastName: 'Doe', username: 'jay'),
+        );
+        expect(profile.initials, 'DO');
+      });
+
+      test('whitespace-only names are treated as absent', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '   ', lastName: '  ', username: 'jay'),
+        );
+        expect(profile.initials, 'JA');
+      });
+
+      test('no name material at all yields the placeholder, never a throw', () {
+        final profile = UserProfile(user: buildUser(username: ''));
+        expect(profile.initials, UserProfile.initialsPlaceholder);
+      });
+
+      test('surrounding whitespace does not become an initial', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '  John', lastName: '  Doe'),
+        );
+        expect(profile.initials, 'JD');
+      });
+    });
+
+    group('displayName on short or empty name material (#183)', () {
+      test('empty first name with a null last name falls back to username', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', username: 'jay'),
+        );
+        expect(profile.displayName, 'jay');
+      });
+
+      test('empty first name with a real last name uses the last name', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '', lastName: 'Doe', username: 'jay'),
+        );
+        expect(profile.displayName, 'Doe');
+      });
+
+      test('whitespace-only names fall back to username', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '  ', lastName: '   ', username: 'jay'),
+        );
+        expect(profile.displayName, 'jay');
+      });
+
+      test('a one-character name is a legal display name', () {
+        final profile = UserProfile(user: buildUser(firstName: 'J'));
+        expect(profile.displayName, 'J');
+      });
+
+      test('null names fall back to username (unchanged)', () {
+        final profile = UserProfile(user: buildUser(username: 'jay'));
+        expect(profile.displayName, 'jay');
+      });
+    });
+
     test('maintains equality', () {
       final user = buildUser();
       final preferences = UserPreferences(id: 'pref123', userId: 'user123');
