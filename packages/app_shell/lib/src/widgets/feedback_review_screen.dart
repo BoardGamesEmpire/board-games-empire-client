@@ -123,6 +123,10 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   late FeedbackReportPreview _preview = widget.preview;
   _ReviewPhase _phase = _ReviewPhase.reviewing;
 
+  /// Identifies the most recent copy attempt, so a completion can tell
+  /// whether it still speaks for the screen. See [_copy].
+  int _copyToken = 0;
+
   bool _isRedacted(String path) => _preview.userRedactedFields.contains(path);
 
   void _toggle(String path, bool redact) {
@@ -469,6 +473,10 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   /// would hand the user a payload containing values they had just redacted.
   /// The #34 privacy contract governs the clipboard the same as the wire.
   Future<void> _copy(ShellLocalizations i18n) async {
+    // Claimed before the first await: taps are not serialized, so several
+    // round-trips can be in flight at once and the platform is under no
+    // obligation to answer them in order.
+    final token = ++_copyToken;
     // `toEncodable` is a floor, not an expectation: `displayJson()` derives
     // from `toJson()` and is JSON-safe today, but `deviceInfo` is free-form
     // `Map<String, dynamic>` and is expected to grow. A future value that
@@ -497,7 +505,13 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
         stackTrace: stackTrace,
       );
     }
-    if (!mounted) return;
+    // Logged above regardless, because a failure is worth recording whether
+    // or not it still owns the screen — but a superseded attempt says
+    // nothing to the user. Without this, a slow first tap that failed lands
+    // after a fast second tap that succeeded and overwrites "copied" with
+    // "couldn't copy", which is the worst available lie for a flow whose
+    // entire job is producing diagnostics.
+    if (!mounted || token != _copyToken) return;
     // The SnackBar is the whole confirmation, sighted and otherwise: it is
     // already a live region (`snack_bar.dart`), so it announces on its own.
     // Deliberately no `SemanticsService.announce` alongside it — deprecated,

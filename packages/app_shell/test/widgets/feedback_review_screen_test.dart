@@ -95,6 +95,12 @@ void main() {
           .setMockMethodCallHandler(SystemChannels.platform, null);
     });
 
+    /// The screen's own strings, so asserting on message text still holds in
+    /// any locale — the same reason everything else here finds by [Key].
+    ShellLocalizations i18nOf(WidgetTester tester) => ShellLocalizations.of(
+      tester.element(find.byType(FeedbackReviewScreen)),
+    );
+
     testWidgets('lifts the whole reviewed report, not a dragged fragment', (
       tester,
     ) async {
@@ -139,7 +145,10 @@ void main() {
       await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
       await tester.pump();
 
-      expect(find.byType(SnackBar), findsOneWidget);
+      // The message, not merely the presence of a bar. `findsOneWidget` on
+      // the SnackBar passes whichever string is inside it, so the two arms of
+      // that ternary could be swapped and this whole group would stay green.
+      expect(find.text(i18nOf(tester).feedbackReviewCopied), findsOneWidget);
     });
 
     // The two classifications that are neither obvious nor symmetrical, and
@@ -181,6 +190,46 @@ void main() {
       expect(find.byType(SnackBar), findsNothing);
     });
 
+    testWidgets('a late completion cannot overwrite a newer result', (
+      tester,
+    ) async {
+      // Each tap starts its own `Clipboard.setData` round-trip, and nothing
+      // obliges the platform to answer them in the order they were asked.
+      // Here the first tap is the slow one and it fails, so a completion
+      // allowed to report an outcome a later tap has already superseded ends
+      // up telling the user the copy failed when it actually succeeded —
+      // about the worst available lie for a diagnostics flow.
+      var calls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            if (call.method != 'Clipboard.setData') return null;
+            if (++calls == 1) {
+              await Future<void>.delayed(const Duration(seconds: 2));
+              throw PlatformException(code: 'no-clipboard');
+            }
+            copied.add((call.arguments as Map)['text'] as String);
+            return null;
+          });
+      await pumpReview(tester);
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pump();
+      await tester.tap(find.byKey(FeedbackReviewScreen.copyButtonKey));
+      await tester.pump();
+
+      final i18n = i18nOf(tester);
+      expect(find.text(i18n.feedbackReviewCopied), findsOneWidget);
+
+      // Far enough for the first tap's failure to land (~2s), not far enough
+      // for the second tap's confirmation to have expired (~4s).
+      for (var second = 0; second < 3; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(find.text(i18n.feedbackReviewCopyFailed), findsNothing);
+      expect(find.text(i18n.feedbackReviewCopied), findsOneWidget);
+    });
+
     testWidgets('a clipboard failure says so instead of failing silently', (
       tester,
     ) async {
@@ -197,7 +246,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(copied, isEmpty);
-      expect(find.byType(SnackBar), findsOneWidget);
+      // Named "says so", so it has to check that it says so.
+      expect(
+        find.text(i18nOf(tester).feedbackReviewCopyFailed),
+        findsOneWidget,
+      );
       // Swallowed rather than rethrown on purpose: an escaping error would
       // reach PlatformDispatcher.onError, which the global hooks turn into a
       // crash report — a failed copy must not summon a crash prompt on top
