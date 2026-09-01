@@ -158,6 +158,60 @@ void main() {
       });
     });
 
+    // ── Supplementary-plane names (found at merge, #347 review) ────────
+    //
+    // `String[]` and `substring` index UTF-16 code UNITS. A character
+    // outside the BMP occupies two of them, so taking one or two units off
+    // the front of such a name used to slice a surrogate pair in half and
+    // hand back a string that is not valid text — mojibake in an avatar
+    // chip rather than a crash, which is the harder kind to notice.
+
+    group('initials on supplementary-plane names (#347)', () {
+      test('an emoji first name yields the whole emoji, not half of it', () {
+        final profile = UserProfile(
+          user: buildUser(firstName: '👍lara', lastName: 'Doe'),
+        );
+        expect(profile.initials, '👍D');
+      });
+
+      test('a single-emoji name is one initial, not a broken pair', () {
+        final profile = UserProfile(user: buildUser(firstName: '👍'));
+        expect(profile.initials, '👍');
+      });
+
+      test('two leading emoji give two whole characters', () {
+        final profile = UserProfile(user: buildUser(firstName: '👍👎x'));
+        expect(profile.initials, '👍👎');
+      });
+
+      test('a supplementary-plane username is not split', () {
+        final profile = UserProfile(user: buildUser(username: '𐐀𐐁c'));
+        expect(profile.initials, '𐐀𐐁'.toUpperCase());
+      });
+
+      test('every initials result is valid UTF-16', () {
+        for (final name in ['👍lara', '👍', '𐐀𐐁c', 'Jo', 'J']) {
+          final initials = UserProfile(user: buildUser(firstName: name))
+              .initials;
+          expect(
+            initials.runes.every((r) => r < 0xD800 || r > 0xDFFF),
+            isTrue,
+            reason: 'unpaired surrogate in initials for "$name"',
+          );
+        }
+      });
+
+      test('BMP behaviour is unchanged', () {
+        expect(UserProfile(user: buildUser(firstName: 'John')).initials, 'JO');
+        expect(
+          UserProfile(
+            user: buildUser(firstName: 'John', lastName: 'Doe'),
+          ).initials,
+          'JD',
+        );
+      });
+    });
+
     group('displayName on short or empty name material (#183)', () {
       test('empty first name with a null last name falls back to username', () {
         final profile = UserProfile(

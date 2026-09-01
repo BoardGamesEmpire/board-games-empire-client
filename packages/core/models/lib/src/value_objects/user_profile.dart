@@ -51,7 +51,7 @@ class UserProfile extends Equatable {
   /// 3. the leading characters of the username,
   /// 4. [initialsPlaceholder].
   ///
-  /// Every step is length-clamped, so a one-character name yields one
+  /// Every step goes through [_leading], so a one-character name yields one
   /// character rather than throwing. Steps 2 and 3 deliberately mirror
   /// [displayName]'s precedence — a profile showing "Doe" must not show
   /// initials taken from the username.
@@ -60,7 +60,7 @@ class UserProfile extends Equatable {
     final last = _lastName;
 
     if (first.isNotEmpty && last.isNotEmpty) {
-      return '${first[0]}${last[0]}'.toUpperCase();
+      return '${_leading(first, 1)}${_leading(last, 1)}'.toUpperCase();
     }
 
     final source = [
@@ -71,10 +71,31 @@ class UserProfile extends Equatable {
 
     if (source == null) return initialsPlaceholder;
 
-    return source
-        .substring(0, source.length < 2 ? source.length : 2)
-        .toUpperCase();
+    return _leading(source, 2).toUpperCase();
   }
+
+  /// The first [count] Unicode **code points** of [source], or all of them
+  /// when it is shorter.
+  ///
+  /// Code points rather than `[]`/`substring`, which index UTF-16 code
+  /// *units* (#347 review). A character outside the Basic Multilingual
+  /// Plane — an emoji, or scripts like Deseret and Gothic — occupies two
+  /// units, so slicing by units cut such a character in half and returned a
+  /// string containing an unpaired surrogate. That is not a crash but
+  /// invalid text: it renders as U+FFFD in an avatar chip, which is harder
+  /// to notice than a throw and impossible to explain from a screenshot.
+  ///
+  /// `take` clamps, so no length guard is needed here or at the call sites.
+  ///
+  /// Code points are not the same as grapheme clusters: a combining mark
+  /// (`e` + U+0301) counts as two, so "é" spelled that way contributes only
+  /// its base letter, and a ZWJ emoji sequence can still be cut at a join.
+  /// Both degrade to *valid* text rather than broken text, which is the
+  /// property worth having. Full grapheme handling needs
+  /// `package:characters`, a dependency this package does not carry and one
+  /// worth adding deliberately rather than in passing.
+  static String _leading(String source, int count) =>
+      String.fromCharCodes(source.runes.take(count));
 
   /// [User.firstName] with whitespace trimmed, or `''` when absent.
   String get _firstName => user.firstName?.trim() ?? '';
