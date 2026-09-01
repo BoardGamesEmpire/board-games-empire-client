@@ -341,10 +341,13 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // route has a row-level reading to gate, the envelope buys nothing
       // and is left out rather than added as decoration.
       //
-      // #272 adds the first household routes whose 404 *can* carry row
-      // semantics (member and detail). That is when this grows a
-      // per-call-site meaning plus the envelope check, following the
-      // collection source as the template — not before.
+      // The membership mutations in #122 add the first household routes
+      // whose 404 *can* carry row semantics — a member or household the
+      // request names by id and the server reports gone. That is when this
+      // grows a per-call-site meaning plus the envelope check, following the
+      // collection source as the template — not before. (Not #272: that
+      // epic is read-only and its list and detail screens both read the
+      // local cache, so it adds no route with a row-level 404.)
       return HouseholdRemoteTransientException(
         '$message — the household route was not reachable',
         cause: cause,

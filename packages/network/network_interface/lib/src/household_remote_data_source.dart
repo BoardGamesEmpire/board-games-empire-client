@@ -62,8 +62,10 @@ typedef HouseholdWithMembers = ({
 /// *row* (see [GameCollectionRemoteDataSource]), but no household route has
 /// such a reading, and Nest answers an unmatched route with the same
 /// envelope — so an envelope-gated rule would still call a partial deploy a
-/// rejection. When #272 adds routes whose 404 can carry row semantics, this
-/// contract grows a per-route clause and the envelope requirement with it.
+/// rejection. The membership mutations in #122 add the first household routes
+/// whose 404 can carry row semantics — a member or household the request names
+/// and the server says is gone — and that is when this contract grows a
+/// per-route clause and the envelope requirement with it.
 abstract class HouseholdRemoteDataSource {
   /// The server's `limit` ceiling for the household list. A larger `limit`
   /// is **rejected with a 400**, not clamped.
