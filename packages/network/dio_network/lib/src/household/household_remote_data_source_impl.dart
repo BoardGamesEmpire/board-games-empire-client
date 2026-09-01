@@ -41,10 +41,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         queryParameters: {'page': page, 'limit': limit},
       );
     } on DioException catch (error) {
-      throw _classifyDioException(
-        error,
-        action: action,
-      );
+      throw _classifyDioException(error, action: action);
     } on Object catch (error) {
       throw HouseholdRemoteTransientException(
         '$action failed unexpectedly',
@@ -59,11 +56,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
     if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-      );
+      throw _classifyStatus(status, '$action returned $status', cause: null);
     }
 
     // Typed as `Object?` deliberately, and checked here rather than by Dio.
@@ -120,10 +113,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         },
       );
     } on DioException catch (error) {
-      throw _classifyDioException(
-        error,
-        action: 'Household create',
-      );
+      throw _classifyDioException(error, action: 'Household create');
     } on Object catch (error) {
       // Contract breach territory (nothing else should escape Dio); stay
       // conservative and transient so the caller can retry.

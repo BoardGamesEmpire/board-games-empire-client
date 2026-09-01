@@ -263,26 +263,23 @@ void main() {
         );
       });
 
-      test(
-        "with the API's own error envelope — Nest's route-not-found carries "
-        'it too, so the envelope does not license a rejection here',
-        () {
-          stubPostThrows(
-            _dioError(
-              DioExceptionType.badResponse,
-              response: _resp({
-                'statusCode': 404,
-                'message': 'Cannot POST /api/households',
-                'error': 'Not Found',
-              }, statusCode: 404),
-            ),
-          );
-          expect(
-            () => remote.createHousehold(name: 'x'),
-            throwsA(isA<HouseholdRemoteTransientException>()),
-          );
-        },
-      );
+      test("with the API's own error envelope — Nest's route-not-found carries "
+          'it too, so the envelope does not license a rejection here', () {
+        stubPostThrows(
+          _dioError(
+            DioExceptionType.badResponse,
+            response: _resp({
+              'statusCode': 404,
+              'message': 'Cannot POST /api/households',
+              'error': 'Not Found',
+            }, statusCode: 404),
+          ),
+        );
+        expect(
+          () => remote.createHousehold(name: 'x'),
+          throwsA(isA<HouseholdRemoteTransientException>()),
+        );
+      });
 
       test('on a non-exception 404 response body', () {
         stubPost(_resp(null, statusCode: 404));

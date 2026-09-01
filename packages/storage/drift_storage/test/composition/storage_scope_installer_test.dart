@@ -229,37 +229,33 @@ void main() {
       expect((await repository.getGame('g-251'))?.title, 'Reachable');
     });
 
-    test(
-      'GameRepository streams close when the server scope is torn down — '
-      'no disposal hook needed, the streams die with the database',
-      () async {
-        await makeInstaller().install(container, config);
-        final repository = container.get<GameRepository>();
+    test('GameRepository streams close when the server scope is torn down — '
+        'no disposal hook needed, the streams die with the database', () async {
+      await makeInstaller().install(container, config);
+      final repository = container.get<GameRepository>();
 
-        var closed = false;
-        final subscription = repository.watchGames().listen(
-          (_) {},
-          onDone: () => closed = true,
-          onError: (Object _) {},
-        );
-        addTearDown(subscription.cancel);
-        // Let the first snapshot land so the stream is genuinely live.
-        await pumpEventQueue();
+      var closed = false;
+      final subscription = repository.watchGames().listen(
+        (_) {},
+        onDone: () => closed = true,
+        onError: (Object _) {},
+      );
+      addTearDown(subscription.cancel);
+      // Let the first snapshot land so the stream is genuinely live.
+      await pumpEventQueue();
 
-        await container.dispose();
-        await pumpEventQueue();
+      await container.dispose();
+      await pumpEventQueue();
 
-        expect(
-          closed,
-          isTrue,
-          reason:
-              'closing the ServerDatabase must close every vended watch '
-              'stream; if this fails the registration needs a dispose hook',
-        );
-      },
-    );
+      expect(
+        closed,
+        isTrue,
+        reason:
+            'closing the ServerDatabase must close every vended watch '
+            'stream; if this fails the registration needs a dispose hook',
+      );
+    });
   });
-
 
   group('key-loss recovery', () {
     test(

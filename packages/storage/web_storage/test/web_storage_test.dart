@@ -287,9 +287,9 @@ void main() {
       expect((await repository.getGame('g-1'))?.title, 'Reachable on web');
       // The same instance's database, not a second one.
       expect(
-        (await GameRepositoryImpl(
-          container.get<ServerDatabase>(),
-        ).getGame('g-1'))?.title,
+        (await GameRepositoryImpl(container.get<ServerDatabase>())
+                .getGame('g-1'))
+            ?.title,
         'Reachable on web',
       );
     });

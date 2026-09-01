@@ -158,10 +158,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, 'Sign In'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.textContaining('at least', findRichText: true),
-        findsNothing,
-      );
+      expect(find.textContaining('at least', findRichText: true), findsNothing);
     });
 
     testWidgets('still requires a non-empty password', (tester) async {

@@ -61,7 +61,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   ///
   /// It bounds responses, not requests. A [getSession] **started after** the
   /// bump captures the new epoch, so the re-comparison matches and no guard
-  /// fires. That gap is [_signOutInFlight]'s job, not this counter's.
+  /// fires. That gap is [_pendingSignOuts]'s job, not this counter's.
   int _sessionEpoch = 0;
 
   /// True from the first statement of [signOut] until its revocation POST
@@ -90,11 +90,19 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// timer — a wall-clock dispatcher needing no user action to land inside
   /// the window. Fixed ahead of that rather than after it.
   ///
-  /// Deliberately a plain bool, not a counter: concurrent sign-outs are
-  /// idempotent in intent, and the last one to resolve releasing the latch
-  /// is the correct behaviour — there is nothing left to protect once no
-  /// revocation is outstanding.
-  bool _signOutInFlight = false;
+  /// A count rather than a flag, because the release condition is "no
+  /// revocation is outstanding" and a flag cannot express it: with two
+  /// [signOut] calls overlapping, the first to complete would clear a flag
+  /// while the second's POST was still in flight, reopening the window this
+  /// exists to close. Raised in review on #347.
+  ///
+  /// Not reachable through today's only caller — `AuthBloc._onSignOut` is a
+  /// `droppable()` handler, so a second `AuthSignOutRequested` is dropped
+  /// while one is being handled. That is a property of the caller, though,
+  /// and this class cannot see it: [signOut] is a public interface method,
+  /// and a latch whose correctness rests on "no caller happens to overlap"
+  /// is the same shape of latent bug this field was added to fix.
+  int _pendingSignOuts = 0;
 
   @override
   AuthState get currentAuthState => _currentState;
@@ -194,7 +202,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // fire. Ordering between a sign-out and a sign-in is #146's job, via
     // the epoch and `AuthSupersededException`; this latch is only about not
     // *asking* on behalf of a caller polling for a session.
-    if (_signOutInFlight) {
+    if (_pendingSignOuts > 0) {
       _log.warn('Refusing a session request while a sign-out is in flight');
       return null;
     }
@@ -379,7 +387,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // receiveTimeout against an unreachable server, with the caller — and
     // the gate — sitting on AuthLoading for all of it.
     _sessionEpoch += 1;
-    _signOutInFlight = true;
+    _pendingSignOuts += 1;
     _setState(const AuthStateUnauthenticated());
 
     try {
@@ -410,10 +418,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         stackTrace: stackTrace,
       );
     } finally {
-      // In a `finally` so a thrown POST cannot leave the latch raised for
+      // In a `finally` so a thrown POST cannot leave the count raised for
       // the life of the process — that would turn a transient network fault
-      // into "this client can never read a session again" (#285).
-      _signOutInFlight = false;
+      // into "this client can never read a session again" (#285). Decrement
+      // rather than reset, so an overlapping sign-out's own protection
+      // survives this one completing.
+      _pendingSignOuts -= 1;
     }
   }
 
@@ -450,11 +460,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// interface method asking what the probe actually wants ("is a bounded
   /// check worthwhile?") rather than asking for a session.
   @override
-  Future<AuthResponse?> getCachedSession() async =>
-      switch (_currentState) {
-        AuthStateAuthenticated(:final session) => session,
-        _ => null,
-      };
+  Future<AuthResponse?> getCachedSession() async => switch (_currentState) {
+    AuthStateAuthenticated(:final session) => session,
+    _ => null,
+  };
 
   /// Always null: web never restores optimistically (#98, decision D10).
   ///
