@@ -503,13 +503,23 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     // Deliberately no `SemanticsService.announce` alongside it — deprecated,
     // and on Android an announcement event makes TalkBack drop its speech
     // queue. Same reasoning as `UnverifiedSessionBanner` and #191.
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          copied ? i18n.feedbackReviewCopied : i18n.feedbackReviewCopyFailed,
+    //
+    // Cleared first because `showSnackBar` *queues*: `Clipboard.setData` is an
+    // async platform round-trip, so the button looks inert and people tap it
+    // again — and three taps stacked three confirmations that replayed for
+    // over fifteen seconds, long after the copy was done. Only the newest
+    // outcome is true, and it is the only one worth showing. `clearSnackBars`
+    // rather than `removeCurrentSnackBar`: the latter merely promotes the next
+    // bar in the queue, which is the same bug one position along.
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            copied ? i18n.feedbackReviewCopied : i18n.feedbackReviewCopyFailed,
+          ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _footer(ShellLocalizations i18n, {required bool sending}) => SafeArea(

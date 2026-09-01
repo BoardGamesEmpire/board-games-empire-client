@@ -158,6 +158,27 @@ void main() {
       }
 
       expect(find.byType(SnackBar), findsOneWidget);
+
+      // Necessary but nowhere near sufficient, and the gap is the whole point
+      // of this test: `ScaffoldMessenger` materializes only the front of its
+      // queue, so `findsOneWidget` holds identically whether one bar is
+      // showing or three are stacked behind it. Measured on 3.47.1: a single
+      // confirmation leaves the screen clear by ~6s, while three queued ones
+      // were still replaying past 16s. Walking the clock past one bar's
+      // lifetime is the only thing that tells those two apart.
+      //
+      // Stepped rather than one `pump(seconds: 8)`, and not `pumpAndSettle`.
+      // A single jump fires the dismiss timer but leaves the exit animation
+      // with no frames to run in, so the bar is still mounted mid-reverse and
+      // this reads as a failure whether or not the bug is present.
+      // `pumpAndSettle` fails the other way: it would patiently drain all
+      // three queued bars and then report a clear screen, passing on exactly
+      // the state this test exists to catch.
+      for (var second = 0; second < 8; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      expect(find.byType(SnackBar), findsNothing);
     });
 
     testWidgets('a clipboard failure says so instead of failing silently', (
