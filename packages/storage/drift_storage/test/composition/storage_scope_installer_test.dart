@@ -11,6 +11,7 @@ import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:path/path.dart' as p;
@@ -121,6 +122,14 @@ ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );
 
+/// Minimal [Game] for the #251 reachability tests.
+Game _game({String id = 'g-251', required String title}) => Game(
+  id: id,
+  title: title,
+  createdAt: DateTime.utc(2026, 1, 1),
+  updatedAt: DateTime.utc(2026, 1, 1),
+);
+
 void main() {
   late Directory tempDir;
   late _FakeKeyService keys;
@@ -201,7 +210,56 @@ void main() {
       // A closed drift database rejects further queries.
       await expectLater(db.customSelect('SELECT 1').get(), throwsA(anything));
     });
+
+    // ── #251 D1: GameRepository is reachable from the server scope ──────
+    //
+    // The repository was complete and test-covered but had no non-test
+    // consumer and no registration anywhere (#150's reachability audit).
+    // It belongs in this tier and not the user-session tier: it takes no
+    // user id, holds only the ServerDatabase, and its stream lifetime
+    // therefore already matches this scope's.
+
+    test('registers GameRepository against the same ServerDatabase', () async {
+      await makeInstaller().install(container, config);
+
+      expect(container.isRegistered<GameRepository>(), isTrue);
+
+      final repository = container.get<GameRepository>();
+      await repository.cacheGame(_game(title: 'Reachable'));
+      expect((await repository.getGame('g-251'))?.title, 'Reachable');
+    });
+
+    test(
+      'GameRepository streams close when the server scope is torn down — '
+      'no disposal hook needed, the streams die with the database',
+      () async {
+        await makeInstaller().install(container, config);
+        final repository = container.get<GameRepository>();
+
+        var closed = false;
+        final subscription = repository.watchGames().listen(
+          (_) {},
+          onDone: () => closed = true,
+          onError: (Object _) {},
+        );
+        addTearDown(subscription.cancel);
+        // Let the first snapshot land so the stream is genuinely live.
+        await pumpEventQueue();
+
+        await container.dispose();
+        await pumpEventQueue();
+
+        expect(
+          closed,
+          isTrue,
+          reason:
+              'closing the ServerDatabase must close every vended watch '
+              'stream; if this fails the registration needs a dispose hook',
+        );
+      },
+    );
   });
+
 
   group('key-loss recovery', () {
     test(

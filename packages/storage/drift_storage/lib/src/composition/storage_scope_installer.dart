@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:storage_interface/storage_interface.dart';
 
 import '../databases/encrypted_executor_factory.dart';
 import '../databases/server_database.dart';
+import '../repositories/game_repository_impl.dart';
 
 /// [ServerScopeInstaller] for per-server storage: opens the
 /// encrypted [ServerDatabase] and registers it in the server's scope.
@@ -37,6 +39,29 @@ import '../databases/server_database.dart';
 /// context rolls back, that server stays unavailable, the app keeps
 /// running. [EncryptionUnavailableError] is never caught — a build without
 /// cipher support must fail loudly.
+///
+/// ## Registrations
+///
+/// The [ServerDatabase], and the per-server repositories that hold nothing
+/// but it — today [GameRepository] (#251).
+///
+/// [GameRepository] belongs in this tier rather than the user-session tier
+/// because it takes **no user id**: it holds only the [ServerDatabase], so
+/// there is no per-user data to scope and no cross-user read to prevent.
+/// The #138 stream-lifetime trap that forces `WatchDisposal` onto the
+/// user-session repositories does not apply for the same reason — a
+/// `watchGame` / `watchGames` subscription is tied to the very database
+/// this scope owns, so the stream's lifetime already *is* the scope's.
+///
+/// That is also why the registration carries **no `dispose:` hook**. The
+/// database's own hook closes it on scope teardown, and closing a drift
+/// database closes every stream vended from it. A hook here would be a
+/// second, redundant closer of streams that are already gone. The
+/// installer test pins this rather than trusting the reasoning.
+///
+/// The web counterpart registers the same repository over its own
+/// `ServerDatabase` (`WebStorageInstaller`, #288) — web never runs a
+/// `ServerScopeInstaller`, so a registration here reaches native only.
 ///
 /// ## Keying
 ///
@@ -78,6 +103,11 @@ class StorageScopeInstaller implements ServerScopeInstaller {
       db,
       dispose: (database) => database.close(),
     );
+
+    // No dispose hook, deliberately (#251) — see the class doc: the
+    // repository holds nothing but the database above, and closing that
+    // closes every stream it vended.
+    container.registerSingleton<GameRepository>(GameRepositoryImpl(db));
   }
 
   /// Constructs the database over the encrypted executor and forces the
