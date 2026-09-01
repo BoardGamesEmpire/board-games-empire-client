@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
@@ -37,6 +40,17 @@ import '../../l10n/shell_localizations.dart';
 /// [Overlay] ancestor (the crash overlay's `Overlay.wrap`; the router's
 /// Navigator) — required because the stack-trace [SelectableText] hosts its
 /// selection toolbar in an [Overlay].
+///
+/// **That [SelectableText] is not redundant with the app-wide selection
+/// region** (#322). Three presentations, and it is load-bearing in two: on
+/// the crash path this screen is a *sibling* of the region's content in
+/// `BgeApp`'s overlay stack, so the region never reaches it
+/// (`bge_app_selection_test.dart` pins that); and on touch platforms there
+/// is no region at all. Only the routed presentation on a pointer platform
+/// puts it inside the region, where it nests harmlessly — a `SelectableText`
+/// inside a `SelectionArea` builds and selects fine, it simply runs its own
+/// selection rather than joining the region's. Deleting it would silently
+/// break the other two.
 ///
 /// The #34 privacy contract holds: nothing is submitted until the user taps
 /// send; redaction happens client-side before the payload is built.
@@ -77,6 +91,7 @@ class FeedbackReviewScreen extends StatefulWidget {
   static const Key queuedConfirmationKey = Key('feedback_review.queued');
   static const Key submissionFailedKey = Key('feedback_review.failed');
   static const Key submissionRejectedKey = Key('feedback_review.rejected');
+  static const Key copyButtonKey = Key('feedback_review.copy');
   static const Key stackTraceSectionKey = Key('feedback_review.stack_trace');
   static const Key breadcrumbsSectionKey = Key('feedback_review.breadcrumbs');
 
@@ -95,6 +110,8 @@ class FeedbackReviewScreen extends StatefulWidget {
 enum _ReviewPhase { reviewing, sending, sent, queued, rejected, failed }
 
 class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
+  static final BgeLogger _log = BgeLogger('bge.shell.feedback_review');
+
   /// The working preview. Intentionally seeded once and then owned as
   /// mutable State — each toggle produces a new preview via the model's
   /// redact/unredact, and that user progress lives here.
@@ -105,6 +122,10 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   /// concern (see `BgeApp`'s review slot), not this widget's.
   late FeedbackReportPreview _preview = widget.preview;
   _ReviewPhase _phase = _ReviewPhase.reviewing;
+
+  /// Identifies the most recent copy attempt, so a completion can tell
+  /// whether it still speaks for the screen. See [_copy].
+  int _copyToken = 0;
 
   bool _isRedacted(String path) => _preview.userRedactedFields.contains(path);
 
@@ -145,6 +166,22 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     }
   }
 
+  /// Whether the report is still the user's to salvage.
+  ///
+  /// Not the complement of [_terminal], and the difference is the point:
+  /// `rejected` and `failed` are terminal, but the report was neither
+  /// delivered nor saved to send later — the only affordance on those states
+  /// is Close, which drops it. Hiding the copy action there would take the
+  /// report away at exactly the moment it became unrecoverable. `sent` and
+  /// `queued` are the two where it is genuinely gone from the user's hands.
+  bool get _copyable => switch (_phase) {
+    _ReviewPhase.reviewing ||
+    _ReviewPhase.sending ||
+    _ReviewPhase.rejected ||
+    _ReviewPhase.failed => true,
+    _ReviewPhase.sent || _ReviewPhase.queued => false,
+  };
+
   bool get _terminal =>
       _phase == _ReviewPhase.sent ||
       _phase == _ReviewPhase.queued ||
@@ -170,6 +207,22 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
               key: FeedbackReviewScreen.backButtonKey,
               onPressed: sending ? null : widget.onCancel,
             ),
+      // #322: the reliable way off this screen with the report in hand. On
+      // touch there is no selection region at all; on pointer platforms
+      // there is one, but dragging across these rows yields their labels and
+      // values run together with no separators — the concatenation problem
+      // that decided the shape of #322. A button that emits the same JSON
+      // the rows are rendered from beats both, so it is not platform-gated.
+      actions: _copyable
+          ? [
+              IconButton(
+                key: FeedbackReviewScreen.copyButtonKey,
+                icon: const Icon(Icons.copy_outlined),
+                tooltip: i18n.feedbackReviewCopy,
+                onPressed: sending ? null : () => _copy(i18n),
+              ),
+            ]
+          : null,
       // Step one of this flow (compose) is a BgePage; this is step two. Built
       // on a raw Scaffold, the content column snapped from the form measure to
       // the full window halfway through the flow — visible as a jump on any
@@ -411,6 +464,77 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
         ),
     ],
   );
+
+  /// Puts the reviewed report on the clipboard (#322).
+  ///
+  /// Serializes [FeedbackReportPreview.displayJson] — *what is on screen* —
+  /// and deliberately not `toSubmittableReport()`. They differ: the
+  /// submittable report is what the server would receive, and copying that
+  /// would hand the user a payload containing values they had just redacted.
+  /// The #34 privacy contract governs the clipboard the same as the wire.
+  Future<void> _copy(ShellLocalizations i18n) async {
+    // Claimed before the first await: taps are not serialized, so several
+    // round-trips can be in flight at once and the platform is under no
+    // obligation to answer them in order.
+    final token = ++_copyToken;
+    // `toEncodable` is a floor, not an expectation: `displayJson()` derives
+    // from `toJson()` and is JSON-safe today, but `deviceInfo` is free-form
+    // `Map<String, dynamic>` and is expected to grow. A future value that
+    // is not a primitive should degrade to its string form rather than
+    // throw in the user's hands while they are reporting a crash.
+    final encoder = JsonEncoder.withIndent('  ', (value) => value.toString());
+    var copied = false;
+    try {
+      final text = encoder.convert(_preview.displayJson());
+      await Clipboard.setData(ClipboardData(text: text));
+      copied = true;
+    } on Object catch (error, stackTrace) {
+      // Not rethrown, and that is load-bearing: `onPressed` discards this
+      // Future, so an escaping error reaches `PlatformDispatcher.onError`,
+      // which `global_error_hooks` turns into a crash report — a failed copy
+      // would summon a fresh crash prompt on top of the crash the user is
+      // already trying to report.
+      //
+      // Logged rather than swallowed outright, because this is the one flow
+      // whose entire job is producing diagnostics. Without a record, a
+      // clipboard that systematically fails on one platform is invisible to
+      // everyone but the user staring at "couldn't copy".
+      _log.warn(
+        'Copying the feedback report to the clipboard failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    // Logged above regardless, because a failure is worth recording whether
+    // or not it still owns the screen — but a superseded attempt says
+    // nothing to the user. Without this, a slow first tap that failed lands
+    // after a fast second tap that succeeded and overwrites "copied" with
+    // "couldn't copy", which is the worst available lie for a flow whose
+    // entire job is producing diagnostics.
+    if (!mounted || token != _copyToken) return;
+    // The SnackBar is the whole confirmation, sighted and otherwise: it is
+    // already a live region (`snack_bar.dart`), so it announces on its own.
+    // Deliberately no `SemanticsService.announce` alongside it — deprecated,
+    // and on Android an announcement event makes TalkBack drop its speech
+    // queue. Same reasoning as `UnverifiedSessionBanner` and #191.
+    //
+    // Cleared first because `showSnackBar` *queues*: `Clipboard.setData` is an
+    // async platform round-trip, so the button looks inert and people tap it
+    // again — and three taps stacked three confirmations that replayed for
+    // over fifteen seconds, long after the copy was done. Only the newest
+    // outcome is true, and it is the only one worth showing. `clearSnackBars`
+    // rather than `removeCurrentSnackBar`: the latter merely promotes the next
+    // bar in the queue, which is the same bug one position along.
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            copied ? i18n.feedbackReviewCopied : i18n.feedbackReviewCopyFailed,
+          ),
+        ),
+      );
+  }
 
   Widget _footer(ShellLocalizations i18n, {required bool sending}) => SafeArea(
     top: false,

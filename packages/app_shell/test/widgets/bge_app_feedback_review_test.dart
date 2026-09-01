@@ -1,7 +1,7 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:observability/observability.dart';
 
+import '../support/stub_feedback_service.dart';
 import '../support/fake_platform_bootstrap.dart';
 
 /// Pinned (#76): from a pending crash draft, `CrashReportPrompt`'s
@@ -26,7 +26,7 @@ void main() {
       hydratedStorageInitializer: (_) async {},
     );
     final reporter = FeedbackUncaughtErrorReporter(
-      service: _StubFeedbackService(),
+      service: StubFeedbackService(),
     );
     return (cubit, reporter);
   }
@@ -111,31 +111,4 @@ void main() {
           '(#34 contract), matching #69 discard',
     );
   });
-}
-
-class _StubFeedbackService implements FeedbackService {
-  @override
-  FeedbackReport buildReport({
-    required FeedbackCategory category,
-    FeedbackSeverity? severity,
-    String? title,
-    String? errorMessage,
-    String? stackTrace,
-    String? userComment,
-    String? clientRequestId,
-  }) => FeedbackReport(
-    category: category,
-    severity: severity ?? FeedbackSeverity.critical,
-    message: errorMessage ?? 'crash',
-    stackTrace: stackTrace,
-    title: title,
-    clientRequestId: 'stub-key',
-  );
-
-  @override
-  Future<FeedbackSubmitResult> submit(FeedbackReport report) async =>
-      FeedbackSubmitResult.sent;
-
-  @override
-  Future<int> drainPending() async => 0;
 }

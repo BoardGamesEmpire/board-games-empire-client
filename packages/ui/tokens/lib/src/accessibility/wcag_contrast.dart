@@ -19,6 +19,13 @@ abstract final class Wcag {
   /// high-contrast schemes are held to.
   static const double aaaNormalText = 7;
 
+  /// SC 1.4.6 — minimum for large text (AAA).
+  ///
+  /// Numerically equal to [aaNormalText] and conceptually unrelated: this is
+  /// the AAA bar for *large* text, that one the AA bar for *normal* text.
+  /// Named separately so a call site says which criterion it is claiming.
+  static const double aaaLargeText = 4.5;
+
   /// The WCAG contrast ratio between [a] and [b], in `1.0..21.0`.
   /// Symmetric — argument order does not matter.
   static double contrastRatio(Color a, Color b) {

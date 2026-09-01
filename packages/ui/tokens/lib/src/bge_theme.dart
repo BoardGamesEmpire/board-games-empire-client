@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:ui_tokens/src/accessibility/bge_selection.dart';
 import 'package:ui_tokens/src/bge_palette.dart';
 import 'package:ui_tokens/src/bge_status_colors.dart';
 import 'package:ui_tokens/src/bge_tokens.dart';
@@ -23,6 +24,10 @@ import 'package:ui_tokens/src/bge_typography.dart';
 /// - **Two-family typography** — the bundled display face on
 ///   display/headline/title, the platform face on body/label. See
 ///   [BgeTypography] for why the split falls there.
+/// - **Legible text selection** — an authored `textSelectionTheme`. Material's
+///   default tint drops selected text below the floor in all four schemes:
+///   under 3:1 in light and dark, and under the 4.5:1 the high-contrast pair
+///   is held to. See [BgeSelection] for both floors and what they exclude.
 /// - **Dimensional tokens** — [BgeTokens.standard] and [BgeStatusColors] are
 ///   installed as `ThemeExtension`s on every theme.
 ///
@@ -91,6 +96,14 @@ abstract final class BgeTheme {
             width: tokens.focusOutlineWidth,
           ),
         ),
+      ),
+      // #322: authored rather than inherited. Left unset, Material
+      // substitutes `primary` at 40% opacity, which drops selected text
+      // below the legibility floor in all four schemes — narrowly in light
+      // and dark, and clearly in the high-contrast pair, which is held to
+      // the AAA large-text bar. See [BgeSelection].
+      textSelectionTheme: TextSelectionThemeData(
+        selectionColor: BgeSelection.colorFor(scheme),
       ),
       extensions: [tokens, BgeStatusColors.forScheme(scheme)],
     );

@@ -1,8 +1,8 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:observability/observability.dart';
 
+import '../support/stub_feedback_service.dart';
 import '../support/fake_platform_bootstrap.dart';
 
 /// Pinned (#106): while the crash flow (#69/#76) is up, system back is
@@ -42,7 +42,7 @@ void main() {
       hydratedStorageInitializer: (_) async {},
     );
     final reporter = FeedbackUncaughtErrorReporter(
-      service: _StubFeedbackService(),
+      service: StubFeedbackService(),
     );
     return (cubit, reporter);
   }
@@ -227,31 +227,4 @@ void main() {
 
     await tester.pump(BgeApp.crashPromptBackDismissWindow);
   });
-}
-
-class _StubFeedbackService implements FeedbackService {
-  @override
-  FeedbackReport buildReport({
-    required FeedbackCategory category,
-    FeedbackSeverity? severity,
-    String? title,
-    String? errorMessage,
-    String? stackTrace,
-    String? userComment,
-    String? clientRequestId,
-  }) => FeedbackReport(
-    category: category,
-    severity: severity ?? FeedbackSeverity.critical,
-    message: errorMessage ?? 'crash',
-    stackTrace: stackTrace,
-    title: title,
-    clientRequestId: 'stub-key',
-  );
-
-  @override
-  Future<FeedbackSubmitResult> submit(FeedbackReport report) async =>
-      FeedbackSubmitResult.sent;
-
-  @override
-  Future<int> drainPending() async => 0;
 }
