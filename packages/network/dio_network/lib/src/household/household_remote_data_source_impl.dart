@@ -44,7 +44,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       throw _classifyDioException(
         error,
         action: action,
-        notFound: _NotFoundMeaning.unreachableEndpoint,
       );
     } on Object catch (error) {
       throw HouseholdRemoteTransientException(
@@ -64,7 +63,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         status,
         '$action returned $status',
         cause: null,
-        notFound: _NotFoundMeaning.unreachableEndpoint,
       );
     }
 
@@ -125,7 +123,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       throw _classifyDioException(
         error,
         action: 'Household create',
-        notFound: _NotFoundMeaning.rejection,
       );
     } on Object catch (error) {
       // Contract breach territory (nothing else should escape Dio); stay
@@ -147,7 +144,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         status,
         'Household create returned $status',
         cause: null,
-        notFound: _NotFoundMeaning.rejection,
       );
     }
 
@@ -306,7 +302,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   HouseholdRemoteException _classifyDioException(
     DioException error, {
     required String action,
-    required _NotFoundMeaning notFound,
   }) {
     final status = error.response?.statusCode;
     if (status != null) {
@@ -314,7 +309,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         status,
         '$action failed with status $status',
         cause: error,
-        notFound: notFound,
       );
     }
     return HouseholdRemoteTransientException('$action failed', cause: error);
@@ -324,7 +318,6 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     int status,
     String message, {
     required Object? cause,
-    required _NotFoundMeaning notFound,
   }) {
     final transient = status >= 500 || _retryable4xx.contains(status);
     if (transient) {
@@ -334,12 +327,34 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         statusCode: status,
       );
     }
-    if (status == 404 && notFound == _NotFoundMeaning.unreachableEndpoint) {
-      // A list route is never absent in a deployed server, so a 404 on it says
-      // the request did not arrive — a misrouted path prefix, an API not
-      // deployed yet, a proxy answering for it. Permanent would end the
-      // hydrate for the life of the process, including after the server is
-      // fixed. Matches the collection list route (#253 D6).
+    if (status == 404) {
+      // EVERY household route is fixed server-side — there is no household
+      // route whose 404 could mean "this row is gone" — so a 404 always says
+      // the request did not reach the household module: a misrouted path
+      // prefix, an API not deployed yet, a proxy or gateway answering for
+      // it. Permanent would end a hydrate for the life of the process, and
+      // on the create path it is worse than that: once #121 owns cancel
+      // semantics, permanent cancels the queue entry and discards the
+      // user's household for a failure a retry thirty seconds later would
+      // have survived (#297).
+      //
+      // Note what is deliberately NOT consulted here: the API's own error
+      // envelope. The collection data source requires that envelope before
+      // reading a 404 as a statement about a row, because a proxy 404
+      // cannot license such a conclusion. That check does not separate the
+      // two cases on a *fixed* route, because Nest answers an unmatched
+      // route with the same envelope (`Cannot POST /api/households`,
+      // rendered by the global `I18nExceptionFilter`) — the residual the
+      // collection source documents on its own `_isApplicationError`. So an
+      // envelope-gated rule would still classify a partial deploy as a
+      // rejection, which is the exact bug #297 is about. Since no household
+      // route has a row-level reading to gate, the envelope buys nothing
+      // and is left out rather than added as decoration.
+      //
+      // #272 adds the first household routes whose 404 *can* carry row
+      // semantics (member and detail). That is when this grows a
+      // per-call-site meaning plus the envelope check, following the
+      // collection source as the template — not before.
       return HouseholdRemoteTransientException(
         '$message — the household route was not reachable',
         cause: cause,
@@ -361,19 +376,4 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       statusCode: status,
     );
   }
-}
-
-/// What a 404 means for the call that received it.
-///
-/// The household routes are fixed server-side, so a 404 never means "this
-/// household is gone" — it means the request did not reach the application.
-/// Only [rejection] preserves the create path's existing classification,
-/// which is out of scope here (see the note on #265).
-enum _NotFoundMeaning {
-  /// A route that always exists in a deployed server: a 404 is a routing or
-  /// deployment fault, and retrying is the right response.
-  unreachableEndpoint,
-
-  /// Classify by status alone, as the create path has since #39.
-  rejection,
 }
