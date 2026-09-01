@@ -92,13 +92,7 @@ class BgePage extends StatelessWidget {
     this.scrollController,
     super.key,
   }) : slivers = null,
-       semanticChildCount = null,
-       assert(
-         footer == null || floatingActionButton == null,
-         'A footer and a floatingActionButton both sit at the bottom of the '
-         'body, and the FAB floats over it — the FAB would cover the end of '
-         'the footer and eat its taps. Pick one.',
-       );
+       semanticChildCount = null;
 
   /// Creates a page whose content is slivers rather than a single box.
   ///
@@ -140,13 +134,7 @@ class BgePage extends StatelessWidget {
        // Vertical centring is a box idea — it needs the content's height,
        // which a lazy sliver list does not have. A list surface starts at
        // the top anyway.
-       centerVertically = false,
-       assert(
-         footer == null || floatingActionButton == null,
-         'A footer and a floatingActionButton both sit at the bottom of the '
-         'body, and the FAB floats over it — the FAB would cover the end of '
-         'the footer and eat its taps. Pick one.',
-       );
+       centerVertically = false;
 
   /// The page's content, for the box constructor. Placed in the constrained,
   /// centered column. Null when built with [BgePage.slivers].
@@ -227,8 +215,44 @@ class BgePage extends StatelessWidget {
   /// the overlap is invisible until someone taps the wrong half of a button.
   final Widget? footer;
 
+  /// Rejects a page carrying both a [footer] and a [floatingActionButton]
+  /// (#231).
+  ///
+  /// ## Why this is not an `assert`, and not in the constructor
+  ///
+  /// It was an `assert` in both constructor initializer lists, which left
+  /// the invariant unenforced in exactly the builds users run: `assert`
+  /// compiles away outside debug. A `const` invocation was covered — the
+  /// analyzer evaluates a const constructor's asserts at compile time — but
+  /// a **non-const** one was not, and that is the shape real screens use:
+  /// `household_list_screen.dart` builds its FAB from widget state, and
+  /// `feedback_review_screen.dart` builds its footer the same way. Neither
+  /// is const, so neither was ever checked in release.
+  ///
+  /// It cannot move to a constructor *body*, because both constructors are
+  /// `const` and a const constructor has no body. Making them non-const to
+  /// host a throw would break every `const BgePage(...)` call site and cost
+  /// the canonicalization on the common path, to guard a case those call
+  /// sites cannot even express. So the check runs here, on the build path,
+  /// which is compiled in every mode and reached before any layout happens.
+  ///
+  /// A [FlutterError] (rather than an `ArgumentError`) so it arrives through
+  /// the framework's error reporting: the page shows an error widget and the
+  /// fault reaches the observability channel (#34), instead of taking the
+  /// app down for a layout conflict.
+  void _checkBottomSlotExclusivity() {
+    if (footer == null || floatingActionButton == null) return;
+    throw FlutterError(
+      'A footer and a floatingActionButton both sit at the bottom of the '
+      'body, and the FAB floats over it — the FAB would cover the end of '
+      'the footer and eat its taps. Pick one.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    _checkBottomSlotExclusivity();
+
     final tokens = BgeTokens.of(context);
     final resolvedPadding = padding ?? EdgeInsets.all(tokens.spaceLg);
 
