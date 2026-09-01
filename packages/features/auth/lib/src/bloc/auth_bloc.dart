@@ -361,6 +361,22 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // for the crash channel, then we flip.
       addError(error, stackTrace);
     }
+
+    // Conditional, not unconditional (#280). `_onSignIn` and this handler
+    // are separate `droppable()` registrations, so they interleave: both
+    // repositories publish unauthenticated BEFORE signOut() resolves, which
+    // flips the gate to the sign-in form while the revocation is still in
+    // flight — on web, for that POST's full duration (up to the 10s
+    // receiveTimeout). A sign-in the server accepted inside that window
+    // must not be undone by a sign-out that has already been superseded by
+    // the user's newer intent.
+    //
+    // Only a live session is protected. Every other state — a loading
+    // state, a sign-in failure, an already-unauthenticated mirror emission
+    // — still flips, because sign-out is intent-to-leave and has nowhere
+    // better to land.
+    if (state is AuthAuthenticated) return;
+
     emit(const AuthUnauthenticated());
   }
 
