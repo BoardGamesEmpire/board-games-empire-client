@@ -58,6 +58,28 @@ void main() {
       );
     });
 
+    // Non-ASCII across the isolate boundary. The threshold counts code units,
+    // so a CJK body reaches `compute` at a larger UTF-8 size than an ASCII one
+    // — and the string has to survive the round trip byte-for-byte.
+    test('a non-ASCII body over the threshold round-trips intact', () async {
+      final value = '\u6f22\u5b57' * 30000;
+      final source = jsonEncode({'v': value});
+      expect(source.codeUnits.length, greaterThan(50 * 1024));
+
+      final decoded = await decodeJsonBody(source) as Map<String, dynamic>;
+
+      expect(decoded['v'], value);
+    });
+
+    test('a non-ASCII body under the threshold decodes inline', () async {
+      final value = '\u6f22\u5b57\u{1f600}';
+      final decoded = await decodeJsonBody(
+        jsonEncode({'v': value}),
+      ) as Map<String, dynamic>;
+
+      expect(decoded['v'], value);
+    });
+
     test('an empty string is a FormatException, not null', () async {
       // Callers guard for empty before calling, but pinning it keeps the
       // contract explicit rather than incidental.

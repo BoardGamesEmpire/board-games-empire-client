@@ -549,6 +549,31 @@ void main() {
           },
         );
 
+        // A 3xx only reaches the classifier because the per-server Dio sets
+        // `validateStatus: (_) => true`; it carries no rejection semantics, so
+        // it is transient. Asked for by #182 and the one status shape the
+        // household suite had no case for.
+        test('a 302 carries no rejection semantics and is transient', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Moved</html>',
+              statusCode: 302,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemoteTransientException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                302,
+              ),
+            ),
+          );
+        });
+
         test('a valid envelope still maps through the real pipeline', () async {
           final remote = remoteOver(
             cannedDio(

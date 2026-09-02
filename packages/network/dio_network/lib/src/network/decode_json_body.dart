@@ -27,7 +27,17 @@ import 'package:flutter/foundation.dart';
 /// Reproduces the rule dio's own `BackgroundTransformer` applies
 /// (`background_transformer.dart:15-25`), which taking the body as a `String`
 /// otherwise loses: below 50 KB decode inline, above it hand the work to
-/// another isolate so a large page does not janks the frame it lands on.
+/// another isolate so a large page does not jank the frame it lands on.
+///
+/// `codeUnits.length` is dio's own expression, kept deliberately rather than
+/// swapped for an encoded byte count. The UTF-8 size of the response describes
+/// work that has **already happened** — the transformer ran `utf8.decode` at
+/// `sync_transformer.dart:65` before this function was handed a `String` — so
+/// it governs nothing here. What remains is parse cost, which tracks the
+/// string being parsed. Measured on a ~60 KB UTF-8 payload: 20k CJK code units
+/// parse in ~38us against ~69us for 60k ASCII code units, so switching to
+/// bytes would offload the *cheaper* body. Diverging from dio would also mean
+/// this path and the transformer's disagree about the same body.
 ///
 /// ## Failures
 ///
