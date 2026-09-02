@@ -7,6 +7,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../support/canned_adapter.dart';
+
 class MockDio extends Mock implements Dio {}
 
 /// A household row as `GET /api/households` embeds it — the scalar columns
@@ -529,6 +531,86 @@ void main() {
       expect(
         () => remote.fetchHouseholds(),
         throwsA(isA<HouseholdRemoteTransientException>()),
+      );
+    });
+  });
+
+  // Driven through a **real** Dio, not `MockDio`, which stubs `Dio.get` itself
+  // and so never runs Dio's own body handling. The read path needs its own
+  // cases and not just the create path's: the two ask Dio for the body
+  // separately, and a stub only proves the type argument matches, not that the
+  // status survives (#265).
+  group('the read path also keeps the status when the body will not parse', () {
+    HouseholdRemoteDataSource remoteOver(Dio dio) =>
+        HouseholdRemoteDataSourceImpl(dio);
+
+    test('a 2xx HTML body under a JSON content type is permanent', () async {
+      final r = remoteOver(
+        cannedDio(body: '<html>Portal</html>', statusCode: 200),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
+      );
+    });
+
+    test('a truncated JSON 2xx is permanent', () async {
+      final r = remoteOver(
+        cannedDio(body: '{"households": [', statusCode: 200),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(isA<HouseholdRemotePermanentException>()),
+      );
+    });
+
+    test('a 404 with an HTML body is still transient (#297)', () async {
+      final r = remoteOver(
+        cannedDio(
+          body: '<html>Not Found</html>',
+          statusCode: 404,
+          contentType: 'text/html',
+        ),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
+    });
+
+    test('a 302 carries no rejection semantics and is transient', () async {
+      final r = remoteOver(
+        cannedDio(
+          body: '<html>Moved</html>',
+          statusCode: 302,
+          contentType: 'text/html',
+        ),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            302,
+          ),
+        ),
       );
     });
   });
