@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -84,8 +86,12 @@ Map<String, dynamic> _envelope(
   },
 };
 
-Response<Object?> _resp(Object? data, {int? statusCode = 200}) => Response(
-  data: data,
+/// [data] is the raw body. A `String` is sent verbatim — that is what a
+/// captive portal or a truncated response actually looks like on the wire —
+/// and anything else is encoded, because the data source now asks Dio for
+/// `Response<String>` and decodes the body itself (#265, #182).
+Response<String> _resp(Object? data, {int? statusCode = 200}) => Response(
+  data: data == null ? null : (data is String ? data : jsonEncode(data)),
   statusCode: statusCode,
   requestOptions: RequestOptions(path: '/api/households'),
 );
@@ -94,9 +100,9 @@ void main() {
   late MockDio mockDio;
   late HouseholdRemoteDataSourceImpl remote;
 
-  void stubGet(Response<Object?> response) {
+  void stubGet(Response<String> response) {
     when(
-      () => mockDio.get<Object?>(
+      () => mockDio.get<String>(
         any(),
         queryParameters: any(named: 'queryParameters'),
       ),
@@ -273,7 +279,7 @@ void main() {
   group('fetchHouseholds — the request', () {
     Map<String, dynamic> capturedQuery() =>
         verify(
-              () => mockDio.get<Object?>(
+              () => mockDio.get<String>(
                 any(),
                 queryParameters: captureAny(named: 'queryParameters'),
               ),
@@ -304,7 +310,7 @@ void main() {
       await remote.fetchHouseholds();
 
       verify(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           '/api/households',
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -319,7 +325,7 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
       verifyNever(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           any(),
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -354,7 +360,7 @@ void main() {
       await remote.fetchHouseholds(page: 1001, limit: 100);
 
       verify(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           any(),
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -365,7 +371,7 @@ void main() {
   group('fetchHouseholds — failures', () {
     void stubGetThrows(Object error) {
       when(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           any(),
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -374,7 +380,7 @@ void main() {
 
     DioException dioError(
       DioExceptionType type, {
-      Response<Object?>? response,
+      Response<String>? response,
     }) => DioException(
       type: type,
       requestOptions: RequestOptions(path: '/api/households'),
@@ -524,6 +530,30 @@ void main() {
         () => remote.fetchHouseholds(),
         throwsA(isA<HouseholdRemoteTransientException>()),
       );
+    });
+  });
+
+  // Asking Dio for `Response<String>` bypasses its `BackgroundTransformer`,
+  // which offloads jsonDecode above 50 KB. The data source reproduces that
+  // threshold itself, so a page large enough to cross it must still decode.
+  group('a large page still decodes (off-isolate path)', () {
+    test('a body over the 50 KB isolate threshold parses correctly', () async {
+      final rows = List.generate(
+        100,
+        (i) => _householdRow(
+          id: 'hh_$i',
+          name: 'Household $i ${'padding' * 40}',
+          members: [_memberRow(id: 'hm_$i', householdId: 'hh_$i')],
+        ),
+      );
+      final body = jsonEncode(_envelope(rows, total: rows.length));
+      expect(body.codeUnits.length, greaterThan(50 * 1024));
+
+      stubGet(_resp(body));
+
+      final result = await remote.fetchHouseholds();
+      expect(result.items, hasLength(100));
+      expect(result.items.first.household.id, 'hh_0');
     });
   });
 }

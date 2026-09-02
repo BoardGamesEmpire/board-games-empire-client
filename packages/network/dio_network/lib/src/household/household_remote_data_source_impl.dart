@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../network/decode_json_body.dart';
+
 /// [HouseholdRemoteDataSource] over a **per-server** Dio instance (#39).
 ///
 /// The path is relative — the per-server Dio carries the base URL
@@ -34,9 +36,9 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     _checkPaging(page: page, limit: limit);
 
     const action = 'Household list';
-    late final Response<Object?> response;
+    late final Response<String> response;
     try {
-      response = await _dio.get<Object?>(
+      response = await _dio.get<String>(
         _basePath,
         queryParameters: {'page': page, 'limit': limit},
       );
@@ -59,23 +61,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       throw _classifyStatus(status, '$action returned $status', cause: null);
     }
 
-    // Typed as `Object?` deliberately, and checked here rather than by Dio.
-    // Asking Dio for `Response<Map<String, dynamic>>` makes it cast the
-    // decoded body itself, before this method sees anything — so a 2xx whose
-    // body is not a JSON object (an HTML captive-portal page, a bare array)
-    // would throw from inside `get()`, land in the `on Object` branch above,
-    // and be reported as **transient**, retrying forever against a response
-    // that will never parse. The interface promises that case is permanent,
-    // so the check belongs after the status is known.
-    final body = response.data;
-    if (body is! Map<String, dynamic>) {
-      throw HouseholdRemotePermanentException(
-        body == null
-            ? '$action returned an empty body'
-            : '$action returned a body that is not a JSON object',
-        statusCode: status,
-      );
-    }
+    final body = await _requireJsonObject(
+      response.data,
+      action: action,
+      status: status,
+    );
 
     try {
       return PaginatedResult.fromEnvelope(
@@ -100,9 +90,10 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     String? language,
     String? visibility,
   }) async {
-    late final Response<Map<String, dynamic>> response;
+    const action = 'Household create';
+    late final Response<String> response;
     try {
-      response = await _dio.post<Map<String, dynamic>>(
+      response = await _dio.post<String>(
         '/api/households',
         data: {
           'name': name,
@@ -113,12 +104,10 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         },
       );
     } on DioException catch (error) {
-      throw _classifyDioException(error, action: 'Household create');
+      throw _classifyDioException(error, action: action);
     } on Object catch (error) {
-      // Contract breach territory (nothing else should escape Dio); stay
-      // conservative and transient so the caller can retry.
       throw HouseholdRemoteTransientException(
-        'Household create failed unexpectedly',
+        '$action failed unexpectedly',
         cause: error,
       );
     }
@@ -130,15 +119,16 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
     if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        'Household create returned $status',
-        cause: null,
-      );
+      throw _classifyStatus(status, '$action returned $status', cause: null);
     }
 
-    final data = response.data;
-    final household = data == null ? null : data['household'];
+    final data = await _requireJsonObject(
+      response.data,
+      action: action,
+      status: status,
+    );
+
+    final household = data['household'];
     if (household is! Map<String, dynamic>) {
       throw HouseholdRemotePermanentException(
         'Household create response missing a "household" object',
@@ -285,6 +275,81 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         '(page - 1) * limit must not exceed $maxPageDepth',
       );
     }
+  }
+
+  /// Decodes a response body the transport was told not to touch, and
+  /// requires it to be a JSON object.
+  ///
+  /// Both request methods ask Dio for `Response<String>`, which is the only
+  /// type argument that keeps Dio out of the body entirely: `DioMixin.fetch`
+  /// forces `responseType` from `T` — `String` gives `plain`, and **anything
+  /// else, `Object?` included, gives `json`** (`dio_mixin.dart:417-427`).
+  ///
+  /// That matters because either half of Dio's own handling loses the status.
+  /// Asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded
+  /// body; asking for anything non-`String` makes it `jsonDecode` a body whose
+  /// **content type** claims JSON. A cast failure or a `FormatException` both
+  /// escape as `DioException(type: unknown)` with **no response attached**, so
+  /// `_classifyDioException` sees a null status and returns transient — for a
+  /// server that answered, and whatever it answered with.
+  ///
+  /// The per-server Dio sets `validateStatus: (_) => true` (`DioFactory`), so
+  /// every status reached that path: an HTML 400 from a proxy retried forever,
+  /// and a 404 was transient by accident rather than by the rule #297 wrote.
+  /// Decoding here, after the status is known, restores both and makes a
+  /// non-object 2xx permanent as the interface documents (#265, #182).
+  ///
+  /// Realistic triggers: a captive portal or SPA catch-all serving HTML — under
+  /// `text/html` **or** `application/json`, since content type is not a promise
+  /// about content — and a dropped connection truncating a genuine JSON body.
+  Future<Map<String, dynamic>> _requireJsonObject(
+    String? raw, {
+    required String action,
+    required int status,
+  }) async {
+    if (raw == null || raw.isEmpty) {
+      throw HouseholdRemotePermanentException(
+        '$action returned an empty body',
+        statusCode: status,
+      );
+    }
+
+    final Object? decoded;
+    try {
+      decoded = await decodeJsonBody(raw);
+    } on FormatException catch (error) {
+      throw HouseholdRemotePermanentException(
+        '$action returned a body that is not JSON',
+        statusCode: status,
+        cause: error,
+      );
+    } on Object catch (error) {
+      // Not a statement about the response. `decodeJsonBody` hands a large body
+      // to another isolate, and a failure to spawn one is a local, momentary
+      // condition — so this is the one decode failure that must stay
+      // **transient**. Permanent would cancel the queued operation and discard
+      // the user's household over a fault the server had no part in, which is
+      // the shape #297 exists to prevent.
+      //
+      // This sits outside the `on Object` net around the Dio call above,
+      // because decoding moved out from under it when the body became a
+      // `String` — so without this clause the interface's "callers never see a
+      // raw transport exception" would not hold, and `CreateHouseholdBloc`
+      // catches `HouseholdRemoteException` with no fallback beneath it.
+      throw HouseholdRemoteTransientException(
+        '$action could not be decoded',
+        statusCode: status,
+        cause: error,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw HouseholdRemotePermanentException(
+        '$action returned a body that is not a JSON object',
+        statusCode: status,
+      );
+    }
+    return decoded;
   }
 
   /// A response status, when present, is authoritative; without one the
