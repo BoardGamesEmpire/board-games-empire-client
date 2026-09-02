@@ -381,7 +381,13 @@ void main() {
 
           await expectLater(
             () => remote.createHousehold(name: 'HQ'),
-            throwsA(isA<HouseholdRemotePermanentException>()),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                200,
+              ),
+            ),
           );
         });
 
@@ -392,7 +398,13 @@ void main() {
 
           await expectLater(
             () => remote.createHousehold(name: 'HQ'),
-            throwsA(isA<HouseholdRemotePermanentException>()),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                201,
+              ),
+            ),
           );
         });
 
@@ -457,7 +469,13 @@ void main() {
 
           await expectLater(
             () => remote.createHousehold(name: 'HQ'),
-            throwsA(isA<HouseholdRemoteTransientException>()),
+            throwsA(
+              isA<HouseholdRemoteTransientException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                502,
+              ),
+            ),
           );
         });
 
@@ -476,7 +494,13 @@ void main() {
 
           await expectLater(
             () => remote.createHousehold(name: 'HQ'),
-            throwsA(isA<HouseholdRemotePermanentException>()),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                403,
+              ),
+            ),
           );
         });
 
@@ -493,7 +517,13 @@ void main() {
 
             await expectLater(
               () => remote.createHousehold(name: 'HQ'),
-              throwsA(isA<HouseholdRemotePermanentException>()),
+              throwsA(
+                isA<HouseholdRemotePermanentException>().having(
+                  (e) => e.statusCode,
+                  'statusCode',
+                  200,
+                ),
+              ),
             );
           },
         );
@@ -525,7 +555,13 @@ void main() {
 
           await expectLater(
             () => remote.createHousehold(name: 'HQ'),
-            throwsA(isA<HouseholdRemotePermanentException>()),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                201,
+              ),
+            ),
           );
         });
 

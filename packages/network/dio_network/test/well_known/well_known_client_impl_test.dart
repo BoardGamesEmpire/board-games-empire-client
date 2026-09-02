@@ -335,7 +335,13 @@ void main() {
 
         await expectLater(
           () => client.fetchIdentity(_kServerUrl),
-          throwsA(isA<WellKnownInvalidResponseException>()),
+          throwsA(
+            isA<WellKnownInvalidResponseException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
         );
       });
 
@@ -402,7 +408,13 @@ void main() {
 
         await expectLater(
           () => client.fetchIdentity(_kServerUrl),
-          throwsA(isA<WellKnownInvalidResponseException>()),
+          throwsA(
+            isA<WellKnownInvalidResponseException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
         );
       });
 
@@ -424,7 +436,13 @@ void main() {
 
         await expectLater(
           () => client.fetchIdentity(_kServerUrl),
-          throwsA(isA<WellKnownInvalidResponseException>()),
+          throwsA(
+            isA<WellKnownInvalidResponseException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
         );
       });
 

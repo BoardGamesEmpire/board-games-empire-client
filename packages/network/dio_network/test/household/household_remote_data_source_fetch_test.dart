@@ -568,7 +568,13 @@ void main() {
 
       await expectLater(
         () => r.fetchHouseholds(),
-        throwsA(isA<HouseholdRemotePermanentException>()),
+        throwsA(
+          isA<HouseholdRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
       );
     });
 
