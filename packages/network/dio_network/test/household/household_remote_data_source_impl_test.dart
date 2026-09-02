@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:network_interface/network_interface.dart';
 
 import 'package:dio_network/dio_network.dart';
+
+import '../support/canned_adapter.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -32,14 +36,12 @@ Map<String, dynamic> _createEnvelope(Map<String, dynamic> household) => {
   'household': household,
 };
 
-Response<Map<String, dynamic>> _resp(
-  Map<String, dynamic>? data, {
-  int? statusCode = 201,
-}) => Response(
-  data: data,
-  statusCode: statusCode,
-  requestOptions: RequestOptions(path: '/api/households'),
-);
+Response<String> _resp(Map<String, dynamic>? data, {int? statusCode = 201}) =>
+    Response(
+      data: data == null ? null : jsonEncode(data),
+      statusCode: statusCode,
+      requestOptions: RequestOptions(path: '/api/households'),
+    );
 
 DioException _dioError(DioExceptionType type, {Response<dynamic>? response}) =>
     DioException(
@@ -52,16 +54,14 @@ void main() {
   late MockDio mockDio;
   late HouseholdRemoteDataSourceImpl remote;
 
-  void stubPost(Response<Map<String, dynamic>> response) {
-    when(
-      () => mockDio.post<Map<String, dynamic>>(any(), data: any(named: 'data')),
-    ).thenAnswer((_) async => response);
+  void stubPost(Response<String> response) {
+    when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+        .thenAnswer((_) async => response);
   }
 
   void stubPostThrows(Object error) {
-    when(
-      () => mockDio.post<Map<String, dynamic>>(any(), data: any(named: 'data')),
-    ).thenThrow(error);
+    when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+        .thenThrow(error);
   }
 
   setUp(() {
@@ -118,10 +118,8 @@ void main() {
         await remote.createHousehold(name: 'Game Night HQ');
 
         verify(
-          () => mockDio.post<Map<String, dynamic>>(
-            '/api/households',
-            data: any(named: 'data'),
-          ),
+          () =>
+              mockDio.post<String>('/api/households', data: any(named: 'data')),
         ).called(1);
       });
     });
@@ -129,7 +127,7 @@ void main() {
     group('request body', () {
       Map<String, dynamic> capturedBody() =>
           verify(
-                () => mockDio.post<Map<String, dynamic>>(
+                () => mockDio.post<String>(
                   any(),
                   data: captureAny(named: 'data'),
                 ),
@@ -357,6 +355,274 @@ void main() {
         );
       });
     });
+
+    // These run against a **real** Dio with a canned adapter, not `MockDio`.
+    // The defect in #265 lives inside Dio's own body cast, which a stubbed
+    // `Dio` never performs — see `test/support/canned_adapter.dart`.
+    //
+    // `permissiveStatus: true` mirrors production: `DioFactory` builds the
+    // per-server Dio with `validateStatus: (_) => true`, so every status comes
+    // back as a Response and the cast runs on all of them — which is why the
+    // misclassification here is not limited to 2xx.
+    group(
+      'an unparseable body classifies by status, not as transport (#265)',
+      () {
+        HouseholdRemoteDataSource remoteOver(Dio dio) =>
+            HouseholdRemoteDataSourceImpl(dio);
+
+        test('2xx with a String body is permanent', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<!doctype html><html>Captive portal</html>',
+              statusCode: 200,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                200,
+              ),
+            ),
+          );
+        });
+
+        test('2xx with a bare JSON array is permanent', () async {
+          final remote = remoteOver(
+            cannedDio(body: '[{"id": "hh_1"}]', statusCode: 201),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                201,
+              ),
+            ),
+          );
+        });
+
+        // The status still decides. A 400 is a rejection whatever the body is,
+        // and must not be softened to transient just because a proxy replaced
+        // the envelope with an error page.
+        test(
+          'a non-2xx with a non-JSON body still classifies by status',
+          () async {
+            final remote = remoteOver(
+              cannedDio(
+                body: '<html>Bad Request</html>',
+                statusCode: 400,
+                contentType: 'text/html',
+              ),
+            );
+
+            await expectLater(
+              () => remote.createHousehold(name: 'HQ'),
+              throwsA(
+                isA<HouseholdRemotePermanentException>().having(
+                  (e) => e.statusCode,
+                  'statusCode',
+                  400,
+                ),
+              ),
+            );
+          },
+        );
+
+        // #297's rule has to survive reaching the classifier by this new route:
+        // a 404 is transient whether its body parses or not.
+        test('a 404 with an HTML body is still transient (#297)', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Not Found</html>',
+              statusCode: 404,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemoteTransientException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                404,
+              ),
+            ),
+          );
+        });
+
+        test('a 5xx with an HTML body is transient', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Bad Gateway</html>',
+              statusCode: 502,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemoteTransientException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                502,
+              ),
+            ),
+          );
+        });
+
+        // An injected Dio need not carry the factory's permissive
+        // `validateStatus`, in which case a non-2xx arrives as a thrown
+        // `badResponse`. The status must still decide.
+        test('a thrown badResponse still classifies by status', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Forbidden</html>',
+              statusCode: 403,
+              contentType: 'text/html',
+              permissiveStatus: false,
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                403,
+              ),
+            ),
+          );
+        });
+
+        // Dio decodes on content type, not on what the body turns out to be, so
+        // an HTML page served as `application/json` and a truncated JSON body
+        // both throw a `FormatException` out of the transformer — losing the
+        // status exactly like the cast did.
+        test(
+          'a 2xx HTML body under a JSON content type is permanent',
+          () async {
+            final remote = remoteOver(
+              cannedDio(body: '<html>Portal</html>', statusCode: 200),
+            );
+
+            await expectLater(
+              () => remote.createHousehold(name: 'HQ'),
+              throwsA(
+                isA<HouseholdRemotePermanentException>().having(
+                  (e) => e.statusCode,
+                  'statusCode',
+                  200,
+                ),
+              ),
+            );
+          },
+        );
+
+        test(
+          'a 400 under a JSON content type still classifies by status',
+          () async {
+            final remote = remoteOver(
+              cannedDio(body: '<html>Bad Request</html>', statusCode: 400),
+            );
+
+            await expectLater(
+              () => remote.createHousehold(name: 'HQ'),
+              throwsA(
+                isA<HouseholdRemotePermanentException>().having(
+                  (e) => e.statusCode,
+                  'statusCode',
+                  400,
+                ),
+              ),
+            );
+          },
+        );
+
+        test('a truncated JSON 2xx is permanent', () async {
+          final remote = remoteOver(
+            cannedDio(body: '{"household": {"id"', statusCode: 201),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                201,
+              ),
+            ),
+          );
+        });
+
+        test(
+          'a truncated JSON 404 is still transient with its status',
+          () async {
+            final remote = remoteOver(
+              cannedDio(body: '{"message"', statusCode: 404),
+            );
+
+            await expectLater(
+              () => remote.createHousehold(name: 'HQ'),
+              throwsA(
+                isA<HouseholdRemoteTransientException>().having(
+                  (e) => e.statusCode,
+                  'statusCode',
+                  404,
+                ),
+              ),
+            );
+          },
+        );
+
+        // A 3xx only reaches the classifier because the per-server Dio sets
+        // `validateStatus: (_) => true`; it carries no rejection semantics, so
+        // it is transient. Asked for by #182 and the one status shape the
+        // household suite had no case for.
+        test('a 302 carries no rejection semantics and is transient', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Moved</html>',
+              statusCode: 302,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemoteTransientException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                302,
+              ),
+            ),
+          );
+        });
+
+        test('a valid envelope still maps through the real pipeline', () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: jsonEncode(_createEnvelope(_householdJson())),
+              statusCode: 201,
+            ),
+          );
+
+          final household = await remote.createHousehold(name: 'HQ');
+          expect(household.id, 'hh_server_1');
+        });
+      },
+    );
 
     group('exception taxonomy', () {
       test('both concrete types are HouseholdRemoteException', () {

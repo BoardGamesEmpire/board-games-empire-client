@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+
+import '../support/canned_adapter.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -84,8 +88,12 @@ Map<String, dynamic> _envelope(
   },
 };
 
-Response<Object?> _resp(Object? data, {int? statusCode = 200}) => Response(
-  data: data,
+/// [data] is the raw body. A `String` is sent verbatim — that is what a
+/// captive portal or a truncated response actually looks like on the wire —
+/// and anything else is encoded, because the data source now asks Dio for
+/// `Response<String>` and decodes the body itself (#265, #182).
+Response<String> _resp(Object? data, {int? statusCode = 200}) => Response(
+  data: data == null ? null : (data is String ? data : jsonEncode(data)),
   statusCode: statusCode,
   requestOptions: RequestOptions(path: '/api/households'),
 );
@@ -94,9 +102,9 @@ void main() {
   late MockDio mockDio;
   late HouseholdRemoteDataSourceImpl remote;
 
-  void stubGet(Response<Object?> response) {
+  void stubGet(Response<String> response) {
     when(
-      () => mockDio.get<Object?>(
+      () => mockDio.get<String>(
         any(),
         queryParameters: any(named: 'queryParameters'),
       ),
@@ -273,7 +281,7 @@ void main() {
   group('fetchHouseholds — the request', () {
     Map<String, dynamic> capturedQuery() =>
         verify(
-              () => mockDio.get<Object?>(
+              () => mockDio.get<String>(
                 any(),
                 queryParameters: captureAny(named: 'queryParameters'),
               ),
@@ -304,7 +312,7 @@ void main() {
       await remote.fetchHouseholds();
 
       verify(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           '/api/households',
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -319,7 +327,7 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
       verifyNever(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           any(),
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -354,7 +362,7 @@ void main() {
       await remote.fetchHouseholds(page: 1001, limit: 100);
 
       verify(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           any(),
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -365,7 +373,7 @@ void main() {
   group('fetchHouseholds — failures', () {
     void stubGetThrows(Object error) {
       when(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           any(),
           queryParameters: any(named: 'queryParameters'),
         ),
@@ -374,7 +382,7 @@ void main() {
 
     DioException dioError(
       DioExceptionType type, {
-      Response<Object?>? response,
+      Response<String>? response,
     }) => DioException(
       type: type,
       requestOptions: RequestOptions(path: '/api/households'),
@@ -524,6 +532,116 @@ void main() {
         () => remote.fetchHouseholds(),
         throwsA(isA<HouseholdRemoteTransientException>()),
       );
+    });
+  });
+
+  // Driven through a **real** Dio, not `MockDio`, which stubs `Dio.get` itself
+  // and so never runs Dio's own body handling. The read path needs its own
+  // cases and not just the create path's: the two ask Dio for the body
+  // separately, and a stub only proves the type argument matches, not that the
+  // status survives (#265).
+  group('the read path also keeps the status when the body will not parse', () {
+    HouseholdRemoteDataSource remoteOver(Dio dio) =>
+        HouseholdRemoteDataSourceImpl(dio);
+
+    test('a 2xx HTML body under a JSON content type is permanent', () async {
+      final r = remoteOver(
+        cannedDio(body: '<html>Portal</html>', statusCode: 200),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
+      );
+    });
+
+    test('a truncated JSON 2xx is permanent', () async {
+      final r = remoteOver(
+        cannedDio(body: '{"households": [', statusCode: 200),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
+      );
+    });
+
+    test('a 404 with an HTML body is still transient (#297)', () async {
+      final r = remoteOver(
+        cannedDio(
+          body: '<html>Not Found</html>',
+          statusCode: 404,
+          contentType: 'text/html',
+        ),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
+    });
+
+    test('a 302 carries no rejection semantics and is transient', () async {
+      final r = remoteOver(
+        cannedDio(
+          body: '<html>Moved</html>',
+          statusCode: 302,
+          contentType: 'text/html',
+        ),
+      );
+
+      await expectLater(
+        () => r.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            302,
+          ),
+        ),
+      );
+    });
+  });
+
+  // Asking Dio for `Response<String>` bypasses its `BackgroundTransformer`,
+  // which offloads jsonDecode above 50 KB. The data source reproduces that
+  // threshold itself, so a page large enough to cross it must still decode.
+  group('a large page still decodes (off-isolate path)', () {
+    test('a body over the 50 KB isolate threshold parses correctly', () async {
+      final rows = List.generate(
+        100,
+        (i) => _householdRow(
+          id: 'hh_$i',
+          name: 'Household $i ${'padding' * 40}',
+          members: [_memberRow(id: 'hm_$i', householdId: 'hh_$i')],
+        ),
+      );
+      final body = jsonEncode(_envelope(rows, total: rows.length));
+      expect(body.codeUnits.length, greaterThan(50 * 1024));
+
+      stubGet(_resp(body));
+
+      final result = await remote.fetchHouseholds();
+      expect(result.items, hasLength(100));
+      expect(result.items.first.household.id, 'hh_0');
     });
   });
 }
