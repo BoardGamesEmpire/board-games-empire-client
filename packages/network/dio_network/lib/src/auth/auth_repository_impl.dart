@@ -120,7 +120,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         data: {'email': email, 'password': password},
       );
     } on DioException catch (e) {
-      throw _mapDioException(e);
+      throw _mapDioException(e, credentialGrant: true);
     }
 
     final body = await _requireGrantBody(response, context: 'sign-in');
@@ -164,7 +164,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         },
       );
     } on DioException catch (e) {
-      throw _mapDioException(e);
+      throw _mapDioException(e, credentialGrant: true);
     }
 
     final body = await _requireGrantBody(response, context: 'sign-up');
@@ -319,7 +319,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // arriving here as `DioException(type: unknown)` with no response — so
       // a captive portal's HTML reached the user as "can't reach the
       // server" with the dead session still on disk.
-      final mapped = _mapDioException(e);
+      final mapped = _mapDioException(e, credentialGrant: false);
 
       // A thrown 401/403 is the SAME definitive negative the response path
       // settles below, and it has to settle the same way. Rethrowing it left
@@ -758,11 +758,29 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// the user off the unauthenticated state this is in the middle of
   /// establishing, over a fault that changes nothing about the answer.
   ///
-  /// Safe to contain because `TokenStorageService.clear()` sets its sign-out
-  /// latch SYNCHRONOUSLY, before the delete that failed, so `retrieve()` — and
-  /// therefore the `TokenInterceptor` and any same-process `getSession` —
-  /// already report nothing stored. A surviving payload is unreadable for the
-  /// rest of the process and gone at the next cold start.
+  /// Contained safely **for this process**: `TokenStorageService.clear()` sets
+  /// its sign-out latch SYNCHRONOUSLY, before the delete that failed, so
+  /// `retrieve()` — and therefore the `TokenInterceptor` and any same-process
+  /// `getSession` — already report nothing stored.
+  ///
+  /// It is NOT gone at the next cold start, and an earlier version of this
+  /// comment said it was. That latch is in-memory and unpersisted
+  /// (`token_storage_service.dart:55-71`), and `retrieve()` only self-heals a
+  /// payload it cannot *decode* — a well-formed one that survived a failed
+  /// delete is read again by a fresh instance, where `restoreCachedSession`
+  /// may adopt it offline. That residual predates this method: the unguarded
+  /// `clear()` left exactly the same bytes on disk and merely failed loudly
+  /// while doing it.
+  ///
+  /// What containment does newly cost is candour. `AuthRepository.getSession`
+  /// promises that a null for a definitive negative means "the stored session
+  /// material is cleared" (`auth_repository.dart:39-41`), and on this path
+  /// that promise cannot be kept when the delete throws. The log record is
+  /// currently the only trace. Neither of the honest repairs is free — a typed
+  /// throw here would let `_finalizeCredentialGrant`'s `on AuthException`
+  /// catch keep a session the server just disowned, and a durable tombstone is
+  /// a `TokenStorageService` change that also fixes the pre-existing residual
+  /// above — so the choice is deliberately left open rather than guessed at.
   Future<void> _clearQuietly(String what) async {
     try {
       await _tokenStorage.clear();
@@ -988,7 +1006,21 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  AuthException _mapDioException(DioException e) {
+  /// [credentialGrant] gates the duplicate-email probe, which is meaningful
+  /// only where an account is being created or a credential presented.
+  ///
+  /// `_isEmailAlreadyExists` treats **any** 409 as a duplicate, so without
+  /// this a 409 from the session endpoint — a route that cannot mean
+  /// "that email is taken" — reached the caller as
+  /// `AuthEmailAlreadyExistsException` instead of the server fault it is.
+  /// The response path never had the bug: it classifies a 409 by status
+  /// before any envelope is consulted. Only the thrown path, reachable with
+  /// an injected `Dio` whose `validateStatus` is not this factory's, routed
+  /// a session 409 through the grant vocabulary.
+  AuthException _mapDioException(
+    DioException e, {
+    required bool credentialGrant,
+  }) {
     // The wire-level failure itself is logged by NetworkLogInterceptor
     // (redacted URI + dio_error_type + status); here we only map it to the
     // domain exception the bloc will categorise (#100 layering).
@@ -998,7 +1030,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       return const AuthInvalidCredentialsException();
     }
 
-    if (_isEmailAlreadyExists(status, e.response?.data)) {
+    if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
     }
 

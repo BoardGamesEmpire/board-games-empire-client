@@ -414,6 +414,28 @@ void main() {
       );
     });
 
+    test('a thrown 409 on the SESSION endpoint is a server fault, not a '
+        'duplicate email', () async {
+      // `/get-session` cannot mean "that email is taken", but
+      // `_isEmailAlreadyExists` treats any 409 as a duplicate — so the grant
+      // vocabulary used to leak onto this path. The response path never had
+      // the bug; only the thrown one.
+      final repo = repoWith(
+        cannedDio(body: '{}', statusCode: 409, permissiveStatus: false),
+      );
+
+      await expectLater(
+        repo.getSession(),
+        throwsA(
+          isA<AuthServerException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            409,
+          ),
+        ),
+      );
+    });
+
     test('a thrown 409 maps without reading the body at all', () async {
       final repo = repoWith(_routingDio({'/sign-up/email': (_kHtml, 409)}));
 

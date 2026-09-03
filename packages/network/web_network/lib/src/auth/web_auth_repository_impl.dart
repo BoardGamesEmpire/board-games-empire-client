@@ -140,7 +140,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         data: {'email': email, 'password': password},
       );
     } on DioException catch (e) {
-      throw _mapDioException(e);
+      throw _mapDioException(e, credentialGrant: true);
     }
 
     final body = await _requireGrantBody(response, context: 'sign-in');
@@ -187,7 +187,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         },
       );
     } on DioException catch (e) {
-      throw _mapDioException(e);
+      throw _mapDioException(e, credentialGrant: true);
     }
 
     final body = await _requireGrantBody(response, context: 'sign-up');
@@ -260,7 +260,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // "unknown" to every later subscriber — and, reaching
       // [_reconcileCredentialGrant] as an exception, it was bucketed as
       // indeterminate and kept a session the server had just disowned.
-      final mapped = _mapDioException(e);
+      final mapped = _mapDioException(e, credentialGrant: false);
 
       if (epoch != _sessionEpoch) {
         _log.warn(
@@ -1013,14 +1013,28 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  AuthException _mapDioException(DioException e) {
+  /// [credentialGrant] gates the duplicate-email probe, which is meaningful
+  /// only where an account is being created or a credential presented.
+  ///
+  /// `_isEmailAlreadyExists` treats **any** 409 as a duplicate, so without
+  /// this a 409 from the session endpoint — a route that cannot mean
+  /// "that email is taken" — reached the caller as
+  /// `AuthEmailAlreadyExistsException` instead of the server fault it is.
+  /// The response path never had the bug: it classifies a 409 by status
+  /// before any envelope is consulted. Only the thrown path, reachable with
+  /// an injected `Dio` whose `validateStatus` is not this factory's, routed
+  /// a session 409 through the grant vocabulary.
+  AuthException _mapDioException(
+    DioException e, {
+    required bool credentialGrant,
+  }) {
     final status = e.response?.statusCode;
     if (status == HttpStatusCode.unauthorized ||
         status == HttpStatusCode.forbidden) {
       return const AuthInvalidCredentialsException();
     }
 
-    if (_isEmailAlreadyExists(status, e.response?.data)) {
+    if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {
       return const AuthEmailAlreadyExistsException();
     }
 

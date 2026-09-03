@@ -279,6 +279,24 @@ void main() {
       );
     });
 
+    test('a thrown 409 on the SESSION endpoint is a server fault, not a '
+        'duplicate email', () async {
+      final repo = repoWith(
+        _routingDio({'/get-session': ('{}', 409)}, permissive: false),
+      );
+
+      await expectLater(
+        repo.getSession(),
+        throwsA(
+          isA<AuthServerException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            409,
+          ),
+        ),
+      );
+    });
+
     test('an envelope past the probe bound is not read, so the status '
         'decides', () async {
       final huge =
