@@ -280,18 +280,9 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// Decodes a response body the transport was told not to touch, and
   /// requires it to be a JSON object.
   ///
-  /// Both request methods ask Dio for `Response<String>`, which is the only
-  /// type argument that keeps Dio out of the body entirely: `DioMixin.fetch`
-  /// forces `responseType` from `T` — `String` gives `plain`, and **anything
-  /// else, `Object?` included, gives `json`** (`dio_mixin.dart:417-427`).
-  ///
-  /// That matters because either half of Dio's own handling loses the status.
-  /// Asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded
-  /// body; asking for anything non-`String` makes it `jsonDecode` a body whose
-  /// **content type** claims JSON. A cast failure or a `FormatException` both
-  /// escape as `DioException(type: unknown)` with **no response attached**, so
-  /// `_classifyDioException` sees a null status and returns transient — for a
-  /// server that answered, and whatever it answered with.
+  /// Both request methods ask Dio for `Response<String>`, the only type
+  /// argument that keeps Dio out of the body; `decodeJsonBody` carries the
+  /// rule and the two ways Dio's own handling destroys the status.
   ///
   /// The per-server Dio sets `validateStatus: (_) => true` (`DioFactory`), so
   /// every status reached that path: an HTML 400 from a proxy retried forever,

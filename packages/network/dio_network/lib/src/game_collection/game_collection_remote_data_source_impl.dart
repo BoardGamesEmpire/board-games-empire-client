@@ -251,15 +251,20 @@ class GameCollectionRemoteDataSourceImpl
       );
     }
 
-    // Typed as `Object?` deliberately. Asking Dio for
-    // `Response<Map<String, dynamic>>` makes it cast the decoded body itself
-    // (`data as T?`, dio_mixin.dart:741) on the success path, before this
-    // method sees anything. A 2xx whose body is not a JSON object — an HTML
-    // captive-portal page, a bare array — would throw a `TypeError` from
+    // Typed as `Object?` rather than `Response<Map<String, dynamic>>`, which
+    // would make Dio cast the decoded body before this method sees anything:
+    // a 2xx whose body is not a JSON object would throw a `TypeError` from
     // inside `request()`, reach the `on Object` branch above, and be reported
-    // as a **transient** failure that retries forever. The interface promises
-    // that case is permanent, so the type check belongs here, after the status
-    // is known.
+    // as **transient** and retried forever. The interface promises that case
+    // is permanent, so the type check belongs here, after the status is known.
+    //
+    // `Object?` stops the cast. It does NOT stop the decode — only
+    // `Response<String>` does that, and #351 is open to make the move. Until
+    // it lands this call site still hands Dio a body to `jsonDecode`, so an
+    // HTML page served under `application/json`, or a truncated JSON
+    // document, still loses its status here. `decodeJsonBody` carries the
+    // rule; this comment described the cast half alone for long enough that
+    // the decode half went unnoticed.
     final body = response.data;
     if (body is! Map<String, dynamic>) {
       throw GameCollectionRemotePermanentException(

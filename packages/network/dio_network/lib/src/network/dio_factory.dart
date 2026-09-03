@@ -42,6 +42,15 @@ class DefaultDioFactory implements DioFactory {
         receiveTimeout: const Duration(seconds: 10),
         headers: const {'Accept': 'application/json'},
         // We inspect status codes ourselves rather than letting Dio throw.
+        //
+        // That only works if Dio also stays out of the response BODY. Ask it
+        // for any type argument but `Response<String>` and a cast or a
+        // `jsonDecode` it drives itself throws from inside the call as
+        // `DioException(type: unknown)` with **no response attached** — the
+        // status gone before anything can classify it, so a permanent
+        // rejection reads as a transport fault and retries forever. Callers
+        // read the body themselves via `decodeJsonBody`, whose doc carries the
+        // rule and its one trap (#265, #182, #352, #358).
         validateStatus: (_) => true,
       ),
     );

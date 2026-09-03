@@ -9,7 +9,15 @@ import 'package:flutter/foundation.dart';
 /// `Response<String>`, because that is the only type argument which keeps Dio
 /// out of the body: `DioMixin.fetch` forces `responseType` from `T` — `String`
 /// gives `plain`, and **anything else, `Object?` included, gives `json`**
-/// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`).
+/// (`dio-5.11.0/lib/src/dio_mixin.dart:419-427`).
+///
+/// `dynamic` is the trap inside that sentence, and #358 was filed for a call
+/// site that fell into it. The forcing block is gated on `T != dynamic`, so
+/// `dynamic` never enters it — and falls straight through to `BaseOptions`'
+/// own default of `ResponseType.json` (`options.dart:153`). It decodes exactly
+/// like the rest while reading, at the call site, as though it had opted out.
+/// State the rule as **`String` is the only exemption**, never as "anything
+/// but `Map`": every other type argument, written or defaulted, ends at json.
 ///
 /// Either half of Dio's own handling destroys the status. Asking for
 /// `Response<Map<String, dynamic>>` makes Dio cast the decoded body; asking for
@@ -19,8 +27,8 @@ import 'package:flutter/foundation.dart';
 /// status-based classifier sees null and calls a permanent failure transient —
 /// which the drain then retries forever (#265, #182).
 ///
-/// Shared rather than copied so the threshold below lives in one place; a third
-/// caller is expected on #351.
+/// Shared rather than copied so the threshold below lives in one place; the
+/// collection remote is still to move onto it (#351).
 ///
 /// ## Threshold
 ///

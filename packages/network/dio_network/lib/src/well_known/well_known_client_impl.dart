@@ -37,23 +37,12 @@ class WellKnownClientImpl implements WellKnownClient {
   Future<ServerIdentity> fetchIdentity(String serverUrl) async {
     final url = _buildWellKnownUrl(serverUrl);
 
-    // `Response<String>` is the only type argument that keeps Dio out of the
-    // body entirely (#182). `DioMixin.fetch` forces `responseType` from `T` —
-    // `String` gives `plain`, and **anything else, `Object?` included, gives
-    // `json`** (`dio_mixin.dart:417-427`) — and each half of Dio's own
-    // handling loses the answer:
-    //
-    // * asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded
-    //   body before this method sees it, so an HTML page throws a `TypeError`;
-    // * asking for anything non-`String` makes Dio `jsonDecode` any body whose
-    //   **content type** claims JSON, so an HTML page served as
-    //   `application/json`, or a truncated JSON document, throws a
-    //   `FormatException`.
-    //
-    // Both escape as `DioException(type: unknown)` with **no response
-    // attached**, land in the catch below, and are reported as *unreachable* —
-    // telling the user to check their connection about a server that answered
-    // perfectly well.
+    // `Response<String>` keeps Dio out of the body; `decodeJsonBody` carries
+    // the rule and why no other type argument will do (#182, #358). Here the
+    // cost of getting it wrong is specific: Dio's own decode failure escapes
+    // with no response attached, lands in the catch below, and is reported as
+    // *unreachable* — telling the user to check their connection about a
+    // server that answered perfectly well.
     //
     // This is the single most likely first-run mistake: point the app at an
     // ordinary website and it answers `/.well-known/bge-identity` with an HTML
