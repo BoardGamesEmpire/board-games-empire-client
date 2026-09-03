@@ -85,7 +85,8 @@ abstract class FeedbackService {
 /// the user the truth ("sent" vs "saved, will send later"; on web the
 /// latter only lasts until reload).
 enum FeedbackSubmitResult {
-  /// Delivered to the server (201).
+  /// Delivered to the server (a 2xx that looked like the API answering;
+  /// the documented success status is 201).
   sent,
 
   /// Persisted to the durable sink for a later [FeedbackService.drainPending].
@@ -99,10 +100,16 @@ enum FeedbackSubmitResult {
 ///
 /// - [FeedbackTransientSubmissionException] — **retryable**: offline /
 ///   connection errors, timeouts, cancellation, 401 (session expired
-///   between resolve and send), 408, 429 (throttle), and 5xx. `submit`
-///   falls back to the durable sink for these; `drainPending` stops on
-///   them (covering the 429-stop requirement) and leaves the record
-///   persisted for the next opportunity.
+///   between resolve and send), 408, 429 (throttle), 5xx, and a 2xx whose
+///   body is present but cannot be decoded (#358). That last one is a
+///   *smell test, not proof*: it catches the common interception shape — a
+///   page where a payload belongs — but a truncated genuine response lands
+///   in it too, and that report DID arrive. Transient is chosen for exactly
+///   that reason: re-sending a delivered report is recoverable (the backend
+///   dedupes on `clientRequestId`), discarding an undelivered one is not.
+///   `submit` falls back to the durable sink for these; `drainPending` stops on them (covering the
+///   429-stop requirement) and leaves the record persisted for the next
+///   opportunity.
 /// - [FeedbackPermanentSubmissionException] — will **never** succeed on
 ///   retry: 400 (validation), 403 (feedback-banned), and every other
 ///   4xx. `submit` surfaces these to the caller without queueing
@@ -129,7 +136,8 @@ sealed class FeedbackSubmissionException implements Exception {
 }
 
 /// A retryable submission failure — offline, timeout, cancellation, 401,
-/// 408, 429, or 5xx. Queue-and-drain-later is the correct response.
+/// 408, 429, 5xx, or an undecodable 2xx body (#358).
+/// Queue-and-drain-later is the correct response.
 final class FeedbackTransientSubmissionException
     extends FeedbackSubmissionException {
   const FeedbackTransientSubmissionException(
@@ -138,8 +146,14 @@ final class FeedbackTransientSubmissionException
     this.statusCode,
   });
 
-  /// The HTTP status that classified as transient (401 / 408 / 429 /
-  /// 5xx), or null for connection-level failures with no response.
+  /// The status the response carried, or null when there was no response
+  /// (connection-level failures).
+  ///
+  /// Usually the status that classified the failure — 401 / 408 / 429 / 5xx.
+  /// Not always: on an undecodable 2xx (#358) the status is context and the
+  /// classification came from the body, and a device-local decode fault
+  /// reports the 2xx it was reading. Do not read this field as "the server
+  /// said this was transient".
   final int? statusCode;
 }
 

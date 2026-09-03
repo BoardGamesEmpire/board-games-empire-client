@@ -21,6 +21,11 @@ import 'package:observability/observability.dart';
 /// | 401, 408, 429                             | transient     |
 /// | 5xx                                       | transient     |
 /// | 400, 403, and every other 4xx             | permanent     |
+///
+/// These cases stub `Dio` itself, so Dio's own body handling never runs.
+/// The cases that need it — a body Dio cannot decode, and an unparseable
+/// 2xx that must not read as "sent" (#358) — drive a real `Dio` in
+/// `feedback_dio_transport_body_test.dart`.
 class _MockDio extends Mock implements Dio {}
 
 void main() {
@@ -40,8 +45,8 @@ void main() {
 
   RequestOptions options() => RequestOptions(path: '/api/feedback/reports');
 
-  Response<dynamic> response(int statusCode) =>
-      Response<dynamic>(requestOptions: options(), statusCode: statusCode);
+  Response<String> response(int statusCode) =>
+      Response<String>(requestOptions: options(), statusCode: statusCode);
 
   DioException statusError(int statusCode) => DioException(
     requestOptions: options(),
@@ -52,9 +57,13 @@ void main() {
   DioException typedError(DioExceptionType type) =>
       DioException(requestOptions: options(), type: type);
 
-  void stubThrow(Object error) =>
-      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
-          .thenThrow(error);
+  void stubThrow(Object error) => when(
+    () => dio.post<String>(
+      any(),
+      data: any<dynamic>(named: 'data'),
+      options: any(named: 'options'),
+    ),
+  ).thenThrow(error);
 
   Future<void> send() => FeedbackDioTransport(dio).send(report);
 
@@ -65,14 +74,33 @@ void main() {
 
     test('POSTs the report JSON to /api/feedback/reports and completes on '
         '201', () async {
-      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
-          .thenAnswer((_) async => response(201));
+      when(
+        () => dio.post<String>(
+          any(),
+          data: any<dynamic>(named: 'data'),
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => response(201));
 
       await send();
 
-      verify(
-        () => dio.post<dynamic>('/api/feedback/reports', data: report.toJson()),
-      ).called(1);
+      final captured = verify(
+        () => dio.post<String>(
+          '/api/feedback/reports',
+          data: report.toJson(),
+          options: captureAny(named: 'options'),
+        ),
+      ).captured.single;
+
+      // Pinned here, not left to `any(named: 'options')`, because this suite
+      // owns the call shape. `responseType` is part of the fix, not a
+      // detail: leaving it to the injected Dio lets a bytes/stream instance
+      // drive Dio's own cast and lose the status again (#358).
+      expect(
+        (captured as Options?)?.responseType,
+        ResponseType.plain,
+        reason: 'the transport must pin responseType, not inherit it',
+      );
     });
 
     group('classifies as transient (retryable)', () {
@@ -174,8 +202,13 @@ void main() {
     test('classifies a non-2xx status surfaced by a permissive '
         'validateStatus instead of treating it as sent — a rejection '
         'must never look like success', () async {
-      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
-          .thenAnswer((_) async => response(403));
+      when(
+        () => dio.post<String>(
+          any(),
+          data: any<dynamic>(named: 'data'),
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => response(403));
 
       await expectLater(
         send(),
@@ -192,8 +225,12 @@ void main() {
     test('a response with NO statusCode classifies transient with a '
         'null statusCode — never a fabricated 0', () async {
       when(
-        () => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')),
-      ).thenAnswer((_) async => Response<dynamic>(requestOptions: options()));
+        () => dio.post<String>(
+          any(),
+          data: any<dynamic>(named: 'data'),
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => Response<String>(requestOptions: options()));
 
       await expectLater(
         send(),
@@ -209,8 +246,13 @@ void main() {
 
     test('a permissive-validateStatus 5xx classifies transient the same '
         'as the exception path', () async {
-      when(() => dio.post<dynamic>(any(), data: any<dynamic>(named: 'data')))
-          .thenAnswer((_) async => response(503));
+      when(
+        () => dio.post<String>(
+          any(),
+          data: any<dynamic>(named: 'data'),
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => response(503));
 
       await expectLater(
         send(),
