@@ -517,6 +517,97 @@ void main() {
     });
   });
 
+  group('the reconcile fallback covers every indeterminate fault', () {
+    // Native had no coverage of this at all, which is how a PR could widen
+    // the fallback without noticing. The web twin has carried the equivalent
+    // since #180 D9 — `web_auth_repository_impl_test.dart`, "an unreadable
+    // session body is indeterminate, so the reconcile keeps the granted
+    // session rather than failing a sign-in whose credentials the server
+    // accepted". These are native's mirror of it.
+    //
+    // The rule: indeterminate means this client could not DETERMINE whether
+    // a session exists. "The response is definitively broken" is not "the
+    // session is definitively absent", and only the second would license
+    // failing a sign-in the server just accepted.
+    test('a MALFORMED 2xx session body keeps the granted session', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': (_kHtml, 200),
+        }),
+      );
+
+      final result = await repo.signIn(email: 'a@b.c', password: 'pw');
+
+      // The granted token, not a confirmed one, and no expiry — the
+      // documented cost of an indeterminate reconcile.
+      expect(result.token, 'session-tok-abc');
+      expect(result.expiresAt, isNull);
+      expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+    });
+
+    test('a well-formed 2xx body with the wrong FIELDS keeps it too', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': ('{"unexpected":"shape"}', 200),
+        }),
+      );
+
+      final result = await repo.signIn(email: 'a@b.c', password: 'pw');
+
+      expect(result.token, 'session-tok-abc');
+      expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+    });
+
+    test('a 5xx reconcile keeps it', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': ('{}', 503),
+        }),
+      );
+
+      final result = await repo.signIn(email: 'a@b.c', password: 'pw');
+
+      expect(result.token, 'session-tok-abc');
+      expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+    });
+
+    test('a 4xx reconcile keeps it — #297 reads a 404 on a fixed route as a '
+        'deployment fault, not a rejection', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': ('{}', 404),
+        }),
+      );
+
+      final result = await repo.signIn(email: 'a@b.c', password: 'pw');
+
+      expect(result.token, 'session-tok-abc');
+      expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+    });
+
+    // And the boundary the fallback must NOT cross: a definitive negative
+    // never arrives here as an exception, because `getSession` settles it and
+    // returns null (#180 D11 fixed that at the source on web; this branch did
+    // the same on native).
+    test('but a definitive 401 on the reconcile is still not kept', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': ('{}', 401),
+        }),
+      );
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthServerException>()),
+      );
+    });
+  });
+
   group('a THROWN definitive negative settles like the response path', () {
     // Native's permissive `validateStatus` normally resolves a 401 as a
     // Response, so this needs an injected Dio without it — which the class

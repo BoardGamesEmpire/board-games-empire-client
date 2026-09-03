@@ -724,6 +724,18 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         throw const AuthSupersededException();
       }
 
+      // The catch is deliberately broad and is NOT missing a classification
+      // branch. Every definitive negative returns null rather than throwing
+      // — #180 D11 fixed that at the source in `_getSessionUnlatched` and
+      // explicitly rejected adding a rethrow here — so anything arriving as
+      // an exception is indeterminate by construction. That includes a 2xx
+      // whose body cannot be read: "the response is definitively broken" is
+      // not "the session is definitively absent", and only the second would
+      // license failing a sign-in the server just accepted. #180 D9/D10 and
+      // the test named for it in `web_auth_repository_impl_test.dart` pin
+      // that outcome. The native twin's `_finalizeCredentialGrant` carries
+      // the full reasoning and the conditions that would change it.
+      //
       // Indeterminate reconcile and no readable grant ([_grantOrNull]):
       // nothing adoptable exists on either side. Surface the reconcile's own
       // failure rather than dressing it up as a server fault — it is what

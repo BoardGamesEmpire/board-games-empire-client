@@ -187,12 +187,52 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   ///
   /// - reconcile succeeds → adopt the confirmed session, which has now
   ///   also rewritten the payload with a real expiry;
-  /// - reconcile is **indeterminate** (transport failure, 5xx) → keep the
-  ///   granted session. Authentication genuinely happened; failing the
-  ///   sign-in here would show "connection failed" for a sign-in that
-  ///   worked, and would leave a valid token stored under a state that
-  ///   says otherwise. The cost is an unconfirmed expiry, which only
-  ///   forfeits offline restore until the next successful `getSession`.
+  /// - reconcile is **indeterminate** → keep the granted session.
+  ///   Authentication genuinely happened; failing the sign-in here would
+  ///   show "connection failed" for a sign-in that worked, and would leave
+  ///   a valid token stored under a state that says otherwise. The cost is
+  ///   an unconfirmed expiry, which only forfeits offline restore until the
+  ///   next successful `getSession`.
+  ///
+  ///   A transport failure and a 5xx are the obvious instances, and an
+  ///   earlier version of this list named only those two. That read as
+  ///   exhaustive and is not: **indeterminate means this client could not
+  ///   determine whether a session exists**, and the widest case is a 2xx
+  ///   whose body cannot be read at all — a captive portal or proxy
+  ///   answering the session endpoint with HTML. #180 **D10** made that a
+  ///   modelled `AuthServerException` instead of a bare `TypeError`, and
+  ///   the test named for it on web pins the outcome: *an unreadable
+  ///   session body is indeterminate, so the reconcile keeps the granted
+  ///   session rather than failing a sign-in whose credentials the server
+  ///   accepted.*
+  ///
+  ///   The distinction that makes this the right bucket, and that a reader
+  ///   coming to the `on AuthException` catch below is likely to trip on:
+  ///   "the response is definitively broken" is not "the session is
+  ///   definitively absent". Only the second licenses failing a sign-in the
+  ///   server just accepted, and an unparseable body asserts neither.
+  ///
+  ///   So the catch below is deliberately broad, and is **not** missing a
+  ///   classification branch. Every definitive negative returns null rather
+  ///   than throwing — #180 **D11** fixed that at the source in
+  ///   `getSession` and explicitly *rejected* adding a rethrow inside this
+  ///   reconcile, on the grounds that fixing the source makes such a branch
+  ///   unreachable and unreachable status checks were the defect that issue
+  ///   existed to remove. Anything arriving here as an exception is
+  ///   therefore indeterminate by construction.
+  ///
+  ///   What would change that: giving the session route an error envelope
+  ///   able to distinguish "the application rejected you" from "nothing
+  ///   answered for it" — the discriminator #297 **D1** looked for and
+  ///   could not find. A 4xx carrying it would become a definitive negative
+  ///   and belong in the branch above, settled in `getSession`, not here.
+  ///   Until then a thrown 4xx stays indeterminate, which is also what
+  ///   #297 concluded for a 404 on a fixed route: it says the request never
+  ///   reached the application, not that the caller was refused.
+  ///
+  ///   Either way, `WebAuthRepositoryImpl._reconcileCredentialGrant` holds
+  ///   the identical posture and must move with it — #352 exists because
+  ///   the two halves of this classification were allowed to drift.
   /// - reconcile returns a **definitive** "no session" → the server
   ///   accepted the credentials and then disowned the session. That is a
   ///   server contract violation, not a network condition, and it must not
@@ -257,6 +297,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         // adopt the granted session over the sign-out's teardown.
         throw const AuthSupersededException();
       }
+
       _log.warn(
         'Session reconcile after $context could not complete; keeping the '
         'granted session with an unconfirmed expiry',

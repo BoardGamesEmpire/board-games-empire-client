@@ -48,6 +48,18 @@ const _kHtml =
     '<!doctype html><html><head><title>Sign in</title></head>'
     '<body><h1>Corporate proxy</h1></body></html>';
 
+Map<String, dynamic> _grantJson() => {
+  'token': 'session-tok-web',
+  'user': {
+    'id': 'user-1',
+    'name': 'webuser',
+    'email': 'web@example.com',
+    'emailVerified': true,
+    'createdAt': '2024-01-01T00:00:00.000Z',
+    'updatedAt': '2024-01-01T00:00:00.000Z',
+  },
+};
+
 Map<String, dynamic> _sessionJson() => {
   'session': {
     'id': 'sess-1',
@@ -260,6 +272,44 @@ void main() {
     });
   });
 
+  group('the reconcile fallback covers every indeterminate fault', () {
+    // The malformed-2xx case is already pinned in
+    // `web_auth_repository_impl_test.dart` (#180 D9). These add the status
+    // classes around it, driven through a real Dio.
+    //
+    // Indeterminate means this client could not DETERMINE whether a session
+    // exists — "the response is definitively broken" is not "the session is
+    // definitively absent".
+    test('a 5xx reconcile keeps the granted session', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': ('{}', 503),
+        }),
+      );
+
+      final result = await repo.signIn(email: 'a@b.c', password: 'pw');
+
+      expect(result.user.id, 'user-1');
+      expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+    });
+
+    test('a 4xx reconcile keeps it — #297 reads a 404 on a fixed route as a '
+        'deployment fault, not a rejection', () async {
+      final repo = repoWith(
+        _routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': ('{}', 404),
+        }),
+      );
+
+      final result = await repo.signIn(email: 'a@b.c', password: 'pw');
+
+      expect(result.user.id, 'user-1');
+      expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+    });
+  });
+
   group('the duplicate-email probe on the THROWN path (#352)', () {
     // The only route to `_probeJson`: a rejection that arrives thrown, so the
     // body is still the raw `String` the request asked for.
@@ -394,7 +444,10 @@ void main() {
 class _RoutingAdapter implements HttpClientAdapter {
   _RoutingAdapter(this.byPathSuffix);
 
-  /// Suffix → (body, status, contentType).
+  /// Suffix → (body, status). Every route is answered as
+  /// `application/json`, which is the content type these cases turn on:
+  /// the point is a body that LIES about its type, so making it
+  /// per-route would only let a case understate the bug.
   final Map<String, (String, int)> byPathSuffix;
 
   @override
