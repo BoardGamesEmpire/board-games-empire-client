@@ -266,10 +266,26 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
 
-    // Captured before the first await, like getSession's own capture: every
-    // suspension in this method (the store, the reconcile) is a window a
-    // sign-out can land in, and each outcome below must be able to tell
-    // "the server misbehaved" apart from "the user left" (#146).
+    // Captured before the first await IN THIS METHOD — every suspension
+    // below (the store, the reconcile) is a window a sign-out can land in,
+    // and each outcome must be able to tell "the server misbehaved" apart
+    // from "the user left" (#146).
+    //
+    // It does NOT cover the caller's grant POST or the body decode that
+    // #352 added after it, and that is a bound rather than an oversight —
+    // the same bound the web twin's `_reconcileCredentialGrant` documents at
+    // length. Every dispatcher of `AuthSignOutRequested` is either
+    // unreachable while a credential grant is in flight or causally
+    // downstream of it: the two UI entries live in the authenticated shell
+    // (`home_placeholder_screen.dart:93`, `bge_app.dart:549`) and
+    // `AuthBloc._onSignIn` holds the form on `AuthLoading` for the whole
+    // call, while the one programmatic dispatcher (`bge_app.dart:1451`)
+    // fires on a `UserSessionScope.activate` failure that cannot run until
+    // this method has already returned.
+    //
+    // Widening the capture would guard a race no caller can produce.
+    // Revisit if any screen ever offers sign-out over `AuthLoading` — that,
+    // not this line, is what holds the bound.
     final epoch = _sessionEpoch;
 
     await _tokenStorage.store(

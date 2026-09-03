@@ -9,6 +9,7 @@
 // response means the server answered, and calling that a network fault told
 // the user to check the one part of the system demonstrably working.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -371,29 +372,43 @@ void main() {
     test(
       'a sign-out is never overtaken by a session response still decoding',
       () async {
-        // Well over dio's 50 KB threshold, so `decodeJsonBody` offloads to a
-        // real isolate and the window is milliseconds rather than microtasks.
+        // 1 MB, so `decodeJsonBody` offloads to a real isolate under
+        // `flutter test` and the window is milliseconds.
         final padded = Map<String, dynamic>.from(_sessionJson())
-          ..['padding'] = 'x' * (256 * 1024);
-        final repo = repoWith(
-          cannedDio(body: jsonEncode(padded), statusCode: 200),
-        );
+          ..['padding'] = 'x' * (1024 * 1024);
+
+        // The response is signalled from an interceptor rather than waited
+        // for with `pumpEventQueue`, which pumps until the queue drains and
+        // so can service the decoder before the sign-out starts. That made
+        // this pass without exercising the checkpoint, and made the native
+        // twin go red under full-suite load. `onResponse` fires inside dio,
+        // immediately before `get` returns, so one yield past it lands in
+        // the decode.
+        final answered = Completer<void>();
+        final dio = cannedDio(body: jsonEncode(padded), statusCode: 200)
+          ..interceptors.add(
+            InterceptorsWrapper(
+              onResponse: (response, handler) {
+                if (!answered.isCompleted) answered.complete();
+                handler.next(response);
+              },
+            ),
+          );
+        final repo = repoWith(dio);
 
         final inFlight = repo.getSession();
-        await pumpEventQueue();
+        await answered.future;
+        await Future<void>.delayed(Duration.zero);
         await repo.signOut();
         // Swallow the result: which of the two guards fires depends on where
         // the sign-out lands, and both are correct outcomes.
         await inFlight.catchError((_) => null);
 
-        // The SAFETY property, asserted instead of one interleaving, because
-        // the exact landing point is not controllable from here — nothing in
-        // dio's pipeline can hook the decode, which happens after it returns.
-        // Stated this way the test can only ever fail for a real defect: the
-        // user signed out, so whatever the ordering, the repository must not
-        // be left authenticated. Without the second checkpoint this fails
-        // whenever the sign-out lands mid-decode, which the 256 KB body makes
-        // the common case.
+        // The SAFETY property rather than one interleaving: the user signed
+        // out, so whatever the ordering the repository must not be left
+        // authenticated. Stated this way it cannot go red without a real
+        // defect — and with the gate above it reliably does go red when the
+        // post-decode checkpoint is removed.
         expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
       },
     );
