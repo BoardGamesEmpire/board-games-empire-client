@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -63,12 +65,12 @@ void main() {
 
   void stubSignOutPostOk() =>
       when(
-        () => mockDio.post<void>(
+        () => mockDio.post<String>(
           '$_kAuthBase/sign-out',
           options: any(named: 'options'),
         ),
       ).thenAnswer(
-        (_) async => Response<void>(
+        (_) async => Response<String>(
           statusCode: 200,
           requestOptions: RequestOptions(path: ''),
         ),
@@ -76,7 +78,7 @@ void main() {
 
   void stubSignOutPostFails() =>
       when(
-        () => mockDio.post<void>(
+        () => mockDio.post<String>(
           '$_kAuthBase/sign-out',
           options: any(named: 'options'),
         ),
@@ -115,13 +117,13 @@ void main() {
 
       Options? sentOptions;
       when(
-        () => mockDio.post<void>(
+        () => mockDio.post<String>(
           '$_kAuthBase/sign-out',
           options: any(named: 'options'),
         ),
       ).thenAnswer((invocation) async {
         sentOptions = invocation.namedArguments[#options] as Options?;
-        return Response<void>(
+        return Response<String>(
           statusCode: 200,
           requestOptions: RequestOptions(path: ''),
         );
@@ -218,31 +220,30 @@ void main() {
           user: any(named: 'user'),
         ),
       ).thenAnswer((_) async {});
-      when(() => mockDio.get<Map<String, dynamic>>('$_kAuthBase/get-session'))
-          .thenAnswer(
-            (_) async => Response(
-              data: {
-                'session': {
-                  'id': 'sess-1',
-                  'token': 'session-tok-abc',
-                  'expiresAt': '2099-01-01T00:00:00.000Z',
-                  'userId': 'user-1',
-                  'createdAt': '2026-01-01T00:00:00.000Z',
-                  'updatedAt': '2026-01-01T00:00:00.000Z',
-                },
-                'user': {
-                  'id': 'user-1',
-                  'name': 'testuser',
-                  'email': 'testuser@example.com',
-                  'emailVerified': true,
-                  'createdAt': '2026-01-01T00:00:00.000Z',
-                  'updatedAt': '2026-01-01T00:00:00.000Z',
-                },
-              },
-              statusCode: 200,
-              requestOptions: RequestOptions(path: ''),
-            ),
-          );
+      when(() => mockDio.get<String>('$_kAuthBase/get-session')).thenAnswer(
+        (_) async => Response(
+          data: jsonEncode({
+            'session': {
+              'id': 'sess-1',
+              'token': 'session-tok-abc',
+              'expiresAt': '2099-01-01T00:00:00.000Z',
+              'userId': 'user-1',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+            },
+            'user': {
+              'id': 'user-1',
+              'name': 'testuser',
+              'email': 'testuser@example.com',
+              'emailVerified': true,
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+            },
+          }),
+          statusCode: 200,
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
       await repo.getSession();
       expect(await repo.watchAuthState().first, isA<AuthStateAuthenticated>());
 
