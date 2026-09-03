@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -69,17 +71,14 @@ Map<String, dynamic> _sessionJson() => {
   'user': _wireUser(),
 };
 
-Response<Map<String, dynamic>> _ok(Map<String, dynamic> data) => Response(
-  data: data,
+Response<String> _ok(Map<String, dynamic> data) => Response(
+  data: jsonEncode(data),
   statusCode: 200,
   requestOptions: RequestOptions(path: ''),
 );
 
-Response<Map<String, dynamic>> _status(
-  int code, [
-  Map<String, dynamic>? data,
-]) => Response(
-  data: data,
+Response<String> _status(int code, [Map<String, dynamic>? data]) => Response(
+  data: data == null ? null : jsonEncode(data),
   statusCode: code,
   requestOptions: RequestOptions(path: ''),
 );
@@ -134,13 +133,13 @@ void main() {
       test('returns AuthResponse on success', () async {
         stubStore();
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<String>(
             '$_kAuthBase/sign-in/email',
             data: any(named: 'data'),
           ),
         ).thenAnswer((_) async => _ok(_signInJson()));
         stubRetrieve();
-        when(() => mockDio.get<Map<String, dynamic>>('$_kAuthBase/get-session'))
+        when(() => mockDio.get<String>('$_kAuthBase/get-session'))
             .thenAnswer((_) async => _ok(_sessionJson()));
 
         final result = await repo.signIn(email: 'a@b.com', password: 'pass');
@@ -153,12 +152,8 @@ void main() {
       });
 
       test('throws AuthInvalidCredentialsException on 401', () {
-        when(
-          () => mockDio.post<Map<String, dynamic>>(
-            any(),
-            data: any(named: 'data'),
-          ),
-        ).thenAnswer((_) async => _status(401));
+        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+            .thenAnswer((_) async => _status(401));
 
         expect(
           () => repo.signIn(email: 'a@b.com', password: 'wrong'),
@@ -167,17 +162,13 @@ void main() {
       });
 
       test('throws AuthNetworkException on connection error', () {
-        when(
-          () => mockDio.post<Map<String, dynamic>>(
-            any(),
-            data: any(named: 'data'),
-          ),
-        ).thenThrow(
-          DioException(
-            type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
-          ),
-        );
+        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+            .thenThrow(
+              DioException(
+                type: DioExceptionType.connectionError,
+                requestOptions: RequestOptions(path: ''),
+              ),
+            );
 
         expect(
           () => repo.signIn(email: 'a@b.com', password: 'pass'),
@@ -214,12 +205,8 @@ void main() {
       });
 
       test('throws AuthEmailAlreadyExistsException on 409', () {
-        when(
-          () => mockDio.post<Map<String, dynamic>>(
-            any(),
-            data: any(named: 'data'),
-          ),
-        ).thenAnswer((_) async => _status(409));
+        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+            .thenAnswer((_) async => _status(409));
 
         expect(
           () => repo.signUp(email: 'dup@b.com', password: 'p', username: 'u'),
@@ -229,17 +216,13 @@ void main() {
 
       test('throws AuthEmailAlreadyExistsException on BetterAuth 422 with '
           'body code USER_ALREADY_EXISTS (BetterAuth never uses 409)', () {
-        when(
-          () => mockDio.post<Map<String, dynamic>>(
-            any(),
-            data: any(named: 'data'),
-          ),
-        ).thenAnswer(
-          (_) async => _status(422, {
-            'code': 'USER_ALREADY_EXISTS',
-            'message': 'User already exists',
-          }),
-        );
+        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+            .thenAnswer(
+              (_) async => _status(422, {
+                'code': 'USER_ALREADY_EXISTS',
+                'message': 'User already exists',
+              }),
+            );
 
         expect(
           () => repo.signUp(email: 'dup@b.com', password: 'p', username: 'u'),
@@ -250,17 +233,13 @@ void main() {
       test('throws AuthEmailAlreadyExistsException on the versioned code '
           'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL (verbatim body observed '
           'from the BGE dev server)', () {
-        when(
-          () => mockDio.post<Map<String, dynamic>>(
-            any(),
-            data: any(named: 'data'),
-          ),
-        ).thenAnswer(
-          (_) async => _status(422, {
-            'message': 'User already exists. Use another email.',
-            'code': 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
-          }),
-        );
+        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+            .thenAnswer(
+              (_) async => _status(422, {
+                'message': 'User already exists. Use another email.',
+                'code': 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
+              }),
+            );
 
         expect(
           () => repo.signUp(email: 'dup@b.com', password: 'p', username: 'u'),
@@ -270,15 +249,11 @@ void main() {
 
       test('a 422 WITHOUT the USER_ALREADY_EXISTS code stays a generic '
           'AuthServerException (no over-mapping of validation failures)', () {
-        when(
-          () => mockDio.post<Map<String, dynamic>>(
-            any(),
-            data: any(named: 'data'),
-          ),
-        ).thenAnswer(
-          (_) async =>
-              _status(422, {'code': 'OTHER', 'message': 'Invalid input'}),
-        );
+        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
+            .thenAnswer(
+              (_) async =>
+                  _status(422, {'code': 'OTHER', 'message': 'Invalid input'}),
+            );
 
         expect(
           () => repo.signUp(email: 'a@b.com', password: 'p', username: 'u'),
@@ -319,7 +294,7 @@ void main() {
       test('fails sign-in as a server fault, persisting nothing', () async {
         stubStore();
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<String>(
             '$_kAuthBase/sign-in/email',
             data: any(named: 'data'),
           ),
@@ -335,7 +310,7 @@ void main() {
       test('fails sign-up as a server fault, persisting nothing', () async {
         stubStore();
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<String>(
             '$_kAuthBase/sign-up/email',
             data: any(named: 'data'),
           ),
@@ -351,7 +326,7 @@ void main() {
       test('leaves the auth state untouched', () async {
         stubStore();
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<String>(
             '$_kAuthBase/sign-in/email',
             data: any(named: 'data'),
           ),
@@ -367,7 +342,7 @@ void main() {
       test('never reaches the session endpoint', () async {
         stubStore();
         when(
-          () => mockDio.post<Map<String, dynamic>>(
+          () => mockDio.post<String>(
             '$_kAuthBase/sign-in/email',
             data: any(named: 'data'),
           ),
@@ -377,7 +352,7 @@ void main() {
           repo.signIn(email: 'a@b.com', password: 'pass'),
           throwsA(isA<AuthServerException>()),
         );
-        verifyNever(() => mockDio.get<Map<String, dynamic>>(any()));
+        verifyNever(() => mockDio.get<String>(any()));
       });
     });
 
@@ -405,7 +380,7 @@ void main() {
         () async {
           stubRetrieve();
           stubClear();
-          when(() => mockDio.get<Map<String, dynamic>>(any()))
+          when(() => mockDio.get<String>(any()))
               .thenAnswer((_) async => _status(401));
 
           expect(await repo.getSession(), isNull);
@@ -415,7 +390,7 @@ void main() {
 
       test('updates stored expiry from session response', () async {
         stubRetrieve();
-        when(() => mockDio.get<Map<String, dynamic>>(any()))
+        when(() => mockDio.get<String>(any()))
             .thenAnswer((_) async => _ok(_sessionJson()));
         stubStore();
 
@@ -439,7 +414,7 @@ void main() {
         // signOut() reads the token to authenticate the best-effort POST
         // before latching; none stored here.
         when(() => mockStorage.retrieve()).thenAnswer((_) async => null);
-        when(() => mockDio.post<void>(any(), options: any(named: 'options')))
+        when(() => mockDio.post<String>(any(), options: any(named: 'options')))
             .thenThrow(
               DioException(
                 type: DioExceptionType.connectionError,

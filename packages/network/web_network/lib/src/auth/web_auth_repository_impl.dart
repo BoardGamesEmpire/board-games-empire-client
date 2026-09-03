@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
+// `decodeJsonBody` only — shared rather than copied so dio's 50 KB
+// isolate threshold lives in one place (#352 D2).
+import 'package:dio_network/dio_network.dart' show decodeJsonBody;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -52,10 +56,25 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// bumped, which makes the later comparison match and the guard silently
   /// inert.
   ///
-  /// Web needs only ONE checkpoint per method, where native has two. Native's
-  /// second exists to unwind its own `TokenStorageService.store`; web
-  /// persists nothing, and no await separates its guard from the state
+  /// Web needs TWO checkpoints in [_getSessionUnlatched], as native does.
+  /// #352 moved body decoding below the first guard, and `decodeJsonBody`
+  /// suspends, so that window now sits between the guard and the state
   /// emission it protects.
+  ///
+  /// How wide it is depends on the platform, and the honest answer for THIS
+  /// class is: not very. `decodeJsonBody`'s 50 KB isolate offload is a no-op
+  /// in a browser — Flutter's web `compute` is `await null; return
+  /// callback(message);` (`foundation/_isolates_web.dart`), so the body is
+  /// parsed on the main thread either way and the suspension is a single
+  /// microtask. A user-initiated sign-out is an event-loop task, and
+  /// microtasks drain before the next one, so in a browser this checkpoint is
+  /// defence in depth rather than a live race.
+  ///
+  /// It is kept because it is load-bearing off the browser — this suite runs
+  /// on the VM, where the offload is real and the window is milliseconds —
+  /// and because the alternative is a guard whose correctness depends on a
+  /// platform detail of `compute` that no reader of this class would think to
+  /// check.
   ///
   /// ## What the epoch does NOT bound (#285)
   ///
@@ -114,9 +133,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }) async {
     final strategy = _requireEmailPasswordStrategy();
 
-    late final Response<Map<String, dynamic>> response;
+    late final Response<String> response;
     try {
-      response = await _dio.post<Map<String, dynamic>>(
+      response = await _dio.post<String>(
         strategy.signInEndpoint,
         data: {'email': email, 'password': password},
       );
@@ -124,13 +143,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw _mapDioException(e);
     }
 
-    _assertSuccess(response, context: 'sign-in');
+    final body = await _requireGrantBody(response, context: 'sign-in');
 
     // BetterAuth set the session cookie in this response and the browser
     // stored it automatically. The reconcile that follows is for the full
     // user object and the canonical expiry — not for the credential.
     return _reconcileCredentialGrant(
-      _grantOrNull(response, context: 'sign-in'),
+      _grantOrNull(body, status: response.statusCode, context: 'sign-in'),
       context: 'sign-in',
     );
   }
@@ -149,9 +168,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw const AuthRegistrationDisabledException();
     }
 
-    late final Response<Map<String, dynamic>> response;
+    late final Response<String> response;
     try {
-      response = await _dio.post<Map<String, dynamic>>(
+      response = await _dio.post<String>(
         strategy.signUpEndpoint!,
         data: {
           'email': email,
@@ -171,10 +190,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw _mapDioException(e);
     }
 
-    _assertSuccess(response, context: 'sign-up');
+    final body = await _requireGrantBody(response, context: 'sign-up');
 
     return _reconcileCredentialGrant(
-      _grantOrNull(response, context: 'sign-up'),
+      _grantOrNull(body, status: response.statusCode, context: 'sign-up'),
       context: 'sign-up',
     );
   }
@@ -220,11 +239,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // [_sessionEpoch].
     final epoch = _sessionEpoch;
 
-    late final Response<Map<String, dynamic>> response;
+    late final Response<String> response;
     try {
-      response = await _dio.get<Map<String, dynamic>>(
-        _identity.sessionEndpoint,
-      );
+      response = await _dio.get<String>(_identity.sessionEndpoint);
     } on DioException catch (e) {
       // A rejected session (401, 403) normally arrives as a Response, not a
       // thrown DioException — `WebDioFactory` sets validateStatus:(_)=>true,
@@ -286,12 +303,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // stranded a genuinely revoked session on the retry-forever view with no
     // way out. A false positive from an intermediary costs one re-sign-in,
     // which is the cheaper failure. Native locked the same call (#180).
-    final isDefinitiveNoSession =
-        status == HttpStatusCode.unauthorized ||
-        status == HttpStatusCode.forbidden ||
-        (status == HttpStatusCode.ok && response.data == null);
-
-    if (isDefinitiveNoSession) {
+    // Two of the three are decidable from the status alone and are taken
+    // here. The third needs the body and waits until after the decode below —
+    // a reordering #352 forced, not a change of rule: the body no longer
+    // arrives pre-decoded, and reading "no session" off an undecoded string
+    // would call a captive portal's HTML page a rejected session.
+    if (status == HttpStatusCode.unauthorized ||
+        status == HttpStatusCode.forbidden) {
       _setState(const AuthStateUnauthenticated());
       return null;
     }
@@ -310,15 +328,60 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
 
+    final decoded = await _decodeBody(
+      response.data,
+      context: 'the session check',
+      status: status,
+    );
+
+    // A 2xx the transport answered but this client cannot read. Definitive
+    // when the body is not JSON, INDETERMINATE when the decode itself could
+    // not be performed — and only the first is a statement about the server
+    // (#352).
+    // Second checkpoint. The decode above is a suspension point, so a
+    // sign-out can land between the guard at the top of this method and the
+    // state emission below — and that emission would re-assert a session the
+    // user has already ended, which is the whole failure #146 exists to
+    // prevent. Ahead of the throw as well as the emission: a response
+    // superseded by sign-out is discarded, not reported.
+    if (epoch != _sessionEpoch) {
+      _log.warn(
+        'Discarding a session response decoded after sign-out',
+        context: {'status': status},
+      );
+      return null;
+    }
+
+    final failure = decoded.failure;
+    if (failure != null) throw failure;
+
+    // The third "definitively no session" shape, now that the body is
+    // readable: BetterAuth answers 200 with no session payload. An empty body
+    // and a literal JSON `null` both land here as null, which is exactly what
+    // `Response<Map<String, dynamic>>` used to hand over as `data == null`.
+    final body = decoded.value;
+    if (body == null) {
+      _setState(const AuthStateUnauthenticated());
+      return null;
+    }
+
     // A 200 whose body is not the documented shape is a server fault, and it
     // has to leave here as one: `AuthRepository` admits only AuthException
     // subtypes out of getSession, and AuthBloc's sign-in / register handlers
     // catch nothing wider — a bare parse error would slip past every clause
-    // and strand the form on AuthLoading with no way back. Native still
-    // reaches straight for `fromJson` here and has the same gap.
+    // and strand the form on AuthLoading with no way back. Native upholds the
+    // same rule now (#181).
+    if (body is! Map<String, dynamic>) {
+      throw AuthServerException(
+        message:
+            'The session endpoint returned a body that is not a JSON object.',
+        statusCode: status,
+      );
+    }
+
     final BgeSessionResponse sessionResponse;
     try {
-      sessionResponse = BgeSessionResponse.fromJson(response.data!);
+      sessionResponse = BgeSessionResponse.fromJson(body);
     } on Object catch (error) {
       throw AuthServerException(
         message: 'The session endpoint returned an unreadable response.',
@@ -391,7 +454,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     _setState(const AuthStateUnauthenticated());
 
     try {
-      final response = await _dio.post<void>(_identity.signOutEndpoint);
+      // `String` for the same reason as every other request here: any other
+      // type argument selects `ResponseType.json`, so a revocation answered
+      // with an HTML error page would throw from inside the call and be
+      // logged as a transport fault rather than the non-2xx it is.
+      final response = await _dio.post<String>(_identity.signOutEndpoint);
 
       final status = response.statusCode;
       if (!_isSuccessStatus(status)) {
@@ -527,18 +594,14 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// granted no session, which is not something to adopt on a reconcile
   /// that cannot reach the server to disagree.
   AuthResponse? _grantOrNull(
-    Response<Map<String, dynamic>> response, {
+    Map<String, dynamic>? data, {
+    required int? status,
     required String context,
   }) {
-    final data = response.data;
-    if (data == null) {
-      _log.warn(
-        'No body on a successful $context; the session endpoint has to '
-        'confirm this $context unaided',
-        context: {'status': response.statusCode},
-      );
-      return null;
-    }
+    // Not logged here: [_requireGrantBody] is the only source of a null on
+    // this path and has already said why, with more detail than this branch
+    // could. A second record would double-count one event.
+    if (data == null) return null;
 
     final AuthResponse granted;
     try {
@@ -553,7 +616,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         'this $context unaided',
         error: error,
         stackTrace: stackTrace,
-        context: {'status': response.statusCode},
+        context: {'status': status},
       );
       return null;
     }
@@ -589,7 +652,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       _log.warn(
         'No session granted on a successful $context; the session endpoint '
         'has to confirm this $context unaided',
-        context: {'status': response.statusCode},
+        context: {'status': status},
       );
       return null;
     }
@@ -729,17 +792,152 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     return strategy;
   }
 
-  void _assertSuccess(
-    Response<Map<String, dynamic>> response, {
+  /// Decodes a body the transport was told not to touch, **deferring** the
+  /// failure so the status can speak first.
+  ///
+  /// Every request here asks Dio for `Response<String>`, the only type
+  /// argument that keeps Dio out of the body: `DioMixin.fetch` forces
+  /// `responseType` from `T` — `String` gives `plain`, and anything else gives
+  /// `json` (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`). Either half of
+  /// Dio's own handling — the cast, or a `jsonDecode` driven by a content type
+  /// that merely *claims* JSON — throws from inside the call as
+  /// `DioException(type: unknown)` with **no response attached**, so the
+  /// status was gone before anything could classify it (#352).
+  ///
+  /// Mirrors `AuthRepositoryImpl._decodeBody` on native, deliberately: the two
+  /// repositories drive the same Dio and the same server, and a rule that held
+  /// on one platform only is how #352 arose in the first place. The helper
+  /// itself is `decodeJsonBody` from `dio_network`, shared rather than copied
+  /// so its 50 KB isolate threshold lives in one place.
+  ///
+  /// The failure is **returned, not thrown**, because the two callers disagree
+  /// about what it means. A rejected response whose body will not parse is
+  /// still a rejection and its status is the honest answer. Only a 2xx has to
+  /// answer for an unreadable body — and which failure it was decides the
+  /// bucket: a body that is not JSON is a statement about the response and is
+  /// definitive, while a failure to **perform** the decode is local, momentary
+  /// and must stay retryable.
+  Future<({Object? value, AuthException? failure})> _decodeBody(
+    String? raw, {
     required String context,
-  }) {
+    required int? status,
+  }) async {
+    if (raw == null || raw.isEmpty) return (value: null, failure: null);
+
+    try {
+      return (value: await decodeJsonBody(raw), failure: null);
+    } on FormatException catch (error) {
+      return (
+        value: null,
+        failure: AuthServerException(
+          message:
+              'The server returned a body that is not JSON during '
+              '$context.',
+          statusCode: status,
+          cause: error,
+        ),
+      );
+    } on Object catch (error) {
+      return (
+        value: null,
+        failure: AuthNetworkException(
+          message: 'Could not decode the response during $context.',
+          cause: error,
+        ),
+      );
+    }
+  }
+
+  /// Status-first validation of a credential grant, returning its decoded
+  /// body — or **null** whenever that body cannot be read.
+  ///
+  /// The status still decides, and a rejection still throws. What an
+  /// unreadable 2xx body does NOT do here is fail the sign-in, and that is the
+  /// one place this deliberately diverges from the native twin (which throws)
+  /// and from [_getSessionUnlatched] below (which also throws).
+  ///
+  /// The reason is web's, and [_grantOrNull] and [_reconcileCredentialGrant]
+  /// are both already built on it: BetterAuth set the session cookie in **this
+  /// response** and the browser has already stored it, so the grant envelope
+  /// is a convenience and the reconcile is the authority. Declining an
+  /// unreadable one costs an unconfirmed expiry; throwing on it would veto a
+  /// sign-in that genuinely succeeded and whose credential is live — and the
+  /// reconcile is about to settle the question either way. `_grantOrNull`
+  /// already returns null for a body whose FIELDS are wrong; a body that is
+  /// not JSON at all is the same situation reached one step earlier, and the
+  /// two must not disagree.
+  ///
+  /// When the reconcile cannot settle it either, nothing is silently
+  /// swallowed: [_reconcileCredentialGrant] rethrows the reconcile's own
+  /// failure for exactly this `granted == null` case.
+  Future<Map<String, dynamic>?> _requireGrantBody(
+    Response<String> response, {
+    required String context,
+  }) async {
     final status = response.statusCode;
+
+    // A REJECTION is settled from the status plus a bounded read of the raw
+    // body, and never a full decode — see the native twin for the reasoning.
+    // `_assertSuccess` never returns for a non-2xx.
+    if (!_isSuccessStatus(status)) {
+      _assertSuccess(status, response.data, context: context);
+    }
+
+    // A 2xx: the body IS the payload, so it earns a real decode.
+    final decoded = await _decodeBody(
+      response.data,
+      context: context,
+      status: status,
+    );
+
+    // Re-run on the decoded body: the duplicate-email envelope is not
+    // status-gated, and here the decode has already happened.
+    _assertSuccess(status, decoded.value, context: context);
+
+    final failure = decoded.failure;
+    if (failure != null) {
+      _log.warn(
+        'Unreadable $context body; the session endpoint has to confirm this '
+        '$context unaided',
+        error: failure,
+        context: {'status': status},
+      );
+      return null;
+    }
+
+    // Every "nothing adoptable here" outcome is logged in THIS method, with
+    // the reason that distinguishes it, and `_grantOrNull` no longer logs its
+    // own null branch. It used to, and since its only callers hand it this
+    // method's result, an unreadable body produced two warn records — the
+    // second of them saying "No body on a successful $context" about a body
+    // that was present and simply would not parse.
+    final body = decoded.value;
+    if (body == null) {
+      _log.warn(
+        'No body on a successful $context; the session endpoint has to '
+        'confirm this $context unaided',
+        context: {'status': status},
+      );
+      return null;
+    }
+    if (body is! Map<String, dynamic>) {
+      _log.warn(
+        'The $context body is not a JSON object; the session endpoint has to '
+        'confirm this $context unaided',
+        context: {'status': status},
+      );
+      return null;
+    }
+    return body;
+  }
+
+  void _assertSuccess(int? status, Object? body, {required String context}) {
     if (status == HttpStatusCode.unauthorized ||
         status == HttpStatusCode.forbidden) {
       throw const AuthInvalidCredentialsException();
     }
 
-    if (_isEmailAlreadyExists(status, response.data)) {
+    if (_isEmailAlreadyExists(status, body)) {
       throw const AuthEmailAlreadyExistsException();
     }
 
@@ -778,10 +976,41 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// NOT a bare status-422 match: other validation failures could share the
   /// status, and showing "account already exists" for those would be worse
   /// than the generic server-error copy.
+  /// Ceiling on the synchronous probe below. A rejection envelope is a few
+  /// hundred bytes, so anything past this is not the envelope being looked
+  /// for, and reading it would be paying main-thread parse time for a body
+  /// that cannot answer the question.
+  static const int _probeMaxChars = 4 * 1024;
+
   bool _isEmailAlreadyExists(int? status, Object? body) {
     if (status == HttpStatusCode.conflict) return true;
-    final code = body is Map ? body['code'] : null;
+    final decoded = body is String ? _probeJson(body) : body;
+    final code = decoded is Map ? decoded['code'] : null;
     return code is String && code.startsWith('USER_ALREADY_EXISTS');
+  }
+
+  /// Best-effort synchronous decode, for the duplicate-email probe alone.
+  ///
+  /// [_mapDioException] reads the body off a **thrown** `DioException`, where
+  /// it now arrives as the raw `String` the request asked for rather than the
+  /// decoded map the probe used to get for free. Without this, a duplicate
+  /// sign-up rejected by a `Dio` whose `validateStatus` is not
+  /// `WebDioFactory`'s would report "unexpected 422" instead of "that account
+  /// already exists".
+  ///
+  /// Deliberately not routed through `decodeJsonBody`: this reads a rejection
+  /// envelope, which is small, and the probe is best-effort — a body that will
+  /// not parse simply is not this envelope.
+  ///
+  /// Bounded by [_probeMaxChars], because this runs SYNCHRONOUSLY on the main
+  /// thread.
+  Object? _probeJson(String raw) {
+    if (raw.isEmpty || raw.length > _probeMaxChars) return null;
+    try {
+      return jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
   }
 
   AuthException _mapDioException(DioException e) {
@@ -803,18 +1032,46 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
 
-    return switch (e.type) {
-      DioExceptionType.connectionTimeout ||
-      DioExceptionType.receiveTimeout ||
-      DioExceptionType.connectionError => AuthNetworkException(
+    // Genuine transport: the request was never answered, so there is no
+    // status to classify by and INDETERMINATE is the honest bucket.
+    // `sendTimeout` joins the list it was missing from — it fell to the
+    // catch-all below, which used to reach the same answer by accident and
+    // no longer does.
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.sendTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.connectionError) {
+      return AuthNetworkException(
         message: 'Connection failed. Check your network.',
         cause: e,
-      ),
-      _ => AuthNetworkException(
-        message: e.message ?? 'Network error.',
+      );
+    }
+
+    // The server answered, with something the branches above did not claim.
+    // The fallthrough used to call that a transport problem, which
+    // contradicted the guard a few hundred lines above it — "a 200 whose body
+    // is not the documented shape is a server fault, and it has to leave here
+    // as one" — and showed "Connection failed. Check your network." for a
+    // misrouted or rejected endpoint (#283).
+    //
+    // Reachable because this class accepts ANY injected `Dio`, which is the
+    // same premise the session catch reasons from: `WebDioFactory`'s
+    // permissive `validateStatus` resolves these as responses, but an
+    // interceptor or a differently-configured Dio throws them.
+    if (status != null) {
+      return AuthServerException(
+        message: 'Unexpected $status from the server.',
+        statusCode: status,
         cause: e,
-      ),
-    };
+      );
+    }
+
+    // No status and no transport type: a cancellation, a bad certificate, or
+    // a fault Dio could not attribute. Nothing answered, so INDETERMINATE.
+    return AuthNetworkException(
+      message: e.message ?? 'Network error.',
+      cause: e,
+    );
   }
 
   /// Tears down auth-state streaming. Does not close the injected [Dio] — that
