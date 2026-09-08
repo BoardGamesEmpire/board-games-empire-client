@@ -141,18 +141,32 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// neither clause licenses discarding the report. The messages stay
   /// distinct so a log still says which happened.
   ///
-  /// Only a body that is present and unparseable disproves delivery. An empty
-  /// or whitespace-only body does not: the wire contract is `→ 201` and this
-  /// transport reads nothing out of the body, so demanding a shape would
-  /// invent a contract the API never promised. Deliberately weaker than
-  /// `HouseholdRemoteDataSourceImpl._requireJsonObject`, which needs the
+  /// That is a deliberate divergence from `decodeJsonBody`'s own doc, which
+  /// tells callers to treat a `FormatException` as permanent. The advice fits
+  /// a caller deprived of a payload it needed; this transport needs nothing
+  /// out of the body, and permanent here means deleting the user's words.
+  /// Classification belongs to the caller, not the parser.
+  ///
+  /// An unparseable body does not prove non-delivery either — it *withdraws*
+  /// the delivery claim rather than settling it the other way. A truncated
+  /// genuine response is unparseable and did arrive, and a body starting with
+  /// `<` is a page a proxy could equally have substituted for a real answer
+  /// on the way back. That asymmetry is a third reason the bucket is
+  /// transient, and the exception messages say what was observed rather than
+  /// what it proves.
+  ///
+  /// An empty or whitespace-only body withdraws nothing: the wire contract is
+  /// `→ 201` and this transport reads nothing out of the body, so demanding a
+  /// shape would invent a contract the API never promised. Deliberately weaker
+  /// than `HouseholdRemoteDataSourceImpl._requireJsonObject`, which needs the
   /// payload it is checking for.
   ///
   /// **That is an accepted gap, not an oversight**: a portal answering with
   /// `Content-Length: 0` and a 200 still reads as delivered. Closing it means
   /// requiring a body, which is only safe once the backend is known to send
   /// one on 201 — unverified here, and getting it wrong fails every genuine
-  /// submission rather than a rare intercepted one. Tracked on #358.
+  /// submission rather than a rare intercepted one. Tracked on #363, which
+  /// carries the one backend fact that settles it.
   Future<void> _rejectUndecodableBody(
     String? body, {
     required int status,
@@ -176,8 +190,8 @@ class FeedbackDioTransport implements FeedbackTransport {
     // exists for, so a first-character test alone would stop detecting it.
     if (text.startsWith('<')) {
       throw FeedbackTransientSubmissionException(
-        'Feedback endpoint answered $status with a page, not a payload, so '
-        'the report did not reach the API',
+        'Feedback endpoint answered $status with a page, not a payload; '
+        'delivery could not be confirmed',
         statusCode: status,
       );
     }
@@ -186,8 +200,8 @@ class FeedbackDioTransport implements FeedbackTransport {
       await decodeJsonBody(text);
     } on FormatException catch (error) {
       throw FeedbackTransientSubmissionException(
-        'Feedback endpoint answered $status with a body that is not JSON, so '
-        'the report did not reach the API',
+        'Feedback endpoint answered $status with a body that is not JSON; '
+        'delivery could not be confirmed',
         cause: error,
         statusCode: status,
       );
