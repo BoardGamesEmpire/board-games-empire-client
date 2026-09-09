@@ -55,13 +55,23 @@ void main() {
   late HouseholdRemoteDataSourceImpl remote;
 
   void stubPost(Response<String> response) {
-    when(() => mockDio.post<String>(any(), data: any(named: 'data')))
-        .thenAnswer((_) async => response);
+    when(
+      () => mockDio.post<String>(
+        any(),
+        options: any(named: 'options'),
+        data: any(named: 'data'),
+      ),
+    ).thenAnswer((_) async => response);
   }
 
   void stubPostThrows(Object error) {
-    when(() => mockDio.post<String>(any(), data: any(named: 'data')))
-        .thenThrow(error);
+    when(
+      () => mockDio.post<String>(
+        any(),
+        options: any(named: 'options'),
+        data: any(named: 'data'),
+      ),
+    ).thenThrow(error);
   }
 
   setUp(() {
@@ -118,8 +128,11 @@ void main() {
         await remote.createHousehold(name: 'Game Night HQ');
 
         verify(
-          () =>
-              mockDio.post<String>('/api/households', data: any(named: 'data')),
+          () => mockDio.post<String>(
+            '/api/households',
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
         ).called(1);
       });
     });
@@ -129,6 +142,7 @@ void main() {
           verify(
                 () => mockDio.post<String>(
                   any(),
+                  options: any(named: 'options'),
                   data: captureAny(named: 'data'),
                 ),
               ).captured.single
@@ -301,6 +315,194 @@ void main() {
       });
     });
 
+    // A 4xx the household API has no code path to emit says the request never
+    // reached the application, which is #297's shape at a different status.
+    group('proxy-originated 4xx on create (#350)', () {
+      HouseholdRemoteDataSource remoteOver(Dio dio) =>
+          HouseholdRemoteDataSourceImpl(dio);
+
+      String envelope(int status, String error) => jsonEncode({
+        'statusCode': status,
+        'message': 'common.forbidden.access',
+        'error': error,
+      });
+
+      test('407 is transient — only a proxy can emit it', () async {
+        final remote = remoteOver(
+          cannedDio(
+            body: '<html>Proxy Authentication Required</html>',
+            statusCode: 407,
+            contentType: 'text/html',
+          ),
+        );
+
+        await expectLater(
+          () => remote.createHousehold(name: 'HQ'),
+          throwsA(
+            isA<HouseholdRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              407,
+            ),
+          ),
+        );
+      });
+
+      test('511 is transient — a captive portal answered', () async {
+        final remote = remoteOver(
+          cannedDio(
+            body: '<html>Network Authentication Required</html>',
+            statusCode: 511,
+            contentType: 'text/html',
+          ),
+        );
+
+        await expectLater(
+          () => remote.createHousehold(name: 'HQ'),
+          throwsA(
+            isA<HouseholdRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              511,
+            ),
+          ),
+        );
+      });
+
+      test(
+        '403 without the API envelope is transient — a WAF answered',
+        () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Blocked by security policy</html>',
+              statusCode: 403,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemoteTransientException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                403,
+              ),
+            ),
+          );
+        },
+      );
+
+      test('403 carrying the API envelope is permanent — the application '
+          'refused', () async {
+        final remote = remoteOver(
+          cannedDio(body: envelope(403, 'Forbidden'), statusCode: 403),
+        );
+
+        await expectLater(
+          () => remote.createHousehold(name: 'HQ'),
+          throwsA(
+            isA<HouseholdRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('an empty-bodied 403 is transient — nothing asserts the '
+          'application answered', () async {
+        final remote = remoteOver(cannedDio(body: '', statusCode: 403));
+
+        await expectLater(
+          () => remote.createHousehold(name: 'HQ'),
+          throwsA(isA<HouseholdRemoteTransientException>()),
+        );
+      });
+
+      test(
+        'a thrown 403 is classified the same way as a returned one',
+        () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: envelope(403, 'Forbidden'),
+              statusCode: 403,
+              permissiveStatus: false,
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(isA<HouseholdRemotePermanentException>()),
+          );
+        },
+      );
+
+      // The envelope probe runs synchronously on the UI isolate, so it is
+      // bounded. A body far past any envelope's size is not the envelope, and
+      // parsing it to find that out is the cost the bound exists to refuse.
+      test('an oversized body claiming to be the envelope does not license '
+          'permanence', () async {
+        final padded = jsonEncode({
+          'statusCode': 403,
+          'message': 'x' * (8 * 1024),
+          'error': 'Forbidden',
+        });
+
+        final remote = remoteOver(cannedDio(body: padded, statusCode: 403));
+
+        await expectLater(
+          () => remote.createHousehold(name: 'HQ'),
+          throwsA(isA<HouseholdRemoteTransientException>()),
+        );
+      });
+
+      test(
+        '409 keeps its envelope-free permanence — the rule is 403-only',
+        () async {
+          final remote = remoteOver(
+            cannedDio(
+              body: '<html>Conflict</html>',
+              statusCode: 409,
+              contentType: 'text/html',
+            ),
+          );
+
+          await expectLater(
+            () => remote.createHousehold(name: 'HQ'),
+            throwsA(isA<HouseholdRemotePermanentException>()),
+          );
+        },
+      );
+    });
+
+    group('responseType is pinned per request (#360)', () {
+      HouseholdRemoteDataSource remoteOver(Dio dio) =>
+          HouseholdRemoteDataSourceImpl(dio);
+
+      for (final type in [ResponseType.bytes, ResponseType.stream]) {
+        test('an injected Dio set to responseType.$type cannot reintroduce '
+            'the status-losing cast', () async {
+          final dio = cannedDio(
+            body: '<html>Bad Request</html>',
+            statusCode: 400,
+          )..options.responseType = type;
+
+          await expectLater(
+            () => remoteOver(dio).createHousehold(name: 'HQ'),
+            throwsA(
+              isA<HouseholdRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                400,
+              ),
+            ),
+          );
+        });
+      }
+    });
+
     group('permanent failures (non-retryable)', () {
       test('400 validation', () {
         stubPostThrows(
@@ -321,11 +523,22 @@ void main() {
         );
       });
 
-      test('403 forbidden', () {
+      // Carries the API's error envelope, which is what separates the
+      // application's own refusal from a WAF's (#350). The envelope-free 403
+      // is pinned as transient in the proxy-originated group above.
+      test('403 forbidden, written by the application', () {
         stubPostThrows(
           _dioError(
             DioExceptionType.badResponse,
-            response: _resp(null, statusCode: 403),
+            response: Response<String>(
+              data: jsonEncode({
+                'statusCode': 403,
+                'message': 'common.forbidden.access',
+                'error': 'Forbidden',
+              }),
+              statusCode: 403,
+              requestOptions: RequestOptions(path: '/api/households'),
+            ),
           ),
         );
         expect(
@@ -485,8 +698,8 @@ void main() {
         test('a thrown badResponse still classifies by status', () async {
           final remote = remoteOver(
             cannedDio(
-              body: '<html>Forbidden</html>',
-              statusCode: 403,
+              body: '<html>Bad Request</html>',
+              statusCode: 400,
               contentType: 'text/html',
               permissiveStatus: false,
             ),
@@ -498,7 +711,7 @@ void main() {
               isA<HouseholdRemotePermanentException>().having(
                 (e) => e.statusCode,
                 'statusCode',
-                403,
+                400,
               ),
             ),
           );

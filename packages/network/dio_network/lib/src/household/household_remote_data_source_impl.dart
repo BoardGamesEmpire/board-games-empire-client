@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
+import 'package:http_status/http_status.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 
 /// [HouseholdRemoteDataSource] over a **per-server** Dio instance (#39).
@@ -25,8 +27,28 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   static const String _basePath = '/api/households';
 
   /// 4xx statuses that are nonetheless worth retrying: an expired session
-  /// (401), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 408, 429};
+  /// (401), a request timeout (408), the throttle (429), and proxy
+  /// authentication (407).
+  ///
+  /// 407 is here because the household API has no code path that emits it —
+  /// it is defined to come from a proxy, so it says the request never reached
+  /// the application (#350). 511 belongs to the same family and needs no entry:
+  /// it is a 5xx, so `status >= 500` already covers it.
+  static const Set<int> _retryable4xx = {401, 407, 408, 429};
+
+  /// Pinned on every request rather than inherited from the injected Dio.
+  ///
+  /// Asking for `Response<String>` is not sufficient on its own: `fetch`'s
+  /// forcing block is skipped when the instance's `responseType` is already
+  /// `bytes`/`stream` (`dio_mixin.dart:419-421`), and `assureResponse` then
+  /// casts the body to `String` anyway (`:807`). That `TypeError` escapes as
+  /// `DioException(type: unknown)` with no response attached — the same
+  /// status-losing failure #265 fixed here, arriving by a different route.
+  /// #360 owns generalising this across the remaining call sites.
+  ///
+  /// A fresh instance per call: `Options` is mutable, and one shared between
+  /// the two request methods is a shared mutable default waiting to be edited.
+  static Options get _plainBody => Options(responseType: ResponseType.plain);
 
   @override
   Future<PaginatedResult<HouseholdWithMembers>> fetchHouseholds({
@@ -40,6 +62,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     try {
       response = await _dio.get<String>(
         _basePath,
+        options: _plainBody,
         queryParameters: {'page': page, 'limit': limit},
       );
     } on DioException catch (error) {
@@ -58,7 +81,12 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
     if (status < 200 || status >= 300) {
-      throw _classifyStatus(status, '$action returned $status', cause: null);
+      throw _classifyStatus(
+        status,
+        '$action returned $status',
+        cause: null,
+        body: response.data,
+      );
     }
 
     final body = await _requireJsonObject(
@@ -95,6 +123,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     try {
       response = await _dio.post<String>(
         '/api/households',
+        options: _plainBody,
         data: {
           'name': name,
           'description': ?description,
@@ -119,7 +148,12 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
     if (status < 200 || status >= 300) {
-      throw _classifyStatus(status, '$action returned $status', cause: null);
+      throw _classifyStatus(
+        status,
+        '$action returned $status',
+        cause: null,
+        body: response.data,
+      );
     }
 
     final data = await _requireJsonObject(
@@ -364,15 +398,46 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         status,
         '$action failed with status $status',
         cause: error,
+        body: error.response?.data,
       );
     }
     return HouseholdRemoteTransientException('$action failed', cause: error);
   }
 
+  /// Classifies an answered request by what its status licenses a caller to
+  /// conclude.
+  ///
+  /// The question is never "did this fail" — the status already says so — but
+  /// **"will the same request fail the same way again?"**, because that is
+  /// what the drain worker acts on. Permanent cancels the queue entry and
+  /// discards the user's work; transient keeps it and retries to the cap. So
+  /// the bar for permanent is evidence that the household API itself rejected
+  /// the request, not merely that something rejected it.
+  ///
+  /// - **5xx, and 401 / 407 / 408 / 429** — transient. Expired session,
+  ///   timeout, throttle, proxy auth: all conditions a later attempt can
+  ///   survive.
+  /// - **404** — transient, unconditionally. Every household route is fixed
+  ///   server-side, so a 404 can only mean the request did not reach the
+  ///   module (#297). See the branch below for why the envelope is not
+  ///   consulted.
+  /// - **403** — transient unless the body carries the API's error envelope.
+  ///   The application can genuinely emit a 403, so this one is gated on
+  ///   evidence rather than settled by the status (#350).
+  /// - **Any other 4xx** — permanent. A 400, 409 or 422 on these routes is the
+  ///   application rejecting the request's content, and the content will not
+  ///   change on retry. #122 adds the first routes whose 4xx can carry row
+  ///   semantics; that is when this grows a per-call-site meaning.
+  /// - **1xx / 3xx** — transient. Surfaced only by the permissive
+  ///   `validateStatus`, and carrying no rejection semantics at all.
+  ///
+  /// [body] is the raw, undecoded body when there is one. It is read only by
+  /// the 403 branch, and only through [isApiErrorEnvelope]'s bounded probe.
   HouseholdRemoteException _classifyStatus(
     int status,
     String message, {
     required Object? cause,
+    required Object? body,
   }) {
     final transient = status >= 500 || _retryable4xx.contains(status);
     if (transient) {
@@ -415,6 +480,34 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // local cache, so it adds no route with a row-level 404.)
       return HouseholdRemoteTransientException(
         '$message — the household route was not reachable',
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    if (status == HttpStatusCode.forbidden &&
+        !isApiErrorEnvelope(body, status)) {
+      // Unlike 404, the envelope IS a usable discriminator at 403. Nest
+      // answers an unmatched route with a 404 carrying the standard envelope
+      // — which is why #297 could not gate the 404 on it — but it does not
+      // answer an unmatched route with a 403. So a 403 without the
+      // envelope was not written by the application: a corporate proxy or WAF
+      // blocked the POST.
+      //
+      // The cost of getting this wrong runs one way. Permanent does not merely
+      // fail the attempt: once #121 owns cancel semantics it cancels the queue
+      // entry and discards the household the user just created, for a block
+      // that a retry after they leave the network would have survived. A
+      // genuine authorization refusal misread as transient only retries to the
+      // cap (#350).
+      //
+      // What this rests on: every production 403 on these routes is raised
+      // with a message, so Nest renders the envelope. A bare
+      // `ForbiddenException()` added to a household route later would carry
+      // none, read here as a proxy block, and retry a refusal that will never
+      // change. Nothing in this package can notice that happen — #263 is the
+      // mechanism that would.
+      return HouseholdRemoteTransientException(
+        '$message — the request did not reach the household module',
         cause: cause,
         statusCode: status,
       );

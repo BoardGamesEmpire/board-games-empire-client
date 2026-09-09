@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -64,17 +66,29 @@ Map<String, dynamic> _entryJson({
   'release': {'id': 'rel_1', 'editionName': 'Deluxe', 'releaseYear': 2018},
 };
 
-Response<Object?> _resp(Map<String, dynamic>? data, {int? statusCode = 200}) =>
-    Response<Object?>(
-      data: data,
+/// `_send` asks Dio for `Response<String>` (#351), so a stubbed response
+/// carries the body as the raw text the transport would have handed back —
+/// undecoded, exactly as production sees it.
+Response<String> _resp(Map<String, dynamic>? data, {int? statusCode = 200}) =>
+    Response<String>(
+      data: data == null ? null : jsonEncode(data),
       statusCode: statusCode,
       requestOptions: RequestOptions(path: _path),
     );
 
 /// A response whose body is deliberately not a JSON object.
-Response<Object?> _resp2(Object? data, {int? statusCode = 200}) =>
-    Response<Object?>(
-      data: data,
+///
+/// A `String` is passed through as the literal body — that is how a caller
+/// spells "this response is not JSON at all". Anything else is encoded, so a
+/// bare array or number arrives as the valid-JSON-but-wrong-shape it is meant
+/// to be.
+Response<String> _resp2(Object? data, {int? statusCode = 200}) =>
+    Response<String>(
+      data: switch (data) {
+        null => null,
+        final String text => text,
+        _ => jsonEncode(data),
+      },
       statusCode: statusCode,
       requestOptions: RequestOptions(path: _path),
     );
@@ -106,10 +120,11 @@ void main() {
     remote = GameCollectionRemoteDataSourceImpl(mockDio);
   });
 
-  void stubGet(Response<Object?> response) {
+  void stubGet(Response<String> response) {
     when(
-      () => mockDio.get<Object?>(
+      () => mockDio.get<String>(
         any(),
+        options: any(named: 'options'),
         queryParameters: any(named: 'queryParameters'),
       ),
     ).thenAnswer((_) async => response);
@@ -117,37 +132,59 @@ void main() {
 
   void stubGetThrows(Object error) {
     when(
-      () => mockDio.get<Object?>(
+      () => mockDio.get<String>(
         any(),
+        options: any(named: 'options'),
         queryParameters: any(named: 'queryParameters'),
       ),
     ).thenThrow(error);
   }
 
-  void stubPost(Response<Object?> response) {
-    when(() => mockDio.post<Object?>(any(), data: any(named: 'data')))
-        .thenAnswer((_) async => response);
+  void stubPost(Response<String> response) {
+    when(
+      () => mockDio.post<String>(
+        any(),
+        options: any(named: 'options'),
+        data: any(named: 'data'),
+      ),
+    ).thenAnswer((_) async => response);
   }
 
   void stubPostThrows(Object error) {
-    when(() => mockDio.post<Object?>(any(), data: any(named: 'data')))
-        .thenThrow(error);
+    when(
+      () => mockDio.post<String>(
+        any(),
+        options: any(named: 'options'),
+        data: any(named: 'data'),
+      ),
+    ).thenThrow(error);
   }
 
-  void stubPatch(Response<Object?> response) {
-    when(() => mockDio.patch<Object?>(any(), data: any(named: 'data')))
-        .thenAnswer((_) async => response);
+  void stubPatch(Response<String> response) {
+    when(
+      () => mockDio.patch<String>(
+        any(),
+        options: any(named: 'options'),
+        data: any(named: 'data'),
+      ),
+    ).thenAnswer((_) async => response);
   }
 
   void stubPatchThrows(Object error) {
-    when(() => mockDio.patch<Object?>(any(), data: any(named: 'data')))
-        .thenThrow(error);
+    when(
+      () => mockDio.patch<String>(
+        any(),
+        options: any(named: 'options'),
+        data: any(named: 'data'),
+      ),
+    ).thenThrow(error);
   }
 
-  void stubDelete(Response<Object?> response) {
+  void stubDelete(Response<String> response) {
     when(
-      () => mockDio.delete<Object?>(
+      () => mockDio.delete<String>(
         any(),
+        options: any(named: 'options'),
         queryParameters: any(named: 'queryParameters'),
       ),
     ).thenAnswer((_) async => response);
@@ -155,8 +192,9 @@ void main() {
 
   void stubDeleteThrows(Object error) {
     when(
-      () => mockDio.delete<Object?>(
+      () => mockDio.delete<String>(
         any(),
+        options: any(named: 'options'),
         queryParameters: any(named: 'queryParameters'),
       ),
     ).thenThrow(error);
@@ -164,8 +202,9 @@ void main() {
 
   Map<String, dynamic> capturedQuery() =>
       verify(
-            () => mockDio.get<Object?>(
+            () => mockDio.get<String>(
               any(),
+              options: any(named: 'options'),
               queryParameters: captureAny(named: 'queryParameters'),
             ),
           ).captured.single
@@ -299,8 +338,9 @@ void main() {
       await remote.fetchCollectionPage();
 
       verify(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           _path,
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       ).called(1);
@@ -369,8 +409,9 @@ void main() {
           throwsArgumentError,
         );
         verifyNever(
-          () => mockDio.get<Object?>(
+          () => mockDio.get<String>(
             any(),
+            options: any(named: 'options'),
             queryParameters: any(named: 'queryParameters'),
           ),
         );
@@ -518,8 +559,9 @@ void main() {
       await remote.fetchEntry('gc_server_1');
 
       verify(
-        () => mockDio.get<Object?>(
+        () => mockDio.get<String>(
           '$_path/gc_server_1',
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       ).called(1);
@@ -551,8 +593,11 @@ void main() {
   group('addToCollection', () {
     Map<String, dynamic> capturedBody() =>
         verify(
-              () =>
-                  mockDio.post<Object?>(any(), data: captureAny(named: 'data')),
+              () => mockDio.post<String>(
+                any(),
+                options: any(named: 'options'),
+                data: captureAny(named: 'data'),
+              ),
             ).captured.single
             as Map<String, dynamic>;
 
@@ -591,8 +636,13 @@ void main() {
         medium: GameMedium.physical,
       );
 
-      verify(() => mockDio.post<Object?>(_path, data: any(named: 'data')))
-          .called(1);
+      verify(
+        () => mockDio.post<String>(
+          _path,
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+        ),
+      ).called(1);
     });
 
     test('sends only the identity when optionals are omitted', () async {
@@ -647,7 +697,13 @@ void main() {
         ),
         throwsArgumentError,
       );
-      verifyNever(() => mockDio.post<Object?>(any(), data: any(named: 'data')));
+      verifyNever(
+        () => mockDio.post<String>(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+        ),
+      );
     });
 
     test('a 404 (unknown platform game) is not-found, not already-removed', () {
@@ -665,8 +721,9 @@ void main() {
   group('updateEntry', () {
     Map<String, dynamic> capturedBody() =>
         verify(
-              () => mockDio.patch<Object?>(
+              () => mockDio.patch<String>(
                 any(),
+                options: any(named: 'options'),
                 data: captureAny(named: 'data'),
               ),
             ).captured.single
@@ -687,8 +744,9 @@ void main() {
       await remote.updateEntry(id: 'gc_server_1', quantity: 2);
 
       verify(
-        () => mockDio.patch<Object?>(
+        () => mockDio.patch<String>(
           '$_path/gc_server_1',
+          options: any(named: 'options'),
           data: any(named: 'data'),
         ),
       ).called(1);
@@ -747,7 +805,11 @@ void main() {
     test('an all-null patch is rejected before the request', () {
       expect(() => remote.updateEntry(id: 'gc_server_1'), throwsArgumentError);
       verifyNever(
-        () => mockDio.patch<Object?>(any(), data: any(named: 'data')),
+        () => mockDio.patch<String>(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+        ),
       );
     });
 
@@ -821,8 +883,9 @@ void main() {
   group('removeEntry', () {
     Map<String, dynamic> capturedQueryOnDelete() =>
         verify(
-              () => mockDio.delete<Object?>(
+              () => mockDio.delete<String>(
                 any(),
+                options: any(named: 'options'),
                 queryParameters: captureAny(named: 'queryParameters'),
               ),
             ).captured.single
@@ -852,8 +915,9 @@ void main() {
       await remote.removeEntry('gc_server_1');
 
       verify(
-        () => mockDio.delete<Object?>(
+        () => mockDio.delete<String>(
           '$_path/gc_server_1',
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       ).called(1);
