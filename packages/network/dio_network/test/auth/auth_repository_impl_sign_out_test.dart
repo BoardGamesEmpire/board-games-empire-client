@@ -134,6 +134,7 @@ void main() {
       await pumpEventQueue();
 
       expect(sentOptions?.headers?['Authorization'], 'Bearer live-token-xyz');
+      expect(sentOptions?.responseType, ResponseType.plain);
     });
 
     test('a failed server call alone does not throw — best-effort — and '
@@ -220,7 +221,12 @@ void main() {
           user: any(named: 'user'),
         ),
       ).thenAnswer((_) async {});
-      when(() => mockDio.get<String>('$_kAuthBase/get-session')).thenAnswer(
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
         (_) async => Response(
           data: jsonEncode({
             'session': {

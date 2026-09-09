@@ -118,6 +118,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       response = await _dio.post<String>(
         strategy.signInEndpoint,
         data: {'email': email, 'password': password},
+        options: _plainBody,
       );
     } on DioException catch (e) {
       throw _mapDioException(e, credentialGrant: true);
@@ -162,6 +163,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
           'firstName': ?firstName,
           'lastName': ?lastName,
         },
+        options: _plainBody,
       );
     } on DioException catch (e) {
       throw _mapDioException(e, credentialGrant: true);
@@ -359,7 +361,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
     late final Response<String> response;
     try {
-      response = await _dio.get<String>(_identity.sessionEndpoint);
+      response = await _dio.get<String>(
+        _identity.sessionEndpoint,
+        options: _plainBody,
+      );
     } on DioException catch (e) {
       // A rejected session (401) arrives as a Response, not a thrown
       // DioException — the per-server Dio sets validateStatus:(_)=>true, so
@@ -370,12 +375,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // failure. That was false twice over, and #352 is the second half.
       // A Dio whose validateStatus is not this factory's throws
       // `badResponse` with the response attached, which `_mapDioException`
-      // now classifies by status rather than as transport (#283). And until
-      // this request asked for `Response<String>`, Dio owned the body: a
-      // cast or a `jsonDecode` it drove itself threw from inside the call,
-      // arriving here as `DioException(type: unknown)` with no response — so
-      // a captive portal's HTML reached the user as "can't reach the
-      // server" with the dead session still on disk.
+      // now classifies by status rather than as transport (#283). And before
+      // this request asked for `Response<String>` and pinned `responseType`
+      // (see `_plainBody`, #360), Dio owned the body: a cast or a
+      // `jsonDecode` it drove itself threw from inside the call, arriving
+      // here as `DioException(type: unknown)` with no response — so a
+      // captive portal's HTML reached the user as "can't reach the server"
+      // with the dead session still on disk.
       final mapped = _mapDioException(e, credentialGrant: false);
 
       // A thrown 401/403 is the SAME definitive negative the response path
@@ -628,14 +634,23 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// [unawaited].
   Future<void> _bestEffortSignOutPost(String? token) async {
     try {
-      // `String` for the same reason as every other request here: any other
-      // type argument selects `ResponseType.json` and has Dio decode a body
-      // nothing reads. Cosmetic on this path — the catch below discards every
-      // outcome — but leaving one call site on the old rule is how the rule
-      // gets forgotten.
+      // `String` plus the pin, for the same reason as every other request
+      // here — see `_plainBody`. Cosmetic on this path, since the catch below
+      // discards every outcome, but leaving one call site off the rule is how
+      // the rule gets forgotten.
+      //
+      // Written out rather than cascaded onto `_plainBody`. This is the only
+      // site that would mutate the pinned instance, and what it writes is a
+      // bearer token: if `_plainBody` ever became a shared `final` — which
+      // its own doc warns against, and which is the obvious "avoid the
+      // allocation" refactor — a cascade here would stamp one user's
+      // `Authorization` header onto every later request in the process.
+      // Keeping every call site read-only means that refactor stays merely
+      // wrong rather than a credential leak.
       await _dio.post<String>(
         _identity.signOutEndpoint,
         options: Options(
+          responseType: ResponseType.plain,
           headers: {if (token != null) 'Authorization': 'Bearer $token'},
         ),
       );
@@ -854,12 +869,17 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// Decodes a body the transport was told not to touch, **deferring** the
   /// failure so the status can speak first.
   ///
-  /// Every request here asks Dio for `Response<String>`, the only type
-  /// argument that keeps Dio out of the body: `DioMixin.fetch` forces
-  /// `responseType` from `T` — `String` gives `plain`, and anything else gives
-  /// `json` (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`). Either half of
-  /// Dio's own handling — the cast, or a `jsonDecode` driven by a content type
-  /// that merely *claims* JSON — throws from inside the call as
+  /// Every request here asks Dio for `Response<String>` **and pins
+  /// `responseType` per request** — together, not either alone.
+  /// `DioMixin.fetch` forces `responseType` from `T`, so `String` gives
+  /// `plain` and anything else gives `json`
+  /// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`) — but it skips that forcing
+  /// entirely for an instance already set to `bytes` or `stream` (`:419-421`),
+  /// and this class takes an arbitrary `Dio` by constructor. The pin is what
+  /// makes the rule true here rather than only for the Dio the factories build
+  /// (see `_plainBody`). Either half of Dio's own handling — the cast, or a
+  /// `jsonDecode` driven by a content type that merely *claims* JSON —
+  /// throws from inside the call as
   /// `DioException(type: unknown)` with **no response attached**. The status
   /// was gone before anything could classify it, so every such answer became
   /// `AuthNetworkException`: the INDETERMINATE bucket, which keeps a dead
@@ -1010,6 +1030,22 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       );
     }
   }
+
+  /// Pins `responseType` so an **injected** Dio cannot put a non-`String` in
+  /// the body.
+  ///
+  /// `DioMixin.fetch` forces `responseType` from `T`, but skips that entirely
+  /// when the instance is already `bytes` or `stream`
+  /// (`dio-5.11.0/lib/src/dio_mixin.dart:419-421`). `assureResponse` then
+  /// casts a `Uint8List` to `String` and the `TypeError` escapes as
+  /// `DioException(type: unknown)` with no response attached — the status gone
+  /// before anything can classify it, which is #352's bug by another door.
+  /// This class takes an arbitrary `Dio` by constructor, so the type argument
+  /// alone is not enough (#360).
+  ///
+  /// A fresh instance per call: `Options` is mutable, and one shared across
+  /// four call sites is a shared mutable default waiting to be edited.
+  static Options get _plainBody => Options(responseType: ResponseType.plain);
 
   /// Whether a rejected auth response means "this email is already
   /// registered".

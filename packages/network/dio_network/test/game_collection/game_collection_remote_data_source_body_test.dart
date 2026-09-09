@@ -10,11 +10,11 @@ import '../support/canned_adapter.dart';
 const _kHtml = '<!doctype html><html><body>Sign in to continue</body></html>';
 
 /// Nest's rendering of any `HttpException` that carries a message.
-String _envelope(int status, String error) => jsonEncode({
-  'statusCode': status,
-  'message': 'errors.game_collection.not_found',
-  'error': error,
-});
+String _envelope(
+  int status,
+  String error, {
+  String message = 'errors.game_collection.rejected',
+}) => jsonEncode({'statusCode': status, 'message': message, 'error': error});
 
 Map<String, dynamic> _entry(String id) => {
   'id': id,
@@ -216,7 +216,14 @@ void main() {
   group('the 404 envelope check survives a String body', () {
     test('an application 404 on a single entry is a missing row', () async {
       final remote = remoteOver(
-        cannedDio(body: _envelope(404, 'Not Found'), statusCode: 404),
+        cannedDio(
+          body: _envelope(
+            404,
+            'Not Found',
+            message: 'errors.game_collection.not_found',
+          ),
+          statusCode: 404,
+        ),
       );
 
       await expectLater(
@@ -239,7 +246,14 @@ void main() {
 
     test('an application 404 on a removal means already removed', () async {
       final remote = remoteOver(
-        cannedDio(body: _envelope(404, 'Not Found'), statusCode: 404),
+        cannedDio(
+          body: _envelope(
+            404,
+            'Not Found',
+            message: 'errors.game_collection.not_found',
+          ),
+          statusCode: 404,
+        ),
       );
 
       await expectLater(
@@ -301,7 +315,14 @@ void main() {
 
     test('a list 404 is transient even with the envelope', () async {
       final remote = remoteOver(
-        cannedDio(body: _envelope(404, 'Not Found'), statusCode: 404),
+        cannedDio(
+          body: _envelope(
+            404,
+            'Not Found',
+            message: 'errors.game_collection.not_found',
+          ),
+          statusCode: 404,
+        ),
       );
 
       await expectLater(
@@ -313,8 +334,9 @@ void main() {
 
   // No collection route emits a 407 either — it is defined to come from a
   // proxy, so it says the request never reached the application. Same
-  // reasoning as #350, no per-source decision attached. The 403 half is #365.
-  group('proxy-originated 4xx (#365, 407 half)', () {
+  // reasoning as #350, no per-source decision attached. The 403 half landed
+  // here too (#365).
+  group('proxy-originated 4xx (#365)', () {
     test('407 is transient on a queued write', () async {
       final remote = remoteOver(
         cannedDio(
@@ -351,7 +373,7 @@ void main() {
       );
     });
 
-    test('403 stays permanent here — the rule is not ported (#365)', () async {
+    test('an envelope-free 403 is transient on a queued write', () async {
       final remote = remoteOver(
         cannedDio(
           body: '<html>Blocked</html>',
@@ -361,8 +383,38 @@ void main() {
       );
 
       await expectLater(
+        remote.removeEntry('gc_1'),
+        throwsA(
+          isA<GameCollectionRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+    });
+
+    test('a 403 carrying the API envelope stays permanent', () async {
+      final remote = remoteOver(
+        cannedDio(
+          body: _envelope(
+            403,
+            'Forbidden',
+            message: 'errors.game_collection.forbidden',
+          ),
+          statusCode: 403,
+        ),
+      );
+
+      await expectLater(
         remote.fetchCollectionPage(),
-        throwsA(isA<GameCollectionRemotePermanentException>()),
+        throwsA(
+          isA<GameCollectionRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
       );
     });
   });

@@ -37,12 +37,18 @@ class WellKnownClientImpl implements WellKnownClient {
   Future<ServerIdentity> fetchIdentity(String serverUrl) async {
     final url = _buildWellKnownUrl(serverUrl);
 
-    // `Response<String>` is the only type argument that keeps Dio out of the
-    // body entirely (#182). `DioMixin.fetch` forces `responseType` from `T` —
-    // `String` gives `plain`, and **anything else, `Object?` included, gives
-    // `json`** (`dio_mixin.dart:417-427`) — and each half of Dio's own
-    // handling loses the answer:
+    // `Response<String>` **and a pinned `responseType`** are what keeps Dio
+    // out of the body — together, not either alone (#182, #360).
+    // `DioMixin.fetch` forces `responseType` from `T` — `String` gives
+    // `plain`, and **anything else, `Object?` included, gives `json`**
+    // (`dio_mixin.dart:417-427`) — but it skips that forcing entirely for an
+    // instance already set to `bytes` or `stream` (`:419-421`), and this
+    // class accepts an arbitrary injected `Dio` via `.withDio`. Each of the
+    // following loses the answer the same way:
     //
+    // * an injected Dio already set to `bytes`/`stream` skips the forcing
+    //   above, so `assureResponse` casts a `Uint8List` to `String` and the
+    //   cast throws;
     // * asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded
     //   body before this method sees it, so an HTML page throws a `TypeError`;
     // * asking for anything non-`String` makes Dio `jsonDecode` any body whose
@@ -50,7 +56,7 @@ class WellKnownClientImpl implements WellKnownClient {
     //   `application/json`, or a truncated JSON document, throws a
     //   `FormatException`.
     //
-    // Both escape as `DioException(type: unknown)` with **no response
+    // All three escape as `DioException(type: unknown)` with **no response
     // attached**, land in the catch below, and are reported as *unreachable* —
     // telling the user to check their connection about a server that answered
     // perfectly well.
@@ -62,7 +68,10 @@ class WellKnownClientImpl implements WellKnownClient {
     // the body read *after* the transport has succeeded, not during it.
     final Response<String> response;
     try {
-      response = await _dio.get<String>(url);
+      response = await _dio.get<String>(
+        url,
+        options: Options(responseType: ResponseType.plain),
+      );
     } on DioException catch (e) {
       // A DioException carrying a response means the server answered and this
       // Dio simply rejected the status — not the same thing as unreachable.
@@ -127,12 +136,21 @@ class WellKnownClientImpl implements WellKnownClient {
 
     // `body` is `Object?`, not `String?`, on purpose. This method is also
     // reached from the catch above with `DioException.response`, which is a
-    // `Response<dynamic>` — an injected Dio using `responseType.bytes`/`stream`
-    // (which `DioMixin.fetch` leaves alone) or an interceptor rejecting with an
-    // already-decoded body can put a non-String there. Narrowing here keeps
-    // that a typed `WellKnownException` instead of an implicit downcast that
-    // would throw a raw `TypeError` out of the very branch added to stop an
-    // answered server being misreported.
+    // `Response<dynamic>` — an interceptor rejecting with an already-decoded
+    // body can put a non-String there. Narrowing here keeps that a typed
+    // `WellKnownException` instead of an implicit downcast that would throw a
+    // raw `TypeError` out of the very branch added to stop an answered server
+    // being misreported. The pin (`responseType.plain`, see the `get` above)
+    // is not redundant with this narrowing, and does not subsume it. The pin
+    // settles what Dio's own transformer does for the request this class
+    // makes; it is not a guarantee about the body's runtime type, because
+    // `.withDio` accepts an arbitrary instance and three routes survive it:
+    // an interceptor rejecting with an already-decoded body it built itself;
+    // an `onRequest` interceptor writing `responseType` back, since `fetch`
+    // forces it BEFORE the interceptor chain runs
+    // (`dio-5.11.0/lib/src/dio_mixin.dart:418-427`); and a custom
+    // `transformer`, which need not consult `responseType` at all. Pin every
+    // request, and still narrow wherever the body arrives untyped (#360).
     final Object? decoded;
     if (body is String) {
       if (body.isEmpty) {

@@ -76,12 +76,9 @@ class GameCollectionRemoteDataSourceImpl
   /// cancel semantics a permanent classification discards the user's edit or
   /// deletion. 511 needs no entry, being a 5xx already covered.
   ///
-  /// #350's other rule — an envelope-free 403 is transient — is deliberately
-  /// **not** ported here, and 403 stays permanent. Collection rows carry a
-  /// `visibility` and the API genuinely refuses reads of another actor's row,
-  /// so whether an envelope-carrying 403 should be permanent or take a
-  /// per-call-site meaning the way `_NotFoundMeaning` does is a decision this
-  /// source has not made. #365 owns it.
+  /// 403 is deliberately **not** a member: it is envelope-gated in
+  /// `_classifyStatus` rather than blanket-retryable, and the reasoning lives
+  /// at that branch (#365).
   static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   @override
@@ -294,10 +291,11 @@ class GameCollectionRemoteDataSourceImpl
       );
     }
 
-    // Typed as `String` deliberately: it is the only type argument that keeps
-    // Dio out of the body. `DioMixin.fetch` forces `responseType` from `T` —
-    // `String` gives `plain`, and anything else, `Object?` included, gives
-    // `json` (`dio_mixin.dart:417-427`).
+    // Typed as `String`, which is not sufficient on its own — see
+    // `_plainBody` above for why the per-request pin has to do the rest.
+    // Together they keep Dio out of the body. `DioMixin.fetch` forces
+    // `responseType` from `T` — `String` gives `plain`, and anything else,
+    // `Object?` included, gives `json` (`dio_mixin.dart:417-427`).
     //
     // Both halves of Dio's own handling destroy the status. The cast
     // (`data as T?`) throws a `TypeError` on a 2xx that is not the expected
@@ -531,6 +529,40 @@ class GameCollectionRemoteDataSourceImpl
     if (transient) {
       return GameCollectionRemoteTransientException(
         message,
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    if (status == 403 && !isApiErrorEnvelope(body, status)) {
+      // The envelope IS a usable discriminator at 403, unlike at 404: Nest
+      // answers an unmatched route with a 404 carrying the standard envelope,
+      // but never with a 403. So a 403 without one was not written by the
+      // application — a corporate proxy or WAF blocked the request, and the
+      // status says nothing about what was asked.
+      //
+      // The cost runs one way. `_send` is shared by three queued writes, so
+      // once #121 owns cancel semantics a permanent classification discards
+      // the user's edit or deletion over a block that a retry from another
+      // network would have survived. A genuine refusal misread as transient
+      // will only retry to the cap #121 introduces.
+      //
+      // There is no per-call-site reading of a 403 to express here, which is
+      // why this needs no equivalent of _NotFoundMeaning: the API refuses an
+      // entry the actor may not see with a 404, not a 403 (#365).
+      //
+      // What this rests on: every 403 that reaches these routes is raised
+      // with a message, so Nest renders the envelope. Two producers, not one
+      // — the policy guard on the controller, and the actor middleware
+      // applied to every route ahead of it, which refuses an impersonated
+      // session with a raw literal rather than a translation key. Both carry
+      // a message, so both render the envelope.
+      //
+      // A bare `ForbiddenException()` added to a collection route — or to any
+      // middleware in front of one — would carry none, read here as a proxy
+      // block, and retry a refusal that will never change. Nothing in this
+      // package can notice that happen; #263 is the mechanism that would.
+      return GameCollectionRemoteTransientException(
+        '$message — the request did not reach the collection module',
         cause: cause,
         statusCode: status,
       );

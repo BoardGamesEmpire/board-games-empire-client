@@ -98,8 +98,19 @@ Response<String> _resp2(Object? data, {int? statusCode = 200}) =>
 /// application answered rather than a proxy in front of it.
 Map<String, dynamic> _errorEnvelope(int status) => {
   'statusCode': status,
-  'message': 'errors.game_collection.not_found',
-  'error': 'Not Found',
+  'message': 'errors.game_collection.rejected',
+  'error': _reasonPhrase[status] ?? 'Error',
+};
+
+/// Only what these tests build. `isApiErrorEnvelope` never compares the label
+/// against the status, so a wrong one here would go unnoticed — which is the
+/// reason to keep it right.
+const Map<int, String> _reasonPhrase = {
+  400: 'Bad Request',
+  403: 'Forbidden',
+  404: 'Not Found',
+  409: 'Conflict',
+  422: 'Unprocessable Entity',
 };
 
 DioException _dioError(DioExceptionType type, {int? status, Object? body}) =>
@@ -1070,7 +1081,7 @@ void main() {
       );
     });
 
-    test('a 403 on delete is still a permanent failure', () {
+    test('a 403 carrying the API envelope is permanent on delete', () {
       stubDeleteThrows(_dioError(DioExceptionType.badResponse, status: 403));
 
       expect(
@@ -1098,21 +1109,50 @@ void main() {
       }
     });
 
-    test('400, 403, 409, 422 are permanent', () async {
-      for (final status in [400, 403, 409, 422]) {
-        stubGetThrows(_dioError(DioExceptionType.badResponse, status: status));
-        expect(
-          () => remote.fetchEntry('gc_1'),
-          throwsA(
-            isA<GameCollectionRemotePermanentException>().having(
-              (e) => e.isRetryable,
-              'isRetryable',
-              isFalse,
+    test(
+      '400, 409, 422, and an envelope-carrying 403, are permanent',
+      () async {
+        for (final status in [400, 403, 409, 422]) {
+          stubGetThrows(
+            _dioError(DioExceptionType.badResponse, status: status),
+          );
+          expect(
+            () => remote.fetchEntry('gc_1'),
+            throwsA(
+              isA<GameCollectionRemotePermanentException>().having(
+                (e) => e.isRetryable,
+                'isRetryable',
+                isFalse,
+              ),
             ),
+            reason: 'status $status should be permanent',
+          );
+        }
+      },
+    );
+
+    // The counterpart to the 403 row above. Without an envelope the API did
+    // not write the response, so the status says nothing about the request
+    // and the entry must survive for a retry (#365).
+    test('a 403 without the API envelope is transient', () async {
+      stubGetThrows(
+        _dioError(
+          DioExceptionType.badResponse,
+          status: 403,
+          body: '<html>Blocked</html>',
+        ),
+      );
+
+      expect(
+        () => remote.fetchEntry('gc_1'),
+        throwsA(
+          isA<GameCollectionRemoteTransientException>().having(
+            (e) => e.isRetryable,
+            'isRetryable',
+            isTrue,
           ),
-          reason: 'status $status should be permanent',
-        );
-      }
+        ),
+      );
     });
 
     test('connection faults without a status are transient', () async {

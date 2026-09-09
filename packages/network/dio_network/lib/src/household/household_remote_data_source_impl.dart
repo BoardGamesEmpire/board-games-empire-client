@@ -44,7 +44,8 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// casts the body to `String` anyway (`:807`). That `TypeError` escapes as
   /// `DioException(type: unknown)` with no response attached — the same
   /// status-losing failure #265 fixed here, arriving by a different route.
-  /// #360 owns generalising this across the remaining call sites.
+  /// #360 finished generalising this: every `_dio` call site under
+  /// `packages/network/*/lib` now pins `responseType` per request.
   ///
   /// A fresh instance per call: `Options` is mutable, and one shared between
   /// the two request methods is a shared mutable default waiting to be edited.
@@ -314,10 +315,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// Decodes a response body the transport was told not to touch, and
   /// requires it to be a JSON object.
   ///
-  /// Both request methods ask Dio for `Response<String>`, which is the only
-  /// type argument that keeps Dio out of the body entirely: `DioMixin.fetch`
-  /// forces `responseType` from `T` — `String` gives `plain`, and **anything
-  /// else, `Object?` included, gives `json`** (`dio_mixin.dart:417-427`).
+  /// Both request methods ask Dio for `Response<String>` and pin
+  /// `responseType` per call (see `_plainBody` above) — together, not either
+  /// alone. `DioMixin.fetch` forces `responseType` from `T` — `String` gives
+  /// `plain`, and **anything else, `Object?` included, gives `json`**
+  /// (`dio_mixin.dart:417-427`).
   ///
   /// That matters because either half of Dio's own handling loses the status.
   /// Asking for `Response<Map<String, dynamic>>` makes Dio cast the decoded

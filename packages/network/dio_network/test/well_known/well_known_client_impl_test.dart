@@ -60,31 +60,45 @@ void main() {
   group('WellKnownClientImpl.fetchIdentity', () {
     group('URL construction', () {
       test('appends /.well-known/bge-identity to bare server URL', () async {
-        when(() => mockDio.get<String>('$_kServerUrl/.well-known/bge-identity'))
-            .thenAnswer((_) async => _makeResponse(_validIdentityJson()));
+        when(
+          () => mockDio.get<String>(
+            '$_kServerUrl/.well-known/bge-identity',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _makeResponse(_validIdentityJson()));
 
         await client.fetchIdentity(_kServerUrl);
 
         verify(
-          () => mockDio.get<String>('$_kServerUrl/.well-known/bge-identity'),
+          () => mockDio.get<String>(
+            '$_kServerUrl/.well-known/bge-identity',
+            options: any(named: 'options'),
+          ),
         ).called(1);
       });
 
       test('strips trailing slash before appending well-known path', () async {
-        when(() => mockDio.get<String>('$_kServerUrl/.well-known/bge-identity'))
-            .thenAnswer((_) async => _makeResponse(_validIdentityJson()));
+        when(
+          () => mockDio.get<String>(
+            '$_kServerUrl/.well-known/bge-identity',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _makeResponse(_validIdentityJson()));
 
         await client.fetchIdentity('$_kServerUrl/');
 
         verify(
-          () => mockDio.get<String>('$_kServerUrl/.well-known/bge-identity'),
+          () => mockDio.get<String>(
+            '$_kServerUrl/.well-known/bge-identity',
+            options: any(named: 'options'),
+          ),
         ).called(1);
       });
     });
 
     group('happy path', () {
       setUp(() {
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeResponse(_validIdentityJson()));
       });
 
@@ -109,7 +123,7 @@ void main() {
         final json = _validIdentityJson();
         json['bge_min_client_version'] = '0.1.0';
         json['bge_max_client_version'] = '3.0.0';
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeResponse(json));
 
         final identity = await client.fetchIdentity(_kServerUrl);
@@ -142,7 +156,7 @@ void main() {
             'sign_up_endpoint': '/api/auth/sign-up/email',
           },
         ];
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeResponse(json));
 
         final identity = await client.fetchIdentity(_kServerUrl);
@@ -155,7 +169,7 @@ void main() {
 
     group('404 response', () {
       setUp(() {
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeEmptyResponse(statusCode: 404));
       });
 
@@ -178,7 +192,7 @@ void main() {
 
     group('non-200/404 response', () {
       test('throws WellKnownInvalidResponseException for 500', () async {
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeEmptyResponse(statusCode: 500));
 
         expect(
@@ -194,7 +208,7 @@ void main() {
       });
 
       test('throws WellKnownInvalidResponseException for 401', () async {
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeEmptyResponse(statusCode: 401));
 
         expect(
@@ -206,7 +220,7 @@ void main() {
 
     group('empty body on 200', () {
       test('throws WellKnownInvalidResponseException', () async {
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeEmptyResponse(statusCode: 200));
 
         expect(
@@ -218,12 +232,13 @@ void main() {
 
     group('network failures', () {
       test('throws WellKnownUnreachableException on connection timeout', () {
-        when(() => mockDio.get<String>(any())).thenThrow(
-          DioException(
-            type: DioExceptionType.connectionTimeout,
-            requestOptions: RequestOptions(path: ''),
-          ),
-        );
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenThrow(
+              DioException(
+                type: DioExceptionType.connectionTimeout,
+                requestOptions: RequestOptions(path: ''),
+              ),
+            );
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
@@ -232,12 +247,13 @@ void main() {
       });
 
       test('throws WellKnownUnreachableException on connection error', () {
-        when(() => mockDio.get<String>(any())).thenThrow(
-          DioException(
-            type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
-          ),
-        );
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenThrow(
+              DioException(
+                type: DioExceptionType.connectionError,
+                requestOptions: RequestOptions(path: ''),
+              ),
+            );
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
@@ -252,7 +268,8 @@ void main() {
             type: DioExceptionType.connectionError,
             requestOptions: RequestOptions(path: ''),
           );
-          when(() => mockDio.get<String>(any())).thenThrow(dioError);
+          when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+              .thenThrow(dioError);
 
           try {
             await client.fetchIdentity(_kServerUrl);
@@ -270,9 +287,10 @@ void main() {
         'throws WellKnownInvalidResponseException on parse failure',
         () async {
           // Missing required fields — fromJson will throw
-          when(() => mockDio.get<String>(any())).thenAnswer(
-            (_) async => _makeResponse({'bge_server_id': 'only-id'}),
-          );
+          when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+              .thenAnswer(
+                (_) async => _makeResponse({'bge_server_id': 'only-id'}),
+              );
 
           expect(
             () => client.fetchIdentity(_kServerUrl),
