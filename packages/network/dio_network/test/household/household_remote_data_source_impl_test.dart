@@ -482,24 +482,27 @@ void main() {
           HouseholdRemoteDataSourceImpl(dio);
 
       for (final type in [ResponseType.bytes, ResponseType.stream]) {
-        test('an injected Dio set to responseType.$type cannot reintroduce '
-            'the status-losing cast', () async {
-          final dio = cannedDio(
-            body: '<html>Bad Request</html>',
-            statusCode: 400,
-          )..options.responseType = type;
+        test(
+          'an injected Dio set to responseType.${type.name} cannot reintroduce '
+          'the status-losing cast',
+          () async {
+            final dio = cannedDio(
+              body: '<html>Bad Request</html>',
+              statusCode: 400,
+            )..options.responseType = type;
 
-          await expectLater(
-            () => remoteOver(dio).createHousehold(name: 'HQ'),
-            throwsA(
-              isA<HouseholdRemotePermanentException>().having(
-                (e) => e.statusCode,
-                'statusCode',
-                400,
+            await expectLater(
+              () => remoteOver(dio).createHousehold(name: 'HQ'),
+              throwsA(
+                isA<HouseholdRemotePermanentException>().having(
+                  (e) => e.statusCode,
+                  'statusCode',
+                  400,
+                ),
               ),
-            ),
-          );
-        });
+            );
+          },
+        );
       }
     });
 

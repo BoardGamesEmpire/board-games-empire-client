@@ -191,22 +191,25 @@ void main() {
   // the request rather than inherited (#360).
   group('responseType is pinned per request', () {
     for (final type in [ResponseType.bytes, ResponseType.stream]) {
-      test('an injected Dio set to responseType.$type cannot reintroduce the '
-          'status-losing cast', () async {
-        final dio = cannedDio(body: _kHtml, statusCode: 400)
-          ..options.responseType = type;
+      test(
+        'an injected Dio set to responseType.${type.name} cannot reintroduce the '
+        'status-losing cast',
+        () async {
+          final dio = cannedDio(body: _kHtml, statusCode: 400)
+            ..options.responseType = type;
 
-        await expectLater(
-          remoteOver(dio).fetchCollectionPage(),
-          throwsA(
-            isA<GameCollectionRemotePermanentException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              400,
+          await expectLater(
+            remoteOver(dio).fetchCollectionPage(),
+            throwsA(
+              isA<GameCollectionRemotePermanentException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                400,
+              ),
             ),
-          ),
-        );
-      });
+          );
+        },
+      );
     }
   });
 

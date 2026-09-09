@@ -12,22 +12,25 @@ void main() {
   // Dio's own body handling never runs and this hazard cannot be seen from it.
   group('responseType is pinned per request (#360)', () {
     for (final type in [ResponseType.bytes, ResponseType.stream]) {
-      test('an injected Dio set to responseType.$type still reports a 502 '
-          'as an answer, not an unreachable server', () async {
-        final dio = cannedDio(body: '<html>Gateway</html>', statusCode: 502)
-          ..options.responseType = type;
+      test(
+        'an injected Dio set to responseType.${type.name} still reports a 502 '
+        'as an answer, not an unreachable server',
+        () async {
+          final dio = cannedDio(body: '<html>Gateway</html>', statusCode: 502)
+            ..options.responseType = type;
 
-        await expectLater(
-          WellKnownClientImpl.withDio(dio).fetchIdentity(_kServerUrl),
-          throwsA(
-            isA<WellKnownInvalidResponseException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              502,
+          await expectLater(
+            WellKnownClientImpl.withDio(dio).fetchIdentity(_kServerUrl),
+            throwsA(
+              isA<WellKnownInvalidResponseException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                502,
+              ),
             ),
-          ),
-        );
-      });
+          );
+        },
+      );
     }
 
     // The other way into `_interpret`: with `validateStatus` left at Dio's
