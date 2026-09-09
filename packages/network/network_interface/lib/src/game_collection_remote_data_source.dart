@@ -89,10 +89,10 @@ import 'package:models/domain.dart';
 ///   and is simply not what was expected stays permanent; the split is between
 ///   "the response is wrong" and "this device could not read it".
 /// - [GameCollectionRemotePermanentException]: 400 (validation), 403, every
-///   other 4xx apart from 407, and a 2xx whose body carries no parseable entry
-///   — empty, not JSON, or decoding to the wrong shape. The one unparseable
-///   2xx that is **not** permanent is the decode-execution failure described
-///   above; every other unreadable body is.
+///   other 4xx that is neither a 404 nor retryable, and a 2xx whose body
+///   carries no parseable entry — empty, not JSON, or decoding to the wrong
+///   shape. The one unparseable 2xx that is **not** permanent is the
+///   decode-execution failure described above; every other unreadable body is.
 ///
 ///   403 is permanent here **unconditionally**, unlike the household source,
 ///   where an envelope-free 403 is transient (#350). Collection rows carry a
