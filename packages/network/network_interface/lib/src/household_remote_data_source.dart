@@ -36,9 +36,11 @@ typedef HouseholdWithMembers = ({
 /// see a raw transport exception — split into:
 ///
 /// - [HouseholdRemoteTransientException] (**retryable**): connection errors,
-///   timeouts, 401 (a session can expire mid-flight), 407, 408, 429, all 5xx,
-///   and any failure without a response status. The caller should keep the
-///   queued create operation for a later retry.
+///   timeouts, 401 (a session can expire mid-flight), 408, 429, all 5xx, any
+///   failure without a response status, and the three 4xx the rules below
+///   carve out — every 404, every 407, and a 403 without the API's error
+///   envelope. The caller should keep the queued create operation for a later
+///   retry.
 /// - [HouseholdRemotePermanentException]: 400 (validation), every 4xx the
 ///   three rules below do not carve out, and a 2xx whose body doesn't carry a
 ///   parseable household — retrying cannot succeed.
