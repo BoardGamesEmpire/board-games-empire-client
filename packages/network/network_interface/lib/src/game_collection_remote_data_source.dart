@@ -76,8 +76,9 @@ import 'package:models/domain.dart';
 ///
 ///   407 is here because it is defined to come from a proxy and no collection
 ///   route emits one, so it reports that the request never reached the
-///   application rather than anything about the request (#350's rule, applied
-///   here by #365).
+///   application rather than anything about the request. That half of #350's
+///   rule carries no decision, so it is ported here; the 403 half does, and is
+///   not (below).
 ///
 ///   One 2xx belongs in this bucket too, and it is the exception to the
 ///   permanent rule below: a 2xx whose body could not be **decoded at all**
