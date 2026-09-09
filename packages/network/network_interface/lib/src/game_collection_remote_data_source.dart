@@ -88,7 +88,10 @@ import 'package:models/domain.dart';
 ///   and is simply not what was expected stays permanent; the split is between
 ///   "the response is wrong" and "this device could not read it".
 /// - [GameCollectionRemotePermanentException]: 400 (validation), 403, every
-///   other 4xx, and a 2xx whose body carries no parseable entry.
+///   other 4xx apart from 407, and a 2xx whose body carries no parseable entry
+///   — empty, not JSON, or decoding to the wrong shape. The one unparseable
+///   2xx that is **not** permanent is the decode-execution failure described
+///   above; every other unreadable body is.
 ///
 ///   403 is permanent here **unconditionally**, unlike the household source,
 ///   where an envelope-free 403 is transient (#350). Collection rows carry a
@@ -331,8 +334,13 @@ sealed class GameCollectionRemoteException implements Exception {
 }
 
 /// A retryable failure — the caller should keep the queued operation and let
-/// it retry later. Covers connection errors, timeouts, 401/408/429, 5xx, and
-/// status-less failures.
+/// it retry later. Covers connection errors, timeouts, 401/407/408/429, 5xx,
+/// status-less failures, a 404 that does not carry the API's error envelope,
+/// and the one 2xx that belongs here: a body this device could not decode at
+/// all, as opposed to one that decoded and was wrong.
+///
+/// See the classification section on [GameCollectionRemoteDataSource] for why
+/// each of those is retryable.
 final class GameCollectionRemoteTransientException
     extends GameCollectionRemoteException {
   const GameCollectionRemoteTransientException(
@@ -346,7 +354,8 @@ final class GameCollectionRemoteTransientException
 }
 
 /// A non-retryable failure — retrying cannot succeed. Covers 400/403 and every
-/// other 4xx that is not a 404, plus a 2xx whose body has no parseable entry.
+/// other 4xx that is neither a 404 nor retryable, plus a 2xx whose body has no
+/// parseable entry — empty, not JSON, or decoding to the wrong shape.
 final class GameCollectionRemotePermanentException
     extends GameCollectionRemoteException {
   const GameCollectionRemotePermanentException(

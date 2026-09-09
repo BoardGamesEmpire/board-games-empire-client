@@ -39,9 +39,9 @@ typedef HouseholdWithMembers = ({
 ///   timeouts, 401 (a session can expire mid-flight), 407, 408, 429, all 5xx,
 ///   and any failure without a response status. The caller should keep the
 ///   queued create operation for a later retry.
-/// - [HouseholdRemotePermanentException]: 400 (validation), every other 4xx,
-///   and a 2xx whose body doesn't carry a parseable household — retrying
-///   cannot succeed.
+/// - [HouseholdRemotePermanentException]: 400 (validation), every 4xx the
+///   three rules below do not carve out, and a 2xx whose body doesn't carry a
+///   parseable household — retrying cannot succeed.
 ///
 /// The governing question is not "did this fail" but **"will the same request
 /// fail the same way again?"**, because that is what the drain acts on. So the
@@ -161,8 +161,13 @@ sealed class HouseholdRemoteException implements Exception {
 }
 
 /// A retryable failure — the caller should keep the queued operation and
-/// let it retry later. Covers connection errors, timeouts, 401/408/429,
-/// 5xx, and status-less failures.
+/// let it retry later. Covers connection errors, timeouts, 401/407/408/429,
+/// 5xx, status-less failures, every 404, and a 403 that does not carry the
+/// API's error envelope.
+///
+/// The 404, 407 and 403 rules each have a reason worth reading before
+/// depending on them — see the classification section on
+/// [HouseholdRemoteDataSource].
 final class HouseholdRemoteTransientException extends HouseholdRemoteException {
   const HouseholdRemoteTransientException(
     super.message, {
@@ -171,8 +176,10 @@ final class HouseholdRemoteTransientException extends HouseholdRemoteException {
   });
 }
 
-/// A non-retryable failure — retrying cannot succeed. Covers 400/403 and
-/// every other 4xx, plus a 2xx whose body has no parseable household.
+/// A non-retryable failure — retrying cannot succeed. Covers 400, a 403 that
+/// carries the API's error envelope, every other 4xx the rules on
+/// [HouseholdRemoteDataSource] do not carve out, plus a 2xx whose body has no
+/// parseable household.
 final class HouseholdRemotePermanentException extends HouseholdRemoteException {
   const HouseholdRemotePermanentException(
     super.message, {
