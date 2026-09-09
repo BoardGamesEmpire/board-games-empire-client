@@ -2,6 +2,9 @@ import 'package:dio/dio.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../network/api_error_envelope.dart';
+import '../network/decode_json_body.dart';
+
 /// What a 404 means for the request that produced it (#253 **D6**).
 ///
 /// The API collapses missing, foreign and out-of-scope rows into one 404, so
@@ -46,9 +49,40 @@ class GameCollectionRemoteDataSourceImpl
 
   static const String _basePath = '/api/game-collections';
 
+  /// Pinned on every request rather than inherited from the injected Dio.
+  ///
+  /// Asking for `Response<String>` is not sufficient on its own. `fetch`'s
+  /// forcing block is skipped when the instance's `responseType` is already
+  /// `bytes`/`stream` (`dio_mixin.dart:419-421`), and `assureResponse` then
+  /// casts the body to `String` anyway (`:807`) — a `TypeError` escaping as
+  /// `DioException(type: unknown)` with no response attached, which is this
+  /// class's own status-losing failure arriving by a different route. `Object?`
+  /// was immune to that cast because every value satisfies it; `String` is not,
+  /// so the move to a typed body makes the pin a requirement rather than a
+  /// hardening (#351, #360).
+  ///
+  /// A fresh instance per call: `Options` is mutable, and one shared across
+  /// five endpoints is a shared mutable default waiting to be edited.
+  static Options get _plainBody => Options(responseType: ResponseType.plain);
+
   /// 4xx statuses that are nonetheless worth retrying: an expired session
-  /// (401), a request timeout (408), and the throttle (429).
-  static const Set<int> _retryable4xx = {401, 408, 429};
+  /// (401), proxy authentication (407), a request timeout (408), and the
+  /// throttle (429).
+  ///
+  /// 407 is here for the reason #350 put it in the household set: it is
+  /// defined to come from a proxy and no collection route emits one, so it
+  /// says the request never reached the application. That matters more here
+  /// than there — `_send` is shared by three queued writes, and once #121 owns
+  /// cancel semantics a permanent classification discards the user's edit or
+  /// deletion. 511 needs no entry, being a 5xx already covered.
+  ///
+  /// #350's other rule — an envelope-free 403 is transient — is deliberately
+  /// **not** ported here, and 403 stays permanent. Collection rows carry a
+  /// `visibility` and the API genuinely refuses reads of another actor's row,
+  /// so whether an envelope-carrying 403 should be permanent or take a
+  /// per-call-site meaning the way `_NotFoundMeaning` does is a decision this
+  /// source has not made. #365 owns it.
+  static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   @override
   Future<List<GameCollection>> fetchCollectionPage({
@@ -64,8 +98,9 @@ class GameCollectionRemoteDataSourceImpl
 
     const action = 'Collection list';
     final response = await _send(
-      request: () => _dio.get<Object?>(
+      request: () => _dio.get<String>(
         _basePath,
+        options: _plainBody,
         queryParameters: {
           'offset': offset,
           'limit': limit,
@@ -104,8 +139,11 @@ class GameCollectionRemoteDataSourceImpl
   Future<GameCollection> fetchEntry(String id) async {
     const action = 'Collection fetch';
     final response = await _send(
-      request: () =>
-          _dio.get<Object?>('$_basePath/$id', queryParameters: const {}),
+      request: () => _dio.get<String>(
+        '$_basePath/$id',
+        options: _plainBody,
+        queryParameters: const {},
+      ),
       action: action,
       notFound: _NotFoundMeaning.missingRow,
     );
@@ -127,8 +165,9 @@ class GameCollectionRemoteDataSourceImpl
 
     const action = 'Collection add';
     final response = await _send(
-      request: () => _dio.post<Object?>(
+      request: () => _dio.post<String>(
         _basePath,
+        options: _plainBody,
         data: {
           'platformGameId': platformGameId,
           'medium': medium.toWire(),
@@ -183,7 +222,8 @@ class GameCollectionRemoteDataSourceImpl
 
     const action = 'Collection update';
     final response = await _send(
-      request: () => _dio.patch<Object?>('$_basePath/$id', data: body),
+      request: () =>
+          _dio.patch<String>('$_basePath/$id', options: _plainBody, data: body),
       action: action,
       notFound: _NotFoundMeaning.missingRow,
     );
@@ -194,8 +234,9 @@ class GameCollectionRemoteDataSourceImpl
   Future<GameCollection> removeEntry(String id, {String? reason}) async {
     const action = 'Collection remove';
     final response = await _send(
-      request: () => _dio.delete<Object?>(
+      request: () => _dio.delete<String>(
         '$_basePath/$id',
+        options: _plainBody,
         queryParameters: {'reason': ?reason},
       ),
       action: action,
@@ -210,11 +251,11 @@ class GameCollectionRemoteDataSourceImpl
   /// Sends [request] and returns its decoded body, having converted every
   /// failure mode into a [GameCollectionRemoteException].
   Future<({Map<String, dynamic> body, int status})> _send({
-    required Future<Response<Object?>> Function() request,
+    required Future<Response<String>> Function() request,
     required String action,
     required _NotFoundMeaning notFound,
   }) async {
-    late final Response<Object?> response;
+    late final Response<String> response;
     try {
       response = await request();
     } on DioException catch (error) {
@@ -225,10 +266,12 @@ class GameCollectionRemoteDataSourceImpl
       //
       // `Object` and not `Exception`, deliberately: the interface promises
       // callers never see a raw transport error, and an `Error` escaping here
-      // unwrapped would break that in the drain rather than in a test. The one
-      // `Error` this used to swallow — Dio's own body cast — no longer reaches
-      // here at all, because the request now asks for an untyped body. Mapping
-      // errors are classified separately, and permanently, by `_parse`.
+      // unwrapped would break that in the drain rather than in a test. Dio's
+      // own body handling no longer reaches here: asking for
+      // `Response<String>` keeps it out of the body entirely, and pinning
+      // `responseType` closes the one route by which an injected instance
+      // could put it back (#351). Mapping errors are classified separately,
+      // and permanently, by `_parse`.
       throw GameCollectionRemoteTransientException(
         '$action failed unexpectedly',
         cause: error,
@@ -251,25 +294,64 @@ class GameCollectionRemoteDataSourceImpl
       );
     }
 
-    // Typed as `Object?` deliberately. Asking Dio for
-    // `Response<Map<String, dynamic>>` makes it cast the decoded body itself
-    // (`data as T?`, dio_mixin.dart:741) on the success path, before this
-    // method sees anything. A 2xx whose body is not a JSON object — an HTML
-    // captive-portal page, a bare array — would throw a `TypeError` from
-    // inside `request()`, reach the `on Object` branch above, and be reported
-    // as a **transient** failure that retries forever. The interface promises
-    // that case is permanent, so the type check belongs here, after the status
-    // is known.
-    final body = response.data;
-    if (body is! Map<String, dynamic>) {
+    // Typed as `String` deliberately: it is the only type argument that keeps
+    // Dio out of the body. `DioMixin.fetch` forces `responseType` from `T` —
+    // `String` gives `plain`, and anything else, `Object?` included, gives
+    // `json` (`dio_mixin.dart:417-427`).
+    //
+    // Both halves of Dio's own handling destroy the status. The cast
+    // (`data as T?`) throws a `TypeError` on a 2xx that is not the expected
+    // shape; the transformer's `jsonDecode` throws a `FormatException` on any
+    // body whose *content type* merely claims JSON. Either escapes `request()`
+    // as `DioException(type: unknown)` with **no response attached**, so
+    // `_classifyDioException` read a null status and called a permanent
+    // failure transient — which the drain then retries forever (#351).
+    //
+    // Decoding here, after the status is read, is what restores it.
+    final raw = response.data;
+    if (raw == null || raw.isEmpty) {
       throw GameCollectionRemotePermanentException(
-        body == null
-            ? '$action returned an empty body'
-            : '$action returned a body that is not a JSON object',
+        '$action returned an empty body',
         statusCode: status,
       );
     }
-    return (body: body, status: status);
+
+    final Object? decoded;
+    try {
+      decoded = await decodeJsonBody(raw);
+    } on FormatException catch (error) {
+      // A body that is not JSON is a statement about the response: the same
+      // request will produce the same unparseable payload.
+      throw GameCollectionRemotePermanentException(
+        '$action returned a body that is not JSON',
+        statusCode: status,
+        cause: error,
+      );
+    } on Object catch (error) {
+      // Not a statement about the response. `decodeJsonBody` hands a body over
+      // 50 KB to another isolate, and a failure to spawn one is local and
+      // momentary — so this is the one decode failure that must stay
+      // transient. Permanent would cancel the queued operation and discard the
+      // user's edit over a fault the server had no part in (#297).
+      //
+      // This clause sits outside the `on Object` net around the Dio call
+      // above, because decoding moved out from under it when the body became a
+      // `String` — without it the interface's "callers never see a raw
+      // transport exception" would stop holding.
+      throw GameCollectionRemoteTransientException(
+        '$action could not be decoded',
+        statusCode: status,
+        cause: error,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw GameCollectionRemotePermanentException(
+        '$action returned a body that is not a JSON object',
+        statusCode: status,
+      );
+    }
+    return (body: decoded, status: status);
   }
 
   /// Unwraps the `{ collection }` envelope every single-entry endpoint returns
@@ -405,11 +487,15 @@ class GameCollectionRemoteDataSourceImpl
   /// property is that the list route 404s in the same deployment, and that is
   /// transient unconditionally, so a missing module surfaces as a hydrate that
   /// never succeeds.
+  ///
+  /// The body arrives here **undecoded** — `_send` asks Dio for
+  /// `Response<String>`, so the envelope has to be probed out of the raw text
+  /// rather than read off a map. [isApiErrorEnvelope] does that with a bounded
+  /// synchronous parse: this question is asked about a response already headed
+  /// for the bin on its status, so it must not pay `decodeJsonBody`'s isolate
+  /// hop on a multi-megabyte portal page.
   static bool _isApplicationError(Object? body, int status) =>
-      body is Map &&
-      body['statusCode'] == status &&
-      body['message'] != null &&
-      body['error'] is String;
+      isApiErrorEnvelope(body, status);
 
   /// A response status, when present, is authoritative; without one the
   /// failure is a connection-level fault and always transient.

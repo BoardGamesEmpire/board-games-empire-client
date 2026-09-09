@@ -71,10 +71,30 @@ import 'package:models/domain.dart';
 /// this API has (#253 D6):
 ///
 /// - [GameCollectionRemoteTransientException] (**retryable**): connection
-///   errors, timeouts, 401 (a session can expire mid-flight), 408, 429, all
-///   5xx, and any failure without a response status.
+///   errors, timeouts, 401 (a session can expire mid-flight), 407, 408, 429,
+///   all 5xx, and any failure without a response status.
+///
+///   407 is here because it is defined to come from a proxy and no collection
+///   route emits one, so it reports that the request never reached the
+///   application rather than anything about the request (#350's rule, applied
+///   here by #365).
+///
+///   One 2xx belongs in this bucket too, and it is the exception to the
+///   permanent rule below: a 2xx whose body could not be **decoded at all**
+///   because the decode could not be performed — in practice an isolate that
+///   would not spawn under memory pressure. That says nothing about the
+///   response, and filing it as permanent would cancel a queued operation over
+///   a local, momentary fault the server had no part in. A body that decodes
+///   and is simply not what was expected stays permanent; the split is between
+///   "the response is wrong" and "this device could not read it".
 /// - [GameCollectionRemotePermanentException]: 400 (validation), 403, every
 ///   other 4xx, and a 2xx whose body carries no parseable entry.
+///
+///   403 is permanent here **unconditionally**, unlike the household source,
+///   where an envelope-free 403 is transient (#350). Collection rows carry a
+///   `visibility` and this API genuinely refuses reads of another actor's row,
+///   so the household argument does not transfer unexamined. #365 owns the
+///   decision; until it is made, the stricter reading stands.
 /// - [GameCollectionNotFoundException]: a 404 from [fetchEntry], [updateEntry]
 ///   or [addToCollection] — the row (or, for an add, the platform game or
 ///   release) does not exist for this actor. Permanent.
@@ -103,12 +123,27 @@ import 'package:models/domain.dart';
 /// before returning [GameCollectionAlreadyRemovedException] or
 /// [GameCollectionNotFoundException]. A 404 without it is **transient**.
 ///
-/// That means the envelope **whole**, not a prefix of it, and with its
-/// `statusCode` agreeing with the response's own status. The filter builds the
+/// That means the envelope **whole**, not a prefix of it, with its
+/// `statusCode` agreeing with the response's own status, and **small enough to
+/// be an envelope at all**. The filter builds the
 /// body from the exception's status, so a real application 404 always carries
 /// all three fields and always says `404`; a two-field lookalike, or a body
 /// announcing some other status, came from a different producer — a gateway
 /// rewriting an upstream failure — and licenses no row-level conclusion.
+///
+/// The size condition is the one that is easy to miss, because it is imposed
+/// by *how* the envelope is read rather than by what it contains. An
+/// implementation taking the body as a `String` has to parse it to inspect it,
+/// and doing that synchronously on a multi-megabyte page — to answer a yes/no
+/// question about three keys — is exactly the cost that makes a proxy's error
+/// page expensive. So the read is bounded, and a body past the bound is not
+/// parsed: it reports no envelope, and the 404 falls back to transient.
+///
+/// A real envelope is a few hundred bytes, so this narrows nothing in
+/// practice; and where it does bite, it errs toward retrying a removal rather
+/// than marking one completed for a request the service may never have seen.
+/// It is stated here because it is a second condition on a rule this doc calls
+/// normative, not an implementation detail.
 ///
 /// This matters most for a removal, because already-removed tells a drain to
 /// mark the operation **completed**: doing that for a request the service

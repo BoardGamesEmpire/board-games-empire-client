@@ -106,6 +106,7 @@ void main() {
     when(
       () => mockDio.get<String>(
         any(),
+        options: any(named: 'options'),
         queryParameters: any(named: 'queryParameters'),
       ),
     ).thenAnswer((_) async => response);
@@ -283,6 +284,7 @@ void main() {
         verify(
               () => mockDio.get<String>(
                 any(),
+                options: any(named: 'options'),
                 queryParameters: captureAny(named: 'queryParameters'),
               ),
             ).captured.single
@@ -314,6 +316,7 @@ void main() {
       verify(
         () => mockDio.get<String>(
           '/api/households',
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       ).called(1);
@@ -329,6 +332,7 @@ void main() {
       verifyNever(
         () => mockDio.get<String>(
           any(),
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       );
@@ -364,6 +368,7 @@ void main() {
       verify(
         () => mockDio.get<String>(
           any(),
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       ).called(1);
@@ -375,6 +380,7 @@ void main() {
       when(
         () => mockDio.get<String>(
           any(),
+          options: any(named: 'options'),
           queryParameters: any(named: 'queryParameters'),
         ),
       ).thenThrow(error);
@@ -453,7 +459,40 @@ void main() {
       );
     });
 
-    test('a 403 is permanent', () {
+    // #350's 403 rule is in the shared classifier, so it governs the read
+    // path too — deliberately. A WAF blocking a GET is no more the
+    // application's refusal than one blocking a POST, and permanent here ends
+    // the hydrate for the life of the process. The envelope is what makes this
+    // one the application's own.
+    test('a 403 carrying the API envelope is permanent', () {
+      stubGetThrows(
+        dioError(
+          DioExceptionType.badResponse,
+          response: Response<String>(
+            data: jsonEncode({
+              'statusCode': 403,
+              'message': 'common.forbidden.view',
+              'error': 'Forbidden',
+            }),
+            statusCode: 403,
+            requestOptions: RequestOptions(path: '/api/households'),
+          ),
+        ),
+      );
+      expect(
+        () => remote.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+    });
+
+    test('a 403 without it is transient — the read never reached the '
+        'application', () {
       stubGetThrows(
         dioError(
           DioExceptionType.badResponse,
@@ -463,7 +502,7 @@ void main() {
       expect(
         () => remote.fetchHouseholds(),
         throwsA(
-          isA<HouseholdRemotePermanentException>().having(
+          isA<HouseholdRemoteTransientException>().having(
             (e) => e.statusCode,
             'statusCode',
             403,

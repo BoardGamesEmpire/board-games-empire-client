@@ -36,19 +36,24 @@ typedef HouseholdWithMembers = ({
 /// see a raw transport exception — split into:
 ///
 /// - [HouseholdRemoteTransientException] (**retryable**): connection errors,
-///   timeouts, 401 (a session can expire mid-flight), 408, 429, all 5xx, and
-///   any failure without a response status. The caller should keep the
+///   timeouts, 401 (a session can expire mid-flight), 407, 408, 429, all 5xx,
+///   and any failure without a response status. The caller should keep the
 ///   queued create operation for a later retry.
-/// - [HouseholdRemotePermanentException]: 400 (validation), 403 (forbidden),
-///   every other 4xx, and a 2xx whose body doesn't carry a parseable
-///   household — retrying cannot succeed.
+/// - [HouseholdRemotePermanentException]: 400 (validation), every other 4xx,
+///   and a 2xx whose body doesn't carry a parseable household — retrying
+///   cannot succeed.
 ///
-/// One documented exception to "every other 4xx": **no 404 from any
-/// household route is permanent** (#297). Every household route is fixed
-/// server-side, so a 404 reports a routing or deployment fault — a misrouted
-/// path prefix, an API not yet deployed, a proxy answering for it — rather
-/// than an answer about households. There is no household route whose 404
-/// could mean "this row is gone".
+/// The governing question is not "did this fail" but **"will the same request
+/// fail the same way again?"**, because that is what the drain acts on. So the
+/// bar for permanent is evidence that the household API itself rejected the
+/// request — not merely that something did. Three 4xx statuses do not clear
+/// it:
+///
+/// **No 404 from any household route is permanent** (#297). Every household
+/// route is fixed server-side, so a 404 reports a routing or deployment fault
+/// — a misrouted path prefix, an API not yet deployed, a proxy answering for
+/// it — rather than an answer about households. There is no household route
+/// whose 404 could mean "this row is gone".
 ///
 /// On [fetchHouseholds] the cost of getting this wrong is a hydrate that
 /// ends for the life of the process, including after the server is fixed
@@ -57,7 +62,18 @@ typedef HouseholdWithMembers = ({
 /// cancels the queue entry and **discards the user's household** for a
 /// failure a later retry would have survived.
 ///
-/// Implementations must not gate this on the API's own error envelope.
+/// **407 is never permanent** (#350). It is defined to come from a proxy, and
+/// no household route emits one, so it says the request did not reach the
+/// application. (511 needs no rule of its own — it is a 5xx.)
+///
+/// **403 is permanent only when the body carries the API's own error
+/// envelope** (#350). Unlike 404, the envelope discriminates here: Nest
+/// answers an unmatched route with a 404 carrying that envelope, but does not
+/// answer one with a 403 — so an envelope-free 403 was written by a proxy or
+/// WAF in front of the API, not by the application refusing the caller.
+///
+/// Implementations must not gate the **404** rule on the API's own error
+/// envelope.
 /// A 404 needs that envelope before it can be read as a statement about a
 /// *row* (see [GameCollectionRemoteDataSource]), but no household route has
 /// such a reading, and Nest answers an unmatched route with the same
