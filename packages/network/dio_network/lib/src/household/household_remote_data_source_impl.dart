@@ -488,8 +488,8 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         !isApiErrorEnvelope(body, status)) {
       // Unlike 404, the envelope IS a usable discriminator at 403. Nest
       // answers an unmatched route with a 404 carrying the standard envelope
-      // — which is why #297 **D1** could not gate the 404 on it — but it does
-      // not answer an unmatched route with a 403. So a 403 without the
+      // — which is why #297 could not gate the 404 on it — but it does not
+      // answer an unmatched route with a 403. So a 403 without the
       // envelope was not written by the application: a corporate proxy or WAF
       // blocked the POST.
       //
@@ -499,6 +499,13 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // that a retry after they leave the network would have survived. A
       // genuine authorization refusal misread as transient only retries to the
       // cap (#350).
+      //
+      // What this rests on: every production 403 on these routes is raised
+      // with a message, so Nest renders the envelope. A bare
+      // `ForbiddenException()` added to a household route later would carry
+      // none, read here as a proxy block, and retry a refusal that will never
+      // change. Nothing in this package can notice that happen — #263 is the
+      // mechanism that would.
       return HouseholdRemoteTransientException(
         '$message — the request did not reach the household module',
         cause: cause,

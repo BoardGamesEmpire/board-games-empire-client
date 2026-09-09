@@ -13,7 +13,7 @@ import 'dart:convert';
 ///
 /// - At **404** it settles nothing on a fixed route, because Nest answers an
 ///   unmatched route with a 404 carrying this same envelope (`Cannot POST
-///   /api/households`). That is why #297 **D1** rejected it there.
+///   /api/households`). That is why #297 rejected it there.
 /// - At **403** it does separate the cases, because Nest does not answer an
 ///   unmatched route with a 403 — so an envelope-free 403 was written by
 ///   something in front of the API (#350).
