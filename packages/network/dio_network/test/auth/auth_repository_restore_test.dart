@@ -152,7 +152,9 @@ void main() {
       expect(cached!.token, _kStoredToken);
       expect(cached.user.id, 'user-1');
       expect(cached.expiresAt, confirmedExpiry);
-      verifyNever(() => mockDio.get<String>(any()));
+      verifyNever(
+        () => mockDio.get<String>(any(), options: any(named: 'options')),
+      );
     });
 
     test('is a pure read — it does not adopt the session as state', () async {
@@ -224,17 +226,23 @@ void main() {
             user: user,
           ),
         );
-        when(() => mockDio.post<String>(any(), data: any(named: 'data')))
-            .thenAnswer(
-              (_) async =>
-                  _response(200, {'token': _kStoredToken, 'user': _wireUser()}),
-            );
-        when(() => mockDio.get<String>(any())).thenThrow(
-          DioException(
-            type: DioExceptionType.connectionError,
-            requestOptions: RequestOptions(path: ''),
+        when(
+          () => mockDio.post<String>(
+            any(),
+            data: any(named: 'data'),
+            options: any(named: 'options'),
           ),
+        ).thenAnswer(
+          (_) async =>
+              _response(200, {'token': _kStoredToken, 'user': _wireUser()}),
         );
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenThrow(
+              DioException(
+                type: DioExceptionType.connectionError,
+                requestOptions: RequestOptions(path: ''),
+              ),
+            );
 
         await repo.signIn(email: 'a@b.com', password: 'p');
         expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
@@ -253,8 +261,12 @@ void main() {
         // Establish a real in-memory session first; without this the assertion
         // below passes for the wrong reason (no in-memory branch to bypass).
         stubRetrieve(restorable());
-        when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-            .thenAnswer((_) async => _response(200, _sessionJson()));
+        when(
+          () => mockDio.get<String>(
+            '$_kAuthBase/get-session',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _response(200, _sessionJson()));
         await repo.getSession();
         expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
         expect(await repo.getCachedSession(), isNotNull);
@@ -272,7 +284,7 @@ void main() {
         await expired.getSession();
         expect(expired.currentAuthState, isA<AuthStateAuthenticated>());
 
-        when(() => mockDio.get<String>(any()))
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _response(503));
         stubRetrieve(restorable());
 
@@ -337,8 +349,12 @@ void main() {
 
     test('does not downgrade an already server-verified session', () async {
       stubRetrieve(restorable());
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) async => _response(200, _sessionJson()));
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => _response(200, _sessionJson()));
 
       await repo.getSession();
       expect(
@@ -359,7 +375,7 @@ void main() {
     test('a 5xx THROWS rather than returning null — a transient server '
         'fault must not read as "your session was rejected"', () async {
       stubRetrieve(restorable());
-      when(() => mockDio.get<String>(any()))
+      when(() => mockDio.get<String>(any(), options: any(named: 'options')))
           .thenAnswer((_) async => _response(503));
 
       await expectLater(
@@ -376,7 +392,7 @@ void main() {
     test('BetterAuth\'s 200-with-null-body is a definitive "no session": '
         'clears material and settles unauthenticated', () async {
       stubRetrieve(restorable());
-      when(() => mockDio.get<String>(any()))
+      when(() => mockDio.get<String>(any(), options: any(named: 'options')))
           .thenAnswer((_) async => _response(200));
 
       expect(await repo.getSession(), isNull);
@@ -388,7 +404,7 @@ void main() {
         'clears material and settles unauthenticated rather than stranding '
         'the user on a retry-forever view', () async {
       stubRetrieve(restorable());
-      when(() => mockDio.get<String>(any()))
+      when(() => mockDio.get<String>(any(), options: any(named: 'options')))
           .thenAnswer((_) async => _response(403));
 
       expect(await repo.getSession(), isNull);
@@ -410,8 +426,12 @@ void main() {
 
       // Hold the session response open, sign out, then let it land.
       final gate = Completer<Response<String>>();
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) => gate.future);
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) => gate.future);
 
       final inFlight = repo.getSession();
       await repo.signOut();
@@ -438,8 +458,12 @@ void main() {
         'renewed credential must not be echoed away, or the client 401s '
         'about one refresh interval after sign-in', () async {
       stubRetrieve(restorable());
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) async => _response(200, _sessionJson()));
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => _response(200, _sessionJson()));
 
       final session = await repo.getSession();
 
@@ -470,8 +494,12 @@ void main() {
               requestOptions: RequestOptions(path: ''),
             ),
           );
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) async => _response(200, _sessionJson()));
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => _response(200, _sessionJson()));
 
       // The store await is the race window: sign out from INSIDE it.
       when(
@@ -496,8 +524,12 @@ void main() {
     test('persists the server-confirmed expiry and user snapshot — the only '
         'path that makes a later offline restore possible', () async {
       stubRetrieve(restorable());
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) async => _response(200, _sessionJson()));
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => _response(200, _sessionJson()));
 
       // Read the persisted arguments by name rather than through several
       // captureAny matchers: mocktail appends multi-argument captures in the
@@ -546,6 +578,7 @@ void main() {
           () => mockDio.post<String>(
             '$_kAuthBase/sign-in/email',
             data: any(named: 'data'),
+            options: any(named: 'options'),
           ),
         ).thenAnswer(
           (_) async =>
@@ -562,8 +595,12 @@ void main() {
           user: user,
         ),
       );
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) async => _response(200, _sessionJson()));
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) async => _response(200, _sessionJson()));
 
       await repo.signIn(email: 'a@b.com', password: 'p');
 
@@ -590,12 +627,13 @@ void main() {
           user: user,
         ),
       );
-      when(() => mockDio.get<String>(any())).thenThrow(
-        DioException(
-          type: DioExceptionType.connectionError,
-          requestOptions: RequestOptions(path: ''),
-        ),
-      );
+      when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+          .thenThrow(
+            DioException(
+              type: DioExceptionType.connectionError,
+              requestOptions: RequestOptions(path: ''),
+            ),
+          );
 
       final session = await repo.signIn(email: 'a@b.com', password: 'p');
 
@@ -671,8 +709,12 @@ void main() {
 
       // Hold the reconcile open, sign out, then let it land.
       final gate = Completer<Response<String>>();
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) => gate.future);
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) => gate.future);
 
       final inFlight = repo.signIn(email: 'a@b.com', password: 'p');
       await pumpEventQueue();
@@ -694,7 +736,7 @@ void main() {
           user: user,
         ),
       );
-      when(() => mockDio.get<String>(any()))
+      when(() => mockDio.get<String>(any(), options: any(named: 'options')))
           .thenAnswer((_) async => _response(401));
 
       await expectLater(

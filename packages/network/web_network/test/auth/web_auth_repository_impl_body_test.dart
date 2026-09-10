@@ -217,6 +217,26 @@ void main() {
     });
   });
 
+  group('responseType is pinned per request (#360)', () {
+    for (final type in [ResponseType.bytes, ResponseType.stream]) {
+      test(
+        'an injected Dio set to responseType.${type.name} cannot reintroduce '
+        'the status-losing cast',
+        () async {
+          final repo = repoWith(
+            cannedDio(body: _kHtml, statusCode: 401)
+              ..options.responseType = type,
+          );
+
+          await expectLater(
+            repo.signIn(email: 'a@b.c', password: 'pw'),
+            throwsA(isA<AuthInvalidCredentialsException>()),
+          );
+        },
+      );
+    }
+  });
+
   group('malformed 2xx bodies stay inside the taxonomy (#181)', () {
     test('a well-formed JSON object with the wrong FIELDS on the session '
         'endpoint', () async {

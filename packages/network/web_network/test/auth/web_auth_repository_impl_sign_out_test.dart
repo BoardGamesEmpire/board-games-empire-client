@@ -74,12 +74,19 @@ void main() {
 
   group('signOut() invariant (web)', () {
     test('completes and transitions to unauthenticated on success', () async {
-      when(() => mockDio.post<String>('$_kAuthBase/sign-out')).thenAnswer(
-        (_) async => Response<String>(
+      Options? sentOptions;
+      when(
+        () => mockDio.post<String>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((invocation) async {
+        sentOptions = invocation.namedArguments[#options] as Options?;
+        return Response<String>(
           statusCode: 200,
           requestOptions: RequestOptions(path: ''),
-        ),
-      );
+        );
+      });
 
       await expectLater(repo.signOut(), completes);
 
@@ -87,11 +94,22 @@ void main() {
         await repo.watchAuthState().first,
         const AuthStateUnauthenticated(),
       );
+
+      // This call reads `response.statusCode` and logs a non-2xx — the branch
+      // that makes a failed revocation observable at all. Without the pin, an
+      // injected bytes/stream Dio loses the status before that branch runs, so
+      // the pin is load-bearing here and nothing else asserts it (#360).
+      expect(sentOptions?.responseType, ResponseType.plain);
     });
 
     test('a failed server call does not throw — best-effort — and still '
         'transitions to unauthenticated', () async {
-      when(() => mockDio.post<String>('$_kAuthBase/sign-out')).thenThrow(
+      when(
+        () => mockDio.post<String>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenThrow(
         DioException(
           type: DioExceptionType.connectionError,
           requestOptions: RequestOptions(path: ''),
@@ -109,7 +127,12 @@ void main() {
     test('an ended (authenticated → signed-out) session is never '
         're-asserted by the stream, even when the server call fails', () async {
       // Reach an authenticated state first via the session endpoint.
-      when(() => mockDio.get<String>('$_kAuthBase/get-session')).thenAnswer(
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
         (_) async => Response(
           data: jsonEncode(_sessionJson()),
           statusCode: 200,
@@ -119,7 +142,12 @@ void main() {
       await repo.getSession();
       expect(await repo.watchAuthState().first, isA<AuthStateAuthenticated>());
 
-      when(() => mockDio.post<String>('$_kAuthBase/sign-out')).thenThrow(
+      when(
+        () => mockDio.post<String>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenThrow(
         DioException(
           type: DioExceptionType.connectionError,
           requestOptions: RequestOptions(path: ''),
@@ -148,8 +176,12 @@ void main() {
       test('does not complete until the POST resolves — the Set-Cookie on that '
           'response is the only teardown web has', () async {
         final gate = Completer<Response<String>>();
-        when(() => mockDio.post<String>('$_kAuthBase/sign-out'))
-            .thenAnswer((_) => gate.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => gate.future);
 
         var completed = false;
         final pending = repo.signOut().then((_) => completed = true);
@@ -184,8 +216,12 @@ void main() {
       test('the state is already unauthenticated while the POST is still '
           'pending — the await must not hold the gate', () async {
         final gate = Completer<Response<String>>();
-        when(() => mockDio.post<String>('$_kAuthBase/sign-out'))
-            .thenAnswer((_) => gate.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => gate.future);
 
         final emissions = <AuthState>[];
         final sub = repo.watchAuthState().listen(emissions.add);
@@ -214,7 +250,12 @@ void main() {
 
       test('a non-2xx revocation still leaves the state unauthenticated — '
           'validateStatus resolves it rather than throwing', () async {
-        when(() => mockDio.post<String>('$_kAuthBase/sign-out')).thenAnswer(
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer(
           (_) async => Response<String>(
             statusCode: 500,
             requestOptions: RequestOptions(path: ''),
@@ -228,7 +269,12 @@ void main() {
       test(
         'a transport failure still leaves the state unauthenticated',
         () async {
-          when(() => mockDio.post<String>('$_kAuthBase/sign-out')).thenThrow(
+          when(
+            () => mockDio.post<String>(
+              '$_kAuthBase/sign-out',
+              options: any(named: 'options'),
+            ),
+          ).thenThrow(
             DioException(
               type: DioExceptionType.receiveTimeout,
               requestOptions: RequestOptions(path: ''),
@@ -248,7 +294,12 @@ void main() {
   // ended — the newer intent wins and the response is dropped.
   group('sign-out supersedes an in-flight getSession()', () {
     setUp(() {
-      when(() => mockDio.post<String>('$_kAuthBase/sign-out')).thenAnswer(
+      when(
+        () => mockDio.post<String>(
+          '$_kAuthBase/sign-out',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer(
         (_) async => Response<String>(
           statusCode: 200,
           requestOptions: RequestOptions(path: ''),
@@ -261,8 +312,12 @@ void main() {
       'not re-assert a session whose cookie the server just revoked',
       () async {
         final gate = Completer<Response<String>>();
-        when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-            .thenAnswer((_) => gate.future);
+        when(
+          () => mockDio.get<String>(
+            '$_kAuthBase/get-session',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => gate.future);
 
         final inFlight = repo.getSession();
         await pumpEventQueue();
@@ -288,8 +343,12 @@ void main() {
     test('the discard does not emit — the stream never shows a session '
         'after the unauthenticated transition', () async {
       final gate = Completer<Response<String>>();
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) => gate.future);
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) => gate.future);
 
       final emissions = <AuthState>[];
       final sub = repo.watchAuthState().listen(emissions.add);
@@ -317,8 +376,12 @@ void main() {
     test('a 401 resolving after sign-out is discarded too — it must not '
         'even re-emit unauthenticated, since nothing was checked', () async {
       final gate = Completer<Response<String>>();
-      when(() => mockDio.get<String>('$_kAuthBase/get-session'))
-          .thenAnswer((_) => gate.future);
+      when(
+        () => mockDio.get<String>(
+          '$_kAuthBase/get-session',
+          options: any(named: 'options'),
+        ),
+      ).thenAnswer((_) => gate.future);
 
       final inFlight = repo.getSession();
       await pumpEventQueue();

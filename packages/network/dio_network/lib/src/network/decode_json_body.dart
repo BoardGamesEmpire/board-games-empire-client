@@ -6,10 +6,14 @@ import 'package:flutter/foundation.dart';
 /// Decodes a response body the transport was told not to touch.
 ///
 /// Data sources that must classify a failure by HTTP status ask Dio for
-/// `Response<String>`, because that is the only type argument which keeps Dio
-/// out of the body: `DioMixin.fetch` forces `responseType` from `T` — `String`
-/// gives `plain`, and **anything else, `Object?` included, gives `json`**
-/// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`).
+/// `Response<String>` **and pin `responseType` per request** — together, not
+/// either alone, keeps Dio out of the body. `DioMixin.fetch` forces
+/// `responseType` from `T` — `String` gives `plain`, and **anything else,
+/// `Object?` included, gives `json`**
+/// (`dio-5.11.0/lib/src/dio_mixin.dart:417-427`) — but it skips that forcing
+/// entirely for an instance already set to `bytes` or `stream` (`:419-421`),
+/// so a caller that takes an arbitrary injected `Dio` has to pin it itself
+/// rather than rely on the type argument alone.
 ///
 /// Either half of Dio's own handling destroys the status. Asking for
 /// `Response<Map<String, dynamic>>` makes Dio cast the decoded body; asking for

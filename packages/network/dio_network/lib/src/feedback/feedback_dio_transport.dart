@@ -67,7 +67,9 @@ class FeedbackDioTransport implements FeedbackTransport {
       // That is this issue's own defect, reintroduced one configuration over.
       // `post<dynamic>` could not hit it because `dynamic` skips the cast, so
       // asking for `String` without pinning would have traded one exposure for
-      // another. `WellKnownClientImpl` defends the same case at `:127-136`.
+      // another. `WellKnownClientImpl` pins for the same reason, and
+      // additionally narrows the body at runtime — see the comment above
+      // its `body is String` check for the routes a pin alone leaves open.
       final response = await _dio.post<String>(
         '/api/feedback/reports',
         data: report.toJson(),
