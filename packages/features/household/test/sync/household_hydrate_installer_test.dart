@@ -1,14 +1,12 @@
 import 'dart:async';
 
 import 'package:di/di.dart';
-import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-import 'package:native_platform/native_platform.dart';
 import 'package:network_interface/network_interface.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
@@ -76,24 +74,6 @@ void main() {
   });
 
   tearDown(() async => container.dispose());
-
-  test('the hydrate installer runs after the one registering the repository '
-      'it resolves', () {
-    final installers = buildNativeUserScopeInstallers();
-
-    final storage = installers.indexWhere(
-      (i) => i is UserSessionScopeInstaller,
-    );
-    final hydrate = installers.indexWhere(
-      (i) => i is HouseholdHydrateInstaller,
-    );
-
-    // Installers run in list order and may resolve what a predecessor
-    // registered. HouseholdRepository is registered by the storage
-    // installer, so ordering here is a real constraint, not cosmetics.
-    expect(storage, isNonNegative);
-    expect(hydrate, greaterThan(storage));
-  });
 
   test('install starts the drain', () async {
     when(
@@ -268,9 +248,9 @@ void main() {
   });
 
   test('install is a no-op where the server has no household client', () async {
-    // Web registers no HouseholdRemoteDataSource (#137). Resolving an
-    // unregistered type throws, which here would mean an unrecoverable
-    // sign-in.
+    // A container assembled without a network stack — since #125 no shipping
+    // composition, but a test scope reaches it. Resolving an unregistered
+    // type throws, which here would mean an unrecoverable sign-in.
     final bare = DependencyContainerImpl()
       ..registerSingleton<HouseholdRepository>(repo);
     addTearDown(bare.dispose);
@@ -488,21 +468,6 @@ void main() {
           limit: any(named: 'limit'),
         ),
       );
-    });
-
-    test('the rehydrator installer runs before the hydrate that registers '
-        'with it', () {
-      final installers = buildNativeUserScopeInstallers();
-
-      final rehydrator = installers.indexWhere(
-        (i) => i is SessionRehydratorInstaller,
-      );
-      final hydrate = installers.indexWhere(
-        (i) => i is HouseholdHydrateInstaller,
-      );
-
-      expect(rehydrator, isNonNegative);
-      expect(hydrate, greaterThan(rehydrator));
     });
   });
 

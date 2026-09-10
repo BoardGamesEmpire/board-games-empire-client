@@ -1,11 +1,17 @@
 import 'package:di/di.dart' show ServerSkewClockService;
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
-    show ClockSkewInterceptor, DioFactory, FeedbackDioTransport;
+    show
+        ClockSkewInterceptor,
+        DioFactory,
+        FeedbackDioTransport,
+        HouseholdRemoteDataSourceImpl;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart'
+    show HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/web_auth_repository_impl.dart';
@@ -80,4 +86,21 @@ void registerServerNetworkWeb({
   // endpoint requires, so `FeedbackDioTransport` needs nothing
   // web-specific. Same installer-placement rationale as the native leg.
   container.registerSingleton<FeedbackTransport>(FeedbackDioTransport(dio));
+
+  // #125: the per-origin household remote. Same convention and the same
+  // placement as the feedback transport above and as native's registration —
+  // it shares this origin's Dio (base URL + the browser-owned session cookie
+  // the `/api/households` endpoints require) and adds no auth of its own.
+  // Const and stateless; the container owns the Dio.
+  //
+  // Native's implementation, not a web twin: it takes an injected Dio and
+  // nothing in it is platform-specific. Its two load-bearing assumptions hold
+  // here — `decodeJsonBody` offloads through `compute`, which runs inline on
+  // web, and its status classification needs the permissive `validateStatus`
+  // that `WebDioFactory` sets exactly as the native factory does. Keeping one
+  // implementation is what makes the 403 envelope rule (#350, #365) a single
+  // rule rather than two that drift.
+  container.registerSingleton<HouseholdRemoteDataSource>(
+    HouseholdRemoteDataSourceImpl(dio),
+  );
 }

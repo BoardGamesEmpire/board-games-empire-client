@@ -127,8 +127,9 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// [AppRoutes.householdCreate] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
 /// carries no `HouseholdRepository` / `HouseholdRemoteDataSource` (tests
-/// without a container; web until the household scope is wired there), in
-/// which case the route falls back to [NotYetAvailableScreen].
+/// without a container; no active user session), in which case the route
+/// falls back to [NotYetAvailableScreen]. Both platforms wire both halves in
+/// a real session since #125.
 ///
 /// The route sits **outside** the auth [ShellRoute]: the screen needs no
 /// `AuthBloc`, only the active server's scoped container. Reachability is

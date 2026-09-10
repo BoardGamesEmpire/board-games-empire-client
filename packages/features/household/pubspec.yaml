@@ -37,6 +37,12 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   bloc_test: ^10.0.0
+  # A real container for the hydrate installer's tests (#125). Dev-only:
+  # nothing under `lib/` names `di` — the installer takes the
+  # `DependencyContainer` abstraction from `interfaces`. Same shape as
+  # `web_storage`'s dev dependency on it.
+  di:
+    path: ../../core/di
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0

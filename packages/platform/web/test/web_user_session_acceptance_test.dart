@@ -34,6 +34,7 @@ library;
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -173,7 +174,18 @@ void main() {
     host = UserScopeHost(parent: () => origin);
     session = ContainerUserSessionScope(
       host: host,
-      installers: const [UserSessionScopeInstaller()],
+      // `buildWebUserScopeInstallers()`'s membership, in its order, per the
+      // note at the top of this file. Two of the three are inert against this
+      // origin container and are here to keep the assembly honest rather than
+      // to be exercised: the re-hydrate seam has nothing registering with it
+      // that this suite drives, and the hydrate installer no-ops because no
+      // `HouseholdRemoteDataSource` is registered here. Driving the hydrate
+      // for real over this database is #369.
+      installers: const [
+        SessionRehydratorInstaller(),
+        UserSessionScopeInstaller(),
+        HouseholdHydrateInstaller(),
+      ],
       server: _server,
     );
     container = WebServerScopeContainer(

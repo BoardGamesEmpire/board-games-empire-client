@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -18,7 +19,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
 
 import 'deep_links/app_links_deep_link_source.dart';
-import 'household/household_hydrate_installer.dart';
 import 'logging/rotating_file_log_sink.dart';
 import 'native_root_module.dart';
 

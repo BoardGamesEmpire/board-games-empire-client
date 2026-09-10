@@ -55,7 +55,8 @@ import '../repositories/sync_queue_repository_impl.dart';
 ///
 /// The `HouseholdRemoteDataSource` the create coordinator also needs is
 /// **not** registered here — it shares the per-server Dio and is registered
-/// in `registerServerNetwork`, beside the resource it depends on. Wiring
+/// beside it, by `registerServerNetwork` on native and
+/// `registerServerNetworkWeb` on web (#125). Wiring
 /// this installer into the platform boot's user-installer list, the create
 /// route, and the `HouseholdLocalizations` delegate happens together in
 /// #129.
