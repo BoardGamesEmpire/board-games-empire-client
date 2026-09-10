@@ -5,7 +5,8 @@ import 'package:dio_network/dio_network.dart'
         ClockSkewInterceptor,
         DioFactory,
         FeedbackDioTransport,
-        HouseholdRemoteDataSourceImpl;
+        HouseholdRemoteDataSourceImpl,
+        NetworkLogInterceptor;
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
@@ -15,6 +16,7 @@ import 'package:network_interface/network_interface.dart'
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/web_auth_repository_impl.dart';
+import 'web_clock_skew_diagnostic_interceptor.dart';
 import 'web_dio_factory.dart';
 
 /// Registers the web network stack for the origin's server into [container].
@@ -64,13 +66,30 @@ void registerServerNetworkWeb({
   final dio = factory.buildForServer(
     baseUrl: originProvider(),
     interceptors: [
+      // #282: permanent network observability, first of the three installed
+      // here so it observes every outgoing request and its resolution — the
+      // same placement and the same rationale as native's. (Dio still seeds
+      // its own `ImplyContentTypeInterceptor` ahead of all of them, on both
+      // platforms.) Redaction-safe — method, resolved URI, and status or
+      // error type only — and self-gating to non-release builds for the
+      // request trace, so nothing web-specific is needed. Web had none of
+      // this: until now the browser stack kept no record of any request it
+      // made.
+      NetworkLogInterceptor(),
       // #118: every response through this Dio is a free calibration sample,
       // so no dedicated calibration request is ever needed. Native installs
       // this last, behind `TokenInterceptor`, so its send stamp excludes the
-      // async token-storage read; on web there is nothing to sit behind — the
-      // browser attaches the cookie itself — so the stamp is already taken
-      // immediately before dispatch.
+      // async token-storage read; on web there is nothing async to sit behind
+      // — the browser attaches the cookie itself, and the log interceptor
+      // above is synchronous — so the stamp is still taken immediately
+      // before dispatch.
       ClockSkewInterceptor(recorder: clock),
+      // #281: reports once if this origin's responses carry no readable
+      // `Date`, which on web means a misconfiguration rather than the benign
+      // absence it is on native. It observes only — the shared feeder above
+      // stays silent, and the condition is invisible to the registered clock,
+      // which never hears about a response it took no sample from.
+      WebClockSkewDiagnosticInterceptor(),
     ],
   );
   container.registerSingleton<Dio>(dio, dispose: (_) => dio.close());

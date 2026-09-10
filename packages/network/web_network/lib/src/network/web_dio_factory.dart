@@ -8,9 +8,11 @@ import 'package:dio_network/dio_network.dart' show DioFactory;
 ///   credentials at all. Today the stack only talks to the browser's own
 ///   origin, where cookies are sent regardless, so it is not load-bearing.
 /// - No token interceptor — the browser owns the opaque httpOnly cookie; Dart
-///   never reads or attaches it. [interceptors] are honored as passed;
-///   `registerServerNetworkWeb` supplies exactly one, the clock-skew feeder
-///   (#118), so this stack has no auth-bearing interceptor at all.
+///   never reads or attaches it. [interceptors] are honored as passed, and
+///   this factory stays agnostic about what they do; none of the ones
+///   `registerServerNetworkWeb` supplies is auth-bearing, so this stack has
+///   no auth-bearing interceptor at all. See that function, or the package
+///   README, for the roster and its order.
 ///
 /// On web the base URL comes from the browser's address bar via
 /// [currentOrigin], not from `ServerConfig.serverUrl`.

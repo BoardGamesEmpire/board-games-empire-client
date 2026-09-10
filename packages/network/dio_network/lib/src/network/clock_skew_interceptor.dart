@@ -22,8 +22,10 @@ import 'package:network_interface/network_interface.dart';
 /// taken after `TokenInterceptor`'s async token-storage read — the only
 /// non-trivial pre-dispatch latency — and immediately before Dio hands
 /// the request to the adapter. That ordering constraint is native-only:
-/// the web stack has no `TokenInterceptor`, so this is simply the sole
-/// interceptor there and nothing async precedes the stamp.
+/// the web stack has no `TokenInterceptor`, and everything ahead of this
+/// there — `NetworkLogInterceptor` (#282) and Dio's own
+/// `ImplyContentTypeInterceptor` — is synchronous, so nothing async
+/// precedes the stamp on that platform either.
 ///
 /// Residual widening of the measured window
 /// (serialization, TCP dispatch) is sub-millisecond and shifts the
@@ -47,8 +49,10 @@ import 'package:network_interface/network_interface.dart';
 /// [tryParseHttpDate] (IMF-fixdate only) rather than `dart:io`'s
 /// `HttpDate`, so this class compiles for web as well as native.
 /// `registerServerNetworkWeb` installs it in the web stack's shared Dio
-/// (#118) — as the *only* interceptor there, since the browser owns the
-/// session cookie and there is no `TokenInterceptor` to sit behind.
+/// (#118), behind `NetworkLogInterceptor` (#282) and ahead of the
+/// web-only unreadable-`Date` diagnostic (#281) — but with no
+/// `TokenInterceptor` to sit behind, since the browser owns the session
+/// cookie.
 ///
 /// Web reads the header because that stack addresses the browser's own
 /// origin, where no CORS filtering applies. A cross-origin deployment
