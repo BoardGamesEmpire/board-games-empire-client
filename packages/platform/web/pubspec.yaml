@@ -41,6 +41,13 @@ dependencies:
   drift_storage:
     path: ../../storage/drift_storage
 
+  # The household feature, for the shared `HouseholdHydrateInstaller` web's
+  # user tier runs since #125. Direct rather than transitive through
+  # `app_shell`, on the same rule as `drift_storage` above: this package names
+  # the symbol.
+  household:
+    path: ../../features/household
+
   # Web-specific
   url_strategy: ^0.3.0
   hydrated_bloc: ^11.0.0
@@ -51,6 +58,9 @@ dev_dependencies:
   # level the storage report emits, and needs drift's storage enum to build
   # the cases.
   drift: ^2.34.3
+  # Swaps the transport under the Dio `registerServerNetworkWeb` registers, so
+  # the hydrate-seam suite (#125) can drive the real remote without a network.
+  dio: ^5.11.0
   logging: ^1.2.0
   mocktail: ^1.0.5
 

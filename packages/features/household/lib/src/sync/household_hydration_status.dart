@@ -12,8 +12,9 @@ import 'household_hydrator.dart';
 enum HouseholdHydrationState {
   /// No pass has run. Also what an **absent** [HouseholdHydrationStatus]
   /// means to a reader — a container with no household client registers
-  /// none (web until #125), and that must render the empty state rather
-  /// than an endless spinner.
+  /// none, and that must render the empty state rather than an endless
+  /// spinner. `HouseholdHydrateInstaller` records which compositions those
+  /// are; since #125 no shipping one is among them.
   idle,
 
   /// A pass is in flight. An empty list under this state is unknown, not

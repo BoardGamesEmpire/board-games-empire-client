@@ -11,38 +11,12 @@ import 'package:dio_network/dio_network.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
-import 'package:models/domain.dart';
 
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
 import 'package:web_network/src/network/register_server_network_web.dart';
 import 'package:web_network/src/network/web_dio_factory.dart';
 
-const _kAuthBase = '/api/auth';
-
-// Web has no MetaDB and no persisted ServerConfig: the identity is fetched
-// from the serving origin's well-known document at runtime. The registration
-// helper therefore takes a ServerIdentity directly — constructing a synthetic
-// ServerConfig just to carry one is the wart this signature removes.
-ServerIdentity _identity() => ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://bge.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: const [
-    EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
+import '../support/server_identity_fixture.dart';
 
 /// Stub adapter returning a canned response with configurable headers
 /// (the `clock_skew_interceptor_test` pattern).
@@ -83,7 +57,7 @@ void main() {
   void register({String origin = 'https://bge.example.com'}) =>
       registerServerNetworkWeb(
         container: container,
-        identity: _identity(),
+        identity: testServerIdentity(),
         // Uri.base has no origin on the VM, so tests inject one; production
         // defaults to WebDioFactory.currentOrigin (the address bar).
         originProvider: () => origin,

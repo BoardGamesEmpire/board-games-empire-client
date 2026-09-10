@@ -503,18 +503,21 @@ class _BgeAppState extends State<BgeApp> {
     // the entry on it, as the create entry this replaces had to, would
     // hide a screen that works.
     //
-    // Web is the first composition where that reading bites. Since #137 it
-    // registers the repository and no household client, and nothing on web
-    // can write the household cache until #125 — so on web this entry opens
-    // a list that is empty by construction, with no create affordance and
-    // no refresh.
+    // Web was the composition where that reading bit: between #137 and
+    // #125 it registered the repository and no household client, so this
+    // entry opened a list that was empty by construction. #125 closed that
+    // — registerServerNetworkWeb registers the client, as its native
+    // counterpart always did.
     //
-    // The gate is left as #269 set it. Narrowing it to require a client
-    // would be this change reversing that decision rather than the issue
-    // that owns it, and it would buy native nothing: registerServerNetwork
-    // registers the client unconditionally, so native never reaches the
-    // case. Whether the entry should wait for #125 on web is #269's
-    // question to reopen.
+    // So no shipping composition reaches the repository-without-client case
+    // any more, and this gate is now the same width a client-requiring one
+    // would be. `HouseholdHydrateInstaller` carries the full statement of
+    // which compositions do reach it; in production, none.
+    //
+    // Left as #269 set it regardless, for two reasons that outlive the
+    // reachability: narrowing it would be this widget reversing #269 rather
+    // than the issue that owns it, and the wide gate is the one that stays
+    // right if a composition without a client ever ships again.
     final container = active.container;
     final canReadHouseholds = container.isRegistered<HouseholdRepository>();
 
@@ -554,8 +557,9 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The #300 retry, for both household screens: the session-scoped
   /// [HouseholdRefresher] the hydrate installer registers, or null where
-  /// this composition runs no drain (any container without a household
-  /// client — web until #125).
+  /// this composition runs no drain — any container without a household
+  /// client, which since #125 is no shipping one (see
+  /// `HouseholdHydrateInstaller`).
   ///
   /// Optional for the same reason `onCreate` is: a screen that cannot
   /// refresh should say the list may be stale and offer nothing to press,
@@ -703,9 +707,9 @@ class _BgeAppState extends State<BgeApp> {
   /// (per-server scope) from the *active server's* scoped container — not
   /// [BgeApp.rootContainer]. Null (→ [NotYetAvailableScreen]) when no
   /// active server is resolvable or its container lacks either dependency
-  /// (tests without a scope; no active user session; web until it registers
-  /// a household client, #125 — #137 gave it the repository, not the
-  /// remote).
+  /// (tests without a scope; no active user session). Both platforms
+  /// register the remote in their network installer, so a real session on
+  /// either reaches this route since #125.
   ///
   /// ## Captured-repository lifetime (#135)
   ///
@@ -756,8 +760,9 @@ class _BgeAppState extends State<BgeApp> {
         // *mutation*, and this is where mutations are already wired, which
         // is what gives #122's membership mutations the same hook.
         //
-        // Absent on a composition that runs no drain (#125 on web):
-        // nothing to invalidate, and a create must not care.
+        // Absent on a composition that runs no drain (a container with no
+        // household client): nothing to invalidate, and a create must not
+        // care.
         if (container.isRegistered<HouseholdHydrationStatus>()) {
           container.get<HouseholdHydrationStatus>().markStale();
         }

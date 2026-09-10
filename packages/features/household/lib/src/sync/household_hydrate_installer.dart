@@ -1,27 +1,34 @@
 import 'dart:async';
 
-import 'package:household/household.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import 'household_hydration_status.dart';
+import 'household_hydrator.dart';
+import 'household_refresher.dart';
+
 /// Starts the household hydrate when a user session activates (#267 D1).
 ///
-/// The hydrator itself lives with the household feature; only this wiring is
-/// platform code. It has to be: the hydrator needs both a
-/// [HouseholdRepository] (registered in the user-session scope by
-/// `UserSessionScopeInstaller`) and a [HouseholdRemoteDataSource]
-/// (registered per-server by `registerServerNetwork`, resolved here because
-/// the user-scope container view falls through to the per-server scope) —
-/// and `drift_storage`, where the storage installer lives, does not depend
-/// on `network_interface` at all. The composition root is the one place that
-/// can see both halves.
+/// Lives beside the hydrator it drives, and is shared by both composition
+/// roots — `buildNativeUserScopeInstallers` and `buildWebUserScopeInstallers`
+/// each hold this same installer rather than a platform copy of it (#125).
 ///
-/// This installer must therefore run **after** `UserSessionScopeInstaller`
-/// in [buildNativeUserScopeInstallers]; installers run in list order and may
-/// resolve what a predecessor registered.
+/// It sat in `native_platform` until #125, on the reasoning that only a
+/// composition root can see both halves of what the hydrator needs: a
+/// [HouseholdRepository] (registered in the user-session scope by
+/// `UserSessionScopeInstaller`) and a [HouseholdRemoteDataSource] (registered
+/// per-server by the network installer, resolved here because the user-scope
+/// container view falls through to the per-server scope). The constraint was
+/// real but it was `drift_storage`'s — that package does not depend on
+/// `network_interface` at all. This one does, and on `interfaces` besides, so
+/// it can see both halves without a platform package's help.
+///
+/// This installer must run **after** `UserSessionScopeInstaller` in whichever
+/// list holds it; installers run in list order and may resolve what a
+/// predecessor registered.
 ///
 /// ## Nothing here may throw
 ///
@@ -34,9 +41,29 @@ import 'package:observability/observability.dart';
 ///   reactively off the local cache, so hydration is a refresh, not a
 ///   precondition for the screen;
 /// - a missing [HouseholdRemoteDataSource] is a no-op rather than a
-///   resolution failure. Web registers no household client until #125, and
-///   a composition without one should sign in normally with a
-///   local-cache-only list.
+///   resolution failure.
+///
+/// ## Which compositions reach that guard (#125)
+///
+/// This is the canonical statement; the readers of an absent
+/// [HouseholdHydrationStatus] cite it rather than restating it.
+///
+/// [install] runs only where a composition supplied user installers, and the
+/// guard fires only when the user tier registered a [HouseholdRepository]
+/// while no [HouseholdRemoteDataSource] is reachable. Since #125 both network
+/// installers register the remote unconditionally — `registerServerNetwork`
+/// and `registerServerNetworkWeb` alike — so **no shipping composition
+/// reaches it**: a container that has a user tier has a network stack too.
+/// What reaches it is a container assembled by hand without one, which in
+/// practice means a test scope.
+///
+/// Note which case is *not* this one. A composition with the network stack
+/// and no user tier — the storage-less web bootstrap, and either platform
+/// between sign-outs — has the remote and no repository, and never calls
+/// [install] at all.
+///
+/// The guard stays regardless: a throw here converges to a sign-out, so the
+/// cost of being wrong about the above is a user who cannot sign in.
 ///
 /// The hydrator swallows its own failures; the `unawaited` here is
 /// deliberate rather than incidental, and the guard below keeps it that way

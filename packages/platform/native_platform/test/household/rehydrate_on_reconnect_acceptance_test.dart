@@ -10,7 +10,6 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-import 'package:native_platform/native_platform.dart';
 import 'package:network_interface/network_interface.dart';
 
 /// The scenario #302 was filed from, end to end across every seam it

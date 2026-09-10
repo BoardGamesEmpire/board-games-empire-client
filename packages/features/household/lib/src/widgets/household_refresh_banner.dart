@@ -60,8 +60,9 @@ class HouseholdRefreshBanner extends StatelessWidget {
   final bool refreshing;
 
   /// Dispatches the retry, or null where this composition cannot run a
-  /// pass at all (web until #125) — in which case the banner still reports
-  /// the stale data and simply offers nothing to press.
+  /// pass at all (a container with no household client) — in which case the
+  /// banner still reports the stale data and simply offers nothing to
+  /// press.
   final VoidCallback? onRetry;
 
   @override

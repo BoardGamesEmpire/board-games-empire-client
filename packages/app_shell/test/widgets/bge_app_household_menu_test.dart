@@ -41,13 +41,13 @@ class _MockHouseholdRemoteDataSource extends Mock
 /// old gate from the new one: under #129's rule the entry vanished, under
 /// #269's it stays and the list simply offers no create affordance.
 ///
-/// Since #137 that case is no longer hypothetical: web's user tier registers
-/// the repository and its server scope registers no household client until
-/// #125, so web is the one composition that actually reaches it. Native does
-/// not — `registerServerNetwork` registers the client unconditionally. The
-/// consequence on web (an entry onto a permanently empty list) is recorded
-/// at the gate in `bge_app.dart`; it is #269's decision to revisit, not this
-/// file's to quietly change.
+/// Between #137 and #125 that case was live in a shipping composition: web's
+/// user tier registered the repository and its origin scope registered no
+/// household client, so web reached it and native did not. #125 closed that
+/// — both network installers now register the client unconditionally — so
+/// the case is reachable only by a container assembled without a network
+/// stack, which is what this suite builds. The gate is still #269's to
+/// revisit, not this file's to quietly change.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late Storage storage;
@@ -117,16 +117,23 @@ void main() {
     });
 
     testWidgets('hides the households entry when the per-user repository is '
-        'absent — the real signed-out native state (#135)', (tester) async {
+        'absent — the signed-out state on both platforms (#135)', (
+      tester,
+    ) async {
+      // The remote outlives the session on either platform: it is registered
+      // per-server, and only the user tier is torn down on sign-out. Since
+      // #125 that is web's signed-out shape too, not just native's.
       await pumpHomeDrawer(tester, withRepository: false, withRemote: true);
 
       expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);
       expect(find.byKey(HomeScreen.entryKey('send_feedback')), findsOneWidget);
     });
 
-    testWidgets('hides the households entry when neither is registered — the '
-        'web signed-out state, which carries no household client either '
-        '(#137)', (tester) async {
+    testWidgets('hides the households entry when neither is registered — a '
+        'container assembled without a network stack', (tester) async {
+      // Web's shape between #137 and #125, and a test scope's today. No
+      // shipping composition reaches it now that both network installers
+      // register the remote.
       await pumpHomeDrawer(tester, withRepository: false, withRemote: false);
 
       expect(find.byKey(HomeScreen.entryKey('households')), findsNothing);
