@@ -181,6 +181,51 @@ void main() {
       },
     );
 
+    test('ignores 5xx responses, where RFC 9110 makes Date optional', () async {
+      final dio = buildDio(ScriptedAdapter(statusCode: 502));
+
+      // RFC 9110 §6.6.1: an origin server with a clock "MUST generate a
+      // Date header field in all 2xx, 3xx, and 4xx responses, and MAY
+      // generate a Date header field in 1xx and 5xx responses". A gateway
+      // error page during an outage omitting it is conformant and says
+      // nothing about whether this origin exposes the header — so a run of
+      // them must not read as a misconfigured deployment.
+      await dio.get<dynamic>('/one');
+      await dio.get<dynamic>('/two');
+      await dio.get<dynamic>('/three');
+
+      expect(warningsIn(records), isEmpty);
+    });
+
+    test('a readable Date on a 5xx still answers the question', () async {
+      final dio = buildDio(
+        ScriptedAdapter(
+          statusCode: 503,
+          responseHeaders: {
+            'date': [readableDate],
+          },
+        ),
+      );
+
+      // The header's presence is positive evidence whatever the status: this
+      // origin exposes it.
+      await dio.get<dynamic>('/unavailable');
+      dio.httpClientAdapter = ScriptedAdapter();
+      await dio.get<dynamic>('/ok-one');
+      await dio.get<dynamic>('/ok-two');
+
+      expect(warningsIn(records), isEmpty);
+    });
+
+    test('counts a 4xx, where the header is still mandatory', () async {
+      final dio = buildDio(ScriptedAdapter(statusCode: 404));
+
+      await dio.get<dynamic>('/missing');
+      await dio.get<dynamic>('/missing-again');
+
+      expect(warningsIn(records), hasLength(1));
+    });
+
     test('delivers the response unchanged', () async {
       final dio = buildDio(ScriptedAdapter());
 

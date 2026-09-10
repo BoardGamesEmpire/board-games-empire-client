@@ -17,7 +17,11 @@ import 'package:dio/dio.dart';
 /// returns an empty JSON object, because its suites are about what the
 /// interceptor stack observes, not about what the body decodes to.
 class ScriptedAdapter implements HttpClientAdapter {
-  ScriptedAdapter({this.responseHeaders = const {}, this.error});
+  ScriptedAdapter({
+    this.responseHeaders = const {},
+    this.error,
+    this.statusCode = 200,
+  });
 
   /// Extra headers merged into the canned response.
   final Map<String, List<String>> responseHeaders;
@@ -25,6 +29,12 @@ class ScriptedAdapter implements HttpClientAdapter {
   /// When set, [fetch] throws this instead of answering — a transport
   /// failure, which carries no response and therefore no headers.
   final DioException? error;
+
+  /// Status of the canned response. Every per-server Dio in this repo sets
+  /// `validateStatus: (_) => true`, so a 4xx or 5xx here comes back as a
+  /// [Response] rather than a throw — which is what lets a suite drive the
+  /// status-dependent branches of an interceptor.
+  final int statusCode;
 
   @override
   void close({bool force = false}) {}
@@ -39,7 +49,7 @@ class ScriptedAdapter implements HttpClientAdapter {
     if (failure != null) throw failure;
     return ResponseBody.fromString(
       '{}',
-      200,
+      statusCode,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
         ...responseHeaders,

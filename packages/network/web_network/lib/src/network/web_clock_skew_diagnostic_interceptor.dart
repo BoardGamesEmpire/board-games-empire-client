@@ -54,7 +54,8 @@ class WebClockSkewDiagnosticInterceptor extends Interceptor {
 
   final BgeLogger _logger = BgeLogger('bge.web.network.clock_skew');
 
-  /// Consecutive responses seen with no readable `Date`, until [_answered].
+  /// Responses seen with no readable `Date`, counting only those where the
+  /// header is mandatory (see [_dateIsMandatory]), until [_answered].
   int _unreadable = 0;
 
   /// Whether the question is answered and nothing further will be logged —
@@ -64,18 +65,17 @@ class WebClockSkewDiagnosticInterceptor extends Interceptor {
   /// Responses with no readable `Date` required before warning.
   ///
   /// **Two, not one.** A single omission is not evidence of a
-  /// misconfiguration: RFC 9110 permits a server with no clock to omit
-  /// `Date`, and an intermediary's own error page — a gateway 502, say —
-  /// may omit it while the origin behind it is configured correctly. If
-  /// that response is the first of a scope, warning on it would report a
-  /// deployment fault that does not exist, and the report would survive
-  /// into a feedback submission.
+  /// misconfiguration: an origin server without a clock must not send
+  /// `Date` at all, so one absence can be a property of that response
+  /// rather than of the deployment. Warning on it would report a fault
+  /// that does not exist, and at [_logger]'s `warn` level the report
+  /// survives into a feedback submission.
   ///
   /// The conditions this exists for apply to *every* response, so they
   /// still trip on the second request; the cost of the higher bar is one
   /// request's delay. Symmetric with the estimator this diagnoses, which
   /// likewise trusts no single sample.
-  static const int _responsesBeforeWarning = 2;
+  static const int _threshold = 2;
 
   @override
   void onResponse(
@@ -84,11 +84,10 @@ class WebClockSkewDiagnosticInterceptor extends Interceptor {
   ) {
     if (!_answered) {
       if (_hasReadableDate(response)) {
-        // The origin exposes the header, so there is nothing to report and
-        // never will be: a later response omitting it is a server without a
-        // clock, not a misconfigured deployment.
+        // Positive evidence, whatever the status: the origin exposes the
+        // header, so there is nothing to report and never will be.
         _answered = true;
-      } else if (++_unreadable >= _responsesBeforeWarning) {
+      } else if (_dateIsMandatory(response) && ++_unreadable >= _threshold) {
         _answered = true;
         // Warn, not debug, and ungated by build mode: the console sink's
         // release threshold is warn+, and warn records reach the breadcrumb
@@ -104,12 +103,31 @@ class WebClockSkewDiagnosticInterceptor extends Interceptor {
             // headers are not request material — no token or query string
             // can reach this.
             'date_header': response.headers.value(_dateHeader),
+            'status': response.statusCode,
             'responses': _unreadable,
           },
         );
       }
     }
     handler.next(response);
+  }
+
+  /// Whether RFC 9110 requires a `Date` on a response with this status, and
+  /// so whether its absence is evidence of anything.
+  ///
+  /// Only 2xx, 3xx and 4xx qualify. §6.6.1: an origin server with a clock
+  /// "MUST generate a Date header field in all 2xx (Successful), 3xx
+  /// (Redirection), and 4xx (Client Error) responses, and MAY generate a
+  /// Date header field in 1xx (Informational) and 5xx (Server Error)
+  /// responses". A 5xx without one is therefore conformant — a gateway's
+  /// own error page during an outage is the ordinary case — and says
+  /// nothing about whether this origin exposes the header. Counting those
+  /// would report a misconfigured deployment on any run of server errors.
+  ///
+  /// A status Dio could not read is likewise not evidence.
+  static bool _dateIsMandatory(Response<dynamic> response) {
+    final status = response.statusCode;
+    return status != null && status >= 200 && status < 500;
   }
 
   /// Whether [response] carries a `Date` the estimator could actually use.
