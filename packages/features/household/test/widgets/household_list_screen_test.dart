@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +63,7 @@ void main() {
     VoidCallback? onEnter,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
+    theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) => MediaQuery(
@@ -82,9 +84,7 @@ void main() {
   /// nothing on its own, so the width a row has to fit into has to come
   /// from the view.
   void useNarrowWindow(WidgetTester tester, {double width = 320}) {
-    tester.view.physicalSize = Size(width, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    useViewSize(tester, Size(width, 800));
   }
 
   group('while the cache is filling', () {

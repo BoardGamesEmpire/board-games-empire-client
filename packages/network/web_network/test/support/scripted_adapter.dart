@@ -11,7 +11,8 @@ import 'package:dio/dio.dart';
 /// need a response whose headers they choose, and one of them also needs a
 /// failure with no response at all.
 ///
-/// Distinct from [CannedAdapter] (`test/support/canned_adapter.dart`), which
+/// Distinct from `CannedAdapter` (`package:bge_test_support/network.dart`),
+/// which
 /// scripts a **body and status** to keep Dio's own decode-and-cast pipeline in
 /// play. This one scripts **headers and transport failures** and always
 /// returns an empty JSON object, because its suites are about what the

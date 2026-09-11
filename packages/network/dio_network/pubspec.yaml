@@ -43,5 +43,9 @@ dev_dependencies:
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
+  # Shared test helpers (#354, #213, #257): canned Dio transports and/or
+  # widget-test viewport, semantics and scroll-geometry helpers.
+  bge_test_support:
+    path: ../../testing/support
 
 flutter:

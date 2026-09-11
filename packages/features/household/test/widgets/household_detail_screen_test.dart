@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -7,6 +8,7 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -76,6 +78,7 @@ void main() {
     Future<void> Function()? onRetry,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
+    theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     builder: (context, child) => MediaQuery(
@@ -455,6 +458,7 @@ void main() {
       var backs = 0;
       await tester.pumpWidget(
         MaterialApp(
+          theme: BgeTheme.light(),
           localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
           supportedLocales: HouseholdLocalizations.supportedLocales,
           home: Builder(
@@ -500,9 +504,7 @@ void main() {
     // The list's badge had to move out of `ListTile.trailing` for exactly
     // this reason (#269); this screen is a column, but the guarantee is
     // worth pinning rather than assuming.
-    tester.view.physicalSize = const Size(320, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    useViewSize(tester, const Size(320, 800));
 
     await tester.pumpWidget(harness(textScaler: const TextScaler.linear(2)));
     await settleWith(

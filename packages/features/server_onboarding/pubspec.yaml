@@ -42,6 +42,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   l10n_test_support:
     path: ../../testing/l10n
+  # Shared test helpers (#354, #213, #257): canned Dio transports and/or
+  # widget-test viewport, semantics and scroll-geometry helpers.
+  bge_test_support:
+    path: ../../testing/support
 
 flutter:
   generate: true

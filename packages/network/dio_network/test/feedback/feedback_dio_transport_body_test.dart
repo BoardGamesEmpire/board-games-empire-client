@@ -16,13 +16,12 @@
 // portal, SSO interstitial, WAF or proxy does — and what a dropped connection
 // does to a genuine JSON response.
 
+import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
 
 import 'package:dio_network/src/feedback/feedback_dio_transport.dart';
-
-import '../support/canned_adapter.dart';
 
 const _kHtml = '<!doctype html><html><body>Sign in to continue</body></html>';
 const _kTruncated = '{"id":"fr_123","status":"acce';

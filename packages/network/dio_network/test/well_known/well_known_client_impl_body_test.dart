@@ -1,9 +1,8 @@
+import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:network_interface/network_interface.dart';
-
-import '../support/canned_adapter.dart';
 
 const _kServerUrl = 'https://api.example.com';
 

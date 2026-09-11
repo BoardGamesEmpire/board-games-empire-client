@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,6 +32,7 @@ void main() {
   });
 
   Widget harness() => MaterialApp(
+    theme: BgeTheme.light(),
     localizationsDelegates:
         ServerOnboardingLocalizations.localizationsDelegates,
     supportedLocales: ServerOnboardingLocalizations.supportedLocales,
@@ -96,9 +98,7 @@ void main() {
       // in two suites, which is what this file's header rejects. So the
       // failure state is injected and the assertion is the geometry — the part
       // the screen contributes.
-      tester.view.physicalSize = const Size(320, 400);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
+      useViewSize(tester, const Size(320, 400));
 
       // A controller so the failure lands after the form is submitted, rather
       // than being the state the screen was born in.
@@ -142,13 +142,7 @@ void main() {
         reason: 'the reveal has to scroll FORWARD to bring the banner up',
       );
 
-      final viewport = tester.renderObject<RenderBox>(
-        find.byType(Scrollable).first,
-      );
-      final banner = tester.renderObject<RenderBox>(
-        find.byType(BgeInlineBanner),
-      );
-      final top = banner.localToGlobal(Offset.zero, ancestor: viewport).dy;
+      final top = topInViewport(tester, find.byType(BgeInlineBanner));
 
       expect(
         top,
