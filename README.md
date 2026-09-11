@@ -62,7 +62,7 @@ packages/
   storage/{drift_storage,web_storage,key_storage,memory_storage,storage_interface}
   network/{dio_network,web_network,network_interface}
   ui/{tokens,widgets}
-  testing/l10n
+  testing/{l10n,support}
 tool/                           check_sdk_constraints.dart, dev_proxy/
 docs/                           ROADMAP.md, dev/
 ```
@@ -79,9 +79,10 @@ rather than by conditionals in feature code.
 
 Two naming traps when writing imports:
 
-- **Five directories don't match their package name**: `testing/l10n` is
-  `l10n_test_support`, `ui/tokens` is `ui_tokens`, and `platform/{web,mobile,desktop}`
-  are `web_platform`, `mobile_platform`, `desktop_platform`.
+- **Six directories don't match their package name**: `testing/l10n` is
+  `l10n_test_support`, `testing/support` is `bge_test_support`, `ui/tokens` is
+  `ui_tokens`, and `platform/{web,mobile,desktop}` are `web_platform`,
+  `mobile_platform`, `desktop_platform`.
 - **`packages/app_shell` sits directly under `packages/`**, not under a layer
   directory like everything else.
 
