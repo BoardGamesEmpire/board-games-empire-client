@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
@@ -99,27 +100,16 @@ Widget _revealHost({
 /// metadata and constrains nothing, so the viewport height the reveal scrolls
 /// within has to come from the view.
 void _useNarrowWindow(WidgetTester tester) {
-  tester.view.physicalSize = const Size(320, 480);
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
+  useViewSize(tester, const Size(320, 480));
 }
 
-RenderBox _scrollBox(WidgetTester tester) =>
-    tester.renderObject<RenderBox>(find.byType(Scrollable));
-
 /// The banner's top edge in the scroll viewport's own coordinate space.
-///
-/// This is the measure the reveal exists to fix, and the one `findsOneWidget`
-/// cannot see: a banner scrolled past is present in the tree with a negative
-/// top edge.
-double _bannerTop(WidgetTester tester) => tester
-    .renderObject<RenderBox>(find.byType(BgeInlineBanner))
-    .localToGlobal(Offset.zero, ancestor: _scrollBox(tester))
-    .dy;
+double _bannerTop(WidgetTester tester) =>
+    topInViewport(tester, find.byType(BgeInlineBanner));
 
 bool _bannerTopVisible(WidgetTester tester) {
   final top = _bannerTop(tester);
-  return top >= 0 && top < _scrollBox(tester).size.height;
+  return top >= 0 && top < scrollViewportOf(tester).size.height;
 }
 
 void main() {
@@ -861,7 +851,7 @@ void main() {
           .height;
       expect(
         bannerHeight,
-        greaterThan(_scrollBox(tester).size.height),
+        greaterThan(scrollViewportOf(tester).size.height),
         reason:
             'sanity: this case only means something while the banner is '
             'taller than the viewport',

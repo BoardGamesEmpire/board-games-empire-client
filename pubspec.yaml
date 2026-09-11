@@ -80,6 +80,7 @@ workspace:
   - packages/platform/connectivity_platform
   - packages/platform/web
   - packages/testing/l10n
+  - packages/testing/support
   - packages/ui/tokens
   - packages/ui/widgets
 

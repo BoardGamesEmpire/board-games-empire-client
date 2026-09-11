@@ -1,13 +1,12 @@
 import 'dart:convert';
 
+import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:network_interface/network_interface.dart';
 
 import 'package:dio_network/dio_network.dart';
-
-import '../support/canned_adapter.dart';
 
 class MockDio extends Mock implements Dio {}
 
@@ -574,7 +573,7 @@ void main() {
 
     // These run against a **real** Dio with a canned adapter, not `MockDio`.
     // The defect in #265 lives inside Dio's own body cast, which a stubbed
-    // `Dio` never performs — see `test/support/canned_adapter.dart`.
+    // `Dio` never performs — see `package:bge_test_support/network.dart`.
     //
     // `permissiveStatus: true` mirrors production: `DioFactory` builds the
     // per-server Dio with `validateStatus: (_) => true`, so every status comes

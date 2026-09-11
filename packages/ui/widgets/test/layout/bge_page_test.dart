@@ -1,69 +1,8 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
-
-/// Sets the actual render surface, then hosts [child].
-///
-/// `MediaQueryData.size` is **metadata, not layout constraints** — a widget
-/// under `MediaQuery(size: Size(320, 480))` still lays out against the test
-/// view's 800x600. Every "narrow window" case here previously set only that
-/// field, so it ran at 800 wide and tested nothing about narrow windows. The
-/// size has to go on `tester.view`.
-///
-/// The text scaler is different: an ancestor `MediaQuery` IS effective. The
-/// framework's own `MediaQuery.fromView` is inserted by `View`, ABOVE the
-/// widget under test — `WidgetsApp` inserts none of its own — so this wrapper
-/// sits below it and wins. Verified, not assumed.
-Widget _host(
-  WidgetTester tester,
-  Widget child, {
-  Size size = const Size(400, 800),
-  double scale = 1,
-}) {
-  tester.view.physicalSize = size;
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
-
-  return MediaQuery(
-    data: MediaQueryData(size: size, textScaler: TextScaler.linear(scale)),
-    child: MaterialApp(theme: BgeTheme.light(), home: child),
-  );
-}
-
-/// The count a screen reader reads as "item 3 of 9", taken off the node that
-/// actually scrolls.
-///
-/// Walked rather than fetched with `tester.getSemantics`, which resolves to the
-/// nearest merged ancestor — that is not the viewport's node, so it reports
-/// null whether or not the count is wired, and an assertion built on it passes
-/// for the broken case. `SettingsScreen`'s test carries the same walk; this is
-/// the primitive's own copy, so the guarantee is tested where it is made.
-int? _countOnScrollingNode(WidgetTester tester) {
-  SemanticsNode? root;
-  tester.binding.rootPipelineOwner.visitChildren((owner) {
-    root ??= owner.semanticsOwner?.rootSemanticsNode;
-  });
-
-  int? found;
-  void walk(SemanticsNode node) {
-    final data = node.getSemanticsData();
-    final scrolls =
-        data.hasAction(SemanticsAction.scrollUp) ||
-        data.hasAction(SemanticsAction.scrollDown);
-    if (scrolls && node.scrollChildCount != null) {
-      found = node.scrollChildCount;
-    }
-    node.visitChildren((child) {
-      walk(child);
-      return true;
-    });
-  }
-
-  walk(root!);
-  return found;
-}
 
 /// A paginated list that grows by a page when a row is tapped.
 ///
@@ -107,7 +46,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           // A child that WANTS the full width. Measuring `Text('body')` would
           // measure its ~30px intrinsic width, which is under 480 whether or
@@ -135,7 +74,7 @@ void main() {
 
     testWidgets('is inert on a phone-width window', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             child: SizedBox(
@@ -162,7 +101,7 @@ void main() {
 
     testWidgets('gives a pane-width page the wider measure', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             width: BgePageWidth.pane,
@@ -187,7 +126,7 @@ void main() {
 
     testWidgets('is inert on a phone at pane width too', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             width: BgePageWidth.pane,
@@ -235,7 +174,7 @@ void main() {
   group('BgePage footer/floatingActionButton exclusion (#231)', () {
     testWidgets('the box constructor rejects both at once', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage(
             footer: const SizedBox(height: 40),
@@ -255,7 +194,7 @@ void main() {
 
     testWidgets('the slivers constructor rejects both at once', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage.slivers(
             footer: const SizedBox(height: 40),
@@ -292,7 +231,7 @@ void main() {
 
     testWidgets('a footer alone still builds', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             footer: SizedBox(key: Key('f'), height: 40),
@@ -307,7 +246,7 @@ void main() {
 
     testWidgets('a floatingActionButton alone still builds', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             floatingActionButton: FloatingActionButton(
@@ -328,7 +267,7 @@ void main() {
   group('BgePage footer', () {
     testWidgets('pins the footer while the content scrolls', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage(
             footer: const SizedBox(key: Key('footer'), height: 40),
@@ -352,7 +291,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             footer: SizedBox(
@@ -379,7 +318,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage(
             footer: const SizedBox(key: Key('footer'), height: 48),
@@ -402,7 +341,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage(
             title: const Text('t'),
@@ -426,7 +365,7 @@ void main() {
             child: Column(children: List.generate(20, (i) => Text('row $i'))),
           ),
           size: const Size(320, 480),
-          scale: 2,
+          textScale: 2,
         ),
       );
 
@@ -449,7 +388,7 @@ void main() {
 
     testWidgets('follows the page measure on a pane page', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(
             width: BgePageWidth.pane,
@@ -478,7 +417,7 @@ void main() {
 
   testWidgets('never lets a tall footer starve the content', (tester) async {
     await tester.pumpWidget(
-      _host(
+      hostAtSize(
         tester,
         BgePage(
           title: const Text('t'),
@@ -489,7 +428,7 @@ void main() {
           child: Column(children: List.generate(30, (i) => Text('row $i'))),
         ),
         size: const Size(320, 480),
-        scale: 2,
+        textScale: 2,
       ),
     );
 
@@ -510,13 +449,13 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage(
             child: Column(children: List.generate(40, (i) => Text('row $i'))),
           ),
           size: const Size(320, 480),
-          scale: 2,
+          textScale: 2,
         ),
       );
 
@@ -529,7 +468,7 @@ void main() {
 
     testWidgets('scrolls even when the content fits', (tester) async {
       await tester.pumpWidget(
-        _host(tester, const BgePage(child: Text('short'))),
+        hostAtSize(tester, const BgePage(child: Text('short'))),
       );
 
       // Scroll is not opt-in per screen; each new screen re-deciding it is how
@@ -540,11 +479,16 @@ void main() {
 
   group('BgePage chrome', () {
     testWidgets('shows an app bar only when a title is given', (tester) async {
-      await tester.pumpWidget(_host(tester, const BgePage(child: Text('b'))));
+      await tester.pumpWidget(
+        hostAtSize(tester, const BgePage(child: Text('b'))),
+      );
       expect(find.byType(AppBar), findsNothing);
 
       await tester.pumpWidget(
-        _host(tester, const BgePage(title: Text('Settings'), child: Text('b'))),
+        hostAtSize(
+          tester,
+          const BgePage(title: Text('Settings'), child: Text('b')),
+        ),
       );
       expect(find.byType(AppBar), findsOneWidget);
       expect(find.text('Settings'), findsOneWidget);
@@ -552,7 +496,7 @@ void main() {
 
     testWidgets('centers vertically only when asked', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           const BgePage(centerVertically: true, child: Text('centered')),
           size: const Size(400, 800),
@@ -571,7 +515,7 @@ void main() {
       final built = <int>[];
 
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage.slivers(
             title: const Text('list'),
@@ -620,7 +564,7 @@ void main() {
       final built = <int>[];
 
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage.slivers(
             title: const Text('search'),
@@ -661,7 +605,7 @@ void main() {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage.slivers(
             title: const Text('list'),
@@ -684,14 +628,14 @@ void main() {
       // AccessibilityBridge derives CollectionInfo from that node. A count
       // stranded on a non-scrolling node is exactly the regression #191
       // shipped and #210 measured.
-      expect(_countOnScrollingNode(tester), 40);
+      expect(scrollChildCountOnScrollingNode(tester), 40);
 
       handle.dispose();
     });
 
     testWidgets('holds a lazily built row to the page measure', (tester) async {
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage.slivers(
             title: const Text('list'),
@@ -729,7 +673,7 @@ void main() {
       final built = <int>[];
 
       await tester.pumpWidget(
-        _host(
+        hostAtSize(
           tester,
           BgePage.slivers(
             title: const Text('list'),
@@ -784,10 +728,10 @@ void main() {
       final handle = tester.ensureSemantics();
 
       await tester.pumpWidget(
-        _host(tester, const _GrowingList(), size: const Size(400, 300)),
+        hostAtSize(tester, const _GrowingList(), size: const Size(400, 300)),
       );
 
-      expect(_countOnScrollingNode(tester), 20);
+      expect(scrollChildCountOnScrollingNode(tester), 20);
 
       await tester.tap(find.text('row 0'));
       await tester.pump();
@@ -797,7 +741,7 @@ void main() {
       // mechanism the style-guide rule rests on: without it a paginated caller
       // would have no way to report a growing count and would have to pass
       // null, which announces nothing at all.
-      expect(_countOnScrollingNode(tester), 40);
+      expect(scrollChildCountOnScrollingNode(tester), 40);
 
       handle.dispose();
     });

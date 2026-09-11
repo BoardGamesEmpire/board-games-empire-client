@@ -1,6 +1,6 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -49,9 +49,7 @@ void main() {
     // window has to be set on the view or the widget still lays out against
     // the 800x600 default. Same trap `bge_page_test.dart` documents.
     if (size != null) {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
+      useViewSize(tester, size);
     }
     await tester.pumpWidget(
       MaterialApp(
@@ -303,27 +301,11 @@ void main() {
       // scroll view splits the two apart, leaving the scrollable node with
       // no count and the counting node unable to scroll. Regressed once
       // already on the way to BgePage; this is what caught it.
-      // Walked rather than looked up by finder: `tester.getSemantics`
-      // resolves to the nearest merged ancestor, which is not the viewport's
-      // node, so it reports null for both of these regardless.
-      SemanticsNode? root;
-      tester.binding.rootPipelineOwner.visitChildren((owner) {
-        root ??= owner.semanticsOwner?.rootSemanticsNode;
-      });
-
-      int? countOnAScrollingNode;
-      void walk(SemanticsNode node) {
-        if (node.getSemanticsData().hasAction(SemanticsAction.scrollUp) &&
-            node.scrollChildCount != null) {
-          countOnAScrollingNode = node.scrollChildCount;
-        }
-        node.visitChildren((child) {
-          walk(child);
-          return true;
-        });
-      }
-
-      walk(root!);
+      //
+      // The walk (and why a finder cannot do this) lives in
+      // `bge_test_support`. This copy previously matched `scrollUp` alone,
+      // which reports null for a viewport scrolled to the end — see #257.
+      final countOnAScrollingNode = scrollChildCountOnScrollingNode(tester);
       expect(
         countOnAScrollingNode,
         isNotNull,

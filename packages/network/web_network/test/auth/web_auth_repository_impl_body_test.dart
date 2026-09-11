@@ -11,16 +11,14 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import 'package:web_network/src/auth/web_auth_repository_impl.dart';
-
-import '../support/canned_adapter.dart';
 
 const _kAuthBase = '/api/auth';
 
@@ -303,7 +301,7 @@ void main() {
     // definitively absent".
     test('a 5xx reconcile keeps the granted session', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{}', 503),
         }),
@@ -318,7 +316,7 @@ void main() {
     test('a 4xx reconcile keeps it — #297 reads a 404 on a fixed route as a '
         'deployment fault, not a rejection', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{}', 404),
         }),
@@ -336,12 +334,12 @@ void main() {
     // body is still the raw `String` the request asked for.
     test('a thrown 422 duplicate-email envelope still maps', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-up/email': (
             '{"code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}',
             422,
           ),
-        }, permissive: false),
+        }, permissiveStatus: false),
       );
 
       await expectLater(
@@ -353,7 +351,7 @@ void main() {
     test('a thrown 409 on the SESSION endpoint is a server fault, not a '
         'duplicate email', () async {
       final repo = repoWith(
-        _routingDio({'/get-session': ('{}', 409)}, permissive: false),
+        routingDio({'/get-session': ('{}', 409)}, permissiveStatus: false),
       );
 
       await expectLater(
@@ -374,7 +372,7 @@ void main() {
           '{"padding":"${'x' * (8 * 1024)}",'
           '"code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}';
       final repo = repoWith(
-        _routingDio({'/sign-up/email': (huge, 422)}, permissive: false),
+        routingDio({'/sign-up/email': (huge, 422)}, permissiveStatus: false),
       );
 
       await expectLater(
@@ -444,7 +442,7 @@ void main() {
     test('a non-JSON sign-in body still signs in when the session endpoint '
         'answers', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (_kHtml, 200),
           '/get-session': (jsonEncode(_sessionJson()), 200),
         }),
@@ -459,7 +457,7 @@ void main() {
     test('but a non-JSON body the reconcile cannot rescue still surfaces the '
         'reconcile\'s own failure', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (_kHtml, 200),
           '/get-session': (_kHtml, 200),
         }),
@@ -472,46 +470,3 @@ void main() {
     });
   });
 }
-
-/// A [CannedAdapter] that answers per path, so a sign-in can fail its grant
-/// body while the session endpoint still answers well — the case
-/// `_requireGrantBody`'s leniency exists for.
-class _RoutingAdapter implements HttpClientAdapter {
-  _RoutingAdapter(this.byPathSuffix);
-
-  /// Suffix → (body, status). Every route is answered as
-  /// `application/json`, which is the content type these cases turn on:
-  /// the point is a body that LIES about its type, so making it
-  /// per-route would only let a case understate the bug.
-  final Map<String, (String, int)> byPathSuffix;
-
-  @override
-  Future<ResponseBody> fetch(
-    RequestOptions options,
-    Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async {
-    for (final entry in byPathSuffix.entries) {
-      if (options.path.endsWith(entry.key)) {
-        return ResponseBody.fromString(
-          entry.value.$1,
-          entry.value.$2,
-          headers: {
-            Headers.contentTypeHeader: [Headers.jsonContentType],
-          },
-        );
-      }
-    }
-    throw StateError('no canned answer for ${options.path}');
-  }
-
-  @override
-  void close({bool force = false}) {}
-}
-
-Dio _routingDio(
-  Map<String, (String, int)> byPathSuffix, {
-  bool permissive = true,
-}) =>
-    Dio(BaseOptions(validateStatus: permissive ? (_) => true : null))
-      ..httpClientAdapter = _RoutingAdapter(byPathSuffix);

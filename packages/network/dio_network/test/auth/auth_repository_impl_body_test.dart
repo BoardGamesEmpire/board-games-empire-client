@@ -14,8 +14,8 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
@@ -26,8 +26,6 @@ import 'package:models/dto.dart';
 
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
-
-import '../support/canned_adapter.dart';
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
@@ -420,12 +418,12 @@ void main() {
     // "unexpected 422" instead of "that account already exists".
     test('a thrown 422 duplicate-email envelope still maps', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-up/email': (
             '{"code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}',
             422,
           ),
-        }),
+        }, permissiveStatus: false),
       );
 
       await expectLater(
@@ -457,7 +455,9 @@ void main() {
     });
 
     test('a thrown 409 maps without reading the body at all', () async {
-      final repo = repoWith(_routingDio({'/sign-up/email': (_kHtml, 409)}));
+      final repo = repoWith(
+        routingDio({'/sign-up/email': (_kHtml, 409)}, permissiveStatus: false),
+      );
 
       await expectLater(
         repo.signUp(email: 'a@b.c', password: 'pw', username: 'u'),
@@ -473,7 +473,9 @@ void main() {
       final huge =
           '{"padding":"${'x' * (8 * 1024)}",'
           '"code":"USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"}';
-      final repo = repoWith(_routingDio({'/sign-up/email': (huge, 422)}));
+      final repo = repoWith(
+        routingDio({'/sign-up/email': (huge, 422)}, permissiveStatus: false),
+      );
 
       await expectLater(
         repo.signUp(email: 'a@b.c', password: 'pw', username: 'u'),
@@ -551,10 +553,10 @@ void main() {
     // failing a sign-in the server just accepted.
     test('a MALFORMED 2xx session body keeps the granted session', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': (_kHtml, 200),
-        }),
+        }, permissiveStatus: false),
       );
 
       final result = await repo.signIn(email: 'a@b.c', password: 'pw');
@@ -568,10 +570,10 @@ void main() {
 
     test('a well-formed 2xx body with the wrong FIELDS keeps it too', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{"unexpected":"shape"}', 200),
-        }),
+        }, permissiveStatus: false),
       );
 
       final result = await repo.signIn(email: 'a@b.c', password: 'pw');
@@ -582,10 +584,10 @@ void main() {
 
     test('a 5xx reconcile keeps it', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{}', 503),
-        }),
+        }, permissiveStatus: false),
       );
 
       final result = await repo.signIn(email: 'a@b.c', password: 'pw');
@@ -597,10 +599,10 @@ void main() {
     test('a 4xx reconcile keeps it — #297 reads a 404 on a fixed route as a '
         'deployment fault, not a rejection', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{}', 404),
-        }),
+        }, permissiveStatus: false),
       );
 
       final result = await repo.signIn(email: 'a@b.c', password: 'pw');
@@ -615,10 +617,10 @@ void main() {
     // the same on native).
     test('but a definitive 401 on the reconcile is still not kept', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{}', 401),
-        }),
+        }, permissiveStatus: false),
       );
 
       await expectLater(
@@ -652,10 +654,10 @@ void main() {
       // in against a session the server had just refused — the exact shape
       // that method's doc says must not happen.
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': ('{}', 401),
-        }),
+        }, permissiveStatus: false),
       );
 
       await expectLater(
@@ -667,10 +669,10 @@ void main() {
 
     test('a healthy reconcile is untouched by that branch', () async {
       final repo = repoWith(
-        _routingDio({
+        routingDio({
           '/sign-in/email': (jsonEncode(_grantJson()), 200),
           '/get-session': (jsonEncode(_sessionJson()), 200),
-        }),
+        }, permissiveStatus: false),
       );
 
       final result = await repo.signIn(email: 'a@b.c', password: 'pw');
@@ -680,38 +682,3 @@ void main() {
     });
   });
 }
-
-/// Answers per path, so a grant can succeed while the reconcile is rejected.
-/// Dio's DEFAULT `validateStatus`, so a non-2xx throws `badResponse` with the
-/// response attached — the shape an injected Dio produces.
-class _RoutingAdapter implements HttpClientAdapter {
-  _RoutingAdapter(this.byPathSuffix);
-
-  final Map<String, (String, int)> byPathSuffix;
-
-  @override
-  Future<ResponseBody> fetch(
-    RequestOptions options,
-    Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async {
-    for (final entry in byPathSuffix.entries) {
-      if (options.path.endsWith(entry.key)) {
-        return ResponseBody.fromString(
-          entry.value.$1,
-          entry.value.$2,
-          headers: {
-            Headers.contentTypeHeader: [Headers.jsonContentType],
-          },
-        );
-      }
-    }
-    throw StateError('no canned answer for ${options.path}');
-  }
-
-  @override
-  void close({bool force = false}) {}
-}
-
-Dio _routingDio(Map<String, (String, int)> byPathSuffix) =>
-    Dio()..httpClientAdapter = _RoutingAdapter(byPathSuffix);

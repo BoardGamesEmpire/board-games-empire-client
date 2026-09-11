@@ -1,7 +1,9 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Pins the #40 create-household form: labelled (never hint-only) fields,
 /// required-after-trim name validation surfacing the localized message
@@ -16,6 +18,7 @@ import 'package:household/l10n/household_localizations.dart';
 void main() {
   Widget wrap(Widget child, {TextScaler textScaler = TextScaler.noScaling}) =>
       MaterialApp(
+        theme: BgeTheme.light(),
         localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
         supportedLocales: HouseholdLocalizations.supportedLocales,
         home: Builder(
@@ -417,9 +420,7 @@ void main() {
 
     testWidgets('the in-flight button does not overflow on a narrow screen '
         'at large text scale', (tester) async {
-      tester.view.physicalSize = const Size(320, 640);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
+      useViewSize(tester, const Size(320, 640));
 
       await tester.pumpWidget(
         wrap(

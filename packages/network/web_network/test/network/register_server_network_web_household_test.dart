@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:bge_test_support/network.dart';
 import 'package:di/di.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
@@ -10,7 +10,6 @@ import 'package:network_interface/network_interface.dart';
 
 import 'package:web_network/src/network/register_server_network_web.dart';
 
-import '../support/canned_adapter.dart';
 import '../support/server_identity_fixture.dart';
 
 /// A household row as `GET /api/households` embeds it, trimmed to the fields
@@ -47,37 +46,6 @@ String _envelopeBody(int status) => jsonEncode({
   'message': 'Forbidden resource',
   'error': 'Forbidden',
 });
-
-/// Fails with a [DioException] of [type] carrying **no response**.
-///
-/// `../support/canned_adapter.dart` has the same adapter, but it is reachable
-/// only through `unreachableDio`, which returns a *fresh* [Dio] — the wrong
-/// shape here, since the point of these tests is what the remote the installer
-/// registered does with the Dio the installer registered. Exposing the adapter
-/// there would be the better fix and is deliberately not taken: that file is a
-/// maintained copy of `dio_network`'s (see its header), so a public helper
-/// added to one copy and not the other is exactly the drift #354 exists to
-/// end. Parameterised by [type] rather than hard-coding one, so a second
-/// failure shape costs an argument instead of a third adapter.
-class _FailingTransport implements HttpClientAdapter {
-  _FailingTransport(this.type);
-
-  final DioExceptionType type;
-
-  @override
-  Future<ResponseBody> fetch(
-    RequestOptions options,
-    Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async => throw DioException(
-    requestOptions: options,
-    type: type,
-    error: 'origin unreachable',
-  );
-
-  @override
-  void close({bool force = false}) {}
-}
 
 /// #125: the per-origin household remote is the web network installer's to
 /// register, on the same convention as native's (`register_server_network.dart`)
@@ -183,8 +151,9 @@ void main() {
     });
 
     test('a transport failure with no response is transient', () async {
-      container.get<Dio>().httpClientAdapter = _FailingTransport(
+      container.get<Dio>().httpClientAdapter = FailingAdapter(
         DioExceptionType.connectionError,
+        error: 'origin unreachable',
       );
 
       await expectLater(

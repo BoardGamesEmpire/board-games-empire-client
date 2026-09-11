@@ -1,0 +1,50 @@
+name: bge_test_support
+description: "Shared test helpers that cannot live in any one package's test/ tree (issues #354, #213, #257)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+# Two entry points, one package (#354 D1). `network.dart` needs only `dio`;
+# `widgets.dart` needs `flutter_test` and the theme. They are separate LIBRARIES
+# rather than separate PACKAGES because pub resolves dependencies per package,
+# not per library — a second package would not have isolated anything, since
+# both `dio_network` and `web_network` already declare `flutter` as a regular
+# dependency and `flutter_test` as a dev one.
+#
+# The export split still earns its place: it keeps the import surface honest and
+# makes a future split mechanical if a genuinely pure-Dart consumer ever appears
+# (`network_interface` is the only candidate in the tree). Move `network.dart`
+# plus its `src/`, and consumers change one import line.
+dependencies:
+  # `CannedAdapter` implements dio's `HttpClientAdapter`.
+  dio: ^5.11.0
+
+  flutter:
+    sdk: flutter
+
+  # A REAL dependency, not a dev one: the public API of `widgets.dart` exposes
+  # `WidgetTester`, so consumers cannot resolve this package without it.
+  # Verified to resolve cleanly and draw no very_good_analysis complaint before
+  # the package was created.
+  flutter_test:
+    sdk: flutter
+
+  # `BgeTheme`, installed by the viewport helper so a measure assertion against
+  # BgeTokens cannot silently fall back to `BgeTokens.standard` (#213).
+  # `ui_tokens` depends only on `flutter`, so this cannot cycle back through
+  # `ui`, which dev-depends on this package.
+  ui_tokens:
+    path: ../../ui/tokens
+
+dev_dependencies:
+  # very_good_analysis per CONTRIBUTING.md, not the flutter_lints that
+  # `packages/testing/l10n` carries — see #354 D5 and #194.
+  very_good_analysis: ^10.2.0
+
+# `ui_tokens` declares `uses-material-design: true`; without the same flag here
+# `flutter test` warns on every run of a consumer suite.
+flutter:
+  uses-material-design: true

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -85,6 +86,18 @@ void main() {
   /// What the test observes is the id handed to [onCreated] and the fact that
   /// the screen does **not** navigate itself (#271 D2): the route change is
   /// the shell's, so at this seam a success is a callback and nothing else.
+  // NOT themed, deliberately, and this is the one harness in the #213 sweep
+  // left that way. Installing `BgeTheme.light()` here makes the #209 reveal
+  // case below fail with the banner at -227 instead of the intended +16.
+  //
+  // That failure is real and is **#233**, not a test problem. The real
+  // typography makes this form far taller — the pre-submit scroll extent goes
+  // from 56 to 251 — so the reveal has 243dp to travel instead of 48. The tap
+  // on submit calls `position.hold()`, which disposes the running
+  // `DrivenScrollActivity`, and nothing retries it. The short travel survived
+  // that; the long one does not. Measured both ways before writing this.
+  //
+  // Re-theme this harness when #233 lands, and the case should pass as-is.
   Widget harness({required void Function(String) onCreated}) => MaterialApp(
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
@@ -128,26 +141,16 @@ void main() {
   /// window this short is a real one — and it is the shape where the failure
   /// was reported.
   void useNarrowWindow(WidgetTester tester) {
-    tester.view.physicalSize = const Size(320, 400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
+    useViewSize(tester, const Size(320, 400));
   }
-
-  ScrollableState pageScroll(WidgetTester tester) =>
-      tester.state<ScrollableState>(find.byType(Scrollable).first);
 
   /// The banner's top edge in the page scroll viewport's own space.
   ///
-  /// Geometry rather than `findsOneWidget`, which passes for a banner scrolled
-  /// clean out of the viewport — the bug in #209 and the reason no existing
-  /// assertion here could catch it.
-  double bannerTop(WidgetTester tester) => tester
-      .renderObject<RenderBox>(find.byKey(CreateHouseholdScreen.errorBannerKey))
-      .localToGlobal(
-        Offset.zero,
-        ancestor: tester.renderObject<RenderBox>(find.byType(Scrollable).first),
-      )
-      .dy;
+  /// Geometry rather than `findsOneWidget`, which passes for a banner
+  /// scrolled clean out of the viewport — the bug in #209 and the reason no
+  /// existing assertion here could catch it.
+  double bannerTop(WidgetTester tester) =>
+      topInViewport(tester, find.byKey(CreateHouseholdScreen.errorBannerKey));
 
   /// Outcome copy must land on an announcing surface — never as plain body
   /// text, which would render the same words and announce nothing (#40's
@@ -343,7 +346,7 @@ void main() {
       await openScreen(tester);
 
       // The user scrolls down to reach the submit button.
-      final position = pageScroll(tester).position;
+      final position = pageScrollOf(tester).position;
       expect(
         position.maxScrollExtent,
         greaterThan(0),
@@ -476,6 +479,7 @@ void main() {
       String? created;
       await tester.pumpWidget(
         MaterialApp(
+          theme: BgeTheme.light(),
           localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
           supportedLocales: HouseholdLocalizations.supportedLocales,
           home: CreateHouseholdScreen(

@@ -1,4 +1,5 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -52,10 +53,7 @@ void main() {
     // tap was blocked, because `tester.tap` needs an on-screen target. Now
     // `find` cannot reach them either, which is a stricter requirement met by
     // the same fix.
-    tester.view.physicalSize = const Size(1200, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    useViewSize(tester, const Size(1200, 2400));
     await tester.pumpWidget(
       MaterialApp(
         // The real theme, so a measure assertion tests the wiring rather
@@ -374,7 +372,7 @@ void main() {
       await pumpReview(tester);
       // Shorten the viewport after pumping — the harness sets a tall one so
       // every row is tappable, but this case needs the report to overflow.
-      tester.view.physicalSize = const Size(1200, 500);
+      useViewSize(tester, const Size(1200, 500));
       await tester.pumpAndSettle();
 
       final before = tester

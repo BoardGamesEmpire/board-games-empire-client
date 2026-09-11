@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -58,6 +59,7 @@ ServerIdentity _identity({
 // harness must provide the delegates; assertions keep matching the
 // English template values.
 Widget _wrap(Widget child, MockAuthBloc bloc) => MaterialApp(
+  theme: BgeTheme.light(),
   localizationsDelegates: AuthLocalizations.localizationsDelegates,
   supportedLocales: AuthLocalizations.supportedLocales,
   home: BlocProvider<AuthBloc>.value(value: bloc, child: child),
@@ -76,26 +78,16 @@ AuthScreen _screen(ServerIdentity identity, MockAuthBloc bloc) =>
 /// erase, and would then pass while testing nothing. Desktop and browser are
 /// first-class targets, so a window this short is a real one.
 void _useNarrowWindow(WidgetTester tester) {
-  tester.view.physicalSize = const Size(320, 400);
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
+  useViewSize(tester, const Size(320, 400));
 }
-
-ScrollableState _pageScroll(WidgetTester tester) =>
-    tester.state<ScrollableState>(find.byType(Scrollable).first);
 
 /// The failure banner's top edge in the page scroll viewport's own space.
 ///
 /// Geometry rather than `findsOneWidget`, which passes for a banner scrolled
 /// clean out of the viewport — the bug in #209, and the reason no existing
 /// assertion in this file could catch it.
-double _bannerTop(WidgetTester tester) => tester
-    .renderObject<RenderBox>(find.byKey(AuthScreen.failureBannerKey))
-    .localToGlobal(
-      Offset.zero,
-      ancestor: tester.renderObject<RenderBox>(find.byType(Scrollable).first),
-    )
-    .dy;
+double _bannerTop(WidgetTester tester) =>
+    topInViewport(tester, find.byKey(AuthScreen.failureBannerKey));
 
 void main() {
   late MockAuthBloc mockBloc;
@@ -373,7 +365,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final position = _pageScroll(tester).position;
+        final position = pageScrollOf(tester).position;
         expect(
           position.maxScrollExtent,
           greaterThan(0),
