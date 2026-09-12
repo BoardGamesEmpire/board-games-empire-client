@@ -327,6 +327,48 @@ void main() {
       expect(result, FeedbackSubmitResult.queued);
       expect(sink.persisted.single.report, r);
       expect(sink.persisted.single.serverId, 'srv-1');
+      // Uncounted: being offline says nothing about this record, and the
+      // drain would stop on it rather than charge it.
+      expect(sink.persisted.single.retryCount, 0);
+      expect(sink.persisted.single.lastError, isNull);
+      expect(sink.persisted.single.lastAttemptAt, isNull);
+    });
+
+    test('an unverified 2xx on direct submit is queued having ALREADY spent '
+        'an attempt — the bound counts the exception, not the code path '
+        'that caught it (#359 review)', () async {
+      final transport = _RecordingTransport(
+        error: const FeedbackUnverifiedDeliveryException(
+          'Feedback response could not be verified',
+          statusCode: 200,
+        ),
+      );
+      final sink = _RecordingSink();
+      final clock = DateTime.utc(2026, 9, 12, 8, 30);
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+        now: () => clock,
+      );
+
+      final result = await service.submit(report(service));
+
+      expect(result, FeedbackSubmitResult.queued);
+      final queued = sink.persisted.single;
+      expect(queued.retryCount, 1);
+      expect(queued.lastError, 'Feedback response could not be verified');
+      // One instant for both stamps, and the record is therefore NOT
+      // immediately retryable: without this the next drain re-POSTs it
+      // seconds after the submit that already reached the server once.
+      expect(queued.queuedAt, clock);
+      expect(queued.lastAttemptAt, clock);
+      expect(queued.isRetryableAt(clock), isFalse);
+      expect(
+        queued.isRetryableAt(clock.add(QueuedFeedbackReport.retryCooldown)),
+        isTrue,
+      );
     });
 
     test('queues defensively when a transport leaks an unclassified '
@@ -531,8 +573,8 @@ void main() {
       lastAttemptAt: lastAttemptAt,
     );
 
-    /// A 2xx the client could not verify — #359 **D4**'s record-level
-    /// failure, as opposed to a throttle or an offline device.
+    /// A 2xx the client could not verify — a record-level failure, as
+    /// opposed to a throttle or an offline device (#359).
     const unverified = FeedbackUnverifiedDeliveryException(
       'answered 201 with an empty body',
       statusCode: 201,
@@ -645,7 +687,7 @@ void main() {
       expect(transport.sent.map((r) => r.clientRequestId), ['bad', 'good']);
     });
 
-    group('an unverified 2xx is record-level, not run-level (#359 D3/D4)', () {
+    group('an unverified 2xx is record-level, not run-level (#359)', () {
       test(
         'it does NOT stop the drain — records behind it still send',
         () async {
@@ -1023,7 +1065,7 @@ void main() {
       );
     });
 
-    group('run-level failures still stop the drain (#359 D4)', () {
+    group('run-level failures still stop the drain (#359)', () {
       for (final (label, error) in <(String, Object)>[
         (
           'a 429 throttle',
@@ -1256,8 +1298,8 @@ class _RecordingSink implements FeedbackSink {
     if (persistError != null) throw persistError!;
     persisted.add(record);
     // Keyed, not appended: both real sinks address a record by its storage
-    // key and overwrite, so a re-persist (the retry-count bump in #359
-    // **D4**) replaces rather than duplicating.
+    // key and overwrite, so a re-persist (the retry-count bump in #359)
+    // replaces rather than duplicating.
     final at = _pending.indexWhere((r) => r.storageKey == record.storageKey);
     if (at == -1) {
       _pending.add(record);

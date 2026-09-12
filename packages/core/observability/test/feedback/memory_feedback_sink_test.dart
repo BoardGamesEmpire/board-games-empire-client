@@ -75,7 +75,7 @@ void main() {
     });
   });
 
-  group('the cap (#359 D1, D6)', () {
+  group('the cap (#359)', () {
     QueuedFeedbackReport record(String key, {DateTime? queuedAt}) =>
         QueuedFeedbackReport(
           report: FeedbackReport(

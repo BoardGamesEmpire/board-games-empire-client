@@ -12,11 +12,11 @@ import 'queued_feedback_report.dart';
 ///
 /// Insertion order is preserved so [pending] drains oldest-first.
 ///
-/// Bounded at [QueuedFeedbackReport.maxQueuedReports] (#359 **D1**): a
-/// deployment where nothing can ever drain — a proxy answering every POST
-/// with its own 200 — would otherwise grow this map without limit for the
-/// life of the session. See [_evictOverflow] for why eviction orders by
-/// `queuedAt` and not by insertion.
+/// Bounded at [QueuedFeedbackReport.maxQueuedReports] (#359): a deployment
+/// where nothing can ever drain — a proxy answering every POST with its own
+/// 200 — would otherwise grow this map without limit for the life of the
+/// session. See [_evictOverflow] for why eviction orders by `queuedAt` and
+/// not by insertion.
 ///
 /// [pending] has no reject path, so the discard obligation in the
 /// [FeedbackSink] contract is satisfied trivially: [persist] refuses an
@@ -44,7 +44,7 @@ class MemoryFeedbackSink implements FeedbackSink {
   }
 
   /// Holds the queue at [QueuedFeedbackReport.maxQueuedReports], evicting
-  /// oldest-first (#359 **D1**, **D6**).
+  /// oldest-first (#359).
   ///
   /// Ordered by [QueuedFeedbackReport.compareByAge] — the one age rule both
   /// sinks share — with insertion order as the tie-break, so equal stamps

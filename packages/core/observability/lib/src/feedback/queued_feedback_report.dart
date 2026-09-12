@@ -32,7 +32,7 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
     String? serverId,
 
     /// When this record entered the queue, for the sink's cap to evict by
-    /// (#359 **D1**).
+    /// (#359).
     ///
     /// Deliberately **not** storage mtime. `FileFeedbackSink` rewrites a
     /// record's file on every re-persist, so bumping [retryCount] restamps
@@ -57,11 +57,10 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
     ///
     /// Counted **only** for `FeedbackUnverifiedDeliveryException` (declared
     /// in `feedback_service.dart`; not imported here, so the name is not a
-    /// doc link) — see #359 **D4**. A throttle, an offline device or a 5xx
-    /// stops the drain
-    /// before reaching the increment, so a week off the network costs a
-    /// record nothing — which is the only reason [maxRetries] can be as
-    /// low as it is.
+    /// doc link) — see #359. A throttle, an offline device or a 5xx stops
+    /// the drain before reaching the increment, so a week off the network
+    /// costs a record nothing — which is the only reason [maxRetries] can
+    /// be as low as it is.
     @Default(0) int retryCount,
 
     /// Last failure message, for diagnostics. Null until one fails.
@@ -75,9 +74,9 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
 
   /// Attempts before a record stops being retried.
   ///
-  /// The value `SyncQueueEntry.maxRetries` already uses (#359 **D6**). The
-  /// two queues are separate stores with no shared code, but a reader who
-  /// knows one bound should not have to check the other.
+  /// The value `SyncQueueEntry.maxRetries` already uses (#359). The two
+  /// queues are separate stores with no shared code, but a reader who knows
+  /// one bound should not have to check the other.
   static const int maxRetries = 5;
 
   /// Minimum gap between two *counted* attempts on one record.
@@ -88,15 +87,14 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   /// portal could burn all five attempts in a single session and strand the
   /// report permanently, on a network fault that clears itself an hour later.
   ///
-  /// An hour makes exhaustion mean what **D6** claimed it meant: the record
-  /// has failed across at least four hours of app usage, not four taps. A
-  /// record still inside the window is skipped entirely — not sent and not
-  /// counted — so the cooldown also stops a broken deployment being
+  /// An hour makes exhaustion mean what [maxRetries] claims it means: the
+  /// record has failed across at least four hours of app usage, not four
+  /// taps. A record still inside the window is skipped entirely — not sent
+  /// and not counted — so the cooldown also stops a broken deployment being
   /// re-POSTed on every signal.
   static const Duration retryCooldown = Duration(hours: 1);
 
-  /// Records a sink holds before evicting oldest-first by [queuedAt]
-  /// (#359 **D6**).
+  /// Records a sink holds before evicting oldest-first by [queuedAt] (#359).
   ///
   /// A count rather than a byte budget: it is the simpler thing to test,
   /// and a byte budget would key local storage policy off
@@ -122,7 +120,7 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   /// oldest, which [epoch] expresses directly.
   DateTime get ageKey => queuedAt ?? epoch;
 
-  /// Oldest-first ordering for eviction, shared by every sink (#359 **D1**).
+  /// Oldest-first ordering for eviction, shared by every sink (#359).
   ///
   /// Deliberately one function rather than a rule each sink restates: the
   /// two implementations have already disagreed once about how to apply it,
@@ -135,10 +133,10 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
 
   /// Whether this record has used up [maxRetries].
   ///
-  /// An exhausted record is **kept and skipped**, never dropped (#359
-  /// **D3**): the server never judged it, so discarding it would destroy
-  /// user-approved words over what may be a captive portal. Only the sink's
-  /// cap ever deletes.
+  /// An exhausted record is **kept and skipped**, never dropped (#359): the
+  /// server never judged it, so discarding it would destroy user-approved
+  /// words over what may be a captive portal. Only the sink's cap ever
+  /// deletes.
   bool get isExhausted => retryCount >= maxRetries;
 
   /// Whether [retryCooldown] has elapsed since [lastAttemptAt], so another

@@ -9,7 +9,7 @@ import '../network/decode_json_body.dart';
 /// Wire contract (backend `libs/api/feedback`): `POST /api/feedback/reports`
 /// → **201** with `{ message, feedbackReport: { id, createdAt } }`; the
 /// status is pinned by `@HttpCode(Http.Created)`, so 204 is unreachable and
-/// every success carries that object (#363 **D1**).
+/// every success carries that object (#363).
 ///
 /// The path is relative — the per-server Dio carries the base URL
 /// (path-prefix deployments included), and the existing per-server auth
@@ -173,7 +173,7 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// transient, and the exception messages say what was observed rather than
   /// what it proves.
   ///
-  /// ## Why an empty body is rejected too (#363 **D1**, **D2**)
+  /// ## Why an empty body is rejected too (#363)
   ///
   /// It was not, until the backend was read. The wire contract is stated
   /// positively now rather than inferred: `POST /api/feedback/reports`
@@ -249,7 +249,7 @@ class FeedbackDioTransport implements FeedbackTransport {
       // record behind this one in the same drain would fail identically.
       // The subtype counts an attempt and continues, so routing it here
       // would let one moment of memory pressure charge the entire queue
-      // (#359 **D4**).
+      // (#359).
       throw FeedbackTransientSubmissionException(
         'Feedback response could not be decoded',
         cause: error,

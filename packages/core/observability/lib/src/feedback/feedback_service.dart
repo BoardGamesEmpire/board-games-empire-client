@@ -113,7 +113,7 @@ enum FeedbackSubmitResult {
 ///   leaves the record persisted for the next opportunity, **except** for
 ///   [FeedbackUnverifiedDeliveryException]: that one describes a single
 ///   response rather than the server or the network, so the drain counts an
-///   attempt against the record and carries on to the next (#359 **D4**).
+///   attempt against the record and carries on to the next (#359).
 /// - [FeedbackPermanentSubmissionException] — will **never** succeed on
 ///   retry: 400 (validation), 403 (feedback-banned), and every other
 ///   4xx. `submit` surfaces these to the caller without queueing
@@ -178,15 +178,21 @@ final class FeedbackTransientSubmissionException
 ///
 /// That distinction is what lets `drainPending` skip the record and keep
 /// going, where a throttle, an offline device or a 5xx must stop the whole
-/// run (#359 **D4**). Reading it off [statusCode] instead would mean
+/// run (#359). Reading it off [statusCode] instead would mean
 /// treating a 2xx status as the signal — precisely the inference
 /// [FeedbackTransientSubmissionException.statusCode]'s own doc warns
 /// against, and correct only until another branch carries a 2xx.
 ///
 /// Raised for: a page where a payload belongs, a body that is not JSON, a
-/// body that is JSON but not an object, an empty or whitespace-only body,
-/// and a decode that could not be performed locally. The messages stay
-/// distinct so a log still says which happened.
+/// body that is JSON but not an object, and an empty or whitespace-only
+/// body. The messages stay distinct so a log still says which happened.
+///
+/// **Not** raised for a failure to *perform* the decode — in practice no
+/// offload isolate available under memory pressure. That says nothing about
+/// the response, only that the device is out of room, and every record
+/// behind it in a drain would fail identically, so it stays the plain
+/// [FeedbackTransientSubmissionException]: the run stops and no attempt is
+/// counted (#359).
 final class FeedbackUnverifiedDeliveryException
     extends FeedbackTransientSubmissionException {
   const FeedbackUnverifiedDeliveryException(

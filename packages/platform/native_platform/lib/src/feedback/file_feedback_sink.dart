@@ -226,7 +226,7 @@ class FileFeedbackSink implements FeedbackSink {
   }
 
   /// Holds the directory at [QueuedFeedbackReport.maxQueuedReports],
-  /// deleting oldest-first (#359 **D1**, **D6**).
+  /// deleting oldest-first (#359).
   ///
   /// Without it, a deployment where nothing can ever drain — a proxy
   /// answering every POST with its own 200 — grows durable files forever on
@@ -234,11 +234,11 @@ class FileFeedbackSink implements FeedbackSink {
   ///
   /// **Ordered by [QueuedFeedbackReport.queuedAt], deliberately not by
   /// mtime**, which [pending] uses for drain order. The two disagree the
-  /// moment a record is re-persisted to count a failed attempt (#359
-  /// **D4**): the rename restamps the file, so mtime says "just written"
-  /// about the record that has been queued longest. A record with no
-  /// `queuedAt` sorts at [QueuedFeedbackReport.epoch] — the sentinel both
-  /// sinks share — because it predates the field and so really is oldest.
+  /// moment a record is re-persisted to count a failed attempt (#359): the
+  /// rename restamps the file, so mtime says "just written" about the
+  /// record that has been queued longest. A record with no `queuedAt` sorts
+  /// at [QueuedFeedbackReport.epoch] — the sentinel both sinks share —
+  /// because it predates the field and so really is oldest.
   ///
   /// **A file whose age cannot be DETERMINED is neither evicted nor
   /// counted.** That is the same line [pending] draws and for the same

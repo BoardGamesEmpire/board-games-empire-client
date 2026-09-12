@@ -189,7 +189,7 @@ class FeedbackServiceImpl implements FeedbackService {
       }
 
       // Out of attempts: keep it, skip it, and let the sink's cap be the
-      // only thing that ever deletes it (#359 **D3**). Skipping rather
+      // only thing that ever deletes it (#359). Skipping rather
       // than breaking is what stops one spent record at the head of the
       // queue from re-creating the stall this bound exists to remove.
       if (record.isExhausted) {
@@ -224,8 +224,7 @@ class FeedbackServiceImpl implements FeedbackService {
         // other transient it is a statement about ONE response, not about
         // the server or the network, so the run continues — but it also
         // need not self-clear (a permanently interposed proxy answers every
-        // record identically), which is why the attempt is counted (#359
-        // **D2**, **D4**).
+        // record identically), which is why the attempt is counted (#359).
         final counted = await _countFailedAttempt(record, error);
         // A record that spends its last attempt *here* has the same claim
         // on revival as one that arrived exhausted: a sibling delivering on
@@ -240,7 +239,7 @@ class FeedbackServiceImpl implements FeedbackService {
         // the server or the connection, so every record behind this one
         // would fail the same way. Stop, count nothing — a week offline must
         // not exhaust a record — and leave the rest persisted for the next
-        // drain (#359 **D4**).
+        // drain (#359).
         break;
       }
       await _removeRecord(record);
@@ -256,10 +255,10 @@ class FeedbackServiceImpl implements FeedbackService {
   ///
   /// The bound exists to stop a report being retried forever against an
   /// endpoint that answers every POST with something other than the API
-  /// (#359 **D1**). A sibling that just delivered on this same transport
-  /// disproves that hypothesis outright — the path demonstrably works right
-  /// now — so continuing to skip these would strand user-approved reports
-  /// on a healthy network until the sink's cap deleted them, having never
+  /// (#359). A sibling that just delivered on this same transport disproves
+  /// that hypothesis outright — the path demonstrably works right now — so
+  /// continuing to skip these would strand user-approved reports on a
+  /// healthy network until the sink's cap deleted them, having never
   /// offered them to a server that would have taken them.
   ///
   /// Runs after the loop rather than inside it because a record can be
@@ -292,7 +291,7 @@ class FeedbackServiceImpl implements FeedbackService {
   }
 
   /// Counts one unverified-delivery attempt against [record] and persists
-  /// the result, so the bound survives a restart (#359 **D1**).
+  /// the result, so the bound survives a restart (#359).
   ///
   /// Best-effort in the same spirit as [_removeRecord]: if the sink cannot
   /// take the update, the record simply keeps its old count and is retried
@@ -391,11 +390,31 @@ class FeedbackServiceImpl implements FeedbackService {
   /// is the reason queueing failed, and usually the more actionable root
   /// cause); a prior transport failure ([transportCause]) is carried
   /// alongside for telemetry.
+  ///
+  /// A [transportCause] that is a [FeedbackUnverifiedDeliveryException] puts
+  /// the record in the queue having **already spent an attempt**.
   Future<FeedbackSubmitResult> _queue(
     FeedbackReport report, {
     required String? serverId,
     required Object? transportCause,
   }) async {
+    // What makes an attempt countable is the exception, not which code path
+    // caught it (see [QueuedFeedbackReport.retryCount]), and a direct submit
+    // can meet an unverified 2xx exactly as a drain can. Entering at zero
+    // would allow `maxRetries` further unverified deliveries after one had
+    // already happened, and a null `lastAttemptAt` reads as retryable, so
+    // the next drain would re-POST within seconds of the submit — skipping
+    // the cooldown that makes the bound measure elapsed time rather than
+    // drain triggers. Every other transient is a statement about the server
+    // or the connection and stops a drain without counting, so it still
+    // enters uncounted.
+    final unverified = transportCause is FeedbackUnverifiedDeliveryException
+        ? transportCause
+        : null;
+    // One clock read: the record's age and its first attempt describe the
+    // same instant. A second read could straddle a clock change and date the
+    // attempt before the record it belongs to.
+    final stamp = _now().toUtc();
     try {
       await _sink.persist(
         QueuedFeedbackReport(
@@ -403,8 +422,11 @@ class FeedbackServiceImpl implements FeedbackService {
           serverId: serverId,
           // Stamped once, here, and never rewritten — the sink's cap evicts
           // by it, and a retry-count bump must not make a record look young
-          // (#359 **D1**).
-          queuedAt: _now().toUtc(),
+          // (#359).
+          queuedAt: stamp,
+          retryCount: unverified == null ? 0 : 1,
+          lastError: unverified?.message,
+          lastAttemptAt: unverified == null ? null : stamp,
         ),
       );
       return FeedbackSubmitResult.queued;

@@ -157,7 +157,7 @@ void main() {
       });
 
       test('a 201 with any JSON object completes — the transport asserts the '
-          'shape the API documents, not its keys (#363 D2)', () async {
+          'shape the API documents, not its keys (#363)', () async {
         await send(cannedDio(body: '{}', statusCode: 201));
         await send(cannedDio(body: '{"id":"fr_123"}', statusCode: 201));
       });
@@ -193,17 +193,14 @@ void main() {
         );
       });
 
-      test(
-        'valid JSON that is not an object is unverified (#363 D2)',
-        () async {
-          for (final body in ['[]', '"ok"', '123', 'null']) {
-            await expectLater(
-              send(cannedDio(body: body, statusCode: 201)),
-              throwsA(isA<FeedbackUnverifiedDeliveryException>()),
-            );
-          }
-        },
-      );
+      test('valid JSON that is not an object is unverified (#363)', () async {
+        for (final body in ['[]', '"ok"', '123', 'null']) {
+          await expectLater(
+            send(cannedDio(body: body, statusCode: 201)),
+            throwsA(isA<FeedbackUnverifiedDeliveryException>()),
+          );
+        }
+      });
 
       test(
         'it stays TRANSIENT — the report is queued, never discarded',

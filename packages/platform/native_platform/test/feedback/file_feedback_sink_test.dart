@@ -466,7 +466,7 @@ void main() {
     });
   });
 
-  group('the cap (#359 D1, D6)', () {
+  group('the cap (#359)', () {
     test('persist holds the directory at maxQueuedReports', () async {
       final sink = buildSink();
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports + 8; i++) {

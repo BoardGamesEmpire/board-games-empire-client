@@ -26,7 +26,7 @@ import 'queued_feedback_report.dart';
 /// `QueuedFeedbackReport` instead of reaching into every platform
 /// implementation.
 ///
-/// ## Capacity (#359 **D1**, **D6**)
+/// ## Capacity (#359)
 ///
 /// A sink is **bounded**, and the bound is part of this contract rather
 /// than a coincidence between the implementations that exist today. A
