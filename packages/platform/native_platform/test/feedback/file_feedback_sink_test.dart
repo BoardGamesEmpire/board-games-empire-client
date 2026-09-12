@@ -67,9 +67,11 @@ void main() {
     String key, {
     String? serverId,
     String message = 'pending',
+    DateTime? queuedAt,
   }) => QueuedFeedbackReport(
     report: report(key, message: message),
     serverId: serverId,
+    queuedAt: queuedAt,
   );
 
   /// An envelope exactly as the pre-#161 encoder wrote it: the idempotency
@@ -461,6 +463,185 @@ void main() {
       }
 
       expect(bystander.existsSync(), isTrue);
+    });
+  });
+
+  group('the cap (#359 D1, D6)', () {
+    test('persist holds the directory at maxQueuedReports', () async {
+      final sink = buildSink();
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports + 8; i++) {
+        await sink.persist(
+          record(
+            'k$i',
+            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          ),
+        );
+      }
+
+      expect(
+        await sink.pending(),
+        hasLength(QueuedFeedbackReport.maxQueuedReports),
+      );
+    });
+
+    test('evicts oldest-first by queuedAt, NOT by file mtime — a retry '
+        'bump restamps mtime without making a record younger', () async {
+      final sink = buildSink();
+      // Fill to the cap with records that are already old.
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await sink.persist(
+          record(
+            'old$i',
+            queuedAt: DateTime.utc(2020, 1, 1).add(Duration(minutes: i)),
+          ),
+        );
+      }
+      // Re-persist the OLDEST one, exactly as counting a failed attempt
+      // does. Its mtime is now the newest on disk; its queuedAt is not.
+      await sink.persist(
+        record(
+          'old0',
+          queuedAt: DateTime.utc(2020, 1, 1),
+        ).copyWith(retryCount: 1),
+      );
+      // One more record tips the directory over the cap.
+      await sink.persist(
+        record('newcomer', queuedAt: DateTime.utc(2026, 9, 11)),
+      );
+
+      final keys = (await sink.pending()).map((r) => r.storageKey).toSet();
+
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      // Keyed on mtime, 'old0' would have survived as the newest write.
+      expect(keys, isNot(contains('old0')));
+      expect(keys, contains('newcomer'));
+    });
+
+    test(
+      'a record with no queuedAt evicts first — it predates the field',
+      () async {
+        final sink = buildSink();
+        await sink.persist(record('legacy'));
+        for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+          await sink.persist(
+            record(
+              'k$i',
+              queuedAt: DateTime.utc(2024, 1, 1).add(Duration(minutes: i)),
+            ),
+          );
+        }
+
+        final keys = (await sink.pending()).map((r) => r.storageKey).toSet();
+
+        expect(keys, isNot(contains('legacy')));
+        expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      },
+    );
+  });
+
+  group('the cap never destroys what it cannot read (#359 review)', () {
+    Future<void> writeRecord(String key, {DateTime? queuedAt}) async {
+      await File('${tempDir.path}/$key.json').writeAsString(
+        jsonEncode(
+          QueuedFeedbackReport(
+            report: report(key),
+            queuedAt: queuedAt,
+          ).toJson(),
+        ),
+      );
+    }
+
+    test('an UNREADABLE record is never an eviction candidate — a read '
+        'fault is not corruption, and this path deletes', () async {
+      final sink = buildSink();
+      // Oldest by queuedAt, so eviction would take it first of all.
+      await writeRecord('locked', queuedAt: DateTime.utc(1999));
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await writeRecord(
+          'k$i',
+          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+        );
+      }
+      final locked = File('${tempDir.path}/locked.json');
+      await Process.run('chmod', ['000', locked.path]);
+      addTearDown(() => Process.run('chmod', ['644', locked.path]));
+
+      // Tips the directory over the cap, forcing an eviction pass.
+      await sink.persist(
+        record('newcomer', queuedAt: DateTime.utc(2026, 9, 11)),
+      );
+
+      expect(
+        locked.existsSync(),
+        isTrue,
+        reason: 'a record that could not be read must survive the cap',
+      );
+    });
+
+    test('an unreadable file is not PAID FOR by deleting extra readable '
+        'records — excess counts what the sink can account for', () async {
+      final sink = buildSink();
+      await writeRecord('locked', queuedAt: DateTime.utc(1999));
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await writeRecord(
+          'k$i',
+          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+        );
+      }
+      final locked = File('${tempDir.path}/locked.json');
+      await Process.run('chmod', ['000', locked.path]);
+      addTearDown(() => Process.run('chmod', ['644', locked.path]));
+
+      // 52 files, 51 of them readable, cap 50 -> exactly ONE eviction.
+      await sink.persist(
+        record('newcomer', queuedAt: DateTime.utc(2026, 9, 11)),
+      );
+
+      expect(File('${tempDir.path}/k0.json').existsSync(), isFalse);
+      expect(
+        File('${tempDir.path}/k1.json').existsSync(),
+        isTrue,
+        reason: 'k1 would be the second eviction charged to the locked file',
+      );
+      expect(locked.existsSync(), isTrue);
+      expect(File('${tempDir.path}/newcomer.json').existsSync(), isTrue);
+    });
+
+    test(
+      'never evicts the record it was just handed, even backdated',
+      () async {
+        final sink = buildSink();
+        for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+          await writeRecord('k$i', queuedAt: DateTime.utc(2026, 6, 1));
+        }
+        // A clock that stepped backwards makes the new record look oldest.
+        await sink.persist(record('backdated', queuedAt: DateTime.utc(1999)));
+
+        expect(File('${tempDir.path}/backdated.json').existsSync(), isTrue);
+        expect(
+          await sink.pending(),
+          hasLength(QueuedFeedbackReport.maxQueuedReports),
+        );
+      },
+    );
+
+    test('pending enforces the cap too, so a pre-cap backlog does not '
+        'persist forever on an upgraded install', () async {
+      final sink = buildSink();
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports + 7; i++) {
+        await writeRecord(
+          'k$i',
+          queuedAt: DateTime.utc(2025, 1, 1).add(Duration(minutes: i)),
+        );
+      }
+
+      final pending = await sink.pending();
+
+      expect(pending, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      // The oldest seven are gone from disk, not merely absent from the list.
+      expect(File('${tempDir.path}/k0.json').existsSync(), isFalse);
+      expect(File('${tempDir.path}/k6.json').existsSync(), isFalse);
+      expect(File('${tempDir.path}/k7.json').existsSync(), isTrue);
     });
   });
 }

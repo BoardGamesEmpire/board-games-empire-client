@@ -146,27 +146,90 @@ void main() {
 
     group('the ordinary success path still completes', () {
       test('a 201 with the API envelope completes', () async {
-        await send(cannedDio(body: '{"id":"fr_123"}', statusCode: 201));
+        await send(
+          cannedDio(
+            body:
+                '{"message":"Submitted","feedbackReport":{"id":"fr_123",'
+                '"createdAt":"2026-09-11T00:00:00.000Z"}}',
+            statusCode: 201,
+          ),
+        );
       });
 
-      test('a 201 with an EMPTY body completes — the wire contract is the '
-          'status, and this transport reads nothing out of the body', () async {
-        await send(cannedDio(body: '', statusCode: 201));
+      test('a 201 with any JSON object completes — the transport asserts the '
+          'shape the API documents, not its keys (#363 D2)', () async {
+        await send(cannedDio(body: '{}', statusCode: 201));
+        await send(cannedDio(body: '{"id":"fr_123"}', statusCode: 201));
+      });
+    });
+
+    // #363: the backend answers 201 with `{ message, feedbackReport }` on
+    // every success and `@HttpCode(Http.Created)` pins the status, so a 2xx
+    // that carries no object is not the API answering. Before #363 every
+    // case here completed and the record was removed as delivered.
+    group('a 2xx without a JSON object is no longer reported as sent', () {
+      test('an EMPTY body on a 201 is unverified, not delivered', () async {
+        await expectLater(
+          send(cannedDio(body: '', statusCode: 201)),
+          throwsA(isA<FeedbackUnverifiedDeliveryException>()),
+        );
+      });
+
+      test('a whitespace-only body is unverified — a newline confirms '
+          'nothing now that the contract is known', () async {
+        for (final body in ['\n', '   ', '\t\n ']) {
+          await expectLater(
+            send(cannedDio(body: body, statusCode: 201)),
+            throwsA(isA<FeedbackUnverifiedDeliveryException>()),
+          );
+        }
+      });
+
+      test('a 204 with no body is unverified — the route cannot answer 204, '
+          'so something else did', () async {
+        await expectLater(
+          send(cannedDio(body: '', statusCode: 204)),
+          throwsA(isA<FeedbackUnverifiedDeliveryException>()),
+        );
       });
 
       test(
-        'a 201 whose body is valid JSON but not an object completes',
+        'valid JSON that is not an object is unverified (#363 D2)',
         () async {
-          await send(cannedDio(body: '[]', statusCode: 201));
+          for (final body in ['[]', '"ok"', '123', 'null']) {
+            await expectLater(
+              send(cannedDio(body: body, statusCode: 201)),
+              throwsA(isA<FeedbackUnverifiedDeliveryException>()),
+            );
+          }
         },
       );
 
-      test('a 201 whose body is only whitespace completes — a newline is a '
-          'delivered report, not a page', () async {
-        await send(cannedDio(body: '\n', statusCode: 201));
-        await send(cannedDio(body: '   ', statusCode: 201));
-        await send(
-          cannedDio(body: '\t\n ', statusCode: 201, contentType: 'text/html'),
+      test(
+        'it stays TRANSIENT — the report is queued, never discarded',
+        () async {
+          await expectLater(
+            send(cannedDio(body: '', statusCode: 201)),
+            throwsA(
+              allOf(
+                isA<FeedbackTransientSubmissionException>(),
+                isNot(isA<FeedbackPermanentSubmissionException>()),
+              ),
+            ),
+          );
+        },
+      );
+
+      test('the 2xx status is carried for diagnostics', () async {
+        await expectLater(
+          send(cannedDio(body: '', statusCode: 201)),
+          throwsA(
+            isA<FeedbackUnverifiedDeliveryException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              201,
+            ),
+          ),
         );
       });
     });

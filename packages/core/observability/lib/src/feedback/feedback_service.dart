@@ -100,16 +100,20 @@ enum FeedbackSubmitResult {
 ///
 /// - [FeedbackTransientSubmissionException] — **retryable**: offline /
 ///   connection errors, timeouts, cancellation, 401 (session expired
-///   between resolve and send), 408, 429 (throttle), 5xx, and a 2xx whose
-///   body is present but cannot be decoded (#358). That last one is a
+///   between resolve and send), 408, 429 (throttle), 5xx, and — via its
+///   subtype [FeedbackUnverifiedDeliveryException] — a 2xx whose body does
+///   not look like the API answering (#358, #363). That last one is a
 ///   *smell test, not proof*: it catches the common interception shape — a
 ///   page where a payload belongs — but a truncated genuine response lands
 ///   in it too, and that report DID arrive. Transient is chosen for exactly
 ///   that reason: re-sending a delivered report is recoverable (the backend
 ///   dedupes on `clientRequestId`), discarding an undelivered one is not.
-///   `submit` falls back to the durable sink for these; `drainPending` stops on them (covering the
-///   429-stop requirement) and leaves the record persisted for the next
-///   opportunity.
+///   `submit` falls back to the durable sink for these. `drainPending`
+///   stops the whole run on them — covering the 429-stop requirement — and
+///   leaves the record persisted for the next opportunity, **except** for
+///   [FeedbackUnverifiedDeliveryException]: that one describes a single
+///   response rather than the server or the network, so the drain counts an
+///   attempt against the record and carries on to the next (#359 **D4**).
 /// - [FeedbackPermanentSubmissionException] — will **never** succeed on
 ///   retry: 400 (validation), 403 (feedback-banned), and every other
 ///   4xx. `submit` surfaces these to the caller without queueing
@@ -136,8 +140,12 @@ sealed class FeedbackSubmissionException implements Exception {
 }
 
 /// A retryable submission failure — offline, timeout, cancellation, 401,
-/// 408, 429, 5xx, or an undecodable 2xx body (#358).
-/// Queue-and-drain-later is the correct response.
+/// 408, 429, or 5xx. Queue-and-drain-later is the correct response, and
+/// `drainPending` stops its run on one.
+///
+/// A 2xx whose body does not look like the API answering is raised as the
+/// subtype [FeedbackUnverifiedDeliveryException], not as this class, and
+/// the drain treats it differently — see there.
 final class FeedbackTransientSubmissionException
     extends FeedbackSubmissionException {
   const FeedbackTransientSubmissionException(
@@ -155,6 +163,37 @@ final class FeedbackTransientSubmissionException
   /// reports the 2xx it was reading. Do not read this field as "the server
   /// said this was transient".
   final int? statusCode;
+}
+
+/// A 2xx whose body does not look like the API answering, so delivery could
+/// not be confirmed (#358, #363).
+///
+/// **A refinement of [FeedbackTransientSubmissionException], not a fourth
+/// mode.** Everything the transient contract promises still holds — the
+/// report is retryable, `submit` queues it, and it is never discarded — and
+/// every existing `on FeedbackTransientSubmissionException` site keeps
+/// catching it. What the subtype adds is a fact only the drain needs: this
+/// failure is a statement about *one response*, not about the server or the
+/// connection.
+///
+/// That distinction is what lets `drainPending` skip the record and keep
+/// going, where a throttle, an offline device or a 5xx must stop the whole
+/// run (#359 **D4**). Reading it off [statusCode] instead would mean
+/// treating a 2xx status as the signal — precisely the inference
+/// [FeedbackTransientSubmissionException.statusCode]'s own doc warns
+/// against, and correct only until another branch carries a 2xx.
+///
+/// Raised for: a page where a payload belongs, a body that is not JSON, a
+/// body that is JSON but not an object, an empty or whitespace-only body,
+/// and a decode that could not be performed locally. The messages stay
+/// distinct so a log still says which happened.
+final class FeedbackUnverifiedDeliveryException
+    extends FeedbackTransientSubmissionException {
+  const FeedbackUnverifiedDeliveryException(
+    super.message, {
+    super.cause,
+    super.statusCode,
+  });
 }
 
 /// A permanent server rejection — 400, 403, or any other 4xx. Retrying

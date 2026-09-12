@@ -121,6 +121,22 @@ class FileFeedbackSink implements FeedbackSink {
   /// reaping it is harmless.
   int _tempSequence = 0;
 
+  /// `queuedAt` per record **file name**, so the cap does not re-read the
+  /// whole directory on every persist.
+  ///
+  /// Keyed on the name rather than the full path deliberately: [_persist]
+  /// builds its path with a `/`, while `Directory.list()` yields a platform
+  /// separator — `\` on the Windows desktop target — so a path key written
+  /// on one side would never match a lookup from the other, and the cache
+  /// would silently never hit while accumulating both spellings.
+  ///
+  /// Safe as instance state because every reader and writer runs under
+  /// [_serialized], and a record's `queuedAt` is fixed for the life of its
+  /// path — [_persist] is the only thing that rewrites one, and it updates
+  /// this in the same step. Bounded by the cap plus whatever churn one
+  /// listing sees, and pruned to the live file set on each enforcement.
+  final Map<String, DateTime> _queuedAtCache = {};
+
   /// The resolved reports directory, memoized. `late final` keeps this
   /// lazy — the provider (a `path_provider` plugin call by default) still
   /// does not run at construction (the boot-hot-path guarantee), but once
@@ -168,6 +184,9 @@ class FileFeedbackSink implements FeedbackSink {
     // because the point of this sink is surviving a restart, including
     // one that wasn't graceful.
     final target = '${dir.path}/$key.json';
+    // Read before the rename: afterwards the file always exists, and this is
+    // what tells a new record from a rewritten one.
+    final existed = await File(target).exists();
     final temp = File('$target.${_tempSequence++}$_tempSuffix');
     try {
       await temp.writeAsString(jsonEncode(record.toJson()), flush: true);
@@ -184,7 +203,164 @@ class FileFeedbackSink implements FeedbackSink {
       }
       rethrow;
     }
+
+    _queuedAtCache['$key.json'] = record.ageKey;
+
+    // A re-persist replaces a file that was already there — the drain's
+    // retry bump is exactly this — so the directory cannot have grown and
+    // there is nothing for the cap to do. Skipping spares a full listing on
+    // every counted attempt, which in the never-drains deployment this cap
+    // exists for is one listing per record per drain.
+    if (!existed) {
+      // Deliberately after the rename, and deliberately unable to fail: the
+      // record is already committed, so surfacing anything from here would
+      // have `_queue` report FeedbackPersistenceException — "could not be
+      // saved" — about a report that is safely on disk.
+      try {
+        await _enforceCap(dir, justPersisted: '$key.json');
+      } on Object {
+        // Best-effort, exactly like _reap. The next persist tries again,
+        // and being one record over the cap harms nothing.
+      }
+    }
   }
+
+  /// Holds the directory at [QueuedFeedbackReport.maxQueuedReports],
+  /// deleting oldest-first (#359 **D1**, **D6**).
+  ///
+  /// Without it, a deployment where nothing can ever drain — a proxy
+  /// answering every POST with its own 200 — grows durable files forever on
+  /// exactly the machine this sink exists to serve.
+  ///
+  /// **Ordered by [QueuedFeedbackReport.queuedAt], deliberately not by
+  /// mtime**, which [pending] uses for drain order. The two disagree the
+  /// moment a record is re-persisted to count a failed attempt (#359
+  /// **D4**): the rename restamps the file, so mtime says "just written"
+  /// about the record that has been queued longest. A record with no
+  /// `queuedAt` sorts at [QueuedFeedbackReport.epoch] — the sentinel both
+  /// sinks share — because it predates the field and so really is oldest.
+  ///
+  /// **A file that cannot be READ is neither evicted nor counted.** That is
+  /// the same line [pending] draws and for the same reason: a filesystem
+  /// fault is not corruption, and this method *deletes*. It is excluded
+  /// from the overflow arithmetic as well as from the candidates, so a
+  /// backup or virus scanner holding handles cannot make this method delete
+  /// readable reports to compensate for files it could not open — which
+  /// would trade a transient lock for permanent data loss, and at worst
+  /// empty the directory of everything still readable. Undecodable *bytes*
+  /// are a different matter and do count, sorting oldest; [pending] reaps
+  /// them anyway.
+  ///
+  /// The consequence is that enough unreadable files at once leave the
+  /// directory over the cap for that pass. Staying over the cap is the
+  /// cheaper error, and the next new record re-tries.
+  ///
+  /// [justPersisted] is never evicted, so a clock that stepped backwards
+  /// cannot have this method delete the record the caller was just told was
+  /// saved.
+  ///
+  /// Runs under the caller's lock — never re-enters [_serialized].
+  Future<void> _enforceCap(Directory dir, {String? justPersisted}) async {
+    final files = await dir
+        .list()
+        .where((e) => e is File && e.path.endsWith('.json'))
+        .cast<File>()
+        .toList();
+    if (files.length <= QueuedFeedbackReport.maxQueuedReports) {
+      _pruneCache(files);
+      return;
+    }
+
+    final candidates = <(File, DateTime)>[];
+    var readable = 0;
+    for (final file in files) {
+      final at = await _queuedAt(file);
+      // null = unreadable: no opinion, so it neither occupies a slot nor
+      // supplies one.
+      if (at == null) continue;
+      readable++;
+      // Counts against the cap, but is not up for deletion.
+      if (_nameOf(file) == justPersisted) continue;
+      candidates.add((file, at));
+    }
+
+    // Measured over the records this sink can actually account for, NOT
+    // over every file on disk. Deriving it from the total would charge the
+    // unreadable files to the records that CAN be deleted and evict extra
+    // readable reports to pay for them — trading a transient lock for
+    // permanent data loss, and at worst emptying the directory of
+    // everything still readable.
+    final excess = readable - QueuedFeedbackReport.maxQueuedReports;
+    if (excess <= 0) {
+      _pruneCache(files);
+      return;
+    }
+
+    // Path tie-break keeps eviction deterministic among equal stamps.
+    candidates.sort((a, b) {
+      final byTime = a.$2.compareTo(b.$2);
+      return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
+    });
+
+    for (final (file, _) in candidates.take(excess)) {
+      await _reap(file);
+    }
+    _pruneCache(files);
+  }
+
+  /// [QueuedFeedbackReport.queuedAt] for the record in [file],
+  /// [QueuedFeedbackReport.epoch] when it has none or cannot be decoded, and
+  /// **null when it cannot be read**.
+  ///
+  /// The null is the important case: it means "no opinion", and
+  /// [_enforceCap] keeps such a file out of the arithmetic entirely rather
+  /// than assuming the worst about a record that may be perfectly valid.
+  ///
+  /// Served from [_queuedAtCache] when possible, so the steady state — a
+  /// directory sitting at the cap, which is precisely the never-drains
+  /// deployment this bound exists for — costs one `list()` and no re-reads.
+  Future<DateTime?> _queuedAt(File file) async {
+    final name = _nameOf(file);
+    final cached = _queuedAtCache[name];
+    if (cached != null) return cached;
+
+    final List<int> bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } on FileSystemException {
+      // Transient, not corrupt — the same distinction the class doc draws
+      // for [pending]. Protect the file rather than evict it.
+      return null;
+    }
+
+    try {
+      final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      final raw = json['queuedAt'];
+      final at = raw is String
+          ? DateTime.parse(raw)
+          : QueuedFeedbackReport.epoch;
+      _queuedAtCache[name] = at;
+      return at;
+    } on Object {
+      // Undecodable bytes: sorts oldest, and [pending] reaps it regardless.
+      return QueuedFeedbackReport.epoch;
+    }
+  }
+
+  /// Drops cache entries for records no longer on disk.
+  ///
+  /// Unconditional: "the cache is no bigger than the directory" would not
+  /// imply "nothing in it is stale" — another process sharing the directory
+  /// can delete a file this instance still has cached — and because the
+  /// cache is normally much smaller than the listing, such a guard would
+  /// fire on nearly every call and the prune would never actually run.
+  void _pruneCache(List<File> live) {
+    final names = {for (final file in live) _nameOf(file)};
+    _queuedAtCache.removeWhere((name, _) => !names.contains(name));
+  }
+
+  /// The record's file name, which is how [_queuedAtCache] is keyed.
+  static String _nameOf(File file) => file.uri.pathSegments.last;
 
   @override
   Future<List<QueuedFeedbackReport>> pending() => _serialized(_pending);
@@ -239,7 +415,7 @@ class FileFeedbackSink implements FeedbackSink {
       return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
     });
 
-    final records = <QueuedFeedbackReport>[];
+    final kept = <(File, QueuedFeedbackReport)>[];
     for (final (file, _) in stamped) {
       // Bytes, not readAsString: the async readAsString hands decoding to
       // the IO service, which reports malformed input as a
@@ -287,9 +463,31 @@ class FileFeedbackSink implements FeedbackSink {
         await _reap(file);
         continue;
       }
-      records.add(record);
+      kept.add((file, record));
     }
-    return records;
+
+    // The cap is enforced here as well as on persist, for the install that
+    // upgrades into a pre-cap backlog: without this it would stay over the
+    // cap indefinitely unless the user happened to submit again, which is
+    // exactly what a stalled queue makes unlikely. Records are already
+    // decoded at this point, so it costs a sort.
+    final excess = kept.length - QueuedFeedbackReport.maxQueuedReports;
+    if (excess > 0) {
+      final byAge = [...kept]
+        ..sort((a, b) {
+          // The shared age rule, with a path tie-break this cannot see.
+          final byTime = QueuedFeedbackReport.compareByAge(a.$2, b.$2);
+          return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
+        });
+      final evicted = <String>{};
+      for (final (file, _) in byAge.take(excess)) {
+        await _reap(file);
+        evicted.add(file.path);
+      }
+      kept.removeWhere((entry) => evicted.contains(entry.$1.path));
+    }
+
+    return [for (final (_, record) in kept) record];
   }
 
   @override
@@ -306,6 +504,7 @@ class FileFeedbackSink implements FeedbackSink {
     final key = _requireSafeKey(storageKey, source: 'storageKey');
     final dir = await _directory;
     final file = File('${dir.path}/$key.json');
+    _queuedAtCache.remove('$key.json');
     if (await file.exists()) await file.delete();
   }
 
@@ -322,6 +521,7 @@ class FileFeedbackSink implements FeedbackSink {
   /// so no worse than it; letting the failure escape would instead abort
   /// the whole drain over a file that is already worthless.
   Future<void> _reap(File file) async {
+    _queuedAtCache.remove(_nameOf(file));
     try {
       await file.delete();
     } on FileSystemException {

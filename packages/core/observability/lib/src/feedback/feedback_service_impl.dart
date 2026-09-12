@@ -38,8 +38,10 @@ class FeedbackServiceImpl implements FeedbackService {
     required this._targetResolver,
     required this._sink,
     String Function()? clientRequestIdGenerator,
+    DateTime Function()? now,
     BgeLogger? logger,
   }) : _clientRequestIdGenerator = clientRequestIdGenerator ?? cuid,
+       _now = now ?? DateTime.now,
        _logger = logger ?? BgeLogger('bge.observability.feedback');
 
   final List<Breadcrumb> Function() _breadcrumbSource;
@@ -47,6 +49,10 @@ class FeedbackServiceImpl implements FeedbackService {
   final FeedbackTargetResolver _targetResolver;
   final FeedbackSink _sink;
   final String Function() _clientRequestIdGenerator;
+
+  /// Injected so a test can pin `queuedAt` / `lastAttemptAt`; defaults to
+  /// [DateTime.now].
+  final DateTime Function() _now;
   final BgeLogger _logger;
 
   @override
@@ -172,6 +178,7 @@ class FeedbackServiceImpl implements FeedbackService {
 
     final pending = await _sink.pending();
     var sent = 0;
+    final exhausted = <QueuedFeedbackReport>[];
     for (final record in pending) {
       // #97 per-server drain safety: a record tagged for a different
       // server is never touched. Untagged records (approved with no
@@ -180,6 +187,21 @@ class FeedbackServiceImpl implements FeedbackService {
       if (recordServerId != null && recordServerId != target.serverId) {
         continue;
       }
+
+      // Out of attempts: keep it, skip it, and let the sink's cap be the
+      // only thing that ever deletes it (#359 **D3**). Skipping rather
+      // than breaking is what stops one spent record at the head of the
+      // queue from re-creating the stall this bound exists to remove.
+      if (record.isExhausted) {
+        exhausted.add(record);
+        continue;
+      }
+
+      // Still cooling down from its last unverified answer. Skipped without
+      // being sent, so `maxRetries` measures elapsed time rather than how
+      // often the drain happened to fire — see
+      // [QueuedFeedbackReport.retryCooldown].
+      if (!record.isRetryableAt(_now())) continue;
 
       try {
         await transport.send(record.report);
@@ -197,16 +219,132 @@ class FeedbackServiceImpl implements FeedbackService {
         );
         await _removeRecord(record);
         continue;
+      } on FeedbackUnverifiedDeliveryException catch (error) {
+        // A 2xx this client could not verify (#358, #363). Unlike every
+        // other transient it is a statement about ONE response, not about
+        // the server or the network, so the run continues — but it also
+        // need not self-clear (a permanently interposed proxy answers every
+        // record identically), which is why the attempt is counted (#359
+        // **D2**, **D4**).
+        await _countFailedAttempt(record, error);
+        continue;
       } on Object {
-        // Transient (including 429 — respect the backend throttle) or
-        // unexpected: stop, leaving this record and the rest persisted
-        // for the next drain.
+        // Throttle (429), offline, 5xx, or unexpected: all statements about
+        // the server or the connection, so every record behind this one
+        // would fail the same way. Stop, count nothing — a week offline must
+        // not exhaust a record — and leave the rest persisted for the next
+        // drain (#359 **D4**).
         break;
       }
       await _removeRecord(record);
       sent++;
     }
+
+    if (sent > 0) await _revive(exhausted);
     return sent;
+  }
+
+  /// Clears the retry count on records that had run out of attempts, after
+  /// another record delivered successfully in the same run.
+  ///
+  /// The bound exists to stop a report being retried forever against an
+  /// endpoint that answers every POST with something other than the API
+  /// (#359 **D1**). A sibling that just delivered on this same transport
+  /// disproves that hypothesis outright — the path demonstrably works right
+  /// now — so continuing to skip these would strand user-approved reports
+  /// on a healthy network until the sink's cap deleted them, having never
+  /// offered them to a server that would have taken them.
+  ///
+  /// Runs after the loop rather than inside it because a record can be
+  /// skipped before the delivery that vindicates it; these are picked up on
+  /// the next drain.
+  ///
+  /// A record that genuinely cannot be delivered while its siblings can will
+  /// re-exhaust, at [QueuedFeedbackReport.maxRetries] attempts spread by
+  /// [QueuedFeedbackReport.retryCooldown] each time round. That is a slow
+  /// cycle rather than a hard stop, and it is the right trade: the failure
+  /// this bucket describes is a property of the *response*, so a record
+  /// failing alone is anomalous enough to be worth re-offering.
+  Future<void> _revive(List<QueuedFeedbackReport> exhausted) async {
+    for (final record in exhausted) {
+      try {
+        await _sink.persist(
+          record.copyWith(retryCount: 0, lastAttemptAt: null),
+        );
+      } on Object catch (error, stackTrace) {
+        // Best-effort, as everywhere else on this path: the record keeps its
+        // spent count and is reconsidered on the next successful drain.
+        _logger.warn(
+          'Failed to clear the retry bound on a queued feedback report',
+          error: error,
+          stackTrace: stackTrace,
+          context: {'clientRequestId': record.storageKey},
+        );
+      }
+    }
+  }
+
+  /// Counts one unverified-delivery attempt against [record] and persists
+  /// the result, so the bound survives a restart (#359 **D1**).
+  ///
+  /// Best-effort in the same spirit as [_removeRecord]: if the sink cannot
+  /// take the update, the record simply keeps its old count and is retried
+  /// again next drain. Note what that costs — `lastAttemptAt` fails to
+  /// persist alongside `retryCount`, so the record also loses its cooldown
+  /// and is re-sent on the very next trigger. An unhealthy sink therefore
+  /// trades the bound for hammering; the alternative, aborting a drain that
+  /// is otherwise delivering reports, is worse. Losing a count is a smaller fault than aborting a
+  /// drain that is otherwise making progress.
+  ///
+  /// Re-persisting rewrites the record under the same storage key. That
+  /// restamps its file mtime on `FileFeedbackSink`, which is precisely why
+  /// eviction keys on [QueuedFeedbackReport.queuedAt] instead.
+  Future<void> _countFailedAttempt(
+    QueuedFeedbackReport record,
+    FeedbackUnverifiedDeliveryException error,
+  ) async {
+    if (record.storageKey == null || record.storageKey!.isEmpty) {
+      // Un-addressable, so the sink would reject the write and the count
+      // could never stick — the record would re-POST on every drain
+      // forever. `pending()` is contracted to discard these, so this is
+      // belt-and-braces, matching [_removeRecord]'s guard.
+      _logger.warn(
+        'Skipping retry bookkeeping for an un-addressable queued report',
+        error: error,
+      );
+      return;
+    }
+    final counted = record.copyWith(
+      retryCount: record.retryCount + 1,
+      lastError: error.message,
+      lastAttemptAt: _now().toUtc(),
+    );
+    try {
+      await _sink.persist(counted);
+    } on Object catch (sinkError, stackTrace) {
+      _logger.warn(
+        'Failed to record a feedback send attempt',
+        error: sinkError,
+        stackTrace: stackTrace,
+        context: {'clientRequestId': record.storageKey},
+      );
+      return;
+    }
+    // Logged only once the count is durable. Announcing exhaustion before
+    // the write would have the log assert a state the next drain disagrees
+    // with, on exactly the runs where the write failed.
+    if (counted.isExhausted) {
+      _logger.warn(
+        'Queued feedback report reached its retry bound; it will be kept '
+        'but no longer retried until a send on this transport succeeds',
+        error: error,
+        context: {
+          'clientRequestId': record.storageKey,
+          'retryCount': counted.retryCount,
+          'statusCode': error.statusCode,
+        },
+      );
+    }
   }
 
   /// Removes a drained record, best-effort. A record with no storage key
@@ -246,7 +384,14 @@ class FeedbackServiceImpl implements FeedbackService {
   }) async {
     try {
       await _sink.persist(
-        QueuedFeedbackReport(report: report, serverId: serverId),
+        QueuedFeedbackReport(
+          report: report,
+          serverId: serverId,
+          // Stamped once, here, and never rewritten — the sink's cap evicts
+          // by it, and a retry-count bump must not make a record look young
+          // (#359 **D1**).
+          queuedAt: _now().toUtc(),
+        ),
       );
       return FeedbackSubmitResult.queued;
     } on Object catch (sinkError) {
