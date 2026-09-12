@@ -143,11 +143,21 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// Permanent means `submit` surfaces the failure un-queued and
   /// `drainPending` drops the record — the user's own words, destroyed over a
   /// portal they will be off in a minute. This class already refuses that
-  /// trade for `badCertificate` on the same reasoning. So the two-clause
-  /// decode split #352 established (a non-JSON body is definitive; a failure
-  /// to *perform* the decode is local) collapses to one bucket here, because
-  /// neither clause licenses discarding the report. The messages stay
-  /// distinct so a log still says which happened.
+  /// trade for `badCertificate` on the same reasoning. So neither clause of
+  /// the two-clause decode split #352 established (a non-JSON body is
+  /// definitive; a failure to *perform* the decode is local) licenses
+  /// discarding the report.
+  ///
+  /// The two do **not** land in the same bucket, though — which they did
+  /// until #359 gave "transient" a second axis. A body this client read and
+  /// could not recognise is a statement about *this response*: it counts an
+  /// attempt and the drain moves on to the next record
+  /// ([FeedbackUnverifiedDeliveryException]). A failure to *perform* the
+  /// decode — no isolate available under memory pressure — is a statement
+  /// about the *device*, and every record behind it would fail the same
+  /// way, so it stays the plain [FeedbackTransientSubmissionException] and
+  /// the drain stops without counting anything. The messages stay distinct
+  /// so a log still says which happened.
   ///
   /// That is a deliberate divergence from `decodeJsonBody`'s own doc, which
   /// tells callers to treat a `FormatException` as permanent. The advice fits
@@ -233,9 +243,14 @@ class FeedbackDioTransport implements FeedbackTransport {
       );
     } on Object catch (error) {
       // Decoding could not be performed — in practice a failure to spawn the
-      // offload isolate under resource pressure. Says nothing about the
-      // response, and shares the bucket for the same reason.
-      throw FeedbackUnverifiedDeliveryException(
+      // offload isolate under resource pressure. Deliberately the run-level
+      // transient and NOT the unverified-delivery subtype: this says nothing
+      // about the response, it says the device is out of room, and every
+      // record behind this one in the same drain would fail identically.
+      // The subtype counts an attempt and continues, so routing it here
+      // would let one moment of memory pressure charge the entire queue
+      // (#359 **D4**).
+      throw FeedbackTransientSubmissionException(
         'Feedback response could not be decoded',
         cause: error,
         statusCode: status,

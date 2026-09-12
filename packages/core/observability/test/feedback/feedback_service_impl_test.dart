@@ -517,6 +517,7 @@ void main() {
       String? serverId,
       int retryCount = 0,
       DateTime? queuedAt,
+      DateTime? lastAttemptAt,
     }) => QueuedFeedbackReport(
       report: FeedbackReport(
         category: FeedbackCategory.bug,
@@ -527,6 +528,7 @@ void main() {
       serverId: serverId,
       retryCount: retryCount,
       queuedAt: queuedAt,
+      lastAttemptAt: lastAttemptAt,
     );
 
     /// A 2xx the client could not verify — #359 **D4**'s record-level
@@ -887,6 +889,12 @@ void main() {
           'so it is offered again on a working network', () async {
         // 'spent' is out of attempts; 'good' delivers, which disproves the
         // unverifiable-endpoint hypothesis the bound was defending against.
+        //
+        // The fixture carries a `lastAttemptAt` deliberately: with a null
+        // one the assertion below that the revived record has none would
+        // pass even if _revive stopped clearing it, and a revived record
+        // still holding a stale stamp would sit out its cooldown and be
+        // skipped on the very next drain.
         final transport = _RecordingTransport();
         final sink = _RecordingSink(
           pendingList: [
@@ -894,6 +902,7 @@ void main() {
               'spent',
               serverId: 'srv-1',
               retryCount: QueuedFeedbackReport.maxRetries,
+              lastAttemptAt: DateTime.utc(2026, 9, 11, 11),
             ),
             pendingRecord('good', serverId: 'srv-1'),
           ],
@@ -912,6 +921,54 @@ void main() {
         expect(sink.persisted.single.retryCount, 0);
         expect(sink.persisted.single.isExhausted, isFalse);
         expect(sink.persisted.single.lastAttemptAt, isNull);
+      });
+
+      test('a record that spends its last attempt during the run is revived '
+          'too, so the last one standing is not stranded', () async {
+        // 'spent' starts one attempt short and exhausts on this very run,
+        // while 'good' delivers on the same transport. Revival used to draw
+        // only on records that arrived exhausted, so this one stayed spent
+        // — and once 'good' was removed no sibling was left to succeed,
+        // `sent` could never exceed 0 again, [_revive] never fired, and the
+        // record sat out every later drain until the sink's cap deleted it.
+        final transport = _RecordingTransport(
+          error: unverified,
+          failOnCall: 1,
+          failOnCallOnly: true,
+        );
+        final sink = _RecordingSink(
+          pendingList: [
+            pendingRecord(
+              'spent',
+              serverId: 'srv-1',
+              retryCount: QueuedFeedbackReport.maxRetries - 1,
+            ),
+            pendingRecord('good', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final sent = await service.drainPending();
+
+        expect(sent, 1);
+        // Counted up to the bound, then cleared by the sibling's success.
+        expect(sink.persisted.map((r) => r.storageKey), ['spent', 'spent']);
+        expect(sink.persisted.map((r) => r.retryCount), [
+          QueuedFeedbackReport.maxRetries,
+          0,
+        ]);
+        final revived = sink.persisted.last;
+        expect(revived.isExhausted, isFalse);
+        // Cleared, not merely absent: the counted record it was revived
+        // from carried one, so a revival that kept it would park the record
+        // inside its cooldown on the next drain.
+        expect(sink.persisted.first.lastAttemptAt, isNotNull);
+        expect(revived.lastAttemptAt, isNull);
       });
 
       test('a run that delivers nothing leaves the bound in place', () async {

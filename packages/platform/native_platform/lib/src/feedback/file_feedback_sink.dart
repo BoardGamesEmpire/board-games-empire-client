@@ -240,18 +240,30 @@ class FileFeedbackSink implements FeedbackSink {
   /// `queuedAt` sorts at [QueuedFeedbackReport.epoch] — the sentinel both
   /// sinks share — because it predates the field and so really is oldest.
   ///
-  /// **A file that cannot be READ is neither evicted nor counted.** That is
-  /// the same line [pending] draws and for the same reason: a filesystem
-  /// fault is not corruption, and this method *deletes*. It is excluded
-  /// from the overflow arithmetic as well as from the candidates, so a
-  /// backup or virus scanner holding handles cannot make this method delete
-  /// readable reports to compensate for files it could not open — which
-  /// would trade a transient lock for permanent data loss, and at worst
-  /// empty the directory of everything still readable. Undecodable *bytes*
-  /// are a different matter and do count, sorting oldest; [pending] reaps
-  /// them anyway.
+  /// **A file whose age cannot be DETERMINED is neither evicted nor
+  /// counted.** That is the same line [pending] draws and for the same
+  /// reason: a filesystem fault is not corruption, and this method
+  /// *deletes*. Such a file is excluded from the overflow arithmetic as
+  /// well as from the candidates, so a backup or virus scanner holding
+  /// handles cannot make this method delete readable reports to compensate
+  /// for files it could not open — which would trade a transient lock for
+  /// permanent data loss, and at worst empty the directory of everything
+  /// still readable. Undecodable *bytes* are a different matter and do
+  /// count, sorting oldest; [pending] reaps them anyway.
   ///
-  /// The consequence is that enough unreadable files at once leave the
+  /// Note which property earns the exemption: **unknown age, not
+  /// unreadability.** A record this sink wrote itself has a known
+  /// `queuedAt` in [_queuedAtCache] and keeps it even if the file later
+  /// becomes unreadable, so it still occupies its slot and can still be
+  /// evicted once it is genuinely the oldest of a directory that is
+  /// genuinely over the cap. That is the policy working rather than an
+  /// escape from it — what the exemption protects is the *arithmetic*, and
+  /// on a cached record the arithmetic is exact: no readable report is
+  /// deleted to pay for a locked one. Re-validating readability before
+  /// trusting a cached age would cost a read per file per pass and buy
+  /// nothing but a later eviction of the same record.
+  ///
+  /// The consequence is that enough files of unknown age at once leave the
   /// directory over the cap for that pass. Staying over the cap is the
   /// cheaper error, and the next new record re-tries.
   ///

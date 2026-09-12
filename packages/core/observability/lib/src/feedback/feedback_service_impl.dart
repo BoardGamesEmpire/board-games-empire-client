@@ -226,7 +226,14 @@ class FeedbackServiceImpl implements FeedbackService {
         // need not self-clear (a permanently interposed proxy answers every
         // record identically), which is why the attempt is counted (#359
         // **D2**, **D4**).
-        await _countFailedAttempt(record, error);
+        final counted = await _countFailedAttempt(record, error);
+        // A record that spends its last attempt *here* has the same claim
+        // on revival as one that arrived exhausted: a sibling delivering on
+        // this transport disproves the hypothesis either way. Leaving these
+        // out strands the last record standing — it exhausts on a run that
+        // also delivers, and on every later run there is no sibling left to
+        // succeed, so `sent` stays 0 and [_revive] never fires again.
+        if (counted != null && counted.isExhausted) exhausted.add(counted);
         continue;
       } on Object {
         // Throttle (429), offline, 5xx, or unexpected: all statements about
@@ -299,7 +306,13 @@ class FeedbackServiceImpl implements FeedbackService {
   /// Re-persisting rewrites the record under the same storage key. That
   /// restamps its file mtime on `FileFeedbackSink`, which is precisely why
   /// eviction keys on [QueuedFeedbackReport.queuedAt] instead.
-  Future<void> _countFailedAttempt(
+  ///
+  /// Returns the counted record once the new count is **durable**, and null
+  /// when it is not — either because the record was un-addressable or
+  /// because the sink refused the write. The caller uses that to decide
+  /// revival, so null is the honest answer in both cases: nothing was
+  /// written, so there is no exhaustion to lift.
+  Future<QueuedFeedbackReport?> _countFailedAttempt(
     QueuedFeedbackReport record,
     FeedbackUnverifiedDeliveryException error,
   ) async {
@@ -312,7 +325,7 @@ class FeedbackServiceImpl implements FeedbackService {
         'Skipping retry bookkeeping for an un-addressable queued report',
         error: error,
       );
-      return;
+      return null;
     }
     final counted = record.copyWith(
       retryCount: record.retryCount + 1,
@@ -328,7 +341,7 @@ class FeedbackServiceImpl implements FeedbackService {
         stackTrace: stackTrace,
         context: {'clientRequestId': record.storageKey},
       );
-      return;
+      return null;
     }
     // Logged only once the count is durable. Announcing exhaustion before
     // the write would have the log assert a state the next drain disagrees
@@ -345,6 +358,7 @@ class FeedbackServiceImpl implements FeedbackService {
         },
       );
     }
+    return counted;
   }
 
   /// Removes a drained record, best-effort. A record with no storage key
