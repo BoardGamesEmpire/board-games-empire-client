@@ -563,6 +563,10 @@ void main() {
         );
       }
       final locked = File('${tempDir.path}/locked.json');
+      // `chmod` is the only way to manufacture a read fault against a real
+      // file, and it is POSIX-only — hence `testOn` on this case and the
+      // next. native_platform ships to Windows desktop too, where an
+      // unguarded Process.run throws before the cap is ever exercised.
       await Process.run('chmod', ['000', locked.path]);
       addTearDown(() => Process.run('chmod', ['644', locked.path]));
 
@@ -576,7 +580,7 @@ void main() {
         isTrue,
         reason: 'a record that could not be read must survive the cap',
       );
-    });
+    }, testOn: 'posix');
 
     test('an unreadable file is not PAID FOR by deleting extra readable '
         'records — excess counts what the sink can account for', () async {
@@ -605,7 +609,7 @@ void main() {
       );
       expect(locked.existsSync(), isTrue);
       expect(File('${tempDir.path}/newcomer.json').existsSync(), isTrue);
-    });
+    }, testOn: 'posix');
 
     test(
       'never evicts the record it was just handed, even backdated',

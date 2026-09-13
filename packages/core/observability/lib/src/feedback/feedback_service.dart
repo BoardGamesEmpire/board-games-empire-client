@@ -70,8 +70,11 @@ abstract class FeedbackService {
   ///
   /// Best-effort and sequential (#97): a **transient** failure —
   /// including 429, respecting the backend throttle — stops the drain,
-  /// leaving that record and the rest persisted for the next attempt. A
-  /// **permanent** rejection drops the record (it can never succeed, and
+  /// leaving that record and the rest persisted for the next attempt.
+  /// [FeedbackUnverifiedDeliveryException] is the one exception: it
+  /// describes a single response rather than the server or the network, so
+  /// the drain counts an attempt against that record and carries on (#359).
+  /// A **permanent** rejection drops the record (it can never succeed, and
   /// keeping it would build an un-drainable backlog) and continues.
   /// Records tagged for a different server are never touched. A no-op
   /// when no transport is available. Overlapping calls coalesce into the

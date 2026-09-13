@@ -43,9 +43,16 @@ import 'queued_feedback_report.dart';
 /// last-written time says "new" about the oldest record in the queue.
 ///
 /// Eviction is the **only** discard permitted on a full sink, and it is
-/// still subject to the transient-fault rule above: a record the
-/// implementation cannot read is not thereby old, and must not be deleted
-/// to make room.
+/// still subject to the transient-fault rule above. What that rule forbids
+/// is letting unreadability stand in for *age*: a record the implementation
+/// cannot read is not thereby old, and no readable record may be deleted to
+/// pay for the slot it occupies.
+///
+/// It does not forbid evicting a record whose age is genuinely known. An
+/// implementation that already holds the `queuedAt` it wrote itself keeps
+/// that age while the file is briefly unreadable, and the record stays
+/// evictable on it — the age is real, so the arithmetic stays exact. See
+/// `FileFeedbackSink._enforceCap` for the case worked through.
 ///
 /// Implementations: `FileFeedbackSink` (native, durable JSON files) and
 /// `MemoryFeedbackSink` (the web stand-in until #63, and the
