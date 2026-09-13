@@ -551,6 +551,29 @@ void main() {
       );
     }
 
+    // Denies reads on [file], returning whether that actually took effect.
+    //
+    // `chmod` is the only way to manufacture a read fault against a real
+    // file, and it is POSIX-only — hence `testOn: 'posix'` on the two cases
+    // that use this. native_platform ships to Windows desktop too, where an
+    // unguarded Process.run throws before the cap is ever exercised.
+    //
+    // It is advisory against a privileged runner as well: root reads a 000
+    // file regardless, which would leave `locked` an ordinary eviction
+    // candidate and fail these cases for a reason that has nothing to do
+    // with the sink. Callers skip visibly rather than assert a precondition
+    // the environment refused to set up.
+    Future<bool> denyReads(File file) async {
+      await Process.run('chmod', ['000', file.path]);
+      addTearDown(() => Process.run('chmod', ['644', file.path]));
+      try {
+        await file.readAsBytes();
+        return false;
+      } on FileSystemException {
+        return true;
+      }
+    }
+
     test('an UNREADABLE record is never an eviction candidate — a read '
         'fault is not corruption, and this path deletes', () async {
       final sink = buildSink();
@@ -563,12 +586,13 @@ void main() {
         );
       }
       final locked = File('${tempDir.path}/locked.json');
-      // `chmod` is the only way to manufacture a read fault against a real
-      // file, and it is POSIX-only — hence `testOn` on this case and the
-      // next. native_platform ships to Windows desktop too, where an
-      // unguarded Process.run throws before the cap is ever exercised.
-      await Process.run('chmod', ['000', locked.path]);
-      addTearDown(() => Process.run('chmod', ['644', locked.path]));
+      if (!await denyReads(locked)) {
+        markTestSkipped(
+          'this runner still reads a chmod 000 file (root?), so the read '
+          'fault this case needs cannot be established',
+        );
+        return;
+      }
 
       // Tips the directory over the cap, forcing an eviction pass.
       await sink.persist(
@@ -593,8 +617,13 @@ void main() {
         );
       }
       final locked = File('${tempDir.path}/locked.json');
-      await Process.run('chmod', ['000', locked.path]);
-      addTearDown(() => Process.run('chmod', ['644', locked.path]));
+      if (!await denyReads(locked)) {
+        markTestSkipped(
+          'this runner still reads a chmod 000 file (root?), so the read '
+          'fault this case needs cannot be established',
+        );
+        return;
+      }
 
       // 52 files, 51 of them readable, cap 50 -> exactly ONE eviction.
       await sink.persist(
