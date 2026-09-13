@@ -53,12 +53,14 @@ void main() {
     FeedbackTargetResolver? targetResolver,
     FeedbackSink? sink,
     String Function()? clientRequestIdGenerator,
+    DateTime Function()? now,
   }) => FeedbackServiceImpl(
     breadcrumbSource: breadcrumbSource ?? () => const [],
     environmentSource: () => environment,
     targetResolver: targetResolver ?? _StaticTargetResolver(null),
     sink: sink ?? _RecordingSink(),
     clientRequestIdGenerator: clientRequestIdGenerator,
+    now: now,
   );
 
   group('buildReport', () {
@@ -325,6 +327,48 @@ void main() {
       expect(result, FeedbackSubmitResult.queued);
       expect(sink.persisted.single.report, r);
       expect(sink.persisted.single.serverId, 'srv-1');
+      // Uncounted: being offline says nothing about this record, and the
+      // drain would stop on it rather than charge it.
+      expect(sink.persisted.single.retryCount, 0);
+      expect(sink.persisted.single.lastError, isNull);
+      expect(sink.persisted.single.lastAttemptAt, isNull);
+    });
+
+    test('an unverified 2xx on direct submit is queued having ALREADY spent '
+        'an attempt — the bound counts the exception, not the code path '
+        'that caught it (#359 review)', () async {
+      final transport = _RecordingTransport(
+        error: const FeedbackUnverifiedDeliveryException(
+          'Feedback response could not be verified',
+          statusCode: 200,
+        ),
+      );
+      final sink = _RecordingSink();
+      final clock = DateTime.utc(2026, 9, 12, 8, 30);
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+        now: () => clock,
+      );
+
+      final result = await service.submit(report(service));
+
+      expect(result, FeedbackSubmitResult.queued);
+      final queued = sink.persisted.single;
+      expect(queued.retryCount, 1);
+      expect(queued.lastError, 'Feedback response could not be verified');
+      // One instant for both stamps, and the record is therefore NOT
+      // immediately retryable: without this the next drain re-POSTs it
+      // seconds after the submit that already reached the server once.
+      expect(queued.queuedAt, clock);
+      expect(queued.lastAttemptAt, clock);
+      expect(queued.isRetryableAt(clock), isFalse);
+      expect(
+        queued.isRetryableAt(clock.add(QueuedFeedbackReport.retryCooldown)),
+        isTrue,
+      );
     });
 
     test('queues defensively when a transport leaks an unclassified '
@@ -510,16 +554,31 @@ void main() {
   });
 
   group('drainPending', () {
-    QueuedFeedbackReport pendingRecord(String key, {String? serverId}) =>
-        QueuedFeedbackReport(
-          report: FeedbackReport(
-            category: FeedbackCategory.bug,
-            severity: FeedbackSeverity.low,
-            message: 'pending',
-            clientRequestId: key,
-          ),
-          serverId: serverId,
-        );
+    QueuedFeedbackReport pendingRecord(
+      String key, {
+      String? serverId,
+      int retryCount = 0,
+      DateTime? queuedAt,
+      DateTime? lastAttemptAt,
+    }) => QueuedFeedbackReport(
+      report: FeedbackReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        message: 'pending',
+        clientRequestId: key,
+      ),
+      serverId: serverId,
+      retryCount: retryCount,
+      queuedAt: queuedAt,
+      lastAttemptAt: lastAttemptAt,
+    );
+
+    /// A 2xx the client could not verify — a record-level failure, as
+    /// opposed to a throttle or an offline device (#359).
+    const unverified = FeedbackUnverifiedDeliveryException(
+      'answered 201 with an empty body',
+      statusCode: 201,
+    );
 
     test('sends the active server\'s records and untagged records in '
         'order, removing each on success, and returns the count', () async {
@@ -626,6 +685,426 @@ void main() {
       // Both removed: 'bad' as a permanent drop, 'good' as sent.
       expect(sink.removed, ['bad', 'good']);
       expect(transport.sent.map((r) => r.clientRequestId), ['bad', 'good']);
+    });
+
+    group('an unverified 2xx is record-level, not run-level (#359)', () {
+      test(
+        'it does NOT stop the drain — records behind it still send',
+        () async {
+          final transport = _RecordingTransport(
+            failOnCall: 1,
+            failOnCallOnly: true,
+            error: unverified,
+          );
+          final sink = _RecordingSink(
+            pendingList: [
+              pendingRecord('poison', serverId: 'srv-1'),
+              pendingRecord('good', serverId: 'srv-1'),
+            ],
+          );
+          final service = buildService(
+            targetResolver: _StaticTargetResolver(
+              FeedbackTarget(serverId: 'srv-1', transport: transport),
+            ),
+            sink: sink,
+          );
+
+          final sent = await service.drainPending();
+
+          expect(sent, 1);
+          expect(transport.sent.map((r) => r.clientRequestId), [
+            'poison',
+            'good',
+          ]);
+          // The unverified record is kept; only the delivered one is removed.
+          expect(sink.removed, ['good']);
+        },
+      );
+
+      test('the failed attempt is counted and persisted', () async {
+        final transport = _RecordingTransport(error: unverified);
+        final sink = _RecordingSink(
+          pendingList: [pendingRecord('a', serverId: 'srv-1')],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+          now: () => DateTime.utc(2026, 9, 11, 12),
+        );
+
+        await service.drainPending();
+
+        expect(sink.persisted, hasLength(1));
+        expect(sink.persisted.single.retryCount, 1);
+        expect(
+          sink.persisted.single.lastAttemptAt,
+          DateTime.utc(2026, 9, 11, 12),
+        );
+        expect(sink.persisted.single.lastError, contains('empty body'));
+        expect(sink.removed, isEmpty);
+      });
+
+      test('an exhausted record is SKIPPED, not sent and not dropped — the '
+          'server never judged it', () async {
+        final transport = _RecordingTransport();
+        final sink = _RecordingSink(
+          pendingList: [
+            pendingRecord(
+              'spent',
+              serverId: 'srv-1',
+              retryCount: QueuedFeedbackReport.maxRetries,
+            ),
+            pendingRecord('fresh', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final sent = await service.drainPending();
+
+        expect(sent, 1);
+        expect(transport.sent.map((r) => r.clientRequestId), ['fresh']);
+        expect(sink.removed, ['fresh']);
+      });
+
+      test(
+        'counting stops at the bound — a record cannot exceed maxRetries',
+        () async {
+          final transport = _RecordingTransport(error: unverified);
+          final sink = _RecordingSink(
+            pendingList: [pendingRecord('a', serverId: 'srv-1')],
+          );
+          var clock = DateTime.utc(2026, 9, 11);
+          final service = buildService(
+            targetResolver: _StaticTargetResolver(
+              FeedbackTarget(serverId: 'srv-1', transport: transport),
+            ),
+            sink: sink,
+            now: () => clock,
+          );
+
+          for (var i = 0; i < QueuedFeedbackReport.maxRetries + 3; i++) {
+            await service.drainPending();
+            // Past the cooldown each time, so this loop measures the bound
+            // rather than the cooldown.
+            clock = clock.add(QueuedFeedbackReport.retryCooldown * 2);
+          }
+
+          expect(transport.sent, hasLength(QueuedFeedbackReport.maxRetries));
+          expect(
+            sink.persisted.last.retryCount,
+            QueuedFeedbackReport.maxRetries,
+          );
+          expect(sink.persisted.last.isExhausted, isTrue);
+        },
+      );
+
+      test('a burst of drain triggers costs ONE attempt — the bound measures '
+          'elapsed time, not how often the drain fired', () async {
+        final transport = _RecordingTransport(error: unverified);
+        final sink = _RecordingSink(
+          pendingList: [pendingRecord('a', serverId: 'srv-1')],
+        );
+        var clock = DateTime.utc(2026, 9, 11);
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+          now: () => clock,
+        );
+
+        // The drain fires on every authenticated signal, and duplicates are
+        // documented — a captive portal must not strand a report inside one
+        // session.
+        for (var i = 0; i < 20; i++) {
+          await service.drainPending();
+          clock = clock.add(const Duration(seconds: 30));
+        }
+
+        expect(transport.sent, hasLength(1));
+        expect(sink.persisted.single.retryCount, 1);
+        expect(sink.persisted.single.isExhausted, isFalse);
+      });
+
+      test('a record still cooling down is not even sent', () async {
+        final transport = _RecordingTransport(error: unverified);
+        final clock = DateTime.utc(2026, 9, 11, 12);
+        final sink = _RecordingSink(
+          pendingList: [
+            pendingRecord('cooling', serverId: 'srv-1').copyWith(
+              retryCount: 1,
+              lastAttemptAt: clock.subtract(const Duration(minutes: 1)),
+            ),
+            pendingRecord('ready', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+          now: () => clock,
+        );
+
+        await service.drainPending();
+
+        expect(transport.sent.map((r) => r.clientRequestId), ['ready']);
+      });
+
+      test('an un-addressable record cannot be counted, and is skipped '
+          'rather than re-POSTed forever', () async {
+        // Only the keyless record fails, so the drain must still finish the
+        // addressable one behind it.
+        final transport = _RecordingTransport(
+          failOnCall: 1,
+          failOnCallOnly: true,
+          error: unverified,
+        );
+        final sink = _RecordingSink(
+          pendingList: [
+            QueuedFeedbackReport(
+              report: const FeedbackReport(
+                category: FeedbackCategory.bug,
+                severity: FeedbackSeverity.low,
+                message: 'keyless',
+              ),
+              serverId: 'srv-1',
+            ),
+            pendingRecord('good', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final sent = await service.drainPending();
+
+        // No persist attempted: the sink would reject it, and the swallowed
+        // ArgumentError would leave it re-POSTing on every drain.
+        expect(sent, 1);
+        expect(sink.persisted, isEmpty);
+        expect(sink.removed, ['good']);
+      });
+    });
+
+    group('stamps are stored in UTC (#359 review)', () {
+      test(
+        'queuedAt and lastAttemptAt are UTC even from a local clock — a '
+        'naive stamp round-trips as local and shifts with the zone',
+        () async {
+          final transport = _RecordingTransport(error: unverified);
+          final sink = _RecordingSink(
+            pendingList: [pendingRecord('a', serverId: 'srv-1')],
+          );
+          final service = buildService(
+            targetResolver: _StaticTargetResolver(
+              FeedbackTarget(serverId: 'srv-1', transport: transport),
+            ),
+            sink: sink,
+            // A LOCAL DateTime, as DateTime.now() returns.
+            now: () => DateTime(2026, 9, 11, 12),
+          );
+
+          await service.drainPending();
+
+          final bumped = sink.persisted.single;
+          expect(bumped.lastAttemptAt!.isUtc, isTrue);
+          // toIso8601String must carry a zone designator, or DateTime.parse
+          // reads it back as local in whatever zone the device is in.
+          expect(bumped.lastAttemptAt!.toIso8601String(), endsWith('Z'));
+        },
+      );
+    });
+
+    group('the bound lifts when the path proves healthy (#359 review)', () {
+      test('a successful send in the same run clears an exhausted record, '
+          'so it is offered again on a working network', () async {
+        // 'spent' is out of attempts; 'good' delivers, which disproves the
+        // unverifiable-endpoint hypothesis the bound was defending against.
+        //
+        // The fixture carries a `lastAttemptAt` deliberately: with a null
+        // one the assertion below that the revived record has none would
+        // pass even if _revive stopped clearing it, and a revived record
+        // still holding a stale stamp would sit out its cooldown and be
+        // skipped on the very next drain.
+        final transport = _RecordingTransport();
+        final sink = _RecordingSink(
+          pendingList: [
+            pendingRecord(
+              'spent',
+              serverId: 'srv-1',
+              retryCount: QueuedFeedbackReport.maxRetries,
+              lastAttemptAt: DateTime.utc(2026, 9, 11, 11),
+            ),
+            pendingRecord('good', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final sent = await service.drainPending();
+
+        expect(sent, 1);
+        expect(sink.persisted.single.storageKey, 'spent');
+        expect(sink.persisted.single.retryCount, 0);
+        expect(sink.persisted.single.isExhausted, isFalse);
+        expect(sink.persisted.single.lastAttemptAt, isNull);
+      });
+
+      test('a record that spends its last attempt during the run is revived '
+          'too, so the last one standing is not stranded', () async {
+        // 'spent' starts one attempt short and exhausts on this very run,
+        // while 'good' delivers on the same transport. Revival used to draw
+        // only on records that arrived exhausted, so this one stayed spent
+        // — and once 'good' was removed no sibling was left to succeed,
+        // `sent` could never exceed 0 again, [_revive] never fired, and the
+        // record sat out every later drain until the sink's cap deleted it.
+        final transport = _RecordingTransport(
+          error: unverified,
+          failOnCall: 1,
+          failOnCallOnly: true,
+        );
+        final sink = _RecordingSink(
+          pendingList: [
+            pendingRecord(
+              'spent',
+              serverId: 'srv-1',
+              retryCount: QueuedFeedbackReport.maxRetries - 1,
+            ),
+            pendingRecord('good', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final sent = await service.drainPending();
+
+        expect(sent, 1);
+        // Counted up to the bound, then cleared by the sibling's success.
+        expect(sink.persisted.map((r) => r.storageKey), ['spent', 'spent']);
+        expect(sink.persisted.map((r) => r.retryCount), [
+          QueuedFeedbackReport.maxRetries,
+          0,
+        ]);
+        final revived = sink.persisted.last;
+        expect(revived.isExhausted, isFalse);
+        // Cleared, not merely absent: the counted record it was revived
+        // from carried one, so a revival that kept it would park the record
+        // inside its cooldown on the next drain.
+        expect(sink.persisted.first.lastAttemptAt, isNotNull);
+        expect(revived.lastAttemptAt, isNull);
+      });
+
+      test('a run that delivers nothing leaves the bound in place', () async {
+        final transport = _RecordingTransport(error: unverified);
+        final sink = _RecordingSink(
+          pendingList: [
+            pendingRecord(
+              'spent',
+              serverId: 'srv-1',
+              retryCount: QueuedFeedbackReport.maxRetries,
+            ),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        expect(await service.drainPending(), 0);
+        expect(sink.persisted, isEmpty);
+        expect(transport.sent, isEmpty);
+      });
+    });
+
+    group('a sink that cannot take the retry bump (#359 review)', () {
+      test(
+        'the drain still finishes, and the record keeps its old count',
+        () async {
+          final transport = _RecordingTransport(error: unverified);
+          final sink = _RecordingSink(
+            persistError: StateError('disk full'),
+            pendingList: [pendingRecord('a', serverId: 'srv-1')],
+          );
+          final service = buildService(
+            targetResolver: _StaticTargetResolver(
+              FeedbackTarget(serverId: 'srv-1', transport: transport),
+            ),
+            sink: sink,
+          );
+
+          // Swallowed, not surfaced: a failed bump must not abort a drain.
+          expect(await service.drainPending(), 0);
+          expect(sink.persisted, isEmpty);
+
+          // The documented cost of that: nothing durable changed, so the
+          // record has no cooldown either and is re-sent on the next trigger.
+          expect(await service.drainPending(), 0);
+          expect(transport.sent, hasLength(2));
+        },
+      );
+    });
+
+    group('run-level failures still stop the drain (#359)', () {
+      for (final (label, error) in <(String, Object)>[
+        (
+          'a 429 throttle',
+          FeedbackTransientSubmissionException('throttled', statusCode: 429),
+        ),
+        (
+          'an offline device (no status)',
+          FeedbackTransientSubmissionException('offline'),
+        ),
+        (
+          'a 503',
+          FeedbackTransientSubmissionException('down', statusCode: 503),
+        ),
+      ]) {
+        test('$label stops the run and counts no attempt', () async {
+          final transport = _RecordingTransport(error: error);
+          final sink = _RecordingSink(
+            pendingList: [
+              pendingRecord('a', serverId: 'srv-1'),
+              pendingRecord('b', serverId: 'srv-1'),
+            ],
+          );
+          final service = buildService(
+            targetResolver: _StaticTargetResolver(
+              FeedbackTarget(serverId: 'srv-1', transport: transport),
+            ),
+            sink: sink,
+          );
+
+          final sent = await service.drainPending();
+
+          expect(sent, 0);
+          // Stopped at the first record: 'b' was never attempted.
+          expect(transport.sent.map((r) => r.clientRequestId), ['a']);
+          expect(sink.removed, isEmpty);
+          // No retry burned — a week offline must not exhaust a record.
+          expect(sink.persisted, isEmpty);
+        });
+      }
     });
 
     test('a keyless record mid-queue is not removed and does not abort '
@@ -818,7 +1297,15 @@ class _RecordingSink implements FeedbackSink {
   Future<void> persist(QueuedFeedbackReport record) async {
     if (persistError != null) throw persistError!;
     persisted.add(record);
-    _pending.add(record);
+    // Keyed, not appended: both real sinks address a record by its storage
+    // key and overwrite, so a re-persist (the retry-count bump in #359)
+    // replaces rather than duplicating.
+    final at = _pending.indexWhere((r) => r.storageKey == record.storageKey);
+    if (at == -1) {
+      _pending.add(record);
+    } else {
+      _pending[at] = record;
+    }
   }
 
   @override
