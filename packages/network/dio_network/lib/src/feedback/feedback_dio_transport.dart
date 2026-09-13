@@ -7,7 +7,11 @@ import '../network/decode_json_body.dart';
 /// instance (#69, #97).
 ///
 /// Wire contract (backend `libs/api/feedback`): `POST /api/feedback/reports`
-/// → 201. The path is relative — the per-server Dio carries the base URL
+/// → **201** with `{ message, feedbackReport: { id, createdAt } }`; the
+/// status is pinned by `@HttpCode(Http.Created)`, so 204 is unreachable and
+/// every success carries that object (#363).
+///
+/// The path is relative — the per-server Dio carries the base URL
 /// (path-prefix deployments included), and the existing per-server auth
 /// plumbing attaches the BetterAuth session the endpoint requires (CASL
 /// `create:feedback_report`; feedback-banned users get 403; throttled at
@@ -25,9 +29,10 @@ import '../network/decode_json_body.dart';
 ///   between resolve and send), 408, 429 (throttle — the drain stops
 ///   here), all 5xx, and any failure without a response status
 ///   (including certificate errors, which can be a captive portal —
-///   discarding a user-approved report on one would be wrong), and a 2xx
-///   whose body is present but unparseable, which means something other
-///   than the API answered (#358 — see [_rejectUndecodableBody]).
+///   discarding a user-approved report on one would be wrong), and — as
+///   [FeedbackUnverifiedDeliveryException] — a 2xx that does not carry the
+///   API's documented JSON object, which means something other than the API
+///   answered (#358, #363 — see [_rejectUndecodableBody]).
 /// - [FeedbackPermanentSubmissionException]: 400 (validation), 403
 ///   (feedback-banned), and every other 4xx — retrying can never
 ///   succeed, so the service must not queue these.
@@ -115,7 +120,7 @@ class FeedbackDioTransport implements FeedbackTransport {
     }
   }
 
-  /// Rejects a 2xx whose body is present and cannot be decoded.
+  /// Rejects a 2xx that does not carry the API's own success payload.
   ///
   /// Reading the status is not enough to call a report delivered. A captive
   /// portal, SSO interstitial or WAF answers the POST with its own page and
@@ -126,22 +131,33 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// `String`, and the 2xx check passed.
   ///
   /// **This is a smell test, not proof of delivery**, and the name is meant
-  /// to say so. An impostor that answers with well-formed JSON — a WAF's
-  /// `{"error":"blocked"}`, an SPA catch-all's `{}` — passes it. Matching the
-  /// API's own envelope would not fix that: #297 looked for exactly such a
-  /// discriminator and rejected it, because the backend answers an unmatched
-  /// route with the same envelope shape. What is catchable here is
-  /// the common case — a page, not a payload.
+  /// to say so. An impostor that answers with a well-formed JSON object — a
+  /// WAF's `{"error":"blocked"}`, an SPA catch-all's `{}` — passes it.
+  /// Matching the API's own envelope would not fix that: #297 looked for
+  /// exactly such a discriminator and rejected it, because the backend
+  /// answers an unmatched route with the same envelope shape. What is
+  /// catchable here is the common case — a page, or nothing at all, where a
+  /// payload belongs.
   ///
   /// **Transient, not permanent**, and the distinction is the whole point.
   /// Permanent means `submit` surfaces the failure un-queued and
   /// `drainPending` drops the record — the user's own words, destroyed over a
   /// portal they will be off in a minute. This class already refuses that
-  /// trade for `badCertificate` on the same reasoning. So the two-clause
-  /// decode split #352 established (a non-JSON body is definitive; a failure
-  /// to *perform* the decode is local) collapses to one bucket here, because
-  /// neither clause licenses discarding the report. The messages stay
-  /// distinct so a log still says which happened.
+  /// trade for `badCertificate` on the same reasoning. So neither clause of
+  /// the two-clause decode split #352 established (a non-JSON body is
+  /// definitive; a failure to *perform* the decode is local) licenses
+  /// discarding the report.
+  ///
+  /// The two do **not** land in the same bucket, though — which they did
+  /// until #359 gave "transient" a second axis. A body this client read and
+  /// could not recognise is a statement about *this response*: it counts an
+  /// attempt and the drain moves on to the next record
+  /// ([FeedbackUnverifiedDeliveryException]). A failure to *perform* the
+  /// decode — no isolate available under memory pressure — is a statement
+  /// about the *device*, and every record behind it would fail the same
+  /// way, so it stays the plain [FeedbackTransientSubmissionException] and
+  /// the drain stops without counting anything. The messages stay distinct
+  /// so a log still says which happened.
   ///
   /// That is a deliberate divergence from `decodeJsonBody`'s own doc, which
   /// tells callers to treat a `FormatException` as permanent. The advice fits
@@ -157,29 +173,46 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// transient, and the exception messages say what was observed rather than
   /// what it proves.
   ///
-  /// An empty or whitespace-only body withdraws nothing: the wire contract is
-  /// `→ 201` and this transport reads nothing out of the body, so demanding a
-  /// shape would invent a contract the API never promised. Deliberately weaker
-  /// than `HouseholdRemoteDataSourceImpl._requireJsonObject`, which needs the
-  /// payload it is checking for.
+  /// ## Why an empty body is rejected too (#363)
   ///
-  /// **That is an accepted gap, not an oversight**: a portal answering with
-  /// `Content-Length: 0` and a 200 still reads as delivered. Closing it means
-  /// requiring a body, which is only safe once the backend is known to send
-  /// one on 201 — unverified here, and getting it wrong fails every genuine
-  /// submission rather than a rare intercepted one. Tracked on #363, which
-  /// carries the one backend fact that settles it.
+  /// It was not, until the backend was read. The wire contract is stated
+  /// positively now rather than inferred: `POST /api/feedback/reports`
+  /// answers **201** with `{ message, feedbackReport: { id, createdAt } }` —
+  /// `feedback.controller.ts:19-24` declares the envelope and `:70-73`
+  /// builds it — on a fresh submission and on an idempotent replay alike.
+  /// **204 is unreachable**, because `@HttpCode(Http.Created)` pins the
+  /// status (`:58-59`) and the handler emits exactly one value. The only
+  /// global response interceptor rewrites i18n markers in place and returns
+  /// marker-free bodies by reference, so it cannot empty one.
+  ///
+  /// So a 2xx carrying no body, or a whitespace-only body, is not this API
+  /// answering, and the empty-body exemption that used to let it through was
+  /// closing a gap the contract never asked for. Requiring a JSON **object**
+  /// rather than merely a non-empty body costs nothing in false rejections
+  /// for the same reason, and additionally catches an impostor answering
+  /// `[]`, `"ok"` or `123`.
+  ///
+  /// Still deliberately weaker than
+  /// `HouseholdRemoteDataSourceImpl._requireJsonObject`: that caller needs
+  /// the payload it is checking for, and this one reads nothing out of it.
+  /// The object requirement asserts the documented shape, and stops there —
+  /// no key is required, per #297's finding above.
   Future<void> _rejectUndecodableBody(
     String? body, {
     required int status,
   }) async {
     final text = body?.trim();
-    // `trim()`, not `isEmpty`: a 201 whose body is a newline is a delivered
-    // report, and `jsonDecode` throws `FormatException` on it just as it does
-    // on a page. This gate is what lets success through, so it has to be the
-    // generous form — unlike the same-looking check in the household remote,
-    // where an empty body is already a failure.
-    if (text == null || text.isEmpty) return;
+    // `trim()` folds whitespace in with empty deliberately: a 2xx whose body
+    // is a newline carries no more of a receipt than one with no body at all,
+    // and the contract says every genuine success carries the receipt.
+    if (text == null || text.isEmpty) {
+      throw FeedbackUnverifiedDeliveryException(
+        'Feedback endpoint answered $status with an empty body; the API '
+        'answers 201 with a report receipt, so delivery could not be '
+        'confirmed',
+        statusCode: status,
+      );
+    }
 
     // A page announces itself in its first character, and JSON never begins
     // with `<`. Answering here keeps a multi-megabyte portal page out of
@@ -191,17 +224,18 @@ class FeedbackDioTransport implements FeedbackTransport {
     // response begins with `{`, and that is the other trigger this check
     // exists for, so a first-character test alone would stop detecting it.
     if (text.startsWith('<')) {
-      throw FeedbackTransientSubmissionException(
+      throw FeedbackUnverifiedDeliveryException(
         'Feedback endpoint answered $status with a page, not a payload; '
         'delivery could not be confirmed',
         statusCode: status,
       );
     }
 
+    final Object? decoded;
     try {
-      await decodeJsonBody(text);
+      decoded = await decodeJsonBody(text);
     } on FormatException catch (error) {
-      throw FeedbackTransientSubmissionException(
+      throw FeedbackUnverifiedDeliveryException(
         'Feedback endpoint answered $status with a body that is not JSON; '
         'delivery could not be confirmed',
         cause: error,
@@ -209,11 +243,26 @@ class FeedbackDioTransport implements FeedbackTransport {
       );
     } on Object catch (error) {
       // Decoding could not be performed — in practice a failure to spawn the
-      // offload isolate under resource pressure. Says nothing about the
-      // response, and shares the bucket for the same reason.
+      // offload isolate under resource pressure. Deliberately the run-level
+      // transient and NOT the unverified-delivery subtype: this says nothing
+      // about the response, it says the device is out of room, and every
+      // record behind this one in the same drain would fail identically.
+      // The subtype counts an attempt and continues, so routing it here
+      // would let one moment of memory pressure charge the entire queue
+      // (#359).
       throw FeedbackTransientSubmissionException(
         'Feedback response could not be decoded',
         cause: error,
+        statusCode: status,
+      );
+    }
+
+    // Valid JSON that is not an object: `[]`, `"ok"`, `123`, `null`. The
+    // documented success payload is an object, so none of these is the API.
+    if (decoded is! Map<String, dynamic>) {
+      throw FeedbackUnverifiedDeliveryException(
+        'Feedback endpoint answered $status with JSON that is not an object; '
+        'delivery could not be confirmed',
         statusCode: status,
       );
     }

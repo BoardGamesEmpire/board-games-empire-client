@@ -45,8 +45,20 @@ void main() {
 
   RequestOptions options() => RequestOptions(path: '/api/feedback/reports');
 
-  Response<String> response(int statusCode) =>
-      Response<String>(requestOptions: options(), statusCode: statusCode);
+  /// The API's documented success payload. Carried on every canned 2xx
+  /// because #363 made a bodyless 2xx an unverified delivery — this suite
+  /// stubs `Dio` itself, so its job is the request and the status, and a
+  /// body that does not look like the API would now fail every case for a
+  /// reason none of them is about.
+  const apiEnvelope =
+      '{"message":"Submitted","feedbackReport":'
+      '{"id":"fr_123","createdAt":"2026-09-11T00:00:00.000Z"}}';
+
+  Response<String> response(int statusCode) => Response<String>(
+    requestOptions: options(),
+    statusCode: statusCode,
+    data: apiEnvelope,
+  );
 
   DioException statusError(int statusCode) => DioException(
     requestOptions: options(),
