@@ -274,12 +274,23 @@ class FeedbackServiceImpl implements FeedbackService {
   Future<void> _revive(List<QueuedFeedbackReport> exhausted) async {
     for (final record in exhausted) {
       try {
-        await _sink.persist(
-          record.copyWith(retryCount: 0, lastAttemptAt: null),
-        );
+        // An update, not a persist: this record came out of a snapshot taken
+        // before the drain started, and a `submit` arriving since may have
+        // evicted it from a full sink. Persisting would write it back and
+        // cost a live report its slot (#376). Gone means there is no spent
+        // bound left to clear.
+        //
+        // `lastError` stays. Only the two fields the bound is made of are
+        // cleared; the message is diagnostics, and the last attempt really
+        // did fail with it.
+        await _sink.update(record.copyWith(retryCount: 0, lastAttemptAt: null));
       } on Object catch (error, stackTrace) {
         // Best-effort, as everywhere else on this path: the record keeps its
-        // spent count and is reconsidered on the next successful drain.
+        // spent count and is reconsidered on the next successful drain. An
+        // un-addressable record lands here too, by way of the `ArgumentError`
+        // [FeedbackSink.update] raises for one — `pending()` is contracted to
+        // discard those, so it is a sink bug, and logging it is better than a
+        // guard here that would quietly skip it.
         _logger.warn(
           'Failed to clear the retry bound on a queued feedback report',
           error: error,
@@ -290,8 +301,8 @@ class FeedbackServiceImpl implements FeedbackService {
     }
   }
 
-  /// Counts one unverified-delivery attempt against [record] and persists
-  /// the result, so the bound survives a restart (#359).
+  /// Counts one unverified-delivery attempt against [record] and writes the
+  /// result back, so the bound survives a restart (#359).
   ///
   /// Best-effort in the same spirit as [_removeRecord]: if the sink cannot
   /// take the update, the record simply keeps its old count and is retried
@@ -299,23 +310,39 @@ class FeedbackServiceImpl implements FeedbackService {
   /// persist alongside `retryCount`, so the record also loses its cooldown
   /// and is re-sent on the very next trigger. An unhealthy sink therefore
   /// trades the bound for hammering; the alternative, aborting a drain that
-  /// is otherwise delivering reports, is worse. Losing a count is a smaller fault than aborting a
-  /// drain that is otherwise making progress.
+  /// is otherwise delivering reports, is worse. Losing a count is a smaller
+  /// fault than aborting a drain that is otherwise making progress.
   ///
-  /// Re-persisting rewrites the record under the same storage key. That
-  /// restamps its file mtime on `FileFeedbackSink`, which is precisely why
-  /// eviction keys on [QueuedFeedbackReport.queuedAt] instead.
+  /// The write goes through [FeedbackSink.update] rather than
+  /// [FeedbackSink.persist]: [record] comes from a snapshot taken before the
+  /// drain started, and on a full sink a `submit` since then may have
+  /// evicted it. Persisting would put it back and take a live report's slot
+  /// to do so (#376).
   ///
-  /// Returns the counted record once the new count is **durable**, and null
-  /// when it is not — either because the record was un-addressable or
-  /// because the sink refused the write. The caller uses that to decide
-  /// revival, so null is the honest answer in both cases: nothing was
-  /// written, so there is no exhaustion to lift.
+  /// Updating rewrites the record under the same storage key. That restamps
+  /// its file mtime on `FileFeedbackSink`, which is precisely why eviction
+  /// keys on [QueuedFeedbackReport.queuedAt] instead.
+  ///
+  /// Returns the counted record once the sink has **accepted** the write,
+  /// and null when it has not — either because the record was un-addressable
+  /// or because the sink refused. The caller uses that to decide revival, so
+  /// null is the honest answer in both cases: nothing was written, so there
+  /// is no exhaustion to lift.
+  ///
+  /// Accepted is not quite *written*. A record evicted between
+  /// [FeedbackSink.pending] and this call updates to nothing, silently and
+  /// by design, and this returns it non-null. Nothing rests on the
+  /// difference: the only reader of the return is [_revive], whose own write
+  /// is an [FeedbackSink.update] against the same absent key and so is
+  /// equally a no-op. Telling the two apart would need the sink to report
+  /// whether it wrote — which is a guarantee no caller has a use for, and a
+  /// weaker one sitting next to the one the interface already makes.
   Future<QueuedFeedbackReport?> _countFailedAttempt(
     QueuedFeedbackReport record,
     FeedbackUnverifiedDeliveryException error,
   ) async {
-    if (record.storageKey == null || record.storageKey!.isEmpty) {
+    final key = record.storageKey;
+    if (key == null || key.isEmpty) {
       // Un-addressable, so the sink would reject the write and the count
       // could never stick — the record would re-POST on every drain
       // forever. `pending()` is contracted to discard these, so this is
@@ -332,26 +359,26 @@ class FeedbackServiceImpl implements FeedbackService {
       lastAttemptAt: _now().toUtc(),
     );
     try {
-      await _sink.persist(counted);
+      await _sink.update(counted);
     } on Object catch (sinkError, stackTrace) {
       _logger.warn(
         'Failed to record a feedback send attempt',
         error: sinkError,
         stackTrace: stackTrace,
-        context: {'clientRequestId': record.storageKey},
+        context: {'clientRequestId': key},
       );
       return null;
     }
-    // Logged only once the count is durable. Announcing exhaustion before
-    // the write would have the log assert a state the next drain disagrees
-    // with, on exactly the runs where the write failed.
+    // Logged only once the sink has taken the count. Announcing exhaustion
+    // before the write would have the log assert a state the next drain
+    // disagrees with, on exactly the runs where the write failed.
     if (counted.isExhausted) {
       _logger.warn(
         'Queued feedback report reached its retry bound; it will be kept '
         'but no longer retried until a send on this transport succeeds',
         error: error,
         context: {
-          'clientRequestId': record.storageKey,
+          'clientRequestId': key,
           'retryCount': counted.retryCount,
           'statusCode': error.statusCode,
         },

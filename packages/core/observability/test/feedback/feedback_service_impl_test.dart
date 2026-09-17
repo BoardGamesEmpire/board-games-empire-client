@@ -736,13 +736,13 @@ void main() {
 
         await service.drainPending();
 
-        expect(sink.persisted, hasLength(1));
-        expect(sink.persisted.single.retryCount, 1);
+        expect(sink.updated, hasLength(1));
+        expect(sink.updated.single.retryCount, 1);
         expect(
-          sink.persisted.single.lastAttemptAt,
+          sink.updated.single.lastAttemptAt,
           DateTime.utc(2026, 9, 11, 12),
         );
-        expect(sink.persisted.single.lastError, contains('empty body'));
+        expect(sink.updated.single.lastError, contains('empty body'));
         expect(sink.removed, isEmpty);
       });
 
@@ -797,11 +797,8 @@ void main() {
           }
 
           expect(transport.sent, hasLength(QueuedFeedbackReport.maxRetries));
-          expect(
-            sink.persisted.last.retryCount,
-            QueuedFeedbackReport.maxRetries,
-          );
-          expect(sink.persisted.last.isExhausted, isTrue);
+          expect(sink.updated.last.retryCount, QueuedFeedbackReport.maxRetries);
+          expect(sink.updated.last.isExhausted, isTrue);
         },
       );
 
@@ -829,8 +826,8 @@ void main() {
         }
 
         expect(transport.sent, hasLength(1));
-        expect(sink.persisted.single.retryCount, 1);
-        expect(sink.persisted.single.isExhausted, isFalse);
+        expect(sink.updated.single.retryCount, 1);
+        expect(sink.updated.single.isExhausted, isFalse);
       });
 
       test('a record still cooling down is not even sent', () async {
@@ -889,9 +886,10 @@ void main() {
 
         final sent = await service.drainPending();
 
-        // No persist attempted: the sink would reject it, and the swallowed
-        // ArgumentError would leave it re-POSTing on every drain.
+        // No write-back attempted: the sink would reject it, and the
+        // swallowed ArgumentError would leave it re-POSTing on every drain.
         expect(sent, 1);
+        expect(sink.updated, isEmpty);
         expect(sink.persisted, isEmpty);
         expect(sink.removed, ['good']);
       });
@@ -917,7 +915,7 @@ void main() {
 
           await service.drainPending();
 
-          final bumped = sink.persisted.single;
+          final bumped = sink.updated.single;
           expect(bumped.lastAttemptAt!.isUtc, isTrue);
           // toIso8601String must carry a zone designator, or DateTime.parse
           // reads it back as local in whatever zone the device is in.
@@ -959,10 +957,10 @@ void main() {
         final sent = await service.drainPending();
 
         expect(sent, 1);
-        expect(sink.persisted.single.storageKey, 'spent');
-        expect(sink.persisted.single.retryCount, 0);
-        expect(sink.persisted.single.isExhausted, isFalse);
-        expect(sink.persisted.single.lastAttemptAt, isNull);
+        expect(sink.updated.single.storageKey, 'spent');
+        expect(sink.updated.single.retryCount, 0);
+        expect(sink.updated.single.isExhausted, isFalse);
+        expect(sink.updated.single.lastAttemptAt, isNull);
       });
 
       test('a record that spends its last attempt during the run is revived '
@@ -999,17 +997,17 @@ void main() {
 
         expect(sent, 1);
         // Counted up to the bound, then cleared by the sibling's success.
-        expect(sink.persisted.map((r) => r.storageKey), ['spent', 'spent']);
-        expect(sink.persisted.map((r) => r.retryCount), [
+        expect(sink.updated.map((r) => r.storageKey), ['spent', 'spent']);
+        expect(sink.updated.map((r) => r.retryCount), [
           QueuedFeedbackReport.maxRetries,
           0,
         ]);
-        final revived = sink.persisted.last;
+        final revived = sink.updated.last;
         expect(revived.isExhausted, isFalse);
         // Cleared, not merely absent: the counted record it was revived
         // from carried one, so a revival that kept it would park the record
         // inside its cooldown on the next drain.
-        expect(sink.persisted.first.lastAttemptAt, isNotNull);
+        expect(sink.updated.first.lastAttemptAt, isNotNull);
         expect(revived.lastAttemptAt, isNull);
       });
 
@@ -1032,18 +1030,18 @@ void main() {
         );
 
         expect(await service.drainPending(), 0);
-        expect(sink.persisted, isEmpty);
+        expect(sink.updated, isEmpty);
         expect(transport.sent, isEmpty);
       });
     });
 
-    group('a sink that cannot take the retry bump (#359 review)', () {
+    group('a sink that cannot take a write-back (#359 review, #376)', () {
       test(
         'the drain still finishes, and the record keeps its old count',
         () async {
           final transport = _RecordingTransport(error: unverified);
           final sink = _RecordingSink(
-            persistError: StateError('disk full'),
+            updateError: StateError('disk full'),
             pendingList: [pendingRecord('a', serverId: 'srv-1')],
           );
           final service = buildService(
@@ -1055,7 +1053,7 @@ void main() {
 
           // Swallowed, not surfaced: a failed bump must not abort a drain.
           expect(await service.drainPending(), 0);
-          expect(sink.persisted, isEmpty);
+          expect(sink.updated, isEmpty);
 
           // The documented cost of that: nothing durable changed, so the
           // record has no cooldown either and is re-sent on the next trigger.
@@ -1063,6 +1061,45 @@ void main() {
           expect(transport.sent, hasLength(2));
         },
       );
+
+      test('a revival the sink refuses is swallowed too, so a drain that has '
+          'already delivered still finishes', () async {
+        // 'spent' arrives exhausted, so it is skipped without a write and
+        // goes straight to the revival list; 'good' delivers, which is
+        // what licenses the revival. The only write of the run is
+        // therefore [_revive]'s, and it throws — the branch the other
+        // updateError test cannot reach, because there `sent` stays 0 and
+        // revival never fires.
+        final transport = _RecordingTransport();
+        final sink = _RecordingSink(
+          updateError: StateError('disk full'),
+          pendingList: [
+            pendingRecord(
+              'spent',
+              serverId: 'srv-1',
+              retryCount: QueuedFeedbackReport.maxRetries,
+            ),
+            pendingRecord('good', serverId: 'srv-1'),
+          ],
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        // The send happened and is accounted for; only the bookkeeping
+        // after it failed, and that must not cost the drain its result.
+        expect(await service.drainPending(), 1);
+        expect(sink.removed, ['good']);
+
+        // The bound survives the failed clear, so the record waits for
+        // the next drain that delivers rather than being retried now.
+        final kept = (await sink.pending()).single;
+        expect(kept.storageKey, 'spent');
+        expect(kept.isExhausted, isTrue);
+      });
     });
 
     group('run-level failures still stop the drain (#359)', () {
@@ -1102,7 +1139,7 @@ void main() {
           expect(transport.sent.map((r) => r.clientRequestId), ['a']);
           expect(sink.removed, isEmpty);
           // No retry burned — a week offline must not exhaust a record.
-          expect(sink.persisted, isEmpty);
+          expect(sink.updated, isEmpty);
         });
       }
     });
@@ -1215,6 +1252,130 @@ void main() {
       // finds nothing left).
       expect(await service.drainPending(), 0);
     });
+
+    /// #376. Both of these drive a real capped sink rather than
+    /// `_RecordingSink`: the bug is an interaction between the drain's
+    /// snapshot and the sink's eviction, so a fake that never evicts cannot
+    /// show it.
+    ///
+    /// Each asserts **both halves** of the harm. The evicted record must not
+    /// come back, and the record that would have been evicted in its place
+    /// must still be there — a resurrection is immune from the eviction pass
+    /// it triggers, so it is always a live report that pays for it.
+    group('a record evicted mid-drain stays evicted', () {
+      /// Stops the drain at the record after the gated one, so the rest of
+      /// the queue stays in the sink and the cap still bites when the
+      /// write-back lands. Any unrecognised error is run-level.
+      final runLevel = StateError('connection dropped');
+
+      /// Fills [sink] to exactly its cap, oldest first, so that one further
+      /// record forces an eviction and the eviction is deterministic.
+      Future<void> fill(
+        MemoryFeedbackSink sink, {
+        int firstRetryCount = 0,
+      }) async {
+        for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+          await sink.persist(
+            pendingRecord(
+              'k$i',
+              retryCount: i == 0 ? firstRetryCount : 0,
+              queuedAt: DateTime.utc(2026).add(Duration(minutes: i)),
+            ),
+          );
+        }
+      }
+
+      /// What concurrent `submit`s do to a full sink: each newcomer lands and
+      /// the oldest record is evicted to make room — while the drain holds
+      /// those records in a snapshot taken before any of it happened.
+      Future<void> submitDuringDrain(
+        MemoryFeedbackSink sink,
+        List<String> keys,
+      ) async {
+        for (final key in keys) {
+          await sink.persist(pendingRecord(key, queuedAt: DateTime.utc(2027)));
+        }
+      }
+
+      Future<Iterable<String?>> keysIn(MemoryFeedbackSink sink) async =>
+          (await sink.pending()).map((r) => r.storageKey);
+
+      test('the retry-count write-back does not put it back', () async {
+        final sink = MemoryFeedbackSink();
+        await fill(sink);
+        // Gate the oldest record's send — it is both the record about to be
+        // evicted and the one whose failed attempt gets counted.
+        final transport = _GateOneTransport(
+          gateOn: 'k0',
+          errorForGated: unverified,
+          errorForOthers: runLevel,
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final drain = service.drainPending();
+        await transport.arrived;
+        await submitDuringDrain(sink, ['newcomer']);
+        expect(
+          await keysIn(sink),
+          isNot(contains('k0')),
+          reason: 'the eviction the rest of the test depends on',
+        );
+        transport.release();
+        await drain;
+
+        final keys = await keysIn(sink);
+        expect(keys, isNot(contains('k0')));
+        // The other half: k1 is what a resurrected k0 would have cost, since
+        // the sink refuses to evict the record it was just handed.
+        expect(keys, contains('k1'));
+        expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      });
+
+      test('the revival write-back does not put it back', () async {
+        final sink = MemoryFeedbackSink();
+        // The oldest arrives already spent, so the drain parks it for
+        // revival instead of sending it.
+        await fill(sink, firstRetryCount: QueuedFeedbackReport.maxRetries);
+        // k0 is never sent, so gate the first record that is. It delivers,
+        // which is what makes revival run at all.
+        final transport = _GateOneTransport(
+          gateOn: 'k1',
+          errorForOthers: runLevel,
+        );
+        final service = buildService(
+          targetResolver: _StaticTargetResolver(
+            FeedbackTarget(serverId: 'srv-1', transport: transport),
+          ),
+          sink: sink,
+        );
+
+        final drain = service.drainPending();
+        await transport.arrived;
+        // Two, so the sink is back at its cap by the time revival lands —
+        // otherwise a resurrected k0 fits without costing anything and the
+        // second half of the assertion cannot fail.
+        await submitDuringDrain(sink, ['newcomer-a', 'newcomer-b']);
+        expect(
+          await keysIn(sink),
+          isNot(contains('k0')),
+          reason: 'the eviction the rest of the test depends on',
+        );
+        transport.release();
+        // One sibling delivered, so revival runs — against a record that is
+        // no longer there.
+        expect(await drain, 1);
+
+        final keys = await keysIn(sink);
+        expect(keys, isNot(contains('k0')));
+        expect(keys, contains('k2'));
+        expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      });
+    });
   });
 }
 
@@ -1282,15 +1443,18 @@ class _GatedTransport implements FeedbackTransport {
 class _RecordingSink implements FeedbackSink {
   _RecordingSink({
     this.persistError,
+    this.updateError,
     this.removeError,
     List<QueuedFeedbackReport>? pendingList,
   }) : _pending = List.of(pendingList ?? const []);
 
   final Object? persistError;
+  final Object? updateError;
   final Object? removeError;
   final List<QueuedFeedbackReport> _pending;
 
   final List<QueuedFeedbackReport> persisted = [];
+  final List<QueuedFeedbackReport> updated = [];
   final List<String> removed = [];
 
   @override
@@ -1298,14 +1462,24 @@ class _RecordingSink implements FeedbackSink {
     if (persistError != null) throw persistError!;
     persisted.add(record);
     // Keyed, not appended: both real sinks address a record by its storage
-    // key and overwrite, so a re-persist (the retry-count bump in #359)
-    // replaces rather than duplicating.
+    // key and overwrite, so a rewrite replaces rather than duplicating.
     final at = _pending.indexWhere((r) => r.storageKey == record.storageKey);
     if (at == -1) {
       _pending.add(record);
     } else {
       _pending[at] = record;
     }
+  }
+
+  @override
+  Future<void> update(QueuedFeedbackReport record) async {
+    if (updateError != null) throw updateError!;
+    updated.add(record);
+    // Absent = never written back, per the #376 contract. Recorded in
+    // [updated] either way, so a test can tell an attempted update from one
+    // that landed.
+    final at = _pending.indexWhere((r) => r.storageKey == record.storageKey);
+    if (at != -1) _pending[at] = record;
   }
 
   @override
@@ -1316,5 +1490,51 @@ class _RecordingSink implements FeedbackSink {
     if (removeError != null) throw removeError!;
     removed.add(storageKey);
     _pending.removeWhere((r) => r.storageKey == storageKey);
+  }
+}
+
+/// Holds the send for one designated record until [release], so a test can
+/// change the sink underneath a drain that has already taken its snapshot.
+///
+/// [_GatedTransport] gates *every* send, which is what overlapping two whole
+/// drains needs. This one gates a single record so the rest of the queue
+/// drains normally around it.
+class _GateOneTransport implements FeedbackTransport {
+  _GateOneTransport({
+    required this.gateOn,
+    this.errorForGated,
+    this.errorForOthers,
+  });
+
+  /// The `clientRequestId` whose send blocks.
+  final String gateOn;
+
+  /// Thrown by the gated send once released; null lets it succeed.
+  final Object? errorForGated;
+
+  /// Thrown by every other send. An unrecognised type is run-level, so this
+  /// is how a test stops the drain before it empties the queue.
+  final Object? errorForOthers;
+
+  final _gate = Completer<void>();
+  final _arrived = Completer<void>();
+
+  /// Completes when the gated record's send has been entered — the point at
+  /// which the drain is provably mid-flight over its snapshot.
+  Future<void> get arrived => _arrived.future;
+
+  void release() => _gate.complete();
+
+  @override
+  Future<void> send(FeedbackReport report) async {
+    if (report.clientRequestId != gateOn) {
+      final other = errorForOthers;
+      if (other != null) throw other;
+      return;
+    }
+    if (!_arrived.isCompleted) _arrived.complete();
+    await _gate.future;
+    final error = errorForGated;
+    if (error != null) throw error;
   }
 }

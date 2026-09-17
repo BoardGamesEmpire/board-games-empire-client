@@ -23,10 +23,10 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// ## Writes are atomic
 ///
-/// [persist] writes a temp file and renames it onto the final name;
-/// `rename` is atomic on every platform this sink targets, so a reader can
-/// only ever observe a complete file. The temp name is unique per call, so
-/// two overlapping persists of the same record cannot collide on it.
+/// [persist] and [update] write a temp file and rename it onto the final
+/// name; `rename` is atomic on every platform this sink targets, so a reader
+/// can only ever observe a complete file. The temp name is unique per call,
+/// so two overlapping writes of the same record cannot collide on it.
 ///
 /// This is load-bearing for the reap below (#161). Under a non-atomic
 /// write, a [persist] racing a [pending] — entirely plausible, since the
@@ -68,9 +68,9 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// ## Operations are serialized
 ///
-/// [persist], [pending], and [remove] run one at a time. Every one of them
-/// acts on a *pathname* after an `await`, so interleaving turns each into a
-/// time-of-check/time-of-use race that loses an approved report:
+/// [persist], [update], [pending], and [remove] run one at a time. Every one
+/// of them acts on a *pathname* after an `await`, so interleaving turns each
+/// into a time-of-check/time-of-use race that loses an approved report:
 ///
 /// - [pending] reads a file that fails to decode, a [persist] for that same
 ///   storage key renames a fresh valid record onto the path, and the reap
@@ -78,6 +78,9 @@ import 'package:path_provider/path_provider.dart';
 /// - [remove] confirms `<storageKey>.json` exists and then deletes it; a
 ///   [persist] landing in between loses the newly queued copy rather than
 ///   the record that was just drained.
+/// - [update] confirms the record is still stored and then rewrites it; a
+///   [remove] landing in between resurrects a record that was just drained,
+///   which is the whole reason the member exists (#376).
 ///
 /// Re-checking before acting (re-stat, re-decode) only narrows those
 /// windows. Serializing closes them, and the cost is low: each operation
@@ -124,16 +127,16 @@ class FileFeedbackSink implements FeedbackSink {
   /// `queuedAt` per record **file name**, so the cap does not re-read the
   /// whole directory on every persist.
   ///
-  /// Keyed on the name rather than the full path deliberately: [_persist]
-  /// builds its path with a `/`, while `Directory.list()` yields a platform
+  /// Keyed on the name rather than the full path deliberately: this sink
+  /// builds its paths with a `/`, while `Directory.list()` yields a platform
   /// separator — `\` on the Windows desktop target — so a path key written
   /// on one side would never match a lookup from the other, and the cache
   /// would silently never hit while accumulating both spellings.
   ///
   /// Safe as instance state because every reader and writer runs under
   /// [_serialized], and a record's `queuedAt` is fixed for the life of its
-  /// path — [_persist] is the only thing that rewrites one, and it updates
-  /// this in the same step. Bounded by the cap plus whatever churn one
+  /// path — [_writeAtomically] is the only thing that rewrites one, and it
+  /// updates this in the same step. Bounded by the cap plus whatever churn one
   /// listing sees, and pruned to the live file set on each enforcement.
   final Map<String, DateTime> _queuedAtCache = {};
 
@@ -180,13 +183,90 @@ class FileFeedbackSink implements FeedbackSink {
     final dir = await _directory;
     if (!await dir.exists()) await dir.create(recursive: true);
 
-    // Write-then-rename so no reader ever sees a partial record. `flush`
-    // because the point of this sink is surviving a restart, including
-    // one that wasn't graceful.
-    final target = '${dir.path}/$key.json';
+    final name = _fileNameFor(key);
     // Read before the rename: afterwards the file always exists, and this is
-    // what tells a new record from a rewritten one.
-    final existed = await File(target).exists();
+    // what tells a new record from a rewritten one. Since #376 the drain's
+    // write-backs go through [update], so on the drain's path the answer is
+    // always false. It is not dead, though: `persist` still permits a
+    // rewrite, and `buildReport` lets a caller supply its own
+    // `clientRequestId`, so two reports sharing one token that both fail
+    // transport arrive here twice. The check is what keeps the cap honest
+    // when they do. Whether the contract should narrow to a create is #379.
+    final existed = await File('${dir.path}/$name').exists();
+    await _writeAtomically(dir, name, record);
+
+    // A rewrite replaces a file that was already there, so the directory
+    // cannot have grown and there is nothing for the cap to do. Skipping
+    // spares a full listing, which in the never-drains deployment this cap
+    // exists for is the difference between one listing per record and one
+    // per record per drain.
+    if (!existed) {
+      // Deliberately after the rename, and deliberately unable to fail: the
+      // record is already committed, so surfacing anything from here would
+      // have `_queue` report FeedbackPersistenceException — "could not be
+      // saved" — about a report that is safely on disk.
+      try {
+        await _enforceCap(dir, justPersisted: name);
+      } on Object {
+        // Best-effort, exactly like _reap. The next persist tries again,
+        // and being one record over the cap harms nothing.
+      }
+    }
+  }
+
+  @override
+  Future<void> update(QueuedFeedbackReport record) =>
+      _serialized(() => _update(record));
+
+  Future<void> _update(QueuedFeedbackReport record) async {
+    final key = _requireSafeKey(
+      record.storageKey,
+      source: 'record.report.clientRequestId',
+    );
+    // Never creates, so the directory is not created either: no directory
+    // means no stored record, which is the no-op case.
+    final dir = await _directory;
+    final name = _fileNameFor(key);
+    // The existence check and the write happen under one turn of
+    // [_serialized], so no operation *of this sink* can remove the record in
+    // between — which is the whole point (#376): a caller doing the check
+    // for itself would be acting on a fact it cannot hold on to.
+    //
+    // It is not a claim about another process sharing the directory. Nothing
+    // here is — see the lock's scope in this class's doc — so a delete from
+    // outside between these two lines is recreated by the rename. Single
+    // writer is the assumption the whole sink already rests on.
+    if (!await File('${dir.path}/$name').exists()) return;
+    await _writeAtomically(dir, name, record);
+    // Deliberately no _enforceCap: an update replaced a file that was
+    // already there, so the directory is exactly the size it was.
+  }
+
+  /// A record's file name — its address on disk, and the key
+  /// [_queuedAtCache] is kept under. One spelling, so the two cannot drift.
+  static String _fileNameFor(String key) => '$key.json';
+
+  /// Writes [record] to `<dir>/<name>` and refreshes that name's
+  /// [_queuedAtCache] entry.
+  ///
+  /// Write-then-rename so no reader ever sees a partial record. `flush`
+  /// because the point of this sink is surviving a restart, including one
+  /// that wasn't graceful.
+  ///
+  /// Shared by [persist] and [update]: the atomicity argument in this
+  /// class's doc is what makes the reap in [pending] safe, and it has to
+  /// hold for every write, not just the first one. The cache write lives
+  /// here for the same reason — it is the bookkeeping every write owes, so
+  /// a third write path cannot be added without it. On an update it
+  /// re-caches the value already held (`queuedAt` is stamped once at
+  /// [persist] and never rewritten), which keeps the cache from drifting if
+  /// that ever stops being true.
+  Future<void> _writeAtomically(
+    Directory dir,
+    String name,
+    QueuedFeedbackReport record,
+  ) async {
+    final target = '${dir.path}/$name';
     final temp = File('$target.${_tempSequence++}$_tempSuffix');
     try {
       await temp.writeAsString(jsonEncode(record.toJson()), flush: true);
@@ -203,26 +283,7 @@ class FileFeedbackSink implements FeedbackSink {
       }
       rethrow;
     }
-
-    _queuedAtCache['$key.json'] = record.ageKey;
-
-    // A re-persist replaces a file that was already there — the drain's
-    // retry bump is exactly this — so the directory cannot have grown and
-    // there is nothing for the cap to do. Skipping spares a full listing on
-    // every counted attempt, which in the never-drains deployment this cap
-    // exists for is one listing per record per drain.
-    if (!existed) {
-      // Deliberately after the rename, and deliberately unable to fail: the
-      // record is already committed, so surfacing anything from here would
-      // have `_queue` report FeedbackPersistenceException — "could not be
-      // saved" — about a report that is safely on disk.
-      try {
-        await _enforceCap(dir, justPersisted: '$key.json');
-      } on Object {
-        // Best-effort, exactly like _reap. The next persist tries again,
-        // and being one record over the cap harms nothing.
-      }
-    }
+    _queuedAtCache[name] = record.ageKey;
   }
 
   /// Holds the directory at [QueuedFeedbackReport.maxQueuedReports],
@@ -234,11 +295,12 @@ class FileFeedbackSink implements FeedbackSink {
   ///
   /// **Ordered by [QueuedFeedbackReport.queuedAt], deliberately not by
   /// mtime**, which [pending] uses for drain order. The two disagree the
-  /// moment a record is re-persisted to count a failed attempt (#359): the
-  /// rename restamps the file, so mtime says "just written" about the
-  /// record that has been queued longest. A record with no `queuedAt` sorts
-  /// at [QueuedFeedbackReport.epoch] — the sentinel both sinks share —
-  /// because it predates the field and so really is oldest.
+  /// moment a record is rewritten to count a failed attempt (#359, through
+  /// [update] since #376): the rename restamps the file, so mtime says
+  /// "just written" about the record that has been queued longest. A record
+  /// with no `queuedAt` sorts at [QueuedFeedbackReport.epoch] — the sentinel
+  /// both sinks share — because it predates the field and so really is
+  /// oldest.
   ///
   /// **A file whose age cannot be DETERMINED is neither evicted nor
   /// counted.** That is the same line [pending] draws and for the same
@@ -416,9 +478,15 @@ class FileFeedbackSink implements FeedbackSink {
     // contract, so a throttle-stopped drain (#97) sends the oldest
     // records rather than an arbitrary cuid2-lexical prefix. Path
     // tie-break keeps the order deterministic within the filesystem's
-    // mtime resolution. Note one deliberate nuance vs the memory sink:
-    // re-persisting an existing key rewrites the file, so the record
-    // re-queues as newest.
+    // mtime resolution.
+    //
+    // One deliberate divergence from the memory sink: every write here
+    // rewrites the file, so an [update] counting a failed attempt restamps
+    // it and the record re-queues as newest, where the memory sink leaves
+    // it in place. This is drain order only — eviction keys on `queuedAt`,
+    // which no write rewrites — and what it orders by is "waited longest
+    // since its last attempt", so a run-level fault that stopped the loop
+    // partway leaves the records it never reached at the front.
     final stamped = <(File, DateTime)>[
       for (final file in files) (file, (await file.stat()).modified),
     ];
@@ -515,8 +583,9 @@ class FileFeedbackSink implements FeedbackSink {
     // normalizes the key.
     final key = _requireSafeKey(storageKey, source: 'storageKey');
     final dir = await _directory;
-    final file = File('${dir.path}/$key.json');
-    _queuedAtCache.remove('$key.json');
+    final name = _fileNameFor(key);
+    final file = File('${dir.path}/$name');
+    _queuedAtCache.remove(name);
     if (await file.exists()) await file.delete();
   }
 
@@ -544,8 +613,8 @@ class FileFeedbackSink implements FeedbackSink {
   /// Validates that [key] is present and safe to use as a file name — it
   /// doubles as the record's file name, so it must exist and must not
   /// smuggle path segments that could traverse out of the reports
-  /// directory. Shared by [persist] (the record's storage key) and
-  /// [remove] (a caller-supplied key).
+  /// directory. Shared by [persist] and [update] (the record's storage key)
+  /// and [remove] (a caller-supplied key).
   String _requireSafeKey(String? key, {required String source}) {
     if (key == null || key.isEmpty) {
       throw ArgumentError.value(

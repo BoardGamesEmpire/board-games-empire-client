@@ -39,7 +39,7 @@ import 'queued_feedback_report.dart';
 /// [QueuedFeedbackReport.compareByAge] — the shared age rule, so two sinks
 /// cannot disagree about which record dies. Note what it orders by:
 /// [QueuedFeedbackReport.queuedAt], *not* a storage timestamp. The drain
-/// re-persists a record to count a failed attempt, so anything derived from
+/// [update]s a record to count a failed attempt, so anything derived from
 /// last-written time says "new" about the oldest record in the queue.
 ///
 /// Eviction is the **only** discard permitted on a full sink, and it is
@@ -69,6 +69,62 @@ abstract interface class FeedbackSink {
   /// have the prompt promise a later send for a report that no longer
   /// exists.
   Future<void> persist(QueuedFeedbackReport record);
+
+  /// Rewrites a record **that is already stored**, addressed by
+  /// [QueuedFeedbackReport.storageKey]. Throws [ArgumentError] if [record]
+  /// has no storage key, exactly as [persist] does.
+  ///
+  /// If no record is stored under that key, this is a **no-op**: the record
+  /// is not created, and the caller is not told (#376). Both conditions are
+  /// ordinary, so neither is an error and neither is logged.
+  ///
+  /// ## Why absent means "do nothing" (#376)
+  ///
+  /// This exists because [persist] is the wrong verb for the only two writes
+  /// the drain performs after [pending] — counting a failed attempt and
+  /// clearing a spent retry bound. Both rewrite a record the drain is holding
+  /// from a snapshot, and a snapshot goes stale: the sink is bounded, so a
+  /// `submit` arriving mid-drain can evict the very record the drain is
+  /// partway through. [persist] would then write that record back, and the
+  /// eviction it triggers cannot fall on the record just handed over — so
+  /// the evicted report returns and a *different*, still-live report dies in
+  /// its place.
+  ///
+  /// The drain has no way to notice, and nothing about it is recoverable
+  /// afterwards: the queue looks the same size either way. Making the write
+  /// conditional on the record still being there is what removes the
+  /// possibility rather than narrowing the window, and a sink can check that
+  /// atomically with the write where a caller cannot.
+  ///
+  /// So an absent key means the record left the queue while the drain was
+  /// working — evicted by the cap, or removed by a drain that got there
+  /// first. In every such case there is nothing left to update and nothing
+  /// the caller could usefully do about it.
+  ///
+  /// ## Presence is all that is checked
+  ///
+  /// Whether the key is stored, and nothing else. An implementation does not
+  /// compare what it holds against [record], so this cannot distinguish a
+  /// rewrite of the record the caller read from a rewrite of a *different*
+  /// record that arrived under the same key since. That is deliberate rather
+  /// than overlooked: the storage key is the report's idempotency token, so
+  /// two records sharing one are the same submission by definition, and
+  /// [persist] has always overwritten on that basis.
+  ///
+  /// ## Capacity
+  ///
+  /// An update cannot grow the sink, so it must **not** run the eviction
+  /// pass. It also must not change the record's position in the age order:
+  /// eviction keys on [QueuedFeedbackReport.queuedAt], which is stamped once
+  /// at [persist] and never rewritten, so a counted attempt cannot make the
+  /// oldest record in the queue look new.
+  ///
+  /// That last rule binds the **caller**, and no implementation verifies it:
+  /// a record handed here with a moved or cleared `queuedAt` silently
+  /// reorders eviction, and a cleared one sorts at
+  /// [QueuedFeedbackReport.epoch] and dies next. Rewrite with `copyWith`,
+  /// which carries the stamp forward.
+  Future<void> update(QueuedFeedbackReport record);
 
   /// All currently-queued records that are still **drainable**.
   ///

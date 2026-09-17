@@ -22,8 +22,16 @@ import 'package:observability/observability.dart';
 ///   `.json`), so a reader never observes a partial record. Load-bearing
 ///   for the reap: without it a persist racing a pending would expose a
 ///   truncated file that the reap would destroy. The temp name is unique
-///   per call so two persists of the same key cannot collide, and an
+///   per call so two writes of the same key cannot collide, and an
 ///   abandoned temp is reclaimed once too old to belong to a live write.
+/// - **`update` rewrites only what is already stored** (#376): it never
+///   creates, never runs the cap, and reports nothing when the key is
+///   absent. The existence check and the write share one turn of the
+///   serialization below, which is what a caller holding a stale snapshot
+///   cannot do for itself. Like every write here it restamps the file, so
+///   the record moves to the back of `pending`'s drain order — deliberate,
+///   and the one place this sink and `MemoryFeedbackSink` differ. Eviction
+///   order is untouched, keying on `queuedAt`.
 /// - **Un-drainable records are reaped, not skipped** (#161): anything
 ///   `pending` declines to emit is deleted, because none of it has an
 ///   address `remove` could ever clear. One exception — a *filesystem*
@@ -31,10 +39,10 @@ import 'package:observability/observability.dart';
 ///   retried. Malformed bytes are corruption and are reaped, which is why
 ///   `pending` reads bytes and decodes in Dart rather than calling
 ///   `readAsString` (see the sink's doc).
-/// - **Operations are serialized**: `persist`, `pending`, and `remove` each
-///   act on a pathname after an `await`, so interleaving them turns the
-///   reap and the remove into time-of-check/time-of-use races that delete a
-///   record written after the read they were based on.
+/// - **Operations are serialized**: `persist`, `update`, `pending`, and
+///   `remove` each act on a pathname after an `await`, so interleaving them
+///   turns the reap and the remove into time-of-check/time-of-use races that
+///   delete a record written after the read they were based on.
 ///
 /// A consequence worth stating for anyone extending these tests: the
 /// reports directory belongs entirely to the sink, so **any** file in it
@@ -675,6 +683,143 @@ void main() {
       expect(File('${tempDir.path}/k0.json').existsSync(), isFalse);
       expect(File('${tempDir.path}/k6.json').existsSync(), isFalse);
       expect(File('${tempDir.path}/k7.json').existsSync(), isTrue);
+    });
+  });
+
+  /// #376: the drain's write-backs address a record read from a snapshot
+  /// taken before the drain started, so whether that record is still stored
+  /// is a question only the sink can answer without a race.
+  group('update (#376)', () {
+    test('rewrites a stored record in place', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a', message: 'first'));
+
+      await sink.update(record('key-a', message: 'second'));
+
+      final pending = await sink.pending();
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'second');
+      expect(
+        Directory(tempDir.path).listSync().whereType<File>(),
+        hasLength(1),
+      );
+    });
+
+    test('restamps the file, so the record moves to the back of the drain '
+        'order — deliberately, and unlike the memory sink', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a'));
+      await sink.persist(record('key-b'));
+      // Set explicitly so the test is immune to filesystem timestamp
+      // resolution. Both are in the past, so the update's rename wins.
+      await File('${tempDir.path}/key-a.json')
+          .setLastModified(DateTime(2026, 1, 1));
+      await File('${tempDir.path}/key-b.json')
+          .setLastModified(DateTime(2026, 1, 2));
+
+      await sink.update(record('key-a', message: 'counted'));
+
+      // MemoryFeedbackSink leaves 'key-a' first; its own update test pins
+      // that. Here the rewrite is what buys atomicity and the restamp comes
+      // with it, so drain order reads "waited longest since its last
+      // attempt" — which is what a drain stopped partway by a run-level
+      // fault wants next time round. Eviction order is a separate question
+      // and is untouched: it keys on `queuedAt`, as the cap group above
+      // pins.
+      expect((await sink.pending()).map((r) => r.storageKey), [
+        'key-b',
+        'key-a',
+      ]);
+    });
+
+    test('is a no-op on a key with no file — it never creates one', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a'));
+
+      await sink.update(record('evicted'));
+
+      expect(File('${tempDir.path}/evicted.json').existsSync(), isFalse);
+      expect((await sink.pending()).map((r) => r.storageKey), ['key-a']);
+    });
+
+    test('does not create the reports directory', () async {
+      final missing = Directory('${tempDir.path}/not-yet');
+      final sink = buildSink(provider: () async => missing);
+
+      await sink.update(record('key-a'));
+
+      expect(missing.existsSync(), isFalse);
+    });
+
+    test('rejects an un-addressable record, exactly as persist does', () async {
+      final sink = buildSink();
+      final keyless = QueuedFeedbackReport(
+        report: const FeedbackReport(
+          category: FeedbackCategory.bug,
+          severity: FeedbackSeverity.low,
+          message: 'pending',
+        ),
+      );
+
+      await expectLater(sink.update(keyless), throwsArgumentError);
+    });
+
+    test('rejects a key that could traverse out of the reports '
+        'directory', () async {
+      final sink = buildSink();
+      final escaping = QueuedFeedbackReport(report: report('../escape'));
+
+      await expectLater(sink.update(escaping), throwsArgumentError);
+    });
+
+    test('leaves no temp file behind', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a'));
+
+      await sink.update(record('key-a', message: 'second'));
+
+      // `uri.pathSegments`, not a split on '/': `listSync` yields a
+      // platform separator, and the desktop target includes Windows.
+      final names = Directory(tempDir.path)
+          .listSync()
+          .map((e) => e.uri.pathSegments.last);
+      expect(names, ['key-a.json']);
+    });
+
+    test('on a full directory, evicts nothing — an update cannot grow '
+        'it', () async {
+      final sink = buildSink();
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await sink.persist(
+          record('k$i', queuedAt: DateTime.utc(2026).add(Duration(minutes: i))),
+        );
+      }
+
+      // The oldest record, which is what an eviction pass would take.
+      await sink.update(
+        record('k0', message: 'bumped', queuedAt: DateTime.utc(2026)),
+      );
+
+      expect(File('${tempDir.path}/k0.json').existsSync(), isTrue);
+      expect(
+        Directory(tempDir.path).listSync().whereType<File>(),
+        hasLength(QueuedFeedbackReport.maxQueuedReports),
+      );
+    });
+
+    test('a record removed first is not written back — the check and the '
+        'write share one turn of the lock', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a'));
+
+      // Issued without awaiting the remove, so both are queued on the
+      // serialization in the order they were called.
+      final removed = sink.remove('key-a');
+      final updated = sink.update(record('key-a', message: 'second'));
+      await Future.wait([removed, updated]);
+
+      expect(File('${tempDir.path}/key-a.json').existsSync(), isFalse);
+      expect(await sink.pending(), isEmpty);
     });
   });
 }

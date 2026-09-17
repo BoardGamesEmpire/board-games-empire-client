@@ -183,4 +183,96 @@ void main() {
       expect((await sink.pending()).map((r) => r.storageKey), contains('k0'));
     });
   });
+
+  /// #376: the drain's write-backs address a record it read from a snapshot,
+  /// so the sink — not the caller — has to decide whether that record is
+  /// still there.
+  group('update (#376)', () {
+    QueuedFeedbackReport record(
+      String key, {
+      String message = 'pending',
+      DateTime? queuedAt,
+    }) => QueuedFeedbackReport(
+      report: FeedbackReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        message: message,
+        clientRequestId: key,
+      ),
+      queuedAt: queuedAt,
+    );
+
+    test('rewrites a stored record in place', () async {
+      final sink = MemoryFeedbackSink();
+      await sink.persist(record('key-a', message: 'first'));
+
+      await sink.update(record('key-a', message: 'second'));
+
+      final pending = await sink.pending();
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'second');
+    });
+
+    test('does not disturb drain order', () async {
+      final sink = MemoryFeedbackSink();
+      await sink.persist(record('key-a'));
+      await sink.persist(record('key-b'));
+
+      await sink.update(record('key-a', message: 'bumped'));
+
+      expect((await sink.pending()).map((r) => r.storageKey), [
+        'key-a',
+        'key-b',
+      ]);
+    });
+
+    test('is a no-op on a key the sink does not hold — it never '
+        'creates', () async {
+      final sink = MemoryFeedbackSink();
+      await sink.persist(record('key-a'));
+
+      await sink.update(record('evicted'));
+
+      expect((await sink.pending()).map((r) => r.storageKey), ['key-a']);
+    });
+
+    test('is a no-op on an empty sink', () async {
+      final sink = MemoryFeedbackSink();
+
+      await sink.update(record('nobody'));
+
+      expect(await sink.pending(), isEmpty);
+    });
+
+    test('rejects an un-addressable record, exactly as persist does', () async {
+      final sink = MemoryFeedbackSink();
+      final keyless = QueuedFeedbackReport(
+        report: const FeedbackReport(
+          category: FeedbackCategory.bug,
+          severity: FeedbackSeverity.low,
+          message: 'pending',
+        ),
+      );
+
+      await expectLater(sink.update(keyless), throwsArgumentError);
+    });
+
+    test('on a full sink, evicts nothing — an update cannot grow the '
+        'queue', () async {
+      final sink = MemoryFeedbackSink();
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await sink.persist(record('k$i', queuedAt: DateTime.utc(2026, 1, 1)));
+      }
+
+      // The oldest record, which is what an eviction pass would take.
+      await sink.update(
+        record('k0', message: 'bumped', queuedAt: DateTime.utc(2026, 1, 1)),
+      );
+
+      final pending = await sink.pending();
+      expect(pending, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(pending.map((r) => r.storageKey), contains('k0'));
+      expect(pending.first.report.message, 'bumped');
+    });
+  });
 }
