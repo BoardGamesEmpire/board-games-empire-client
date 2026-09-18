@@ -35,9 +35,9 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
     /// (#359).
     ///
     /// Deliberately **not** storage mtime. `FileFeedbackSink` rewrites a
-    /// record's file on every re-persist, so bumping [retryCount] restamps
-    /// its mtime and moves it to newest — mtime answers "last written", and
-    /// eviction needs "oldest queued".
+    /// record's file whenever the drain counts a failed attempt against
+    /// [retryCount], and that restamps its mtime to newest — mtime answers
+    /// "last written", and eviction needs "oldest queued".
     ///
     /// **Always UTC.** `toIso8601String()` writes no zone designator for a
     /// local `DateTime`, and `DateTime.parse` then reads that back as local
