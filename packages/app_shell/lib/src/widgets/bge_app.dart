@@ -1315,13 +1315,20 @@ class _BgeAppState extends State<BgeApp> {
 /// [AuthSignOutRequested], converging the system to a coherent
 /// unauthenticated state (an "authenticated" session whose per-user
 /// services can never resolve must not persist silently; signing back in
-/// retries from clean state). The gate also does not advance when auth
-/// changed *during* the activation — a revalidation rejecting the token,
-/// or a switch to another user: the state that justified advancing has
-/// been superseded, and nothing would re-emit to correct a wrong advance
-/// (#176). That check makes the sign-in leg conditional on the auth state
-/// still holding when the await returns, not merely on activation
-/// succeeding. **Sign-out**: `onSignedOut()` runs first —
+/// retries from clean state). The gate also does not advance when the
+/// world changed *during* the activation, in any of three ways: the user
+/// switched servers, auth was superseded (a revalidation rejecting the
+/// token, a sign-out, a fresh sign-in attempt), or the session scope this
+/// handler built was torn down and not yet replaced — the last of which a
+/// fast sign-out → sign-back-in produces while the user id still matches.
+/// The state that justified advancing has been superseded, nothing would
+/// re-emit to correct a wrong advance, and whatever superseded it owns the
+/// convergence, so this leg takes no corrective action either (#176). That
+/// makes the sign-in leg conditional on the world still holding when the
+/// await returns, not merely on activation succeeding. For the same
+/// reason the failure leg's recovery sign-out is conditional too: it
+/// exists to stop a live authenticated session being stranded without
+/// services, and dispatches only while there is still such a session. **Sign-out**: `onSignedOut()` runs first —
 /// synchronously, in the listener — and the scope pop follows, so the
 /// home subtree is already unmounting when its repositories are disposed
 /// and no live widget can dispatch into a disposed service; the pop still
@@ -1365,8 +1372,12 @@ class _AuthScope extends StatelessWidget {
         if (active == null) return child;
 
         return BlocProvider<AuthBloc>(
-          // Keyed on serverId: a switch disposes the old bloc (and its
-          // repository subscription) and builds a fresh one. The startup
+          // Keyed on serverId: a switch unmounts the old bloc (closing it
+          // and its repository subscription) and builds a fresh one. The
+          // close is asynchronous — `AuthBloc.close` awaits its
+          // subscriptions — so a handler still in flight over the old bloc
+          // must not read `isClosed` as "did the server change" (#176). The
+          // startup
           // session check is dispatched on creation so every freshly-keyed
           // bloc restores its own server's session.
           key: ValueKey('auth_bloc_${active.serverId}'),
@@ -1434,6 +1445,27 @@ class _AuthScope extends StatelessWidget {
       ? active.container.get<UserSessionScope>()
       : null;
 
+  /// Whether [active] is still the server the app is living in.
+  ///
+  /// The authoritative staleness signal for a handler that outlived its
+  /// listener frame, and *not* interchangeable with `authBloc.isClosed`: a
+  /// server switch unmounts the old provider, but [AuthBloc.close] awaits
+  /// two subscription cancellations before `super.close()`, so the departed
+  /// bloc goes on answering `isClosed == false` — and `state` goes on
+  /// answering with the departed server's session — well past the unmount
+  /// (measured in a widget test: still false a second later). The scope
+  /// answers synchronously and is never behind (#176).
+  bool _serverStillActive(ActiveServer active) =>
+      scope?.active?.serverId == active.serverId;
+
+  /// Whether [authBloc] still reports an authenticated session for
+  /// [userId]. Checked alongside [_serverStillActive], never instead of it.
+  bool _stillAuthenticatedAs(AuthBloc authBloc, String userId) {
+    if (authBloc.isClosed) return false;
+    final current = authBloc.state;
+    return current is AuthAuthenticated && current.session.user.id == userId;
+  }
+
   /// Activates the user-session scope for [userId], then advances the
   /// bootstrap gate. On activation failure the gate does **not** advance:
   /// the failure is logged and a sign-out is dispatched so the system
@@ -1456,30 +1488,65 @@ class _AuthScope extends StatelessWidget {
           stackTrace: stackTrace,
           context: {'serverId': active.serverId},
         );
-        // The bloc may have been disposed by a server switch while the
-        // activation was in flight; there is nothing to converge then.
-        if (!authBloc.isClosed) {
+        // Only when this handler's session is still the live one. A
+        // sign-out that landed while the activation was failing has
+        // already converged the system, and a server switch has closed
+        // the bloc outright; dispatching into either drives a pointless
+        // sign-out round trip — and a second onSignedOut/deactivate pair
+        // — for a session that is already gone (#176).
+        if (_serverStillActive(active) &&
+            _stillAuthenticatedAs(authBloc, userId)) {
           authBloc.add(const AuthSignOutRequested());
         }
         return;
       }
     }
-    // The activation above is awaited, and auth can change underneath it —
-    // a revalidation rejecting the restored token, or a fast switch to
-    // another user. Advancing the gate on the strength of a state that has
-    // since been superseded routes to home for a session the server has
-    // already disowned, and nothing re-emits to correct it: a value-equal
-    // AuthUnauthenticated is deduped by bloc state equality (#176).
+    // The activation above is awaited, and three things can go stale under
+    // it. The gate advances only if both still hold, and it takes no
+    // corrective action either way — whatever superseded this handler owns
+    // the convergence (#176).
     //
-    // No deactivation here. The unauthenticated listener has already
-    // queued one, and the scope serializes it behind this activation, so
-    // by this point the scope it built is torn down.
-    final current = authBloc.state;
-    if (current is! AuthAuthenticated || current.session.user.id != userId) {
+    // The server: the user can switch servers, which unmounts this
+    // handler's whole auth subtree. Its captured bloc does not notice
+    // promptly (see [_serverStillActive]), so advancing here would route
+    // to home on behalf of a server nobody is looking at.
+    //
+    // Auth: a revalidation can reject the restored token, or a sign-out
+    // can land. Advancing on a superseded state routes to home for a
+    // session the server has already disowned, and nothing re-emits to
+    // correct it — a value-equal AuthUnauthenticated is deduped by bloc
+    // state equality.
+    //
+    // The scope: a sign-out queued behind this activation tears the
+    // session scope down, and it is torn down *before* this line runs —
+    // the scope's serialization chain settles the teardown ahead of the
+    // activation caller's resumption (measured, not assumed). That is why
+    // there is no deactivation here. But on a fast sign-out →
+    // sign-back-in the re-activation is still queued behind that
+    // teardown, so auth alone reads "authenticated, same user" while no
+    // user scope exists at all; routing home there mounts the per-user
+    // subtree over services nobody has installed. The second handler
+    // advances the gate itself once its own activation lands.
+    final serverLive = _serverStillActive(active);
+    final authLive = _stillAuthenticatedAs(authBloc, userId);
+    final scopeLive =
+        sessionScope == null || sessionScope.activeUserId == userId;
+    if (!serverLive || !authLive || !scopeLive) {
       _log.warn(
-        'Auth changed during user-session activation; leaving the bootstrap '
-        'gate on the auth leg',
-        context: {'serverId': active.serverId},
+        'Auth or its user scope changed during user-session activation; '
+        'leaving the bootstrap gate on the auth leg',
+        // Which of the two failed, and whether the bloc outlived the
+        // activation at all, are different diagnoses with different
+        // follow-up — a bare "something changed" breadcrumb cannot tell
+        // them apart. Reported as predicates rather than ids: no user id
+        // has ever been written to this log channel.
+        context: {
+          'serverId': active.serverId,
+          'serverStillActive': serverLive,
+          'authStillLive': authLive,
+          'scopeStillLive': scopeLive,
+          'authBlocClosed': authBloc.isClosed,
+        },
       );
       return;
     }

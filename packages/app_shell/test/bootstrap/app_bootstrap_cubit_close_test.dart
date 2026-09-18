@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
+import 'package:observability/observability.dart';
 
 import '../support/fake_platform_bootstrap.dart';
 
@@ -35,8 +36,55 @@ class _GatedResetBootstrap extends FakePlatformBootstrap {
   Future<void> reset() async {
     resetStarted = true;
     await gate.future;
+    // Recorded before the throw: the reset really did run, and a fake that
+    // skips super leaves `calls`/`resetCallCount` lying about it.
+    await super.reset();
     throw StateError('reset failed after the cubit was closed');
   }
+}
+
+/// A bootstrap whose destructive [reset] parks until released and then
+/// **succeeds** — the one caller that reaches `_attempt` already closed,
+/// because `resetAndRetry` falls through to it on the success leg.
+class _GatedSuccessfulResetBootstrap extends FakePlatformBootstrap {
+  _GatedSuccessfulResetBootstrap(Object initializeFailure)
+    : super(outcomes: [initializeFailure]);
+
+  final gate = Completer<void>();
+  var resetStarted = false;
+
+  @override
+  Future<void> reset() async {
+    resetStarted = true;
+    await gate.future;
+    await super.reset();
+  }
+}
+
+/// Counts the drains the transition callback would trigger.
+class _CountingFeedbackService implements FeedbackService {
+  int drainCalls = 0;
+
+  @override
+  Future<int> drainPending() async {
+    drainCalls += 1;
+    return 0;
+  }
+
+  @override
+  FeedbackReport buildReport({
+    required FeedbackCategory category,
+    FeedbackSeverity? severity,
+    String? title,
+    String? errorMessage,
+    String? stackTrace,
+    String? userComment,
+    String? clientRequestId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<FeedbackSubmitResult> submit(FeedbackReport report) =>
+      throw UnimplementedError();
 }
 
 void main() {
@@ -64,8 +112,9 @@ void main() {
         'breadcrumb is recorded for a bootstrap that did not fail', () async {
       final records = captureLogs();
       final hydrated = _GatedHydratedInitializer();
+      final bootstrap = FakePlatformBootstrap();
       final cubit = AppBootstrapCubit(
-        platformBootstrap: FakePlatformBootstrap(),
+        platformBootstrap: bootstrap,
         hydratedStorageInitializer: hydrated.call,
       );
 
@@ -82,6 +131,17 @@ void main() {
 
       await expectLater(attempt, completes);
       expect(bootstrapFailures(records), isEmpty);
+      // Not merely "emitted nothing": the attempt must not have *started*
+      // the resource-acquiring half. On native `initialize()` opens the
+      // encrypted meta database and builds the orchestrator, and nothing
+      // is left to dispose either.
+      expect(
+        bootstrap.initializeCallCount,
+        0,
+        reason:
+            'a close inside the hydrated-storage await must stop the attempt '
+            'before it acquires anything',
+      );
     });
 
     test('is a clean no-op for the destructive reset leg too — its failure '
@@ -113,6 +173,40 @@ void main() {
 
       await expectLater(recovery, completes);
       expect(bootstrapFailures(records), hasLength(failuresBeforeClose));
+      expect(bootstrap.resetCallCount, 1);
+    });
+
+    test('a reset that SUCCEEDS after the close does not run the bootstrap '
+        'it would normally fall through to', () async {
+      final bootstrap = _GatedSuccessfulResetBootstrap(
+        Exception('meta db open failed'),
+      );
+      final cubit = AppBootstrapCubit(
+        platformBootstrap: bootstrap,
+        hydratedStorageInitializer: (_) async {},
+        resetOfferThreshold: 1,
+      );
+
+      await cubit.initialize();
+      expect(bootstrap.initializeCallCount, 1);
+
+      final recovery = cubit.resetAndRetry();
+      await pumpEventQueue();
+      expect(bootstrap.resetStarted, isTrue);
+
+      await cubit.close();
+      bootstrap.gate.complete();
+      await expectLater(recovery, completes);
+
+      // The distinct leg: the reset succeeded, so `resetAndRetry` walks on
+      // into `_attempt`. Every emit guard downstream would still let the
+      // attempt open the meta database and build an orchestrator that no
+      // one is left to dispose — only the entry guard stops it.
+      expect(
+        bootstrap.initializeCallCount,
+        1,
+        reason: 'a closed cubit must attempt no bootstrap after a reset',
+      );
     });
   });
 
@@ -123,10 +217,12 @@ void main() {
       Future<void> Function(AppBootstrapCubit cubit) stage, {
       List<Object> outcomes = const [],
       int resetOfferThreshold = 3,
+      FeedbackService? feedbackService,
     }) async {
       final cubit = AppBootstrapCubit(
         platformBootstrap: FakePlatformBootstrap(outcomes: outcomes),
         hydratedStorageInitializer: (_) async {},
+        feedbackService: feedbackService,
         resetOfferThreshold: resetOfferThreshold,
       );
       await stage(cubit);
@@ -148,6 +244,23 @@ void main() {
       final cubit = await closedIn((c) => c.initialize());
 
       expect(cubit.onAuthenticated, returnsNormally);
+    });
+
+    test('onAuthenticated() drains no queued feedback — the guard sits ahead '
+        'of the drain, not merely ahead of the emit', () async {
+      final feedback = _CountingFeedbackService();
+      final cubit = await closedIn(
+        (c) => c.initialize(),
+        feedbackService: feedback,
+      );
+
+      cubit.onAuthenticated();
+      await pumpEventQueue();
+
+      // The drain fires on *every* live invocation, including ones whose
+      // state transition is a no-op, so "no throw" alone cannot tell the
+      // guard's placement apart from the emit guard it sits above.
+      expect(feedback.drainCalls, 0);
     });
 
     test('onSignedOut() does not throw', () async {

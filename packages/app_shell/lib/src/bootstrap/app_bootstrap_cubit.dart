@@ -26,6 +26,16 @@ import 'platform_bootstrap.dart';
 /// same presentation-layer-coordination pattern as [onServerRegistered]
 /// (a BlocListener over the auth bloc invokes them; blocs never depend
 /// on blocs).
+///
+/// Liveness policy (#177): every entry point is reachable on a **closed**
+/// cubit — the transition callbacks arrive from BlocListeners, and the
+/// awaited legs resume after an unmount, hot restart or test teardown —
+/// so each one checks [isClosed] and does nothing. The checks are written
+/// out at each site rather than factored into a wrapper because three of
+/// them are load-bearing on *where* they sit, not merely that they exist:
+/// ahead of the failure counter, ahead of the feedback drain, and ahead of
+/// the work [_attempt] would otherwise start. Anything added here inherits
+/// the obligation.
 class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   AppBootstrapCubit({
     required this._platformBootstrap,
@@ -245,6 +255,14 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       if (!_hydratedStorageReady) {
         await _initializeHydratedStorage(_platformBootstrap);
         _hydratedStorageReady = true;
+        // Checked here and not only after the next await: `initialize()` is
+        // the resource-acquiring half of the attempt — it opens the
+        // encrypted meta database and builds the orchestrator — and a
+        // closed cubit must not *start* it, for the same reason the entry
+        // guard above exists. Guarding only the result would let a close
+        // that landed in the storage await acquire everything and then
+        // drop it (#177).
+        if (isClosed) return;
       }
       final result = await _platformBootstrap.initialize();
       // Closed while the attempt was in flight (unmount, hot restart, test
