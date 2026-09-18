@@ -333,7 +333,7 @@ class FeedbackServiceImpl implements FeedbackService {
   /// [FeedbackSink.pending] and this call updates to nothing, silently and
   /// by design, and this returns it non-null. Nothing rests on the
   /// difference: the only reader of the return is [_revive], whose own write
-  /// is an [FeedbackSink.update] against the same absent key and so is
+  /// is a [FeedbackSink.update] against the same absent key and so is
   /// equally a no-op. Telling the two apart would need the sink to report
   /// whether it wrote — which is a guarantee no caller has a use for, and a
   /// weaker one sitting next to the one the interface already makes.
