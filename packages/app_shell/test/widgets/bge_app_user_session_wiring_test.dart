@@ -9,6 +9,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -57,6 +58,49 @@ class _ThrowingUserSessionScope implements UserSessionScope {
   Future<void> deactivate() async => throw StateError('deactivation boom');
 }
 
+/// A seam whose [activate] completes only when the test releases it — the
+/// window an auth loss has to land in to be raced against the bootstrap
+/// gate (#176).
+///
+/// Serialized on one chain, like every real [UserSessionScope]
+/// (`ContainerUserSessionScope`, `ServerContextImpl`): a [deactivate] the
+/// unauthenticated listener queues while [activate] is parked must run
+/// *behind* it, which is exactly what the shell relies on when it declines
+/// to deactivate on the stale-auth path. A fake that let the two interleave
+/// would end the test with a live scope for a signed-out user and never say
+/// so.
+class _GatedActivateUserSessionScope implements UserSessionScope {
+  final activateGate = Completer<void>();
+  final calls = <String>[];
+  var activateStarted = false;
+
+  Future<void> _ops = Future<void>.value();
+  String? _activeUserId;
+
+  @override
+  String? get activeUserId => _activeUserId;
+
+  @override
+  Future<void> activate(String userId) => _enqueue(() async {
+    activateStarted = true;
+    calls.add('activate:$userId');
+    await activateGate.future;
+    _activeUserId = userId;
+  });
+
+  @override
+  Future<void> deactivate() => _enqueue(() async {
+    calls.add('deactivate');
+    _activeUserId = null;
+  });
+
+  Future<void> _enqueue(Future<void> Function() op) {
+    final result = _ops.then((_) => op());
+    _ops = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+}
+
 /// A seam whose [deactivate] completes only when the test releases it,
 /// proving the gate routes away *before* the scope pop finishes — no live
 /// home widget over disposed repositories (#135 review).
@@ -86,6 +130,35 @@ Household _household(String id) => Household(
   updatedAt: DateTime.utc(2024),
 );
 
+/// Counts the queued-feedback drains the gate callback would trigger.
+///
+/// The stale-auth path must not reach the drain at all: it posts queued
+/// reports to a server that has just disowned this session (#176).
+class _CountingFeedbackService implements FeedbackService {
+  int drainCalls = 0;
+
+  @override
+  Future<int> drainPending() async {
+    drainCalls++;
+    return 0;
+  }
+
+  @override
+  FeedbackReport buildReport({
+    required FeedbackCategory category,
+    FeedbackSeverity? severity,
+    String? title,
+    String? errorMessage,
+    String? stackTrace,
+    String? userComment,
+    String? clientRequestId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<FeedbackSubmitResult> submit(FeedbackReport report) =>
+      throw UnimplementedError();
+}
+
 /// Counts the passes the shell's trigger asks for.
 class _SpyRehydrator implements SessionRehydrator {
   int passes = 0;
@@ -107,6 +180,7 @@ void main() {
   AppBootstrapCubit buildCubit(
     FakeAuthRepository repo, {
     UserSessionScope? sessionScope,
+    FeedbackService? feedbackService,
   }) => AppBootstrapCubit(
     platformBootstrap: FakePlatformBootstrap(
       activeServerScope: FakeActiveServerScope(
@@ -114,6 +188,7 @@ void main() {
       ),
     ),
     hydratedStorageInitializer: noopHydrated,
+    feedbackService: feedbackService,
   );
 
   /// Sign-out lives in the navigation drawer (#129).
@@ -138,6 +213,50 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(sessionScope.calls, ['activate:u1']);
     expect(sessionScope.activeUserId, 'u1');
+  });
+
+  testWidgets('an auth loss during session-scope activation keeps the gate '
+      'on the auth leg instead of routing to home', (tester) async {
+    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final sessionScope = _GatedActivateUserSessionScope();
+    final feedback = _CountingFeedbackService();
+    final cubit = buildCubit(
+      repo,
+      sessionScope: sessionScope,
+      feedbackService: feedback,
+    );
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await cubit.initialize();
+    await tester.pump();
+    expect(
+      sessionScope.activateStarted,
+      isTrue,
+      reason: 'activation must be parked inside the gate',
+    );
+
+    // The repository disowns the session mid-activation — #98/#141
+    // revalidation rejecting the restored token.
+    repo.emitAuthState(const AuthStateUnauthenticated());
+    await tester.pump();
+
+    sessionScope.activateGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(cubit.state, const AppBootstrapNeedsAuth());
+    expect(find.byType(HomeScreen), findsNothing);
+    expect(find.byType(AuthScreen), findsOneWidget);
+    expect(
+      feedback.drainCalls,
+      0,
+      reason: 'the stale path must not drain against a disowned session',
+    );
+    // The reason the stale path deactivates nothing itself: the
+    // unauthenticated listener already queued one, and the scope ran it
+    // behind the activation it was racing.
+    expect(sessionScope.calls, ['activate:u1', 'deactivate']);
+    expect(sessionScope.activeUserId, isNull);
   });
 
   testWidgets('sign-out deactivates the user-session scope', (tester) async {

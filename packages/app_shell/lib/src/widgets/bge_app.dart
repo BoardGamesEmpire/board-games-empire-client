@@ -1315,7 +1315,13 @@ class _BgeAppState extends State<BgeApp> {
 /// [AuthSignOutRequested], converging the system to a coherent
 /// unauthenticated state (an "authenticated" session whose per-user
 /// services can never resolve must not persist silently; signing back in
-/// retries from clean state). **Sign-out**: `onSignedOut()` runs first —
+/// retries from clean state). The gate also does not advance when auth
+/// changed *during* the activation — a revalidation rejecting the token,
+/// or a switch to another user: the state that justified advancing has
+/// been superseded, and nothing would re-emit to correct a wrong advance
+/// (#176). That check makes the sign-in leg conditional on the auth state
+/// still holding when the await returns, not merely on activation
+/// succeeding. **Sign-out**: `onSignedOut()` runs first —
 /// synchronously, in the listener — and the scope pop follows, so the
 /// home subtree is already unmounting when its repositories are disposed
 /// and no live widget can dispatch into a disposed service; the pop still
@@ -1457,6 +1463,25 @@ class _AuthScope extends StatelessWidget {
         }
         return;
       }
+    }
+    // The activation above is awaited, and auth can change underneath it —
+    // a revalidation rejecting the restored token, or a fast switch to
+    // another user. Advancing the gate on the strength of a state that has
+    // since been superseded routes to home for a session the server has
+    // already disowned, and nothing re-emits to correct it: a value-equal
+    // AuthUnauthenticated is deduped by bloc state equality (#176).
+    //
+    // No deactivation here. The unauthenticated listener has already
+    // queued one, and the scope serializes it behind this activation, so
+    // by this point the scope it built is torn down.
+    final current = authBloc.state;
+    if (current is! AuthAuthenticated || current.session.user.id != userId) {
+      _log.warn(
+        'Auth changed during user-session activation; leaving the bootstrap '
+        'gate on the auth leg',
+        context: {'serverId': active.serverId},
+      );
+      return;
     }
     try {
       onAuthenticated();
