@@ -216,6 +216,78 @@ class _GatedFailingUserSessionScope implements UserSessionScope {
   }
 }
 
+/// Counts sign-outs *and* hangs sign-in, so the failure leg can be raced
+/// against a bloc sitting in [AuthLoading].
+class _HangingSignInSignOutCountingAuthRepository
+    extends _HangingSignInAuthRepository {
+  _HangingSignInSignOutCountingAuthRepository({super.initialSession});
+
+  int signOutCalls = 0;
+
+  @override
+  Future<void> signOut() {
+    signOutCalls++;
+    return super.signOut();
+  }
+}
+
+/// A repository whose startup session check never answers, so the bloc
+/// keyed to it parks in [AuthLoading] and emits nothing the shell's auth
+/// listener acts on.
+///
+/// The server a switch lands *on*, when the test needs the switch itself —
+/// rather than the new bloc's first emission — to be the only thing that
+/// stands the departed handler down.
+class _HangingSessionCheckAuthRepository extends FakeAuthRepository {
+  @override
+  Future<AuthResponse?> getSession() => Completer<AuthResponse?>().future;
+}
+
+/// A seam whose **first** activation parks until released and then fails,
+/// while a later one succeeds — the supersession the failure leg cannot see
+/// from the world alone (#383).
+///
+/// Serialized on an `_ops` chain like every real implementation, so the
+/// sign-out/sign-back-in queues behind the parked activation exactly as it
+/// does in production.
+class _FailFirstThenSucceedUserSessionScope implements UserSessionScope {
+  final activateGate = Completer<void>();
+  final calls = <String>[];
+  var activateCount = 0;
+  String? _activeUserId;
+
+  Future<void> _ops = Future<void>.value();
+
+  // Reported truthfully: the point of this fake is that `activeUserId`
+  // reads as the live user by the time the failed handler resumes, which
+  // is why the scope cannot answer the supersession question here.
+  @override
+  String? get activeUserId => _activeUserId;
+
+  @override
+  Future<void> activate(String userId) => _enqueue(() async {
+    final attempt = ++activateCount;
+    calls.add('activate#$attempt:$userId');
+    if (attempt == 1) {
+      await activateGate.future;
+      throw StateError('activation boom');
+    }
+    _activeUserId = userId;
+  });
+
+  @override
+  Future<void> deactivate() => _enqueue(() async {
+    calls.add('deactivate');
+    _activeUserId = null;
+  });
+
+  Future<void> _enqueue(Future<void> Function() op) {
+    final result = _ops.then((_) => op());
+    _ops = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+}
+
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 Household _household(String id) => Household(
@@ -519,6 +591,122 @@ void main() {
     // rejected (#176).
     expect(repo.signOutCalls, 0);
     expect(sessionScope.calls, ['activate:u1', 'deactivate']);
+    expect(cubit.state, const AppBootstrapNeedsAuth());
+  });
+
+  testWidgets('an activation that fails after the same user signed back in '
+      'leaves the newer session alone', (tester) async {
+    final repo = _SignOutCountingAuthRepository(
+      initialSession: sampleSession(),
+    );
+    final sessionScope = _FailFirstThenSucceedUserSessionScope();
+    final cubit = buildCubit(repo, sessionScope: sessionScope);
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await cubit.initialize();
+    await tester.pump();
+    expect(sessionScope.activateCount, 1);
+
+    // Sign out and straight back in as the SAME user, while the first
+    // activation is still parked. Both queue behind it on the scope chain.
+    repo.emitAuthState(const AuthStateUnauthenticated());
+    await tester.pump();
+    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    await tester.pump();
+
+    // Release the first activation, which now fails.
+    sessionScope.activateGate.complete();
+    await tester.pumpAndSettle();
+
+    // Server and user id both read live — for the *newer* session. Only
+    // the epoch distinguishes them, and without it this leg signs out a
+    // session that activated successfully moments earlier (#383).
+    expect(repo.signOutCalls, 0);
+    expect(sessionScope.calls, [
+      'activate#1:u1',
+      'deactivate',
+      'activate#2:u1',
+    ], reason: 'no trailing deactivate: the new session survives');
+    expect(sessionScope.activeUserId, 'u1');
+  });
+
+  testWidgets('an activation that fails while a sign-in is in flight leaves '
+      'the recovery to that sign-in', (tester) async {
+    final repo = _HangingSignInSignOutCountingAuthRepository(
+      initialSession: sampleSession(),
+    );
+    final sessionScope = _GatedFailingUserSessionScope();
+    final cubit = buildCubit(repo, sessionScope: sessionScope);
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await cubit.initialize();
+    // Fixed pumps: the auth screen animates a progress indicator, so
+    // pumpAndSettle never returns on this leg.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(sessionScope.activateStarted, isTrue);
+
+    // AuthAuthenticated → AuthLoading. The listener ignores AuthLoading, so
+    // no epoch is burned and no teardown is queued — this is the one window
+    // where the auth predicate is the only clause that can stand the
+    // failed handler down.
+    BlocProvider.of<AuthBloc>(
+      tester.element(find.byType(AuthLifecycleRevalidationTrigger)),
+    ).add(const AuthSignInRequested(email: 'u1@example.com', password: 'pw'));
+    await tester.pump();
+
+    sessionScope.activateGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // The sign-in will converge on its own — to authenticated, whose
+    // handler activates afresh, or to unauthenticated, which has already
+    // converged. Either way a sign-out from here only cancels it.
+    expect(repo.signOutCalls, 0);
+    expect(cubit.state, const AppBootstrapNeedsAuth());
+  });
+
+  testWidgets('an activation that fails after a server switch drives no '
+      'sign-out into the departed bloc', (tester) async {
+    final repoA = _SignOutCountingAuthRepository(
+      initialSession: sampleSession(),
+    );
+    final sessionScope = _GatedFailingUserSessionScope();
+    final scope = _SwitchableActiveServerScope(
+      buildActiveServer(repoA, userSessionScope: sessionScope),
+    );
+    final cubit = AppBootstrapCubit(
+      platformBootstrap: FakePlatformBootstrap(activeServerScope: scope),
+      hydratedStorageInitializer: noopHydrated,
+    );
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+    await cubit.initialize();
+    await tester.pump();
+    expect(sessionScope.activateStarted, isTrue);
+
+    // Server B's session check never answers, so its bloc parks in
+    // AuthLoading and the shell's listener never fires for it. No epoch is
+    // burned by the switch, and A's bloc goes on reporting
+    // AuthAuthenticated(u1) with isClosed == false (#176) — so the active
+    // server is the only clause that can stand this handler down.
+    scope.switchTo(
+      buildActiveServer(
+        _HangingSessionCheckAuthRepository(),
+        serverId: 'server-uuid-2',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    sessionScope.activateGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(repoA.signOutCalls, 0);
     expect(cubit.state, const AppBootstrapNeedsAuth());
   });
 

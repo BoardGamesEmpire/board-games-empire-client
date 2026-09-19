@@ -1337,7 +1337,7 @@ class _BgeAppState extends State<BgeApp> {
 /// [UserSessionScope] (shell tests that don't provide one; any composition
 /// with no per-user services) skips the scope step entirely, keeping the
 /// prior behavior.
-class _AuthScope extends StatelessWidget {
+class _AuthScope extends StatefulWidget {
   const _AuthScope({
     required this.scope,
     required this.onAuthenticated,
@@ -1357,19 +1357,44 @@ class _AuthScope extends StatelessWidget {
 
   final Widget child;
 
+  @override
+  State<_AuthScope> createState() => _AuthScopeState();
+}
+
+/// Stateful only to hold [_authEpoch] (#383); nothing here affects build.
+class _AuthScopeState extends State<_AuthScope> {
   static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
+
+  /// Counts the auth transitions this scope's listener has acted on.
+  ///
+  /// The supersession token for a handler that outlived its listener
+  /// frame, and the only one available: server and user id describe the
+  /// *world*, and a sign-out followed by a same-user sign-in leaves both
+  /// reading exactly as they did, so neither can tell this handler's
+  /// session from its successor's. `AuthResponse` carries no per-sign-in
+  /// field to compare either — `token` is null on web by design (#291) and
+  /// `expiresAt` is null until the session endpoint confirms it.
+  ///
+  /// Same mechanism as `WebAuthRepositoryImpl._sessionEpoch` (#146, #285),
+  /// one layer up: bumped before dispatch, captured by the handler,
+  /// re-compared on resume.
+  ///
+  /// Mutated without [setState] deliberately — it is not build-affecting
+  /// state, and a rebuild here would re-subscribe the [StreamBuilder]
+  /// below for nothing.
+  int _authEpoch = 0;
 
   @override
   Widget build(BuildContext context) {
-    final scope = this.scope;
-    if (scope == null) return child;
+    final scope = widget.scope;
+    if (scope == null) return widget.child;
 
     return StreamBuilder<ActiveServer?>(
       stream: scope.watchActive(),
       initialData: scope.active,
       builder: (context, snapshot) {
         final active = snapshot.data;
-        if (active == null) return child;
+        if (active == null) return widget.child;
 
         return BlocProvider<AuthBloc>(
           // Keyed on serverId: a switch unmounts the old bloc (closing it
@@ -1383,7 +1408,7 @@ class _AuthScope extends StatelessWidget {
           key: ValueKey('auth_bloc_${active.serverId}'),
           create: (_) => AuthBloc(
             authRepository: active.container.get<AuthRepository>(),
-            connectivity: connectivity,
+            connectivity: widget.connectivity,
           )..add(const AuthSessionCheckRequested()),
           child: BlocListener<AuthBloc, AuthBlocState>(
             // Entry/exit transitions only. `current is AuthAuthenticated`
@@ -1401,6 +1426,10 @@ class _AuthScope extends StatelessWidget {
                     previous is! AuthAuthenticated) ||
                 current is AuthUnauthenticated,
             listener: (context, state) {
+              // Bumped for every transition this listener acts on, before
+              // anything is dispatched, so a handler's captured value is
+              // stale the moment the next one starts (#383).
+              final epoch = ++_authEpoch;
               if (state is AuthAuthenticated) {
                 // Captured synchronously — the async handler outlives this
                 // listener frame and needs the bloc for the sign-out
@@ -1412,7 +1441,12 @@ class _AuthScope extends StatelessWidget {
                 // serializes scope operations, so overlapping handlers
                 // cannot interleave scope mutations (#135).
                 unawaited(
-                  _handleAuthenticated(active, authBloc, state.session.user.id),
+                  _handleAuthenticated(
+                    active,
+                    authBloc,
+                    state.session.user.id,
+                    epoch,
+                  ),
                 );
               } else if (state is AuthUnauthenticated) {
                 // Route first: the gate callback is synchronous here (its
@@ -1420,7 +1454,7 @@ class _AuthScope extends StatelessWidget {
                 // the listener, not as an unhandled zone error), and the
                 // home subtree starts unmounting before the scope pop
                 // disposes its repositories.
-                onSignedOut();
+                widget.onSignedOut();
                 unawaited(_deactivateSessionScope(active));
               }
             },
@@ -1428,7 +1462,7 @@ class _AuthScope extends StatelessWidget {
             // trigger rather than chrome, hence a sibling of the banner
             // host; rationale lives on the widget.
             child: AuthLifecycleRevalidationTrigger(
-              child: _UnverifiedSessionBannerHost(child: child),
+              child: _UnverifiedSessionBannerHost(child: widget.child),
             ),
           ),
         );
@@ -1456,7 +1490,7 @@ class _AuthScope extends StatelessWidget {
   /// (measured in a widget test: still false a second later). The scope
   /// answers synchronously and is never behind (#176).
   bool _serverStillActive(ActiveServer active) =>
-      scope?.active?.serverId == active.serverId;
+      widget.scope?.active?.serverId == active.serverId;
 
   /// Whether [authBloc] still reports an authenticated session for
   /// [userId]. Checked alongside [_serverStillActive], never instead of it.
@@ -1476,26 +1510,54 @@ class _AuthScope extends StatelessWidget {
     ActiveServer active,
     AuthBloc authBloc,
     String userId,
+    int epoch,
   ) async {
     final sessionScope = _userSessionScopeOf(active);
     if (sessionScope != null) {
       try {
         await sessionScope.activate(userId);
       } on Object catch (error, stackTrace) {
+        // Recovery is this handler's to dispatch only while it still owns
+        // the session. Three ways it stops owning it:
+        //
+        // Superseded: another transition has been acted on since. This is
+        // the only one that catches a sign-out followed by a same-user
+        // sign-back-in — server and user id both read live for the *newer*
+        // session, so without the epoch this leg signs out a session that
+        // has just been activated successfully (#383). The scope cannot
+        // answer it either: by the time this runs the re-activation has
+        // typically landed, so `activeUserId` reads as this user.
+        //
+        // Server gone: the switch closed the bloc's subtree, and nothing
+        // over there is waiting on a sign-out.
+        //
+        // Auth moved on: a sign-out that landed while the activation was
+        // failing has already converged the system, and a fresh sign-in
+        // still in `AuthLoading` will converge on its own — its own
+        // handler owns whatever follows. Dispatching into either costs a
+        // network round trip and a second onSignedOut/deactivate pair for
+        // a session that is already gone (#176).
+        final superseded = _authEpoch != epoch;
+        final serverLive = _serverStillActive(active);
+        final authLive = _stillAuthenticatedAs(authBloc, userId);
+        final recovering = !superseded && serverLive && authLive;
         _log.error(
-          'User-session scope activation failed; signing out to recover',
+          recovering
+              ? 'User-session scope activation failed; signing out to recover'
+              : 'User-session scope activation failed; a newer session owns '
+                    'the recovery',
           error: error,
           stackTrace: stackTrace,
-          context: {'serverId': active.serverId},
+          // Predicates, never user ids — the success leg's log channel
+          // holds to the same rule.
+          context: {
+            'serverId': active.serverId,
+            'superseded': superseded,
+            'serverStillActive': serverLive,
+            'authStillLive': authLive,
+          },
         );
-        // Only when this handler's session is still the live one. A
-        // sign-out that landed while the activation was failing has
-        // already converged the system, and a server switch has closed
-        // the bloc outright; dispatching into either drives a pointless
-        // sign-out round trip — and a second onSignedOut/deactivate pair
-        // — for a session that is already gone (#176).
-        if (_serverStillActive(active) &&
-            _stillAuthenticatedAs(authBloc, userId)) {
+        if (recovering) {
           authBloc.add(const AuthSignOutRequested());
         }
         return;
@@ -1551,7 +1613,7 @@ class _AuthScope extends StatelessWidget {
       return;
     }
     try {
-      onAuthenticated();
+      widget.onAuthenticated();
     } on Object catch (error, stackTrace) {
       // The callback runs in an unawaited async continuation; without
       // this guard a throw (e.g. the bootstrap cubit closed during the
