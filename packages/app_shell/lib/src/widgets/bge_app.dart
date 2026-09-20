@@ -1564,9 +1564,9 @@ class _AuthScopeState extends State<_AuthScope> {
       }
     }
     // The activation above is awaited, and three things can go stale under
-    // it. The gate advances only if both still hold, and it takes no
-    // corrective action either way — whatever superseded this handler owns
-    // the convergence (#176).
+    // it. The gate advances only if all three still hold, and it takes
+    // no corrective action either way — whatever superseded this handler
+    // owns the convergence (#176).
     //
     // The server: the user can switch servers, which unmounts this
     // handler's whole auth subtree. Its captured bloc does not notice
@@ -1602,7 +1602,7 @@ class _AuthScopeState extends State<_AuthScope> {
       _log.warn(
         'Auth or its user scope changed during user-session activation; '
         'leaving the bootstrap gate on the auth leg',
-        // Which of the two failed, and whether the bloc outlived the
+        // Which of the three failed, and whether the bloc outlived the
         // activation at all, are different diagnoses with different
         // follow-up — a bare "something changed" breadcrumb cannot tell
         // them apart. Reported as predicates rather than ids: no user id
