@@ -26,6 +26,16 @@ import 'platform_bootstrap.dart';
 /// same presentation-layer-coordination pattern as [onServerRegistered]
 /// (a BlocListener over the auth bloc invokes them; blocs never depend
 /// on blocs).
+///
+/// Liveness policy (#177): every entry point is reachable on a **closed**
+/// cubit — the transition callbacks arrive from BlocListeners, and the
+/// awaited legs resume after an unmount, hot restart or test teardown —
+/// so each one checks [isClosed] and does nothing. The checks are written
+/// out at each site rather than factored into a wrapper because three of
+/// them are load-bearing on *where* they sit, not merely that they exist:
+/// ahead of the failure counter, ahead of the feedback drain, and ahead of
+/// the work [_attempt] would otherwise start. Anything added here inherits
+/// the obligation.
 class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   AppBootstrapCubit({
     required this._platformBootstrap,
@@ -88,7 +98,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// state is not a programmer error and must not throw into an unawaited
   /// future.
   Future<void> retry() async {
-    if (state is! AppBootstrapFailed) return;
+    if (isClosed || state is! AppBootstrapFailed) return;
     emit(const AppBootstrapInitializing());
     await _attempt();
   }
@@ -102,7 +112,9 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// same fire-and-forget reason as [retry].
   Future<void> resetAndRetry() async {
     final current = state;
-    if (current is! AppBootstrapFailed || !current.canOfferReset) return;
+    if (isClosed || current is! AppBootstrapFailed || !current.canOfferReset) {
+      return;
+    }
     emit(const AppBootstrapInitializing());
     _logger.warn(
       'User-confirmed destructive reset of device-local meta state',
@@ -111,6 +123,9 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
     try {
       await _platformBootstrap.reset();
     } on Object catch (error, stackTrace) {
+      // The reset is awaited, so this leg has the same close-during-attempt
+      // window as _attempt, and the same reason to record nothing (#177).
+      if (isClosed) return;
       _consecutiveFailures += 1;
       _logger.error(
         'Destructive reset failed',
@@ -136,7 +151,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// a BlocListener reacting to the onboarding bloc's success state, and
   /// a duplicate or late signal must not throw into an unawaited future.
   void onServerRegistered() {
-    if (state is! AppBootstrapNeedsServer) return;
+    if (isClosed || state is! AppBootstrapNeedsServer) return;
     _logger.info('First server registered; advancing to auth');
     emit(const AppBootstrapNeedsAuth());
   }
@@ -162,7 +177,22 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// [AppBootstrapReady] — that signal must still drain the new server's
   /// queue even though the state transition is a no-op. Fire-and-forget:
   /// the drain never blocks or fails navigation.
+  ///
+  /// Two exceptions to "every invocation", both of which withhold the
+  /// call rather than narrow the contract:
+  /// - a **closed** cubit drains nothing (the guard below) — the app is
+  ///   going away, and a best-effort upload has no one left to report to
+  ///   (the service itself is device-global and outlives this cubit);
+  /// - the shell does not invoke this at all when auth went stale during
+  ///   user-session activation (#176), because the queue would be posted
+  ///   against a session the server has just disowned.
   void onAuthenticated() {
+    // Ahead of the drain, not merely the emit: a closed cubit means the app
+    // is going away, and there is no one left for a best-effort upload to
+    // report to. The service itself is device-global and outlives this
+    // cubit, so the drain is withheld because the moment has passed, not
+    // because the collaborator is gone (#177).
+    if (isClosed) return;
     _drainPendingFeedback();
     if (state is! AppBootstrapNeedsAuth) return;
     _logger.info('Authenticated; advancing to home');
@@ -208,18 +238,38 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
   /// signals also fire during the pre-home auth leg (a restore finding
   /// no session), where the app is already exactly where it belongs.
   void onSignedOut() {
-    if (state is! AppBootstrapReady) return;
+    if (isClosed || state is! AppBootstrapReady) return;
     _logger.info('Signed out; returning to auth');
     emit(const AppBootstrapNeedsAuth());
   }
 
   Future<void> _attempt() async {
+    // A closed cubit attempts nothing. The guards further down catch a
+    // close that lands *inside* an attempt; this one catches a caller that
+    // reaches here already closed — `resetAndRetry` does, on the leg where
+    // the destructive reset itself succeeded after the close, and running
+    // the bootstrap from there would open the meta database and build an
+    // orchestrator that no one is left to reach or dispose (#177).
+    if (isClosed) return;
     try {
       if (!_hydratedStorageReady) {
         await _initializeHydratedStorage(_platformBootstrap);
         _hydratedStorageReady = true;
+        // Checked here and not only after the next await: `initialize()` is
+        // the resource-acquiring half of the attempt — it opens the
+        // encrypted meta database and builds the orchestrator — and a
+        // closed cubit must not *start* it, for the same reason the entry
+        // guard above exists. Guarding only the result would let a close
+        // that landed in the storage await acquire everything and then
+        // drop it (#177).
+        if (isClosed) return;
       }
       final result = await _platformBootstrap.initialize();
+      // Closed while the attempt was in flight (unmount, hot restart, test
+      // teardown). Returning before the side effects keeps a closed cubit
+      // from recording anything — an emit here would throw, and the catch
+      // below would read that as a bootstrap failure (#177).
+      if (isClosed) return;
       _orchestrator = result.orchestrator;
       _activeServerScope = result.activeServerScope;
       _consecutiveFailures = 0;
@@ -236,6 +286,10 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
             : const AppBootstrapNeedsServer(),
       );
     } on Object catch (error, stackTrace) {
+      // Same guard, and it must sit ahead of the counter: a closed cubit
+      // that increments _consecutiveFailures leaves the count lying for a
+      // failure nobody can see or retry (#177).
+      if (isClosed) return;
       _consecutiveFailures += 1;
       _logger.error(
         'Bootstrap attempt failed',

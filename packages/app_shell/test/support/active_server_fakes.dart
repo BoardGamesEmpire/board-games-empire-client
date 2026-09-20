@@ -190,6 +190,7 @@ ActiveServer buildActiveServer(
   HouseholdRefresher? householdRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
+  String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
     ..registerSingleton<AuthRepository>(repo);
@@ -216,7 +217,7 @@ ActiveServer buildActiveServer(
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
   }
   return ActiveServer(
-    serverId: 'server-uuid-1',
+    serverId: serverId,
     displayName: 'My Server',
     identity: serverIdentity(),
     container: container,
