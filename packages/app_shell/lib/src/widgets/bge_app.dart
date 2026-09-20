@@ -1580,15 +1580,20 @@ class _AuthScopeState extends State<_AuthScope> {
     // state equality.
     //
     // The scope: a sign-out queued behind this activation tears the
-    // session scope down, and it is torn down *before* this line runs —
-    // the scope's serialization chain settles the teardown ahead of the
-    // activation caller's resumption (measured, not assumed). That is why
-    // there is no deactivation here. But on a fast sign-out →
-    // sign-back-in the re-activation is still queued behind that
-    // teardown, so auth alone reads "authenticated, same user" while no
-    // user scope exists at all; routing home there mounts the per-user
-    // subtree over services nobody has installed. The second handler
-    // advances the gate itself once its own activation lands.
+    // session scope down, and `activeUserId` is null *before* this line
+    // runs. Not because the teardown finishes first — it does not — but
+    // because both implementations null the id in the first synchronous
+    // statement of teardown (`ContainerUserSessionScope._teardown`,
+    // `ServerContextImpl._teardownUserScope`), and the serialization
+    // chain runs that prefix before the activation caller resumes. The
+    // re-activation that would restore the id is queued behind the
+    // teardown and lands after it (measured, not assumed). The read
+    // below sits in the window between them, which is why there is no
+    // deactivation here. But on a fast sign-out → sign-back-in that
+    // same queueing means auth alone reads "authenticated, same user"
+    // while no user scope exists at all; routing home there mounts the
+    // per-user subtree over services nobody has installed. The second
+    // handler advances the gate itself once its own activation lands.
     final serverLive = _serverStillActive(active);
     final authLive = _stillAuthenticatedAs(authBloc, userId);
     final scopeLive =
