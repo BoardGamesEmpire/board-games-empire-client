@@ -48,6 +48,12 @@ dependencies:
   household:
     path: ../../features/household
 
+  # The browser bindings the durable feedback sink is written against (#292).
+  # IndexedDB rather than a second drift/wasm database: the queue is a
+  # key -> opaque-JSON store, and a device-global drift database would open a
+  # second wasm worker on every authenticated session.
+  web: ^1.1.1
+
   # Web-specific
   url_strategy: ^0.3.0
   hydrated_bloc: ^11.0.0
