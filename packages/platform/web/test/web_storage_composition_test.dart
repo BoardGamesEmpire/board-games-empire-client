@@ -12,10 +12,12 @@ library;
 
 import 'dart:async';
 
+import 'package:di/di.dart';
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/wasm.dart' show WasmStorageImplementation;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
+import 'package:observability/observability.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:web_platform/web.dart';
 import 'package:web_platform/web_storage_composition.dart';
@@ -29,6 +31,57 @@ void main() {
       // a single named thing to reach for, and that it is this type.
       expect(bgeWebPlatformBootstrap(), isA<WebPlatformBootstrap>());
       expect(bgeWebPlatformBootstrap().supportsReset, isFalse);
+    });
+
+    test('its root container carries the DURABLE feedback sink, not the '
+        'stand-in (#292)', () async {
+      // The one assertion that catches the wiring mistake this composition
+      // exists to prevent: `const WebPlatformBootstrap()` still builds a
+      // perfectly valid root container, just with a sink that forgets
+      // everything on reload.
+      final container = await bgeWebPlatformBootstrap().createRootContainer();
+      addTearDown(container.dispose);
+
+      expect(container.get<FeedbackSink>(), isA<IndexedDbFeedbackSink>());
+    });
+  });
+
+  group('buildWebRootModule', () {
+    test('registers a sink whose records survive the container being torn '
+        'down and rebuilt', () async {
+      final container = DependencyContainerImpl();
+      await buildWebRootModule(container);
+      // This is the one test that writes to the *production* database name,
+      // because that is what `buildWebRootModule` opens. Clean up through a
+      // tear-down rather than the success path: a record left behind by a
+      // failing run would make the next run pass on the previous run's data.
+      addTearDown(() async {
+        final sink = await IndexedDbFeedbackSink.open();
+        await sink.remove('composition-round-trip');
+        await sink.onDispose();
+      });
+      final record = QueuedFeedbackReport(
+        report: const FeedbackReport(
+          category: FeedbackCategory.bug,
+          severity: FeedbackSeverity.low,
+          message: 'approved while the boot was failing',
+          clientRequestId: 'composition-round-trip',
+        ),
+        queuedAt: DateTime.utc(2026, 9, 20),
+      );
+      await container.get<FeedbackSink>().persist(record);
+      // Closes the IndexedDB connection, the way a reload would.
+      await container.dispose();
+
+      final rebuilt = DependencyContainerImpl();
+      addTearDown(rebuilt.dispose);
+      await buildWebRootModule(rebuilt);
+      final pending = await rebuilt.get<FeedbackSink>().pending();
+
+      expect(
+        pending.map((r) => r.storageKey),
+        contains('composition-round-trip'),
+      );
     });
   });
 

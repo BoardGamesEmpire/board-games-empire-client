@@ -5,6 +5,8 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
+
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
@@ -61,18 +63,91 @@ void main() {
     expect(container.get<BuildInfo>(), _info);
   });
 
-  test('registers the in-memory FeedbackSink stand-in (#69) — durable '
-      'replacement tracked on #63', () async {
-    final container = DependencyContainerImpl();
-    addTearDown(container.dispose);
+  group('FeedbackSink registration (#69, #292)', () {
+    test('falls back to the in-memory stand-in when the caller supplies no '
+        'durable sink', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
 
-    await registerWebRootModule(
-      container,
-      buildInfoReader: const _StubBuildInfoReader(_info),
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(container.isRegistered<FeedbackSink>(), isTrue);
+      expect(container.get<FeedbackSink>(), isA<MemoryFeedbackSink>());
+    });
+
+    test(
+      'registers the durable sink the composition root supplies (#292) — '
+      'this library cannot name its type, so it must not construct one',
+      () async {
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+        final durable = _DisposableSink();
+
+        await registerWebRootModule(
+          container,
+          buildInfoReader: const _StubBuildInfoReader(_info),
+          feedbackSink: Future.value(durable),
+        );
+
+        expect(container.get<FeedbackSink>(), same(durable));
+      },
     );
 
-    expect(container.isRegistered<FeedbackSink>(), isTrue);
-    expect(container.get<FeedbackSink>(), isA<MemoryFeedbackSink>());
+    test('overlaps the sink open with the build-info read rather than queueing '
+        'them — two bounded platform reads should not stack their worst '
+        'cases in front of a blank page', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+      final gate = Completer<void>();
+      final durable = _DisposableSink();
+
+      final registering = registerWebRootModule(
+        container,
+        // Does not resolve until the sink future is already being waited on.
+        buildInfoReader: _GatedBuildInfoReader(_info, gate.future),
+        feedbackSink: Future<FeedbackSink?>.delayed(
+          const Duration(milliseconds: 20),
+          () => durable,
+        ),
+      );
+      // If the module awaited the sink first, the reader would never have been
+      // asked and this gate would deadlock the registration.
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      gate.complete();
+      await registering;
+
+      expect(container.get<FeedbackSink>(), same(durable));
+    });
+
+    test('disposes a sink that holds a connection when the root container '
+        'tears down', () async {
+      final container = DependencyContainerImpl();
+      final durable = _DisposableSink();
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        feedbackSink: Future.value(durable),
+      );
+      await container.dispose();
+
+      expect(durable.disposals, 1);
+    });
+
+    test('disposing a stand-in that holds nothing is not an error — the '
+        'module does not know which kind it got', () async {
+      final container = DependencyContainerImpl();
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      await expectLater(container.dispose(), completes);
+    });
   });
 
   group('ConnectivityService registration (#9)', () {
@@ -188,4 +263,41 @@ void main() {
     expect(service, isA<UnsupportedPushNotificationService>());
     expect(service.isPlatformSupported, isFalse);
   });
+}
+
+/// Stands in for `IndexedDbFeedbackSink` here: the real one reaches
+/// `dart:js_interop` and cannot be named on the VM, and what this suite is
+/// asserting is the module's routing and disposal, not the store.
+class _DisposableSink implements FeedbackSink, Disposable {
+  int disposals = 0;
+
+  @override
+  Future<void> onDispose() async => disposals++;
+
+  @override
+  Future<void> persist(QueuedFeedbackReport record) async {}
+
+  @override
+  Future<void> update(QueuedFeedbackReport record) async {}
+
+  @override
+  Future<List<QueuedFeedbackReport>> pending() async => const [];
+
+  @override
+  Future<void> remove(String storageKey) async {}
+}
+
+/// A reader that does not answer until [_gate] does, so a suite can prove the
+/// module is not waiting on something else first.
+class _GatedBuildInfoReader implements BuildInfoReader {
+  const _GatedBuildInfoReader(this._info, this._gate);
+
+  final BuildInfo _info;
+  final Future<void> _gate;
+
+  @override
+  Future<BuildInfo> read() async {
+    await _gate;
+    return _info;
+  }
 }
