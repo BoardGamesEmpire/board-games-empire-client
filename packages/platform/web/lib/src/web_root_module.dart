@@ -27,7 +27,9 @@ import 'build_info/package_info_build_info_reader.dart';
 /// degraded value rather than throwing into bootstrap. [BuildInfoReader]
 /// carries that guarantee itself ([BuildInfo.unknown] on failure or
 /// timeout; never throws, never hangs), [MemoryFeedbackSink] is pure
-/// RAM, and [ConnectivityService] is registered **lazily** — the
+/// RAM and the durable [feedbackSink] is opened by the caller, which
+/// degrades to that stand-in rather than handing a throw to this seam, and
+/// [ConnectivityService] is registered **lazily** — the
 /// [ConnectivityPlusService] constructor touches the connectivity plugin
 /// (subscription + eager check), so construction is deferred to first
 /// resolution, keeping registration itself plugin-free. This seam adds
@@ -36,13 +38,14 @@ import 'build_info/package_info_build_info_reader.dart';
 /// `runBgeApp`'s belt-and-braces fallback.
 ///
 /// Registrations: [BuildInfo] (read from Flutter's generated
-/// `version.json`, #35), the **in-memory stand-in** [FeedbackSink] —
-/// still RAM, though since #288 no longer for want of storage: web has a
-/// drift/wasm database now, but it is registered in the *server* scope
-/// and this builds the *root* container, so a durable web sink is its own
-/// piece of work (#292). An approved-but-unsent report is still lost on
-/// reload, and the prompt still tells the user so — the
-/// device-global [ConnectivityService] (#9), disposed via its
+/// `version.json`, #35), the [FeedbackSink] — the durable IndexedDB sink
+/// when [feedbackSink] supplies one, and the in-memory stand-in otherwise
+/// (#292). The durable sink cannot be built here: it reaches
+/// `dart:js_interop`, and this library is on the VM-compilable side of the
+/// package split, so the browser-only composition root opens it and passes
+/// it in. A caller that passes nothing — every VM test, and the storage-less
+/// bootstrap — gets RAM, and an approved-but-unsent report is then lost on
+/// reload. The device-global [ConnectivityService] (#9), disposed via its
 /// [Disposable] conformance when the root container tears down, and the
 /// #15 [PushNotificationService] null object
 /// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free).
@@ -52,16 +55,40 @@ import 'build_info/package_info_build_info_reader.dart';
 ///
 /// [buildInfoReader] and [connectivityFactory] are injectable for tests;
 /// production uses the concrete [PackageInfoBuildInfoReader] and
-/// [ConnectivityPlusService].
+/// [ConnectivityPlusService]. [feedbackSink] is a **composition** seam
+/// rather than a test one — it is how the browser-only half supplies a sink
+/// this library cannot name.
+///
+/// [feedbackSink] is a *future* rather than a value so the two bootstrap-time
+/// platform reads overlap. Both are bounded — [BuildInfoReader] by its own
+/// read timeout, the sink's open by its — and they share no state, so taking
+/// them in sequence would have stacked one worst case on the other in front of
+/// a blank page. The caller starts the open before calling, both are then in
+/// flight at once, and awaiting them one after the other costs the longer of
+/// the two rather than the sum.
 Future<void> registerWebRootModule(
   DependencyContainer container, {
   BuildInfoReader? buildInfoReader,
   ConnectivityService Function()? connectivityFactory,
+  Future<FeedbackSink?>? feedbackSink,
 }) async {
   final reader = buildInfoReader ?? PackageInfoBuildInfoReader();
+  // Resolved before the read is awaited, so a caller's in-flight open is not
+  // held up behind it.
+  final pendingSink = feedbackSink ?? Future<FeedbackSink?>.value();
   container
     ..registerSingleton<BuildInfo>(await reader.read())
-    ..registerSingleton<FeedbackSink>(MemoryFeedbackSink())
+    ..registerSingleton<FeedbackSink>(
+      await pendingSink ?? MemoryFeedbackSink(),
+      dispose: (sink) async {
+        // The durable sink holds an open IndexedDB connection; the stand-in
+        // holds nothing. Same conformance check as ConnectivityService below,
+        // so neither needs the module to know which it got.
+        if (sink case final Disposable disposable) {
+          await disposable.onDispose();
+        }
+      },
+    )
     ..registerLazySingleton<ConnectivityService>(
       connectivityFactory ?? ConnectivityPlusService.new,
       dispose: (service) async {
