@@ -288,6 +288,31 @@ void main() {
       expect(await sink.pending(), isEmpty);
       expect(await sink.rawKeys(), isEmpty);
     });
+
+    test('a store fault is skipped, not reaped — unreadability is never a '
+        'reason to delete (#292 D6)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      await sink.persist(record('survivor'));
+
+      // A closed connection is the one store fault a test against a real
+      // IndexedDB can actually stage: a transaction cannot be opened on it
+      // at all. The faults this rule was written for — quota exhaustion, a
+      // corrupt backing store — are unreachable from here, and this reaches
+      // the same code, since every read in `pending` is inside the
+      // transaction that now cannot start.
+      await sink.onDispose();
+
+      await expectLater(sink.pending(), throwsA(anything));
+
+      final reopened = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(reopened.onDispose);
+      expect(
+        (await reopened.pending()).map((r) => r.storageKey),
+        ['survivor'],
+        reason: 'a fault is transient: the record is retried, not written off',
+      );
+    });
   });
 
   group('update: presence-only, and never the create path (#376)', () {

@@ -346,6 +346,16 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// the branch is absent rather than forgotten: inside a transaction that
   /// succeeded, every value has been read, so every record has a determinable
   /// age. A store fault fails the read instead, and deletes nothing.
+  ///
+  /// Native's remedy for what this costs — `FileFeedbackSink`'s per-name
+  /// `queuedAt` cache, which spares it a re-`stat` per candidate — is
+  /// deliberately **not** inherited (#292 D5). A keyed store hands back the
+  /// record and its stamp in the same read, so a cache would be a second
+  /// source of truth for something already in hand, and it would import the
+  /// untested carve-out #378 is filed for: a record whose age is known from
+  /// the cache while the record itself cannot be read. #386 holds both the
+  /// cost that is real once the cap engages and the remedy that fits a keyed
+  /// store, which is an index rather than a cache.
   Future<void> _enforceCap(
     web.IDBObjectStore store, {
     required String justPersisted,
