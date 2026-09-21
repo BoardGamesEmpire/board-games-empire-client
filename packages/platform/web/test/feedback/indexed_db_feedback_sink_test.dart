@@ -123,6 +123,24 @@ void main() {
     return ready.future;
   }
 
+  /// Writes under a key that need not be text at all.
+  Future<void> writeRawKeyed(
+    String databaseName,
+    JSAny key,
+    String value,
+  ) async {
+    final database = await openRawConnection(databaseName, 1);
+    final transaction = database.transaction('records'.toJS, 'readwrite');
+    final done = Completer<void>();
+    transaction.oncomplete = ((web.Event _) => done.complete()).toJS;
+    transaction.onerror = ((web.Event _) => done.completeError(
+      StateError('tx'),
+    )).toJS;
+    transaction.objectStore('records').put(value.toJS, key);
+    await done.future;
+    database.close();
+  }
+
   /// The common case: a stored record is JSON text.
   Future<void> writeRaw(String databaseName, String key, String value) =>
       writeRawValue(databaseName, key, value.toJS);
@@ -596,5 +614,157 @@ void main() {
         );
       },
     );
+  });
+
+  group('keys this sink cannot address are reaped, not trusted', () {
+    test('a non-text key whose record also carries no clientRequestId is '
+        'reaped — two nulls must not compare equal and pass as drainable', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // A numeric key is a valid IndexedDB key, and reads as null text here.
+      // The record under it has no clientRequestId, so its storageKey is null
+      // too: compared directly, the two agree, and the record would be kept as
+      // drainable under an address `remove` could never target.
+      await writeRawKeyed(name, 7.toJS, jsonEncode(record(null).toJson()));
+      await sink.persist(record('good'));
+
+      expect((await sink.pending()).map((r) => r.storageKey), ['good']);
+      expect(await sink.rawKeys(), ['good']);
+    });
+
+    test('an empty key is reaped — persist rejects one, so nothing may be '
+        'drained under it either', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRaw(name, '', jsonEncode(record('').toJson()));
+
+      expect(await sink.pending(), isEmpty);
+      expect(await sink.rawKeys(), isEmpty);
+    });
+  });
+
+  group("the cap's fast path", () {
+    test('a persist under the bound reads no payloads — only once the cap '
+        'engages is the queue worth cloning', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
+      await sink.persist(record('first'));
+
+      final before = IndexedDbFeedbackSink.debugPayloadReads;
+      await sink.persist(record('second'));
+
+      expect(
+        IndexedDbFeedbackSink.debugPayloadReads,
+        before,
+        reason: 'under the cap, one key listing and nothing else',
+      );
+    });
+
+    test('a persist that overflows the bound does read them', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await sink.persist(
+          record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i)),
+        );
+      }
+
+      final before = IndexedDbFeedbackSink.debugPayloadReads;
+      await sink.persist(record('overflow', queuedAt: DateTime.utc(2026, 9)));
+
+      expect(
+        IndexedDbFeedbackSink.debugPayloadReads,
+        greaterThan(before),
+        reason: 'ages have to come from somewhere once eviction is real',
+      );
+    });
+  });
+
+  group('the IndexedDB behaviour this sink is built on', () {
+    // Characterization tests. The class doc calls these measured rather than
+    // documented, and both were got wrong once by reasoning about them, so
+    // they are pinned here rather than left as prose.
+
+    test('a canceled request error needs stopPropagation as well as '
+        'preventDefault: preventDefault alone still fires transaction.onerror', () async {
+      final outcomes = <String, bool>{};
+      for (final stopPropagation in [false, true]) {
+        final database = await openRawConnection(freshName(), 1);
+        addTearDown(() => database.close());
+        final transaction = database.transaction('records'.toJS, 'readwrite');
+        final store = transaction.objectStore('records');
+        var transactionErrored = false;
+        final settled = Completer<String>();
+        transaction.oncomplete = ((web.Event _) {
+          if (!settled.isCompleted) settled.complete('committed');
+        }).toJS;
+        transaction.onabort = ((web.Event _) {
+          if (!settled.isCompleted) settled.complete('aborted');
+        }).toJS;
+        transaction.onerror = ((web.Event _) => transactionErrored = true).toJS;
+
+        final seeded = Completer<void>();
+        final put = store.put('one'.toJS, 'k1'.toJS);
+        put.onsuccess = ((web.Event _) => seeded.complete()).toJS;
+        await seeded.future;
+
+        // add() on an existing key is a ConstraintError: a real request error,
+        // without needing the store to misbehave.
+        final failed = Completer<void>();
+        final duplicate = store.add('two'.toJS, 'k1'.toJS);
+        duplicate.onerror = ((web.Event event) {
+          event.preventDefault();
+          if (stopPropagation) event.stopPropagation();
+          failed.complete();
+        }).toJS;
+        await failed.future;
+
+        expect(await settled.future, 'committed');
+        outcomes['stopPropagation=$stopPropagation'] = transactionErrored;
+      }
+
+      expect(
+        outcomes['stopPropagation=false'],
+        isTrue,
+        reason: 'preventDefault stops the abort, not the bubbling',
+      );
+      expect(
+        outcomes['stopPropagation=true'],
+        isFalse,
+        reason: 'which is why _awaitOptional does both',
+      );
+    });
+
+    test('a transaction survives an await on its own request and dies across '
+        'any other', () async {
+      final database = await openRawConnection(freshName(), 1);
+      addTearDown(() => database.close());
+      final transaction = database.transaction('records'.toJS, 'readwrite');
+      final store = transaction.objectStore('records');
+
+      Future<void> put(String key) {
+        final done = Completer<void>();
+        final request = store.put('v'.toJS, key.toJS);
+        request.onsuccess = ((web.Event _) => done.complete()).toJS;
+        request.onerror = ((web.Event _) => done.completeError(
+          StateError('inactive'),
+        )).toJS;
+        return done.future;
+      }
+
+      await put('a');
+      await expectLater(put('b'), completes);
+
+      await Future<void>.delayed(Duration.zero);
+      // `put` on a finished transaction throws synchronously rather than
+      // rejecting its request, so the call is wrapped to catch it either way.
+      await expectLater(
+        Future<void>(() => put('c')),
+        throwsA(anything),
+        reason: 'the transaction went inactive across a non-IDB await',
+      );
+    });
   });
 }

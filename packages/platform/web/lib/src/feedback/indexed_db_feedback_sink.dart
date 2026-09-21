@@ -244,16 +244,22 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
       var kept = <(String, QueuedFeedbackReport)>[];
       for (final entry in entries) {
         final decoded = _decode(entry.value);
-        // One check, every reject case. A value this store cannot even read
-        // as text has a null key or a null value; a record carrying no
-        // `clientRequestId` has a null storageKey; a record claiming a
-        // different one disagrees with the key it is filed under. None is
-        // addressable by `remove`, so none could ever be drained.
-        if (decoded == null || decoded.storageKey != entry.key) {
+        final key = entry.key;
+        // Every reject case, and the order matters. The address has to be
+        // usable text in its own right *before* it is compared: IndexedDB
+        // takes numbers, dates and arrays as keys, and such a key reads as
+        // null here — which would compare equal to the null `storageKey` of a
+        // record carrying no `clientRequestId`, and the pair would then be
+        // kept as drainable under an address that does not exist. An empty
+        // key fails for the same reason `persist` rejects one.
+        if (key == null ||
+            key.isEmpty ||
+            decoded == null ||
+            decoded.storageKey != key) {
           await _deleteQuietly(store, entry.rawKey);
           continue;
         }
-        kept.add((entry.key!, decoded));
+        kept.add((key, decoded));
       }
 
       // Enforced here as well as on `persist`, for the install that arrives
@@ -344,19 +350,27 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
     web.IDBObjectStore store, {
     required String justPersisted,
   }) async {
-    final entries = await _entriesIn(store);
-    if (entries == null) return;
+    // Keys first, and values only if the bound is actually exceeded. The
+    // ordering is the whole cost model: under the cap — which is every persist
+    // on a queue that drains — this returns after one key listing, having read
+    // no payloads. Reading both up front would clone the entire queue on every
+    // submit, up to roughly 12.5 MB at the per-report protocol ceiling.
+    final keys = await _keysIn(store);
+    if (keys == null) return;
 
-    final excess = entries.length - QueuedFeedbackReport.maxQueuedReports;
+    final excess = keys.length - QueuedFeedbackReport.maxQueuedReports;
     if (excess <= 0) return;
 
+    final values = await _valuesIn(store);
+    if (values == null || values.length != keys.length) return;
+
     final candidates = <(String, QueuedFeedbackReport?, JSAny?)>[];
-    for (final entry in entries) {
+    for (var i = 0; i < keys.length; i++) {
       // Counts against the cap, but is never up for deletion: `persist`
       // returning has to mean the record is stored, and `submit` reports
       // `queued` on the strength of that.
-      if (entry.key == justPersisted) continue;
-      candidates.add((entry.key ?? '', _decode(entry.value), entry.rawKey));
+      if (keys[i].key == justPersisted) continue;
+      candidates.add((keys[i].key ?? '', _decode(values[i]), keys[i].rawKey));
     }
 
     // Key tie-break keeps eviction deterministic among equal stamps.
@@ -510,23 +524,50 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// the case to be cheap, not a reason to let it be fatal.
   static Future<List<({JSAny? rawKey, String? key, String? value})>?>
   _entriesIn(web.IDBObjectStore store) async {
-    final keys = await _awaitOptional(store.getAllKeys());
-    final values = await _awaitOptional(store.getAll());
-    if (keys == null || values == null) return null;
-
-    // Both `getAllKeys` and `getAll` yield ascending key order, so the two
-    // lists line up index for index.
-    final rawKeys = (keys as JSArray<JSAny?>).toDart;
-    final rawValues = (values as JSArray<JSAny?>).toDart;
-    if (rawKeys.length != rawValues.length) return null;
+    final keys = await _keysIn(store);
+    if (keys == null) return null;
+    final values = await _valuesIn(store);
+    if (values == null || values.length != keys.length) return null;
 
     return [
-      for (var i = 0; i < rawKeys.length; i++)
-        (
-          rawKey: rawKeys[i],
-          key: _asText(rawKeys[i]),
-          value: _asText(rawValues[i]),
-        ),
+      for (var i = 0; i < keys.length; i++)
+        (rawKey: keys[i].rawKey, key: keys[i].key, value: values[i]),
+    ];
+  }
+
+  /// Every key in the store, raw and as text where it is text.
+  ///
+  /// Separate from [_valuesIn] so the cap can count without reading a single
+  /// payload. Both yield ascending key order, so their results line up index
+  /// for index — which is what lets a record be compared against the key it is
+  /// filed under.
+  static Future<List<({JSAny? rawKey, String? key})>?> _keysIn(
+    web.IDBObjectStore store,
+  ) async {
+    final result = await _awaitOptional(store.getAllKeys());
+    if (result == null) return null;
+    return [
+      for (final rawKey in (result as JSArray<JSAny?>).toDart)
+        (rawKey: rawKey, key: _asText(rawKey)),
+    ];
+  }
+
+  /// Counts payload reads, so a suite can pin the cap's fast path.
+  ///
+  /// That path is a cost property with no behavioural signature — reading the
+  /// payloads early gives exactly the same answers — so nothing else would
+  /// catch its loss. It has already been lost once, in a refactor that merged
+  /// the two reads.
+  @visibleForTesting
+  static int debugPayloadReads = 0;
+
+  /// Every value in the store, as text where it is text.
+  static Future<List<String?>?> _valuesIn(web.IDBObjectStore store) async {
+    debugPayloadReads++;
+    final result = await _awaitOptional(store.getAll());
+    if (result == null) return null;
+    return [
+      for (final value in (result as JSArray<JSAny?>).toDart) _asText(value),
     ];
   }
 
@@ -553,18 +594,27 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// Bridges one IndexedDB request to a [Future] that **never** rejects and
   /// never aborts the transaction, answering null on failure.
   ///
-  /// Cancelling the error event is the load-bearing part, and it is not what a
-  /// Dart `try`/`catch` does: an IndexedDB request whose error event goes
-  /// uncanceled aborts its transaction, so catching the rejected future would
-  /// still lose every write the transaction had made. `preventDefault` is what
-  /// stops the abort — measured, not assumed.
+  /// Two cancellations are needed, and neither is what a Dart `try`/`catch`
+  /// does. An IndexedDB request whose error event goes uncanceled aborts its
+  /// transaction, so catching the rejected future would still lose every write
+  /// the transaction had made — `preventDefault` is what stops the abort. But
+  /// the event *also* bubbles from the request to the transaction, where
+  /// [_transaction]'s own `onerror` would fail the operation anyway: the
+  /// transaction would commit and the caller would still be told it had not.
+  /// `stopPropagation` is what keeps the failure local to the request.
+  ///
+  /// Both measured rather than assumed, and the pair matters: with only
+  /// `preventDefault`, a probe shows the transaction committing while
+  /// `transaction.onerror` still fires.
   static Future<JSAny?> _awaitOptional(web.IDBRequest request) {
     final completer = Completer<JSAny?>();
     request.onsuccess = ((web.Event _) {
       if (!completer.isCompleted) completer.complete(request.result);
     }).toJS;
     request.onerror = ((web.Event event) {
-      event.preventDefault();
+      event
+        ..preventDefault()
+        ..stopPropagation();
       if (!completer.isCompleted) completer.complete(null);
     }).toJS;
     return completer.future;

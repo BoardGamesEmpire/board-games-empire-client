@@ -101,23 +101,27 @@ void main() {
         'cases in front of a blank page', () async {
       final container = DependencyContainerImpl();
       addTearDown(container.dispose);
-      final gate = Completer<void>();
+      final readStarted = Completer<void>();
       final durable = _DisposableSink();
 
-      final registering = registerWebRootModule(
+      // The sink resolves only once `read()` has actually been entered, so the
+      // two orderings have different *outcomes* rather than merely different
+      // timings: a module that awaited the sink first would never start the
+      // read, and would wait here forever.
+      //
+      // That distinction is the point. Gating on elapsed time instead — the
+      // first version of this test — passes on a serialized implementation,
+      // because both orderings finish at the same wall-clock moment when the
+      // slower operation is the one being waited on.
+      await registerWebRootModule(
         container,
-        // Does not resolve until the sink future is already being waited on.
-        buildInfoReader: _GatedBuildInfoReader(_info, gate.future),
-        feedbackSink: Future<FeedbackSink?>.delayed(
-          const Duration(milliseconds: 20),
-          () => durable,
-        ),
+        buildInfoReader: _SignallingBuildInfoReader(_info, readStarted),
+        feedbackSink: readStarted.future.then((_) => durable),
+      ).timeout(
+        const Duration(seconds: 2),
+        onTimeout: () =>
+            fail('the module awaited the sink before starting its own read'),
       );
-      // If the module awaited the sink first, the reader would never have been
-      // asked and this gate would deadlock the registration.
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      gate.complete();
-      await registering;
 
       expect(container.get<FeedbackSink>(), same(durable));
     });
@@ -287,17 +291,17 @@ class _DisposableSink implements FeedbackSink, Disposable {
   Future<void> remove(String storageKey) async {}
 }
 
-/// A reader that does not answer until [_gate] does, so a suite can prove the
-/// module is not waiting on something else first.
-class _GatedBuildInfoReader implements BuildInfoReader {
-  const _GatedBuildInfoReader(this._info, this._gate);
+/// A reader that announces when it has been entered, so a suite can make the
+/// sink's readiness depend on the read having started.
+class _SignallingBuildInfoReader implements BuildInfoReader {
+  const _SignallingBuildInfoReader(this._info, this._started);
 
   final BuildInfo _info;
-  final Future<void> _gate;
+  final Completer<void> _started;
 
   @override
   Future<BuildInfo> read() async {
-    await _gate;
+    if (!_started.isCompleted) _started.complete();
     return _info;
   }
 }
