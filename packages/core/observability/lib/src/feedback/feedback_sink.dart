@@ -54,10 +54,11 @@ import 'queued_feedback_report.dart';
 /// evictable on it — the age is real, so the arithmetic stays exact. See
 /// `FileFeedbackSink._enforceCap` for the case worked through.
 ///
-/// Implementations: `FileFeedbackSink` (native, durable JSON files) and
-/// `MemoryFeedbackSink` (the web stand-in until #63, and the
-/// resolve-or-default fallback). A durable web sink (#292) inherits this
-/// section rather than deciding a second policy.
+/// Implementations: `FileFeedbackSink` (native, durable JSON files),
+/// `IndexedDbFeedbackSink` (web, durable IndexedDB records — #292) and
+/// `MemoryFeedbackSink`, now only the fallback: `runBgeApp` resolves it when
+/// no platform sink is registered, and the web composition root registers it
+/// when the browser refuses storage.
 abstract interface class FeedbackSink {
   /// Persists [record]. Throws [ArgumentError] if it has no
   /// [QueuedFeedbackReport.storageKey] — the sink is addressed by it.

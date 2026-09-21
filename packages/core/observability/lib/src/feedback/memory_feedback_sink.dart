@@ -3,11 +3,16 @@ import 'queued_feedback_report.dart';
 
 /// RAM implementation of [FeedbackSink] (#69, #97).
 ///
-/// Two jobs: the **web stand-in** until #63 gives web a durable store
-/// (an approved-but-unsent report survives within the session and is
-/// lost on reload — the prompt tells the user so), and `runBgeApp`'s
-/// resolve-or-default fallback when a platform module registered no
-/// sink. Nothing about a RAM sink is platform-specific, so it lives in
+/// The **fallback**, on every platform. `runBgeApp` resolves it when no
+/// platform module registered a sink, and web's composition root registers it
+/// when the browser refuses storage (#292). It stopped being web's standing
+/// implementation when `IndexedDbFeedbackSink` landed.
+///
+/// An approved-but-unsent report held here survives within the session and is
+/// lost on reload. The prompt does **not** say so — it promises a later send
+/// on every platform, which is #385, not something this sink can fix.
+///
+/// Nothing about a RAM sink is platform-specific, so it lives in
 /// `observability`.
 ///
 /// Insertion order is preserved so [pending] drains oldest-first.
