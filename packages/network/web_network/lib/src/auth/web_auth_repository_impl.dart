@@ -157,30 +157,33 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// that would end it, and this latch explicitly does not answer that
   /// half.
   ///
-  /// ## The bound on the release, which this class cannot close
+  /// ## What counts as a replacement, and why a 2xx does not
   ///
-  /// "A credential grant issued a new cookie" is inferred from a **2xx on
-  /// the credential POST**, because an httpOnly cookie is invisible to Dart
-  /// — there is nothing else to read. `_assertSuccess` rejects only 401,
+  /// An httpOnly cookie is invisible to Dart, so "a credential grant issued
+  /// a new cookie" cannot be read directly — and a **2xx on the credential
+  /// POST** is not a stand-in for it. `_assertSuccess` rejects only 401,
   /// 403, a duplicate-email envelope and non-2xx, so a 2xx that sets NO
   /// session cookie (BetterAuth sign-up with verification required, or
-  /// `autoSignIn` off) releases this latch without replacing anything. The
-  /// reconcile that follows then reads the STALE cookie and can adopt the
-  /// previous user's session.
+  /// `autoSignIn` off) once released this latch without replacing anything.
+  /// The reconcile that followed read the STALE cookie and adopted the
+  /// previous user's session — on a shared browser, a different person's.
   ///
-  /// Not introduced here — `_reconcileCredentialGrant` reads unlatched by
-  /// design, so that adoption predates this field and happened just as
-  /// readily when the latch was released unconditionally. Raised in review
-  /// on the #348 PR and filed rather than fixed inside it: the repair is an
-  /// adoption rule (compare the granted identity against the confirmed one),
-  /// not a latch rule, and it wants a decision of its own.
+  /// What this class CAN prove is whether the grant came back carrying a
+  /// session, and that is the gate: [_reconcileCredentialGrant] releases the
+  /// latch only for a grant that did, and refuses the unlatched read
+  /// entirely for a grant that did not, because it cannot tell the stale
+  /// cookie from one it set. Raised in review on the #348 PR as an adoption
+  /// rule rather than a latch rule, which it still is — the two are gated
+  /// together because either one alone leaves the other reachable.
   bool _unrevokedSignOut = false;
 
   /// Monotonic count of credential POSTs the server ACCEPTED (#348).
   ///
-  /// Bumped at the top of [_reconcileCredentialGrant], which is reached only
-  /// after a 2xx from sign-in or sign-up — the moment the server issued a
-  /// fresh session cookie and the browser overwrote the old one by name.
+  /// Bumped in [_reconcileCredentialGrant] for a grant that came back
+  /// CARRYING a session — the moment the server issued a fresh cookie and
+  /// the browser overwrote the old one by name. A 2xx that carries no
+  /// session proves no such thing and is not counted (see
+  /// [_unrevokedSignOut]).
   ///
   /// [signOut] compares it rather than reading [_currentState], and the
   /// difference is a full session round trip wide. The cookie is replaced
@@ -325,13 +328,30 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
   /// [getSession] without the #285 sign-out latch.
   ///
-  /// Only for `_reconcileCredentialGrant` — see the latch's rationale in
-  /// [getSession]. The [_sessionEpoch] guards below still apply, so a
-  /// sign-out that lands *during* this read is still honoured.
-  Future<AuthResponse?> _getSessionUnlatched() async {
+  /// Only for `_reconcileCredentialGrant` and [_settleAfterLateRevocation] —
+  /// see the latch's rationale in [getSession]. The [_sessionEpoch] guards
+  /// below still apply, so a sign-out that lands *during* this read is still
+  /// honoured.
+  ///
+  /// [grantsAtEntry] adds the other half of that rule, for callers whose read
+  /// a credential grant can outrun. [_sessionEpoch] counts sign-outs, so it
+  /// cannot see a grant at all — and this method EMITS state. A settle read
+  /// describing the cookie a revocation deleted would otherwise overwrite the
+  /// authenticated state a newer grant has already reached, which is #346's
+  /// own failure turned around: the sign-out clobbering the sign-in instead.
+  /// `_reconcileCredentialGrant` passes nothing, deliberately — it bumps
+  /// [_credentialGrants] itself before reading, and would trip its own guard.
+  Future<AuthResponse?> _getSessionUnlatched({int? grantsAtEntry}) async {
     // Captured in the synchronous prologue, before ANY await — see
     // [_sessionEpoch].
     final epoch = _sessionEpoch;
+
+    // Whether something newer than this read has happened since it began.
+    // Evaluated ahead of every state emission below and never after one, so
+    // the three checkpoints stay the only places this question is asked.
+    bool superseded() =>
+        epoch != _sessionEpoch ||
+        (grantsAtEntry != null && _credentialGrants != grantsAtEntry);
 
     late final Response<String> response;
     try {
@@ -365,9 +385,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // the pin rather than by asking for `Response<String>` alone.
       final mapped = _mapDioException(e, credentialGrant: false);
 
-      if (epoch != _sessionEpoch) {
+      if (superseded()) {
         _log.warn(
-          'Discarding a failed session request that resolved after sign-out',
+          'Discarding a failed session request that was superseded while in '
+          'flight',
           error: e,
         );
         return null;
@@ -381,12 +402,14 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw mapped;
     }
 
-    // The user signed out while this request was in flight. Their intent is
-    // newer than this response: discard it without touching state, so
-    // sign-out stays final (see [_sessionEpoch]).
-    if (epoch != _sessionEpoch) {
+    // The user signed out — or signed back in — while this request was in
+    // flight. Either way, what happened since is newer than this response:
+    // discard it without touching state, so sign-out stays final (see
+    // [_sessionEpoch]) and a newer grant is not clobbered (see
+    // [grantsAtEntry]).
+    if (superseded()) {
       _log.warn(
-        'Discarding a session response that resolved after sign-out',
+        'Discarding a session response that was superseded while in flight',
         context: {'status': response.statusCode},
       );
       return null;
@@ -445,11 +468,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // sign-out can land between the guard at the top of this method and the
     // state emission below — and that emission would re-assert a session the
     // user has already ended, which is the whole failure #146 exists to
-    // prevent. Ahead of the throw as well as the emission: a response
-    // superseded by sign-out is discarded, not reported.
-    if (epoch != _sessionEpoch) {
+    // prevent. Ahead of the throw as well as the emission: a superseded
+    // response is discarded, not reported.
+    if (superseded()) {
       _log.warn(
-        'Discarding a session response decoded after sign-out',
+        'Discarding a session response decoded after it was superseded',
         context: {'status': status},
       );
       return null;
@@ -657,7 +680,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // Only reachable when a grant moved the state: on the ordinary path the
     // state is still unauthenticated and there is nothing to settle.
     if (revoked && _credentialGrants != grantsAtStart) {
-      await _settleAfterLateRevocation();
+      await _settleAfterLateRevocation(_credentialGrants);
     }
   }
 
@@ -670,15 +693,22 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// its own state against a change it caused. Its [_sessionEpoch] guards
   /// still apply, so a newer sign-out landing during this read wins.
   ///
+  /// [grantsAtSettle] is why this read passes a grant checkpoint and the
+  /// reconcile does not. This one is issued AFTER the revocation completed,
+  /// so a credential POST starting now gets a cookie the revocation cannot
+  /// delete — and this read, sent before that cookie existed, comes back
+  /// describing no session. Emitting that would sign the user out of the
+  /// session they just created, one round trip after the fact.
+  ///
   /// Never throws, and the catch is `Object` rather than [AuthException] for
   /// that reason alone. [signOut] is contractually best-effort — it cannot
   /// fail on the network, and a test pins that — so a settle-up added AFTER
   /// the revocation already succeeded must not become the first thing able
   /// to throw out of it. The sign-out is done by the time this runs; the
   /// user's intent is served whatever this returns.
-  Future<void> _settleAfterLateRevocation() async {
+  Future<void> _settleAfterLateRevocation(int grantsAtSettle) async {
     try {
-      await _getSessionUnlatched();
+      await _getSessionUnlatched(grantsAtEntry: grantsAtSettle);
     } on Object catch (error, stackTrace) {
       _log.warn(
         'Could not settle the session after a late sign-out revocation; the '
@@ -898,8 +928,18 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     //
     // The single funnel point: both `signIn` and `signUp` arrive here, and
     // neither can reach it without a grant the server accepted.
-    _unrevokedSignOut = false;
-    _credentialGrants += 1;
+    // Gated on the grant actually CARRYING a session, because a 2xx alone
+    // does not prove a replacement cookie. BetterAuth answers a
+    // verification-required sign-up with 200, a null token and no
+    // `Set-Cookie`, and an unreadable body says nothing either way. Counting
+    // those as grants released the latch over the cookie a failed revocation
+    // left live — and on a shared browser that cookie is the previous user's
+    // session, handed to whoever signed up next.
+    final replacedCookie = granted != null;
+    if (replacedCookie) {
+      _unrevokedSignOut = false;
+      _credentialGrants += 1;
+    }
 
     // #346's checkpoint, and a different question from [_sessionEpoch]
     // below: not "did a sign-out START after this?" but "did a revocation
@@ -931,6 +971,30 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // capture. Revisit if any screen ever offers sign-out over
     // `AuthLoading` — that, not this line, is what holds the bound.
     final epoch = _sessionEpoch;
+
+    // Nothing proved a replacement cookie AND a revocation was left
+    // unobserved, so the jar may still hold the session the user ended. The
+    // read below is deliberately unlatched, and it cannot tell that cookie
+    // from one this grant set — so here it must not run at all. Adopting its
+    // answer would hand this caller the PREVIOUS session (#348, the adoption
+    // half rather than the latch half).
+    //
+    // Only this combination is refused. A no-session grant with no latch
+    // raised still reads, and still ends at the `confirmed == null` throw
+    // below, so nothing changes for an ordinary verification-required
+    // sign-up.
+    if (!replacedCookie && _unrevokedSignOut) {
+      _log.warn(
+        'A 2xx $context carried no session while a revocation was left '
+        'unobserved; refusing to reconcile against a cookie it did not '
+        'replace',
+      );
+      throw AuthServerException(
+        message:
+            'Authentication succeeded but the server reported no session '
+            'during $context.',
+      );
+    }
 
     final AuthResponse? confirmed;
     try {

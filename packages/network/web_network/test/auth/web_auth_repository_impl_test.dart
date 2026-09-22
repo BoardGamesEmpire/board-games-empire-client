@@ -1815,6 +1815,106 @@ void main() {
         await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
         expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
       });
+
+      // #346's failure turned around: the sign-out clobbering the sign-in.
+      // The settle read is issued AFTER the revocation completed, so a
+      // credential POST starting now receives a cookie that revocation
+      // cannot delete. This read was sent before that cookie existed and
+      // comes back describing no session — and `_sessionEpoch` counts
+      // sign-outs, so it cannot see the grant that overtook it.
+      test('a settle read does not clobber a grant that landed while it was '
+          'in flight (#346)', () async {
+        final revocation = Completer<Response<String>>();
+        final settleRead = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+
+        var reads = 0;
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) {
+              reads += 1;
+              // 1: the first sign-in's reconcile. 2: the settle, held open.
+              // 3: the second sign-in's reconcile.
+              return reads == 2
+                  ? settleRead.future
+                  : Future.value(_ok(_sessionJson()));
+            });
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        // A grant inside the window is what makes the settle run at all.
+        await repo.signIn(email: 'a@b.com', password: 'pass');
+
+        revocation.complete(_status(200));
+        await pumpEventQueue();
+        expect(reads, 2, reason: 'the settle read is in flight');
+
+        // A NEWER grant lands while the settle is still outstanding. Its
+        // cookie postdates the revocation, so it is the live one.
+        await repo.signIn(email: 'a@b.com', password: 'pass');
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+
+        settleRead.complete(_status(200));
+        await signOut;
+        await pumpEventQueue();
+
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+      });
+
+      // The ADOPTION half of #348 rather than the latch half. A 2xx is not
+      // proof of a replacement cookie: BetterAuth answers a
+      // verification-required sign-up with 200, a null token and no
+      // `Set-Cookie`. With a revocation left unobserved the previous user's
+      // cookie is still in the jar, so an unlatched reconcile read would
+      // authenticate whoever signs up next AS the user who just failed to
+      // sign out — on a shared browser, a different person.
+      test('a 2xx grant that carries no session does not adopt the cookie a '
+          'failed revocation left live (#348)', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(500));
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok({'token': null, 'user': null}));
+        // The previous user's session: the revocation was declined, so their
+        // cookie was never cleared.
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+        expect(await repo.getSession(), isNull, reason: 'the latch holds');
+
+        await expectLater(
+          repo.signUp(email: 'next@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthServerException>()),
+        );
+
+        expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
+        // The read never ran at all: with nothing proving a replacement, the
+        // reconcile has no cookie it can trust to ask about.
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
     });
 
     // Pins the premise that bounds `_reconcileCredentialGrant`'s success
