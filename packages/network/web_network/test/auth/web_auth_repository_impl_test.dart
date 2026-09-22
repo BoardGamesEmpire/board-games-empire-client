@@ -1277,8 +1277,20 @@ void main() {
         expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
       });
 
-      test('the latch is released even when the sign-out POST throws '
-          '(#285 D1)', () async {
+      // #348 AMENDS this clause of #285 — it is not a regression
+      // against it. #285 released the latch in a `finally` on every outcome
+      // so a transient fault could not raise it for the life of the
+      // process.
+      // The other half of that trade is what #348 reports: on a failed
+      // revocation the cookie is still live — `signOut` logs exactly that —
+      // and releasing hands the next getSession a session the user ended.
+      //
+      // The objection #285 recorded ("this client can never read a session
+      // again") was overstated, which is what makes the amendment possible:
+      // `signIn` does not consult the latch, so an exit always existed, and
+      // on web the latch is tab-lifetime so a reload clears it too.
+      test('the latch is HELD when the sign-out POST throws — the cookie is '
+          'still live (#348, amending #285)', () async {
         when(() => mockDio.post<String>(any(), options: any(named: 'options')))
             .thenThrow(
               DioException(
@@ -1291,7 +1303,432 @@ void main() {
 
         await repo.signOut();
 
+        expect(await repo.getSession(), isNull);
+        // Refused rather than asked: the latch is a statement about the
+        // request, so no round trip is made at all.
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+      });
+    });
+
+    // ── #348 / #346: what signOut does when its POST RESOLVES ────────────
+    //
+    // The two issues are the same await resolving into its two outcomes, so
+    // one rule covers both:
+    //
+    //   - succeeded, state no longer unauthenticated -> a sign-in landed in
+    //     the window and the revocation's `Set-Cookie: Max-Age=0` deletes by
+    //     NAME, so it just deleted the new cookie -> re-validate (#346).
+    //   - not observed to succeed -> the cookie is live -> hold the latch,
+    //     unless a grant already replaced it (#348).
+    //   - otherwise -> release, as before.
+    group('signOut() settles by what the revocation actually did', () {
+      // The gap that let #348 survive #285's review: every Response in the
+      // latch group above is a 200, so the "server declined to revoke" case
+      // — the one #348 is actually about — had no coverage at all.
+      test('a non-2xx revocation holds the latch — the server declined, so '
+          'the cookie was never cleared (#348)', () async {
+        when(() => mockDio.post<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _status(500));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
+        expect(await repo.getSession(), isNull);
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
+      test('a successful revocation still releases the latch (#348 keeps '
+          "#285's normal path)", () async {
+        when(() => mockDio.post<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _status(200));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
         expect(await repo.getSession(), isNotNull);
+      });
+
+      // The release condition. The exit is a credential grant because the
+      // server issuing a new session cookie is what makes the old one
+      // unreachable — same name, so the browser has overwritten it.
+      test(
+        'a successful credential grant releases a held latch (#348)',
+        () async {
+          when(
+            () => mockDio.post<String>(
+              '$_kAuthBase/sign-out',
+              options: any(named: 'options'),
+            ),
+          ).thenAnswer((_) async => _status(500));
+          when(
+            () => mockDio.post<String>(
+              '$_kAuthBase/sign-in/email',
+              data: any(named: 'data'),
+              options: any(named: 'options'),
+            ),
+          ).thenAnswer((_) async => _ok(_grantJson()));
+          when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+              .thenAnswer((_) async => _ok(_sessionJson()));
+
+          await repo.signOut();
+          expect(await repo.getSession(), isNull, reason: 'latch is held');
+
+          await repo.signIn(email: 'a@b.com', password: 'pass');
+
+          expect(await repo.getSession(), isNotNull);
+          expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+        },
+      );
+
+      // #346. The mirror of the case above: the POST
+      // SUCCEEDS, late, and its `Set-Cookie: Max-Age=0` deletes by cookie
+      // NAME — so it clears the cookie the sign-in inside the window just
+      // received. In-memory state would otherwise say authenticated over a
+      // cookie that no longer exists, and the next request 401s.
+      test('a late successful revocation re-validates the session a sign-in '
+          'created inside the window (#346)', () async {
+        final revocation = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+
+        // The reconcile sees a live session; the re-validation afterwards
+        // sees BetterAuth's 200-with-null-body, because the revocation's
+        // header has just deleted the cookie by name.
+        final sessionReads = <Response<String>>[
+          _ok(_sessionJson()),
+          _status(200),
+        ];
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => sessionReads.removeAt(0));
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        await repo.signIn(email: 'a@b.com', password: 'pass');
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+
+        revocation.complete(_status(200));
+        await signOut;
+
+        // Settled against the server rather than left asserting a session
+        // over a cookie this revocation deleted.
+        expect(sessionReads, isEmpty, reason: 're-validation must have run');
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+      });
+
+      // The interleaving neither issue spelled out. A grant that lands
+      // inside the window has already replaced the cookie (same name), so a
+      // failed revocation leaves nothing for THIS client to adopt and the
+      // latch must not be raised over a session the user just created.
+      //
+      // The old session is still valid server-side — that is #390, not a
+      // latch this class can hold.
+      test('a failed revocation does NOT hold the latch when a grant landed '
+          'inside the window (#348)', () async {
+        final revocation = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        await repo.signIn(email: 'a@b.com', password: 'pass');
+
+        revocation.completeError(
+          DioException(
+            type: DioExceptionType.connectionError,
+            requestOptions: RequestOptions(path: ''),
+          ),
+        );
+        await signOut;
+
+        expect(await repo.getSession(), isNotNull);
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+      });
+
+      // signOut() is contractually best-effort and never throws — pinned
+      // elsewhere for the POST. The re-validation runs after the revocation
+      // already succeeded, so it must not become the first thing able to
+      // throw out of a completed sign-out.
+      test('a re-validation that fails does not throw out of signOut, and '
+          'leaves the granted session alone (#346)', () async {
+        final revocation = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+
+        var sessionReads = 0;
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async {
+              sessionReads += 1;
+              if (sessionReads == 1) return _ok(_sessionJson());
+              throw DioException(
+                type: DioExceptionType.connectionError,
+                requestOptions: RequestOptions(path: ''),
+              );
+            });
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+        await repo.signIn(email: 'a@b.com', password: 'pass');
+
+        revocation.complete(_status(200));
+
+        await expectLater(signOut, completes);
+        expect(sessionReads, 2, reason: 're-validation must have been tried');
+        // Indeterminate: the state is left as it was rather than torn down
+        // on a network fault.
+        expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+      });
+
+      // ── The window between the credential POST and the reconcile ───────
+      //
+      // Raised in review. The cookie is replaced the moment the credential
+      // POST resolves; `AuthStateAuthenticated` is not emitted until the
+      // reconcile's GET comes back. Reading `currentAuthState` to decide
+      // whether a grant landed misses everything in that gap, which is a
+      // full round trip wide. Both tests below park a reconcile there.
+
+      test(
+        'a failed revocation does not hold the latch while the grant is '
+        'still reconciling — the cookie was already replaced (#348)',
+        () async {
+          final revocation = Completer<Response<String>>();
+          final firstRead = Completer<Response<String>>();
+          when(
+            () => mockDio.post<String>(
+              '$_kAuthBase/sign-out',
+              options: any(named: 'options'),
+            ),
+          ).thenAnswer((_) => revocation.future);
+          when(
+            () => mockDio.post<String>(
+              '$_kAuthBase/sign-in/email',
+              data: any(named: 'data'),
+              options: any(named: 'options'),
+            ),
+          ).thenAnswer((_) async => _ok(_grantJson()));
+
+          var reads = 0;
+          when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+              .thenAnswer((_) {
+                reads += 1;
+                return reads == 1
+                    ? firstRead.future
+                    : Future.value(_ok(_sessionJson()));
+              });
+
+          final signOut = repo.signOut();
+          await pumpEventQueue();
+
+          final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+          await pumpEventQueue();
+
+          // The grant is accepted and its cookie is in the jar, but the state
+          // still reads unauthenticated — that is the whole gap.
+          expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+
+          revocation.completeError(
+            DioException(
+              type: DioExceptionType.connectionError,
+              requestOptions: RequestOptions(path: ''),
+            ),
+          );
+          await signOut;
+
+          firstRead.complete(_ok(_sessionJson()));
+          await signIn;
+
+          expect(repo.currentAuthState, isA<AuthStateAuthenticated>());
+          expect(
+            await repo.getSession(),
+            isNotNull,
+            reason: 'the latch must not be held over the new session',
+          );
+        },
+      );
+
+      test('a revocation that completes mid-reconcile is not adopted over — '
+          'its Set-Cookie deleted the grant\'s cookie (#346)', () async {
+        final revocation = Completer<Response<String>>();
+        final firstRead = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+
+        var reads = 0;
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) {
+              reads += 1;
+              // The reconcile's own read is gated; the settle that follows sees
+              // BetterAuth's 200-with-null-body, the cookie now being gone.
+              return reads == 1 ? firstRead.future : Future.value(_status(200));
+            });
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await pumpEventQueue();
+
+        revocation.complete(_status(200));
+        await signOut;
+
+        // The reconcile's read was sent BEFORE the deletion, so it still
+        // describes a live session. Adopting it is the #346 failure.
+        firstRead.complete(_ok(_sessionJson()));
+
+        await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+      });
+
+      // The same physical race as the test above, reached through the
+      // reconcile's INDETERMINATE exit. Without the revocation recheck there,
+      // the readable grant is adopted with an unconfirmed expiry (#180) over
+      // a cookie the revocation has already deleted by name — #346
+      // reproduced inside the fix for #346.
+      test('a revocation that completes mid-reconcile is not adopted over '
+          'when the reconcile itself fails (#346)', () async {
+        final revocation = Completer<Response<String>>();
+        final firstRead = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+
+        var reads = 0;
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) {
+              reads += 1;
+              return reads == 1 ? firstRead.future : Future.value(_status(200));
+            });
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await pumpEventQueue();
+
+        revocation.complete(_status(200));
+        await signOut;
+
+        // Indeterminate, not definitive — the branch that would otherwise
+        // keep the grant rather than fail the sign-in.
+        firstRead.completeError(
+          DioException(
+            type: DioExceptionType.connectionError,
+            requestOptions: RequestOptions(path: ''),
+          ),
+        );
+
+        await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
+      });
+
+      // And through the DEFINITIVE-null exit, where the cost is the error
+      // type rather than the state: `AuthServerException` reaches the form as
+      // AuthFailureServer, blaming the server for the user's own sign-out —
+      // the symptom #146 names.
+      test('a revocation that completes mid-reconcile supersedes rather than '
+          'blaming the server for the empty read (#346, #146)', () async {
+        final revocation = Completer<Response<String>>();
+        final firstRead = Completer<Response<String>>();
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => revocation.future);
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok(_grantJson()));
+
+        var reads = 0;
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) {
+              reads += 1;
+              return reads == 1 ? firstRead.future : Future.value(_status(200));
+            });
+
+        final signOut = repo.signOut();
+        await pumpEventQueue();
+
+        final signIn = repo.signIn(email: 'a@b.com', password: 'pass');
+        await pumpEventQueue();
+
+        revocation.complete(_status(200));
+        await signOut;
+
+        // The read raced the deletion and lost: BetterAuth's 200-with-null
+        // body, which is a definitive "no session".
+        firstRead.complete(_status(200));
+
+        await expectLater(signIn, throwsA(isA<AuthSupersededException>()));
+        expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
       });
     });
 

@@ -62,10 +62,34 @@ abstract class AuthRepository {
   /// even when clearing the persisted session material fails. In that
   /// case an [AuthSignOutPersistenceException] is thrown, but only after
   /// the state transition has been observed by [watchAuthState], so the
-  /// stream can never re-assert a session the user just ended (#37). The
-  /// residual risk of a failed persisted clear is the surviving token
-  /// restoring a session on the next cold start, where sign-out can be
-  /// repeated.
+  /// stream can never re-assert a session the user just ended (#37).
+  ///
+  /// ## The residual, which differs by platform (#348)
+  ///
+  /// This clause used to bound the residual to "the surviving token
+  /// restoring a session on the next **cold start**, where sign-out can be
+  /// repeated". That was true of one platform and one failure only, and
+  /// #348 and #356 were both filed against it. What actually holds:
+  ///
+  /// **Where the credential is held locally** (native token storage): a
+  /// failed clear leaves a WELL-FORMED payload behind, which `retrieve()`
+  /// does not self-heal — it discards only a payload it cannot decode. The
+  /// next cold start can read it. The cold-start bound holds for a sign-out,
+  /// which the user can simply repeat. It does NOT hold when the session was
+  /// **rejected by the server** rather than ended by the user: there is then
+  /// no action to repeat and no signal that anything failed (#356).
+  ///
+  /// **Where the credential is a server-set cookie** (web): nothing local
+  /// exists to clear, so the residual is not deferred to a cold start at
+  /// all. A revocation the server did not accept leaves the cookie live for
+  /// the rest of the process, reachable by any session read. An
+  /// implementation in that position must refuse session reads until a
+  /// credential grant replaces the cookie (#348) — an in-memory
+  /// transition is not a teardown when the credential outlives it.
+  ///
+  /// In both cases the session survives **server-side** until it expires.
+  /// No client-side clear ends it, and nothing here retries the revocation
+  /// that would (#390).
   Future<void> signOut();
 
   /// Returns the locally cached session without a network call, or null
