@@ -915,11 +915,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // oversight: every dispatcher of `AuthSignOutRequested` is either
     // unreachable while that POST is in flight or causally downstream of
     // it. The two UI dispatchers are home-menu entries
-    // (`home_placeholder_screen.dart:93`, `bge_app.dart:549`), reachable
+    // (`home_placeholder_screen.dart:93`, `bge_app.dart:552`), reachable
     // only from an authenticated shell — and `AuthBloc._onSignIn` holds the
     // form on `AuthLoading` for the whole call, including the body decode
     // #352 added. The one programmatic dispatcher
-    // (`bge_app.dart:1451`) fires when `UserSessionScope.activate` fails,
+    // (`bge_app.dart:1561`) fires when `UserSessionScope.activate` fails,
     // which cannot run until this reconcile has already emitted. (Web has
     // registered a `UserSessionScope` since #137; the bound above is what
     // holds, not its absence.)

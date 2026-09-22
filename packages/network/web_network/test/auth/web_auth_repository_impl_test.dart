@@ -1387,6 +1387,91 @@ void main() {
         },
       );
 
+      // The negative twin of the case above, and the reason the two belong
+      // together: the release is gated on a grant the server ACCEPTED, not on
+      // a credential POST having been attempted. Account for the grant any
+      // earlier — ahead of the status check — and a rejection releases the
+      // latch with no replacement cookie, which is the precise failure #348
+      // exists to prevent. Nothing else in this suite pins that direction.
+      test('a rejected sign-in does not release a held latch (#348)', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(500));
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(401));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'wrong'),
+          throwsA(isA<AuthInvalidCredentialsException>()),
+        );
+
+        expect(
+          await repo.getSession(),
+          isNull,
+          reason: 'the latch still holds',
+        );
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
+      // Nor is the status check by itself the gate. BetterAuth's
+      // USER_ALREADY_EXISTS envelope is not status-gated, so a 2xx can still
+      // be a rejection, and the body has to be decoded and read before the
+      // grant counts. Releasing here would release the latch over a response
+      // that set no cookie at all.
+      test('a 2xx duplicate-email sign-up does not release a held latch '
+          '(#348)', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(500));
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer(
+          (_) async => _status(200, {
+            'code': 'USER_ALREADY_EXISTS',
+            'message': 'User already exists',
+          }),
+        );
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
+        await expectLater(
+          repo.signUp(email: 'dup@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthEmailAlreadyExistsException>()),
+        );
+
+        expect(
+          await repo.getSession(),
+          isNull,
+          reason: 'the latch still holds',
+        );
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
       // #346. The mirror of the case above: the POST
       // SUCCEEDS, late, and its `Set-Cookie: Max-Age=0` deletes by cookie
       // NAME — so it clears the cookie the sign-in inside the window just
