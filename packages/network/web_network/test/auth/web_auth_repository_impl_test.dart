@@ -1355,6 +1355,83 @@ void main() {
         expect(await repo.getSession(), isNotNull);
       });
 
+      // Raised in review on the #348 PR, and deliberately NOT changed. With
+      // two sign-outs overlapping, one failing and one succeeding, the failure
+      // raises the latch without knowing the other call's 2xx already cleared
+      // the cookie. The latch is then held over an empty jar, and that is
+      // still the right answer: BetterAuth's sign-out expires the session
+      // cookie on every 2xx, so every reader answers as an unlatched one
+      // would. A session read finds no session either way; a grant that
+      // carries no session is refused either way; a grant that carries one
+      // releases the latch before anything reads it.
+      //
+      // Not reachable through today's only caller either — `AuthBloc` is
+      // `droppable()` on sign-out. [_pendingSignOuts] handles the same
+      // overlap anyway because getting it wrong fails OPEN; this fails
+      // closed. The one case that tells held from released is another tab
+      // signing in over the shared jar, which a single failed sign-out's
+      // latch refuses too. These pin the latch as kept, in both completion
+      // orders, so that trade is visible the next time someone proposes it.
+      test('overlapping sign-outs with mixed outcomes keep the latch held — '
+          'the failure resolving first (#348, kept in review)', () async {
+        final failing = Completer<Response<String>>();
+        final succeeding = Completer<Response<String>>();
+        final gates = <Completer<Response<String>>>[failing, succeeding];
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => gates.removeAt(0).future);
+        // Answers with a session so a released latch would show. The real
+        // jar is empty after the 2xx.
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final signOutA = repo.signOut();
+        final signOutB = repo.signOut();
+        await pumpEventQueue();
+
+        failing.complete(_status(500));
+        await signOutA;
+        succeeding.complete(_status(200));
+        await signOutB;
+
+        expect(await repo.getSession(), isNull, reason: 'the latch holds');
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
+      test('overlapping sign-outs with mixed outcomes keep the latch held — '
+          'the success resolving first (#348, kept in review)', () async {
+        final failing = Completer<Response<String>>();
+        final succeeding = Completer<Response<String>>();
+        final gates = <Completer<Response<String>>>[failing, succeeding];
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) => gates.removeAt(0).future);
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        final signOutA = repo.signOut();
+        final signOutB = repo.signOut();
+        await pumpEventQueue();
+
+        succeeding.complete(_status(200));
+        await signOutB;
+        failing.complete(_status(500));
+        await signOutA;
+
+        expect(await repo.getSession(), isNull, reason: 'the latch holds');
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
       // The release condition. The exit is a credential grant because the
       // server issuing a new session cookie is what makes the old one
       // unreachable — same name, so the browser has overwritten it.
