@@ -279,9 +279,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // length. Every dispatcher of `AuthSignOutRequested` is either
     // unreachable while a credential grant is in flight or causally
     // downstream of it: the two UI entries live in the authenticated shell
-    // (`home_placeholder_screen.dart:93`, `bge_app.dart:549`) and
+    // (`home_placeholder_screen.dart:93`, `bge_app.dart:552`) and
     // `AuthBloc._onSignIn` holds the form on `AuthLoading` for the whole
-    // call, while the one programmatic dispatcher (`bge_app.dart:1451`)
+    // call, while the one programmatic dispatcher (`bge_app.dart:1561`)
     // fires on a `UserSessionScope.activate` failure that cannot run until
     // this method has already returned.
     //

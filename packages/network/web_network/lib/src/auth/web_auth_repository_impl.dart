@@ -109,6 +109,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// timer — a wall-clock dispatcher needing no user action to land inside
   /// the window. Fixed ahead of that rather than after it.
   ///
+  /// ## What #348 changed
+  ///
+  /// This counter still comes down whenever the POST resolves, on every
+  /// outcome. What used to travel with it — the assumption that a resolved
+  /// POST means the window is closed — does not hold when the revocation
+  /// FAILED: the cookie is then still live, and [signOut] raises
+  /// [_unrevokedSignOut] instead, which has its own release condition. The
+  /// two are separate state on purpose; the reasoning is on that field.
+  ///
   /// A count rather than a flag, because the release condition is "no
   /// revocation is outstanding" and a flag cannot express it: with two
   /// [signOut] calls overlapping, the first to complete would clear a flag
@@ -122,6 +131,80 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// and a latch whose correctness rests on "no caller happens to overlap"
   /// is the same shape of latent bug this field was added to fix.
   int _pendingSignOuts = 0;
+
+  /// True when a sign-out's revocation was **not observed to succeed**, so
+  /// the browser is still holding a cookie the server never invalidated
+  /// (#348).
+  ///
+  /// Separate state from [_pendingSignOuts], and deliberately NOT that
+  /// counter held up. The two answer different questions and are released by
+  /// different things: the counter means "a revocation is in flight" and
+  /// comes down when the POST resolves; this means "a revocation resolved
+  /// badly and the cookie outlived it" and comes down only when a credential
+  /// grant issues a new one. Keeping the counter raised instead would break
+  /// the arithmetic it exists for — an overlapping [signOut]'s decrement
+  /// would take down a latch this one meant to keep up — and would leave the
+  /// class unable to say which of the two situations it is in.
+  ///
+  /// Released in [_reconcileCredentialGrant]: the server has just issued a
+  /// fresh session cookie, which replaces the stale one by NAME, so nothing
+  /// addressable by this client is left to adopt. That is the same reason a
+  /// grant landing INSIDE the sign-out window means this is never set at all
+  /// — see [signOut].
+  ///
+  /// What it does not do is get the old session **revoked**. That session
+  /// stays valid server-side until it expires; #390 is the bounded retry
+  /// that would end it, and this latch explicitly does not answer that
+  /// half.
+  ///
+  /// ## What counts as a replacement, and why a 2xx does not
+  ///
+  /// An httpOnly cookie is invisible to Dart, so "a credential grant issued
+  /// a new cookie" cannot be read directly — and a **2xx on the credential
+  /// POST** is not a stand-in for it. `_assertSuccess` rejects only 401,
+  /// 403, a duplicate-email envelope and non-2xx, so a 2xx that sets NO
+  /// session cookie (BetterAuth sign-up with verification required, or
+  /// `autoSignIn` off) once released this latch without replacing anything.
+  /// The reconcile that followed read the STALE cookie and adopted the
+  /// previous user's session — on a shared browser, a different person's.
+  ///
+  /// What this class CAN prove is whether the grant came back carrying a
+  /// session, and that is the gate: [_reconcileCredentialGrant] releases the
+  /// latch only for a grant that did, and refuses the unlatched read
+  /// entirely for a grant that did not, because it cannot tell the stale
+  /// cookie from one it set. Raised in review on the #348 PR as an adoption
+  /// rule rather than a latch rule, which it still is — the two are gated
+  /// together because either one alone leaves the other reachable.
+  bool _unrevokedSignOut = false;
+
+  /// Monotonic count of credential POSTs the server ACCEPTED (#348).
+  ///
+  /// Bumped in [_reconcileCredentialGrant] for a grant that came back
+  /// CARRYING a session — the moment the server issued a fresh cookie and
+  /// the browser overwrote the old one by name. A 2xx that carries no
+  /// session proves no such thing and is not counted (see
+  /// [_unrevokedSignOut]).
+  ///
+  /// [signOut] compares it rather than reading [_currentState], and the
+  /// difference is a full session round trip wide. The cookie is replaced
+  /// when the credential POST resolves; `AuthStateAuthenticated` is not
+  /// emitted until the reconcile's GET comes back. A sign-out resolving
+  /// inside that gap sees a state still reading unauthenticated, and would
+  /// latch [_unrevokedSignOut] over the session the user just created — with
+  /// no release path left, because the release already ran before the await.
+  int _credentialGrants = 0;
+
+  /// Monotonic count of revocations that COMPLETED successfully (#346).
+  ///
+  /// Distinct from [_sessionEpoch], which counts sign-outs as they START.
+  /// The question here is the other one: has a `Set-Cookie: Max-Age=0`
+  /// actually come back and deleted the cookie by name? Only a 2xx says so.
+  ///
+  /// [_reconcileCredentialGrant] captures it and re-compares after its
+  /// session read, because a revocation completing in that window deletes
+  /// the very cookie the grant just received — the #346 failure, one round
+  /// trip earlier than the one [signOut] can see for itself.
+  int _revocationEpoch = 0;
 
   @override
   AuthState get currentAuthState => _currentState;
@@ -228,18 +311,47 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       return null;
     }
 
+    // #348. The revocation resolved, badly: the cookie this request would
+    // carry is one the server never invalidated and the user has already
+    // ended. Same answer as above, for a window that does not close on its
+    // own — see [_unrevokedSignOut] for what does close it.
+    if (_unrevokedSignOut) {
+      _log.warn(
+        'Refusing a session request: the last sign-out was not accepted, so '
+        'the session cookie was never revoked',
+      );
+      return null;
+    }
+
     return _getSessionUnlatched();
   }
 
   /// [getSession] without the #285 sign-out latch.
   ///
-  /// Only for `_reconcileCredentialGrant` — see the latch's rationale in
-  /// [getSession]. The [_sessionEpoch] guards below still apply, so a
-  /// sign-out that lands *during* this read is still honoured.
-  Future<AuthResponse?> _getSessionUnlatched() async {
+  /// Only for `_reconcileCredentialGrant` and [_settleAfterLateRevocation] —
+  /// see the latch's rationale in [getSession]. The [_sessionEpoch] guards
+  /// below still apply, so a sign-out that lands *during* this read is still
+  /// honoured.
+  ///
+  /// [grantsAtEntry] adds the other half of that rule, for callers whose read
+  /// a credential grant can outrun. [_sessionEpoch] counts sign-outs, so it
+  /// cannot see a grant at all — and this method EMITS state. A settle read
+  /// describing the cookie a revocation deleted would otherwise overwrite the
+  /// authenticated state a newer grant has already reached, which is #346's
+  /// own failure turned around: the sign-out clobbering the sign-in instead.
+  /// `_reconcileCredentialGrant` passes nothing, deliberately — it bumps
+  /// [_credentialGrants] itself before reading, and would trip its own guard.
+  Future<AuthResponse?> _getSessionUnlatched({int? grantsAtEntry}) async {
     // Captured in the synchronous prologue, before ANY await — see
     // [_sessionEpoch].
     final epoch = _sessionEpoch;
+
+    // Whether something newer than this read has happened since it began.
+    // Evaluated ahead of every state emission below and never after one, so
+    // the three checkpoints stay the only places this question is asked.
+    bool superseded() =>
+        epoch != _sessionEpoch ||
+        (grantsAtEntry != null && _credentialGrants != grantsAtEntry);
 
     late final Response<String> response;
     try {
@@ -273,9 +385,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // the pin rather than by asking for `Response<String>` alone.
       final mapped = _mapDioException(e, credentialGrant: false);
 
-      if (epoch != _sessionEpoch) {
+      if (superseded()) {
         _log.warn(
-          'Discarding a failed session request that resolved after sign-out',
+          'Discarding a failed session request that was superseded while in '
+          'flight',
           error: e,
         );
         return null;
@@ -289,12 +402,14 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw mapped;
     }
 
-    // The user signed out while this request was in flight. Their intent is
-    // newer than this response: discard it without touching state, so
-    // sign-out stays final (see [_sessionEpoch]).
-    if (epoch != _sessionEpoch) {
+    // The user signed out — or signed back in — while this request was in
+    // flight. Either way, what happened since is newer than this response:
+    // discard it without touching state, so sign-out stays final (see
+    // [_sessionEpoch]) and a newer grant is not clobbered (see
+    // [grantsAtEntry]).
+    if (superseded()) {
       _log.warn(
-        'Discarding a session response that resolved after sign-out',
+        'Discarding a session response that was superseded while in flight',
         context: {'status': response.statusCode},
       );
       return null;
@@ -353,11 +468,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // sign-out can land between the guard at the top of this method and the
     // state emission below — and that emission would re-assert a session the
     // user has already ended, which is the whole failure #146 exists to
-    // prevent. Ahead of the throw as well as the emission: a response
-    // superseded by sign-out is discarded, not reported.
-    if (epoch != _sessionEpoch) {
+    // prevent. Ahead of the throw as well as the emission: a superseded
+    // response is discarded, not reported.
+    if (superseded()) {
       _log.warn(
-        'Discarding a session response decoded after sign-out',
+        'Discarding a session response decoded after it was superseded',
         context: {'status': status},
       );
       return null;
@@ -449,7 +564,24 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// Residual risk, unavoidable on either posture: if the POST never lands
   /// the cookie is never cleared, and the session survives until it expires
   /// server-side. Awaiting cannot fix that — but it does mean the failure is
-  /// observed and logged rather than silently discarded.
+  /// observed, and #348 is what makes it *acted on*: a revocation that was
+  /// not seen to succeed raises [_unrevokedSignOut], so no later session read
+  /// in this process is handed the cookie it left behind. Ending that session
+  /// server-side needs a retry, which is #390.
+  ///
+  /// ## What this does when the POST resolves (#348, #346)
+  ///
+  /// One rule, three outcomes — and the first two are the same `await`
+  /// resolving in the two ways it can, which is why #348 and #346 are one
+  /// change:
+  ///
+  /// - **Succeeded, and the state is no longer unauthenticated.** A sign-in
+  ///   landed inside the window, and this response's
+  ///   `Set-Cookie: Max-Age=0` deletes by NAME — so it just deleted that
+  ///   sign-in's cookie. Re-validate (#346).
+  /// - **Not observed to succeed.** The cookie is live: hold the latch,
+  ///   unless a grant already replaced it.
+  /// - **Otherwise.** Release, which is the ordinary path.
   @override
   Future<void> signOut() async {
     // Both statements run before any await, and both make the user's intent
@@ -464,6 +596,15 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     _pendingSignOuts += 1;
     _setState(const AuthStateUnauthenticated());
 
+    // Captured before any await, like the epoch above. A grant is "inside
+    // this window" when the server accepted its credentials after this
+    // point — see [_credentialGrants] for why the state cannot answer that.
+    final grantsAtStart = _credentialGrants;
+
+    // Whether the server is known to have cleared the cookie. Only a 2xx
+    // says so: it is the response that carries `Set-Cookie: Max-Age=0`.
+    var revoked = false;
+
     try {
       // `String` plus the pin, for the same reason as every other request
       // here — see `_plainBody`. Without it a revocation answered with an
@@ -475,7 +616,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       );
 
       final status = response.statusCode;
-      if (!_isSuccessStatus(status)) {
+      if (_isSuccessStatus(status)) {
+        revoked = true;
+        // This response carried `Set-Cookie: Max-Age=0`. Anything holding a
+        // cookie of that name has just lost it — see [_revocationEpoch].
+        _revocationEpoch += 1;
+      } else {
         // `validateStatus: (_) => true` (`WebDioFactory`) resolves a 5xx as
         // an ordinary Response, so the catch below only ever sees transport
         // faults. Without this branch the failure that actually matters —
@@ -483,7 +629,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         // — is the one failure logged nowhere, and the doc's promise that
         // awaiting makes it observable would hold for nothing.
         _log.warn(
-          'Sign-out was not accepted; the session cookie may still be live '
+          'Sign-out was not accepted; the session cookie is still live '
           'until it expires server-side',
           context: {'status': status},
         );
@@ -493,18 +639,83 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // user's intent stands either way. It is not best-effort in the sense
       // of being skippable; see the doc above.
       _log.warn(
-        'Sign-out POST did not complete; the session cookie may still be '
-        'live until it expires server-side',
+        'Sign-out POST did not complete; the session cookie is still live '
+        'until it expires server-side',
         error: error,
         stackTrace: stackTrace,
       );
     } finally {
-      // In a `finally` so a thrown POST cannot leave the count raised for
-      // the life of the process — that would turn a transient network fault
-      // into "this client can never read a session again" (#285). Decrement
+      // A grant that landed inside the window has already replaced the
+      // cookie — same name, so the browser overwrote it — which means a
+      // failed revocation left nothing THIS client can still address, and
+      // raising the latch would refuse session reads for a session the user
+      // just created. The old session does survive server-side either way;
+      // ending it is #390's job, not a latch's.
+      final supersededByGrant = _credentialGrants != grantsAtStart;
+      if (!revoked && !supersededByGrant) {
+        // #348. Held here rather than released with the counter below,
+        // because the cookie is still live and no later `getSession` in this
+        // process should be handed it. Released by a credential grant, not
+        // by time — see [_unrevokedSignOut].
+        _unrevokedSignOut = true;
+      }
+
+      // The COUNTER always comes down: a thrown POST must not leave it
+      // raised for the life of the process, which would turn a transient
+      // network fault into "this client can never read a session again"
+      // (#285). What #348 changed is that the failure case now leaves
+      // [_unrevokedSignOut] up instead, which has its own exit. Decrement
       // rather than reset, so an overlapping sign-out's own protection
       // survives this one completing.
       _pendingSignOuts -= 1;
+    }
+
+    // #346. The revocation succeeded, late, and its
+    // `Set-Cookie: Max-Age=0` deletes by cookie NAME — so if a sign-in
+    // landed inside the window, what this response just deleted is the
+    // cookie that sign-in received. In-memory state would otherwise keep
+    // asserting a session over a cookie that no longer exists, and the next
+    // request 401s.
+    //
+    // Only reachable when a grant moved the state: on the ordinary path the
+    // state is still unauthenticated and there is nothing to settle.
+    if (revoked && _credentialGrants != grantsAtStart) {
+      await _settleAfterLateRevocation(_credentialGrants);
+    }
+  }
+
+  /// Re-reads the session after a late revocation may have deleted a cookie
+  /// a sign-in issued inside the sign-out window (#346).
+  ///
+  /// [_getSessionUnlatched] rather than [getSession] for the same reason
+  /// `_reconcileCredentialGrant` uses it: the latch is about not *asking* on
+  /// behalf of a caller polling for a session, and this is the class settling
+  /// its own state against a change it caused. Its [_sessionEpoch] guards
+  /// still apply, so a newer sign-out landing during this read wins.
+  ///
+  /// [grantsAtSettle] is why this read passes a grant checkpoint and the
+  /// reconcile does not. This one is issued AFTER the revocation completed,
+  /// so a credential POST starting now gets a cookie the revocation cannot
+  /// delete — and this read, sent before that cookie existed, comes back
+  /// describing no session. Emitting that would sign the user out of the
+  /// session they just created, one round trip after the fact.
+  ///
+  /// Never throws, and the catch is `Object` rather than [AuthException] for
+  /// that reason alone. [signOut] is contractually best-effort — it cannot
+  /// fail on the network, and a test pins that — so a settle-up added AFTER
+  /// the revocation already succeeded must not become the first thing able
+  /// to throw out of it. The sign-out is done by the time this runs; the
+  /// user's intent is served whatever this returns.
+  Future<void> _settleAfterLateRevocation(int grantsAtSettle) async {
+    try {
+      await _getSessionUnlatched(grantsAtEntry: grantsAtSettle);
+    } on Object catch (error, stackTrace) {
+      _log.warn(
+        'Could not settle the session after a late sign-out revocation; the '
+        'in-memory state may name a session whose cookie it deleted',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -708,17 +919,47 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     AuthResponse? granted, {
     required String context,
   }) async {
+    // #348's release condition. Reaching here means the credential POST
+    // returned a 2xx — `_requireGrantBody` never returns for anything else —
+    // so the server has issued a fresh session cookie and the browser has
+    // overwritten the stale one by name. A latch raised over a cookie that
+    // is no longer in the jar would refuse session reads for the session the
+    // user just created.
+    //
+    // The single funnel point: both `signIn` and `signUp` arrive here, and
+    // neither can reach it without a grant the server accepted.
+    // Gated on the grant actually CARRYING a session, because a 2xx alone
+    // does not prove a replacement cookie. BetterAuth answers a
+    // verification-required sign-up with 200, a null token and no
+    // `Set-Cookie`, and an unreadable body says nothing either way. Counting
+    // those as grants released the latch over the cookie a failed revocation
+    // left live — and on a shared browser that cookie is the previous user's
+    // session, handed to whoever signed up next.
+    final replacedCookie = granted != null;
+    if (replacedCookie) {
+      _unrevokedSignOut = false;
+      _credentialGrants += 1;
+    }
+
+    // #346's checkpoint, and a different question from [_sessionEpoch]
+    // below: not "did a sign-out START after this?" but "did a revocation
+    // COMPLETE while this reconcile was in flight?". If one did, its
+    // `Set-Cookie: Max-Age=0` deleted the cookie this grant received —
+    // deletion is by NAME — so the session read below describes a session
+    // the browser can no longer authenticate.
+    final revocationEpoch = _revocationEpoch;
+
     // Captured before the reconcile await, mirroring native's capture in
     // `_finalizeCredentialGrant`. Like native, it does not cover the
     // credential POST that preceded it — a deliberate bound, not an
     // oversight: every dispatcher of `AuthSignOutRequested` is either
     // unreachable while that POST is in flight or causally downstream of
     // it. The two UI dispatchers are home-menu entries
-    // (`home_placeholder_screen.dart:93`, `bge_app.dart:549`), reachable
+    // (`home_placeholder_screen.dart:93`, `bge_app.dart:552`), reachable
     // only from an authenticated shell — and `AuthBloc._onSignIn` holds the
     // form on `AuthLoading` for the whole call, including the body decode
     // #352 added. The one programmatic dispatcher
-    // (`bge_app.dart:1451`) fires when `UserSessionScope.activate` fails,
+    // (`bge_app.dart:1561`) fires when `UserSessionScope.activate` fails,
     // which cannot run until this reconcile has already emitted. (Web has
     // registered a `UserSessionScope` since #137; the bound above is what
     // holds, not its absence.)
@@ -731,13 +972,48 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // `AuthLoading` — that, not this line, is what holds the bound.
     final epoch = _sessionEpoch;
 
+    // Nothing proved a replacement cookie AND a revocation was left
+    // unobserved, so the jar may still hold the session the user ended. The
+    // read below is deliberately unlatched, and it cannot tell that cookie
+    // from one this grant set — so here it must not run at all. Adopting its
+    // answer would hand this caller the PREVIOUS session (#348, the adoption
+    // half rather than the latch half).
+    //
+    // Only this combination is refused. A no-session grant with no latch
+    // raised still reads, and still ends at the `confirmed == null` throw
+    // below, so nothing changes for an ordinary verification-required
+    // sign-up.
+    if (!replacedCookie && _unrevokedSignOut) {
+      _log.warn(
+        'A 2xx $context carried no session while a revocation was left '
+        'unobserved; refusing to reconcile against a cookie it did not '
+        'replace',
+      );
+      throw AuthServerException(
+        message:
+            'Authentication succeeded but the server reported no session '
+            'during $context.',
+      );
+    }
+
     final AuthResponse? confirmed;
     try {
       confirmed = await _getSessionUnlatched();
     } on AuthException catch (error, stackTrace) {
-      if (epoch != _sessionEpoch) {
-        // The reconcile failed AND a sign-out landed meanwhile: do not adopt
-        // the granted session over the sign-out's teardown.
+      if (epoch != _sessionEpoch || _revocationEpoch != revocationEpoch) {
+        // The reconcile failed AND the sign-out won meanwhile: do not adopt
+        // the granted session over the sign-out's teardown. Either half is
+        // enough, and they cover different sign-outs — one that STARTED
+        // after the capture above, or one already in flight when this grant
+        // landed, whose revocation COMPLETED during the read.
+        //
+        // The second is the half [_sessionEpoch] structurally cannot see
+        // here: that sign-out bumped it before this reconcile captured it,
+        // so the capture reads equal for the whole window. It is also the
+        // more damaging of the two, because keeping `granted` below would
+        // assert an authenticated session over a cookie the revocation's
+        // `Set-Cookie` has already deleted by name — #346 reached through
+        // the indeterminate exit instead of the confirmed one.
         throw const AuthSupersededException();
       }
 
@@ -777,7 +1053,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // reconcile's own epoch guard discards a response that resolved after
       // a sign-out and returns null. Blaming the server for the user's own
       // sign-out surfaced AuthFailureServer on the form (#146).
-      if (epoch != _sessionEpoch) {
+      //
+      // The revocation half answers the same question for the sign-out that
+      // was already in flight when this grant landed — the one
+      // [_sessionEpoch] reads as equal here (see the catch above). The read
+      // raced that revocation and lost, so an empty body is the user's own
+      // sign-out too, not a server disowning the session it just issued.
+      if (epoch != _sessionEpoch || _revocationEpoch != revocationEpoch) {
         throw const AuthSupersededException();
       }
       throw AuthServerException(
@@ -785,6 +1067,25 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
             'Authentication succeeded but the server reported no session '
             'during $context.',
       );
+    }
+
+    // #346. A revocation completed while the read above was in
+    // flight, so the cookie that read authenticated with has since been
+    // deleted by name. Adopting `confirmed` would leave in-memory state
+    // asserting a session over a cookie that no longer exists, and the next
+    // request 401s — which is exactly #346, reached one round trip earlier
+    // than the window [signOut] can settle for itself.
+    //
+    // The sign-out wins, as it does for every other supersession here
+    // (#146). The successful read has already emitted authenticated, so the
+    // state is corrected before the throw rather than left standing.
+    if (_revocationEpoch != revocationEpoch) {
+      _log.warn(
+        'A sign-out revocation completed during the $context reconcile; its '
+        'Set-Cookie deleted the cookie this grant received',
+      );
+      _setState(const AuthStateUnauthenticated());
+      throw const AuthSupersededException();
     }
 
     // No epoch recheck here, unlike both failure branches above, and the
