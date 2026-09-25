@@ -135,6 +135,8 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   Future<BootstrapResult> initialize() {
     final attempt = _initialize();
     // The error, if any, is the caller's; dispose() only waits for the end.
+    // Attempts never overlap (a caller rule on PlatformBootstrap.initialize),
+    // so the latest is the only one in flight.
     _attemptEnded = attempt.then<void>((_) {}, onError: (Object _) {});
     return attempt;
   }

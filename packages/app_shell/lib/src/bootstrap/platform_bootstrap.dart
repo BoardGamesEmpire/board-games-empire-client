@@ -143,6 +143,11 @@ abstract interface class PlatformBootstrap {
   /// May throw (e.g. `DatabaseKeyError` when the meta key is lost). The
   /// shell surfaces failures as a retryable error state; it never reacts
   /// destructively on its own.
+  ///
+  /// Callers must not overlap calls to [initialize] and [reset]: start one
+  /// only after the previous one has settled, as `AppBootstrapCubit` does.
+  /// Implementations rely on that. Each attempt commits into the
+  /// bootstrap's own fields, and [dispose] waits for the latest one only.
   Future<BootstrapResult> initialize();
 
   /// Whether [reset] is meaningful on this platform.

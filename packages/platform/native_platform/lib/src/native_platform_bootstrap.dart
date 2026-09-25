@@ -407,7 +407,9 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   }
 
   /// Records [operation] as the one [dispose] waits for. Its error, if any,
-  /// is the caller's; dispose() only waits for the end.
+  /// is the caller's; dispose() only waits for the end. Operations never
+  /// overlap (a caller rule on [PlatformBootstrap.initialize]), so the
+  /// latest is the only one in flight.
   Future<T> _track<T>(Future<T> operation) {
     _operationEnded = operation.then<void>((_) {}, onError: (Object _) {});
     return operation;
