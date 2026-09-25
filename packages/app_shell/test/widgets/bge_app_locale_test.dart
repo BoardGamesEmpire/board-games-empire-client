@@ -104,7 +104,7 @@ void main() {
       await tester.pumpWidget(
         BgeApp(
           bootstrapCubit: ownedCubit,
-          closeBootstrapCubitOnDispose: true,
+          teardown: ownedCubit.close,
           activeLocaleController: controller,
           disposeActiveLocaleControllerOnDispose: true,
         ),

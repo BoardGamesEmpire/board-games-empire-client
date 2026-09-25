@@ -116,23 +116,7 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('closes the cubit on unmount when it owns it '
-        '(closeBootstrapCubitOnDispose: true)', (tester) async {
-      final ownedCubit = AppBootstrapCubit(
-        platformBootstrap: FakePlatformBootstrap(),
-        hydratedStorageInitializer: (_) async {},
-      );
-
-      await tester.pumpWidget(
-        BgeApp(bootstrapCubit: ownedCubit, closeBootstrapCubitOnDispose: true),
-      );
-      await tester.pump();
-      await unmount(tester);
-
-      expect(ownedCubit.isClosed, isTrue);
-    });
-
-    testWidgets('does not close an externally owned cubit (default)', (
+    testWidgets('does not close a cubit it was not handed a teardown for', (
       tester,
     ) async {
       final externalCubit = AppBootstrapCubit(
@@ -148,37 +132,30 @@ void main() {
       expect(externalCubit.isClosed, isFalse);
     });
 
-    // Root-container ownership (#72): mirrors the cubit ownership pattern
-    // above. runBgeApp passes disposeRootContainerOnDispose: true; tests
-    // and future embedders injecting their own container keep the default
-    // and dispose it themselves.
-    testWidgets('disposes an owned root container on unmount '
-        '(disposeRootContainerOnDispose: true)', (tester) async {
-      final container = SpyRootContainer();
-      final ownedCubit = AppBootstrapCubit(
+    // Teardown (#384): runBgeApp hands in its shared teardown, which owns
+    // the cubit and the root container. The widget runs it on unmount and
+    // never disposes the container itself.
+    testWidgets('runs the teardown it is handed on unmount', (tester) async {
+      final cubit = AppBootstrapCubit(
         platformBootstrap: FakePlatformBootstrap(),
         hydratedStorageInitializer: (_) async {},
       );
+      addTearDown(cubit.close);
+      var teardowns = 0;
 
       await tester.pumpWidget(
-        BgeApp(
-          bootstrapCubit: ownedCubit,
-          closeBootstrapCubitOnDispose: true,
-          rootContainer: container,
-          disposeRootContainerOnDispose: true,
-        ),
+        BgeApp(bootstrapCubit: cubit, teardown: () async => teardowns++),
       );
       await tester.pump();
       await unmount(tester);
 
-      expect(container.disposed, isTrue);
+      expect(teardowns, 1);
     });
 
-    testWidgets('does not dispose an externally owned root container '
-        '(default)', (tester) async {
+    testWidgets('never disposes the root container itself', (tester) async {
       final container = SpyRootContainer();
-      // BgeApp must not dispose it (default flag), so the test owns
-      // teardown of the real underlying GetIt instance.
+      // Only the teardown disposes it, and there is none here, so the test
+      // owns disposal of the real underlying GetIt instance.
       addTearDown(container.dispose);
       final externalCubit = AppBootstrapCubit(
         platformBootstrap: FakePlatformBootstrap(),

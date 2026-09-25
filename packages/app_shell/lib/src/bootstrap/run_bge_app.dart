@@ -19,6 +19,7 @@ import '../widgets/bge_app.dart';
 import '../widgets/build_error_view.dart';
 import 'app_bootstrap_cubit.dart';
 import 'platform_bootstrap.dart';
+import 'shell_teardown.dart';
 
 /// Boots the application. This is the entire contract of each app's
 /// `main.dart`: perform platform-specific setup, then hand a
@@ -48,10 +49,14 @@ import 'platform_bootstrap.dart';
 /// on a failed boot. Implementations must not throw (they register
 /// degraded values instead); as a belt-and-braces guard, a throw here is
 /// breadcrumbed at error level and boot proceeds on an empty fallback —
-/// error capture is never coupled to root-container success. The app
-/// widget owns the container's lifecycle
-/// ([BgeApp.disposeRootContainerOnDispose]), since this function has no
-/// teardown point of its own.
+/// error capture is never coupled to root-container success.
+///
+/// Teardown (#384) is one [ShellTeardown]: close the cubit, dispose the
+/// platform bootstrap, then the root container. Two callers share it. The
+/// exit hook ([ShellTeardown.onExitRequested]) runs it before the process
+/// exits (#226), bounded by a deadline, because granting the exit with the
+/// databases still open is what crashes on macOS. [BgeApp] runs it on
+/// unmount ([BgeApp.teardown]).
 ///
 /// The active-locale slot (issue #33) is an [ActiveLocaleController]
 /// seeded with the raw OS locale — the best available value before the
@@ -81,7 +86,7 @@ import 'platform_bootstrap.dart';
 /// web included, because #83's auth-gate stashes redirect-bounced
 /// locations into the same slot. Draining the slot is #82/#83 scope. The
 /// app widget owns the handler's lifecycle
-/// ([BgeApp.disposeDeepLinkHandlerOnDispose]), mirroring the container.
+/// ([BgeApp.disposeDeepLinkHandlerOnDispose]).
 ///
 /// Error capture (issue #34) is [installGlobalErrorHooks]: the two
 /// catch-all surfaces the Flutter team recommends, with **no custom
@@ -301,18 +306,26 @@ Future<void> runBgeApp({
     feedbackService: registeredFeedbackService,
   );
   bootstrapCubitRef = bootstrapCubit;
+
+  // #384/#226: one teardown for the cubit, the bootstrap's databases and
+  // the root container, shared by the exit hook and the app widget. The
+  // hook is registered before bootstrap starts, so a quit from the splash
+  // screen waits too: the bootstrap then releases its in-flight attempt.
+  final teardown = ShellTeardown(
+    bootstrapCubit: bootstrapCubit,
+    platformBootstrap: platformBootstrap,
+    rootContainer: rootContainer,
+  )..listenForExit();
   unawaited(bootstrapCubit.initialize());
 
   runApp(
     BgeApp(
       bootstrapCubit: bootstrapCubit,
-      // runBgeApp has no teardown point of its own, so the app widget
-      // owns the cubit's, the root container's, the deep-link handler's,
-      // and the active-locale controller's lifecycles (relevant to hot
-      // restart and tests).
-      closeBootstrapCubitOnDispose: true,
+      // The teardown owns the cubit and the root container. The app widget
+      // owns the deep-link handler's and the active-locale controller's
+      // lifecycles (relevant to hot restart and tests).
+      teardown: teardown.run,
       rootContainer: rootContainer,
-      disposeRootContainerOnDispose: true,
       feedbackReporter: feedbackReporter,
       pendingDeepLinkHolder: pendingDeepLinkHolder,
       deepLinkHandler: deepLinkHandler,

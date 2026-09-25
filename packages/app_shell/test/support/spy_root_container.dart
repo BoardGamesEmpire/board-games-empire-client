@@ -16,6 +16,10 @@ class SpyRootContainer extends DependencyContainerImpl {
   /// Whether [dispose] has been called at least once.
   bool get disposed => disposeCallCount > 0;
 
+  /// Whether a [dispose] call has finished, not merely started (#384): the
+  /// exit hook must not answer until the container is actually released.
+  bool disposeCompleted = false;
+
   @override
   Future<void> dispose() async {
     // Increment runs synchronously on invocation (before the first await),
@@ -23,5 +27,6 @@ class SpyRootContainer extends DependencyContainerImpl {
     // `dispose()` call — the shape `BgeApp.dispose` uses.
     disposeCallCount++;
     await super.dispose();
+    disposeCompleted = true;
   }
 }
