@@ -15,10 +15,9 @@ import 'pending_deep_link_holder.dart';
 /// auth gating) is #82/#83 scope. Rejected links are logged at warning
 /// level — redacted via [redactDeepLinkForLog], never raw — and dropped.
 ///
-/// Lifecycle mirrors `AppBootstrapCubit`: constructed and [start]ed once
-/// per boot by `runBgeApp` (native only — web's source is null and no
-/// handler is created), disposed by the owning widget
-/// (`BgeApp.disposeDeepLinkHandlerOnDispose`).
+/// Lifecycle: constructed and [start]ed once per boot by `runBgeApp`
+/// (native only — web's source is null and no handler is created),
+/// disposed by the owning widget (`BgeApp.disposeDeepLinkHandlerOnDispose`).
 class DeepLinkHandler {
   DeepLinkHandler({
     required this._source,

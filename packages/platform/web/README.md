@@ -52,7 +52,7 @@ Future<void> main() async {
 }
 ```
 
-`const WebPlatformBootstrap()` also boots — without a database. The composed
+`WebPlatformBootstrap()` also boots — without a database. The composed
 factory has its own name so that mistake has to be made deliberately.
 
 Part of the Board Games Empire client monorepo; not published to pub.dev.

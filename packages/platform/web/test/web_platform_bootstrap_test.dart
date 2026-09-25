@@ -5,8 +5,12 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
+
+import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:models/domain.dart';
 import 'package:web_platform/web.dart';
 
 /// A stand-in [ActiveServerScope] for the [WebPlatformBootstrap.initialize]
@@ -23,9 +27,56 @@ class _FakeActiveServerScope implements ActiveServerScope {
   Stream<ActiveServer?> watchActive() => const Stream.empty();
 }
 
+/// A per-server container that counts its disposals, and whose disposal can
+/// be held open on [closing].
+class _SpyContainer extends DependencyContainerImpl {
+  int disposeCalls = 0;
+  Future<void>? closing;
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls++;
+    await closing;
+    await super.dispose();
+  }
+}
+
+/// The shape `bootstrapWebServerScope` returns: one server, over [container].
+class _FakeServerScope implements ActiveServerScope {
+  _FakeServerScope(this.container);
+
+  final _SpyContainer container;
+
+  @override
+  ActiveServer get active => ActiveServer(
+    serverId: 'server-uuid-1',
+    displayName: 'Test BGE Server',
+    identity: _identity,
+    container: container,
+  );
+
+  @override
+  Stream<ActiveServer?> watchActive() => Stream.value(active);
+}
+
+const _identity = ServerIdentity(
+  serverId: 'server-uuid-1',
+  issuer: 'https://bge.example.com',
+  wellKnownSchemaVersion: 1,
+  name: 'Test BGE Server',
+  deviceAuthorizationEndpoint: '/api/auth/device',
+  authBasePath: '/api/auth',
+  sessionEndpoint: '/api/auth/get-session',
+  signOutEndpoint: '/api/auth/sign-out',
+  passkeySupported: false,
+  twoFactorSupported: false,
+  anonymousAuthSupported: false,
+  strategies: [],
+);
+
 void main() {
   group('WebPlatformBootstrap', () {
-    const bootstrap = WebPlatformBootstrap();
+    final bootstrap = WebPlatformBootstrap();
 
     test('never supports the destructive reset', () {
       expect(bootstrap.supportsReset, isFalse);
@@ -63,5 +114,96 @@ void main() {
         await expectLater(bootstrap.initialize(), throwsStateError);
       },
     );
+  });
+
+  // #384: web's scope holds the drift/wasm database and the user session
+  // (#288, #137), so web has something to release too.
+  group('WebPlatformBootstrap.dispose', () {
+    test('disposes the per-server container initialize() built', () async {
+      final container = _SpyContainer();
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async => _FakeServerScope(container),
+      );
+      await bootstrap.initialize();
+
+      await bootstrap.dispose();
+
+      expect(container.disposeCalls, 1);
+    });
+
+    test('a second initialize() releases the server the first one built, '
+        'as native does', () async {
+      final first = _SpyContainer();
+      final second = _SpyContainer();
+      final containers = [first, second];
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async =>
+            _FakeServerScope(containers.removeAt(0)),
+      );
+      await bootstrap.initialize();
+
+      await bootstrap.initialize();
+
+      expect(first.disposeCalls, 1);
+      await bootstrap.dispose();
+      expect(second.disposeCalls, 1);
+    });
+
+    test('a second caller waits for the teardown the first caller '
+        'started', () async {
+      final closing = Completer<void>();
+      final container = _SpyContainer()..closing = closing.future;
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async => _FakeServerScope(container),
+      );
+      await bootstrap.initialize();
+
+      unawaited(bootstrap.dispose());
+      var secondReturned = false;
+      final second = bootstrap.dispose().then((_) => secondReturned = true);
+      await pumpEventQueue();
+      expect(secondReturned, isFalse);
+
+      closing.complete();
+      await second;
+      expect(container.disposeCalls, 1);
+    });
+
+    test('is terminal: initialize() afterwards throws without building a '
+        'scope', () async {
+      var built = 0;
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () async {
+          built++;
+          return _FakeServerScope(_SpyContainer());
+        },
+      );
+
+      await bootstrap.dispose();
+
+      await expectLater(bootstrap.initialize(), throwsStateError);
+      expect(built, 0);
+    });
+
+    test('during initialize(), waits for the attempt — which disposes the '
+        'scope it built instead of committing it', () async {
+      final building = Completer<ActiveServerScope>();
+      final container = _SpyContainer();
+      final bootstrap = WebPlatformBootstrap(
+        serverScopeBuilder: () => building.future,
+      );
+
+      final attempt = bootstrap.initialize();
+      await pumpEventQueue();
+      var disposed = false;
+      final disposal = bootstrap.dispose().then((_) => disposed = true);
+      await pumpEventQueue();
+      expect(disposed, isFalse);
+
+      building.complete(_FakeServerScope(container));
+      await expectLater(attempt, throwsStateError);
+      await disposal;
+      expect(container.disposeCalls, 1);
+    });
   });
 }

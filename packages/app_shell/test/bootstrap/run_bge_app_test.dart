@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
 import 'package:observability/observability.dart';
@@ -26,10 +27,10 @@ import '../support/spy_root_container.dart';
 ///   at error level (`bge.shell.root_container`) and proceeds on a
 ///   *functional* empty fallback container — error capture is never
 ///   coupled to root-container success.
-/// - **Ownership.** `runBgeApp` has no teardown point of its own, so
-///   `BgeApp` owns the container's lifecycle
-///   (`disposeRootContainerOnDispose: true`), mirroring
-///   `closeBootstrapCubitOnDispose`.
+/// - **Ownership.** One shared teardown (#384) disposes the container,
+///   after the cubit and the platform bootstrap. `BgeApp` runs it on
+///   unmount and the exit hook runs it on quit (#226); the exit-teardown
+///   group pins both.
 /// - **Widget-tree exposure is deliberately deferred** (#72 decision):
 ///   nothing reads the container from `BuildContext` yet; the first
 ///   widget consumer adds a thin provider when it actually needs one.
@@ -95,6 +96,26 @@ void main() {
     await tester.pump();
   }
 
+  /// Sends the engine's cancellable exit request, the message a desktop
+  /// embedder sends on Cmd-Q or last-window close (#226), and returns the
+  /// framework's decoded reply once it arrives.
+  Future<Object?> requestAppExit(WidgetTester tester) {
+    final reply = Completer<Object?>();
+    const channel = SystemChannels.platform;
+    unawaited(
+      tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        channel.name,
+        channel.codec.encodeMethodCall(
+          const MethodCall('System.requestAppExit'),
+        ),
+        (data) => reply.complete(
+          data == null ? null : channel.codec.decodeEnvelope(data),
+        ),
+      ),
+    );
+    return reply.future;
+  }
+
   group('runBgeApp — root container sequencing', () {
     testWidgets('builds the root container exactly once, before the '
         'failure-prone platform initialize', (tester) async {
@@ -139,8 +160,7 @@ void main() {
       );
     });
 
-    testWidgets('hands the platform-built container to BgeApp and grants '
-        'it ownership', (tester) async {
+    testWidgets('hands the platform-built container to BgeApp', (tester) async {
       final container = SpyRootContainer();
       final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
 
@@ -148,14 +168,6 @@ void main() {
 
       final app = tester.widget<BgeApp>(find.byType(BgeApp));
       expect(app.rootContainer, same(container));
-      expect(
-        app.disposeRootContainerOnDispose,
-        isTrue,
-        reason:
-            'runBgeApp has no teardown point of its own — the app widget '
-            'owns the container lifecycle, mirroring '
-            'closeBootstrapCubitOnDispose',
-      );
     });
 
     testWidgets('disposes the root container when the app unmounts '
@@ -169,6 +181,89 @@ void main() {
       await unmount(tester);
 
       expect(container.disposed, isTrue);
+    });
+  });
+
+  // #226: the macOS quit crash is sqlite3's shutdown finalizers running
+  // over databases nobody closed. The exit request is the last point where
+  // Dart can close them, so the answer has to wait for the teardown (#384).
+  group('runBgeApp — exit teardown (#226, #384)', () {
+    testWidgets('the exit is granted only after the platform bootstrap and '
+        'the root container are disposed', (tester) async {
+      final closing = Completer<void>();
+      addTearDown(() {
+        if (!closing.isCompleted) closing.complete();
+      });
+      final container = SpyRootContainer();
+      final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container)
+        ..onDispose = () => closing.future;
+      await boot(tester, bootstrap);
+
+      Object? response;
+      bool? containerReleasedAtAnswer;
+      final answered = requestAppExit(tester).then((r) {
+        response = r;
+        containerReleasedAtAnswer = container.disposeCompleted;
+      });
+      await tester.pump();
+
+      expect(bootstrap.disposeCallCount, 1);
+      expect(
+        response,
+        isNull,
+        reason: 'answering now would exit with the databases still open',
+      );
+
+      closing.complete();
+      await tester.pump();
+      await answered;
+      expect(response, {'response': 'exit'});
+      expect(
+        containerReleasedAtAnswer,
+        isTrue,
+        reason: 'the root container is the last step the answer waits for',
+      );
+    });
+
+    testWidgets('a teardown that hangs still gets its exit after two '
+        'seconds', (tester) async {
+      final closing = Completer<void>();
+      final bootstrap = FakePlatformBootstrap()
+        ..onDispose = () => closing.future;
+      await boot(tester, bootstrap);
+
+      Object? response;
+      unawaited(requestAppExit(tester).then((r) => response = r));
+      await tester.pump(const Duration(milliseconds: 1999));
+      expect(response, isNull);
+
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(response, {
+        'response': 'exit',
+      }, reason: 'a quit that hangs is worse than the crash (#226)');
+
+      // Let the teardown finish inside the test: it is what removes the
+      // exit listener, and a listener left behind would answer the next
+      // test's exit request from this test's teardown.
+      closing.complete();
+      await tester.pump();
+    });
+
+    testWidgets('unmounting runs the same teardown: the exit afterwards '
+        'finds it done and disposes nothing twice', (tester) async {
+      final container = SpyRootContainer();
+      final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
+      await boot(tester, bootstrap);
+
+      await unmount(tester);
+      expect(bootstrap.disposeCallCount, 1);
+      expect(container.disposeCallCount, 1);
+
+      final answered = requestAppExit(tester);
+      await tester.pump();
+      expect(await answered, {'response': 'exit'});
+      expect(bootstrap.disposeCallCount, 1);
+      expect(container.disposeCallCount, 1);
     });
   });
 
@@ -377,8 +472,8 @@ void main() {
         app.disposeActiveLocaleControllerOnDispose,
         isTrue,
         reason:
-            'runBgeApp has no teardown point of its own — the app widget '
-            'owns the controller lifecycle, mirroring the root container',
+            'the shared teardown (#384) does not cover it — the app '
+            'widget owns the controller lifecycle',
       );
     });
   });
@@ -430,8 +525,8 @@ void main() {
         app.disposeDeepLinkHandlerOnDispose,
         isTrue,
         reason:
-            'runBgeApp has no teardown point of its own — the app widget '
-            'owns the handler lifecycle, mirroring the root container',
+            'the shared teardown (#384) does not cover it — the app '
+            'widget owns the handler lifecycle',
       );
       expect(
         app.pendingDeepLinkHolder!.peek,

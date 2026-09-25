@@ -26,20 +26,18 @@ void configureWebUrlStrategy() => setPathUrlStrategy();
 /// rather than built here — see [bgeWebPlatformBootstrap] in
 /// `web_storage_composition.dart` and the note on [_serverScopeBuilder].
 class WebPlatformBootstrap implements PlatformBootstrap {
-  const WebPlatformBootstrap({this._rootModule, this._serverScopeBuilder});
+  /// Not const since #384: the instance holds the server [initialize] built,
+  /// so that [dispose] can release it.
+  WebPlatformBootstrap({this._rootModule, this._serverScopeBuilder});
 
   /// Injectable root-module seam (#69); null → [registerWebRootModule].
-  /// Nullable field rather than a defaulted one so the constructor stays
-  /// const for production callers.
   final Future<void> Function(DependencyContainer container)? _rootModule;
 
   /// Injectable web-server-scope seam (#96); null → the storage-less
   /// [bootstrapWebServerScope].
   ///
-  /// Nullable rather than defaulted so the constructor stays const for
-  /// production callers, and so bootstrap/cubit tests can supply a fake scope
-  /// without the live same-origin well-known fetch (`Uri.base` has no origin
-  /// on the VM).
+  /// Injectable so bootstrap/cubit tests can supply a fake scope without the
+  /// live same-origin well-known fetch (`Uri.base` has no origin on the VM).
   ///
   /// **The default is storage-less on purpose** (#288). Composing the
   /// drift/wasm data layer in here would drag `dart:js_interop` into this
@@ -48,6 +46,15 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// browser app gets it from [bgeWebPlatformBootstrap], and that is the
   /// only production caller.
   final Future<ActiveServerScope> Function()? _serverScopeBuilder;
+
+  /// The server [initialize] built, held so that [dispose] can release it.
+  ActiveServer? _server;
+
+  /// Set by the first [dispose] call and returned to every later one.
+  Future<void>? _disposal;
+
+  /// Completes when the latest [initialize] attempt ends, however it ends.
+  Future<void>? _attemptEnded;
 
   /// Builds the web root container (#72): a fresh, isolated
   /// [DependencyContainerImpl] populated by the injected root module
@@ -120,11 +127,70 @@ class WebPlatformBootstrap implements PlatformBootstrap {
   /// `runBgeApp`/`AppBootstrapCubit` surface it as the shared retryable
   /// bootstrap-failure state. Web never routes to a "needs server" state — a
   /// server exists by construction, and `/server-add` is unreachable.
+  ///
+  /// Throws [StateError] once [dispose] has been called, the same rule as
+  /// native (#384). An attempt that [dispose] lands on disposes the scope it
+  /// built instead of committing it.
   @override
-  Future<BootstrapResult> initialize() async {
+  Future<BootstrapResult> initialize() {
+    final attempt = _initialize();
+    // The error, if any, is the caller's; dispose() only waits for the end.
+    // Attempts never overlap (a caller rule on PlatformBootstrap.initialize),
+    // so the latest is the only one in flight.
+    _attemptEnded = attempt.then<void>((_) {}, onError: (Object _) {});
+    return attempt;
+  }
+
+  Future<BootstrapResult> _initialize() async {
+    _throwIfDisposed();
+    // Retry hygiene, as on native: release a server an earlier attempt
+    // committed, or it would be dropped still holding its database.
+    await _release();
     final scope = await (_serverScopeBuilder ?? bootstrapWebServerScope)();
+    if (_disposal != null) {
+      // Nothing is left to reach this scope, so it is released here.
+      try {
+        await scope.active?.container.dispose();
+      } on Object {
+        // Intentionally ignored, as in createRootContainer: the StateError
+        // below is the one the caller has to see.
+      }
+      throw _disposedError();
+    }
+    _server = scope.active;
     return BootstrapResult(hasServer: true, activeServerScope: scope);
   }
+
+  /// Disposes the per-server container [initialize] built (#384): the
+  /// drift/wasm database and the user session (#288, #137).
+  ///
+  /// Every caller gets the same future, so a second caller waits for the
+  /// teardown the first one started. A failure propagates to the caller;
+  /// `runBgeApp`'s teardown breadcrumbs it.
+  @override
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
+    // An attempt in flight sees _disposal and releases its own scope; wait
+    // for that, so that returning here means everything is closed.
+    await _attemptEnded;
+    await _release();
+  }
+
+  /// Disposes the held server's container, if any, without ending this
+  /// bootstrap.
+  Future<void> _release() async {
+    final server = _server;
+    _server = null;
+    await server?.container.dispose();
+  }
+
+  void _throwIfDisposed() {
+    if (_disposal != null) throw _disposedError();
+  }
+
+  StateError _disposedError() =>
+      StateError('WebPlatformBootstrap has been disposed.');
 
   @override
   bool get supportsReset => false;

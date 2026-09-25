@@ -127,9 +127,8 @@ import 'session_rehydrate_trigger.dart';
 class BgeApp extends StatefulWidget {
   const BgeApp({
     required this.bootstrapCubit,
-    this.closeBootstrapCubitOnDispose = false,
+    this.teardown,
     this.rootContainer,
-    this.disposeRootContainerOnDispose = false,
     this.feedbackReporter,
     this.pendingDeepLinkHolder,
     this.deepLinkHandler,
@@ -161,21 +160,19 @@ class BgeApp extends StatefulWidget {
   /// Two seconds is the Android "press back again to exit" convention.
   static const Duration crashPromptBackDismissWindow = Duration(seconds: 2);
 
-  /// Whether this widget owns [bootstrapCubit]'s lifecycle and closes it
-  /// on unmount. `runBgeApp` (which creates the cubit and has no later
-  /// teardown point) passes true; tests injecting their own cubits keep
-  /// the default and close it themselves.
-  final bool closeBootstrapCubitOnDispose;
+  /// `runBgeApp`'s shared teardown (#384), run on unmount. It closes
+  /// [bootstrapCubit] and disposes the platform bootstrap and the root
+  /// container. The exit hook runs the same one (#226), so whichever comes
+  /// second waits for the first instead of disposing anything twice. Null
+  /// means this widget owns none of them; tests injecting their own cubit
+  /// close it themselves.
+  final Future<void> Function()? teardown;
 
   /// The app-scope, device-global root container (#72), built by the
   /// platform composition root via
   /// `PlatformBootstrap.createRootContainer` and handed in by
-  /// `runBgeApp`.
+  /// `runBgeApp`. This widget never disposes it: [teardown] does.
   final DependencyContainer? rootContainer;
-
-  /// Whether this widget owns [rootContainer]'s lifecycle and disposes it
-  /// on unmount.
-  final bool disposeRootContainerOnDispose;
 
   /// The crash-draft reporter (#69), when `runBgeApp` created one.
   final FeedbackUncaughtErrorReporter? feedbackReporter;
@@ -970,9 +967,6 @@ class _BgeAppState extends State<BgeApp> {
     unawaited(_localeSub?.cancel());
     unawaited(_themeModeCubit?.close());
     unawaited(_localeCubit?.close());
-    if (widget.closeBootstrapCubitOnDispose) {
-      unawaited(widget.bootstrapCubit.close());
-    }
     final deepLinkHandler = widget.deepLinkHandler;
     if (widget.disposeDeepLinkHandlerOnDispose && deepLinkHandler != null) {
       unawaited(deepLinkHandler.dispose());
@@ -982,10 +976,8 @@ class _BgeAppState extends State<BgeApp> {
         activeLocaleController != null) {
       activeLocaleController.dispose();
     }
-    final rootContainer = widget.rootContainer;
-    if (widget.disposeRootContainerOnDispose && rootContainer != null) {
-      unawaited(rootContainer.dispose());
-    }
+    final teardown = widget.teardown;
+    if (teardown != null) unawaited(teardown());
     super.dispose();
   }
 
