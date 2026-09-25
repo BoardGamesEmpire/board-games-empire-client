@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull;
@@ -32,6 +33,9 @@ class _FakeEncryptionKeyService implements EncryptionKeyService {
   int deleteMetaKeyCalls = 0;
   bool? metaFileExistedWhenKeyDeleted;
 
+  /// When set, [deleteMetaKey] waits on it after recording the call.
+  Future<void>? deletingMetaKey;
+
   @override
   Future<String> getOrCreateServerKey(String serverId) async => 'a' * 64;
 
@@ -45,6 +49,7 @@ class _FakeEncryptionKeyService implements EncryptionKeyService {
   Future<void> deleteMetaKey() async {
     deleteMetaKeyCalls++;
     metaFileExistedWhenKeyDeleted = metaFileProbe?.call().existsSync();
+    await deletingMetaKey;
   }
 }
 
@@ -57,11 +62,39 @@ class _TestExecutorFactory extends EncryptedExecutorFactory {
 
   final File metaFile;
 
+  /// Every meta executor handed out, so tests can see which were closed.
+  final List<_SpyExecutor> metaExecutors = [];
+
+  /// When set, the next meta database open waits on it.
+  Future<void>? metaOpening;
+
   @override
-  QueryExecutor metaExecutor() => NativeDatabase.memory();
+  QueryExecutor metaExecutor() {
+    final executor = _SpyExecutor(opening: metaOpening);
+    metaExecutors.add(executor);
+    return executor;
+  }
 
   @override
   Future<File> resolveDatabaseFile(String relativePath) async => metaFile;
+}
+
+/// An in-memory executor that records whether it was closed, and whose
+/// open can be held on [opening].
+class _SpyExecutor extends LazyDatabase {
+  _SpyExecutor({Future<void>? opening})
+    : super(() async {
+        await opening;
+        return NativeDatabase.memory();
+      });
+
+  bool closed = false;
+
+  @override
+  Future<void> close() {
+    closed = true;
+    return super.close();
+  }
 }
 
 void main() {
@@ -72,6 +105,9 @@ void main() {
   late _MockServerRepository serverRepository;
   late _MockDevicePreferencesRepository preferencesRepository;
   late _MockServerOrchestrator orchestrator;
+
+  /// How many orchestrators the default factory has built.
+  late int orchestratorsBuilt;
 
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('native_bootstrap_test');
@@ -84,6 +120,7 @@ void main() {
     serverRepository = _MockServerRepository();
     preferencesRepository = _MockDevicePreferencesRepository();
     orchestrator = _MockServerOrchestrator();
+    orchestratorsBuilt = 0;
     when(() => orchestrator.initialize()).thenAnswer((_) async {});
     when(() => orchestrator.dispose()).thenAnswer((_) async {});
   });
@@ -105,7 +142,10 @@ void main() {
           required ServerRepository serverRepository,
           required DevicePreferencesRepository preferencesRepository,
           required contextFactory,
-        }) => orchestrator,
+        }) {
+          orchestratorsBuilt++;
+          return orchestrator;
+        },
   );
 
   group('NativePlatformBootstrap', () {
@@ -198,6 +238,156 @@ void main() {
 
         expect(keyService.deleteMetaKeyCalls, 1);
         expect(metaFile.existsSync(), isFalse);
+      });
+
+      test('releases without ending the bootstrap: initialize() still '
+          'works afterwards', () async {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => const []);
+        final bootstrap = buildBootstrap();
+        await bootstrap.initialize();
+
+        await bootstrap.reset();
+
+        final result = await bootstrap.initialize();
+        expect(result.orchestrator, same(orchestrator));
+        await bootstrap.dispose();
+      });
+    });
+
+    // #384: dispose() is the shell's teardown seam. #226's exit hook grants
+    // the exit when it returns, so "returned" has to mean "released".
+    group('dispose()', () {
+      setUp(() {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => const []);
+      });
+
+      test('closes the orchestrator and the meta database that '
+          'initialize() opened', () async {
+        final bootstrap = buildBootstrap();
+        await bootstrap.initialize();
+
+        await bootstrap.dispose();
+
+        verify(() => orchestrator.dispose()).called(1);
+        expect(executorFactory.metaExecutors.single.closed, isTrue);
+      });
+
+      test('a second caller waits for the teardown the first caller '
+          'started', () async {
+        final orchestratorClosing = Completer<void>();
+        when(() => orchestrator.dispose())
+            .thenAnswer((_) => orchestratorClosing.future);
+        final bootstrap = buildBootstrap();
+        await bootstrap.initialize();
+
+        unawaited(bootstrap.dispose());
+        var secondReturned = false;
+        final second = bootstrap.dispose().then((_) => secondReturned = true);
+        await pumpEventQueue();
+
+        expect(
+          secondReturned,
+          isFalse,
+          reason:
+              'returning while the first caller is still closing would '
+              'grant the exit mid-close — the #226 crash itself',
+        );
+
+        orchestratorClosing.complete();
+        await second;
+        verify(() => orchestrator.dispose()).called(1);
+      });
+
+      test('during reset(), waits for the reset to finish — the key and '
+          'the files are both gone when it returns', () async {
+        final deleting = Completer<void>();
+        keyService.deletingMetaKey = deleting.future;
+        metaFile.writeAsStringSync('db');
+        final bootstrap = buildBootstrap();
+        await bootstrap.initialize();
+
+        final resetting = bootstrap.reset();
+        await pumpEventQueue();
+        var disposed = false;
+        final disposal = bootstrap.dispose().then((_) => disposed = true);
+        await pumpEventQueue();
+
+        expect(
+          disposed,
+          isFalse,
+          reason:
+              'returning now would let the exit land between the key '
+              'delete and the file delete',
+        );
+
+        deleting.complete();
+        await resetting;
+        await disposal;
+        expect(metaFile.existsSync(), isFalse);
+      });
+
+      test('is terminal: initialize() afterwards throws and builds '
+          'nothing', () async {
+        final bootstrap = buildBootstrap();
+
+        await bootstrap.dispose();
+
+        await expectLater(bootstrap.initialize(), throwsStateError);
+        expect(orchestratorsBuilt, 0);
+      });
+
+      test('during initialize(), waits for the attempt — which releases '
+          'what it built instead of committing it', () async {
+        final orchestratorStarting = Completer<void>();
+        when(() => orchestrator.initialize())
+            .thenAnswer((_) => orchestratorStarting.future);
+        final bootstrap = buildBootstrap();
+
+        final attempt = bootstrap.initialize();
+        await pumpEventQueue();
+        var disposed = false;
+        final disposal = bootstrap.dispose().then((_) => disposed = true);
+        await pumpEventQueue();
+
+        expect(
+          disposed,
+          isFalse,
+          reason:
+              'the attempt still holds an open meta database; returning '
+              'now would let a quit from the splash screen exit with it '
+              'open',
+        );
+
+        orchestratorStarting.complete();
+        await expectLater(attempt, throwsStateError);
+        await disposal;
+        verify(() => orchestrator.dispose()).called(1);
+        expect(executorFactory.metaExecutors.single.closed, isTrue);
+      });
+
+      test('during the meta database open, the attempt stops before it '
+          'builds the orchestrator', () async {
+        final metaOpening = Completer<void>();
+        executorFactory.metaOpening = metaOpening.future;
+        final bootstrap = buildBootstrap();
+
+        final attempt = bootstrap.initialize();
+        await pumpEventQueue();
+        final disposal = bootstrap.dispose();
+        metaOpening.complete();
+
+        await expectLater(attempt, throwsStateError);
+        await disposal;
+        expect(
+          orchestratorsBuilt,
+          0,
+          reason:
+              'restoring every connected server only to close it again '
+              'spends the exit deadline (#226)',
+        );
+        expect(executorFactory.metaExecutors.single.closed, isTrue);
       });
     });
 

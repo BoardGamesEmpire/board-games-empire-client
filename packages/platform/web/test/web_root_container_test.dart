@@ -24,7 +24,7 @@ class _Marker {}
 void main() {
   group('WebPlatformBootstrap.createRootContainer', () {
     test('returns a functional container (register/get round trip)', () async {
-      const bootstrap = WebPlatformBootstrap();
+      final bootstrap = WebPlatformBootstrap();
       final container = await bootstrap.createRootContainer();
       addTearDown(container.dispose);
 
@@ -36,7 +36,7 @@ void main() {
 
     test('registers BuildInfo via the defensive read — BuildInfo.unknown '
         'when the platform source is unavailable (test VM)', () async {
-      const bootstrap = WebPlatformBootstrap();
+      final bootstrap = WebPlatformBootstrap();
       final container = await bootstrap.createRootContainer();
       addTearDown(container.dispose);
 
@@ -46,7 +46,7 @@ void main() {
 
     test('each call returns a fresh, isolated container — no shared '
         'global GetIt state', () async {
-      const bootstrap = WebPlatformBootstrap();
+      final bootstrap = WebPlatformBootstrap();
       final first = await bootstrap.createRootContainer();
       final second = await bootstrap.createRootContainer();
       addTearDown(first.dispose);

@@ -134,4 +134,7 @@ class _UnusedPlatformBootstrap implements PlatformBootstrap {
   @override
   Future<HydratedStorageDirectory> hydratedStorageDirectory() =>
       throw UnimplementedError();
+
+  @override
+  Future<void> dispose() => throw UnimplementedError();
 }

@@ -171,6 +171,14 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   MetaDatabase? _metaDatabase;
   ServerOrchestrator? _orchestrator;
 
+  /// Set by the first [dispose] call and returned to every later one.
+  Future<void>? _disposal;
+
+  /// Completes when the latest [initialize] or [reset] ends, however it
+  /// ends. The shell never runs the two at once: `resetAndRetry` awaits the
+  /// reset before it starts the next attempt.
+  Future<void>? _operationEnded;
+
   @override
   bool get supportsReset => true;
 
@@ -244,10 +252,16 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     ]);
   }
 
+  /// Throws [StateError] once [dispose] has been called — including when
+  /// the call lands mid-attempt, in which case the attempt releases what it
+  /// built instead of committing it (#384).
   @override
-  Future<BootstrapResult> initialize() async {
+  Future<BootstrapResult> initialize() => _track(_initialize());
+
+  Future<BootstrapResult> _initialize() async {
+    _throwIfDisposed();
     // Retry hygiene: release anything a previous failed attempt left open.
-    await dispose();
+    await _release();
 
     MetaDatabase? meta;
     ServerOrchestrator? orchestrator;
@@ -257,6 +271,10 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       // (e.g. DatabaseKeyError) surface here, on the retryable error
       // path, instead of at an arbitrary later query.
       await meta.customSelect('SELECT 1').get();
+      // The orchestrator restores every connected server, opening each
+      // one's database. Disposed already, that is work the exit deadline
+      // pays for only to undo it (#226).
+      _throwIfDisposed();
 
       final serverRepository = _serverRepositoryFactory(meta);
       final preferencesRepository = _devicePreferencesRepositoryFactory(meta);
@@ -273,6 +291,11 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       await orchestrator.initialize();
 
       final servers = await serverRepository.getAllServers();
+
+      // Disposed while this attempt was in flight. Nothing is left to reach
+      // these handles, so throwing here sends them through the rollback
+      // below rather than committing them after the teardown has run.
+      _throwIfDisposed();
 
       // Commit state only on success (established orchestrator invariant).
       _metaDatabase = meta;
@@ -320,10 +343,14 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     }
   }
 
+  /// A [dispose] that lands mid-reset waits for it to finish, so an exit
+  /// cannot fall between the key delete and the file delete (#384).
   @override
-  Future<void> reset() async {
+  Future<void> reset() => _track(_reset());
+
+  Future<void> _reset() async {
     _logger.warn('Resetting device-local meta state (user confirmed)');
-    await dispose();
+    await _release();
     // Key first, then file — the recovery ordering established in
     // StorageScopeInstaller: a crash in between must not leave an
     // encrypted database whose key still exists and looks healthy.
@@ -363,9 +390,33 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   Future<HydratedStorageDirectory> hydratedStorageDirectory() =>
       _hydratedDirectoryProvider();
 
-  /// Releases the resources held by the current bootstrap, if any.
-  /// Safe to call repeatedly; [initialize] calls it before each attempt.
-  Future<void> dispose() async {
+  /// Ends this bootstrap and releases what it holds (#384).
+  ///
+  /// Every caller gets the same future, so a second caller waits for the
+  /// teardown the first one started instead of returning while it is still
+  /// closing. #226's exit hook grants the exit when this returns.
+  @override
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
+    // An attempt in flight holds handles it has not committed yet. It sees
+    // _disposal and rolls them back; wait for that, so that returning here
+    // means everything is closed. A reset in flight is waited for whole.
+    await _operationEnded;
+    await _release();
+  }
+
+  /// Records [operation] as the one [dispose] waits for. Its error, if any,
+  /// is the caller's; dispose() only waits for the end.
+  Future<T> _track<T>(Future<T> operation) {
+    _operationEnded = operation.then<void>((_) {}, onError: (Object _) {});
+    return operation;
+  }
+
+  /// Releases the resources held by the current bootstrap, if any, without
+  /// ending it: [initialize] calls this before each attempt and [reset]
+  /// before deleting the files, and both must leave the bootstrap usable.
+  Future<void> _release() async {
     final orchestrator = _orchestrator;
     _orchestrator = null;
     final meta = _metaDatabase;
@@ -391,6 +442,13 @@ class NativePlatformBootstrap implements PlatformBootstrap {
           stackTrace: stackTrace,
         );
       }
+    }
+  }
+
+  /// The same exception `ServerOrchestratorImpl` throws once disposed.
+  void _throwIfDisposed() {
+    if (_disposal != null) {
+      throw StateError('NativePlatformBootstrap has been disposed.');
     }
   }
 

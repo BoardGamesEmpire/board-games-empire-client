@@ -27,6 +27,10 @@ import 'spy_root_container.dart';
 /// default, matching the platform with no out-of-band channel (web).
 /// Wiring tests script a fake source here.
 ///
+/// [dispose] (#384) is recorded in [calls] and then runs [onDispose], if
+/// set — the hook teardown tests use to hold it open, throw from it, or
+/// observe what had already been torn down when it ran.
+///
 /// [createLogSink] (#100) returns a silent no-op sink so `runBgeApp` can
 /// attach a sink without producing console/file noise in tests. It is
 /// deliberately NOT recorded in [calls]: `runBgeApp` invokes it first, and
@@ -59,15 +63,19 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   /// Scripts [createDeepLinkSource] (#10); null = no out-of-band channel.
   DeepLinkSource? deepLinkSource;
 
+  /// Runs inside [dispose], after the call is recorded.
+  Future<void> Function()? onDispose;
+
   /// The last container returned from [createRootContainer], if any.
   DependencyContainer? lastRootContainer;
 
   /// Ordered log of lifecycle calls: `'createRootContainer'`,
-  /// `'createDeepLinkSource'`, `'initialize'`, and `'reset'`.
+  /// `'createDeepLinkSource'`, `'initialize'`, `'reset'`, and `'dispose'`.
   final List<String> calls = [];
 
   int get initializeCallCount => calls.where((c) => c == 'initialize').length;
   int get resetCallCount => calls.where((c) => c == 'reset').length;
+  int get disposeCallCount => calls.where((c) => c == 'dispose').length;
   int get createRootContainerCallCount =>
       calls.where((c) => c == 'createRootContainer').length;
   int get createDeepLinkSourceCallCount =>
@@ -128,6 +136,12 @@ class FakePlatformBootstrap implements PlatformBootstrap {
   @override
   Future<HydratedStorageDirectory> hydratedStorageDirectory() async =>
       HydratedStorageDirectory('unused-in-tests');
+
+  @override
+  Future<void> dispose() async {
+    calls.add('dispose');
+    await onDispose?.call();
+  }
 }
 
 /// Silent [LogSink] for tests — drops every record, flushes nothing.

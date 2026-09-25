@@ -136,9 +136,9 @@ abstract interface class PlatformBootstrap {
   /// construct and initialize the [ServerOrchestrator], and wrap it in an
   /// `OrchestratorActiveServerScope` for the [BootstrapResult].
   ///
-  /// Web: nothing to open — return
-  /// `BootstrapResult(hasServer: true, orchestrator: null,
-  /// activeServerScope: null)` until #96 supplies the single-origin scope.
+  /// Web: fetch the origin's identity and build its single-origin scope
+  /// (#96), which holds the drift/wasm database and the user session (#288,
+  /// #137). There is no orchestrator.
   ///
   /// May throw (e.g. `DatabaseKeyError` when the meta key is lost). The
   /// shell surfaces failures as a retryable error state; it never reacts
@@ -167,4 +167,25 @@ abstract interface class PlatformBootstrap {
   /// Native resolves an application-support path (async);
   /// web returns [HydratedStorageDirectory.web].
   Future<HydratedStorageDirectory> hydratedStorageDirectory();
+
+  /// Releases everything [initialize] acquired, and ends this bootstrap
+  /// (#384).
+  ///
+  /// Called once by `runBgeApp`'s teardown, which runs when the app exits
+  /// (#226) or unmounts. Native closes the orchestrator's server databases
+  /// and the MetaDB. Web disposes the per-server container it built.
+  ///
+  /// Implementations must make it:
+  /// - **waitable** — every call returns the same future, so a second
+  ///   caller waits for the teardown the first one started. Returning early
+  ///   would let the exit go ahead with the databases still open;
+  /// - **terminal** — a later [initialize] throws [StateError]. An
+  ///   [initialize] already in flight releases what it built instead of
+  ///   committing it, and this future waits for that release. A [reset] in
+  ///   flight is waited for too.
+  ///
+  /// This is not the release [initialize] does before a retry, or the one
+  /// [reset] does before deleting files: those must leave the bootstrap
+  /// usable.
+  Future<void> dispose();
 }

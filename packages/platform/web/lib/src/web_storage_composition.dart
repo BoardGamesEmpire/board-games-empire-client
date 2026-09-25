@@ -37,7 +37,7 @@ Future<ActiveServerScope> buildWebServerScope() {
 /// drift/wasm data layer and the durable feedback queue composed in.
 ///
 /// This exists so the app's `main()` cannot get the wiring subtly wrong.
-/// `const WebPlatformBootstrap()` is a *valid* object that boots a
+/// `WebPlatformBootstrap()` is a *valid* object that boots a
 /// storage-less app, so the mistake it replaces would not fail — it would
 /// just quietly have no database. One symbol, named for what it is, is the
 /// cheapest guard available.

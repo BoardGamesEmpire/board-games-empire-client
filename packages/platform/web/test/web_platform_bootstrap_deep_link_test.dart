@@ -15,7 +15,7 @@ import 'package:web_platform/web.dart';
 void main() {
   group('WebPlatformBootstrap.createDeepLinkSource', () {
     test('returns null — no out-of-band channel on web', () {
-      const bootstrap = WebPlatformBootstrap();
+      final bootstrap = WebPlatformBootstrap();
 
       expect(bootstrap.createDeepLinkSource(), isNull);
     });

@@ -26,7 +26,7 @@ import 'package:web_storage/web_storage.dart';
 void main() {
   group('bgeWebPlatformBootstrap', () {
     test('is a WebPlatformBootstrap with the storage-composed scope', () {
-      // The wiring the app depends on. `const WebPlatformBootstrap()` would
+      // The wiring the app depends on. `WebPlatformBootstrap()` would
       // also boot — without a database — so what matters is that the app has
       // a single named thing to reach for, and that it is this type.
       expect(bgeWebPlatformBootstrap(), isA<WebPlatformBootstrap>());
@@ -36,7 +36,7 @@ void main() {
     test('its root container carries the DURABLE feedback sink, not the '
         'stand-in (#292)', () async {
       // The one assertion that catches the wiring mistake this composition
-      // exists to prevent: `const WebPlatformBootstrap()` still builds a
+      // exists to prevent: `WebPlatformBootstrap()` still builds a
       // perfectly valid root container, just with a sink that forgets
       // everything on reload.
       final container = await bgeWebPlatformBootstrap().createRootContainer();
