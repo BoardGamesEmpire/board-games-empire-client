@@ -338,6 +338,18 @@ void main() {
         expect(orchestratorsBuilt, 0);
       });
 
+      test('is terminal: reset() afterwards throws and deletes '
+          'nothing', () async {
+        metaFile.writeAsStringSync('db');
+        final bootstrap = buildBootstrap();
+
+        await bootstrap.dispose();
+
+        await expectLater(bootstrap.reset(), throwsStateError);
+        expect(keyService.deleteMetaKeyCalls, 0);
+        expect(metaFile.existsSync(), isTrue);
+      });
+
       test('during initialize(), waits for the attempt — which releases '
           'what it built instead of committing it', () async {
         final orchestratorStarting = Completer<void>();

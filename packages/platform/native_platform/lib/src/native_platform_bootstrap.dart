@@ -344,11 +344,14 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   }
 
   /// A [dispose] that lands mid-reset waits for it to finish, so an exit
-  /// cannot fall between the key delete and the file delete (#384).
+  /// cannot fall between the key delete and the file delete (#384). Once
+  /// [dispose] has been called, this throws [StateError] and deletes
+  /// nothing: no later [dispose] would be there to wait for it.
   @override
   Future<void> reset() => _track(_reset());
 
   Future<void> _reset() async {
+    _throwIfDisposed();
     _logger.warn('Resetting device-local meta state (user confirmed)');
     await _release();
     // Key first, then file — the recovery ordering established in

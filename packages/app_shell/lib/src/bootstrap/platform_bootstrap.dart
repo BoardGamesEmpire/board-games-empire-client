@@ -184,10 +184,11 @@ abstract interface class PlatformBootstrap {
   /// - **waitable** — every call returns the same future, so a second
   ///   caller waits for the teardown the first one started. Returning early
   ///   would let the exit go ahead with the databases still open;
-  /// - **terminal** — a later [initialize] throws [StateError]. An
-  ///   [initialize] already in flight releases what it built instead of
-  ///   committing it, and this future waits for that release. A [reset] in
-  ///   flight is waited for too.
+  /// - **terminal** — a later [initialize] throws [StateError], and so does
+  ///   a later [reset] where [supportsReset] is true. An [initialize]
+  ///   already in flight releases what it built instead of committing it,
+  ///   and this future waits for that release. A [reset] in flight is
+  ///   waited for too.
   ///
   /// This is not the release [initialize] does before a retry, or the one
   /// [reset] does before deleting files: those must leave the bootstrap
