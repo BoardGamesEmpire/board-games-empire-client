@@ -14,6 +14,8 @@ abstract class AuthRepository {
   ///
   /// Throws [AuthInvalidCredentialsException] for 401/403.
   /// Throws [AuthNetworkException] for connectivity failures.
+  /// Throws [AuthLocalDecodeException] when the server answered but this
+  /// device could not decode the reply.
   /// Throws [AuthServerException] for unexpected server errors, including a
   /// credential grant the server then reports no session for.
   Future<AuthResponse> signIn({
@@ -26,6 +28,8 @@ abstract class AuthRepository {
   /// Throws [AuthRegistrationDisabledException] if registration is disabled.
   /// Throws [AuthEmailAlreadyExistsException] if the email is taken.
   /// Throws [AuthNetworkException] for connectivity failures.
+  /// Throws [AuthLocalDecodeException] when the server answered but this
+  /// device could not decode the reply.
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -44,7 +48,8 @@ abstract class AuthRepository {
   /// was in flight: the newer intent wins.
   ///
   /// Throws (rather than returning null) whenever the answer is
-  /// **indeterminate**: [AuthNetworkException] for transport failures, and
+  /// **indeterminate**: [AuthNetworkException] for transport failures,
+  /// [AuthLocalDecodeException] for a 2xx this device could not decode, and
   /// [AuthServerException] for any other non-2xx. This split is what lets
   /// the bloc layer distinguish "the session is gone" (→ sign-in form) from
   /// "we could not check" (→ offline restore or the retry view, #37/#98).
@@ -309,8 +314,36 @@ final class AuthRegistrationDisabledException extends AuthException {
   });
 }
 
+/// Nothing answered: the request failed in transport — a timeout, a refused
+/// connection, a cancellation — so there is no status to classify by.
+///
+/// **Indeterminate**, but not the only type that is. Indeterminate means this
+/// client could not determine whether a session exists (#98):
+/// [AuthRepository.getSession] throws [AuthServerException] and
+/// [AuthLocalDecodeException] for outcomes it cannot settle too, and
+/// `AuthBloc`'s restore treats every [AuthException] other than
+/// [AuthInvalidCredentialsException] that way. What sets this one apart is
+/// its advice — the connection is the thing to check — so a fault that did
+/// reach the server does not belong here (#357).
 final class AuthNetworkException extends AuthException {
   const AuthNetworkException({required super.message, super.cause});
+}
+
+/// The server answered with a 2xx, and this device could not perform the
+/// decode of its body — in practice, the isolate a large body is parsed on
+/// would not spawn under resource pressure (#357).
+///
+/// Local and momentary, so **indeterminate** and retryable: it says nothing
+/// about the response or the session, and filing it as definitive would clear
+/// stored credentials over a fault the server had no part in. Not an
+/// [AuthNetworkException] either: the server was reached, so telling the user
+/// to check their connection would point at the one part of the system that
+/// demonstrably worked.
+///
+/// Distinct from a body that is not JSON, which is a statement about the
+/// response and surfaces as [AuthServerException].
+final class AuthLocalDecodeException extends AuthException {
+  const AuthLocalDecodeException({required super.message, super.cause});
 }
 
 final class AuthServerException extends AuthException {

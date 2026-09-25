@@ -518,7 +518,7 @@ void main() {
     // dio's 50 KB threshold `decodeJsonBody` parses in another isolate, so
     // this also pins that a FormatException keeps its identity across that
     // boundary — if it did not, a large captive-portal page would come back
-    // as the retryable AuthNetworkException and retry forever.
+    // as the retryable AuthLocalDecodeException and retry forever.
     test('a >50KB non-JSON body on the session endpoint is still a server '
         'fault, not a network one', () async {
       final bigHtml = '<html>${'x' * (60 * 1024)}</html>';
@@ -546,7 +546,9 @@ void main() {
     // not spawn under resource pressure — is local and momentary, and says
     // nothing about the response. No canned body can produce it, so the
     // decoder is injected. Filing it as definitive would clear the user's
-    // credentials over a fault the server had no part in.
+    // credentials over a fault the server had no part in. And it is not a
+    // network failure either: the server answered, so "check your
+    // connection" would be the wrong advice (#357).
     Future<Object?> unspawnable(String _) async =>
         throw IsolateSpawnException('resource pressure');
 
@@ -558,7 +560,7 @@ void main() {
 
       await expectLater(
         repo.getSession(),
-        throwsA(isA<AuthNetworkException>()),
+        throwsA(isA<AuthLocalDecodeException>()),
       );
       verifyNever(() => storage.clear());
     });
@@ -573,7 +575,7 @@ void main() {
 
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'pass'),
-          throwsA(isA<AuthNetworkException>()),
+          throwsA(isA<AuthLocalDecodeException>()),
         );
         verifyNever(
           () => storage.store(

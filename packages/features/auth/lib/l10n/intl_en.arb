@@ -136,6 +136,10 @@
   "@authErrorNetwork": {
     "description": "Submission error: connectivity failure or timeout"
   },
+  "authErrorLocalDecode": "This device could not read the server's reply. Please try again.",
+  "@authErrorLocalDecode": {
+    "description": "Submission error: the server answered, but this device could not decode its reply (a local, momentary fault). Must not suggest checking the connection."
+  },
   "authErrorServer": "Something went wrong on the server. Please try again.",
   "@authErrorServer": {
     "description": "Submission error: unexpected server failure"

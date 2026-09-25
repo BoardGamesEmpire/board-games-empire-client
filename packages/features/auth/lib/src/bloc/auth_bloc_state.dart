@@ -142,6 +142,18 @@ final class AuthFailureNetwork extends AuthOperationFailure {
   const AuthFailureNetwork();
 }
 
+/// The server answered, and this device could not decode the reply — a
+/// local, momentary fault (#357). Separate from [AuthFailureNetwork] so the
+/// message does not send the user to check a connection that worked.
+final class AuthFailureLocalDecode extends AuthOperationFailure {
+  const AuthFailureLocalDecode([this.cause]);
+
+  /// The exception behind it, carrying the platform's own error. Retained for
+  /// the log, which has no other record of this fault on native, and excluded
+  /// from equality like [AuthFailureServer.cause].
+  final Object? cause;
+}
+
 /// Anything unanticipated (unexpected status, malformed body, …). The
 /// original error is retained for the feedback pipeline, but excluded
 /// from equality so tests can match on the state alone.

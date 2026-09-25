@@ -244,6 +244,36 @@ void main() {
         expect(find.byType(SnackBar), findsNothing);
       });
 
+      testWidgets('a reply this device could not decode does not blame the '
+          'connection (#357)', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureLocalDecode(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(
+          _wrap(_screen(_identity(), mockBloc), mockBloc),
+        );
+        await tester.pumpAndSettle();
+
+        // The server answered; only this device failed to read the reply.
+        expect(
+          find.text(
+            'This device could not read the server\'s reply. Please '
+            'try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Could not reach the server. Check your connection.'),
+          findsNothing,
+        );
+      });
+
       testWidgets('retires the failure when the user edits a field', (
         tester,
       ) async {

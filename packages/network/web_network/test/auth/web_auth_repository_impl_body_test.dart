@@ -475,7 +475,8 @@ void main() {
     // `decodeJsonBody`'s second failure mode — an offload isolate that would
     // not spawn under resource pressure — is local and momentary, and says
     // nothing about the response. No canned body can produce it, so the
-    // decoder is injected.
+    // decoder is injected. And it is not a network failure either: the server
+    // answered, so "check your connection" would be the wrong advice (#357).
     Future<Object?> unspawnable(String _) async =>
         throw IsolateSpawnException('resource pressure');
 
@@ -489,7 +490,7 @@ void main() {
 
         await expectLater(
           repo.getSession(),
-          throwsA(isA<AuthNetworkException>()),
+          throwsA(isA<AuthLocalDecodeException>()),
         );
         expect(repo.currentAuthState, isNot(isA<AuthStateUnauthenticated>()));
       },
@@ -507,7 +508,7 @@ void main() {
 
       await expectLater(
         repo.signIn(email: 'a@b.c', password: 'pw'),
-        throwsA(isA<AuthNetworkException>()),
+        throwsA(isA<AuthLocalDecodeException>()),
       );
       expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
     });

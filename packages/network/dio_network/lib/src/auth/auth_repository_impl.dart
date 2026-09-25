@@ -928,8 +928,8 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     } on Object catch (error) {
       return (
         value: null,
-        failure: AuthNetworkException(
-          message: 'Could not decode the response during $context.',
+        failure: AuthLocalDecodeException(
+          message: 'This device could not decode the response during $context.',
           cause: error,
         ),
       );
@@ -973,7 +973,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // already happened, so the check is free.
     _assertSuccess(status, decoded.value, context: context);
 
-    // An unreadable body on a 2xx is the server's to answer for.
+    // An unreadable body on a 2xx fails the grant: as a server fault when it
+    // is not JSON, and as a local one when this device could not run the
+    // decode (#357).
     final failure = decoded.failure;
     if (failure != null) throw failure;
 

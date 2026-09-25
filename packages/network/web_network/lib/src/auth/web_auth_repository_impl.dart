@@ -1184,8 +1184,8 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     } on Object catch (error) {
       return (
         value: null,
-        failure: AuthNetworkException(
-          message: 'Could not decode the response during $context.',
+        failure: AuthLocalDecodeException(
+          message: 'This device could not decode the response during $context.',
           cause: error,
         ),
       );

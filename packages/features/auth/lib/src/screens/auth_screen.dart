@@ -239,6 +239,7 @@ class _AuthScreenState extends State<AuthScreen> {
         AuthFailureEmailAlreadyExists() => l10n.authErrorEmailExists,
         AuthFailureRegistrationDisabled() => l10n.authRegistrationDisabled,
         AuthFailureNetwork() => l10n.authErrorNetwork,
+        AuthFailureLocalDecode() => l10n.authErrorLocalDecode,
         AuthFailureServer() => l10n.authErrorServer,
       };
 
