@@ -437,7 +437,7 @@ void main() {
   group('an unreadable grant body defers to the reconcile, never vetoes the '
       'sign-in', () {
     // Web's cookie is already set by the grant response, so the envelope is a
-    // convenience and the reconcile is the authority — `_grantOrNull` and
+    // convenience and the reconcile is the authority — `_readGrant` and
     // `_reconcileCredentialGrant` are both built on that. A body that is not
     // JSON at all must behave like one whose fields are wrong, which already
     // recovered.

@@ -92,6 +92,35 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
+    'warns (not errors) when the server granted no session — an expected '
+    'outcome of its configuration, which error-level noise would turn into '
+    'bug reports (#331)',
+    build: () {
+      when(
+        () => repo.signUp(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+          username: any(named: 'username'),
+          firstName: any(named: 'firstName'),
+          lastName: any(named: 'lastName'),
+        ),
+      ).thenThrow(const AuthSessionNotGrantedException());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(
+      const AuthRegisterRequested(
+        email: 'a@b.co',
+        password: 'x',
+        username: 'u',
+      ),
+    ),
+    verify: (_) {
+      expect(warns(), isNotEmpty);
+      expect(errors(), isEmpty);
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
     'errors on an unexpected server failure (AuthFailureServer)',
     build: () {
       when(

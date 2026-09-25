@@ -16,8 +16,16 @@ abstract class AuthRepository {
   /// Throws [AuthNetworkException] for connectivity failures.
   /// Throws [AuthLocalDecodeException] when the server answered but this
   /// device could not decode the reply.
+  /// Throws [AuthSessionNotGrantedException] when the grant itself declines
+  /// a session — BetterAuth's `token: null` envelope.
   /// Throws [AuthServerException] for unexpected server errors, including a
-  /// credential grant the server then reports no session for.
+  /// grant that carried a session the server then reports it does not have.
+  ///
+  /// A declined grant is reported as declined only when nothing contradicts
+  /// it. An implementation that confirms the grant against the session
+  /// endpoint (web) throws that check's own failure instead when the check
+  /// cannot complete: until it answers, whether a session exists is
+  /// undetermined.
   Future<AuthResponse> signIn({
     required String email,
     required String password,
@@ -30,6 +38,13 @@ abstract class AuthRepository {
   /// Throws [AuthNetworkException] for connectivity failures.
   /// Throws [AuthLocalDecodeException] when the server answered but this
   /// device could not decode the reply.
+  /// Throws [AuthSessionNotGrantedException] when the grant itself declines
+  /// a session — BetterAuth's `token: null` envelope, which is how a server
+  /// requiring email verification answers a sign-up.
+  /// Throws [AuthServerException] for unexpected server errors, including a
+  /// grant that carried a session the server then reports it does not have.
+  ///
+  /// A declined grant is confirmed the same way as on [signIn].
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -353,6 +368,29 @@ final class AuthServerException extends AuthException {
     super.cause,
   });
   final int? statusCode;
+}
+
+/// The server accepted the credentials and granted no session (#331).
+///
+/// BetterAuth answers a successful sign-up with `token: null` when the
+/// server requires email verification or has `autoSignIn` off. On a
+/// verification-required server it also answers a sign-up for an email that
+/// is already registered the same way, deliberately, so that sign-up cannot
+/// reveal who has an account. The response does not say which of these
+/// happened, so this type names what the response says rather than why: it
+/// asserts neither that an account was created nor that verification is the
+/// reason.
+///
+/// Sign-in is guarded for the same envelope, but BetterAuth does not send it
+/// there: it refuses an unverified sign-in with a 403 instead (#394).
+///
+/// An expected outcome of the server's configuration, not a fault — and not
+/// one a retry changes, since the same request gets the same answer.
+final class AuthSessionNotGrantedException extends AuthException {
+  const AuthSessionNotGrantedException({
+    super.message =
+        'The server accepted the credentials but granted no session.',
+  });
 }
 
 /// The operation was overtaken by a sign-out (or another supersession of

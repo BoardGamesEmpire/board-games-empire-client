@@ -618,10 +618,10 @@ void main() {
       //
       // This used to hold by accident: `AuthResponse.token` was
       // `required String`, so the envelope could not be parsed and
-      // `_grantOrNull` returned null via its catch. #291 made the field
+      // `_readGrant` declined it via its catch. #291 made the field
       // nullable, which would have made the envelope parse cleanly and
       // become an *adoptable* grant — signing in a user the server had
-      // explicitly declined to grant a session to. `_grantOrNull` now
+      // explicitly declined to grant a session to. `_readGrant` now
       // rejects it deliberately; the test below pins that.
       test(
         "BetterAuth's token:null envelope does not fail the sign-in",
@@ -646,10 +646,12 @@ void main() {
       // The other half of the same shape, and the one that would regress
       // silently: a server that granted no session AND a reconcile that
       // cannot confirm one. There is nothing adoptable on either side, so
-      // the reconcile's own failure must surface. If `_grantOrNull` ever
+      // the reconcile's own failure must surface. If `_readGrant` ever
       // starts treating a token:null envelope as readable, this adopts a
       // session for a user who was never signed in, and only this test
-      // says so.
+      // says so. It stays the reconcile's failure rather than "no session
+      // granted" (#331): on web the reconcile is the authority, and it could
+      // not answer.
       test(
         "BetterAuth's token:null envelope is not an adoptable grant",
         () async {
@@ -670,6 +672,26 @@ void main() {
           expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
         },
       );
+
+      // Sign-in reaches the same shape through the same funnel. Native's
+      // guard raises it for both operations, and web matches (#331).
+      test("BetterAuth's token:null envelope with no session behind it is "
+          '"no session granted" on sign-in too', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-in/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _status(401));
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'p'),
+          throwsA(isA<AuthSessionNotGrantedException>()),
+        );
+      });
 
       // Both sides failed: no readable grant to fall back on and no
       // confirmation. Nothing adoptable exists, so the reconcile's own
@@ -724,7 +746,7 @@ void main() {
       });
     });
 
-    // signUp routes through the same _grantOrNull + _reconcileCredentialGrant
+    // signUp routes through the same _readGrant + _reconcileCredentialGrant
     // pair as signIn. Covered separately because the group above stubs only
     // the sign-in endpoint, so nothing there exercises this path.
     group('credential grant reconcile (signUp)', () {
@@ -930,6 +952,48 @@ void main() {
           await expectLater(register(), throwsA(isA<AuthServerException>()));
         },
       );
+
+      // #331. A server that requires email verification answers the sign-up
+      // with a well-formed `token: null` envelope and sets no cookie, so the
+      // reconcile finds no session either. The server did what it was
+      // configured to do; reporting it as a server fault invited a retry that
+      // can only get the same answer.
+      test('a token:null grant the session endpoint also finds no session '
+          'for is "no session granted", not a server fault (#331)', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _status(401));
+
+        await expectLater(
+          register(),
+          throwsA(isA<AuthSessionNotGrantedException>()),
+        );
+        expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
+      });
+
+      // Only a grant the server DECLINED is "not granted". A grant with no
+      // body says nothing about why no session followed, so it stays a
+      // server fault — filing it as "not granted" would be #331 in reverse.
+      test('a bodiless grant followed by no session is still a server fault, '
+          'not "no session granted"', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(200));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _status(401));
+
+        await expectLater(register(), throwsA(isA<AuthServerException>()));
+      });
     });
 
     // A 401 normally resolves as a Response (validateStatus:(_)=>true), but
@@ -1988,6 +2052,40 @@ void main() {
         expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
         // The read never ran at all: with nothing proving a replacement, the
         // reconcile has no cookie it can trust to ask about.
+        verifyNever(
+          () => mockDio.get<String>(any(), options: any(named: 'options')),
+        );
+      });
+
+      // The same refusal, reached by a grant the server DECLINED rather than
+      // one that could not be read. The envelope says on its own that no
+      // session was granted — native decides on it alone — so that is what
+      // surfaces, not a server fault (#331). The read still never runs.
+      test('a well-formed token:null grant refused over a held latch is "no '
+          'session granted" (#331)', () async {
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-out',
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(500));
+        when(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _ok({..._grantJson(), 'token': null}));
+        when(() => mockDio.get<String>(any(), options: any(named: 'options')))
+            .thenAnswer((_) async => _ok(_sessionJson()));
+
+        await repo.signOut();
+
+        await expectLater(
+          repo.signUp(email: 'next@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthSessionNotGrantedException>()),
+        );
+        expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
         verifyNever(
           () => mockDio.get<String>(any(), options: any(named: 'options')),
         );

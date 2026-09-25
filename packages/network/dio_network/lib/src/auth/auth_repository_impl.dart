@@ -268,9 +268,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // same envelope failed inside `AuthResponse.fromJson`, and a raw parse
     // error slips past every `on AuthException` clause in AuthBloc and
     // strands the form on AuthLoading — the failure this replaces.
+    //
+    // Not a server fault: the server answered as configured, and calling it
+    // one invited a retry that can only get the same answer (#331).
     final token = granted.token;
     if (token == null) {
-      throw AuthServerException(
+      throw AuthSessionNotGrantedException(
         message:
             'The server accepted the $context but granted no session token.',
       );

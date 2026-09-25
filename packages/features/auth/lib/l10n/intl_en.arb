@@ -140,6 +140,10 @@
   "@authErrorLocalDecode": {
     "description": "Submission error: the server answered, but this device could not decode its reply (a local, momentary fault). Must not suggest checking the connection."
   },
+  "authErrorSessionNotGranted": "This server accepted your details but didn't sign you in. It may need you to confirm your email first — check your inbox, then sign in.",
+  "@authErrorSessionNotGranted": {
+    "description": "Submission error: the server accepted the credentials but started no session, typically because it requires email verification. The server does not say why, and a duplicate sign-up gets the same answer as a new account, so the copy must not claim an account was created or that verification is certainly the reason."
+  },
   "authErrorServer": "Something went wrong on the server. Please try again.",
   "@authErrorServer": {
     "description": "Submission error: unexpected server failure"

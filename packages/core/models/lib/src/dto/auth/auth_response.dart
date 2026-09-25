@@ -49,8 +49,8 @@ abstract class AuthResponse with _$AuthResponse {
     /// Required, though nullable, so every construction site has to state
     /// which of those it means rather than inheriting a default. A consumer
     /// that genuinely needs the credential must reject null explicitly:
-    /// `AuthRepositoryImpl` is the only one, and it treats a null here as a
-    /// server contract violation.
+    /// `AuthRepositoryImpl` is the only one, and it treats a null here as
+    /// the server granting no session (#331).
     required String? token,
 
     /// Authenticated user (BetterAuth shape).

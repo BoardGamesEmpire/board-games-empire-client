@@ -242,7 +242,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // stored it automatically. The reconcile that follows is for the full
     // user object and the canonical expiry — not for the credential.
     return _reconcileCredentialGrant(
-      _grantOrNull(body, status: response.statusCode, context: 'sign-in'),
+      _readGrant(body, status: response.statusCode, context: 'sign-in'),
       context: 'sign-in',
     );
   }
@@ -287,7 +287,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     final body = await _requireGrantBody(response, context: 'sign-up');
 
     return _reconcileCredentialGrant(
-      _grantOrNull(body, status: response.statusCode, context: 'sign-up'),
+      _readGrant(body, status: response.statusCode, context: 'sign-up'),
       context: 'sign-up',
     );
   }
@@ -823,11 +823,17 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// session endpoint was about to confirm. Whether the sign-in stands is
   /// the reconcile's call, and the reconcile is the authority regardless.
   ///
-  /// Returns null for three shapes: no body, a body that will not parse,
-  /// and BetterAuth's documented `token: null` envelope — a server that
-  /// granted no session, which is not something to adopt on a reconcile
+  /// Nothing is adoptable for three shapes: no body, a body that will not
+  /// parse, and BetterAuth's documented `token: null` envelope — a server
+  /// that granted no session, which is not something to adopt on a reconcile
   /// that cannot reach the server to disagree.
-  AuthResponse? _grantOrNull(
+  ///
+  /// The third is a [_DeclinedGrant] and the other two an [_UnreadableGrant],
+  /// because they mean different things. The envelope is the server's own
+  /// statement that it declined to grant a session; a missing or unreadable
+  /// body says nothing about why, so where no session follows it stays a
+  /// server fault (#331).
+  _Grant _readGrant(
     Map<String, dynamic>? data, {
     required int? status,
     required String context,
@@ -835,7 +841,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // Not logged here: [_requireGrantBody] is the only source of a null on
     // this path and has already said why, with more detail than this branch
     // could. A second record would double-count one event.
-    if (data == null) return null;
+    if (data == null) return const _UnreadableGrant();
 
     final AuthResponse granted;
     try {
@@ -852,7 +858,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         stackTrace: stackTrace,
         context: {'status': status},
       );
-      return null;
+      return const _UnreadableGrant();
     }
 
     // BetterAuth's documented no-session envelope: `token: null`, returned
@@ -888,19 +894,36 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         'has to confirm this $context unaided',
         context: {'status': status},
       );
-      return null;
+      return const _DeclinedGrant();
     }
 
     // The token in this envelope is the same live credential the session
     // endpoint vends, and web has no use for it either (#291) — keep the
     // user identity, which is the only part that makes a granted session
     // adoptable, and leave the credential behind.
-    return AuthResponse(
-      token: null,
-      user: granted.user,
-      expiresAt: granted.expiresAt,
+    return _AdoptableGrant(
+      AuthResponse(
+        token: null,
+        user: granted.user,
+        expiresAt: granted.expiresAt,
+      ),
     );
   }
+
+  /// The failure for a 2xx credential grant that ends with no session: the
+  /// server's own answer when it declined to grant one, and a server fault
+  /// otherwise (#331).
+  static AuthException _noSessionAfter(String context, _Grant grant) =>
+      switch (grant) {
+        _DeclinedGrant() => AuthSessionNotGrantedException(
+          message: 'The server accepted the $context but granted no session.',
+        ),
+        _AdoptableGrant() || _UnreadableGrant() => AuthServerException(
+          message:
+              'Authentication succeeded but the server reported no session '
+              'during $context.',
+        ),
+      };
 
   /// Reconciles a freshly granted credential against the session endpoint.
   ///
@@ -913,7 +936,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// - reconcile succeeds → adopt the confirmed session, which carries the
   ///   server's canonical expiry;
   /// - reconcile is **INDETERMINATE** (transport failure, 5xx) → keep the
-  ///   granted session, or rethrow if [granted] is null.
+  ///   granted session, or rethrow if the grant carried none.
   ///   Authentication genuinely happened and the browser already
   ///   holds the cookie proving it; failing here would report
   ///   "connection failed" for a sign-in that worked. The cost is an
@@ -923,11 +946,17 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// - reconcile returns a **DEFINITIVE** "no session" → the server accepted
   ///   the credential and then disowned the session. That is a server
   ///   contract violation, not a network condition, and it must not be
-  ///   reported as success.
+  ///   reported as success — unless the grant itself had declined a session,
+  ///   in which case the reconcile only confirmed what the server said.
   Future<AuthResponse> _reconcileCredentialGrant(
-    AuthResponse? granted, {
+    _Grant grant, {
     required String context,
   }) async {
+    final granted = switch (grant) {
+      _AdoptableGrant(:final session) => session,
+      _DeclinedGrant() || _UnreadableGrant() => null,
+    };
+
     // #348's release condition. Reaching here means the credential POST
     // returned a 2xx — `_requireGrantBody` never returns for anything else —
     // so the server has issued a fresh session cookie and the browser has
@@ -991,18 +1020,16 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // Only this combination is refused. A no-session grant with no latch
     // raised still reads, and still ends at the `confirmed == null` throw
     // below, so nothing changes for an ordinary verification-required
-    // sign-up.
+    // sign-up. With no read to run, the envelope is the only answer there
+    // is, so a grant the server declined surfaces as not granted — the same
+    // answer native gives from the envelope alone (#331).
     if (!replacedCookie && _unrevokedSignOut) {
       _log.warn(
         'A 2xx $context carried no session while a revocation was left '
         'unobserved; refusing to reconcile against a cookie it did not '
         'replace',
       );
-      throw AuthServerException(
-        message:
-            'Authentication succeeded but the server reported no session '
-            'during $context.',
-      );
+      throw _noSessionAfter(context, grant);
     }
 
     final AuthResponse? confirmed;
@@ -1038,13 +1065,19 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // that outcome. The native twin's `_finalizeCredentialGrant` carries
       // the full reasoning and the conditions that would change it.
       //
-      // Indeterminate reconcile and no readable grant ([_grantOrNull]):
+      // Indeterminate reconcile and no adoptable grant ([_readGrant]):
       // nothing adoptable exists on either side. Surface the reconcile's own
       // failure rather than dressing it up as a server fault — it is what
       // actually went wrong, and its retryable copy is the honest thing to
       // show for a sign-in whose credentials the server accepted. A
       // synthesised stand-in would carry no real `user.id` and so could not
       // activate the per-(server, user) scope anyway (#135).
+      //
+      // A declined grant rethrows too, where native would call it not
+      // granted. Here the reconcile, not the envelope, is the authority on
+      // whether a session exists — backend#407's hazard is an envelope with
+      // no token over a live cookie — so while it cannot answer, its own
+      // retryable failure is the honest report (#331).
       if (granted == null) rethrow;
 
       _log.warn(
@@ -1071,11 +1104,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       if (epoch != _sessionEpoch || _revocationEpoch != revocationEpoch) {
         throw const AuthSupersededException();
       }
-      throw AuthServerException(
-        message:
-            'Authentication succeeded but the server reported no session '
-            'during $context.',
-      );
+      throw _noSessionAfter(context, grant);
     }
 
     // #346. A revocation completed while the read above was in
@@ -1200,16 +1229,16 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// one place this deliberately diverges from the native twin (which throws)
   /// and from [_getSessionUnlatched] below (which also throws).
   ///
-  /// The reason is web's, and [_grantOrNull] and [_reconcileCredentialGrant]
+  /// The reason is web's, and [_readGrant] and [_reconcileCredentialGrant]
   /// are both already built on it: BetterAuth set the session cookie in **this
   /// response** and the browser has already stored it, so the grant envelope
   /// is a convenience and the reconcile is the authority. Declining an
   /// unreadable one costs an unconfirmed expiry; throwing on it would veto a
   /// sign-in that genuinely succeeded and whose credential is live — and the
-  /// reconcile is about to settle the question either way. `_grantOrNull`
-  /// already returns null for a body whose FIELDS are wrong; a body that is
-  /// not JSON at all is the same situation reached one step earlier, and the
-  /// two must not disagree.
+  /// reconcile is about to settle the question either way. `_readGrant`
+  /// already declines a body whose FIELDS are wrong; a body that is not JSON
+  /// at all is the same situation reached one step earlier, and the two must
+  /// not disagree.
   ///
   /// When the reconcile cannot settle it either, nothing is silently
   /// swallowed: [_reconcileCredentialGrant] rethrows the reconcile's own
@@ -1250,7 +1279,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     }
 
     // Every "nothing adoptable here" outcome is logged in THIS method, with
-    // the reason that distinguishes it, and `_grantOrNull` no longer logs its
+    // the reason that distinguishes it, and `_readGrant` no longer logs its
     // own null branch. It used to, and since its only callers hand it this
     // method's result, an unreadable body produced two warn records — the
     // second of them saying "No body on a successful $context" about a body
@@ -1458,4 +1487,28 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   Future<void> onDispose() async {
     await _stateController.close();
   }
+}
+
+/// A credential grant as [WebAuthRepositoryImpl._readGrant] read it (#331).
+sealed class _Grant {
+  const _Grant();
+}
+
+/// A grant carrying a session to adopt should the reconcile not settle.
+final class _AdoptableGrant extends _Grant {
+  const _AdoptableGrant(this.session);
+
+  final AuthResponse session;
+}
+
+/// BetterAuth's `token: null` envelope: the server's own statement that it
+/// declined to grant a session.
+final class _DeclinedGrant extends _Grant {
+  const _DeclinedGrant();
+}
+
+/// No body, a body that would not parse, or one whose fields are wrong:
+/// nothing adoptable, and nothing said about why.
+final class _UnreadableGrant extends _Grant {
+  const _UnreadableGrant();
 }

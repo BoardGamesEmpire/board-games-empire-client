@@ -154,6 +154,13 @@ final class AuthFailureLocalDecode extends AuthOperationFailure {
   final Object? cause;
 }
 
+/// The server accepted the credentials and granted no session — typically a
+/// sign-up on a server that requires email verification (#331). An expected
+/// outcome of its configuration, not a fault, and one a retry cannot change.
+final class AuthFailureSessionNotGranted extends AuthOperationFailure {
+  const AuthFailureSessionNotGranted();
+}
+
 /// Anything unanticipated (unexpected status, malformed body, …). The
 /// original error is retained for the feedback pipeline, but excluded
 /// from equality so tests can match on the state alone.

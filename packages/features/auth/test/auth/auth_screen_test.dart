@@ -274,6 +274,39 @@ void main() {
         );
       });
 
+      // The copy asserts neither that an account was created nor why: a
+      // duplicate sign-up on a verification-required server gets the same
+      // envelope as a new one (#331).
+      testWidgets('a session the server did not grant says so, without '
+          'calling it a server fault (#331)', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureSessionNotGranted(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(
+          _wrap(_screen(_identity(), mockBloc), mockBloc),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            "This server accepted your details but didn't sign you in. It "
+            'may need you to confirm your email first — check your inbox, '
+            'then sign in.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Something went wrong on the server. Please try again.'),
+          findsNothing,
+        );
+      });
+
       testWidgets('retires the failure when the user edits a field', (
         tester,
       ) async {
