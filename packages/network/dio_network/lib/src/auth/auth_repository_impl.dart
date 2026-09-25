@@ -47,6 +47,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required this._dio,
     this._clock = const LocalClockService(),
     this._deviceNowUtc = _systemDeviceNowUtc,
+    this._decodeJson = decodeJsonBody,
   }) : _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   static DateTime _systemDeviceNowUtc() => DateTime.now().toUtc();
@@ -70,6 +71,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// [StoredSession.isDeviceClockPlausibleAt] for why mixing the two
   /// silently disables offline restore on skewed devices.
   final DateTime Function() _deviceNowUtc;
+
+  /// The JSON decode behind [_decodeBody]. Always `decodeJsonBody` in
+  /// production; injectable because its second failure mode — an offload
+  /// isolate that would not spawn — is the one no response body can produce,
+  /// so without a seam the more expensive branch of the split is the untested
+  /// one (#364).
+  final Future<Object?> Function(String) _decodeJson;
 
   AuthState _currentState = const AuthStateUnknown();
 
@@ -905,7 +913,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     if (raw == null || raw.isEmpty) return (value: null, failure: null);
 
     try {
-      return (value: await decodeJsonBody(raw), failure: null);
+      return (value: await _decodeJson(raw), failure: null);
     } on FormatException catch (error) {
       return (
         value: null,

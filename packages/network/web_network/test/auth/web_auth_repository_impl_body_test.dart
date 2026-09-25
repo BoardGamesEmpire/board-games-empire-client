@@ -11,9 +11,11 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate' show IsolateSpawnException;
 
 import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
+import 'package:dio_network/dio_network.dart' show decodeJsonBody;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -79,8 +81,15 @@ Map<String, dynamic> _sessionJson() => {
 const _kTruncatedJson = '{"session":{"id":"sess-1","token":"tok","exp';
 
 void main() {
-  WebAuthRepositoryImpl repoWith(Dio dio) {
-    final repo = WebAuthRepositoryImpl(identity: _identity(), dio: dio);
+  WebAuthRepositoryImpl repoWith(
+    Dio dio, {
+    Future<Object?> Function(String) decodeJson = decodeJsonBody,
+  }) {
+    final repo = WebAuthRepositoryImpl(
+      identity: _identity(),
+      dio: dio,
+      decodeJson: decodeJson,
+    );
     addTearDown(repo.onDispose);
     return repo;
   }
@@ -390,43 +399,36 @@ void main() {
     test(
       'a sign-out is never overtaken by a session response still decoding',
       () async {
-        // 1 MB, so `decodeJsonBody` offloads to a real isolate under
-        // `flutter test` and the window is milliseconds.
-        final padded = Map<String, dynamic>.from(_sessionJson())
-          ..['padding'] = 'x' * (1024 * 1024);
+        // The decode is held open by the injected decoder (#364), so the
+        // sign-out lands inside the window on every run. It used to be raced
+        // against a real 1 MB isolate decode, which could let the decode
+        // finish first and pass without exercising the checkpoint.
+        final decodeStarted = Completer<void>();
+        final releaseDecode = Completer<void>();
+        // Only the first decode — the session read's — is held. A later one
+        // passes straight through rather than throwing on a completed
+        // Completer, which the repository would swallow as a decode fault.
+        Future<Object?> heldOpen(String raw) async {
+          if (!decodeStarted.isCompleted) {
+            decodeStarted.complete();
+            await releaseDecode.future;
+          }
+          return decodeJsonBody(raw);
+        }
 
-        // The response is signalled from an interceptor rather than waited
-        // for with `pumpEventQueue`, which pumps until the queue drains and
-        // so can service the decoder before the sign-out starts. That made
-        // this pass without exercising the checkpoint, and made the native
-        // twin go red under full-suite load. `onResponse` fires inside dio,
-        // immediately before `get` returns, so one yield past it lands in
-        // the decode.
-        final answered = Completer<void>();
-        final dio = cannedDio(body: jsonEncode(padded), statusCode: 200)
-          ..interceptors.add(
-            InterceptorsWrapper(
-              onResponse: (response, handler) {
-                if (!answered.isCompleted) answered.complete();
-                handler.next(response);
-              },
-            ),
-          );
-        final repo = repoWith(dio);
+        final repo = repoWith(
+          cannedDio(body: jsonEncode(_sessionJson()), statusCode: 200),
+          decodeJson: heldOpen,
+        );
 
         final inFlight = repo.getSession();
-        await answered.future;
-        await Future<void>.delayed(Duration.zero);
+        await decodeStarted.future;
         await repo.signOut();
-        // Swallow the result: which of the two guards fires depends on where
-        // the sign-out lands, and both are correct outcomes.
+        releaseDecode.complete();
         await inFlight.catchError((_) => null);
 
-        // The SAFETY property rather than one interleaving: the user signed
-        // out, so whatever the ordering the repository must not be left
-        // authenticated. Stated this way it cannot go red without a real
-        // defect — and with the gate above it reliably does go red when the
-        // post-decode checkpoint is removed.
+        // The user signed out mid-decode, so the repository must not be left
+        // authenticated by the response that finished decoding afterwards.
         expect(repo.currentAuthState, isA<AuthStateUnauthenticated>());
       },
     );
@@ -467,6 +469,47 @@ void main() {
         repo.signIn(email: 'a@b.c', password: 'pw'),
         throwsA(isA<AuthServerException>()),
       );
+    });
+  });
+  group('a decode that could not be PERFORMED stays retryable (#364)', () {
+    // `decodeJsonBody`'s second failure mode — an offload isolate that would
+    // not spawn under resource pressure — is local and momentary, and says
+    // nothing about the response. No canned body can produce it, so the
+    // decoder is injected.
+    Future<Object?> unspawnable(String _) async =>
+        throw IsolateSpawnException('resource pressure');
+
+    test(
+      'on the session endpoint it is indeterminate, not a sign-out',
+      () async {
+        final repo = repoWith(
+          cannedDio(body: jsonEncode(_sessionJson()), statusCode: 200),
+          decodeJson: unspawnable,
+        );
+
+        await expectLater(
+          repo.getSession(),
+          throwsA(isA<AuthNetworkException>()),
+        );
+        expect(repo.currentAuthState, isNot(isA<AuthStateUnauthenticated>()));
+      },
+    );
+
+    test('on a sign-in whose reconcile cannot decode either, the reconcile\'s '
+        'retryable failure surfaces', () async {
+      final repo = repoWith(
+        routingDio({
+          '/sign-in/email': (jsonEncode(_grantJson()), 200),
+          '/get-session': (jsonEncode(_sessionJson()), 200),
+        }),
+        decodeJson: unspawnable,
+      );
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthNetworkException>()),
+      );
+      expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
     });
   });
 }

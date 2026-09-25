@@ -31,12 +31,21 @@ import 'package:http_status/http_status.dart';
 /// resource owned by the container. [onDispose] tears down only the auth-state
 /// stream.
 class WebAuthRepositoryImpl implements AuthRepository, Disposable {
-  WebAuthRepositoryImpl({required this._identity, required this._dio})
-    : _stateController = StreamController<AuthState>.broadcast(sync: true);
+  WebAuthRepositoryImpl({
+    required this._identity,
+    required this._dio,
+    this._decodeJson = decodeJsonBody,
+  }) : _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   final ServerIdentity _identity;
   final Dio _dio;
   final StreamController<AuthState> _stateController;
+
+  /// The JSON decode behind [_decodeBody]. Always `decodeJsonBody` in
+  /// production; injectable for the same reason as the native twin's — the
+  /// decode's second failure mode is the one no response body can produce
+  /// (#364).
+  final Future<Object?> Function(String) _decodeJson;
   final BgeLogger _log = BgeLogger('bge.web.auth.repository');
 
   AuthState _currentState = const AuthStateUnknown();
@@ -1160,7 +1169,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     if (raw == null || raw.isEmpty) return (value: null, failure: null);
 
     try {
-      return (value: await decodeJsonBody(raw), failure: null);
+      return (value: await _decodeJson(raw), failure: null);
     } on FormatException catch (error) {
       return (
         value: null,
