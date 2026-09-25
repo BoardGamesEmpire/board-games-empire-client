@@ -159,11 +159,10 @@ class FeedbackDioTransport implements FeedbackTransport {
   /// the drain stops without counting anything. The messages stay distinct
   /// so a log still says which happened.
   ///
-  /// That is a deliberate divergence from `decodeJsonBody`'s own doc, which
-  /// tells callers to treat a `FormatException` as permanent. The advice fits
+  /// `decodeJsonBody` leaves that classification to its callers (#362).
+  /// Permanent — the answer the household and collection sources give — fits
   /// a caller deprived of a payload it needed; this transport needs nothing
   /// out of the body, and permanent here means deleting the user's words.
-  /// Classification belongs to the caller, not the parser.
   ///
   /// An unparseable body does not prove non-delivery either — it *withdraws*
   /// the delivery claim rather than settling it the other way. A truncated
