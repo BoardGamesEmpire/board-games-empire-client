@@ -180,6 +180,50 @@ void main() {
     );
 
     test(
+      'server id != localId, with the server copy already hydrated: keeps '
+      "the server's owner row, drops the synthesized one, completes the op",
+      () async {
+        // A hydrate that runs before the reconcile caches the server's
+        // household and its owner membership. Until the reconcile, the
+        // household is listed twice: once per id.
+        final created = await repo.create(name: 'HQ');
+        final server = created.household.copyWith(
+          id: 'hh_server',
+          isDirty: false,
+          isLocalOnly: false,
+        );
+        await repo.cacheHousehold(server);
+        await repo.cacheMembers([
+          HouseholdMember(
+            id: 'm_server',
+            userId: _kUserId,
+            householdId: 'hh_server',
+            role: HouseholdRole.householdOwner,
+            createdAt: _fixed,
+            updatedAt: _fixed,
+          ),
+        ]);
+        expect(await repo.getHouseholds(), hasLength(2));
+
+        await repo.reconcileCreatedHousehold(
+          server,
+          localId: created.household.id,
+          completedSyncQueueId: created.syncQueueId,
+        );
+
+        final households = await repo.getHouseholds();
+        expect(households.map((h) => h.id), ['hh_server']);
+        final members = await repo.getMembers('hh_server');
+        expect(members.map((m) => m.id), ['m_server']);
+        expect(await repo.getCurrentUserMember(created.household.id), isNull);
+        expect(
+          (await syncQueue.getAllEntries()).single.status,
+          SyncStatus.completed,
+        );
+      },
+    );
+
+    test(
       'leaves the queue untouched when no completedSyncQueueId is given',
       () async {
         final created = await repo.create(name: 'HQ');

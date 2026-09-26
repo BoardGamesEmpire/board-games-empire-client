@@ -344,9 +344,25 @@ class HouseholdRepositoryImpl
 
       // 2. Server-assigned id path: migrate the synthesized owner member
       //    row(s) onto the canonical id, then drop the stale optimistic
-      //    household row. The (householdId, userId) unique index can't
-      //    collide — the canonical id is brand new.
+      //    household row. The canonical id is not necessarily new here: a
+      //    hydrate that ran first (#267) has already cached the server's
+      //    membership rows under it, and re-pointing a user who has one
+      //    would break the (householdId, userId) unique index. The
+      //    server's row wins — it carries the real member id, while the
+      //    synthesized one is provisional — so drop the local duplicate
+      //    and re-point whatever remains.
       if (localId != serverHousehold.id) {
+        final serverMemberUserIds = _db.selectOnly(_db.householdMembersTable)
+          ..addColumns([_db.householdMembersTable.userId])
+          ..where(
+            _db.householdMembersTable.householdId.equals(serverHousehold.id),
+          );
+        await (_db.delete(_db.householdMembersTable)..where(
+              (t) =>
+                  t.householdId.equals(localId) &
+                  t.userId.isInQuery(serverMemberUserIds),
+            ))
+            .go();
         await (_db.update(
           _db.householdMembersTable,
         )..where((t) => t.householdId.equals(localId))).write(

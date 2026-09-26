@@ -155,7 +155,10 @@ abstract class HouseholdRepository {
   ///
   /// The synthesized owner member row keeps its client-generated id; the
   /// authoritative member id is reconciled by the membership sync (#122),
-  /// not here — nothing in the create-only flow reads it.
+  /// not here — nothing in the create-only flow reads it. The exception is
+  /// a server membership row already cached under the canonical id (a
+  /// hydrate ran first): that row is kept, and the synthesized row for the
+  /// same user is dropped rather than re-pointed onto it.
   Future<void> reconcileCreatedHousehold(
     Household serverHousehold, {
     required String localId,
