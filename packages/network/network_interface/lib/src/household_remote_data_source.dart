@@ -106,14 +106,21 @@ abstract class HouseholdRemoteDataSource {
   /// [ArgumentError] before the request rather than spending a round trip on
   /// a rejection the caller could have known about locally.
   ///
-  /// ### Scope is the caller's role, not their membership
+  /// ### Scope is the caller's membership
   ///
-  /// `GET /households` widens by role: a member gets the households they
-  /// belong to, an admin gets **every household on the server**. This method
-  /// reports what the server sent and makes no attempt to tell the two apart
-  /// — `PaginationMeta.total` is the only available signal, and it is a hint
-  /// rather than a determination. backend#364 is the membership-scoped read
-  /// that would make the distinction real.
+  /// `GET /households` returns the households the caller holds a member row
+  /// for, and nothing else, whoever the caller is (backend#417). It used to
+  /// widen by role — an admin received every household on the server — and
+  /// no longer does. A friend's household is read by id; listing another
+  /// user's households (backend#485) and every household (backend#419) are
+  /// tracked as surfaces of their own, never a widening of this one. So for
+  /// a user session, a cached household missing from the **complete** list
+  /// is one the user was removed from or one that was deleted (#268).
+  ///
+  /// Only a first page with `hasMore: false` is complete. A walk across
+  /// pages is not one snapshot: a household removed between two requests
+  /// shifts the rest up and can carry a live one past the boundary unseen.
+  /// Absence from a walk is something to re-check, never proof.
   ///
   /// Throws [HouseholdRemoteException] (see class doc for classification).
   Future<PaginatedResult<HouseholdWithMembers>> fetchHouseholds({

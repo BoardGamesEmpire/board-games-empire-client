@@ -1,5 +1,20 @@
 import 'package:models/domain.dart';
 
+/// What [HouseholdRepository.cacheHouseholdWithRoster] did with one
+/// household from a server read (#268).
+enum HouseholdRosterWrite {
+  /// The household and its roster now match the server's.
+  replaced,
+
+  /// The household was written, but the roster was empty or did not
+  /// include the current user, so it was only merged in: no cached member
+  /// was removed.
+  merged,
+
+  /// Nothing was written: the cached household is dirty or local-only.
+  held,
+}
+
 /// Read cache + cache-writer + create repository for [Household] data.
 ///
 /// ## Scope: create + read-cache + cache-writer
@@ -10,22 +25,30 @@ import 'package:models/domain.dart';
 /// still deferred — they land with the membership work (#122), at which
 /// point membership-mutation sync ops join the queue.
 ///
-/// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers])
-/// are server-driven cache populators that accept payloads the server
-/// already auth-filtered, not user-facing mutations.
+/// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
+/// [cacheHouseholdWithRoster]) and [purgeHouseholdsAbsentFrom] are
+/// server-driven: they apply payloads the server already auth-filtered,
+/// and are not user-facing mutations.
 ///
-/// **TODO(household-mutations-phase-4)**: a known gap exists between
-/// now and the membership work (#122). If a user leaves a household on
-/// another device (or the web UI), this device's cache won't know until
-/// a full resync arrives, and the read-side membership gate below trusts
-/// the cache — so a stale local member row will keep the household
-/// visible to a user who has actually been removed. The mitigation
-/// today is the read-cache nature of the repo: every server
-/// response refreshes the membership, so the stale window closes
-/// on the next sync tick. #122 will close it deterministically
-/// by introducing membership-mutation sync ops that update the
-/// local member rows in the same transaction they enqueue against
-/// the sync queue.
+/// ## Removals made elsewhere (#268)
+///
+/// A household the current user left, was removed from, or saw deleted on
+/// another device (or the web UI) leaves their list on the next hydrate,
+/// by [purgeHouseholdsAbsentFrom]. A member removed from a household the
+/// user is still in drops out of its roster on the next write of it, by
+/// [cacheHouseholdWithRoster]. Between passes the read-side membership
+/// gate below still trusts a cache the server may have moved past, so the
+/// stale window now closes on the next hydrate rather than never. The
+/// exception is a whole household for a user whose list does not fit one
+/// page: nothing short of a single-page read licenses the purge.
+///
+/// **TODO(household-mutations-phase-4)**: this device's own membership
+/// mutations (#122) will update the local member rows in the same
+/// transaction they enqueue against the sync queue. Until the server
+/// accepts one, the next hydrate still carries the old roster, so each
+/// must hold its household against both writers above: mark it dirty,
+/// which both already honour, or give member rows sync flags of their own
+/// and teach both writers about them in the same change.
 ///
 /// ## Access boundary (members-only by default)
 ///
@@ -206,6 +229,69 @@ abstract class HouseholdRepository {
   /// Upserts a batch of members. Same user-agnostic semantics as
   /// [cacheMember].
   Future<void> cacheMembers(List<HouseholdMember> members);
+
+  /// Writes one household from a server read together with the roster
+  /// that read embedded, and makes the cached roster match it (#268): a
+  /// cached member whose user is not in [roster] is deleted and the rest
+  /// are upserted as by [cacheMembers], in one transaction.
+  ///
+  /// This is how a member removed on another device leaves this one. It
+  /// relies on the server reading each household and its roster together,
+  /// which the household list does.
+  ///
+  /// Two cases write less, and the result says which:
+  ///
+  /// - A cached household that is `isDirty` or `isLocalOnly` is left
+  ///   alone, roster included ([HouseholdRosterWrite.held]). The queue
+  ///   owns it until the server acknowledges it, as for [cacheHousehold].
+  /// - A roster that is empty or leaves out the current user is not
+  ///   trusted to say who left. The household is written and the roster
+  ///   merged in, deleting no one ([HouseholdRosterWrite.merged]). Applied
+  ///   as given it would delete the current user's own row, and the
+  ///   household would vanish from their list.
+  Future<HouseholdRosterWrite> cacheHouseholdWithRoster(
+    Household household,
+    List<HouseholdMember> roster,
+  );
+
+  /// The households [purgeHouseholdsAbsentFrom] could remove right now: the
+  /// cached households the current user has a member row in, less any that
+  /// are `isDirty` or `isLocalOnly` (#268).
+  ///
+  /// Read it **before** requesting the snapshot, and pass it to the purge.
+  /// A household that became purgeable after this read (created, or
+  /// confirmed by the server, while the request was in flight) is one the
+  /// snapshot could not have seen, and the purge leaves it alone. This
+  /// reads the database, so a write from any repository over it counts,
+  /// another browser tab's included.
+  Future<Set<String>> purgeableHouseholdIds();
+
+  /// Removes the current user from each household in [purgeable] that
+  /// [snapshotIds] does not name, in one transaction, and returns the ids
+  /// it removed them from (#268).
+  ///
+  /// [snapshotIds] must be **one consistent read of every household** the
+  /// server would return for the current user. For the household list that
+  /// is a first page with `hasMore: false`; a walk across pages is not
+  /// one, and absence from it proves nothing.
+  ///
+  /// [purgeable] is a [purgeableHouseholdIds] read taken before the
+  /// snapshot was requested. Nothing outside it is removed, and neither is
+  /// a household in it that is no longer purgeable: one edited since, which
+  /// the queue now owns.
+  ///
+  /// Only the current user's member row is deleted, because the snapshot
+  /// speaks for their memberships and nobody else's. The cache is shared by
+  /// everyone who signs in to this server on this device, and another of
+  /// them may still belong to the household. A household left with no
+  /// member row at all is deleted with it: no read can reach it.
+  ///
+  /// Rows are deleted, not tombstoned: the server has already spoken, and a
+  /// tombstone is a local intent waiting for a server to settle it.
+  Future<Set<String>> purgeHouseholdsAbsentFrom(
+    Set<String> snapshotIds, {
+    required Set<String> purgeable,
+  });
 
   /// Watches all households the current user is a member of, in
   /// [getHouseholds]'s order. Tombstoned households are excluded. Emits a

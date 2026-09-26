@@ -5,6 +5,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
 
 import 'package:household/household.dart';
 
@@ -12,6 +13,8 @@ class MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 class MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
+
+class MockBgeLogger extends Mock implements BgeLogger {}
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -59,15 +62,32 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(_household('fallback'));
+    registerFallbackValue(<HouseholdMember>[]);
+    registerFallbackValue(<String>{});
   });
 
   setUp(() {
     repo = MockHouseholdRepository();
     remote = MockHouseholdRemoteDataSource();
 
-    when(() => repo.cacheHousehold(any())).thenAnswer((_) async {});
-    when(() => repo.cacheMembers(any())).thenAnswer((_) async {});
+    when(() => repo.cacheHouseholdWithRoster(any(), any()))
+        .thenAnswer((_) async => HouseholdRosterWrite.replaced);
+    when(() => repo.purgeableHouseholdIds())
+        .thenAnswer((_) async => <String>{});
+    when(
+      () => repo.purgeHouseholdsAbsentFrom(
+        any(),
+        purgeable: any(named: 'purgeable'),
+      ),
+    ).thenAnswer((_) async => <String>{});
   });
+
+  /// The households the pass wrote, in order.
+  List<String> writtenIds() =>
+      verify(() => repo.cacheHouseholdWithRoster(captureAny(), any())).captured
+          .cast<Household>()
+          .map((h) => h.id)
+          .toList();
 
   HouseholdHydrator build({
     int limit = HouseholdRemoteDataSource.maxPageSize,
@@ -92,29 +112,36 @@ void main() {
 
       await build().hydrate();
 
-      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
-          .cast<Household>();
-      expect(cached.map((h) => h.id), equals(['h-1', 'h-2']));
+      expect(writtenIds(), equals(['h-1', 'h-2']));
     });
 
-    test('caches the members embedded in the page', () async {
-      when(
-        () => remote.fetchHouseholds(
-          page: any(named: 'page'),
-          limit: any(named: 'limit'),
-        ),
-      ).thenAnswer(
-        (_) async =>
-            _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
-      );
+    test(
+      'writes each household with the roster embedded in the page',
+      () async {
+        when(
+          () => remote.fetchHouseholds(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer(
+          (_) async => _page(
+            ids: ['h-1'],
+            page: 1,
+            limit: 100,
+            total: 1,
+            hasMore: false,
+          ),
+        );
 
-      await build().hydrate();
+        await build().hydrate();
 
-      final cached = verify(() => repo.cacheMembers(captureAny())).captured
-          .cast<List<HouseholdMember>>();
-      expect(cached.single.single.id, equals('m-h-1'));
-      expect(cached.single.single.householdId, equals('h-1'));
-    });
+        final rosters = verify(
+          () => repo.cacheHouseholdWithRoster(any(), captureAny()),
+        ).captured.cast<List<HouseholdMember>>();
+        expect(rosters.single.single.id, equals('m-h-1'));
+        expect(rosters.single.single.householdId, equals('h-1'));
+      },
+    );
 
     test('requests page 1 at the server page-size cap', () async {
       when(
@@ -135,9 +162,6 @@ void main() {
 
   group('HouseholdHydrator — the drain', () {
     test('follows hasMore across pages and caches all of them', () async {
-      // The drain is only reachable below the server's page-size cap: at
-      // limit == maxPageSize, hasMore true implies total > limit, which is
-      // the admin degrade. See the class doc.
       when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-1', 'h-2'],
@@ -163,12 +187,7 @@ void main() {
 
       await build(limit: 2).hydrate();
 
-      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
-          .cast<Household>();
-      expect(
-        cached.map((h) => h.id),
-        equals(['h-1', 'h-2', 'h-3', 'h-4', 'h-5']),
-      );
+      expect(writtenIds(), equals(['h-1', 'h-2', 'h-3', 'h-4', 'h-5']));
     });
 
     test('stops on hasMore false even when the page is full', () async {
@@ -193,57 +212,89 @@ void main() {
     });
   });
 
-  group('HouseholdHydrator — the admin-scope degrade', () {
-    test('stops after page 1 when total exceeds the page size', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 100)).thenAnswer(
+  group('HouseholdHydrator — the purge (#268)', () {
+    test('a single-page snapshot purges against the ids it returned', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
         (_) async => _page(
+          ids: ['h-1', 'h-2'],
+          page: 1,
+          limit: 100,
+          total: 2,
+          hasMore: false,
+        ),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.complete));
+
+      verify(
+        () => repo.purgeHouseholdsAbsentFrom({
+          'h-1',
+          'h-2',
+        }, purgeable: any(named: 'purgeable')),
+      ).called(1);
+    });
+
+    test('reads what it may purge before page 1 is requested', () async {
+      // A household that becomes purgeable while the request is in flight
+      // is one the snapshot may not have seen. Read after the response, the
+      // purge could remove a household created during the pass.
+      var requested = false;
+      when(() => repo.purgeableHouseholdIds())
+          .thenAnswer((_) async => requested ? {'h-old', 'h-new'} : {'h-old'});
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async {
+        requested = true;
+        return _page(
           ids: ['h-1'],
           page: 1,
           limit: 100,
-          total: 4000,
-          hasMore: true,
-        ),
-      );
+          total: 1,
+          hasMore: false,
+        );
+      });
 
       await build().hydrate();
 
-      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
-      verifyNever(
-        () => remote.fetchHouseholds(page: 2, limit: any(named: 'limit')),
-      );
+      verify(() => repo.purgeHouseholdsAbsentFrom(any(), purgeable: {'h-old'}))
+          .called(1);
     });
 
-    test('still caches the page it did fetch', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 100)).thenAnswer(
-        (_) async => _page(
-          ids: ['h-1'],
-          page: 1,
-          limit: 100,
-          total: 4000,
-          hasMore: true,
+    test('an empty snapshot is still one, and purges', () async {
+      // The user removed from their last household is exactly the case
+      // this exists for.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
         ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: const [], page: 1, limit: 100, total: 0, hasMore: false),
       );
 
-      await build().hydrate();
+      expect(await build().hydrate(), equals(HydrateOutcome.complete));
 
-      verify(() => repo.cacheHousehold(any())).called(1);
-    });
-
-    test('reports the set as incomplete, so no purge may follow', () async {
-      when(() => remote.fetchHouseholds(page: 1, limit: 100)).thenAnswer(
-        (_) async => _page(
-          ids: ['h-1'],
-          page: 1,
-          limit: 100,
-          total: 4000,
-          hasMore: true,
+      verify(
+        () => repo.purgeHouseholdsAbsentFrom(
+          const <String>{},
+          purgeable: any(named: 'purgeable'),
         ),
-      );
-
-      expect(await build().hydrate(), equals(HydrateOutcome.adminScoped));
+      ).called(1);
     });
 
-    test('reports a drained set as complete', () async {
+    test('logs the households it removed', () async {
+      // A household leaving someone's list is the one thing this pass does
+      // that a user can see go wrong, so it leaves a record.
+      final logger = MockBgeLogger();
       when(
         () => remote.fetchHouseholds(
           page: any(named: 'page'),
@@ -253,14 +304,72 @@ void main() {
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
       );
+      when(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      ).thenAnswer((_) async => {'h-gone'});
 
-      expect(await build().hydrate(), equals(HydrateOutcome.complete));
+      await HouseholdHydrator(
+        repository: repo,
+        remote: remote,
+        logger: logger,
+      ).hydrate();
+
+      final context =
+          verify(
+                () => logger.info(any(), context: captureAny(named: 'context')),
+              ).captured.single
+              as Map<String, dynamic>;
+      expect(context['householdIds'], equals(['h-gone']));
     });
+  });
 
-    test('does not degrade a member-scoped drain below the page cap', () async {
-      // total (5) > limit (2) here, but that is ordinary paging, not an
-      // admin response. The scope determination is made once, against the
-      // server's real page-size cap.
+  group('HouseholdHydrator — a roster it could not trust (#268)', () {
+    test('is logged, naming the household', () async {
+      // The repository merged it rather than letting it say who left. That
+      // is a response missing its roster, which is worth hearing about.
+      final logger = MockBgeLogger();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => _page(
+          ids: ['h-1', 'h-2'],
+          page: 1,
+          limit: 100,
+          total: 2,
+          hasMore: false,
+        ),
+      );
+      when(
+        () => repo.cacheHouseholdWithRoster(
+          any(that: isA<Household>().having((h) => h.id, 'id', 'h-2')),
+          any(),
+        ),
+      ).thenAnswer((_) async => HouseholdRosterWrite.merged);
+
+      final outcome = await HouseholdHydrator(
+        repository: repo,
+        remote: remote,
+        logger: logger,
+      ).hydrate();
+
+      expect(outcome, equals(HydrateOutcome.complete));
+      final context =
+          verify(
+                () => logger.warn(any(), context: captureAny(named: 'context')),
+              ).captured.single
+              as Map<String, dynamic>;
+      expect(context['householdId'], equals('h-2'));
+    });
+  });
+
+  group('HouseholdHydrator — a drain across pages (#268)', () {
+    void stubThreePages() {
       when(() => remote.fetchHouseholds(page: 1, limit: 2)).thenAnswer(
         (_) async => _page(
           ids: ['h-1', 'h-2'],
@@ -283,18 +392,59 @@ void main() {
         (_) async =>
             _page(ids: ['h-5'], page: 3, limit: 2, total: 5, hasMore: false),
       );
+    }
 
-      expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.complete));
+    test('reports drained, not complete', () async {
+      // The server's own contract: a walk across pages is not one snapshot,
+      // and a live household can slip past a page boundary unseen.
+      stubThreePages();
+
+      expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.drained));
+    });
+
+    test('purges nothing', () async {
+      stubThreePages();
+
+      await build(limit: 2).hydrate();
+
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
+
+    test('follows hasMore past the server page-size cap', () async {
+      // The list is membership-scoped for a user session (backend#417), so
+      // a total above the cap is a user with that many households, not an
+      // admin's view of the server. Nothing stops at page 1 any more.
+      when(() => remote.fetchHouseholds(page: 1, limit: 100)).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 150, hasMore: true),
+      );
+      when(() => remote.fetchHouseholds(page: 2, limit: 100)).thenAnswer(
+        (_) async => _page(
+          ids: ['h-2'],
+          page: 2,
+          limit: 100,
+          total: 150,
+          hasMore: false,
+        ),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.drained));
+      expect(writtenIds(), equals(['h-1', 'h-2']));
     });
   });
 
   group('HouseholdHydrator — a server that contradicts itself', () {
     test('stops at the last page the server counted, rather than trusting '
         'hasMore forever', () async {
-      // hasMore true with total <= the page cap is self-contradictory: it
-      // is below the admin-degrade threshold, so nothing else stops the
-      // drain. Left alone it walks to the server's page-depth ceiling and
-      // is terminated by an ArgumentError ~1000 requests later.
+      // hasMore true on the last page the server counted is
+      // self-contradictory. Left alone the drain walks to the server's
+      // page-depth ceiling and is terminated by an ArgumentError ~1000
+      // requests later.
       when(
         () => remote.fetchHouseholds(
           page: any(named: 'page'),
@@ -325,6 +475,37 @@ void main() {
       // Not complete: the envelope cannot be trusted, so nothing may purge
       // against what it produced.
       expect(outcome, equals(HydrateOutcome.failed));
+    });
+
+    test('purges nothing when page 1 says it is the last but counts more '
+        'than one page', () async {
+      // hasMore false licenses the purge only when the envelope agrees with
+      // itself. Here it counts 150 households and delivered 100: taking it
+      // at its word would remove the 50 it did not send.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => _page(
+          ids: ['h-1'],
+          page: 1,
+          limit: 100,
+          total: 150,
+          hasMore: false,
+        ),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      expect(writtenIds(), equals(['h-1']));
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
     });
   });
 
@@ -385,9 +566,7 @@ void main() {
 
       expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.failed));
 
-      final cached = verify(() => repo.cacheHousehold(captureAny())).captured
-          .cast<Household>();
-      expect(cached.map((h) => h.id), equals(['h-1', 'h-2']));
+      expect(writtenIds(), equals(['h-1', 'h-2']));
     });
 
     test('absorbs a scope teardown mid-drain', () async {
@@ -399,10 +578,65 @@ void main() {
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
-      when(() => repo.cacheHousehold(any()))
+      when(() => repo.cacheHouseholdWithRoster(any(), any()))
           .thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
 
       expect(await build(limit: 2).hydrate(), equals(HydrateOutcome.failed));
+    });
+
+    test('a failed purge completes instead of throwing', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
+      );
+      when(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      ).thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+    });
+
+    test('a failed read of what it may purge completes instead of throwing, '
+        'before requesting anything', () async {
+      when(() => repo.purgeableHouseholdIds())
+          .thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      verifyNever(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      );
+    });
+
+    test('a pass that failed on a page purges nothing', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenThrow(
+        const HouseholdRemoteTransientException('offline', statusCode: 503),
+      );
+
+      await build().hydrate();
+
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
     });
 
     test('stops requesting pages once a write has failed', () async {
@@ -410,7 +644,7 @@ void main() {
         (_) async =>
             _page(ids: ['h-1'], page: 1, limit: 2, total: 5, hasMore: true),
       );
-      when(() => repo.cacheHousehold(any()))
+      when(() => repo.cacheHouseholdWithRoster(any(), any()))
           .thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
 
       await build(limit: 2).hydrate();

@@ -42,13 +42,14 @@ void main() {
     );
   });
 
-  test('an admin-scoped pass reads as refreshed, not failed', () {
-    // #269 D2. The set is incomplete, not broken: page 1 landed and the
-    // cache is more current than it was. Surfacing "couldn't refresh"
-    // there would cry wolf on every admin sign-in.
+  test('a drained pass reads as refreshed, not failed', () {
+    // Every page landed; the set is only not one snapshot, which matters
+    // to a purge (#268) and not to a list. Surfacing "couldn't refresh"
+    // there would cry wolf on every sign-in for a user with that many
+    // households.
     status
       ..started()
-      ..finished(HydrateOutcome.adminScoped);
+      ..finished(HydrateOutcome.drained);
 
     expect(status.state, equals(HouseholdHydrationState.refreshed));
   });
@@ -126,13 +127,13 @@ void main() {
       expect(stamped.sinceRefresh, equals(const Duration(minutes: 7)));
     });
 
-    test('an admin-scoped pass stamps, like the state it reports', () {
-      // It reads as refreshed (#269 D2) because the cache is more current
-      // than it was. The window has to agree, or an admin re-drains on
-      // every entry forever.
+    test('a drained pass stamps, like the state it reports', () {
+      // It reads as refreshed because the cache is more current than it
+      // was. The window has to agree, or a user with more than one page of
+      // households re-drains on every entry forever.
       stamped
         ..started()
-        ..finished(HydrateOutcome.adminScoped);
+        ..finished(HydrateOutcome.drained);
 
       expect(stamped.sinceRefresh, equals(Duration.zero));
     });
