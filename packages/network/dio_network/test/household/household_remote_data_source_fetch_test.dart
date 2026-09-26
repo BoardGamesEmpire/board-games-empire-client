@@ -359,6 +359,24 @@ void main() {
       );
     });
 
+    // An int wraps on the VM, so a depth computed by multiplying can come back
+    // under the ceiling: 2^62 * 100 is 25 * 2^64, which wraps to 0. On the web
+    // an int is a JavaScript number, which does not wrap, and `1 << 62` there
+    // is 0, so this page cannot be written: the test is the VM's.
+    test('a page whose depth would overflow an int still throws', () {
+      expect(
+        () => remote.fetchHouseholds(page: (1 << 62) + 1, limit: 100),
+        throwsA(isA<ArgumentError>()),
+      );
+      verifyNever(
+        () => mockDio.get<String>(
+          any(),
+          options: any(named: 'options'),
+          queryParameters: any(named: 'queryParameters'),
+        ),
+      );
+    }, testOn: 'vm');
+
     test('the last page inside the ceiling is allowed', () async {
       stubGet(_resp(_envelope(const [])));
 

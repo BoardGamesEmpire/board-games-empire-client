@@ -1,5 +1,7 @@
 import 'package:models/domain.dart';
 
+import 'paginated_result.dart';
+
 /// Remote data source for the current user's [GameCollection] entries (#253).
 ///
 /// The network seam the collection slice had none of: #44's initial hydrate
@@ -19,7 +21,7 @@ import 'package:models/domain.dart';
 ///
 /// | Method | Path | Success | Envelope |
 /// |---|---|---|---|
-/// | [fetchCollectionPage] | `GET /api/game-collections` | 200 | `{ collections: [...] }` |
+/// | [fetchCollectionPage] | `GET /api/game-collections` | 200 | `{ collections: [...], pagination }` |
 /// | [fetchEntry] | `GET /api/game-collections/:id` | 200 | `{ collection }` |
 /// | [addToCollection] | `POST /api/game-collections` | 201 | `{ collection, message }` |
 /// | [updateEntry] | `PATCH /api/game-collections/:id` | 200 | `{ collection, message }` |
@@ -179,28 +181,48 @@ abstract class GameCollectionRemoteDataSource {
   /// 400, not clamped.
   static const int maxPageSize = 100;
 
-  /// The backend's `offset` ceiling (`DEFAULT_MAX_OFFSET`) — a hardening bound
-  /// on scan-and-discard paging, not a real deep-pagination story. A larger
-  /// offset is rejected with a 400.
-  static const int maxOffset = 100000;
+  /// The backend's depth ceiling (`DEFAULT_MAX_OFFSET`, shared by every
+  /// paginated route): `(page - 1) * limit` may not exceed this, enforced as a
+  /// validation error on `page`. Exceeding it is a 400, not an empty page. It
+  /// is a hardening bound on how deep a page can reach, not a deep-pagination
+  /// story; a collection hydrate will never approach it.
+  static const int maxPageDepth = 100000;
 
   /// Fetches **one page** of the acting user's collection, newest-updated
-  /// first.
+  /// first (`updatedAt desc, id desc`).
   ///
-  /// Paging is the caller's (#253 D2): this returns the page the server gave
-  /// and nothing more.
+  /// Paging is the caller's: this returns the page the server gave, with the
+  /// paging metadata that produced it, and nothing more.
   ///
   /// ### End of list
   ///
-  /// The response envelope carries **no total and no `hasMore`** (tracked
-  /// upstream as backend#230), so the only available signal is the page
-  /// length: **a page shorter than [limit] is the last page.** Terminating on
-  /// an empty page instead is correct but costs one extra round trip on every
-  /// hydrate, and terminating on anything else is wrong.
+  /// Drain by following [PaginationMeta.hasMore]. Do not treat a page shorter
+  /// than [limit] as the last one. The envelope says whether another page
+  /// exists, so there is nothing left to infer, and a page exactly [limit]
+  /// long says nothing either way (#295).
   ///
-  /// [offset] must be in `0..maxOffset` and [limit] in `1..maxPageSize`;
-  /// both are validated server-side and a violation is a 400, so
+  /// ### A drain is not a snapshot
+  ///
+  /// A page is a position in a live list, newest-updated first, so an add or
+  /// an edit moves its row to the front. A change made mid-drain lands on a
+  /// page already read and is missed. When the row came from further down,
+  /// every row it passed shifts back one, and one of them comes back twice. A
+  /// removal is the same move when [includeDeleted] is set, because a
+  /// tombstone's `updatedAt` changes too. Without it, the removed row leaves
+  /// the list, the rows behind it shift forward, and one that never changed
+  /// can fall onto a page already read, where no later [updatedSince] pass
+  /// will return it.
+  ///
+  /// So a drain that must be complete passes [includeDeleted], upserts by id,
+  /// and then runs an [updatedSince] pass reaching back to before it began.
+  ///
+  /// [page] is **1-based**, [limit] is in `1..maxPageSize`, and together they
+  /// must keep `(page - 1) * limit` within [maxPageDepth]. The server
+  /// validates all three and answers a violation with a 400, so
   /// implementations throw [ArgumentError] before the request instead.
+  ///
+  /// A 404 from this method is **transient**, not a missing row. See the
+  /// classification section on this class.
   ///
   /// ### Tombstones
   ///
@@ -209,8 +231,8 @@ abstract class GameCollectionRemoteDataSource {
   /// [includeDeleted] for a full picture, or [deletedOnly] for tombstones
   /// alone. [updatedSince] combined with [includeDeleted] is the delta-sync
   /// shape.
-  Future<List<GameCollection>> fetchCollectionPage({
-    int offset = 0,
+  Future<PaginatedResult<GameCollection>> fetchCollectionPage({
+    int page = 1,
     int limit = maxPageSize,
     bool includeDeleted = false,
     bool deletedOnly = false,
