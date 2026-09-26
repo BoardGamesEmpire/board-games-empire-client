@@ -49,6 +49,19 @@ Map<String, dynamic> _entry(String id) => {
   },
 };
 
+/// A `GET /api/game-collections` body as the wire carries it: the rows plus
+/// the `pagination` object every list envelope has (backend#230).
+String _listBody(List<Map<String, dynamic>> rows) => jsonEncode({
+  'collections': rows,
+  'pagination': {
+    'page': 1,
+    'limit': 100,
+    'total': rows.length,
+    'totalPages': 1,
+    'hasMore': false,
+  },
+});
+
 void main() {
   GameCollectionRemoteDataSource remoteOver(Dio dio) =>
       GameCollectionRemoteDataSourceImpl(dio);
@@ -150,17 +163,13 @@ void main() {
 
     test('a valid envelope still maps through the real pipeline', () async {
       final remote = remoteOver(
-        cannedDio(
-          body: jsonEncode({
-            'collections': [_entry('gc_1')],
-          }),
-          statusCode: 200,
-        ),
+        cannedDio(body: _listBody([_entry('gc_1')]), statusCode: 200),
       );
 
       final page = await remote.fetchCollectionPage();
-      expect(page, hasLength(1));
-      expect(page.single.id, 'gc_1');
+      expect(page.items, hasLength(1));
+      expect(page.items.single.id, 'gc_1');
+      expect(page.meta.hasMore, isFalse);
     });
   });
 
@@ -168,8 +177,9 @@ void main() {
   // Dio's transformer — including the 50 KB isolate offload it applies.
   group('a large body still decodes off-isolate', () {
     test('a page over the 50 KB threshold parses correctly', () async {
-      final entries = List.generate(120, (i) => _entry('gc_$i'));
-      final body = jsonEncode({'collections': entries});
+      // A full page and no more: the server never returns more than `limit`.
+      final entries = List.generate(100, (i) => _entry('gc_$i'));
+      final body = _listBody(entries);
       expect(
         body.codeUnits.length,
         greaterThan(50 * 1024),
@@ -179,8 +189,8 @@ void main() {
       final remote = remoteOver(cannedDio(body: body, statusCode: 200));
 
       final page = await remote.fetchCollectionPage(limit: 100);
-      expect(page, hasLength(120));
-      expect(page.last.id, 'gc_119');
+      expect(page.items, hasLength(100));
+      expect(page.items.last.id, 'gc_99');
     });
   });
 

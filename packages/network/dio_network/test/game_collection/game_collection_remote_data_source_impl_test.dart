@@ -122,6 +122,42 @@ DioException _dioError(DioExceptionType type, {int? status, Object? body}) =>
           : _resp2(body ?? _errorEnvelope(status), statusCode: status),
     );
 
+/// The `pagination` object every list envelope carries (backend#230).
+/// Defaults describe a complete single page, so a test states only the paging
+/// it is about.
+Map<String, dynamic> _pagination({
+  int page = 1,
+  int limit = 100,
+  int total = 0,
+  int totalPages = 1,
+  bool hasMore = false,
+}) => {
+  'page': page,
+  'limit': limit,
+  'total': total,
+  'totalPages': totalPages,
+  'hasMore': hasMore,
+};
+
+/// A `GET /api/game-collections` body: the rows plus their paging.
+Map<String, dynamic> _listEnvelope(
+  List<Map<String, dynamic>> collections, {
+  int page = 1,
+  int limit = 100,
+  int? total,
+  int totalPages = 1,
+  bool hasMore = false,
+}) => {
+  'collections': collections,
+  'pagination': _pagination(
+    page: page,
+    limit: limit,
+    total: total ?? collections.length,
+    totalPages: totalPages,
+    hasMore: hasMore,
+  ),
+};
+
 void main() {
   late MockDio mockDio;
   late GameCollectionRemoteDataSourceImpl remote;
@@ -320,31 +356,67 @@ void main() {
   });
 
   group('fetchCollectionPage', () {
-    test('maps a page of entries', () async {
+    test('maps a page of entries and reads the pagination meta', () async {
       stubGet(
-        _resp({
-          'collections': [
-            _entryJson(),
-            _entryJson(id: 'gc_server_2', medium: 'Digital'),
-          ],
-        }),
+        _resp(
+          _listEnvelope(
+            [_entryJson(), _entryJson(id: 'gc_server_2', medium: 'Digital')],
+            page: 2,
+            limit: 2,
+            total: 5,
+            totalPages: 3,
+            hasMore: true,
+          ),
+        ),
       );
 
-      final page = await remote.fetchCollectionPage(limit: 2);
+      final page = await remote.fetchCollectionPage(page: 2, limit: 2);
 
-      expect(page, hasLength(2));
-      expect(page.first.id, 'gc_server_1');
-      expect(page.last.medium, GameMedium.digital);
+      expect(page.items, hasLength(2));
+      expect(page.items.first.id, 'gc_server_1');
+      expect(page.items.last.medium, GameMedium.digital);
+      expect(page.meta.page, 2);
+      expect(page.meta.limit, 2);
+      expect(page.meta.total, 5);
+      expect(page.meta.totalPages, 3);
+      expect(page.meta.hasMore, isTrue);
     });
 
-    test('an empty page maps to an empty list', () async {
-      stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
+    // The case the retired short-page rule could not settle (#295): a page
+    // exactly `limit` long says nothing about whether another follows, so the
+    // old rule spent a round trip finding out. The server now says, and the
+    // caller reads it.
+    test('a full last page reports hasMore false', () async {
+      stubGet(
+        _resp(
+          _listEnvelope(
+            [_entryJson(), _entryJson(id: 'gc_server_2')],
+            page: 2,
+            limit: 2,
+            total: 4,
+            totalPages: 2,
+          ),
+        ),
+      );
 
-      expect(await remote.fetchCollectionPage(), isEmpty);
+      final page = await remote.fetchCollectionPage(page: 2, limit: 2);
+
+      expect(page.items, hasLength(2));
+      expect(page.meta.hasMore, isFalse);
+    });
+
+    test('an empty page is a page, not a failure', () async {
+      stubGet(_resp(_listEnvelope(const [])));
+
+      final page = await remote.fetchCollectionPage();
+
+      expect(page.items, isEmpty);
+      expect(page.meta.total, 0);
+      expect(page.meta.hasMore, isFalse);
     });
 
     test('hits the relative collection path', () async {
-      stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
+      stubGet(_resp(_listEnvelope(const [])));
 
       await remote.fetchCollectionPage();
 
@@ -358,18 +430,28 @@ void main() {
     });
 
     group('query parameters', () {
-      test('sends only paging when no filters are supplied', () async {
-        stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
+      test('sends page and limit, and never an offset', () async {
+        stubGet(_resp(_listEnvelope(const [])));
 
-        await remote.fetchCollectionPage(offset: 40, limit: 20);
+        await remote.fetchCollectionPage(page: 3, limit: 20);
 
-        expect(capturedQuery(), equals({'offset': 40, 'limit': 20}));
+        final query = capturedQuery();
+        expect(query, equals({'page': 3, 'limit': 20}));
+        expect(query.containsKey('offset'), isFalse);
+      });
+
+      test('defaults to the first page at the maximum size', () async {
+        stubGet(_resp(_listEnvelope(const [])));
+
+        await remote.fetchCollectionPage();
+
+        expect(capturedQuery(), equals({'page': 1, 'limit': 100}));
       });
 
       test(
         'omits the tombstone flags when they are at their defaults',
         () async {
-          stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
+          stubGet(_resp(_listEnvelope(const [])));
 
           await remote.fetchCollectionPage();
 
@@ -383,7 +465,7 @@ void main() {
       );
 
       test('sends every filter when supplied', () async {
-        stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
+        stubGet(_resp(_listEnvelope(const [])));
 
         await remote.fetchCollectionPage(
           includeDeleted: true,
@@ -402,7 +484,7 @@ void main() {
       });
 
       test('sends updatedSince as UTC even when given a local time', () async {
-        stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
+        stubGet(_resp(_listEnvelope(const [])));
 
         final local = DateTime.utc(2026, 2, 1, 18).toLocal();
         await remote.fetchCollectionPage(updatedSince: local);
@@ -412,6 +494,14 @@ void main() {
     });
 
     group('paging bounds are rejected before the request', () {
+      void expectNoRequest() => verifyNever(
+        () => mockDio.get<String>(
+          any(),
+          options: any(named: 'options'),
+          queryParameters: any(named: 'queryParameters'),
+        ),
+      );
+
       test('a limit above the backend cap throws ArgumentError', () {
         expect(
           () => remote.fetchCollectionPage(
@@ -419,13 +509,7 @@ void main() {
           ),
           throwsArgumentError,
         );
-        verifyNever(
-          () => mockDio.get<String>(
-            any(),
-            options: any(named: 'options'),
-            queryParameters: any(named: 'queryParameters'),
-          ),
-        );
+        expectNoRequest();
       });
 
       test('a non-positive limit throws ArgumentError', () {
@@ -434,40 +518,86 @@ void main() {
           () => remote.fetchCollectionPage(limit: -1),
           throwsArgumentError,
         );
+        expectNoRequest();
       });
 
-      test('a negative offset throws ArgumentError', () {
+      test('page is 1-based, so 0 and below throw ArgumentError', () {
+        expect(() => remote.fetchCollectionPage(page: 0), throwsArgumentError);
+        expect(() => remote.fetchCollectionPage(page: -1), throwsArgumentError);
+        expectNoRequest();
+      });
+
+      // The literals in this group are canaries, not oversights. Asserting
+      // against `maxPageSize` or `maxPageDepth` on both sides would only prove
+      // we send what we said we send. Pinning the values means a change to
+      // either constant fails here and forces a look at whether the backend's
+      // bound moved with it: the drift nothing else detects (#263). The
+      // cap-plus-one case above stays relative, because its subject is the
+      // boundary, not its value.
+      test('a page past the depth ceiling throws ArgumentError', () {
+        // (1002 - 1) * 100 = 100,100, past the 100,000 ceiling.
         expect(
-          () => remote.fetchCollectionPage(offset: -1),
+          () => remote.fetchCollectionPage(page: 1002, limit: 100),
           throwsArgumentError,
         );
+        expectNoRequest();
       });
 
-      test('an offset above the backend ceiling throws ArgumentError', () {
+      test('the depth ceiling scales with limit', () {
+        // (4002 - 1) * 25 = 100,025.
         expect(
-          () => remote.fetchCollectionPage(
-            offset: GameCollectionRemoteDataSource.maxOffset + 1,
-          ),
+          () => remote.fetchCollectionPage(page: 4002, limit: 25),
           throwsArgumentError,
         );
+        expectNoRequest();
       });
 
-      // The literal 100 below is a canary, not an oversight: asserting against
-      // `maxPageSize` on both sides would only prove we send what we said we
-      // send. Pinning the value means a change to the constant fails here and
-      // forces a look at whether the backend's `@Max` moved with it — the drift
-      // nothing else detects (#263). The out-of-range cases above stay relative
-      // (`maxPageSize + 1`), because their subject is the boundary, not its
-      // value.
-      test('the cap itself is accepted', () async {
-        stubGet(_resp({'collections': <Map<String, dynamic>>[]}));
-
-        await remote.fetchCollectionPage(
-          limit: GameCollectionRemoteDataSource.maxPageSize,
-          offset: GameCollectionRemoteDataSource.maxOffset,
+      // An int wraps on the VM, so a depth computed by multiplying can come
+      // back under the ceiling: 2^62 * 100 is 25 * 2^64, which wraps to 0. On
+      // the web an int is a JavaScript number, which does not wrap, and
+      // `1 << 62` there is 0, so this page cannot be written: the test is the
+      // VM's.
+      test('a page whose depth would overflow an int is still rejected', () {
+        expect(
+          () => remote.fetchCollectionPage(page: (1 << 62) + 1, limit: 100),
+          throwsArgumentError,
         );
+        expectNoRequest();
+      }, testOn: 'vm');
 
-        expect(capturedQuery()['limit'], 100);
+      test('the cap and the ceiling themselves are accepted', () async {
+        stubGet(_resp(_listEnvelope(const [])));
+
+        // (1001 - 1) * 100 = 100,000: exactly the ceiling, at exactly the cap.
+        await remote.fetchCollectionPage(page: 1001, limit: 100);
+
+        expect(capturedQuery(), equals({'page': 1001, 'limit': 100}));
+      });
+
+      test('the ceiling at a smaller limit is accepted', () async {
+        stubGet(_resp(_listEnvelope(const [])));
+
+        // (4001 - 1) * 25 = 100,000.
+        await remote.fetchCollectionPage(page: 4001, limit: 25);
+
+        expect(capturedQuery(), equals({'page': 4001, 'limit': 25}));
+      });
+
+      // The pairs above pass for any ceiling from 100,000 to 100,024. Only at
+      // limit 1 does a page number pin it to the one value.
+      test('at limit 1 the ceiling is exactly 100,000', () async {
+        stubGet(_resp(_listEnvelope(const [])));
+
+        // (100002 - 1) * 1 = 100,001: one past the ceiling.
+        await expectLater(
+          remote.fetchCollectionPage(page: 100002, limit: 1),
+          throwsArgumentError,
+        );
+        expectNoRequest();
+
+        // (100001 - 1) * 1 = 100,000: the ceiling itself.
+        await remote.fetchCollectionPage(page: 100001, limit: 1);
+        expect(capturedQuery(), equals({'page': 100001, 'limit': 1}));
       });
     });
 
@@ -503,8 +633,46 @@ void main() {
       );
     });
 
+    // The shape a response from before backend#230 has: a cache or an old
+    // proxy replaying it must not read as an empty, final page.
+    test('a 2xx body missing the pagination object is permanent', () {
+      stubGet(
+        _resp({
+          'collections': [_entryJson()],
+        }),
+      );
+      expect(
+        () => remote.fetchCollectionPage(),
+        throwsA(
+          isA<GameCollectionRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
+      );
+    });
+
+    test('a pagination object missing hasMore is permanent, not a guess', () {
+      stubGet(
+        _resp({
+          'collections': <Map<String, dynamic>>[],
+          'pagination': _pagination()..remove('hasMore'),
+        }),
+      );
+      expect(
+        () => remote.fetchCollectionPage(),
+        throwsA(isA<GameCollectionRemotePermanentException>()),
+      );
+    });
+
+    // These three carry a valid `pagination`, so each fails on the defect it
+    // names and nothing else. For the two row tests that is load-bearing: the
+    // envelope checks that `pagination` is present before it maps a single
+    // row, so without it they would pass on the missing object and never
+    // reach the row.
     test('a 2xx body without a "collections" array is permanent', () {
-      stubGet(_resp({'message': 'ok'}));
+      stubGet(_resp({'message': 'ok', 'pagination': _pagination()}));
       expect(
         () => remote.fetchCollectionPage(),
         throwsA(isA<GameCollectionRemotePermanentException>()),
@@ -515,11 +683,26 @@ void main() {
       stubGet(
         _resp({
           'collections': ['nope'],
+          'pagination': _pagination(total: 1),
         }),
       );
       expect(
         () => remote.fetchCollectionPage(),
         throwsA(isA<GameCollectionRemotePermanentException>()),
+      );
+    });
+
+    test('a row the mapper cannot read is permanent', () {
+      stubGet(_resp(_listEnvelope([_entryJson()..remove('createdAt')])));
+      expect(
+        () => remote.fetchCollectionPage(),
+        throwsA(
+          isA<GameCollectionRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
       );
     });
 

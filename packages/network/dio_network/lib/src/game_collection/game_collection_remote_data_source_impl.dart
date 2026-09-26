@@ -82,8 +82,8 @@ class GameCollectionRemoteDataSourceImpl
   static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   @override
-  Future<List<GameCollection>> fetchCollectionPage({
-    int offset = 0,
+  Future<PaginatedResult<GameCollection>> fetchCollectionPage({
+    int page = 1,
     int limit = GameCollectionRemoteDataSource.maxPageSize,
     bool includeDeleted = false,
     bool deletedOnly = false,
@@ -91,7 +91,7 @@ class GameCollectionRemoteDataSourceImpl
     bool? favorite,
     DateTime? updatedSince,
   }) async {
-    _checkPaging(offset: offset, limit: limit);
+    _checkPaging(page: page, limit: limit);
 
     const action = 'Collection list';
     final response = await _send(
@@ -99,7 +99,7 @@ class GameCollectionRemoteDataSourceImpl
         _basePath,
         options: _plainBody,
         queryParameters: {
-          'offset': offset,
+          'page': page,
           'limit': limit,
           // The false cases are the server's own defaults, so omitting them
           // keeps the query string to what the caller actually asked for.
@@ -115,18 +115,15 @@ class GameCollectionRemoteDataSourceImpl
       notFound: _NotFoundMeaning.unreachableEndpoint,
     );
 
-    final collections = response.body['collections'];
-    if (collections is! List) {
-      throw GameCollectionRemotePermanentException(
-        '$action response missing a "collections" array',
-        statusCode: response.status,
-      );
-    }
-
+    // The envelope parse and the row mapping share one permanent
+    // classification: a missing array, a missing or partial `pagination`, and
+    // a row the mapper cannot read are all a 2xx this source cannot map.
     return _parse(
-      () => collections
-          .map((entry) => _mapEntry(entry as Map<String, dynamic>))
-          .toList(growable: false),
+      () => PaginatedResult.fromEnvelope(
+        response.body,
+        key: 'collections',
+        item: _mapEntry,
+      ),
       action: action,
       status: response.status,
     );
@@ -419,14 +416,15 @@ class GameCollectionRemoteDataSourceImpl
 
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
-  /// `limit` is capped at [GameCollectionRemoteDataSource.maxPageSize] and
-  /// `offset` at [GameCollectionRemoteDataSource.maxOffset], both **rejected
-  /// with a 400 rather than clamped**. A 400 mid-hydrate classifies as
-  /// permanent, so an out-of-range page would fail the whole sync for a reason
-  /// the caller could have known locally.
-  void _checkPaging({required int offset, required int limit}) {
+  /// `page` is 1-based, `limit` is capped at
+  /// [GameCollectionRemoteDataSource.maxPageSize], and `(page - 1) * limit`
+  /// may not exceed [GameCollectionRemoteDataSource.maxPageDepth]. The server
+  /// **rejects** each violation with a 400 rather than clamping it. A 400
+  /// mid-hydrate classifies as permanent, so an out-of-range page would fail
+  /// the whole sync for a reason the caller could have known locally.
+  void _checkPaging({required int page, required int limit}) {
     const maxPageSize = GameCollectionRemoteDataSource.maxPageSize;
-    const maxOffset = GameCollectionRemoteDataSource.maxOffset;
+    const maxPageDepth = GameCollectionRemoteDataSource.maxPageDepth;
     if (limit < 1 || limit > maxPageSize) {
       throw ArgumentError.value(
         limit,
@@ -435,11 +433,18 @@ class GameCollectionRemoteDataSourceImpl
             'page rather than clamping it)',
       );
     }
-    if (offset < 0 || offset > maxOffset) {
+    if (page < 1) {
+      throw ArgumentError.value(page, 'page', 'is 1-based');
+    }
+    // Divided rather than multiplied: `(page - 1) * limit` wraps on the VM for
+    // a large enough page and would land back under the ceiling. For integers,
+    // `x * limit > depth` holds exactly when `x > depth ~/ limit`, and `limit`
+    // is at least 1 by now.
+    if (page - 1 > maxPageDepth ~/ limit) {
       throw ArgumentError.value(
-        offset,
-        'offset',
-        'must be between 0 and $maxOffset',
+        page,
+        'page',
+        '(page - 1) * limit must not exceed $maxPageDepth',
       );
     }
   }
