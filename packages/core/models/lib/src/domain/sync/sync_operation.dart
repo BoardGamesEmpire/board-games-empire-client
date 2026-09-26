@@ -96,37 +96,32 @@ final class UpdateCollectionOperation extends SyncOperation {
     required this.collectionId,
     this.quantity,
     this.rating,
-    this.playCount,
     this.playAgain,
     this.favorite,
     this.comment,
-    this.lastPlayed,
   });
 
   static const String type = 'update_collection';
 
+  /// Ignores `play_count` and `last_played` if a payload still carries
+  /// them. The server owns play history and rejects both on an update
+  /// (#258), so they are not carried forward.
   factory UpdateCollectionOperation.fromJson(Map<String, dynamic> json) =>
       UpdateCollectionOperation(
         collectionId: json['collection_id'] as String,
         quantity: json['quantity'] as int?,
         rating: json['rating'] as int?,
-        playCount: json['play_count'] as int?,
         playAgain: json['play_again'] as bool?,
         favorite: json['favorite'] as bool?,
         comment: json['comment'] as String?,
-        lastPlayed: json['last_played'] != null
-            ? DateTime.parse(json['last_played'] as String)
-            : null,
       );
 
   final String collectionId;
   final int? quantity;
   final int? rating;
-  final int? playCount;
   final bool? playAgain;
   final bool? favorite;
   final String? comment;
-  final DateTime? lastPlayed;
 
   @override
   Map<String, dynamic> toJson() => {
@@ -134,12 +129,9 @@ final class UpdateCollectionOperation extends SyncOperation {
     'collection_id': collectionId,
     if (quantity != null) 'quantity': quantity,
     if (rating != null) 'rating': rating,
-    if (playCount != null) 'play_count': playCount,
     if (playAgain != null) 'play_again': playAgain,
     if (favorite != null) 'favorite': favorite,
     if (comment != null) 'comment': comment,
-    if (lastPlayed != null)
-      'last_played': lastPlayed!.toUtc().toIso8601String(),
   };
 }
 

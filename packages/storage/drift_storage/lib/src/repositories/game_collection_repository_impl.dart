@@ -74,7 +74,8 @@ import 'watch_disposal.dart';
 /// must be `> 0` when provided (`null` means "leave unchanged"). Both
 /// methods throw [ArgumentError] **before** opening the transaction,
 /// so the local cache and sync queue stay untouched on invalid input.
-/// Removing an entry uses [removeFromCollection], not
+/// `updateCollectionEntry` with every field `null` throws the same way:
+/// it has nothing to send. Removing an entry uses [removeFromCollection], not
 /// `addToCollection(quantity: 0)` or `updateCollectionEntry(quantity: 0)`.
 ///
 /// ## Tombstones
@@ -390,13 +391,26 @@ class GameCollectionRepositoryImpl
     required String id,
     int? quantity,
     int? rating,
-    int? playCount,
     bool? playAgain,
     bool? favorite,
     String? comment,
-    DateTime? lastPlayed,
   }) async {
     checkNotDisposed();
+    // Every field null is an update with nothing in it: the transport
+    // rejects that as an empty patch, so queueing it would leave an
+    // operation that can never be delivered.
+    if (quantity == null &&
+        rating == null &&
+        playAgain == null &&
+        favorite == null &&
+        comment == null) {
+      throw ArgumentError.value(
+        null,
+        'fields',
+        'at least one field must be supplied — an update with nothing in '
+            'it cannot be sent',
+      );
+    }
     // null = "leave unchanged" by the API contract; only validate
     // when the caller actually supplied a value. Same pre-transaction
     // fail-fast rationale as addToCollection.
@@ -437,17 +451,11 @@ class GameCollectionRepositoryImpl
         GameCollectionsTableCompanion(
           quantity: quantity != null ? Value(quantity) : const Value.absent(),
           rating: rating != null ? Value(rating) : const Value.absent(),
-          playCount: playCount != null
-              ? Value(playCount)
-              : const Value.absent(),
           playAgain: playAgain != null
               ? Value(playAgain)
               : const Value.absent(),
           favorite: favorite != null ? Value(favorite) : const Value.absent(),
           comment: comment != null ? Value(comment) : const Value.absent(),
-          lastPlayed: lastPlayed != null
-              ? Value(lastPlayed)
-              : const Value.absent(),
           isDirty: const Value(true),
           updatedAt: Value(now),
         ),
@@ -458,11 +466,9 @@ class GameCollectionRepositoryImpl
           collectionId: id,
           quantity: quantity,
           rating: rating,
-          playCount: playCount,
           playAgain: playAgain,
           favorite: favorite,
           comment: comment,
-          lastPlayed: lastPlayed,
         ),
       );
 

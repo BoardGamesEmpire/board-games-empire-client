@@ -826,9 +826,9 @@ void main() {
 
     test('the empty-patch rejection is an ArgumentError, deliberately outside '
         'the remote-exception taxonomy', () {
-      // A drain reaching this has an UpdateCollectionOperation carrying only
-      // server-managed fields (#258) — nothing this transport can send. It is
-      // a caller bug, not a server answer, so it must not masquerade as one:
+      // Reaching this means a caller built an update with nothing in it,
+      // which the repository already refuses (#258). It is a caller bug,
+      // not a server answer, so it must not masquerade as one:
       // `catch (GameCollectionRemoteException)` deliberately misses it.
       expect(
         () => remote.updateEntry(id: 'gc_server_1'),

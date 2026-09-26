@@ -348,14 +348,19 @@ void main() {
 
         // Simulate play history accumulated over the entry's
         // lifetime: 5 plays, favorited, marked "would play
-        // again", last played on a known date.
+        // again", last played on a known date. Play history is
+        // server-owned, so it arrives the way it does in
+        // production: on a server copy of the entry.
         final lastPlayedTimestamp = DateTime.utc(2025, 6, 1);
-        await repo.updateCollectionEntry(
-          id: first.id,
-          playCount: 5,
-          playAgain: true,
-          favorite: true,
-          lastPlayed: lastPlayedTimestamp,
+        await repo.reconcileFromServer(
+          first.copyWith(
+            playCount: 5,
+            playAgain: true,
+            favorite: true,
+            lastPlayed: lastPlayedTimestamp,
+            isDirty: false,
+            isLocalOnly: false,
+          ),
         );
 
         // Tombstone, then re-add WITHOUT supplying any optional
@@ -426,7 +431,7 @@ void main() {
           medium: _kMedium,
         );
 
-        await repo.updateCollectionEntry(id: entry.id, playCount: 3);
+        await repo.updateCollectionEntry(id: entry.id, favorite: true);
 
         verify(
           () => mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
@@ -573,6 +578,33 @@ void main() {
           verifyNever(() => mockSync.enqueue(any()));
           final row = (await repo.getCollection()).single;
           expect(row.quantity, equals(5));
+        },
+      );
+
+      test(
+        'updateCollectionEntry throws ArgumentError when no field is supplied',
+        () async {
+          // An operation with nothing in it is one the transport rejects
+          // as an empty patch, so accepting it would mark the row dirty
+          // and queue something that can never be delivered.
+          final local = await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+          );
+          await repo.reconcileFromServer(
+            local.copyWith(isDirty: false, isLocalOnly: false),
+          );
+          reset(mockSync);
+          _stubMockSyncDefaults(mockSync);
+
+          await expectLater(
+            () => repo.updateCollectionEntry(id: local.id),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          verifyNever(() => mockSync.enqueue(any()));
+          final row = (await repo.getCollection()).single;
+          expect(row.isDirty, isFalse);
         },
       );
 

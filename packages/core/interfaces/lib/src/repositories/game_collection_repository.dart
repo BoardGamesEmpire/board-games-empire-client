@@ -92,13 +92,18 @@ abstract class GameCollectionRepository {
   ///
   /// Only non-null fields are updated. [quantity] must be `> 0` when
   /// provided; implementations should throw [ArgumentError] before
-  /// opening the transaction for non-positive values. Enqueues
-  /// [UpdateCollectionOperation].
+  /// opening the transaction for non-positive values, and likewise when
+  /// every field is `null`, since that update has nothing to send.
+  /// Enqueues [UpdateCollectionOperation].
+  ///
+  /// Play history (`playCount`, `lastPlayed`) is not editable here. The
+  /// server owns it and rejects both fields on this update (#258), so
+  /// it reaches the cache only from server data.
   ///
   /// **TODO(clear-fields)**: this method cannot currently distinguish
   /// "don't touch this field" from "explicitly clear this nullable
-  /// field to null". For nullable columns ([rating], [comment],
-  /// [lastPlayed]), `null` always means leave-unchanged. A planned
+  /// field to null". For nullable columns ([rating], [comment]),
+  /// `null` always means leave-unchanged. A planned
   /// follow-up will add a separate `clearFields` method (or an enum
   /// parameter on this one) plus a `ClearFieldsOperation` sync op,
   /// so callers can explicitly null out a previously-set rating or
@@ -108,11 +113,9 @@ abstract class GameCollectionRepository {
     required String id,
     int? quantity,
     int? rating,
-    int? playCount,
     bool? playAgain,
     bool? favorite,
     String? comment,
-    DateTime? lastPlayed,
   });
 
   /// Removes an entry from the collection.
