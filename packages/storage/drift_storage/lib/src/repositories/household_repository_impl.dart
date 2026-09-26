@@ -582,7 +582,7 @@ class HouseholdRepositoryImpl
   /// household is unique on `(householdId, userId)` — and the two ids for
   /// one membership legitimately differ. `create` synthesizes an owner row
   /// under a client-generated cuid2 and `reconcileCreatedHousehold` keeps
-  /// that id deliberately (the authoritative id is #122's job), so the
+  /// that id deliberately (this upsert is what replaces it), so the
   /// server's row for the same membership arrives under a different id.
   /// Upserting on the primary key makes that a `UNIQUE` constraint failure
   /// instead of the update it should be, which would kill a hydrate on the

@@ -156,9 +156,10 @@ abstract class HouseholdRepository {
   /// completed in the **same transaction**; if any step throws, all of it
   /// rolls back.
   ///
-  /// The synthesized owner member row keeps its client-generated id; the
-  /// authoritative member id is reconciled by the membership sync (#122),
-  /// not here — nothing in the create-only flow reads it. The exception is
+  /// The synthesized owner member row keeps its client-generated id. The
+  /// next server write of that membership replaces it, since member writes
+  /// resolve on `(householdId, userId)` (#267), and nothing in the
+  /// create-only flow reads it before then. The exception is
   /// a server membership row already cached under the canonical id (a
   /// hydrate ran first): that row is kept, and the synthesized row for the
   /// same user is dropped rather than re-pointed onto it.
