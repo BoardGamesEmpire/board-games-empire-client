@@ -65,7 +65,9 @@ import 'watch_disposal.dart';
 /// The [Household.isDirty] / [Household.isLocalOnly] columns are set on
 /// the optimistic [create] row and cleared by [reconcileCreatedHousehold]
 /// once the server confirms; server-sourced cache-writer rows carry them
-/// as `false`.
+/// as `false`. [cacheHousehold] never overwrites a row carrying either
+/// flag (#298): the sync queue owns that row until the server acknowledges
+/// it.
 ///
 /// **TODO(household-mutations-phase-4)**: a stale-cache window
 /// exists between server-side membership changes (leaves, removals,
@@ -143,6 +145,10 @@ class HouseholdRepositoryImpl
   @override
   String get disposedRepositoryName => 'HouseholdRepository';
 
+  /// Local id → canonical id, for every create reconciled onto a new id
+  /// ([reconciledHouseholdId]).
+  final Map<String, String> _reconciledIds = {};
+
   @override
   Future<List<Household>> getHouseholds() async {
     checkNotDisposed();
@@ -200,22 +206,52 @@ class HouseholdRepositoryImpl
   @override
   Future<void> cacheHousehold(Household household) async {
     checkNotDisposed();
-    await _db
+    await _writeServerHousehold(household);
+  }
+
+  /// Upserts a server copy of a household, except over a row that is
+  /// `isDirty` or `isLocalOnly`: that row is left alone, flags and values.
+  /// The sync queue owns it until the server acknowledges the change, and
+  /// only the acknowledgement clears it ([_acknowledgeHousehold]). A server
+  /// tombstone over such a row is skipped too; the queued operation settles
+  /// it when it drains.
+  Future<void> _writeServerHousehold(Household household) {
+    final row = _serverHouseholdCompanion(household);
+    return _db
         .into(_db.householdsTable)
-        .insertOnConflictUpdate(
-          HouseholdsTableCompanion.insert(
-            id: household.id,
-            name: household.name,
-            description: Value(household.description),
-            image: Value(household.image),
-            isDirty: Value(household.isDirty),
-            isLocalOnly: Value(household.isLocalOnly),
-            deletedAt: Value(household.deletedAt),
-            createdAt: household.createdAt,
-            updatedAt: household.updatedAt,
+        .insert(
+          row,
+          onConflict: DoUpdate(
+            (_) => row,
+            where: (old) =>
+                old.isDirty.equals(false) & old.isLocalOnly.equals(false),
           ),
         );
   }
+
+  /// Writes the server's acknowledgement of a local change over the row it
+  /// settles: the server's values, with both sync flags cleared. This is
+  /// the only writer that clears them.
+  Future<void> _acknowledgeHousehold(Household household) => _db
+      .into(_db.householdsTable)
+      .insertOnConflictUpdate(_serverHouseholdCompanion(household));
+
+  /// A server copy never carries local sync state, whatever the model's
+  /// flags say: a row a server write marked dirty or local-only would be
+  /// one no later server write could refresh and no acknowledgement would
+  /// clear.
+  HouseholdsTableCompanion _serverHouseholdCompanion(Household household) =>
+      HouseholdsTableCompanion.insert(
+        id: household.id,
+        name: household.name,
+        description: Value(household.description),
+        image: Value(household.image),
+        isDirty: const Value(false),
+        isLocalOnly: const Value(false),
+        deletedAt: Value(household.deletedAt),
+        createdAt: household.createdAt,
+        updatedAt: household.updatedAt,
+      );
 
   @override
   Future<void> cacheMember(HouseholdMember member) async {
@@ -334,19 +370,40 @@ class HouseholdRepositoryImpl
     String? completedSyncQueueId,
   }) async {
     checkNotDisposed();
-    return _db.transaction(() async {
-      // 1. Upsert the server-confirmed household (canonical id, flags
-      //    cleared). Done first so the members FK target exists before
-      //    the re-point below (FK enforcement is on).
-      await cacheHousehold(
-        serverHousehold.copyWith(isDirty: false, isLocalOnly: false),
-      );
+    await _db.transaction(() async {
+      // 1. Write the server-confirmed household. Done first so the members
+      //    FK target exists before the re-point below (FK enforcement is
+      //    on). When the server kept the local id, the optimistic row is
+      //    the one being confirmed: acknowledge it. Otherwise the canonical
+      //    row is a server copy like any other, written by the hydrate's
+      //    rule, so a dirty one keeps its changes.
+      if (localId == serverHousehold.id) {
+        await _acknowledgeHousehold(serverHousehold);
+      } else {
+        await _writeServerHousehold(serverHousehold);
+      }
 
       // 2. Server-assigned id path: migrate the synthesized owner member
       //    row(s) onto the canonical id, then drop the stale optimistic
-      //    household row. The (householdId, userId) unique index can't
-      //    collide — the canonical id is brand new.
+      //    household row. The canonical id is not necessarily new here: a
+      //    hydrate that ran first (#267) has already cached the server's
+      //    membership rows under it, and re-pointing a user who has one
+      //    would break the (householdId, userId) unique index. The
+      //    server's row wins — it carries the real member id, while the
+      //    synthesized one is provisional — so drop the local duplicate
+      //    and re-point whatever remains.
       if (localId != serverHousehold.id) {
+        final serverMemberUserIds = _db.selectOnly(_db.householdMembersTable)
+          ..addColumns([_db.householdMembersTable.userId])
+          ..where(
+            _db.householdMembersTable.householdId.equals(serverHousehold.id),
+          );
+        await (_db.delete(_db.householdMembersTable)..where(
+              (t) =>
+                  t.householdId.equals(localId) &
+                  t.userId.isInQuery(serverMemberUserIds),
+            ))
+            .go();
         await (_db.update(
           _db.householdMembersTable,
         )..where((t) => t.householdId.equals(localId))).write(
@@ -365,7 +422,19 @@ class HouseholdRepositoryImpl
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
     });
+    if (localId != serverHousehold.id) {
+      _reconciledIds[localId] = serverHousehold.id;
+      // The transaction's own updates went out before the record existed,
+      // and a watcher that re-read on them may already have delivered the
+      // local row's disappearance. This one makes every household watcher
+      // read again with the record in place, whatever order the executor
+      // delivers in (#306).
+      _db.markTablesUpdated([_db.householdsTable]);
+    }
   }
+
+  @override
+  String? reconciledHouseholdId(String localId) => _reconciledIds[localId];
 
   @override
   Stream<List<Household>> watchHouseholds() =>
@@ -513,7 +582,7 @@ class HouseholdRepositoryImpl
   /// household is unique on `(householdId, userId)` — and the two ids for
   /// one membership legitimately differ. `create` synthesizes an owner row
   /// under a client-generated cuid2 and `reconcileCreatedHousehold` keeps
-  /// that id deliberately (the authoritative id is #122's job), so the
+  /// that id deliberately (this upsert is what replaces it), so the
   /// server's row for the same membership arrives under a different id.
   /// Upserting on the primary key makes that a `UNIQUE` constraint failure
   /// instead of the update it should be, which would kill a hydrate on the

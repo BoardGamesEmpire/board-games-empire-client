@@ -330,11 +330,9 @@ class SyncQueueRepositoryImpl
           collectionId: newId,
           quantity: op.quantity,
           rating: op.rating,
-          playCount: op.playCount,
           playAgain: op.playAgain,
           favorite: op.favorite,
           comment: op.comment,
-          lastPlayed: op.lastPlayed,
         ),
       RemoveFromCollectionOperation() when op.collectionId == oldId =>
         RemoveFromCollectionOperation(collectionId: newId),

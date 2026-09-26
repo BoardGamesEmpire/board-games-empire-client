@@ -16,25 +16,35 @@ sealed class HouseholdDetailEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// The household cache emitted. [household] is null when this screen's id
-/// was not among the readable rows.
-final class HouseholdDetailHouseholdUpdated extends HouseholdDetailEvent {
-  const HouseholdDetailHouseholdUpdated(this.household);
+/// The household cache emitted: every household readable to the current
+/// user. The bloc picks its own out only once it has checked whether a
+/// reconcile moved it to a new id (#306), which is why the whole list
+/// travels rather than a pre-filtered row.
+final class HouseholdDetailHouseholdsUpdated extends HouseholdDetailEvent {
+  const HouseholdDetailHouseholdsUpdated(this.households);
 
-  final Household? household;
+  final List<Household> households;
 
   @override
-  List<Object?> get props => [household];
+  List<Object?> get props => [households];
 }
 
-/// The roster emitted.
+/// The roster for [householdId] emitted.
+///
+/// Carries the id it was read for because the bloc can move to a new one
+/// (#306): the old roster empties as its rows move, and that emission can
+/// still be queued after the bloc has switched.
 final class HouseholdDetailMembersUpdated extends HouseholdDetailEvent {
-  const HouseholdDetailMembersUpdated(this.members);
+  const HouseholdDetailMembersUpdated(
+    this.members, {
+    required this.householdId,
+  });
 
   final List<HouseholdMember> members;
+  final String householdId;
 
   @override
-  List<Object?> get props => [members];
+  List<Object?> get props => [members, householdId];
 }
 
 /// The current user's own member row resolved, giving the bloc the user id
@@ -65,24 +75,32 @@ enum HouseholdDetailSource {
 }
 
 /// One cache stream failed.
+///
+/// A roster failure carries [householdId] for the reason
+/// [HouseholdDetailMembersUpdated] does (#306); it is null for the
+/// household stream, which does not change when the id does.
 final class HouseholdDetailReadFailed extends HouseholdDetailEvent {
-  const HouseholdDetailReadFailed(this.source);
+  const HouseholdDetailReadFailed(this.source, {this.householdId});
 
   final HouseholdDetailSource source;
+  final String? householdId;
 
   @override
-  List<Object?> get props => [source];
+  List<Object?> get props => [source, householdId];
 }
 
 /// One cache stream ended — how a user-session teardown arrives, since
 /// `WatchDisposal` closes vended streams rather than erroring them.
+///
+/// [householdId] as on [HouseholdDetailReadFailed].
 final class HouseholdDetailReadEnded extends HouseholdDetailEvent {
-  const HouseholdDetailReadEnded(this.source);
+  const HouseholdDetailReadEnded(this.source, {this.householdId});
 
   final HouseholdDetailSource source;
+  final String? householdId;
 
   @override
-  List<Object?> get props => [source];
+  List<Object?> get props => [source, householdId];
 }
 
 /// The hydration status stream ended, so no pass will ever report again.

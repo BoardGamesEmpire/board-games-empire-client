@@ -969,4 +969,232 @@ void main() {
       },
     );
   });
+
+  group('a household reconciled onto a new id (#306)', () {
+    // A queued create reconciling while this screen is open, or before it
+    // was rebuilt: the repository moves the household from the local id
+    // this screen was built with onto the server's id, and records where
+    // it went. The optimistic row is gone, so without following that
+    // record the screen would report a household it is showing as missing.
+    const serverId = 'hh_server';
+    late StreamController<List<HouseholdMember>> serverMembers;
+    String? reconciledTo;
+
+    setUp(() {
+      reconciledTo = null;
+      serverMembers = StreamController<List<HouseholdMember>>();
+      when(() => repository.reconciledHouseholdId(_id))
+          .thenAnswer((_) => reconciledTo);
+      when(() => repository.watchMembers(serverId))
+          .thenAnswer((_) => serverMembers.stream);
+      when(() => repository.getCurrentUserMember(serverId)).thenAnswer(
+        (_) async => _member(
+          'u-me',
+          role: HouseholdRole.householdOwner,
+          householdId: serverId,
+        ),
+      );
+    });
+
+    tearDown(() => unawaited(serverMembers.close()));
+
+    Future<List<HouseholdDetailState>> openAndRender(
+      HouseholdDetailBloc bloc,
+    ) async {
+      final states = <HouseholdDetailState>[];
+      final sub = bloc.stream.listen(states.add);
+      addTearDown(sub.cancel);
+      households.add([_household(_id)]);
+      members.add([_member('u-me', role: HouseholdRole.householdOwner)]);
+      await settle();
+      expect(bloc.state, isA<HouseholdDetailReady>());
+      states.clear();
+      return states;
+    }
+
+    test('an open screen keeps the household rendered, under the new id, '
+        'when the old roster empties first', () async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      final states = await openAndRender(bloc);
+
+      reconciledTo = serverId;
+      members.add(const []);
+      households.add([_household(serverId)]);
+      serverMembers.add([
+        _member(
+          'u-me',
+          role: HouseholdRole.householdOwner,
+          householdId: serverId,
+        ),
+      ]);
+      await settle();
+
+      expect(states, isNotEmpty);
+      expect(states, everyElement(isA<HouseholdDetailReady>()));
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>()
+            .having((s) => s.household.id, 'household.id', serverId)
+            .having((s) => s.memberCount, 'memberCount', 1)
+            .having((s) => s.role, 'role', HouseholdRole.householdOwner),
+      );
+    });
+
+    test('an open screen keeps the household rendered when the household '
+        'list answers first, and ignores the old roster emptying', () async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      final states = await openAndRender(bloc);
+
+      reconciledTo = serverId;
+      households.add([_household(serverId)]);
+      members.add(const []);
+      await settle();
+
+      expect(states, everyElement(isA<HouseholdDetailReady>()));
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>()
+            .having((s) => s.household.id, 'household.id', serverId)
+            .having((s) => s.memberCount, 'memberCount', 1),
+      );
+    });
+
+    test(
+      'a screen built on the old id afterwards renders the household',
+      () async {
+        reconciledTo = serverId;
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+
+        households.add([_household(serverId)]);
+        serverMembers.add([
+          _member(
+            'u-me',
+            role: HouseholdRole.householdOwner,
+            householdId: serverId,
+          ),
+        ]);
+
+        await expectLater(
+          bloc.stream,
+          emitsThrough(
+            isA<HouseholdDetailReady>()
+                .having((s) => s.household.id, 'household.id', serverId)
+                .having((s) => s.role, 'role', HouseholdRole.householdOwner),
+          ),
+        );
+      },
+    );
+
+    test('recovers on the household emission that follows the record, if '
+        'both streams answered before it existed', () async {
+      // Hearing the local row vanish, and the old roster empty, before the
+      // record exists reads as a removal. The repository emits the
+      // household list again once it has recorded the move, which is what
+      // corrects it.
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      await openAndRender(bloc);
+
+      households.add([_household(serverId)]);
+      members.add(const []);
+      await expectLater(
+        bloc.stream,
+        emitsThrough(isA<HouseholdDetailNotFound>()),
+      );
+
+      reconciledTo = serverId;
+      households.add([_household(serverId)]);
+      serverMembers.add([
+        _member(
+          'u-me',
+          role: HouseholdRole.householdOwner,
+          householdId: serverId,
+        ),
+      ]);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          isA<HouseholdDetailReady>().having(
+            (s) => s.household.id,
+            'household.id',
+            serverId,
+          ),
+        ),
+      );
+    });
+
+    test('a failure on the old roster, queued before the move, is not the '
+        "new roster's failure", () async {
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      final states = await openAndRender(bloc);
+
+      reconciledTo = serverId;
+      households.add([_household(serverId)]);
+      members.addError(StateError('old roster'));
+      await settle();
+
+      expect(states, isNot(contains(isA<HouseholdDetailError>())));
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>().having(
+          (s) => s.household.id,
+          'household.id',
+          serverId,
+        ),
+      );
+    });
+
+    test('a failure on the old roster, handled before anything else after '
+        "the move, is not the new roster's failure", () async {
+      // The failure is the first event after the record, so it is the one
+      // that has to make the move before judging whose failure it is.
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      final states = await openAndRender(bloc);
+
+      reconciledTo = serverId;
+      members.addError(StateError('old roster'));
+      households.add([_household(serverId)]);
+      serverMembers.add([
+        _member(
+          'u-me',
+          role: HouseholdRole.householdOwner,
+          householdId: serverId,
+        ),
+      ]);
+      await settle();
+
+      expect(states, isNot(contains(isA<HouseholdDetailError>())));
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>().having(
+          (s) => s.household.id,
+          'household.id',
+          serverId,
+        ),
+      );
+    });
+
+    test(
+      'a household that disappears with no record is still not found',
+      () async {
+        // Following a record must not turn every disappearance into a wait.
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        await openAndRender(bloc);
+
+        households.add(const []);
+
+        await expectLater(
+          bloc.stream,
+          emitsThrough(isA<HouseholdDetailNotFound>()),
+        );
+      },
+    );
+  });
 }

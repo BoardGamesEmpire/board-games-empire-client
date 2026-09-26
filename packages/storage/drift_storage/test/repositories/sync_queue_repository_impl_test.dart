@@ -782,14 +782,13 @@ void main() {
         const op = UpdateCollectionOperation(
           collectionId: 'col-1',
           favorite: true,
-          lastPlayed: null,
         );
         final restored = SyncOperation.deserialize(
           op.serialized,
         ) as UpdateCollectionOperation;
 
         expect(restored.favorite, isTrue);
-        expect(restored.lastPlayed, isNull);
+        expect(restored.rating, isNull);
       });
 
       test('RemoveFromCollectionOperation round-trips', () {

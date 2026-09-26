@@ -14,7 +14,8 @@ import '../support/fixed_clock.dart';
 // table. The broad read-gate / membership behaviour lives in
 // household_repository_impl_test.dart; the create / reconcile write path in
 // household_repository_impl_create_test.dart. This file only pins the
-// sync-flag round-trip through the mapper and the cache writer.
+// sync-flag round-trip through the mapper, the cache writer and the
+// reconcile that acknowledges a create.
 
 const _kUserId = 'user-abc';
 
@@ -110,7 +111,11 @@ void main() {
       expect(list.single.isDirty, isFalse);
     });
 
-    test('cacheHousehold persists the flags to the row', () async {
+    test('cacheHousehold writes a server row clean, whatever flags the payload '
+        'carries', () async {
+      // A server write cannot create local sync state: a row it marked
+      // dirty or local-only would be one no later server write could refresh and no
+      // acknowledgement would ever clear.
       final now = DateTime.now().toUtc();
       await repo.cacheHousehold(
         Household(
@@ -124,8 +129,8 @@ void main() {
       );
 
       final row = await _rawRow(db, 'h-1');
-      expect(row.isDirty, isTrue);
-      expect(row.isLocalOnly, isTrue);
+      expect(row.isDirty, isFalse);
+      expect(row.isLocalOnly, isFalse);
     });
 
     test(
@@ -142,35 +147,79 @@ void main() {
       },
     );
 
-    test(
-      'cacheHousehold upsert can clear a previously local-only row',
-      () async {
-        final now = DateTime.now().toUtc();
-        await repo.cacheHousehold(
-          Household(
-            id: 'h-1',
-            name: 'Optimistic',
-            isLocalOnly: true,
-            isDirty: true,
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
-        // Server confirmation re-caches the same id with flags cleared.
-        await repo.cacheHousehold(
-          Household(
-            id: 'h-1',
-            name: 'Confirmed',
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
+    // A dirty or local-only row belongs to the sync queue until the server
+    // acknowledges it (#298). A server write that lands first — a hydrate — must leave
+    // both its flags and its values alone, or the list's pending badge
+    // disappears and the displayed values revert before the queued
+    // operation is even sent.
+    test('cacheHousehold leaves a local-only row untouched', () async {
+      final created = await repo.create(name: 'Optimistic');
+      final before = await _rawRow(db, created.household.id);
+      final now = DateTime.now().toUtc();
 
-        final row = await _rawRow(db, 'h-1');
-        expect(row.name, equals('Confirmed'));
-        expect(row.isDirty, isFalse);
-        expect(row.isLocalOnly, isFalse);
-      },
-    );
+      await repo.cacheHousehold(
+        Household(
+          id: created.household.id,
+          name: 'Server',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      expect(await _rawRow(db, created.household.id), equals(before));
+    });
+
+    test('cacheHousehold leaves a dirty row untouched', () async {
+      await _seedHousehold(db, id: 'h-1', name: 'Edited', isDirty: true);
+      await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
+      final before = await _rawRow(db, 'h-1');
+      final now = DateTime.now().toUtc();
+
+      await repo.cacheHousehold(
+        Household(id: 'h-1', name: 'Server', createdAt: now, updatedAt: now),
+      );
+
+      expect(await _rawRow(db, 'h-1'), equals(before));
+    });
+
+    test('cacheHousehold skips a server tombstone over a dirty row', () async {
+      // The queued operation settles it when it drains.
+      await _seedHousehold(db, id: 'h-1', name: 'Edited', isDirty: true);
+      await _seedMember(db, id: 'm-1', userId: _kUserId, householdId: 'h-1');
+      final now = DateTime.now().toUtc();
+
+      await repo.cacheHousehold(
+        Household(
+          id: 'h-1',
+          name: 'Edited',
+          deletedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      expect(await repo.getHousehold('h-1'), isNotNull);
+    });
+
+    test("the create's reconcile clears a local-only row and takes the "
+        "server's values", () async {
+      // Only the server's acknowledgement of the create may clear the
+      // flags, and it goes through the reconcile, not cacheHousehold.
+      final created = await repo.create(name: 'Optimistic');
+
+      await repo.reconcileCreatedHousehold(
+        created.household.copyWith(
+          name: 'Confirmed',
+          isDirty: false,
+          isLocalOnly: false,
+        ),
+        localId: created.household.id,
+      );
+
+      final row = await _rawRow(db, created.household.id);
+      expect(row.name, equals('Confirmed'));
+      expect(row.isDirty, isFalse);
+      expect(row.isLocalOnly, isFalse);
+    });
   });
 }

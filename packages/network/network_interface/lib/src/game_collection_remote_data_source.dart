@@ -44,8 +44,8 @@ import 'package:models/domain.dart';
 /// forbidNonWhitelisted: true` — a body containing either is a **400**. They are
 /// therefore absent from [updateEntry]'s parameters rather than accepted and
 /// silently discarded: the transport cannot construct a request the server is
-/// guaranteed to reject. `UpdateCollectionOperation` still carries both, so the
-/// caller drops them at the call site; the domain-level fix is **#258** (#253 D3).
+/// guaranteed to reject. The repository's update surface and
+/// `UpdateCollectionOperation` do not carry them either (#258).
 ///
 /// Likewise absent: `platformGameId` and `medium` on [updateEntry] — they are
 /// the row's identity server-side, and changing a game's medium means adding a
@@ -173,15 +173,6 @@ import 'package:models/domain.dart';
 /// unwrapped — an out-of-range page, a non-positive quantity, an empty patch.
 /// These are caller bugs, not server answers, and a drain that catches
 /// [GameCollectionRemoteException] will not catch them.
-///
-/// One of them is reachable from real queued data rather than from a coding
-/// slip, and callers must handle it before calling: an
-/// `UpdateCollectionOperation` whose only populated fields are `playCount`
-/// and/or `lastPlayed` has **nothing this transport can send** once those are
-/// dropped, so [updateEntry] would be called with every field null and throw.
-/// Such an operation is a no-op against this API — complete it without calling
-/// here. It exists only because the repository's update surface accepts fields
-/// the server owns; that is what #258 fixes.
 abstract class GameCollectionRemoteDataSource {
   /// The backend's `limit` ceiling for this endpoint
   /// (`GAME_COLLECTION_MAX_PAGE_SIZE`). A larger `limit` is rejected with a
@@ -273,10 +264,6 @@ abstract class GameCollectionRemoteDataSource {
   /// null-handling section on this class. At least one field must be non-null:
   /// the server rejects an empty patch with a 400, so implementations throw
   /// [ArgumentError] before the request instead.
-  ///
-  /// A caller draining an `UpdateCollectionOperation` whose only populated
-  /// fields are the server-managed ones has nothing to send and must not call
-  /// this method — see "Argument violations" on this class.
   ///
   /// Throws [GameCollectionNotFoundException] on a 404.
   Future<GameCollection> updateEntry({

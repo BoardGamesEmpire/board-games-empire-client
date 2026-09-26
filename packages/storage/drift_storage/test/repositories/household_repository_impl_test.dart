@@ -631,8 +631,8 @@ void main() {
           'carries a different id (#267 D4)', () async {
         // The create flow synthesizes an owner member row with a
         // CLIENT-generated id, and reconcileCreatedHousehold
-        // deliberately keeps that id (the authoritative one is #122's
-        // job). So the server's row for the same (householdId, userId)
+        // deliberately keeps that id (this upsert is what replaces
+        // it). So the server's row for the same (householdId, userId)
         // arrives under a DIFFERENT id — which collides with the
         // (householdId, userId) unique index, not with the primary key.
         // Resolving conflicts on the primary key alone makes this an

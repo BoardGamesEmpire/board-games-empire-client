@@ -146,24 +146,57 @@ abstract class HouseholdRepository {
   /// only handle tying the response to the optimistic row).
   ///
   /// The server assigns the canonical id (its create DTO has no id field).
-  /// When [serverHousehold]'s id differs from [localId], this migrates the
-  /// synthesized owner member row onto the canonical id and drops the stale
-  /// optimistic household row, then upserts [serverHousehold] with the sync
-  /// flags cleared. When [completedSyncQueueId] is provided, that queue
-  /// entry is marked completed in the **same transaction**; if any step
-  /// throws, all of it rolls back.
+  /// When [serverHousehold]'s id equals [localId], the optimistic row is
+  /// acknowledged: it takes the server's values and both sync flags are
+  /// cleared. This is the only write that clears them. When the ids differ,
+  /// [serverHousehold] is written under the canonical id by the same rule
+  /// as [cacheHousehold], the synthesized owner member row is migrated onto
+  /// it, and the stale optimistic household row is dropped. When
+  /// [completedSyncQueueId] is provided, that queue entry is marked
+  /// completed in the **same transaction**; if any step throws, all of it
+  /// rolls back.
   ///
-  /// The synthesized owner member row keeps its client-generated id; the
-  /// authoritative member id is reconciled by the membership sync (#122),
-  /// not here — nothing in the create-only flow reads it.
+  /// The synthesized owner member row keeps its client-generated id. The
+  /// next server write of that membership replaces it, since member writes
+  /// resolve on `(householdId, userId)` (#267), and nothing in the
+  /// create-only flow reads it before then. The exception is
+  /// a server membership row already cached under the canonical id (a
+  /// hydrate ran first): that row is kept, and the synthesized row for the
+  /// same user is dropped rather than re-pointed onto it.
   Future<void> reconcileCreatedHousehold(
     Household serverHousehold, {
     required String localId,
     String? completedSyncQueueId,
   });
 
+  /// The canonical id [reconcileCreatedHousehold] moved [localId] onto, or
+  /// null if it has not — including when the server kept the local id, and
+  /// when a reconcile rolled back.
+  ///
+  /// For a screen that holds a household by id when the id changes under
+  /// it (#306): one open during the reconcile, or one rebuilt on the local
+  /// id afterwards. The optimistic row is gone by then, so the local id
+  /// reads as a household that does not exist.
+  ///
+  /// Once the record is readable, [watchHouseholds] emits again, so a
+  /// subscriber that checks this on every emission sees the move even if
+  /// it heard the local row vanish first.
+  ///
+  /// Kept in memory, for the life of this repository, which is the user
+  /// session. Nothing restores a route across an app restart, so no route
+  /// can hold a local id longer than that. Never throws, including after
+  /// disposal.
+  String? reconciledHouseholdId(String localId);
+
   /// Upserts a [Household] from a server response. User-agnostic by
   /// design — the read-side boundary enforces visibility.
+  ///
+  /// The row is written with `isDirty` and `isLocalOnly` both `false`,
+  /// whatever [household] carries: a server copy has no local sync state.
+  /// An existing row with either flag set is left untouched, flags and
+  /// values, tombstone included. It holds local changes the server has not
+  /// accepted yet, and only the server's acknowledgement of them may
+  /// overwrite it ([reconcileCreatedHousehold], for a create).
   Future<void> cacheHousehold(Household household);
 
   /// Upserts a [HouseholdMember] from a server response. User-agnostic

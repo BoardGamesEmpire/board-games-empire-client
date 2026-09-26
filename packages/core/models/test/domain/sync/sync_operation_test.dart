@@ -107,6 +107,30 @@ void main() {
       expect(add, isA<AddToCollectionOperation>());
     });
 
+    test('decodes an update_collection that still carries play history '
+        'and does not carry it forward', () {
+      // The update surface once accepted playCount / lastPlayed, which the
+      // server owns and rejects (#258). A payload queued in that shape must
+      // still decode, and must not put those fields back on the wire.
+      final op = SyncOperation.fromJson(const {
+        'type': 'update_collection',
+        'collection_id': 'col_1',
+        'rating': 7,
+        'play_count': 3,
+        'last_played': '2025-06-01T00:00:00.000Z',
+      });
+
+      expect(op, isA<UpdateCollectionOperation>());
+      final update = op as UpdateCollectionOperation;
+      expect(update.collectionId, equals('col_1'));
+      expect(update.rating, equals(7));
+      expect(update.toJson(), {
+        'type': 'update_collection',
+        'collection_id': 'col_1',
+        'rating': 7,
+      });
+    });
+
     test('throws FormatException on an unknown type', () {
       expect(
         () => SyncOperation.fromJson(const {'type': 'not_a_real_op'}),
