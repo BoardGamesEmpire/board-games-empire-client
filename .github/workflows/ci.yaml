@@ -298,7 +298,72 @@ jobs:
         run: flutter pub get
       - name: flutter test
         working-directory: ${{ matrix.package }}
-        run: flutter test --exclude-tags golden --test-randomize-ordering-seed random
+        run: flutter test --coverage --exclude-tags golden --test-randomize-ordering-seed random
+      # ── Coverage → Codecov ──────────────────────────────────────────
+      # `flutter test` writes lcov paths relative to the PACKAGE
+      # (`SF:lib/src/...`), and nearly every package has a `lib/src/`, so
+      # uploaded as-is they collide and Codecov cannot place them. The
+      # package dir is prefixed here, per report — codecov.yml `fixes:`
+      # rewrite repo-wide and cannot tell one package's upload from
+      # another's.
+      #
+      # The flag is the package path minus `packages/`, slashes → dashes
+      # (Codecov flags allow only [\w.-], max 45). The path rather than
+      # the dir name keeps flags unique as packages are added, and
+      # `platform-web` says more than `web`. That holds only while no dir
+      # name has a dash of its own (`a-b/c` and `a/b-c` would share a
+      # flag), so the step below enforces it and the length, failing
+      # loudly rather than letting Codecov reject or merge an upload
+      # behind the non-fatal step. Flag config and ignores live in
+      # codecov.yml.
+      #
+      # Two blind spots, both of which read as HIGHER coverage, not lower:
+      #   - A file no test imports is absent from lcov entirely, so it
+      #     does not count against the package.
+      #   - Code only the browser suites reach (`test-web`) is absent too:
+      #     `flutter test --platform chrome --coverage` writes an empty
+      #     report on the pinned Flutter, so that job does not upload.
+      # Goldens are excluded above, so golden-only widget code reads low.
+      - name: Prefix coverage paths with the package dir
+        id: coverage
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          rel="${PACKAGE#packages/}"
+          if [[ ! "$rel" =~ ^[A-Za-z0-9_/]+$ ]]; then
+            echo "::error::$PACKAGE: use only [A-Za-z0-9_] in dir names; its Codecov flag could collide with another package's."
+            exit 1
+          fi
+          flag="${rel//\//-}"
+          if (( ${#flag} > 45 )); then
+            echo "::error::$PACKAGE: Codecov flag '$flag' is ${#flag} chars; the limit is 45."
+            exit 1
+          fi
+          report="$PACKAGE/coverage/lcov.info"
+          # A package whose every test is excluded here (golden-only, or
+          # browser-only) has no report. Not an error — just nothing to send.
+          if [ ! -s "$report" ]; then
+            echo "::notice::No coverage report for $PACKAGE; skipping upload."
+            echo "report=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sed -i "s|^SF:|SF:$PACKAGE/|" "$report"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "flag=$flag" >> "$GITHUB_OUTPUT"
+      # Not fatal: a Codecov outage should not turn a green test run red.
+      # Fork PRs have no access to the token and upload tokenless, which
+      # Codecov accepts for public repos.
+      - name: Upload coverage
+        if: steps.coverage.outputs.report != ''
+        uses: codecov/codecov-action@v5
+        with:
+          files: ${{ steps.coverage.outputs.report }}
+          disable_search: true
+          flags: ${{ steps.coverage.outputs.flag }}
+          name: ${{ steps.coverage.outputs.flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   # ── Browser tests (#288) ─────────────────────────────────────
   # Some suites cannot run on the VM at all: `package:drift/wasm.dart`
