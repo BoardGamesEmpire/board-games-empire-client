@@ -33,3 +33,7 @@ ignore:
   - "**/*.config.dart"
   - "**/*.mocks.dart"
   - "**/*_localizations*.dart"
+  # Drift's step-by-step migrations (`melos run schema:migrations`). Unlike
+  # the above these are committed rather than bundled by `generate`, and
+  # enter the report once a database wires in its `stepByStep(...)` (#54).
+  - "**/*.steps.dart"
