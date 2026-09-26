@@ -59,29 +59,35 @@ import 'watch_disposal.dart';
 /// remaining household mutations (`leaveHousehold`, `removeMember`,
 /// `transferOwnership`, …) are deferred to the membership work (#122).
 /// The "cache-writer" methods ([cacheHousehold], [cacheMember],
-/// [cacheMembers]) are server-driven populators that accept payloads the
-/// server already auth-filtered.
+/// [cacheMembers], [cacheHouseholdWithRoster]) are server-driven
+/// populators that accept payloads the server already auth-filtered.
 ///
 /// The [Household.isDirty] / [Household.isLocalOnly] columns are set on
 /// the optimistic [create] row and cleared by [reconcileCreatedHousehold]
 /// once the server confirms; server-sourced cache-writer rows carry them
 /// as `false`. [cacheHousehold] never overwrites a row carrying either
 /// flag (#298): the sync queue owns that row until the server acknowledges
-/// it.
+/// it. [cacheHouseholdWithRoster] and [purgeHouseholdsAbsentFrom] leave it
+/// alone for the same reason, roster included.
 ///
-/// **TODO(household-mutations-phase-4)**: a stale-cache window
-/// exists between server-side membership changes (leaves, removals,
-/// role swaps performed via the web UI or another device) and the
-/// next resync arriving at this device. During that window the
-/// read-side membership gate is making decisions on a cache the
-/// server has already moved past — e.g., a user who has actually
-/// been removed from a household will still see it via
-/// [getHousehold] / [watchHouseholds] until the cache catches up.
-/// Phase 4 will close this by introducing membership-mutation sync
-/// ops that update the local member rows in the same Drift
-/// transaction they enqueue against the sync queue. Until then the
-/// gate is best-effort, with eventual consistency at the next
-/// sync tick.
+/// ## Removals made elsewhere (#268)
+///
+/// The hydrate removes what the server no longer holds: a member through
+/// [cacheHouseholdWithRoster], the current user's membership of a whole
+/// household through [purgeHouseholdsAbsentFrom]. The purge's one race is
+/// a household that became the user's while the snapshot it purges against
+/// was in flight. The purge spares it by removing nothing outside a
+/// [purgeableHouseholdIds] read taken before the request. That read is of
+/// the database, not of anything this repository remembers, so it holds
+/// for any writer, including a repository in another tab over the same
+/// storage.
+///
+/// **TODO(household-mutations-phase-4)**: this device's own membership
+/// mutations (#122) — leave, kick, role swaps — will update the local
+/// member rows in the same Drift transaction they enqueue against the sync
+/// queue. Until the server accepts one, the next hydrate still carries the
+/// old roster, so each must hold its household against the two writers
+/// above (see [HouseholdRepository]).
 ///
 /// ## Future: per-household visibility
 ///
@@ -219,15 +225,18 @@ class HouseholdRepositoryImpl
     final row = _serverHouseholdCompanion(household);
     return _db
         .into(_db.householdsTable)
-        .insert(
-          row,
-          onConflict: DoUpdate(
-            (_) => row,
-            where: (old) =>
-                old.isDirty.equals(false) & old.isLocalOnly.equals(false),
-          ),
-        );
+        .insert(row, onConflict: DoUpdate((_) => row, where: _serverMayWrite));
   }
+
+  /// Whether the sync queue owns [row]: it carries local changes the server
+  /// has not acknowledged (#298). No server write may overwrite or remove
+  /// it, roster included; only the acknowledgement settles it.
+  static bool _isQueueOwned(HouseholdsTableData row) =>
+      row.isDirty || row.isLocalOnly;
+
+  /// [_isQueueOwned]'s negation, as a predicate over [t] in a query.
+  static Expression<bool> _serverMayWrite($HouseholdsTableTable t) =>
+      t.isDirty.equals(false) & t.isLocalOnly.equals(false);
 
   /// Writes the server's acknowledgement of a local change over the row it
   /// settles: the server's values, with both sync flags cleared. This is
@@ -270,6 +279,10 @@ class HouseholdRepositoryImpl
   @override
   Future<void> cacheMembers(List<HouseholdMember> members) async {
     checkNotDisposed();
+    await _upsertMembers(members);
+  }
+
+  Future<void> _upsertMembers(List<HouseholdMember> members) async {
     await _db.batch((b) {
       for (final m in members) {
         b.insert(
@@ -282,6 +295,95 @@ class HouseholdRepositoryImpl
         );
       }
     });
+  }
+
+  @override
+  Future<HouseholdRosterWrite> cacheHouseholdWithRoster(
+    Household household,
+    List<HouseholdMember> roster,
+  ) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      // Read here rather than left to [_writeServerHousehold]'s guarded
+      // upsert: that guard spares the household row, and a queue-owned
+      // household's roster has to be spared with it.
+      final cached = await (_db.select(
+        _db.householdsTable,
+      )..where((t) => t.id.equals(household.id))).getSingleOrNull();
+      if (cached != null && _isQueueOwned(cached)) {
+        return HouseholdRosterWrite.held;
+      }
+
+      await _writeServerHousehold(household);
+      final userId = _currentUserId();
+      if (!roster.any((m) => m.userId == userId)) {
+        await _upsertMembers(roster);
+        return HouseholdRosterWrite.merged;
+      }
+
+      await (_db.delete(_db.householdMembersTable)..where(
+            (t) =>
+                t.householdId.equals(household.id) &
+                t.userId.isNotIn(roster.map((m) => m.userId)),
+          ))
+          .go();
+      await _upsertMembers(roster);
+      return HouseholdRosterWrite.replaced;
+    });
+  }
+
+  @override
+  Future<Set<String>> purgeableHouseholdIds() async {
+    checkNotDisposed();
+    return (await _purgeableIds(_currentUserId()).get()).toSet();
+  }
+
+  @override
+  Future<Set<String>> purgeHouseholdsAbsentFrom(
+    Set<String> snapshotIds, {
+    required Set<String> purgeable,
+  }) async {
+    checkNotDisposed();
+    final userId = _currentUserId();
+    return _db.transaction(() async {
+      // Read again here: [purgeable] predates the snapshot, and a household
+      // in it may have been edited since, which hands it to the queue.
+      final purged = (await _purgeableIds(userId).get())
+          .where((id) => purgeable.contains(id) && !snapshotIds.contains(id))
+          .toSet();
+      if (purged.isEmpty) return purged;
+
+      await (_db.delete(
+            _db.householdMembersTable,
+          )..where((t) => t.householdId.isIn(purged) & t.userId.equals(userId)))
+          .go();
+      final stillHeld = _db.selectOnly(_db.householdMembersTable)
+        ..addColumns([_db.householdMembersTable.householdId])
+        ..where(_db.householdMembersTable.householdId.isIn(purged));
+      await (_db.delete(
+        _db.householdsTable,
+      )..where((t) => t.id.isIn(purged) & t.id.isNotInQuery(stillHeld))).go();
+      return purged;
+    });
+  }
+
+  /// The households [userId] has a member row in that no server write is
+  /// barred from ([_serverMayWrite]).
+  Selectable<String> _purgeableIds(String userId) {
+    final query =
+        _db.selectOnly(_db.householdsTable).join([
+            innerJoin(
+              _db.householdMembersTable,
+              _db.householdMembersTable.householdId.equalsExp(
+                    _db.householdsTable.id,
+                  ) &
+                  _db.householdMembersTable.userId.equals(userId),
+              useColumns: false,
+            ),
+          ])
+          ..addColumns([_db.householdsTable.id])
+          ..where(_serverMayWrite(_db.householdsTable));
+    return query.map((row) => row.read(_db.householdsTable.id)!);
   }
 
   // ── Mutations (P4, #39) ──────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import 'household_hydrator.dart';
 /// (#269 D1, #269 D2).
 ///
 /// Deliberately coarser than [HydrateOutcome]: the drain's completeness
-/// question ([HydrateOutcome.adminScoped]) matters to a purge (#268), not
+/// question ([HydrateOutcome.drained]) matters to a purge (#268), not
 /// to a list. What a list needs is "is the cache still filling?" and "is
 /// what you are reading possibly stale?".
 enum HouseholdHydrationState {
@@ -21,10 +21,10 @@ enum HouseholdHydrationState {
   /// empty.
   running,
 
-  /// The last pass landed rows. Includes an admin-scoped truncation: the
-  /// set is incomplete, but the cache is more current than it was, and
-  /// crying "couldn't refresh" at every admin sign-in would train the
-  /// warning away.
+  /// The last pass landed rows. Includes a drain across pages: the set is
+  /// not one snapshot, but the cache is more current than it was, and
+  /// crying "couldn't refresh" at every sign-in for a user with that many
+  /// households would train the warning away.
   refreshed,
 
   /// The last pass ended early. The cache holds at least what it held
@@ -195,7 +195,7 @@ class HouseholdHydrationStatus {
 
     final next = switch (outcome) {
       HydrateOutcome.complete ||
-      HydrateOutcome.adminScoped => HouseholdHydrationState.refreshed,
+      HydrateOutcome.drained => HouseholdHydrationState.refreshed,
       HydrateOutcome.failed => HouseholdHydrationState.failed,
     };
 

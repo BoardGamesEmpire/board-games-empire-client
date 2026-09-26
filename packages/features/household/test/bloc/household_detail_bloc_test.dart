@@ -504,10 +504,10 @@ void main() {
   group('the roster gate', () {
     test('an empty roster under a visible household holds, rather than '
         'claiming nobody is in it', () async {
-      // The hydrator writes cacheHousehold and cacheMembers as separate
-      // writes, so between them the household is visible and the roster is
-      // still `const []`. Rendering "No members" there states something
-      // false about a household that always has at least its owner.
+      // The household and its roster arrive on separate streams, so the
+      // household can be visible while the roster is still `const []`.
+      // Rendering "No members" there states something false about a
+      // household that always has at least its owner.
       final bloc = build();
       addTearDown(bloc.close);
 
@@ -579,7 +579,7 @@ void main() {
       },
     );
 
-    test('an admin-scoped pass reads as refreshed, not failed', () async {
+    test('a refreshed pass does not read as a failed one', () async {
       final bloc = build();
       addTearDown(bloc.close);
 

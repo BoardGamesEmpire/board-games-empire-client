@@ -137,8 +137,16 @@ void main() {
     container
       ..registerSingleton<HouseholdRepository>(repo)
       ..registerSingleton<HouseholdRemoteDataSource>(remote);
-    when(() => repo.cacheHousehold(any())).thenAnswer((_) async {});
-    when(() => repo.cacheMembers(any())).thenAnswer((_) async {});
+    when(() => repo.cacheHouseholdWithRoster(any(), any()))
+        .thenAnswer((_) async => HouseholdRosterWrite.replaced);
+    when(() => repo.purgeableHouseholdIds())
+        .thenAnswer((_) async => <String>{});
+    when(
+      () => repo.purgeHouseholdsAbsentFrom(
+        any(),
+        purgeable: any(named: 'purgeable'),
+      ),
+    ).thenAnswer((_) async => <String>{});
     // The shell reads the container off the active server, as it does in
     // production, rather than being handed one directly.
     scope = _FakeActiveServerScope(
@@ -160,6 +168,8 @@ void main() {
         updatedAt: DateTime.utc(2024),
       ),
     );
+    registerFallbackValue(<HouseholdMember>[]);
+    registerFallbackValue(<String>{});
   });
 
   tearDown(() async {
@@ -205,7 +215,7 @@ void main() {
     // Where #302 starts: the list is showing "couldn't refresh", and
     // nothing in the client will ever ask again on its own.
     expect(status.state, equals(HouseholdHydrationState.failed));
-    verifyNever(() => repo.cacheHousehold(any()));
+    verifyNever(() => repo.cacheHouseholdWithRoster(any(), any()));
 
     await tester.pumpWidget(
       SessionRehydrateTrigger(
@@ -230,7 +240,7 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
-    verify(() => repo.cacheHousehold(any())).called(1);
+    verify(() => repo.cacheHouseholdWithRoster(any(), any())).called(1);
     expect(status.state, equals(HouseholdHydrationState.refreshed));
   });
 

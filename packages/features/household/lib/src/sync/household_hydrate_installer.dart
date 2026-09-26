@@ -114,10 +114,10 @@ import 'household_refresher.dart';
 ///
 /// Staleness is answered from that same status rather than remembered by
 /// the registry (#302 D4): `failed` or `idle` is worth another pass,
-/// `running` is one already happening, and `refreshed` — including the
-/// admin-scoped truncation, which updated the cache — is not, until it
-/// ages out. A registry holding its own copy of that would be a second
-/// answer free to drift from the one the screen reads.
+/// `running` is one already happening, and `refreshed` — including a drain
+/// across pages, which updated the cache — is not, until it ages out. A
+/// registry holding its own copy of that would be a second answer free to
+/// drift from the one the screen reads.
 ///
 /// ## The window a refreshed pass ages out of (#300 D1, D2, D8)
 ///
