@@ -72,6 +72,25 @@ import 'household_detail_state.dart';
 /// A failure to resolve identity is not a failure of the screen: the role
 /// line is omitted and everything else renders. Losing the answer to "what
 /// am I here" is much less than losing the household.
+///
+/// ## A household whose id changes (#306)
+///
+/// A household created offline is shown under its local id until the
+/// server confirms it, and the reconcile moves it onto the server's id and
+/// deletes the local row. To this screen that is indistinguishable from a
+/// removal, which is the one thing it must not report it as.
+///
+/// So on every cache emission the bloc first asks the repository whether
+/// its id was reconciled away, and if so moves to the new one: the
+/// household is picked out by the new id, and the roster is re-read under
+/// it. The roster already on screen stays until the new read answers,
+/// since it names the same people, and anything the old roster still
+/// reports after the move is dropped. A bloc built on the local id after
+/// the reconcile starts from the new id.
+///
+/// Redirecting the route instead would give the right URL, which matters
+/// once web routes are addressable (#321). Until then this keeps the
+/// correction inside the one screen that holds the id.
 class HouseholdDetailBloc
     extends Bloc<HouseholdDetailEvent, HouseholdDetailState> {
   HouseholdDetailBloc({
@@ -82,7 +101,7 @@ class HouseholdDetailBloc
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.detail'),
        super(const HouseholdDetailLoading()) {
-    on<HouseholdDetailHouseholdUpdated>(_onHouseholdUpdated);
+    on<HouseholdDetailHouseholdsUpdated>(_onHouseholdsUpdated);
     on<HouseholdDetailMembersUpdated>(_onMembersUpdated);
     on<HouseholdDetailIdentityResolved>(_onIdentityResolved);
     on<HouseholdDetailReadFailed>(_onReadFailed);
@@ -91,12 +110,11 @@ class HouseholdDetailBloc
     on<HouseholdDetailHydrationEnded>(_onHydrationEnded);
     on<HouseholdDetailRetryRequested>(_onRetryRequested);
 
+    _repository = repository;
+    _householdId = repository.reconciledHouseholdId(householdId) ?? householdId;
+
     _households = repository.watchHouseholds().listen(
-      (households) => add(
-        HouseholdDetailHouseholdUpdated(
-          households.where((h) => h.id == householdId).firstOrNull,
-        ),
-      ),
+      (households) => add(HouseholdDetailHouseholdsUpdated(households)),
       onError: (Object error, StackTrace stackTrace) {
         _logger.warn(
           'Household read failed',
@@ -109,22 +127,7 @@ class HouseholdDetailBloc
           add(const HouseholdDetailReadEnded(HouseholdDetailSource.household)),
     );
 
-    _members = repository
-        .watchMembers(householdId)
-        .listen(
-          (members) => add(HouseholdDetailMembersUpdated(members)),
-          onError: (Object error, StackTrace stackTrace) {
-            _logger.warn(
-              'Household member read failed',
-              error: error,
-              stackTrace: stackTrace,
-            );
-            add(const HouseholdDetailReadFailed(HouseholdDetailSource.members));
-          },
-          onDone: () => add(
-            const HouseholdDetailReadEnded(HouseholdDetailSource.members),
-          ),
-        );
+    _members = _watchMembers(_householdId);
 
     _hasHydrationSource = hydration != null;
     _hydration = hydration?.listen(
@@ -137,8 +140,6 @@ class HouseholdDetailBloc
       onDone: () => add(const HouseholdDetailHydrationEnded()),
     );
 
-    _repository = repository;
-    _householdId = householdId;
     unawaited(_resolveIdentity());
   }
 
@@ -151,10 +152,13 @@ class HouseholdDetailBloc
   final Future<void> Function()? _onRetry;
 
   late final HouseholdRepository _repository;
-  late final String _householdId;
+
+  /// The id this screen reads, which a reconcile can move (#306) — see
+  /// [_followReconcile].
+  late String _householdId;
 
   late final StreamSubscription<List<Household>> _households;
-  late final StreamSubscription<List<HouseholdMember>> _members;
+  late StreamSubscription<List<HouseholdMember>> _members;
   StreamSubscription<HouseholdHydrationState>? _hydration;
 
   /// Null until the household stream has answered at all, which is not the
@@ -272,16 +276,78 @@ class HouseholdDetailBloc
     if (userId == null && retry) unawaited(_resolveIdentity());
   }
 
-  void _onHouseholdUpdated(
-    HouseholdDetailHouseholdUpdated event,
+  StreamSubscription<List<HouseholdMember>> _watchMembers(String householdId) =>
+      _repository
+          .watchMembers(householdId)
+          .listen(
+            (members) => add(
+              HouseholdDetailMembersUpdated(members, householdId: householdId),
+            ),
+            onError: (Object error, StackTrace stackTrace) {
+              _logger.warn(
+                'Household member read failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              add(
+                HouseholdDetailReadFailed(
+                  HouseholdDetailSource.members,
+                  householdId: householdId,
+                ),
+              );
+            },
+            onDone: () => add(
+              HouseholdDetailReadEnded(
+                HouseholdDetailSource.members,
+                householdId: householdId,
+              ),
+            ),
+          );
+
+  /// Moves this screen onto the id a reconcile moved its household to, if
+  /// one has (#306).
+  ///
+  /// Asked on every cache emission rather than once, because the reconcile
+  /// can land at any point in the screen's life, and both of its streams
+  /// emit when it does: the household list loses the local row and gains
+  /// the server's, and the old roster empties. Whichever arrives first
+  /// makes the move.
+  ///
+  /// Both may arrive before the record exists, and then read as a removal.
+  /// The repository emits the household list again once the record is
+  /// readable, and that emission makes the move.
+  ///
+  /// Moving on a roster emission leaves the household as last picked, under
+  /// the local id, until the household list answers; that emission is
+  /// already on its way, since the reconcile wrote the rows it reads.
+  void _followReconcile() {
+    final movedTo = _repository.reconciledHouseholdId(_householdId);
+    if (movedTo == null) return;
+    _householdId = movedTo;
+    unawaited(_members.cancel());
+    _members = _watchMembers(movedTo);
+  }
+
+  /// Whether a roster event was read for an id this screen has moved off
+  /// (#306): queued before the move, and saying nothing about the roster
+  /// now on screen.
+  bool _isStaleRoster(String? householdId) =>
+      householdId != null && householdId != _householdId;
+
+  void _onHouseholdsUpdated(
+    HouseholdDetailHouseholdsUpdated event,
     Emitter<HouseholdDetailState> emit,
   ) {
+    _followReconcile();
+    final household = event.households
+        .where((h) => h.id == _householdId)
+        .firstOrNull;
     // An emission is proof THIS stream recovered — the one thing that
     // clears its failure, and it says nothing about the other one.
     _householdFailed = false;
     _householdAnswered = true;
-    _household = event.household;
-    if (event.household != null) _householdEverSeen = true;
+    _household = household;
+    if (household != null) _householdEverSeen = true;
     _emitDerived(emit);
   }
 
@@ -289,6 +355,11 @@ class HouseholdDetailBloc
     HouseholdDetailMembersUpdated event,
     Emitter<HouseholdDetailState> emit,
   ) {
+    _followReconcile();
+    // A roster read for an id this screen has moved off: the old rows
+    // emptying as the reconcile moved them, which says nothing about who
+    // is in the household. The move itself may have changed what to show.
+    if (_isStaleRoster(event.householdId)) return _emitDerived(emit);
     _membersFailed = false;
     _members0 = event.members;
     // The roster just changed, and if we still do not know which row is
@@ -319,6 +390,7 @@ class HouseholdDetailBloc
       case HouseholdDetailSource.household:
         _householdFailed = true;
       case HouseholdDetailSource.members:
+        if (_isStaleRoster(event.householdId)) return;
         _membersFailed = true;
     }
     _emitDerived(emit);
@@ -332,6 +404,7 @@ class HouseholdDetailBloc
       case HouseholdDetailSource.household:
         _householdDone = true;
       case HouseholdDetailSource.members:
+        if (_isStaleRoster(event.householdId)) return;
         _membersDone = true;
     }
     // Whatever is already on screen stays — the route is being popped

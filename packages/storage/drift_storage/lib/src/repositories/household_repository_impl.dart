@@ -145,6 +145,10 @@ class HouseholdRepositoryImpl
   @override
   String get disposedRepositoryName => 'HouseholdRepository';
 
+  /// Local id → canonical id, for every create reconciled onto a new id
+  /// ([reconciledHouseholdId]).
+  final Map<String, String> _reconciledIds = {};
+
   @override
   Future<List<Household>> getHouseholds() async {
     checkNotDisposed();
@@ -366,7 +370,7 @@ class HouseholdRepositoryImpl
     String? completedSyncQueueId,
   }) async {
     checkNotDisposed();
-    return _db.transaction(() async {
+    await _db.transaction(() async {
       // 1. Write the server-confirmed household. Done first so the members
       //    FK target exists before the re-point below (FK enforcement is
       //    on). When the server kept the local id, the optimistic row is
@@ -418,7 +422,19 @@ class HouseholdRepositoryImpl
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
     });
+    if (localId != serverHousehold.id) {
+      _reconciledIds[localId] = serverHousehold.id;
+      // The transaction's own updates went out before the record existed,
+      // and a watcher that re-read on them may already have delivered the
+      // local row's disappearance. This one makes every household watcher
+      // read again with the record in place, whatever order the executor
+      // delivers in (#306).
+      _db.markTablesUpdated([_db.householdsTable]);
+    }
   }
+
+  @override
+  String? reconciledHouseholdId(String localId) => _reconciledIds[localId];
 
   @override
   Stream<List<Household>> watchHouseholds() =>

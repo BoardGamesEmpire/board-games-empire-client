@@ -168,6 +168,25 @@ abstract class HouseholdRepository {
     String? completedSyncQueueId,
   });
 
+  /// The canonical id [reconcileCreatedHousehold] moved [localId] onto, or
+  /// null if it has not — including when the server kept the local id, and
+  /// when a reconcile rolled back.
+  ///
+  /// For a screen that holds a household by id when the id changes under
+  /// it (#306): one open during the reconcile, or one rebuilt on the local
+  /// id afterwards. The optimistic row is gone by then, so the local id
+  /// reads as a household that does not exist.
+  ///
+  /// Once the record is readable, [watchHouseholds] emits again, so a
+  /// subscriber that checks this on every emission sees the move even if
+  /// it heard the local row vanish first.
+  ///
+  /// Kept in memory, for the life of this repository, which is the user
+  /// session. Nothing restores a route across an app restart, so no route
+  /// can hold a local id longer than that. Never throws, including after
+  /// disposal.
+  String? reconciledHouseholdId(String localId);
+
   /// Upserts a [Household] from a server response. User-agnostic by
   /// design — the read-side boundary enforces visibility.
   ///

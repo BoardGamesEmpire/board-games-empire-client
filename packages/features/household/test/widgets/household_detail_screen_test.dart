@@ -275,6 +275,40 @@ void main() {
     expect(find.text('2 members'), findsOneWidget);
   });
 
+  testWidgets('keeps the household on screen when a reconcile moves it to '
+      "the server's id (#306)", (tester) async {
+    // A household created offline, open under its local id when the server
+    // confirms it. The reconcile deletes the local row, so the list loses
+    // it and its roster empties; the repository records where it went.
+    String? reconciledTo;
+    when(() => repository.reconciledHouseholdId(_id))
+        .thenAnswer((_) => reconciledTo);
+    await tester.pumpWidget(harness());
+    hydration.add(HouseholdHydrationState.refreshed);
+    await settleWith(tester);
+    expect(find.text('Sunday Crew'), findsOneWidget);
+
+    void expectStillShown() {
+      expect(find.text('Sunday Crew'), findsOneWidget);
+      expect(find.text('1 member'), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsNothing);
+      expect(find.byKey(HouseholdDetailScreen.loadingKey), findsNothing);
+    }
+
+    reconciledTo = 'hh_server';
+    members.add(const []);
+    await tester.pump();
+    expectStillShown();
+
+    households.add([_household('hh_server')]);
+    await tester.pump();
+    expectStillShown();
+
+    members.add([_member('u-me')]);
+    await tester.pumpAndSettle();
+    expectStillShown();
+  });
+
   group('not found', () {
     testWidgets('renders once the hydrate has settled', (tester) async {
       await tester.pumpWidget(harness());
