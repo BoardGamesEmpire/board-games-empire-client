@@ -1,0 +1,35 @@
+# Codecov configuration. Uploads come from the `test` job in
+# .github/workflows/ci.yaml: one lcov report per package, each carrying
+# a flag named after the package path (packages/core/di → core-di), so
+# coverage reads per package as well as for the whole repo. Flags are
+# created on first upload — a new package needs nothing added here.
+
+coverage:
+  # Report only, for now: nothing here fails a PR. The numbers need a
+  # few runs of history before a target means anything, and two known
+  # blind spots skew them (see the `test` job) — tighten once they are
+  # understood, not before.
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# Every package runs on every CI run, so an absent upload means that
+# package's tests failed. Carrying its old numbers forward would hide
+# that, so it stays off (Codecov's default, stated here on purpose).
+flag_management:
+  default_rules:
+    carryforward: false
+
+# Generated sources — the same set the `generate` job bundles. They are
+# gitignored and regenerated every run; coverage over them measures the
+# generator, not this codebase.
+ignore:
+  - "**/*.g.dart"
+  - "**/*.freezed.dart"
+  - "**/*.config.dart"
+  - "**/*.mocks.dart"
+  - "**/*_localizations*.dart"
