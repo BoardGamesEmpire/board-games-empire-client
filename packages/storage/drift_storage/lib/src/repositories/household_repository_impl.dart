@@ -65,7 +65,9 @@ import 'watch_disposal.dart';
 /// The [Household.isDirty] / [Household.isLocalOnly] columns are set on
 /// the optimistic [create] row and cleared by [reconcileCreatedHousehold]
 /// once the server confirms; server-sourced cache-writer rows carry them
-/// as `false`.
+/// as `false`. [cacheHousehold] never overwrites a row carrying either
+/// flag (#298): the sync queue owns that row until the server acknowledges
+/// it.
 ///
 /// **TODO(household-mutations-phase-4)**: a stale-cache window
 /// exists between server-side membership changes (leaves, removals,
@@ -200,22 +202,52 @@ class HouseholdRepositoryImpl
   @override
   Future<void> cacheHousehold(Household household) async {
     checkNotDisposed();
-    await _db
+    await _writeServerHousehold(household);
+  }
+
+  /// Upserts a server copy of a household, except over a row that is
+  /// `isDirty` or `isLocalOnly`: that row is left alone, flags and values.
+  /// The sync queue owns it until the server acknowledges the change, and
+  /// only the acknowledgement clears it ([_acknowledgeHousehold]). A server
+  /// tombstone over such a row is skipped too; the queued operation settles
+  /// it when it drains.
+  Future<void> _writeServerHousehold(Household household) {
+    final row = _serverHouseholdCompanion(household);
+    return _db
         .into(_db.householdsTable)
-        .insertOnConflictUpdate(
-          HouseholdsTableCompanion.insert(
-            id: household.id,
-            name: household.name,
-            description: Value(household.description),
-            image: Value(household.image),
-            isDirty: Value(household.isDirty),
-            isLocalOnly: Value(household.isLocalOnly),
-            deletedAt: Value(household.deletedAt),
-            createdAt: household.createdAt,
-            updatedAt: household.updatedAt,
+        .insert(
+          row,
+          onConflict: DoUpdate(
+            (_) => row,
+            where: (old) =>
+                old.isDirty.equals(false) & old.isLocalOnly.equals(false),
           ),
         );
   }
+
+  /// Writes the server's acknowledgement of a local change over the row it
+  /// settles: the server's values, with both sync flags cleared. This is
+  /// the only writer that clears them.
+  Future<void> _acknowledgeHousehold(Household household) => _db
+      .into(_db.householdsTable)
+      .insertOnConflictUpdate(_serverHouseholdCompanion(household));
+
+  /// A server copy never carries local sync state, whatever the model's
+  /// flags say: a row a server write marked dirty or local-only would be
+  /// one no later server write could refresh and no acknowledgement would
+  /// clear.
+  HouseholdsTableCompanion _serverHouseholdCompanion(Household household) =>
+      HouseholdsTableCompanion.insert(
+        id: household.id,
+        name: household.name,
+        description: Value(household.description),
+        image: Value(household.image),
+        isDirty: const Value(false),
+        isLocalOnly: const Value(false),
+        deletedAt: Value(household.deletedAt),
+        createdAt: household.createdAt,
+        updatedAt: household.updatedAt,
+      );
 
   @override
   Future<void> cacheMember(HouseholdMember member) async {
@@ -335,12 +367,17 @@ class HouseholdRepositoryImpl
   }) async {
     checkNotDisposed();
     return _db.transaction(() async {
-      // 1. Upsert the server-confirmed household (canonical id, flags
-      //    cleared). Done first so the members FK target exists before
-      //    the re-point below (FK enforcement is on).
-      await cacheHousehold(
-        serverHousehold.copyWith(isDirty: false, isLocalOnly: false),
-      );
+      // 1. Write the server-confirmed household. Done first so the members
+      //    FK target exists before the re-point below (FK enforcement is
+      //    on). When the server kept the local id, the optimistic row is
+      //    the one being confirmed: acknowledge it. Otherwise the canonical
+      //    row is a server copy like any other, written by the hydrate's
+      //    rule, so a dirty one keeps its changes.
+      if (localId == serverHousehold.id) {
+        await _acknowledgeHousehold(serverHousehold);
+      } else {
+        await _writeServerHousehold(serverHousehold);
+      }
 
       // 2. Server-assigned id path: migrate the synthesized owner member
       //    row(s) onto the canonical id, then drop the stale optimistic

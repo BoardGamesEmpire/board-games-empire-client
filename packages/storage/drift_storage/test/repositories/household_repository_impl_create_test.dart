@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
@@ -222,6 +223,55 @@ void main() {
         );
       },
     );
+
+    test('server id != localId: a hydrated server row that is dirty keeps '
+        'its changes', () async {
+      // The canonical row is a server copy like any other, so the
+      // reconcile writes it by the same rule as a hydrate: a row the
+      // queue still owns is left alone. Only the create's own row is
+      // acknowledged.
+      final created = await repo.create(name: 'HQ');
+      final server = created.household.copyWith(
+        id: 'hh_server',
+        isDirty: false,
+        isLocalOnly: false,
+      );
+      await repo.cacheHousehold(server);
+      await repo.cacheMembers([
+        HouseholdMember(
+          id: 'm_server',
+          userId: _kUserId,
+          householdId: 'hh_server',
+          role: HouseholdRole.householdOwner,
+          createdAt: _fixed,
+          updatedAt: _fixed,
+        ),
+      ]);
+      // Stands in for an offline edit of the hydrated copy.
+      await (db.update(
+        db.householdsTable,
+      )..where((t) => t.id.equals('hh_server'))).write(
+        const HouseholdsTableCompanion(
+          name: Value('HQ renamed'),
+          isDirty: Value(true),
+        ),
+      );
+
+      await repo.reconcileCreatedHousehold(
+        server,
+        localId: created.household.id,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      final canonical = await repo.getHousehold('hh_server');
+      expect(canonical!.name, equals('HQ renamed'));
+      expect(canonical.isDirty, isTrue);
+      expect(await rawHousehold(created.household.id), isNull);
+      expect(
+        (await syncQueue.getAllEntries()).single.status,
+        SyncStatus.completed,
+      );
+    });
 
     test(
       'leaves the queue untouched when no completedSyncQueueId is given',

@@ -146,12 +146,15 @@ abstract class HouseholdRepository {
   /// only handle tying the response to the optimistic row).
   ///
   /// The server assigns the canonical id (its create DTO has no id field).
-  /// When [serverHousehold]'s id differs from [localId], this migrates the
-  /// synthesized owner member row onto the canonical id and drops the stale
-  /// optimistic household row, then upserts [serverHousehold] with the sync
-  /// flags cleared. When [completedSyncQueueId] is provided, that queue
-  /// entry is marked completed in the **same transaction**; if any step
-  /// throws, all of it rolls back.
+  /// When [serverHousehold]'s id equals [localId], the optimistic row is
+  /// acknowledged: it takes the server's values and both sync flags are
+  /// cleared. This is the only write that clears them. When the ids differ,
+  /// [serverHousehold] is written under the canonical id by the same rule
+  /// as [cacheHousehold], the synthesized owner member row is migrated onto
+  /// it, and the stale optimistic household row is dropped. When
+  /// [completedSyncQueueId] is provided, that queue entry is marked
+  /// completed in the **same transaction**; if any step throws, all of it
+  /// rolls back.
   ///
   /// The synthesized owner member row keeps its client-generated id; the
   /// authoritative member id is reconciled by the membership sync (#122),
@@ -167,6 +170,13 @@ abstract class HouseholdRepository {
 
   /// Upserts a [Household] from a server response. User-agnostic by
   /// design — the read-side boundary enforces visibility.
+  ///
+  /// The row is written with `isDirty` and `isLocalOnly` both `false`,
+  /// whatever [household] carries: a server copy has no local sync state.
+  /// An existing row with either flag set is left untouched, flags and
+  /// values, tombstone included. It holds local changes the server has not
+  /// accepted yet, and only the server's acknowledgement of them may
+  /// overwrite it ([reconcileCreatedHousehold], for a create).
   Future<void> cacheHousehold(Household household);
 
   /// Upserts a [HouseholdMember] from a server response. User-agnostic
