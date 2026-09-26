@@ -9,9 +9,10 @@ import '../network/decode_json_body.dart';
 /// [HouseholdRemoteDataSource] over a **per-server** Dio instance (#39).
 ///
 /// The path is relative — the per-server Dio carries the base URL
-/// (path-prefix deployments included), and the existing per-server auth
-/// plumbing (TokenInterceptor) attaches the BetterAuth session the endpoint
-/// requires. This class adds no auth handling of its own; it is constructed
+/// (path-prefix deployments included). The BetterAuth session the endpoint
+/// requires is attached below this class: by the per-server auth plumbing
+/// (TokenInterceptor) on native, and by the browser, as its session cookie,
+/// on web. This class adds no auth handling of its own; it is constructed
 /// from the per-server container by the network installer (#39 wiring), so
 /// unlike [WellKnownClientImpl] it does **not** build or own its Dio, and it
 /// is intentionally **not** an injectable global singleton (the per-server

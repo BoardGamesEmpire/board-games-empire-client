@@ -5,6 +5,7 @@ import 'package:dio_network/dio_network.dart'
         ClockSkewInterceptor,
         DioFactory,
         FeedbackDioTransport,
+        GameCollectionRemoteDataSourceImpl,
         HouseholdRemoteDataSourceImpl,
         NetworkLogInterceptor;
 import 'package:interfaces/orchestration.dart';
@@ -12,7 +13,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
-    show HouseholdRemoteDataSource;
+    show GameCollectionRemoteDataSource, HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/web_auth_repository_impl.dart';
@@ -121,5 +122,17 @@ void registerServerNetworkWeb({
   // rule rather than two that drift.
   container.registerSingleton<HouseholdRemoteDataSource>(
     HouseholdRemoteDataSourceImpl(dio),
+  );
+
+  // #368: the per-origin collection remote. Same convention, same placement
+  // and the same reuse argument as the household remote above: it shares this
+  // origin's Dio (base URL + the browser-owned session cookie
+  // `/api/game-collections` requires) and adds no auth of its own. Const and
+  // stateless; the container owns the Dio.
+  //
+  // Nothing resolves it yet on either platform. #44's hydrate reads through
+  // it, and #121's drain pushes queued collection operations through it.
+  container.registerSingleton<GameCollectionRemoteDataSource>(
+    GameCollectionRemoteDataSourceImpl(dio),
   );
 }

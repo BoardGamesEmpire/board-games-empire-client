@@ -29,10 +29,11 @@ enum _NotFoundMeaning { missingRow, alreadyRemoved, unreachableEndpoint }
 /// [GameCollectionRemoteDataSource] over a **per-server** Dio instance (#253).
 ///
 /// Paths are relative — the per-server Dio carries the base URL (path-prefix
-/// deployments included), and the existing per-server auth plumbing
-/// (TokenInterceptor) attaches the BetterAuth session the endpoints require.
-/// This class adds no auth handling of its own; it is constructed from the
-/// per-server container by the network installer, so like
+/// deployments included). The BetterAuth session the endpoints require is
+/// attached below this class: by the per-server auth plumbing
+/// (TokenInterceptor) on native, and by the browser, as its session cookie,
+/// on web. This class adds no auth handling of its own; it is constructed
+/// from the per-server container by the network installer, so like
 /// [HouseholdRemoteDataSourceImpl] it does **not** build or own its Dio and is
 /// intentionally not an injectable global singleton.
 ///
