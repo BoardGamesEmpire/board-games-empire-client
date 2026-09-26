@@ -304,7 +304,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     if (page < 1) {
       throw ArgumentError.value(page, 'page', 'is 1-based');
     }
-    if ((page - 1) * limit > maxPageDepth) {
+    // Divided rather than multiplied: `(page - 1) * limit` wraps on the VM for
+    // a large enough page and would land back under the ceiling. For integers,
+    // `x * limit > depth` holds exactly when `x > depth ~/ limit`, and `limit`
+    // is at least 1 by now.
+    if (page - 1 > maxPageDepth ~/ limit) {
       throw ArgumentError.value(
         page,
         'page',
