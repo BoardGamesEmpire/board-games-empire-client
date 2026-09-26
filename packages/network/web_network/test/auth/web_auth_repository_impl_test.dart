@@ -958,8 +958,8 @@ void main() {
       // reconcile finds no session either. The server did what it was
       // configured to do; reporting it as a server fault invited a retry that
       // can only get the same answer.
-      test('a token:null grant the session endpoint also finds no session '
-          'for is "no session granted", not a server fault (#331)', () async {
+      test('a token:null grant with no session behind it is "no session '
+          'granted", not a server fault (#331)', () async {
         when(
           () => mockDio.post<String>(
             '$_kAuthBase/sign-up/email',
