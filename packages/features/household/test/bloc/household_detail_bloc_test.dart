@@ -1149,6 +1149,37 @@ void main() {
       );
     });
 
+    test('a failure on the old roster, handled before anything else after '
+        "the move, is not the new roster's failure", () async {
+      // The failure is the first event after the record, so it is the one
+      // that has to make the move before judging whose failure it is.
+      final bloc = build(withHydration: false);
+      addTearDown(bloc.close);
+      final states = await openAndRender(bloc);
+
+      reconciledTo = serverId;
+      members.addError(StateError('old roster'));
+      households.add([_household(serverId)]);
+      serverMembers.add([
+        _member(
+          'u-me',
+          role: HouseholdRole.householdOwner,
+          householdId: serverId,
+        ),
+      ]);
+      await settle();
+
+      expect(states, isNot(contains(isA<HouseholdDetailError>())));
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>().having(
+          (s) => s.household.id,
+          'household.id',
+          serverId,
+        ),
+      );
+    });
+
     test(
       'a household that disappears with no record is still not found',
       () async {

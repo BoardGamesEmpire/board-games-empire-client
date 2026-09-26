@@ -311,7 +311,9 @@ class HouseholdDetailBloc
   /// can land at any point in the screen's life, and both of its streams
   /// emit when it does: the household list loses the local row and gains
   /// the server's, and the old roster empties. Whichever arrives first
-  /// makes the move.
+  /// makes the move. A roster failure or end asks too, since it may be the
+  /// first thing handled after the move, and it is judged against the id
+  /// the screen should be on.
   ///
   /// Both may arrive before the record exists, and then read as a removal.
   /// The repository emits the household list again once the record is
@@ -390,6 +392,7 @@ class HouseholdDetailBloc
       case HouseholdDetailSource.household:
         _householdFailed = true;
       case HouseholdDetailSource.members:
+        _followReconcile();
         if (_isStaleRoster(event.householdId)) return;
         _membersFailed = true;
     }
@@ -404,6 +407,7 @@ class HouseholdDetailBloc
       case HouseholdDetailSource.household:
         _householdDone = true;
       case HouseholdDetailSource.members:
+        _followReconcile();
         if (_isStaleRoster(event.householdId)) return;
         _membersDone = true;
     }
