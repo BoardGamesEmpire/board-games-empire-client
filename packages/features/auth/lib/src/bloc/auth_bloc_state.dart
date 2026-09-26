@@ -142,6 +142,25 @@ final class AuthFailureNetwork extends AuthOperationFailure {
   const AuthFailureNetwork();
 }
 
+/// The server answered, and this device could not decode the reply — a
+/// local, momentary fault (#357). Separate from [AuthFailureNetwork] so the
+/// message does not send the user to check a connection that worked.
+final class AuthFailureLocalDecode extends AuthOperationFailure {
+  const AuthFailureLocalDecode([this.cause]);
+
+  /// The exception behind it, carrying the platform's own error. Retained for
+  /// the log, which has no other record of this fault on native, and excluded
+  /// from equality like [AuthFailureServer.cause].
+  final Object? cause;
+}
+
+/// The server accepted the credentials and granted no session — typically a
+/// sign-up on a server that requires email verification (#331). An expected
+/// outcome of its configuration, not a fault, and one a retry cannot change.
+final class AuthFailureSessionNotGranted extends AuthOperationFailure {
+  const AuthFailureSessionNotGranted();
+}
+
 /// Anything unanticipated (unexpected status, malformed body, …). The
 /// original error is retained for the feedback pipeline, but excluded
 /// from equality so tests can match on the state alone.

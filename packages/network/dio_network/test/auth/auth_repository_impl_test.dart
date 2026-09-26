@@ -309,6 +309,11 @@ void main() {
     // what keeps that from becoming a *silent* failure now that the shape
     // parses: it has to leave as a modelled AuthException, and nothing may
     // be persisted on the way out.
+    //
+    // It leaves as AuthSessionNotGrantedException rather than a server fault
+    // (#331): the server did exactly what it was configured to do, and the
+    // generic "something went wrong on the server" invited a retry that can
+    // only ever produce the same answer.
     group('a grant envelope with no token', () {
       Map<String, dynamic> tokenlessGrant() => {
         ..._signInJson(),
@@ -326,7 +331,7 @@ void main() {
         );
       }
 
-      test('fails sign-in as a server fault, persisting nothing', () async {
+      test('fails sign-in as not granted, persisting nothing', () async {
         stubStore();
         when(
           () => mockDio.post<String>(
@@ -338,12 +343,12 @@ void main() {
 
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'pass'),
-          throwsA(isA<AuthServerException>()),
+          throwsA(isA<AuthSessionNotGrantedException>()),
         );
         verifyNothingPersisted();
       });
 
-      test('fails sign-up as a server fault, persisting nothing', () async {
+      test('fails sign-up as not granted, persisting nothing', () async {
         stubStore();
         when(
           () => mockDio.post<String>(
@@ -355,7 +360,7 @@ void main() {
 
         await expectLater(
           repo.signUp(email: 'a@b.com', password: 'p', username: 'u'),
-          throwsA(isA<AuthServerException>()),
+          throwsA(isA<AuthSessionNotGrantedException>()),
         );
         verifyNothingPersisted();
       });
@@ -372,7 +377,7 @@ void main() {
 
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'pass'),
-          throwsA(isA<AuthServerException>()),
+          throwsA(isA<AuthSessionNotGrantedException>()),
         );
         expect(repo.currentAuthState, isA<AuthStateUnknown>());
       });
@@ -389,7 +394,7 @@ void main() {
 
         await expectLater(
           repo.signIn(email: 'a@b.com', password: 'pass'),
-          throwsA(isA<AuthServerException>()),
+          throwsA(isA<AuthSessionNotGrantedException>()),
         );
         verifyNever(
           () => mockDio.get<String>(any(), options: any(named: 'options')),

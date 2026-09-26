@@ -14,8 +14,18 @@ abstract class AuthRepository {
   ///
   /// Throws [AuthInvalidCredentialsException] for 401/403.
   /// Throws [AuthNetworkException] for connectivity failures.
+  /// Throws [AuthLocalDecodeException] when the server answered but this
+  /// device could not decode the reply.
+  /// Throws [AuthSessionNotGrantedException] when the grant itself declines
+  /// a session — BetterAuth's `token: null` envelope.
   /// Throws [AuthServerException] for unexpected server errors, including a
-  /// credential grant the server then reports no session for.
+  /// grant that carried a session the server then reports it does not have.
+  ///
+  /// A declined grant is reported as declined only when nothing contradicts
+  /// it. An implementation that confirms the grant against the session
+  /// endpoint (web) throws that check's own failure instead when the check
+  /// cannot complete: until it answers, whether a session exists is
+  /// undetermined.
   Future<AuthResponse> signIn({
     required String email,
     required String password,
@@ -26,6 +36,15 @@ abstract class AuthRepository {
   /// Throws [AuthRegistrationDisabledException] if registration is disabled.
   /// Throws [AuthEmailAlreadyExistsException] if the email is taken.
   /// Throws [AuthNetworkException] for connectivity failures.
+  /// Throws [AuthLocalDecodeException] when the server answered but this
+  /// device could not decode the reply.
+  /// Throws [AuthSessionNotGrantedException] when the grant itself declines
+  /// a session — BetterAuth's `token: null` envelope, which is how a server
+  /// requiring email verification answers a sign-up.
+  /// Throws [AuthServerException] for unexpected server errors, including a
+  /// grant that carried a session the server then reports it does not have.
+  ///
+  /// A declined grant is confirmed the same way as on [signIn].
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -44,7 +63,8 @@ abstract class AuthRepository {
   /// was in flight: the newer intent wins.
   ///
   /// Throws (rather than returning null) whenever the answer is
-  /// **indeterminate**: [AuthNetworkException] for transport failures, and
+  /// **indeterminate**: [AuthNetworkException] for transport failures,
+  /// [AuthLocalDecodeException] for a 2xx this device could not decode, and
   /// [AuthServerException] for any other non-2xx. This split is what lets
   /// the bloc layer distinguish "the session is gone" (→ sign-in form) from
   /// "we could not check" (→ offline restore or the retry view, #37/#98).
@@ -309,8 +329,36 @@ final class AuthRegistrationDisabledException extends AuthException {
   });
 }
 
+/// Nothing answered: the request failed in transport — a timeout, a refused
+/// connection, a cancellation — so there is no status to classify by.
+///
+/// **Indeterminate**, but not the only type that is. Indeterminate means this
+/// client could not determine whether a session exists (#98):
+/// [AuthRepository.getSession] throws [AuthServerException] and
+/// [AuthLocalDecodeException] for outcomes it cannot settle too, and
+/// `AuthBloc`'s restore treats every [AuthException] other than
+/// [AuthInvalidCredentialsException] that way. What sets this one apart is
+/// its advice — the connection is the thing to check — so a fault that did
+/// reach the server does not belong here (#357).
 final class AuthNetworkException extends AuthException {
   const AuthNetworkException({required super.message, super.cause});
+}
+
+/// The server answered with a 2xx, and this device could not perform the
+/// decode of its body — in practice, the isolate a large body is parsed on
+/// would not spawn under resource pressure (#357).
+///
+/// Local and momentary, so **indeterminate** and retryable: it says nothing
+/// about the response or the session, and filing it as definitive would clear
+/// stored credentials over a fault the server had no part in. Not an
+/// [AuthNetworkException] either: the server was reached, so telling the user
+/// to check their connection would point at the one part of the system that
+/// demonstrably worked.
+///
+/// Distinct from a body that is not JSON, which is a statement about the
+/// response and surfaces as [AuthServerException].
+final class AuthLocalDecodeException extends AuthException {
+  const AuthLocalDecodeException({required super.message, super.cause});
 }
 
 final class AuthServerException extends AuthException {
@@ -320,6 +368,29 @@ final class AuthServerException extends AuthException {
     super.cause,
   });
   final int? statusCode;
+}
+
+/// The server accepted the credentials and granted no session (#331).
+///
+/// BetterAuth answers a successful sign-up with `token: null` when the
+/// server requires email verification or has `autoSignIn` off. On a
+/// verification-required server it also answers a sign-up for an email that
+/// is already registered the same way, deliberately, so that sign-up cannot
+/// reveal who has an account. The response does not say which of these
+/// happened, so this type names what the response says rather than why: it
+/// asserts neither that an account was created nor that verification is the
+/// reason.
+///
+/// Sign-in is guarded for the same envelope, but BetterAuth does not send it
+/// there: it refuses an unverified sign-in with a 403 instead (#394).
+///
+/// An expected outcome of the server's configuration, not a fault — and not
+/// one a retry changes, since the same request gets the same answer.
+final class AuthSessionNotGrantedException extends AuthException {
+  const AuthSessionNotGrantedException({
+    super.message =
+        'The server accepted the credentials but granted no session.',
+  });
 }
 
 /// The operation was overtaken by a sign-out (or another supersession of

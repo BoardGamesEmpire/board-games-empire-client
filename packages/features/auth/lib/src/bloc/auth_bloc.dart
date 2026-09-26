@@ -92,9 +92,10 @@ import 'auth_bloc_state.dart';
 /// [AuthException]s and *emit* failure states (they do not rethrow), so
 /// [onError] alone would see almost nothing; [onTransition] categorises the
 /// emitted failure states by the #100 severity buckets — warn for the
-/// modelled, recoverable outcomes (invalid credentials, network, email
-/// taken, registration disabled), error for [AuthFailureServer] and for an
-/// [AuthSessionCheckFailed] whose cause is an unexpected non-auth fault.
+/// modelled, recoverable outcomes (invalid credentials, network, local
+/// decode, session not granted, email taken, registration disabled), error
+/// for [AuthFailureServer] and for an [AuthSessionCheckFailed] whose cause is
+/// an unexpected non-auth fault.
 /// [onError] is the backstop for the genuinely unexpected: sign-out's
 /// `addError`, or any future uncaught throw in a handler. The decision to
 /// enter on a cached session is logged by the repository, which owns the
@@ -307,6 +308,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(const AuthUnauthenticated());
     } on AuthInvalidCredentialsException {
       emit(const AuthFailureInvalidCredentials());
+    } on AuthSessionNotGrantedException {
+      emit(const AuthFailureSessionNotGranted());
+    } on AuthLocalDecodeException catch (e) {
+      emit(AuthFailureLocalDecode(e));
     } on AuthNetworkException {
       emit(const AuthFailureNetwork());
     } on AuthException catch (e) {
@@ -335,6 +340,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(const AuthFailureRegistrationDisabled());
     } on AuthEmailAlreadyExistsException {
       emit(const AuthFailureEmailAlreadyExists());
+    } on AuthSessionNotGrantedException {
+      emit(const AuthFailureSessionNotGranted());
+    } on AuthLocalDecodeException catch (e) {
+      emit(AuthFailureLocalDecode(e));
     } on AuthNetworkException {
       emit(const AuthFailureNetwork());
     } on AuthException catch (e) {
@@ -522,9 +531,17 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthFailureEmailAlreadyExists():
       case AuthFailureRegistrationDisabled():
       case AuthFailureNetwork():
+      case AuthFailureSessionNotGranted():
         _log.warn(
           'Auth operation failed',
           context: {'event': event, 'failure': next.runtimeType.toString()},
+        );
+      // Recoverable too, but nothing else records it: keep the cause.
+      case AuthFailureLocalDecode(:final cause):
+        _log.warn(
+          'Auth operation failed',
+          error: cause,
+          context: {'event': event, 'failure': 'AuthFailureLocalDecode'},
         );
       // Anything unanticipated (unexpected status, malformed body, …) → error.
       case AuthFailureServer(:final cause):

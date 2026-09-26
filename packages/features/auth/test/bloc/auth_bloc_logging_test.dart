@@ -68,6 +68,59 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
+    'warns (not errors) when this device could not decode a reply — a local, '
+    'recoverable outcome (#357)',
+    build: () {
+      when(
+        () => repo.signIn(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+        ),
+      ).thenThrow(const AuthLocalDecodeException(message: 'no isolate'));
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) =>
+        b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
+    verify: (_) {
+      expect(warns(), isNotEmpty);
+      expect(errors(), isEmpty);
+      // Nothing else logs this fault on native, so the record carries the
+      // exception — and through it the platform's own error — or the only
+      // trace of a device failing to spawn isolates is a state name.
+      expect(warns().single.error, isA<AuthLocalDecodeException>());
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
+    'warns (not errors) when the server granted no session — an expected '
+    'outcome of its configuration, which error-level noise would turn into '
+    'bug reports (#331)',
+    build: () {
+      when(
+        () => repo.signUp(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+          username: any(named: 'username'),
+          firstName: any(named: 'firstName'),
+          lastName: any(named: 'lastName'),
+        ),
+      ).thenThrow(const AuthSessionNotGrantedException());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) => b.add(
+      const AuthRegisterRequested(
+        email: 'a@b.co',
+        password: 'x',
+        username: 'u',
+      ),
+    ),
+    verify: (_) {
+      expect(warns(), isNotEmpty);
+      expect(errors(), isEmpty);
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
     'errors on an unexpected server failure (AuthFailureServer)',
     build: () {
       when(

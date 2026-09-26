@@ -260,6 +260,46 @@ void main() {
         expect: () => [const AuthLoading(), const AuthFailureNetwork()],
       );
 
+      // No switch over AuthException exists, so a missing clause would compile
+      // and quietly fall to the catch-all's server kind. Each handler pins its
+      // own mapping (#357).
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the local-decode kind, not the network one, when the server '
+        'answered and this device could not decode the reply',
+        build: () {
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(const AuthLocalDecodeException(message: 'no isolate'));
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) =>
+            b.add(const AuthSignInRequested(email: 'a@b.com', password: 'p')),
+        expect: () => [const AuthLoading(), const AuthFailureLocalDecode()],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the session-not-granted kind, not the server one, when the '
+        'server accepted the credentials but granted no session (#331)',
+        build: () {
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(const AuthSessionNotGrantedException());
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) =>
+            b.add(const AuthSignInRequested(email: 'a@b.com', password: 'p')),
+        expect: () => [
+          const AuthLoading(),
+          const AuthFailureSessionNotGranted(),
+        ],
+      );
+
       blocTest<AuthBloc, AuthBlocState>(
         'emits the server kind (cause retained) on an unexpected failure',
         build: () {
@@ -361,6 +401,61 @@ void main() {
         expect: () => [
           const AuthLoading(),
           const AuthFailureRegistrationDisabled(),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the local-decode kind when the server answered and this device '
+        'could not decode the reply',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(const AuthLocalDecodeException(message: 'no isolate'));
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+          ),
+        ),
+        expect: () => [const AuthLoading(), const AuthFailureLocalDecode()],
+      );
+
+      // The case #331 was filed for: a server requiring email verification
+      // accepts the sign-up and grants no session.
+      blocTest<AuthBloc, AuthBlocState>(
+        'emits the session-not-granted kind when the server accepted the '
+        'registration but granted no session (#331)',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+              firstName: any(named: 'firstName'),
+              lastName: any(named: 'lastName'),
+            ),
+          ).thenThrow(const AuthSessionNotGrantedException());
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'a@b.com',
+            password: 'p',
+            username: 'u',
+          ),
+        ),
+        expect: () => [
+          const AuthLoading(),
+          const AuthFailureSessionNotGranted(),
         ],
       );
     });

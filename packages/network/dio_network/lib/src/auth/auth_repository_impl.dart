@@ -47,6 +47,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     required this._dio,
     this._clock = const LocalClockService(),
     this._deviceNowUtc = _systemDeviceNowUtc,
+    this._decodeJson = decodeJsonBody,
   }) : _stateController = StreamController<AuthState>.broadcast(sync: true);
 
   static DateTime _systemDeviceNowUtc() => DateTime.now().toUtc();
@@ -70,6 +71,13 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// [StoredSession.isDeviceClockPlausibleAt] for why mixing the two
   /// silently disables offline restore on skewed devices.
   final DateTime Function() _deviceNowUtc;
+
+  /// The JSON decode behind [_decodeBody]. Always `decodeJsonBody` in
+  /// production; injectable because its second failure mode — an offload
+  /// isolate that would not spawn — is the one no response body can produce,
+  /// so without a seam the more expensive branch of the split is the untested
+  /// one (#364).
+  final Future<Object?> Function(String) _decodeJson;
 
   AuthState _currentState = const AuthStateUnknown();
 
@@ -260,9 +268,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // same envelope failed inside `AuthResponse.fromJson`, and a raw parse
     // error slips past every `on AuthException` clause in AuthBloc and
     // strands the form on AuthLoading — the failure this replaces.
+    //
+    // Not a server fault: the server answered as configured, and calling it
+    // one invited a retry that can only get the same answer (#331).
     final token = granted.token;
     if (token == null) {
-      throw AuthServerException(
+      throw AuthSessionNotGrantedException(
         message:
             'The server accepted the $context but granted no session token.',
       );
@@ -905,7 +916,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     if (raw == null || raw.isEmpty) return (value: null, failure: null);
 
     try {
-      return (value: await decodeJsonBody(raw), failure: null);
+      return (value: await _decodeJson(raw), failure: null);
     } on FormatException catch (error) {
       return (
         value: null,
@@ -920,8 +931,8 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     } on Object catch (error) {
       return (
         value: null,
-        failure: AuthNetworkException(
-          message: 'Could not decode the response during $context.',
+        failure: AuthLocalDecodeException(
+          message: 'This device could not decode the response during $context.',
           cause: error,
         ),
       );
@@ -965,7 +976,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // already happened, so the check is free.
     _assertSuccess(status, decoded.value, context: context);
 
-    // An unreadable body on a 2xx is the server's to answer for.
+    // An unreadable body on a 2xx fails the grant: as a server fault when it
+    // is not JSON, and as a local one when this device could not run the
+    // decode (#357).
     final failure = decoded.failure;
     if (failure != null) throw failure;
 

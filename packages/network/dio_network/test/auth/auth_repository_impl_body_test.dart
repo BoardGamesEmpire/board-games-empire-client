@@ -14,6 +14,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate' show IsolateSpawnException;
 
 import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
@@ -26,6 +27,7 @@ import 'package:models/dto.dart';
 
 import 'package:dio_network/src/auth/auth_repository_impl.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
+import 'package:dio_network/src/network/decode_json_body.dart';
 
 class MockTokenStorage extends Mock implements TokenStorageService {}
 
@@ -108,11 +110,15 @@ void main() {
     );
   });
 
-  AuthRepositoryImpl repoWith(Dio dio) {
+  AuthRepositoryImpl repoWith(
+    Dio dio, {
+    Future<Object?> Function(String) decodeJson = decodeJsonBody,
+  }) {
     final repo = AuthRepositoryImpl(
       identity: _identity(),
       tokenStorage: storage,
       dio: dio,
+      decodeJson: decodeJson,
     );
     addTearDown(repo.onDispose);
     return repo;
@@ -361,44 +367,40 @@ void main() {
     // `clear()` is the single, total teardown path; a write that has to be
     // undone is not that.
     test('a sign-out mid-decode never reaches the store', () async {
-      // 1 MB, so the decode is a real isolate spawn and the window is
-      // milliseconds. The body is VALID JSON deliberately: the case is a
-      // sign-out landing while a perfectly good session is being decoded.
-      final padded = Map<String, dynamic>.from(_sessionJson())
-        ..['padding'] = 'x' * (1024 * 1024);
+      // The decode is held open by the injected decoder (#364), so the
+      // sign-out lands inside the window on every run. It used to be raced
+      // against a real 1 MB isolate decode, and a sign-out that landed after
+      // it silently stopped exercising the checkpoint. The body is VALID JSON
+      // deliberately: the case is a sign-out landing while a perfectly good
+      // session is being decoded.
+      final decodeStarted = Completer<void>();
+      final releaseDecode = Completer<void>();
+      // Only the first decode — the session read's — is held. A later one
+      // passes straight through rather than throwing on a completed
+      // Completer, which the repository would swallow as a decode fault.
+      Future<Object?> heldOpen(String raw) async {
+        if (!decodeStarted.isCompleted) {
+          decodeStarted.complete();
+          await releaseDecode.future;
+        }
+        return decodeJsonBody(raw);
+      }
 
-      // The response is signalled from an interceptor rather than waited for
-      // with `pumpEventQueue`, which pumps until the queue drains and so
-      // over-ran the isolate under full-suite load — the sign-out then landed
-      // AFTER the decode, which is a legitimate outcome, and this went red for
-      // no defect. `onResponse` fires inside dio, immediately before
-      // `_dio.get` returns, so one yield past it lands in the decode.
-      final answered = Completer<void>();
-      final dio = cannedDio(body: jsonEncode(padded), statusCode: 200)
-        ..interceptors.add(
-          InterceptorsWrapper(
-            onResponse: (response, handler) {
-              if (!answered.isCompleted) answered.complete();
-              handler.next(response);
-            },
-          ),
-        );
-      final repo = repoWith(dio);
+      final repo = repoWith(
+        cannedDio(body: jsonEncode(_sessionJson()), statusCode: 200),
+        decodeJson: heldOpen,
+      );
 
       final inFlight = repo.getSession();
-      await answered.future;
-      await Future<void>.delayed(Duration.zero);
+      await decodeStarted.future;
       await repo.signOut();
+      releaseDecode.complete();
       await inFlight.catchError((_) => null);
 
       // Without the checkpoint the decode resumes and stores the signed-out
       // user's bearer token and PII, only for the post-store guard to take it
       // back. `clear()` is the single, total teardown path; a write that has
       // to be undone is not that.
-      //
-      // Should the timing ever land the sign-out outside the window, this
-      // stops exercising guard two rather than going red — it cannot fail
-      // without a real defect.
       verifyNever(
         () => storage.store(
           token: any(named: 'token'),
@@ -516,7 +518,7 @@ void main() {
     // dio's 50 KB threshold `decodeJsonBody` parses in another isolate, so
     // this also pins that a FormatException keeps its identity across that
     // boundary — if it did not, a large captive-portal page would come back
-    // as the retryable AuthNetworkException and retry forever.
+    // as the retryable AuthLocalDecodeException and retry forever.
     test('a >50KB non-JSON body on the session endpoint is still a server '
         'fault, not a network one', () async {
       final bigHtml = '<html>${'x' * (60 * 1024)}</html>';
@@ -537,6 +539,54 @@ void main() {
 
       expect(result?.token, 'session-tok-renewed');
     });
+  });
+
+  group('a decode that could not be PERFORMED stays retryable (#364)', () {
+    // `decodeJsonBody`'s second failure mode — an offload isolate that would
+    // not spawn under resource pressure — is local and momentary, and says
+    // nothing about the response. No canned body can produce it, so the
+    // decoder is injected. Filing it as definitive would clear the user's
+    // credentials over a fault the server had no part in. And it is not a
+    // network failure either: the server answered, so "check your
+    // connection" would be the wrong advice (#357).
+    Future<Object?> unspawnable(String _) async =>
+        throw IsolateSpawnException('resource pressure');
+
+    test('on the session endpoint it keeps the stored credentials', () async {
+      final repo = repoWith(
+        cannedDio(body: jsonEncode(_sessionJson()), statusCode: 200),
+        decodeJson: unspawnable,
+      );
+
+      await expectLater(
+        repo.getSession(),
+        throwsA(isA<AuthLocalDecodeException>()),
+      );
+      verifyNever(() => storage.clear());
+    });
+
+    test(
+      'on a sign-in grant it fails retryable and persists nothing',
+      () async {
+        final repo = repoWith(
+          cannedDio(body: jsonEncode(_grantJson()), statusCode: 200),
+          decodeJson: unspawnable,
+        );
+
+        await expectLater(
+          repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(isA<AuthLocalDecodeException>()),
+        );
+        verifyNever(
+          () => storage.store(
+            token: any(named: 'token'),
+            expiresAt: any(named: 'expiresAt'),
+            persistedAt: any(named: 'persistedAt'),
+            user: any(named: 'user'),
+          ),
+        );
+      },
+    );
   });
 
   group('the reconcile fallback covers every indeterminate fault', () {
