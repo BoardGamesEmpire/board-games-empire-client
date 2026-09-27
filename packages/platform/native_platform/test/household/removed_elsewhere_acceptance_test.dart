@@ -52,7 +52,8 @@ PaginatedResult<HouseholdWithMembers> _snapshot(
     page: 1,
     limit: 100,
     total: rosters.length,
-    totalPages: 1,
+    // Derived as the server derives it: an empty list is no pages, not one.
+    totalPages: (rosters.length / 100).ceil(),
     hasMore: false,
   ),
 );

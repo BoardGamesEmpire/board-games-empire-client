@@ -36,12 +36,16 @@ HouseholdMember _member(String id, {required String householdId}) =>
     );
 
 /// One page of [ids], each household carrying a single member.
+///
+/// [totalPages] defaults to what the server derives from [total] and
+/// [limit]; pass it only to build an envelope that contradicts itself.
 PaginatedResult<HouseholdWithMembers> _page({
   required List<String> ids,
   required int page,
   required int limit,
   required int total,
   required bool hasMore,
+  int? totalPages,
 }) => PaginatedResult(
   items: [
     for (final id in ids)
@@ -51,7 +55,7 @@ PaginatedResult<HouseholdWithMembers> _page({
     page: page,
     limit: limit,
     total: total,
-    totalPages: (total / limit).ceil(),
+    totalPages: totalPages ?? (total / limit).ceil(),
     hasMore: hasMore,
   ),
 );
@@ -514,6 +518,122 @@ void main() {
           purgeable: any(named: 'purgeable'),
         ),
       );
+    });
+
+    test('purges nothing when page 1 sends households but counts no '
+        'pages', () async {
+      // The server rounds `total` over `limit` up, so any household at all
+      // is a page. Rows and count agree here, but the envelope does not.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => _page(
+          ids: ['h-1'],
+          page: 1,
+          limit: 100,
+          total: 1,
+          totalPages: 0,
+          hasMore: false,
+        ),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      expect(writtenIds(), equals(['h-1']));
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
+
+    test('purges nothing when an empty page 1 counts a page', () async {
+      // The costliest envelope to believe: an empty snapshot purges every
+      // membership the pass may touch. The server counts no pages for no
+      // households, so one that counts a page did not come from that count.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => _page(
+          ids: const [],
+          page: 1,
+          limit: 100,
+          total: 0,
+          totalPages: 1,
+          hasMore: false,
+        ),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
+
+    test('purges nothing when the answer to page 1 is numbered as another '
+        'page', () async {
+      // A page 2 the server really sent counts at least two pages, which
+      // the check above already rejects. This one counts a single page, so
+      // only its number gives it away.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 2, limit: 100, total: 1, hasMore: false),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      expect(writtenIds(), equals(['h-1']));
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
+
+    test('a page 1 numbered as another page is logged with its '
+        'number', () async {
+      // Its counts agree with each other, so without the number the warning
+      // would not say what was wrong.
+      final logger = MockBgeLogger();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 2, limit: 100, total: 1, hasMore: false),
+      );
+
+      await HouseholdHydrator(
+        repository: repo,
+        remote: remote,
+        logger: logger,
+      ).hydrate();
+
+      final context =
+          verify(
+                () => logger.warn(any(), context: captureAny(named: 'context')),
+              ).captured.single
+              as Map<String, dynamic>;
+      expect(context['page'], equals(2));
     });
 
     test('a page 1 that sends fewer households than it counts is drained: '

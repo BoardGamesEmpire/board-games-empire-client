@@ -90,8 +90,8 @@ enum HydrateOutcome {
 /// [HouseholdRepository.purgeableMemberships] named **before page 1 was
 /// requested**: a household created or rejoined while the request was in
 /// flight can be missing from the response and still be the user's. A
-/// first page whose envelope counts more than one page, or a different
-/// number of households than it sent, purges nothing either.
+/// first page whose envelope contradicts itself, or that sends fewer
+/// households than it counts, purges nothing either.
 class HouseholdHydrator {
   HouseholdHydrator({
     required HouseholdRepository repository,
@@ -207,14 +207,18 @@ class HouseholdHydrator {
         // page is the whole list, and the rows are held to `total` too.
         final counts = {
           'rows': result.items.length,
+          'page': result.meta.page,
           'totalPages': result.meta.totalPages,
           'total': result.meta.total,
           'limit': result.meta.limit,
         };
-        // A page 1 that counts more than one page, or counts fewer
-        // households than it sent, contradicts itself. The server's own
-        // contract calls the second broken.
-        if (result.meta.totalPages > 1 ||
+        // A page 1 contradicts itself when it is numbered as another page,
+        // counts other than one page, or counts fewer households than it
+        // sent. The server derives `totalPages` from `total` over `limit`,
+        // rounded up, so a single page counts one, or none when it is empty.
+        // Its own contract calls the last case broken.
+        if (result.meta.page != page ||
+            result.meta.totalPages != (result.meta.total == 0 ? 0 : 1) ||
             result.meta.total > result.meta.limit ||
             result.items.length > result.meta.total) {
           _logger.warn(
