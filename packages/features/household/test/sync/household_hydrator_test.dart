@@ -515,6 +515,62 @@ void main() {
         ),
       );
     });
+
+    test('purges nothing when page 1 sends fewer households than it '
+        'counts', () async {
+      // The count comes from the same membership-scoped read as the rows,
+      // so a household it counts and the page leaves out is one the user
+      // still belongs to.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 2, hasMore: false),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      expect(writtenIds(), equals(['h-1']));
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
+
+    test('purges nothing when page 1 sends more households than it '
+        'counts', () async {
+      // Rows and count that disagree did not come from one read, whichever
+      // way they disagree.
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => _page(
+          ids: ['h-1', 'h-2'],
+          page: 1,
+          limit: 100,
+          total: 1,
+          hasMore: false,
+        ),
+      );
+
+      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+
+      expect(writtenIds(), equals(['h-1', 'h-2']));
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
   });
 
   group('HouseholdHydrator — failures never escape', () {

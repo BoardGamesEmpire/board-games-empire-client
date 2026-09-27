@@ -88,8 +88,8 @@ enum HydrateOutcome {
 /// [HouseholdRepository.purgeableMemberships] named **before page 1 was
 /// requested**: a household created or rejoined while the request was in
 /// flight can be missing from the response and still be the user's. A
-/// first page whose envelope counts more than one page purges nothing
-/// either.
+/// first page whose envelope counts more than one page, or a different
+/// number of households than it sent, purges nothing either.
 class HouseholdHydrator {
   HouseholdHydrator({
     required HouseholdRepository repository,
@@ -201,15 +201,20 @@ class HouseholdHydrator {
       if (!result.meta.hasMore) {
         if (page > 1) return HydrateOutcome.drained;
         // The purge deletes whatever page 1 leaves out, so `hasMore` alone
-        // does not license it: the rest of the envelope must also say there
-        // is one page. The row count is not compared with `total`. The
-        // server may filter rows after counting, so a short page is valid.
+        // does not license it: the rest of the envelope must also say this
+        // page is the whole list. The rows are held to `total` too. Both
+        // come from one membership-scoped read, so a household counted and
+        // not sent is one the user still belongs to. A short page is valid
+        // to stop on, but it proves nothing about what it left out.
         if (result.meta.totalPages > 1 ||
-            result.meta.total > result.meta.limit) {
+            result.meta.total > result.meta.limit ||
+            result.items.length != result.meta.total) {
           _logger.warn(
-            'Household list reports page 1 as its last but counts more than '
-            'one page; purging nothing. The cached set is NOT complete.',
+            'Household list reports page 1 as its last but does not count '
+            'exactly the households it sent; purging nothing. The cached '
+            'set is NOT complete.',
             context: {
+              'rows': result.items.length,
               'totalPages': result.meta.totalPages,
               'total': result.meta.total,
               'limit': result.meta.limit,
