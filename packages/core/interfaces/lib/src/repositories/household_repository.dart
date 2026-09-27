@@ -254,17 +254,19 @@ abstract class HouseholdRepository {
     List<HouseholdMember> roster,
   );
 
-  /// The households [purgeHouseholdsAbsentFrom] could remove right now: the
-  /// cached households the current user has a member row in, less any that
+  /// The memberships [purgeHouseholdsAbsentFrom] could remove right now, as
+  /// household id to the id of the current user's member row in it: every
+  /// cached household the current user has a member row in, less any that
   /// are `isDirty` or `isLocalOnly` (#268).
   ///
   /// Read it **before** requesting the snapshot, and pass it to the purge.
-  /// A household that became purgeable after this read (created, or
-  /// confirmed by the server, while the request was in flight) is one the
-  /// snapshot could not have seen, and the purge leaves it alone. This
-  /// reads the database, so a write from any repository over it counts,
-  /// another browser tab's included.
-  Future<Set<String>> purgeableHouseholdIds();
+  /// A membership that appeared after this read is one the snapshot could
+  /// not have seen, and the purge leaves it alone. That covers a household
+  /// created or confirmed by the server while the request was in flight,
+  /// and one the user was removed from and added back to: the server gives
+  /// a rejoined membership a new id. This reads the database, so a write
+  /// from any repository over it counts, another browser tab's included.
+  Future<Map<String, String>> purgeableMemberships();
 
   /// Removes the current user from each household in [purgeable] that
   /// [snapshotIds] does not name, in one transaction, and returns the ids
@@ -275,22 +277,23 @@ abstract class HouseholdRepository {
   /// is a first page with `hasMore: false`; a walk across pages is not
   /// one, and absence from it proves nothing.
   ///
-  /// [purgeable] is a [purgeableHouseholdIds] read taken before the
+  /// [purgeable] is a [purgeableMemberships] read taken before the
   /// snapshot was requested. Nothing outside it is removed, and neither is
-  /// a household in it that is no longer purgeable: one edited since, which
-  /// the queue now owns.
+  /// a household whose membership has changed since: one edited, which the
+  /// queue now owns, or one re-cached with a member row the read did not
+  /// name.
   ///
-  /// Only the current user's member row is deleted, because the snapshot
-  /// speaks for their memberships and nobody else's. The cache is shared by
-  /// everyone who signs in to this server on this device, and another of
-  /// them may still belong to the household. A household left with no
-  /// member row at all is deleted with it: no read can reach it.
+  /// Only the member row [purgeable] names is deleted, because the snapshot
+  /// speaks for the current user's memberships and nobody else's. The cache
+  /// is shared by everyone who signs in to this server on this device, and
+  /// another of them may still belong to the household. A household left
+  /// with no member row at all is deleted with it: no read can reach it.
   ///
   /// Rows are deleted, not tombstoned: the server has already spoken, and a
   /// tombstone is a local intent waiting for a server to settle it.
   Future<Set<String>> purgeHouseholdsAbsentFrom(
     Set<String> snapshotIds, {
-    required Set<String> purgeable,
+    required Map<String, String> purgeable,
   });
 
   /// Watches all households the current user is a member of, in

@@ -64,6 +64,7 @@ void main() {
     registerFallbackValue(_household('fallback'));
     registerFallbackValue(<HouseholdMember>[]);
     registerFallbackValue(<String>{});
+    registerFallbackValue(<String, String>{});
   });
 
   setUp(() {
@@ -72,8 +73,8 @@ void main() {
 
     when(() => repo.cacheHouseholdWithRoster(any(), any()))
         .thenAnswer((_) async => HouseholdRosterWrite.replaced);
-    when(() => repo.purgeableHouseholdIds())
-        .thenAnswer((_) async => <String>{});
+    when(() => repo.purgeableMemberships())
+        .thenAnswer((_) async => <String, String>{});
     when(
       () => repo.purgeHouseholdsAbsentFrom(
         any(),
@@ -244,8 +245,11 @@ void main() {
       // is one the snapshot may not have seen. Read after the response, the
       // purge could remove a household created during the pass.
       var requested = false;
-      when(() => repo.purgeableHouseholdIds())
-          .thenAnswer((_) async => requested ? {'h-old', 'h-new'} : {'h-old'});
+      when(() => repo.purgeableMemberships()).thenAnswer(
+        (_) async => requested
+            ? {'h-old': 'm-old', 'h-new': 'm-new'}
+            : {'h-old': 'm-old'},
+      );
       when(
         () => remote.fetchHouseholds(
           page: any(named: 'page'),
@@ -264,8 +268,12 @@ void main() {
 
       await build().hydrate();
 
-      verify(() => repo.purgeHouseholdsAbsentFrom(any(), purgeable: {'h-old'}))
-          .called(1);
+      verify(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: {'h-old': 'm-old'},
+        ),
+      ).called(1);
     });
 
     test('an empty snapshot is still one, and purges', () async {
@@ -606,7 +614,7 @@ void main() {
 
     test('a failed read of what it may purge completes instead of throwing, '
         'before requesting anything', () async {
-      when(() => repo.purgeableHouseholdIds())
+      when(() => repo.purgeableMemberships())
           .thenThrow(StateError('HouseholdRepositoryImpl has been disposed'));
 
       expect(await build().hydrate(), equals(HydrateOutcome.failed));

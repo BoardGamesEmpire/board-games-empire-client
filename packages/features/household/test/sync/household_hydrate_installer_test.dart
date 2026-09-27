@@ -65,7 +65,10 @@ void main() {
   late _MockHouseholdRepository repo;
   late _MockHouseholdRemoteDataSource remote;
 
-  setUpAll(() => registerFallbackValue(<String>{}));
+  setUpAll(() {
+    registerFallbackValue(<String>{});
+    registerFallbackValue(<String, String>{});
+  });
 
   setUp(() {
     container = DependencyContainerImpl();
@@ -75,8 +78,8 @@ void main() {
     container.registerSingleton<HouseholdRemoteDataSource>(remote);
     // Every single-page pass purges against what it read (#268), empty
     // pages included.
-    when(() => repo.purgeableHouseholdIds())
-        .thenAnswer((_) async => <String>{});
+    when(() => repo.purgeableMemberships())
+        .thenAnswer((_) async => <String, String>{});
     when(
       () => repo.purgeHouseholdsAbsentFrom(
         any(),

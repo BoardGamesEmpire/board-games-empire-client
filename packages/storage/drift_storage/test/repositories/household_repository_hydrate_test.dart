@@ -177,7 +177,7 @@ void main() {
         await repo.cacheHouseholdWithRoster(_household('h-gone'), [
           _member('h-gone', _kUserId),
         ]);
-        final purgeable = await repo.purgeableHouseholdIds();
+        final purgeable = await repo.purgeableMemberships();
 
         final purged = await repo.purgeHouseholdsAbsentFrom({
           'h-kept',
@@ -200,7 +200,7 @@ void main() {
         _member('h-shared', _kUserId),
         _member('h-shared', _kOtherUserId),
       ]);
-      final purgeable = await repo.purgeableHouseholdIds();
+      final purgeable = await repo.purgeableMemberships();
 
       final purged = await repo.purgeHouseholdsAbsentFrom(
         const {},
@@ -220,7 +220,7 @@ void main() {
 
       final purged = await repo.purgeHouseholdsAbsentFrom(
         const {},
-        purgeable: await repo.purgeableHouseholdIds(),
+        purgeable: await repo.purgeableMemberships(),
       );
 
       expect(purged, isEmpty);
@@ -234,7 +234,7 @@ void main() {
 
       final purged = await repo.purgeHouseholdsAbsentFrom(
         const {},
-        purgeable: await repo.purgeableHouseholdIds(),
+        purgeable: await repo.purgeableMemberships(),
       );
 
       expect(purged, isEmpty);
@@ -246,7 +246,7 @@ void main() {
       await repo.cacheHouseholdWithRoster(_household('h-1'), [
         _member('h-1', _kUserId),
       ]);
-      final purgeable = await repo.purgeableHouseholdIds();
+      final purgeable = await repo.purgeableMemberships();
       await (db.update(db.householdsTable)..where((t) => t.id.equals('h-1')))
           .write(const HouseholdsTableCompanion(isDirty: Value(true)));
 
@@ -261,14 +261,15 @@ void main() {
 
     test('leaves a household I have no member row in untouched', () async {
       // The list speaks for the caller's own memberships and nothing else,
-      // so its silence about any other household proves nothing.
+      // so its silence about any other household proves nothing, even
+      // handed someone else's row.
       await repo.cacheHouseholdWithRoster(_household('h-theirs'), [
         _member('h-theirs', _kOtherUserId),
       ]);
 
       final purged = await repo.purgeHouseholdsAbsentFrom(
         const {},
-        purgeable: {'h-theirs'},
+        purgeable: {'h-theirs': 'm-h-theirs-$_kOtherUserId'},
       );
 
       expect(purged, isEmpty);
@@ -297,7 +298,7 @@ void main() {
         // the household, and by the time the purge runs its flags are
         // cleared and the owner's member row is in place.
         final created = await repo.create(name: 'Just made');
-        final purgeable = await repo.purgeableHouseholdIds();
+        final purgeable = await repo.purgeableMemberships();
         await reconcile(repo, created, serverId: 'h-server');
 
         final purged = await repo.purgeHouseholdsAbsentFrom(
@@ -311,18 +312,22 @@ void main() {
       },
     );
 
-    test('keeps a household another tab created during the pass', () async {
-      // Two repositories over one database: what the web gives two tabs
-      // that share storage. Nothing this repository holds in memory could
-      // see the other tab's write; the database can.
+    // Two repositories over one database: what the web gives two tabs that
+    // share storage. Nothing this repository holds in memory could see the
+    // other tab's write; the database can.
+    HouseholdRepositoryImpl anotherTab() {
       final clock = FixedClockService(_t);
-      final otherTab = HouseholdRepositoryImpl(
+      return HouseholdRepositoryImpl(
         db: db,
         currentUserId: () => _kUserId,
         syncQueue: SyncQueueRepositoryImpl(db, clock, userId: _kUserId),
         clock: clock,
       );
-      final purgeable = await repo.purgeableHouseholdIds();
+    }
+
+    test('keeps a household another tab created during the pass', () async {
+      final otherTab = anotherTab();
+      final purgeable = await repo.purgeableMemberships();
       final created = await otherTab.create(name: 'Made in the other tab');
       await reconcile(otherTab, created, serverId: 'h-server');
 
@@ -336,11 +341,34 @@ void main() {
       expect(listed.map((h) => h.id), equals(['h-server']));
     });
 
+    test('keeps a household another tab re-cached with a new membership '
+        'during the pass', () async {
+      // Removed and added back while this pass's request was out, so the
+      // snapshot lacks the household, and the other tab cached it from a
+      // later one. The server gave the rejoined membership a new id.
+      await repo.cacheHouseholdWithRoster(_household('h-1'), [
+        _member('h-1', _kUserId, id: 'm-before'),
+      ]);
+      final purgeable = await repo.purgeableMemberships();
+      await anotherTab().cacheHouseholdWithRoster(_household('h-1'), [
+        _member('h-1', _kUserId, id: 'm-rejoined'),
+      ]);
+
+      final purged = await repo.purgeHouseholdsAbsentFrom(
+        const {},
+        purgeable: purgeable,
+      );
+
+      expect(purged, isEmpty);
+      final listed = await repo.getHouseholds();
+      expect(listed.map((h) => h.id), equals(['h-1']));
+    });
+
     test('keeps a household that became mine after the purgeable read, '
         'whichever writer landed it', () async {
       // Joining through an invite, say: nothing about the writer has to
       // know the purge exists.
-      final purgeable = await repo.purgeableHouseholdIds();
+      final purgeable = await repo.purgeableMemberships();
       await repo.cacheHouseholdWithRoster(_household('h-joined'), [
         _member('h-joined', _kUserId),
       ]);
@@ -364,7 +392,7 @@ void main() {
 
       final purged = await repo.purgeHouseholdsAbsentFrom(
         const {},
-        purgeable: await repo.purgeableHouseholdIds(),
+        purgeable: await repo.purgeableMemberships(),
       );
 
       expect(purged, equals({'h-server'}));

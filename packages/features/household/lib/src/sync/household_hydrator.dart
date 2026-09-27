@@ -84,11 +84,12 @@ enum HydrateOutcome {
 /// ([HydrateOutcome.drained]). A user above one page of households keeps
 /// the stale window they always had.
 ///
-/// The purge is limited to the households
-/// [HouseholdRepository.purgeableHouseholdIds] named **before page 1 was
-/// requested**: a household created while the request was in flight can be
-/// missing from the response without having gone anywhere. A first page
-/// whose envelope counts more than one page purges nothing either.
+/// The purge is limited to the memberships
+/// [HouseholdRepository.purgeableMemberships] named **before page 1 was
+/// requested**: a household created or rejoined while the request was in
+/// flight can be missing from the response and still be the user's. A
+/// first page whose envelope counts more than one page purges nothing
+/// either.
 class HouseholdHydrator {
   HouseholdHydrator({
     required HouseholdRepository repository,
@@ -144,9 +145,9 @@ class HouseholdHydrator {
   Future<HydrateOutcome>? _inFlight;
 
   Future<HydrateOutcome> _drain() async {
-    final Set<String> purgeable;
+    final Map<String, String> purgeable;
     try {
-      purgeable = await _repo.purgeableHouseholdIds();
+      purgeable = await _repo.purgeableMemberships();
     } on Object catch (error, stackTrace) {
       // A disposed repository, in practice; every write after it would fail
       // the same way. See the class doc.

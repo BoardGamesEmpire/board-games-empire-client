@@ -119,7 +119,10 @@ void main() {
   late _CannedTransport transport;
   ActiveServerScope? scope;
 
-  setUpAll(() => registerFallbackValue(<String>{}));
+  setUpAll(() {
+    registerFallbackValue(<String>{});
+    registerFallbackValue(<String, String>{});
+  });
 
   setUp(() {
     wellKnown = _MockWellKnownClient();
@@ -131,8 +134,8 @@ void main() {
         .thenAnswer((_) async => _identity());
     // Every single-page pass purges against what it read (#268), empty
     // pages included.
-    when(() => repository.purgeableHouseholdIds())
-        .thenAnswer((_) async => <String>{});
+    when(() => repository.purgeableMemberships())
+        .thenAnswer((_) async => <String, String>{});
     when(
       () => repository.purgeHouseholdsAbsentFrom(
         any(),

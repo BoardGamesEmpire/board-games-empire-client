@@ -75,12 +75,13 @@ import 'watch_disposal.dart';
 /// The hydrate removes what the server no longer holds: a member through
 /// [cacheHouseholdWithRoster], the current user's membership of a whole
 /// household through [purgeHouseholdsAbsentFrom]. The purge's one race is
-/// a household that became the user's while the snapshot it purges against
-/// was in flight. The purge spares it by removing nothing outside a
-/// [purgeableHouseholdIds] read taken before the request. That read is of
-/// the database, not of anything this repository remembers, so it holds
-/// for any writer, including a repository in another tab over the same
-/// storage.
+/// a membership that appeared while the snapshot it purges against was in
+/// flight: a household created, confirmed, or left and rejoined. The purge
+/// spares it by removing only the member rows a [purgeableMemberships] read
+/// named before the request, matched by id, since the server gives a
+/// rejoined membership a new one. That read is of the database, not of
+/// anything this repository remembers, so it holds for any writer,
+/// including a repository in another tab over the same storage.
 ///
 /// **TODO(household-mutations-phase-4)**: this device's own membership
 /// mutations (#122) — leave, kick, role swaps — will update the local
@@ -333,43 +334,49 @@ class HouseholdRepositoryImpl
   }
 
   @override
-  Future<Set<String>> purgeableHouseholdIds() async {
+  Future<Map<String, String>> purgeableMemberships() async {
     checkNotDisposed();
-    return (await _purgeableIds(_currentUserId()).get()).toSet();
+    return _purgeableMemberships(_currentUserId());
   }
 
   @override
   Future<Set<String>> purgeHouseholdsAbsentFrom(
     Set<String> snapshotIds, {
-    required Set<String> purgeable,
+    required Map<String, String> purgeable,
   }) async {
     checkNotDisposed();
     final userId = _currentUserId();
     return _db.transaction(() async {
-      // Read again here: [purgeable] predates the snapshot, and a household
-      // in it may have been edited since, which hands it to the queue.
-      final purged = (await _purgeableIds(userId).get())
-          .where((id) => purgeable.contains(id) && !snapshotIds.contains(id))
-          .toSet();
-      if (purged.isEmpty) return purged;
+      // Read again here: [purgeable] predates the snapshot. A household in
+      // it may have been edited since, which hands it to the queue, or
+      // re-cached with a member row the snapshot never saw.
+      final current = await _purgeableMemberships(userId);
+      final purged = {
+        for (final MapEntry(key: householdId, value: memberId)
+            in current.entries)
+          if (purgeable[householdId] == memberId &&
+              !snapshotIds.contains(householdId))
+            householdId: memberId,
+      };
+      if (purged.isEmpty) return const <String>{};
 
       await (_db.delete(
-            _db.householdMembersTable,
-          )..where((t) => t.householdId.isIn(purged) & t.userId.equals(userId)))
-          .go();
+        _db.householdMembersTable,
+      )..where((t) => t.id.isIn(purged.values))).go();
       final stillHeld = _db.selectOnly(_db.householdMembersTable)
         ..addColumns([_db.householdMembersTable.householdId])
-        ..where(_db.householdMembersTable.householdId.isIn(purged));
-      await (_db.delete(
-        _db.householdsTable,
-      )..where((t) => t.id.isIn(purged) & t.id.isNotInQuery(stillHeld))).go();
-      return purged;
+        ..where(_db.householdMembersTable.householdId.isIn(purged.keys));
+      await (_db.delete(_db.householdsTable)..where(
+            (t) => t.id.isIn(purged.keys) & t.id.isNotInQuery(stillHeld),
+          ))
+          .go();
+      return purged.keys.toSet();
     });
   }
 
   /// The households [userId] has a member row in that no server write is
-  /// barred from ([_serverMayWrite]).
-  Selectable<String> _purgeableIds(String userId) {
+  /// barred from ([_serverMayWrite]), each to the id of that row.
+  Future<Map<String, String>> _purgeableMemberships(String userId) async {
     final query =
         _db.selectOnly(_db.householdsTable).join([
             innerJoin(
@@ -381,9 +388,14 @@ class HouseholdRepositoryImpl
               useColumns: false,
             ),
           ])
-          ..addColumns([_db.householdsTable.id])
+          ..addColumns([_db.householdsTable.id, _db.householdMembersTable.id])
           ..where(_serverMayWrite(_db.householdsTable));
-    return query.map((row) => row.read(_db.householdsTable.id)!);
+    return {
+      for (final row in await query.get())
+        row.read(_db.householdsTable.id)!: row.read(
+          _db.householdMembersTable.id,
+        )!,
+    };
   }
 
   // ── Mutations (P4, #39) ──────────────────────────────────────────────────────────

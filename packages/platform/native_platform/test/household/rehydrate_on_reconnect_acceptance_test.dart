@@ -139,8 +139,8 @@ void main() {
       ..registerSingleton<HouseholdRemoteDataSource>(remote);
     when(() => repo.cacheHouseholdWithRoster(any(), any()))
         .thenAnswer((_) async => HouseholdRosterWrite.replaced);
-    when(() => repo.purgeableHouseholdIds())
-        .thenAnswer((_) async => <String>{});
+    when(() => repo.purgeableMemberships())
+        .thenAnswer((_) async => <String, String>{});
     when(
       () => repo.purgeHouseholdsAbsentFrom(
         any(),
@@ -170,6 +170,7 @@ void main() {
     );
     registerFallbackValue(<HouseholdMember>[]);
     registerFallbackValue(<String>{});
+    registerFallbackValue(<String, String>{});
   });
 
   tearDown(() async {
