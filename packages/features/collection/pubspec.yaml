@@ -1,0 +1,45 @@
+name: game_collection
+# Not `collection`: that name is dart-lang's `package:collection`, already in
+# the workspace's dependency graph. The directory keeps the feature's name, as
+# `packages/platform/web` does for `web_platform`.
+description: "Game collection feature — the hydrate today, the list screen next (#44)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  # A Flutter package from the start, although the hydrate needs none of it:
+  # #44's list screen builds here (#259).
+  flutter:
+    sdk: flutter
+
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # A real container for the hydrate installer's tests. Dev-only: nothing
+  # under `lib/` names `di` — the installer takes the `DependencyContainer`
+  # abstraction from `interfaces`. Same shape as `household`'s.
+  di:
+    path: ../../core/di
+  # The real repositories over an in-memory database, for the hydrator's
+  # tests. Dev-only, and the reason this package can exist at all:
+  # `drift_storage` cannot see `network_interface`, so the hydrate could not
+  # live there (#259). The foreign key the hydrate must satisfy is enforced
+  # by that database, so a fake could not prove it.
+  drift_storage:
+    path: ../../storage/drift_storage
+  mocktail: ^1.0.5
+  very_good_analysis: ^10.2.0
+  flutter_lints: ^6.0.0

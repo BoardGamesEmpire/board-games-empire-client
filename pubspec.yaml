@@ -63,6 +63,7 @@ workspace:
   - packages/core/di
   - packages/core/observability
   - packages/features/auth
+  - packages/features/collection
   - packages/features/feedback
   - packages/features/household
   - packages/features/server_onboarding

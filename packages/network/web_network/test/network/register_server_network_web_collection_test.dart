@@ -13,10 +13,11 @@ import 'package:web_network/src/network/register_server_network_web.dart';
 import '../support/server_identity_fixture.dart';
 
 /// A collection row as `GET /api/game-collections` returns it, trimmed to the
-/// fields the mapper requires. The full-fidelity fixture lives with the data
-/// source's own tests (`dio_network/test/game_collection/`); duplicating it
-/// here would be a second copy of the wire shape to keep in step, and nothing
-/// below asserts on mapping beyond the id.
+/// fields the mapper requires — the embedded platform game summary among them
+/// (#259). The full-fidelity fixture lives with the data source's own tests
+/// (`dio_network/test/game_collection/`); duplicating it here would be a
+/// second copy of the wire shape to keep in step, and nothing below asserts on
+/// mapping beyond the id.
 Map<String, dynamic> _row() => {
   'id': 'gc_1',
   'userId': 'user-abc',
@@ -25,6 +26,11 @@ Map<String, dynamic> _row() => {
   'quantity': 1,
   'createdAt': '2026-01-15T10:30:00.000Z',
   'updatedAt': '2026-02-02T09:00:00.000Z',
+  'platformGame': {
+    'id': 'pg_1',
+    'platform': {'id': 'plat_1', 'name': 'Tabletop'},
+    'game': {'id': 'g_1', 'title': 'Brass: Birmingham'},
+  },
 };
 
 String _listBody() => jsonEncode({
@@ -107,7 +113,7 @@ void main() {
 
       final page = await remote().fetchCollectionPage();
 
-      expect(page.items.single.id, 'gc_1');
+      expect(page.items.single.entry.id, 'gc_1');
       expect(page.meta.hasMore, isFalse);
     });
   });

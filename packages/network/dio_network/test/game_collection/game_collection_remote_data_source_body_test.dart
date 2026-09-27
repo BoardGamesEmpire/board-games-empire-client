@@ -168,7 +168,7 @@ void main() {
 
       final page = await remote.fetchCollectionPage();
       expect(page.items, hasLength(1));
-      expect(page.items.single.id, 'gc_1');
+      expect(page.items.single.entry.id, 'gc_1');
       expect(page.meta.hasMore, isFalse);
     });
   });
@@ -190,7 +190,7 @@ void main() {
 
       final page = await remote.fetchCollectionPage(limit: 100);
       expect(page.items, hasLength(100));
-      expect(page.items.last.id, 'gc_99');
+      expect(page.items.last.entry.id, 'gc_99');
     });
   });
 

@@ -41,11 +41,12 @@ import 'watch_disposal.dart';
 /// throw [StateError] if it does not exist; the transaction then
 /// rolls back without enqueuing a sync op.
 ///
-/// `reconcileFromServer` extends the same boundary to inbound server
-/// responses: it verifies `serverEntry.userId == currentUserId` and
-/// throws [StateError] if the response is for a different user. A
-/// wrong/stale server response or a buggy caller cannot inject
-/// another user's collection row into this repository's cache.
+/// `reconcileFromServer` and `mergeFromServer` extend the same boundary
+/// to inbound server responses: they verify `serverEntry.userId ==
+/// currentUserId` and throw [StateError] if the response is for a
+/// different user. A wrong/stale server response or a buggy caller
+/// cannot inject another user's collection row into this repository's
+/// cache.
 ///
 /// ## Disposal (#135 / #138 / #150)
 ///
@@ -564,12 +565,13 @@ class GameCollectionRepositoryImpl
   /// local row had a different id, that stale row is dropped
   /// before the upsert (after the remap).
   ///
+  /// A server-driven pull uses [mergeFromServer] instead, which
+  /// gives way to a dirty or local-only row (#259).
+  ///
   /// **TODO(server-driven-dirty-merge)**: see the interface
-  /// `reconcileFromServer` doc — this upsert clobbers unsynced
-  /// local dirty edits when the reconcile is a server-driven
-  /// background pull (no `completedSyncQueueId`). Phase 3 sync-
-  /// orchestrator scope: split into `acknowledge` /
-  /// `mergeFromServer` with explicit conflict resolution.
+  /// `reconcileFromServer` doc — an ack still clears `isDirty` when a
+  /// second edit to the row is queued behind the one acknowledged.
+  /// The drain worker (#121) owns that case.
   ///
   /// ## Sync-queue closure
   ///
@@ -597,65 +599,10 @@ class GameCollectionRepositoryImpl
     // Boundary check: fail fast BEFORE opening the transaction so
     // the local cache and sync queue stay untouched on a
     // misrouted server response.
-    if (serverEntry.userId != _userId) {
-      throw StateError(
-        'reconcileFromServer received an entry for userId '
-        '"${serverEntry.userId}" but this repository is scoped to '
-        '"$_userId". Server response routing is misconfigured.',
-      );
-    }
+    _checkServerEntryUser(serverEntry, caller: 'reconcileFromServer');
 
     return _db.transaction(() async {
-      // Look up any local row for the same triplet (live or
-      // tombstoned). The schema permits multiple tombstones per
-      // triplet, so this uses the same ordered+limited helper as
-      // addToCollection: picks the live row if any, else the most
-      // recent tombstone, else nothing — never throws.
-      final local = await _findCanonicalRow(
-        platformGameId: serverEntry.platformGameId,
-        wireMedium: serverEntry.medium.toWire(),
-      );
-
-      // Id reassignment: rewrite pending Update/Remove ops that
-      // reference the OLD local id so they don't get sent to the
-      // server with an unknown id once we drop the local row
-      // below.
-      if (local != null && local.id != serverEntry.id) {
-        await _syncQueue.remapCollectionId(
-          oldCollectionId: local.id,
-          newCollectionId: serverEntry.id,
-        );
-      }
-
-      final serverIsTombstone = serverEntry.deletedAt != null;
-
-      if (serverIsTombstone) {
-        await (_db.delete(_db.gameCollectionsTable)..where(
-              (t) =>
-                  t.userId.equals(_userId) &
-                  t.platformGameId.equals(serverEntry.platformGameId) &
-                  t.medium.equals(serverEntry.medium.toWire()) &
-                  (t.deletedAt.isNotNull() | t.isLocalOnly.equals(false)),
-            ))
-            .go();
-      } else {
-        // Live entry path. Drop the stale local row if its id
-        // differs (after we already remapped any pending ops
-        // referencing it above), then upsert with the canonical
-        // server id.
-        if (local != null && local.id != serverEntry.id) {
-          await (_db.delete(
-            _db.gameCollectionsTable,
-          )..where((t) => t.id.equals(local.id))).go();
-        }
-        await _db
-            .into(_db.gameCollectionsTable)
-            .insertOnConflictUpdate(
-              _modelToCompanion(
-                serverEntry.copyWith(isDirty: false, isLocalOnly: false),
-              ),
-            );
-      }
+      await _writeServerEntry(serverEntry);
 
       // Close the loop with the queued op that triggered this server
       // write, if the caller knows which one it was. Drift's
@@ -668,6 +615,130 @@ class GameCollectionRepositoryImpl
     });
   }
 
+  /// Merges server entries no local mutation asked for (#259).
+  ///
+  /// The checks and the writes share one transaction, so a local edit
+  /// cannot land between "no row is dirty" and the upsert that would
+  /// overwrite it. See the interface doc for the
+  /// cases the check covers.
+  @override
+  Future<void> mergeFromServer(List<GameCollection> serverEntries) async {
+    checkNotDisposed();
+    for (final serverEntry in serverEntries) {
+      _checkServerEntryUser(serverEntry, caller: 'mergeFromServer');
+    }
+    if (serverEntries.isEmpty) return;
+
+    return _db.transaction(() async {
+      for (final serverEntry in serverEntries) {
+        if (await _localRowWins(serverEntry)) continue;
+        await _writeServerEntry(serverEntry);
+      }
+    });
+  }
+
+  /// Throws [StateError] when [serverEntry] belongs to another user.
+  void _checkServerEntryUser(
+    GameCollection serverEntry, {
+    required String caller,
+  }) {
+    if (serverEntry.userId != _userId) {
+      throw StateError(
+        '$caller received an entry for userId '
+        '"${serverEntry.userId}" but this repository is scoped to '
+        '"$_userId". Server response routing is misconfigured.',
+      );
+    }
+  }
+
+  /// Whether a row standing where [serverEntry] would land must be kept:
+  /// one with its id, or any row for its triplet, that is dirty or
+  /// local-only, or that is clean and holds a copy the server stamped
+  /// later than [serverEntry].
+  ///
+  /// The whole triplet, tombstones included, rather than only the
+  /// canonical row: the tombstone purge deletes every row for the
+  /// triplet, so a dirty tombstone behind a clean live row would
+  /// otherwise be purged along with it.
+  ///
+  /// The `updatedAt` comparison is sound only for a clean row, whose
+  /// stamp is the server's: [_writeServerEntry] is the one write that
+  /// clears the flags, and it stores the server's `updatedAt`. A dirty
+  /// row's stamp is the local clock's, but a dirty row is kept anyway.
+  Future<bool> _localRowWins(GameCollection serverEntry) async {
+    final rows =
+        await (_db.select(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  (t.id.equals(serverEntry.id) |
+                      (t.platformGameId.equals(serverEntry.platformGameId) &
+                          t.medium.equals(serverEntry.medium.toWire()))),
+            ))
+            .get();
+    return rows.any(
+      (row) =>
+          row.isDirty ||
+          row.isLocalOnly ||
+          row.updatedAt.isAfter(serverEntry.updatedAt),
+    );
+  }
+
+  /// The write both server paths share: remap on id reassignment, then
+  /// purge on a tombstone or upsert a live entry clean. Runs inside the
+  /// caller's transaction.
+  Future<void> _writeServerEntry(GameCollection serverEntry) async {
+    // Look up any local row for the same triplet (live or
+    // tombstoned). The schema permits multiple tombstones per
+    // triplet, so this uses the same ordered+limited helper as
+    // addToCollection: picks the live row if any, else the most
+    // recent tombstone, else nothing — never throws.
+    final local = await _findCanonicalRow(
+      platformGameId: serverEntry.platformGameId,
+      wireMedium: serverEntry.medium.toWire(),
+    );
+
+    // Id reassignment: rewrite pending Update/Remove ops that
+    // reference the OLD local id so they don't get sent to the
+    // server with an unknown id once we drop the local row
+    // below.
+    if (local != null && local.id != serverEntry.id) {
+      await _syncQueue.remapCollectionId(
+        oldCollectionId: local.id,
+        newCollectionId: serverEntry.id,
+      );
+    }
+
+    final serverIsTombstone = serverEntry.deletedAt != null;
+
+    if (serverIsTombstone) {
+      await (_db.delete(_db.gameCollectionsTable)..where(
+            (t) =>
+                t.userId.equals(_userId) &
+                t.platformGameId.equals(serverEntry.platformGameId) &
+                t.medium.equals(serverEntry.medium.toWire()) &
+                (t.deletedAt.isNotNull() | t.isLocalOnly.equals(false)),
+          ))
+          .go();
+    } else {
+      // Live entry path. Drop the stale local row if its id
+      // differs (after we already remapped any pending ops
+      // referencing it above), then upsert with the canonical
+      // server id.
+      if (local != null && local.id != serverEntry.id) {
+        await (_db.delete(
+          _db.gameCollectionsTable,
+        )..where((t) => t.id.equals(local.id))).go();
+      }
+      await _db
+          .into(_db.gameCollectionsTable)
+          .insertOnConflictUpdate(
+            _modelToCompanion(
+              serverEntry.copyWith(isDirty: false, isLocalOnly: false),
+            ),
+          );
+    }
+  }
+
   // ── Streams ──────────────────────────────────────────────────────────────────
 
   @override
@@ -678,6 +749,47 @@ class GameCollectionRepositoryImpl
             .watch()
             .map((rows) => rows.map(_mapRow).toList()),
   );
+
+  /// One query joining the entry to its platform game and game, so
+  /// Drift re-runs it when any of the three tables changes (#259).
+  ///
+  /// Inner joins: `game_collections.platform_game_id` and
+  /// `platform_games.game_id` are enforced foreign keys, so an outer
+  /// join would only add a null case that cannot occur.
+  @override
+  Stream<List<GameCollectionListItem>> watchCollectionListItems() =>
+      untilDisposed(() {
+        final entries = _db.gameCollectionsTable;
+        final platformGames = _db.platformGamesTable;
+        final games = _db.gamesTable;
+
+        final query =
+            _db.select(entries).join([
+                innerJoin(
+                  platformGames,
+                  platformGames.id.equalsExp(entries.platformGameId),
+                ),
+                innerJoin(games, games.id.equalsExp(platformGames.gameId)),
+              ])
+              ..where(
+                entries.userId.equals(_userId) & entries.deletedAt.isNull(),
+              )
+              ..orderBy([
+                OrderingTerm.asc(games.title.collate(Collate.noCase)),
+                OrderingTerm.asc(entries.id),
+              ]);
+
+        return query.watch().map(
+          (rows) => [
+            for (final row in rows)
+              _mapListItem(
+                row.readTable(entries),
+                row.readTable(platformGames),
+                row.readTable(games),
+              ),
+          ],
+        );
+      });
 
   @override
   Stream<GameCollection?> watchEntry(String id) => untilDisposed(
@@ -762,6 +874,18 @@ class GameCollectionRepositoryImpl
     deletedAt: row.deletedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  );
+
+  GameCollectionListItem _mapListItem(
+    GameCollectionsTableData entry,
+    PlatformGamesTableData platformGame,
+    GamesTableData game,
+  ) => GameCollectionListItem(
+    entry: _mapRow(entry),
+    title: game.title,
+    subtitle: game.subtitle,
+    platformName: platformGame.platformName,
+    thumbnail: platformGame.thumbnail ?? game.thumbnail,
   );
 
   GameCollectionsTableCompanion _modelToCompanion(GameCollection m) =>

@@ -147,7 +147,7 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
     );
     container.registerSingleton<GameCollectionRepository>(
       collections,
-      // Close-on-teardown (#135, #138): watchCollection/watchEntry vend
+      // Close-on-teardown (#135, #138): the collection's watch streams vend
       // Drift streams tied to the per-server database, which outlives this
       // scope. Without this callback a subscription taken under one user
       // would keep emitting that user's frozen rows after sign-out.

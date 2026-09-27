@@ -16,6 +16,8 @@ dependencies:
     path: ../../app_shell
   household:
     path: ../../features/household
+  game_collection:
+    path: ../../features/collection
   interfaces:
     path: ../../core/interfaces
   models:

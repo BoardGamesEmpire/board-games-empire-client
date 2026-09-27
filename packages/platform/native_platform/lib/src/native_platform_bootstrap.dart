@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
@@ -72,15 +73,18 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// themselves with, and an installer can only resolve what a predecessor
 /// registered.
 ///
-/// [HouseholdHydrateInstaller] runs **last**: it resolves the
-/// [HouseholdRepository] the storage installer registers, and starts the
-/// #267 household hydrate for the session. It starts that drain unawaited
-/// — activation is the bootstrap gate, and a throw here signs the user
-/// out, so an unreachable server must not reach this list's caller.
+/// The hydrate installers run **after** it: [HouseholdHydrateInstaller]
+/// resolves the [HouseholdRepository] the storage installer registers and
+/// starts the #267 household hydrate, and [GameCollectionHydrateInstaller]
+/// does the same for the [GameCollectionRepository] and the collection
+/// hydrate (#259). Each starts its drain unawaited — activation is the
+/// bootstrap gate, and a throw here signs the user out, so an unreachable
+/// server must not reach this list's caller.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
+  GameCollectionHydrateInstaller(),
 ];
 
 /// Composes the real per-server [ServerContextFactory] from

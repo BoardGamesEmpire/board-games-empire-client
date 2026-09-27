@@ -1,6 +1,8 @@
 import 'package:di/di.dart' show SessionRehydratorInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
+import 'package:game_collection/game_collection.dart'
+    show GameCollectionHydrateInstaller;
 import 'package:household/household.dart' show HouseholdHydrateInstaller;
 import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
 
@@ -19,9 +21,10 @@ import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
 /// Order is structural, exactly as on native. [SessionRehydratorInstaller]
 /// runs **first**: it registers the #302 re-hydrate seam that later
 /// hydrating installers register themselves with, and an installer can only
-/// resolve what a predecessor registered. [HouseholdHydrateInstaller] runs
-/// **last** for the same reason: it resolves the `HouseholdRepository` the
-/// tier above it registers.
+/// resolve what a predecessor registered. The hydrate installers run after
+/// the tier above them for the same reason: [HouseholdHydrateInstaller]
+/// resolves the `HouseholdRepository` it registers, and
+/// [GameCollectionHydrateInstaller] the `GameCollectionRepository` (#259).
 ///
 /// The resources these installers need — the `ServerDatabase` (#288), the
 /// skew-corrected `ClockService` (#118) and the `AuthRepository` — live in
@@ -48,4 +51,5 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
+  GameCollectionHydrateInstaller(),
 ];
