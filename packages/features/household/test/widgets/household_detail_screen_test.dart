@@ -254,11 +254,11 @@ void main() {
     });
   });
 
-  testWidgets('never flashes "No members" between the two hydrate writes', (
+  testWidgets('never flashes "No members" before the roster arrives', (
     tester,
   ) async {
-    // cacheHousehold and cacheMembers are separate writes, so the
-    // household is briefly on screen with an empty roster.
+    // The household and its roster arrive on separate streams, so the
+    // household can briefly be on screen with an empty roster.
     await tester.pumpWidget(harness());
     hydration.add(HouseholdHydrationState.running);
     members.add(const []);

@@ -54,8 +54,9 @@ import 'household_detail_state.dart';
 /// as well as an absent one: the membership gate only shows a household we
 /// hold a member row for, so "this household has no members" is false of
 /// every household that can appear here. The hydrator makes the empty
-/// window reachable rather than theoretical, writing the household and its
-/// members as two separate writes.
+/// window reachable rather than theoretical: it writes a household and its
+/// roster in one transaction (#268), but the two reach this screen on
+/// separate streams, and nothing orders one emission after the other.
 ///
 /// Both waits are bounded by the hydrate: whatever the cache holds when
 /// the pass settles is what gets rendered, including a count of zero. A
@@ -531,10 +532,11 @@ class HouseholdDetailBloc
     // An EMPTY roster under a visible household is a contradiction, not a
     // fact: the membership gate only shows a household we hold a member
     // row for, so a household on screen always has at least us in it. The
-    // hydrator makes the contradiction reachable — `cacheHousehold` and
-    // `cacheMembers` are separate writes, so between them the household
-    // has arrived and the roster is still `const []`, and rendering "No
-    // members" there states something false.
+    // hydrator makes the contradiction reachable. The household and its
+    // roster land in one transaction but arrive on two streams, so the
+    // household can be here while the roster stream still holds the
+    // `const []` it emitted before the write, and rendering "No members"
+    // there states something false.
     //
     // Held only while a pass could still deliver it, the same bound the
     // absent-household branch uses. An empty roster nothing is going to
