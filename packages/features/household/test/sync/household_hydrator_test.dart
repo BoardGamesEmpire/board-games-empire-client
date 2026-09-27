@@ -516,11 +516,14 @@ void main() {
       );
     });
 
-    test('purges nothing when page 1 sends fewer households than it '
-        'counts', () async {
-      // The count comes from the same membership-scoped read as the rows,
-      // so a household it counts and the page leaves out is one the user
-      // still belongs to.
+    test('a page 1 that sends fewer households than it counts is drained: '
+        'cached, not purged', () async {
+      // The backend's contract allows a short page, since a read may filter
+      // rows after counting them. So the pass did not fail: every row the
+      // server sent is cached. But the count comes from the same
+      // membership-scoped read as the rows, so a household it counts and the
+      // page leaves out is one the user still belongs to, and nothing may be
+      // purged against it.
       when(
         () => remote.fetchHouseholds(
           page: any(named: 'page'),
@@ -531,7 +534,7 @@ void main() {
             _page(ids: ['h-1'], page: 1, limit: 100, total: 2, hasMore: false),
       );
 
-      expect(await build().hydrate(), equals(HydrateOutcome.failed));
+      expect(await build().hydrate(), equals(HydrateOutcome.drained));
 
       expect(writtenIds(), equals(['h-1']));
       verifyNever(
@@ -542,10 +545,41 @@ void main() {
       );
     });
 
+    test('a page 1 that sends fewer households than it counts is logged '
+        'with its counts', () async {
+      // The outcome reads as a refresh, so this is the only record that the
+      // server sent less than it counted.
+      final logger = MockBgeLogger();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 2, hasMore: false),
+      );
+
+      await HouseholdHydrator(
+        repository: repo,
+        remote: remote,
+        logger: logger,
+      ).hydrate();
+
+      final context =
+          verify(
+                () => logger.warn(any(), context: captureAny(named: 'context')),
+              ).captured.single
+              as Map<String, dynamic>;
+      expect(context['rows'], equals(1));
+      expect(context['total'], equals(2));
+    });
+
     test('purges nothing when page 1 sends more households than it '
         'counts', () async {
-      // Rows and count that disagree did not come from one read, whichever
-      // way they disagree.
+      // The backend's contract calls this response broken, unlike a short
+      // page: rows and count that disagree this way did not come from one
+      // read. So the pass fails.
       when(
         () => remote.fetchHouseholds(
           page: any(named: 'page'),

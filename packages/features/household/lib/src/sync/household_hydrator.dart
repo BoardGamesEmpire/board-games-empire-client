@@ -15,9 +15,11 @@ enum HydrateOutcome {
   /// The pass purged against it.
   complete,
 
-  /// Every page was cached, but across more than one request. A walk
-  /// across pages is not one snapshot, so the set is **not** complete and
-  /// nothing was purged.
+  /// Every household the server sent was cached, but not as a snapshot a
+  /// purge can trust, so the set is **not** complete and nothing was
+  /// purged. Either the list took more than one request, and a walk across
+  /// pages is not one snapshot, or its only page sent fewer households than
+  /// it counts, which proves nothing about the ones it left out.
   drained,
 
   /// The pass ended early on a failure. Whatever landed before it is kept.
@@ -202,25 +204,38 @@ class HouseholdHydrator {
         if (page > 1) return HydrateOutcome.drained;
         // The purge deletes whatever page 1 leaves out, so `hasMore` alone
         // does not license it: the rest of the envelope must also say this
-        // page is the whole list. The rows are held to `total` too. Both
-        // come from one membership-scoped read, so a household counted and
-        // not sent is one the user still belongs to. A short page is valid
-        // to stop on, but it proves nothing about what it left out.
+        // page is the whole list, and the rows are held to `total` too.
+        final counts = {
+          'rows': result.items.length,
+          'totalPages': result.meta.totalPages,
+          'total': result.meta.total,
+          'limit': result.meta.limit,
+        };
+        // A page 1 that counts more than one page, or counts fewer
+        // households than it sent, contradicts itself. The server's own
+        // contract calls the second broken.
         if (result.meta.totalPages > 1 ||
             result.meta.total > result.meta.limit ||
-            result.items.length != result.meta.total) {
+            result.items.length > result.meta.total) {
           _logger.warn(
-            'Household list reports page 1 as its last but does not count '
-            'exactly the households it sent; purging nothing. The cached '
-            'set is NOT complete.',
-            context: {
-              'rows': result.items.length,
-              'totalPages': result.meta.totalPages,
-              'total': result.meta.total,
-              'limit': result.meta.limit,
-            },
+            'Household list reports page 1 as its last but contradicts '
+            'itself; purging nothing. The cached set is NOT complete.',
+            context: counts,
           );
           return HydrateOutcome.failed;
+        }
+        // A short page doesn't: the server may filter rows after counting.
+        // Every row it sent is cached, so the pass did not fail. But the
+        // count comes from the same membership-scoped read as the rows, so a
+        // household counted and not sent is one the user still belongs to,
+        // and the page licenses no purge.
+        if (result.items.length < result.meta.total) {
+          _logger.warn(
+            'Household list sent fewer households than it counts on its '
+            'only page; caching them and purging nothing.',
+            context: counts,
+          );
+          return HydrateOutcome.drained;
         }
         try {
           final purged = await _repo.purgeHouseholdsAbsentFrom({

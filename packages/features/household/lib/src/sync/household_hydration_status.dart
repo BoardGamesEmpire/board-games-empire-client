@@ -21,10 +21,11 @@ enum HouseholdHydrationState {
   /// empty.
   running,
 
-  /// The last pass landed rows. Includes a drain across pages: the set is
-  /// not one snapshot, but the cache is more current than it was, and
-  /// crying "couldn't refresh" at every sign-in for a user with that many
-  /// households would train the warning away.
+  /// The last pass landed rows. Includes a drained pass: the set is not one
+  /// snapshot, but the cache is more current than it was, and crying
+  /// "couldn't refresh" at every sign-in for a user with that many
+  /// households, or for a server that sent a short page, would train the
+  /// warning away.
   refreshed,
 
   /// The last pass ended early. The cache holds at least what it held
