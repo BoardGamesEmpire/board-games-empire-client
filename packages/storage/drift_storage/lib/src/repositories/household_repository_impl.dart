@@ -230,8 +230,10 @@ class HouseholdRepositoryImpl
   }
 
   /// Whether the sync queue owns [row]: it carries local changes the server
-  /// has not acknowledged (#298). No server write may overwrite or remove
-  /// it, roster included; only the acknowledgement settles it.
+  /// has not acknowledged (#298). [_writeServerHousehold],
+  /// [cacheHouseholdWithRoster] and [purgeHouseholdsAbsentFrom] leave it
+  /// alone, roster included; only the acknowledgement settles it.
+  /// [cacheMember] and [cacheMembers] do not check it yet (#122).
   static bool _isQueueOwned(HouseholdsTableData row) =>
       row.isDirty || row.isLocalOnly;
 
