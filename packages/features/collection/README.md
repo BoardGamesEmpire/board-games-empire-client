@@ -15,7 +15,7 @@ user session activates, on native and web alike, and registers it with the
 session's `SessionRehydrator` so a pass that started offline runs again later.
 
 Each server row carries a summary of its platform game and game. The hydrator
-writes that summary first (`GameRepository.cachePlatformGameSummary`), then
+writes that summary first (`GameRepository.cachePlatformGameSummaries`), then
 the entry (`GameCollectionRepository.mergeFromServer`). The order matters: the
 local collection row has an enforced foreign key onto its platform game, so on
 a fresh device the entry alone cannot be stored.
