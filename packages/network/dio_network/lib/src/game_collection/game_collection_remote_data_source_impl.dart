@@ -83,7 +83,7 @@ class GameCollectionRemoteDataSourceImpl
   static const Set<int> _retryable4xx = {401, 407, 408, 429};
 
   @override
-  Future<PaginatedResult<GameCollection>> fetchCollectionPage({
+  Future<PaginatedResult<GameCollectionWithSummary>> fetchCollectionPage({
     int page = 1,
     int limit = GameCollectionRemoteDataSource.maxPageSize,
     bool includeDeleted = false,
@@ -118,12 +118,13 @@ class GameCollectionRemoteDataSourceImpl
 
     // The envelope parse and the row mapping share one permanent
     // classification: a missing array, a missing or partial `pagination`, and
-    // a row the mapper cannot read are all a 2xx this source cannot map.
+    // a row the mapper cannot read — its summary included (#259) — are all a
+    // 2xx this source cannot map.
     return _parse(
       () => PaginatedResult.fromEnvelope(
         response.body,
         key: 'collections',
-        item: _mapEntry,
+        item: _mapEntryWithSummary,
       ),
       action: action,
       status: response.status,
@@ -131,7 +132,7 @@ class GameCollectionRemoteDataSourceImpl
   }
 
   @override
-  Future<GameCollection> fetchEntry(String id) async {
+  Future<GameCollectionWithSummary> fetchEntry(String id) async {
     const action = 'Collection fetch';
     final response = await _send(
       request: () => _dio.get<String>(
@@ -142,7 +143,7 @@ class GameCollectionRemoteDataSourceImpl
       action: action,
       notFound: _NotFoundMeaning.missingRow,
     );
-    return _singleEntry(response, action: action);
+    return _singleEntry(response, action: action, map: _mapEntryWithSummary);
   }
 
   @override
@@ -178,7 +179,7 @@ class GameCollectionRemoteDataSourceImpl
       action: action,
       notFound: _NotFoundMeaning.missingRow,
     );
-    return _singleEntry(response, action: action);
+    return _singleEntry(response, action: action, map: _mapEntry);
   }
 
   @override
@@ -222,7 +223,7 @@ class GameCollectionRemoteDataSourceImpl
       action: action,
       notFound: _NotFoundMeaning.missingRow,
     );
-    return _singleEntry(response, action: action);
+    return _singleEntry(response, action: action, map: _mapEntry);
   }
 
   @override
@@ -238,7 +239,7 @@ class GameCollectionRemoteDataSourceImpl
       // The one place a 404 is not a failure.
       notFound: _NotFoundMeaning.alreadyRemoved,
     );
-    return _singleEntry(response, action: action);
+    return _singleEntry(response, action: action, map: _mapEntry);
   }
 
   // ── Request plumbing ────────────────────────────────────────────────
@@ -352,10 +353,11 @@ class GameCollectionRemoteDataSourceImpl
 
   /// Unwraps the `{ collection }` envelope every single-entry endpoint returns
   /// (the mutating ones wrap it alongside a localized `message`, which the
-  /// client does not consume).
-  GameCollection _singleEntry(
+  /// client does not consume), mapping it with [map].
+  T _singleEntry<T>(
     ({Map<String, dynamic> body, int status}) response, {
     required String action,
+    required T Function(Map<String, dynamic> json) map,
   }) {
     final entry = response.body['collection'];
     if (entry is! Map<String, dynamic>) {
@@ -364,11 +366,7 @@ class GameCollectionRemoteDataSourceImpl
         statusCode: response.status,
       );
     }
-    return _parse(
-      () => _mapEntry(entry),
-      action: action,
-      status: response.status,
-    );
+    return _parse(() => map(entry), action: action, status: response.status);
   }
 
   /// A 2xx whose body cannot be mapped is a permanent failure: retrying the
@@ -385,13 +383,45 @@ class GameCollectionRemoteDataSourceImpl
     }
   }
 
+  /// Maps a read's row to the entry plus the summary it embeds (#259).
+  ///
+  /// The summary is required here: a read's caller stores the entry, which it
+  /// cannot do without the platform game and game the summary names. A row
+  /// without it throws, and [_parse] files that as permanent.
+  GameCollectionWithSummary _mapEntryWithSummary(Map<String, dynamic> json) =>
+      (entry: _mapEntry(json), summary: _mapSummary(json));
+
+  /// Maps the embedded `platformGame` object to a [PlatformGameSummary].
+  ///
+  /// The platform `slug` is not read: no table has a column for it.
+  static PlatformGameSummary _mapSummary(Map<String, dynamic> json) {
+    final platformGame = json['platformGame'] as Map<String, dynamic>;
+    final platform = platformGame['platform'] as Map<String, dynamic>;
+    final game = platformGame['game'] as Map<String, dynamic>;
+    return PlatformGameSummary(
+      id: platformGame['id'] as String,
+      platformId: platform['id'] as String,
+      platformName: platform['name'] as String,
+      image: platformGame['image'] as String?,
+      thumbnail: platformGame['thumbnail'] as String?,
+      game: GameSummary(
+        id: game['id'] as String,
+        title: game['title'] as String,
+        subtitle: game['subtitle'] as String?,
+        image: game['image'] as String?,
+        thumbnail: game['thumbnail'] as String?,
+      ),
+    );
+  }
+
   /// Maps a server collection payload to the domain [GameCollection].
   ///
   /// Explicit field mapping (not [GameCollection.fromJson]) keeps the server
   /// representation decoupled from the local-persistence representation: the
   /// response carries fields the model doesn't (`visibility`, `deleteReason`,
-  /// and the embedded `platformGame` / `release` summary — #253 D5, #259) and
-  /// omits the client-only sync flags, which default to `false` for this
+  /// the `release` summary — #253, #264, #404 — and the `platformGame`
+  /// summary, which [_mapSummary] reads for the two reads) and omits the
+  /// client-only sync flags, which default to `false` for this
   /// server-confirmed row.
   GameCollection _mapEntry(Map<String, dynamic> json) => GameCollection(
     id: json['id'] as String,

@@ -48,6 +48,11 @@ dependencies:
   household:
     path: ../../features/household
 
+  # The collection feature, for the shared `GameCollectionHydrateInstaller`
+  # (#259), on the same rule as `household` above.
+  game_collection:
+    path: ../../features/collection
+
   # The browser bindings the durable feedback sink is written against (#292).
   # IndexedDB rather than a second drift/wasm database: the queue is a
   # key -> opaque-JSON store, and a device-global drift database would open a

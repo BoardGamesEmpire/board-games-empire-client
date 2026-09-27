@@ -261,7 +261,7 @@ void main() {
     test('maps every field the domain model carries', () async {
       stubGet(_resp({'collection': _entryJson(releaseId: 'rel_1')}));
 
-      final entry = await remote.fetchEntry('gc_server_1');
+      final (:entry, summary: _) = await remote.fetchEntry('gc_server_1');
 
       expect(entry.id, 'gc_server_1');
       expect(entry.userId, 'user-abc');
@@ -285,7 +285,7 @@ void main() {
     test('a server-confirmed row has both sync flags false', () async {
       stubGet(_resp({'collection': _entryJson()}));
 
-      final entry = await remote.fetchEntry('gc_server_1');
+      final (:entry, summary: _) = await remote.fetchEntry('gc_server_1');
 
       expect(entry.isDirty, isFalse);
       expect(entry.isLocalOnly, isFalse);
@@ -294,7 +294,7 @@ void main() {
     test('maps a Digital medium', () async {
       stubGet(_resp({'collection': _entryJson(medium: 'Digital')}));
 
-      final entry = await remote.fetchEntry('gc_server_1');
+      final (:entry, summary: _) = await remote.fetchEntry('gc_server_1');
       expect(entry.medium, GameMedium.digital);
     });
 
@@ -323,7 +323,7 @@ void main() {
         }),
       );
 
-      final entry = await remote.fetchEntry('gc_server_1');
+      final (:entry, summary: _) = await remote.fetchEntry('gc_server_1');
 
       expect(entry.releaseId, isNull);
       expect(entry.rating, isNull);
@@ -347,12 +347,116 @@ void main() {
           }),
         );
 
-        final entry = await remote.fetchEntry('gc_server_1');
+        final (:entry, summary: _) = await remote.fetchEntry('gc_server_1');
 
         expect(entry.deletedAt, DateTime.parse('2026-03-01T12:00:00.000Z'));
         expect(entry.isDeleted, isTrue);
       },
     );
+  });
+
+  // The summary is what lets the hydrate store an entry at all: the local
+  // collection row has a foreign key onto the platform game it names.
+  group('the embedded platform game summary (#259)', () {
+    test('a page returns each entry with the summary it embeds', () async {
+      stubGet(_resp(_listEnvelope([_entryJson()])));
+
+      final page = await remote.fetchCollectionPage();
+      final (:entry, :summary) = page.items.single;
+
+      expect(entry.id, 'gc_server_1');
+      expect(summary.id, 'pg_1');
+      expect(summary.platformId, 'plat_1');
+      expect(summary.platformName, 'Tabletop');
+      expect(summary.image, 'pg.png');
+      expect(summary.thumbnail, 'pg_thumb.png');
+      expect(summary.game.id, 'g_1');
+      expect(summary.game.title, 'Brass: Birmingham');
+      expect(summary.game.subtitle, isNull);
+      expect(summary.game.image, 'g.png');
+      expect(summary.game.thumbnail, 'g_thumb.png');
+    });
+
+    test('a single-entry read returns the summary too', () async {
+      stubGet(_resp({'collection': _entryJson()}));
+
+      final (:entry, :summary) = await remote.fetchEntry('gc_server_1');
+
+      expect(entry.platformGameId, 'pg_1');
+      expect(summary.id, 'pg_1');
+      expect(summary.game.title, 'Brass: Birmingham');
+    });
+
+    test('null image overrides map to null, not the game\'s', () async {
+      final json = _entryJson();
+      json['platformGame'] = <String, dynamic>{
+        ...json['platformGame'] as Map<String, dynamic>,
+        'image': null,
+        'thumbnail': null,
+      };
+      stubGet(_resp({'collection': json}));
+
+      final (entry: _, :summary) = await remote.fetchEntry('gc_server_1');
+
+      expect(summary.image, isNull);
+      expect(summary.thumbnail, isNull);
+    });
+
+    // Without these the entry cannot be stored, so a page lacking them is a
+    // 2xx this source cannot map, like any other malformed row.
+    for (final (label, strip)
+        in <(String, void Function(Map<String, dynamic>))>[
+          ('platformGame', (json) => json.remove('platformGame')),
+          (
+            'platformGame.game',
+            (json) =>
+                (json['platformGame'] as Map<String, dynamic>).remove('game'),
+          ),
+          (
+            'platformGame.platform',
+            (json) => (json['platformGame'] as Map<String, dynamic>).remove(
+              'platform',
+            ),
+          ),
+        ]) {
+      test('a page row without $label is permanent', () {
+        final json = _entryJson();
+        strip(json);
+        stubGet(_resp(_listEnvelope([json])));
+
+        expect(
+          () => remote.fetchCollectionPage(),
+          throwsA(isA<GameCollectionRemotePermanentException>()),
+        );
+      });
+    }
+
+    test('a single-entry read without the summary is permanent', () {
+      stubGet(_resp({'collection': _entryJson()..remove('platformGame')}));
+
+      expect(
+        () => remote.fetchEntry('gc_server_1'),
+        throwsA(isA<GameCollectionRemotePermanentException>()),
+      );
+    });
+
+    // The writes return a bare entry, which the drain reconciles onto a row
+    // whose platform game is already cached; they neither need the summary
+    // nor fail without it.
+    test('a mutation response without the summary still maps', () async {
+      stubPost(
+        _resp({
+          'collection': _entryJson()..remove('platformGame'),
+        }, statusCode: 201),
+      );
+
+      final entry = await remote.addToCollection(
+        platformGameId: 'pg_1',
+        medium: GameMedium.physical,
+      );
+
+      expect(entry.id, 'gc_server_1');
+    });
   });
 
   group('fetchCollectionPage', () {
@@ -373,8 +477,8 @@ void main() {
       final page = await remote.fetchCollectionPage(page: 2, limit: 2);
 
       expect(page.items, hasLength(2));
-      expect(page.items.first.id, 'gc_server_1');
-      expect(page.items.last.medium, GameMedium.digital);
+      expect(page.items.first.entry.id, 'gc_server_1');
+      expect(page.items.last.entry.medium, GameMedium.digital);
       expect(page.meta.page, 2);
       expect(page.meta.limit, 2);
       expect(page.meta.total, 5);

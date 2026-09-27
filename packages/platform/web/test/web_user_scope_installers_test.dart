@@ -7,6 +7,7 @@ library;
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:web_platform/web.dart';
 
@@ -16,12 +17,13 @@ void main() {
       final installers = buildWebUserScopeInstallers();
 
       // Order is structural: the re-hydrate registry has to exist before any
-      // hydrating installer can register itself with it (#302), and the
-      // hydrate installer resolves the repository the tier above it registers.
-      expect(installers, hasLength(3));
+      // hydrating installer can register itself with it (#302), and each
+      // hydrate installer resolves a repository the tier above it registers.
+      expect(installers, hasLength(4));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
+      expect(installers[3], isA<GameCollectionHydrateInstaller>());
     });
 
     test('runs the same installer native does, not a web copy of it', () {
@@ -64,6 +66,28 @@ void main() {
       // `native_platform/test/household_hydrate_installer_ordering_test.dart`.
       expect(storage, isNonNegative);
       expect(hydrate, greaterThan(storage));
+    });
+
+    test('runs the same collection hydrate installer native does, after the '
+        'tiers it depends on (#259)', () {
+      final installers = buildWebUserScopeInstallers();
+
+      final rehydrator = installers.indexWhere(
+        (i) => i is SessionRehydratorInstaller,
+      );
+      final storage = installers.indexWhere(
+        (i) => i is UserSessionScopeInstaller,
+      );
+      final hydrate = installers.indexWhere(
+        (i) => i is GameCollectionHydrateInstaller,
+      );
+
+      expect(
+        installers.whereType<GameCollectionHydrateInstaller>(),
+        hasLength(1),
+      );
+      expect(hydrate, greaterThan(storage));
+      expect(hydrate, greaterThan(rehydrator));
     });
   });
 }

@@ -7,9 +7,14 @@ import 'package:models/domain.dart';
 import '../databases/server_database.dart';
 
 class GameRepositoryImpl implements GameRepository {
-  const GameRepositoryImpl(this._db);
+  /// [now] is the clock [cachePlatformGameSummaries] stamps an inserted row
+  /// from. It defaults to the device clock: the stamp is a local "first
+  /// cached" time with no consensus meaning, so the skew-corrected
+  /// `ClockService` is not what it wants. Injected so a test can pin it.
+  const GameRepositoryImpl(this._db, {this._now = DateTime.now});
 
   final ServerDatabase _db;
+  final DateTime Function() _now;
 
   // ── Game ───────────────────────────────────────────────────────────────────────
 
@@ -166,6 +171,79 @@ class GameRepositoryImpl implements GameRepository {
         );
       }
     });
+  }
+
+  // ── Collection summary (#259) ──────────────────────────────────────────────────
+
+  @override
+  Future<void> cachePlatformGameSummaries(
+    List<PlatformGameSummary> summaries,
+  ) async {
+    if (summaries.isEmpty) return;
+    final now = _now().toUtc();
+
+    await _db.transaction(() async {
+      for (final summary in summaries) {
+        await _writeSummary(summary, now);
+      }
+    });
+  }
+
+  /// Writes one summary's game, then its platform game. Runs inside the
+  /// caller's transaction.
+  ///
+  /// Each insert carries the summary's columns plus the two required
+  /// timestamps; each conflict update carries the summary's columns only.
+  /// Drift writes just the columns a companion marks present, which is what
+  /// keeps a fuller record's other fields intact.
+  Future<void> _writeSummary(PlatformGameSummary summary, DateTime now) async {
+    final game = summary.game;
+
+    await _db
+        .into(_db.gamesTable)
+        .insert(
+          GamesTableCompanion.insert(
+            id: game.id,
+            title: game.title,
+            subtitle: Value(game.subtitle),
+            image: Value(game.image),
+            thumbnail: Value(game.thumbnail),
+            createdAt: now,
+            updatedAt: now,
+          ),
+          onConflict: DoUpdate(
+            (_) => GamesTableCompanion(
+              title: Value(game.title),
+              subtitle: Value(game.subtitle),
+              image: Value(game.image),
+              thumbnail: Value(game.thumbnail),
+            ),
+          ),
+        );
+
+    await _db
+        .into(_db.platformGamesTable)
+        .insert(
+          PlatformGamesTableCompanion.insert(
+            id: summary.id,
+            gameId: game.id,
+            platformId: summary.platformId,
+            platformName: summary.platformName,
+            image: Value(summary.image),
+            thumbnail: Value(summary.thumbnail),
+            createdAt: now,
+            updatedAt: now,
+          ),
+          onConflict: DoUpdate(
+            (_) => PlatformGamesTableCompanion(
+              gameId: Value(game.id),
+              platformId: Value(summary.platformId),
+              platformName: Value(summary.platformName),
+              image: Value(summary.image),
+              thumbnail: Value(summary.thumbnail),
+            ),
+          ),
+        );
   }
 
   // ── Mappers ──────────────────────────────────────────────────────────────────────────

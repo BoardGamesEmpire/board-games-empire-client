@@ -2,13 +2,29 @@ import 'package:models/domain.dart';
 
 import 'paginated_result.dart';
 
+/// One collection entry from a read, with the platform game summary it embeds
+/// (#259).
+///
+/// The two travel together because the server sends them together, and they
+/// stay **separate values** for the reason [HouseholdWithMembers] gives: they
+/// are cached through separate writers into separate tables
+/// (`GameRepository.cachePlatformGameSummaries` for the summary,
+/// `GameCollectionRepository` for the entry). The summary is written first,
+/// because the local collection row has a foreign key onto the platform game
+/// it names.
+typedef GameCollectionWithSummary = ({
+  GameCollection entry,
+  PlatformGameSummary summary,
+});
+
 /// Remote data source for the current user's [GameCollection] entries (#253).
 ///
-/// The network seam the collection slice had none of: #44's initial hydrate
-/// reads through [fetchCollectionPage], and the sync-queue drain worker (#121)
-/// pushes queued collection operations through [addToCollection],
-/// [updateEntry] and [removeEntry]. Responses are reconciled into the local
-/// cache by `GameCollectionRepository.reconcileFromServer`.
+/// The network seam the collection slice had none of: the collection hydrate
+/// (#259) reads through [fetchCollectionPage], and the sync-queue drain worker
+/// (#121) pushes queued collection operations through [addToCollection],
+/// [updateEntry] and [removeEntry]. A hydrate merges what it reads with
+/// `GameCollectionRepository.mergeFromServer`; a drain acknowledges each
+/// mutation with `GameCollectionRepository.reconcileFromServer`.
 ///
 /// Implementations run over a **per-server** authenticated transport — the
 /// injected client carries the base URL (path-prefix deployments included) and
@@ -30,14 +46,29 @@ import 'paginated_result.dart';
 /// Every returned [GameCollection] is server-confirmed state: `isDirty` and
 /// `isLocalOnly` are `false`.
 ///
+/// ## The embedded summary (#259)
+///
+/// Every collection response embeds a `platformGame` summary: the platform
+/// game's id, image and thumbnail, its platform's id and name, and its game's
+/// id, title, subtitle, image and thumbnail. The two **reads** return it
+/// beside the entry, as a [GameCollectionWithSummary]. Storing it is the
+/// caller's job; this class stays transport (#253).
+///
+/// A read whose row lacks `platformGame`, `platformGame.game` or
+/// `platformGame.platform` is a **permanent** failure, like any other row this
+/// source cannot map. The entry cannot be stored without the platform game and
+/// game ids, so there is nothing useful to return in its place.
+///
+/// The three **writes** return a bare [GameCollection] and ignore the summary.
+/// A drain reconciles their result onto a local row that already references a
+/// cached platform game, since the local add could not have been made without
+/// one.
+///
 /// ## What the mapping drops (#253 D5)
 ///
-/// The server response carries three things the domain model has no field for:
-/// `visibility`, `deleteReason`, and an embedded `platformGame` / `release`
-/// summary (game title, subtitle, image, thumbnail; platform name and slug).
-/// The summary is exactly what a collection list needs to render, and dropping
-/// it is a known cost tracked by **#259** — capturing it is a storage decision,
-/// not a transport one, so it does not happen here.
+/// Still dropped: `visibility` and `deleteReason`, which the domain model has
+/// no field for (#264); the `release` summary, which has no local table yet
+/// (#404); and the platform `slug`, which nothing reads.
 ///
 /// ## What the request bodies deliberately cannot carry
 ///
@@ -214,7 +245,10 @@ abstract class GameCollectionRemoteDataSource {
   /// will return it.
   ///
   /// So a drain that must be complete passes [includeDeleted], upserts by id,
-  /// and then runs an [updatedSince] pass reaching back to before it began.
+  /// and then runs an [updatedSince] pass reaching back to when page 1 was
+  /// read. The server filters `updatedAt >= updatedSince` by its own clock,
+  /// so the safest date is one of its own timestamps: the newest `updatedAt`
+  /// page 1 returned, which the collection hydrate uses (#259).
   ///
   /// [page] is **1-based**, [limit] is in `1..maxPageSize`, and together they
   /// must keep `(page - 1) * limit` within [maxPageDepth]. The server
@@ -231,7 +265,7 @@ abstract class GameCollectionRemoteDataSource {
   /// [includeDeleted] for a full picture, or [deletedOnly] for tombstones
   /// alone. [updatedSince] combined with [includeDeleted] is the delta-sync
   /// shape.
-  Future<PaginatedResult<GameCollection>> fetchCollectionPage({
+  Future<PaginatedResult<GameCollectionWithSummary>> fetchCollectionPage({
     int page = 1,
     int limit = maxPageSize,
     bool includeDeleted = false,
@@ -241,12 +275,12 @@ abstract class GameCollectionRemoteDataSource {
     DateTime? updatedSince,
   });
 
-  /// Fetches a single entry by its server id.
+  /// Fetches a single entry by its server id, with its embedded summary.
   ///
   /// Throws [GameCollectionNotFoundException] if the row does not exist for
   /// this actor (missing, another user's, or outside the actor's read scope —
   /// the server collapses all three into a 404).
-  Future<GameCollection> fetchEntry(String id);
+  Future<GameCollectionWithSummary> fetchEntry(String id);
 
   /// Adds a game to the acting user's collection.
   ///

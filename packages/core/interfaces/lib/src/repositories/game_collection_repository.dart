@@ -14,10 +14,19 @@ import 'package:models/domain.dart';
 /// construction). Every read and mutation method filters by that
 /// user; another user's cached rows are invisible and unreachable
 /// regardless of which id the caller supplies. [reconcileFromServer]
-/// applies the same boundary to inbound server responses: it throws
-/// [StateError] if `serverEntry.userId` differs from the repository's
-/// scoped user, so a misrouted or stale response cannot inject
-/// another user's row.
+/// and [mergeFromServer] apply the same boundary to inbound server
+/// responses: they throw [StateError] if a server entry's `userId` differs
+/// from the repository's scoped user, so a misrouted or stale response
+/// cannot inject another user's row.
+///
+/// ## Two server writers
+///
+/// [reconcileFromServer] **acknowledges** a queued mutation: the
+/// server's answer to something this device sent, so it wins. And
+/// [mergeFromServer] **merges** server state nobody on this device asked
+/// for, such as a hydrate: it gives way to any row the sync queue still
+/// owns. Choose by where the entry came from, not by what it looks
+/// like.
 abstract class GameCollectionRepository {
   /// Returns all collection entries for the current user.
   Future<List<GameCollection>> getCollection();
@@ -143,8 +152,9 @@ abstract class GameCollectionRepository {
   /// intentionally no separate `purge` method on this interface:
   /// tombstone lifecycle is owned by the sync engine, not by
   /// callers, so the only paths that remove rows are
-  /// [removeFromCollection] (tombstone) and [reconcileFromServer]
-  /// with a tombstoned server entry (surgical physical purge).
+  /// [removeFromCollection] (tombstone), and [reconcileFromServer] or
+  /// [mergeFromServer] with a tombstoned server entry (physical
+  /// purge).
   ///
   /// ### Re-adding before purge
   ///
@@ -229,19 +239,18 @@ abstract class GameCollectionRepository {
   /// If a local row had a different id, that stale row is dropped
   /// first (after the remap step above).
   ///
-  /// **TODO(server-driven-dirty-merge)**: this contract treats
-  /// every live-entry reconcile as authoritative — server wins,
-  /// `isDirty` is cleared. That's correct when [completedSyncQueueId]
-  /// is supplied (the reconcile is the ack of a specific queued
-  /// mutation, so the local dirty state was that mutation, and
-  /// clearing it is exactly right). It is NOT correct for a
-  /// server-driven background pull arriving while unrelated local
-  /// dirty edits are queued: the upsert clobbers those edits and
-  /// marks the row clean, while the queued Update ops may still be
-  /// in flight. A future revision will split this into
-  /// `acknowledge(serverEntry, syncQueueId)` and
-  /// `mergeFromServer(serverEntry)` with explicit conflict
-  /// resolution for the latter. Phase 3 sync-orchestrator scope.
+  /// This contract treats every live-entry reconcile as authoritative:
+  /// server wins, `isDirty` is cleared. That is right for the ack of a
+  /// queued mutation, since the local dirty state was that mutation. A
+  /// server-driven pull must not come here; it goes through
+  /// [mergeFromServer] (#259), which leaves a dirty or local-only row
+  /// alone.
+  ///
+  /// **TODO(server-driven-dirty-merge)**: what is left is an ack
+  /// arriving while a *second* edit to the same row is still queued
+  /// behind the one acknowledged. The upsert then shows the server's
+  /// answer to the first edit and clears `isDirty`, although the second
+  /// is still queued. The drain worker (#121) owns that case.
   ///
   /// ### Sync-queue closure
   ///
@@ -250,16 +259,88 @@ abstract class GameCollectionRepository {
   /// every write lands or none does — a failure in any step
   /// rolls back the whole reconciliation.
   ///
-  /// Callers that reconcile from a server-driven sync (not
-  /// originating from a local mutation — e.g. a full re-pull) may
-  /// omit [completedSyncQueueId] to skip the queue step.
+  /// [completedSyncQueueId] may be omitted when the caller cannot
+  /// name the queue entry. A server-driven sync that did not
+  /// originate from a local mutation, such as a full re-pull, uses
+  /// [mergeFromServer] instead.
   Future<void> reconcileFromServer(
     GameCollection serverEntry, {
     String? completedSyncQueueId,
   });
 
+  /// Merges server state that no local mutation asked for, such as a
+  /// hydrate's page (#259).
+  ///
+  /// Each of [serverEntries] is merged by the rules below. The whole list
+  /// lands in one transaction, so a watcher re-runs once for it rather
+  /// than once per entry. An empty list writes nothing.
+  ///
+  /// ### The queue owns a dirty or local-only row
+  ///
+  /// When a local row for an entry's `(userId, platformGameId, medium)`
+  /// triplet, or with its id, is `isDirty` or `isLocalOnly`, that entry
+  /// **writes nothing**: neither values nor flags. That row
+  /// holds an edit, a removal or an add the sync queue has yet to
+  /// send, and the server's copy predates it. The queued operation
+  /// settles the row when the drain acknowledges it through
+  /// [reconcileFromServer]. That covers three cases:
+  ///
+  /// - a dirty entry keeps its values and stays dirty;
+  /// - a local tombstone stays in place, rather than the entry coming
+  ///   back from the server's still-live copy;
+  /// - a local-only entry stays under its local id, even when the
+  ///   server already holds the same game under another id. No queue
+  ///   remap happens here; the drain's acknowledgement does that.
+  ///
+  /// A server tombstone over such a row is skipped by the same rule.
+  ///
+  /// This is the rule #298 set for households' `cacheHousehold`.
+  ///
+  /// ### A newer clean copy is kept
+  ///
+  /// When a clean local row for the entry holds a copy the server
+  /// stamped later than the entry's `updatedAt`, the entry also writes
+  /// nothing: it is the older read. A hydrate page fetched before the
+  /// drain acknowledged an edit is the case this covers. A clean row's
+  /// stamp is the server's, so the two compare on one clock. An equal
+  /// stamp still writes.
+  ///
+  /// ### Otherwise it is the reconcile without the queue step
+  ///
+  /// With no such row, a live entry is upserted clean and a
+  /// tombstone purges the triplet's rows, exactly as
+  /// [reconcileFromServer] does. That includes the remap when a clean
+  /// local row sits under a different id. No queue entry is closed.
+  ///
+  /// Throws [StateError] if any entry's `userId` is not this
+  /// repository's user, before any write.
+  Future<void> mergeFromServer(List<GameCollection> serverEntries);
+
   /// Watches the full collection, emitting on any change.
   Stream<List<GameCollection>> watchCollection();
+
+  /// Watches the collection as list rows: each live entry with the
+  /// title, subtitle, platform name and thumbnail of the platform game
+  /// it names (#259).
+  ///
+  /// Every entry has those to show. Its platform game, and that
+  /// platform game's game, are both enforced parents in the cache, so
+  /// the join never drops a row.
+  ///
+  /// The thumbnail is resolved here, once: the platform game's own
+  /// thumbnail when it has one, otherwise the game's. That is the
+  /// fallback [PlatformGame] states for all its overrides.
+  ///
+  /// Ordered by title, ignoring case, then by entry id, so entries with
+  /// equal titles hold their places between emissions.
+  ///
+  /// Re-emits when the entries, their platform games or their games
+  /// change, so a hydrate that refreshes a title reaches the list with
+  /// nothing done by the screen. Tombstoned entries are left out, as in
+  /// [watchCollection]; a tombstoned *game* is not, since the entry is
+  /// still the user's. Closes, rather than errors, when the repository
+  /// is disposed.
+  Stream<List<GameCollectionListItem>> watchCollectionListItems();
 
   /// Watches a single entry. Emits null when removed.
   Stream<GameCollection?> watchEntry(String id);
