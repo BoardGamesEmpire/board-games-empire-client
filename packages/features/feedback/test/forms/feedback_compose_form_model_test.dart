@@ -71,17 +71,14 @@ void main() {
   });
 
   group('validateForSubmit', () {
-    test('returns false and touches every control when invalid', () {
+    test('returns false when invalid, and leaves the errors to the view', () {
+      // Showing them is `rejectSubmit`'s job, in the widget, which also
+      // focuses the first one (#230). Marking them here as well made two
+      // owners for one step.
       expect(model.validateForSubmit(), isFalse);
       expect(
         model.form.control(FeedbackComposeFormModel.messageControlName).touched,
-        isTrue,
-      );
-      expect(
-        model.form
-            .control(FeedbackComposeFormModel.severityControlName)
-            .touched,
-        isTrue,
+        isFalse,
       );
     });
 

@@ -25,20 +25,19 @@ void main() {
   Widget compose({
     ValueChanged<FeedbackComposeResult>? onSubmit,
     bool enabled = true,
-  }) => Column(
-    children: [
-      FeedbackComposeForm(
-        model: model,
-        onSubmit: onSubmit ?? (_) {},
-        enabled: enabled,
-      ),
-      FeedbackComposeSubmitButton(
-        model: model,
-        onSubmit: onSubmit ?? (_) {},
-        enabled: enabled,
-      ),
-    ],
-  );
+  }) {
+    final form = FeedbackComposeForm(
+      model: model,
+      onSubmit: onSubmit ?? (_) {},
+      enabled: enabled,
+    );
+    return Column(
+      children: [
+        form,
+        FeedbackComposeSubmitButton(form: form),
+      ],
+    );
+  }
 
   Future<void> pick(WidgetTester tester, Key field, String option) async {
     await tester.ensureVisible(find.byKey(field));
@@ -223,7 +222,9 @@ void main() {
     );
   });
 
-  testWidgets('enabled: false disables the review affordance', (tester) async {
+  testWidgets('a disabled form disables its review affordance with it', (
+    tester,
+  ) async {
     await tester.pumpWidget(wrap(compose(enabled: false)));
 
     final button = tester.widget<FilledButton>(

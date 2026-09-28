@@ -109,14 +109,15 @@ class FeedbackComposeFormModel {
   }
 
   /// Validates for submission: reconciles severity enablement with the
-  /// current category (see the class doc), then returns true when the
-  /// form is valid; otherwise marks every enabled control touched
-  /// (surfacing the localized required errors) and returns false.
+  /// current category (see the class doc), then returns whether the form
+  /// is valid.
+  ///
+  /// Showing an invalid form's errors is the view's job, not this: its
+  /// `rejectSubmit` marks every control touched, then focuses the first
+  /// error and brings it into view (#230).
   bool validateForSubmit() {
     syncSeverityEnablement();
-    if (form.valid) return true;
-    form.markAllAsTouched();
-    return false;
+    return form.valid;
   }
 
   /// Builds the hand-off value from the current (valid) form state:
