@@ -1,6 +1,6 @@
 import 'dart:ui' show lerpDouble;
 
-import 'package:flutter/foundation.dart' show lerpDuration;
+import 'package:flutter/foundation.dart' show lerpDuration, listEquals;
 import 'package:flutter/material.dart';
 
 /// Dimensional design tokens (#32): spacing, radii, motion durations, and
@@ -194,6 +194,42 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
 
   /// Long motion duration (e.g. large or emphasized transitions).
   final Duration motionLong;
+
+  /// Every field, in declaration order: the one list [==] and [hashCode] both
+  /// read, so the two cannot disagree about which fields count (#212).
+  ///
+  /// Equality matters because `ThemeData` compares its extensions with `==`.
+  /// Without it, a token set rebuilt with the same values (every
+  /// `ThemeData.lerp` frame builds one) compares unequal by identity, and so
+  /// does any theme holding it.
+  List<Object> get _fields => [
+    spaceXs,
+    spaceSm,
+    spaceMd,
+    spaceLg,
+    spaceXl,
+    spaceXxl,
+    radiusSm,
+    radiusMd,
+    radiusLg,
+    minTapTarget,
+    focusOutlineWidth,
+    contentMaxWidth,
+    paneMaxWidth,
+    breakpointMedium,
+    breakpointExpanded,
+    motionShort,
+    motionMedium,
+    motionLong,
+  ];
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BgeTokens && listEquals(other._fields, _fields);
+
+  @override
+  int get hashCode => Object.hashAll(_fields);
 
   @override
   BgeTokens copyWith({

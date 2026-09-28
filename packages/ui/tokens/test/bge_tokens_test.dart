@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -177,6 +179,67 @@ void main() {
       expect(copy.spaceSm, BgeTokens.standard.spaceSm);
       expect(copy.minTapTarget, BgeTokens.standard.minTapTarget);
       expect(copy.motionLong, BgeTokens.standard.motionLong);
+    });
+  });
+
+  group('BgeTokens equality', () {
+    test('an unchanged copy is equal, with an equal hashCode', () {
+      final copy = BgeTokens.standard.copyWith();
+
+      // A distinct instance, so what follows is structural equality and not
+      // the identity a const `standard` would give for free.
+      expect(copy, isNot(same(BgeTokens.standard)));
+      expect(copy, BgeTokens.standard);
+      expect(copy.hashCode, BgeTokens.standard.hashCode);
+    });
+
+    // One case per field (#212). A field left out of the equality comparison
+    // fails its own case. A new field on `BgeTokens` needs a case here too,
+    // and the test after the loop fails until it has one.
+    const ms = Duration(milliseconds: 1);
+    final changes = <String, BgeTokens Function(BgeTokens)>{
+      'spaceXs': (t) => t.copyWith(spaceXs: t.spaceXs + 1),
+      'spaceSm': (t) => t.copyWith(spaceSm: t.spaceSm + 1),
+      'spaceMd': (t) => t.copyWith(spaceMd: t.spaceMd + 1),
+      'spaceLg': (t) => t.copyWith(spaceLg: t.spaceLg + 1),
+      'spaceXl': (t) => t.copyWith(spaceXl: t.spaceXl + 1),
+      'spaceXxl': (t) => t.copyWith(spaceXxl: t.spaceXxl + 1),
+      'radiusSm': (t) => t.copyWith(radiusSm: t.radiusSm + 1),
+      'radiusMd': (t) => t.copyWith(radiusMd: t.radiusMd + 1),
+      'radiusLg': (t) => t.copyWith(radiusLg: t.radiusLg + 1),
+      'minTapTarget': (t) => t.copyWith(minTapTarget: t.minTapTarget + 1),
+      'focusOutlineWidth': (t) =>
+          t.copyWith(focusOutlineWidth: t.focusOutlineWidth + 1),
+      'contentMaxWidth': (t) =>
+          t.copyWith(contentMaxWidth: t.contentMaxWidth + 1),
+      'paneMaxWidth': (t) => t.copyWith(paneMaxWidth: t.paneMaxWidth + 1),
+      'breakpointMedium': (t) =>
+          t.copyWith(breakpointMedium: t.breakpointMedium + 1),
+      'breakpointExpanded': (t) =>
+          t.copyWith(breakpointExpanded: t.breakpointExpanded + 1),
+      'motionShort': (t) => t.copyWith(motionShort: t.motionShort + ms),
+      'motionMedium': (t) => t.copyWith(motionMedium: t.motionMedium + ms),
+      'motionLong': (t) => t.copyWith(motionLong: t.motionLong + ms),
+    };
+
+    for (final MapEntry(key: field, value: change) in changes.entries) {
+      test('a copy with a different $field is unequal', () {
+        expect(change(BgeTokens.standard), isNot(BgeTokens.standard));
+      });
+    }
+
+    test('has a case for every field BgeTokens declares', () {
+      // Read from the source rather than from another hand-kept list, so a
+      // field missing from both `_fields` and the map above still fails.
+      final source = File(
+        '${Directory.current.path}/lib/src/bge_tokens.dart',
+      ).readAsStringSync();
+      final declared = RegExp(
+        r'^  final \S+ (\w+)(?:;| =)',
+        multiLine: true,
+      ).allMatches(source).map((m) => m[1]!).toSet();
+
+      expect(changes.keys.toSet(), declared);
     });
   });
 
