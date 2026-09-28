@@ -1,3 +1,4 @@
+import 'package:di/di.dart' show replayThenForward;
 import 'package:interfaces/services.dart';
 
 /// Pass-through [ClockService] test double returning the real wall
@@ -20,9 +21,8 @@ class SystemClockService implements ClockService {
   Duration? get skewEstimate => null;
 
   @override
-  Stream<Duration?> watchSkew() => Stream<Duration?>.multi((controller) {
-    controller
-      ..add(null)
-      ..close();
-  });
+  Stream<Duration?> watchSkew() => replayThenForward(
+    current: () => null,
+    updates: () => const Stream.empty(),
+  );
 }

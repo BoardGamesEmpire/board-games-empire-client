@@ -121,11 +121,10 @@ class _FixedClock implements ClockService {
   Duration? get skewEstimate => null;
 
   @override
-  Stream<Duration?> watchSkew() => Stream<Duration?>.multi((controller) {
-    controller
-      ..add(null)
-      ..close();
-  });
+  Stream<Duration?> watchSkew() => replayThenForward(
+    current: () => null,
+    updates: () => const Stream.empty(),
+  );
 }
 
 void main() {

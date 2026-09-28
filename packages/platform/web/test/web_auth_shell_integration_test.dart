@@ -98,15 +98,10 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Stream<AuthState> watchAuthState() {
-    return Stream.multi((controller) {
-      controller.add(_currentState);
-      final sub = _controller.stream.listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: controller.close,
-      );
-      controller.onCancel = sub.cancel;
-    });
+    return replayThenForward(
+      current: () => _currentState,
+      updates: () => _controller.stream,
+    );
   }
 
   void _setState(AuthState next) {
