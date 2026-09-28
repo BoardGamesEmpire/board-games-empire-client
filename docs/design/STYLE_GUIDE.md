@@ -168,6 +168,21 @@ without a tokenized harness.
   that mixes rows *with* prose keeps 480: the prose decides, which is why
   `FeedbackReviewScreen` takes the reading measure and `SettingsScreen` does
   not.
+- Dialogs take `contentMaxWidth` too, from the theme. `BgeTheme` caps every
+  dialog at the reading measure, so a `showDialog` call site sets no width of
+  its own. A dialog is a title, a sentence or two and its buttons: prose, so the
+  prose decides. Left to Flutter, a dialog may grow to the window minus 40dp
+  insets, up to 2480 on a 2560 monitor. Bottom sheets keep Flutter's own 640
+  cap. The cap reaches Flutter's pickers too. The date and time pickers
+  narrow and stay dialogs: in a landscape window the date picker goes from 496
+  to 480 and the time picker from 572, and neither overflows. The calendar form
+  of `showDateRangePicker` is the exception. Flutter builds it as a plain
+  `Dialog` sized to the whole window with no insets, so wherever the window is
+  wider than 480, a phone held landscape included, the cap turns a full-screen
+  picker into a full-height 480 strip. A range picker lifts the cap in its
+  `builder`, by wrapping the child in a `DialogTheme` whose constraints are
+  `const BoxConstraints()`. The app has no picker yet, so check the first one
+  against this.
 - `breakpointMedium` (600) / `breakpointExpanded` (840).
 
 **Measures are caps; breakpoints are thresholds.** A cap is already adaptive —
@@ -176,7 +191,9 @@ and stops short on a monitor with no window-class check. Reach for a breakpoint
 only when a layout should *change form* (rail vs. bottom bar, one pane vs.
 two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
 value today and are still separate tokens: retuning one must not silently move
-the other. Nothing consumes the breakpoints yet — that is #207.
+the other. Nothing consumes the breakpoints yet. The first consumers are
+expected to be the navigation shell (#414), once a section of equal standing
+with home exists, and the first two-pane layout (#46).
 
 ---
 
@@ -388,6 +405,9 @@ legible body text on every surface role.
 - [ ] Measure: `width: BgePageWidth.pane` for rows that are a label plus a
       trailing control; the default 480 for prose, and for a surface mixing
       prose with rows
+- [ ] Dialogs set no width: the theme caps them at the reading measure. A
+      calendar range picker is the exception, and lifts the cap
+- [ ] A breakpoint changes a layout's form, never its width
 - [ ] A list surface passes `semanticChildCount` — the count it currently
       holds, grown as pages arrive, never left null on a known list
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals

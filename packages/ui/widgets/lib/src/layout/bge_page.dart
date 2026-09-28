@@ -13,18 +13,6 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// one starves the content above it. Half leaves the content at least half.
 const double _footerMaxViewportFraction = 0.5;
 
-/// Which measure caps a [BgePage]'s content column.
-enum BgePageWidth {
-  /// A reading measure ([BgeTokens.contentMaxWidth]). Forms and prose — the
-  /// default, and correct for most screens.
-  form,
-
-  /// A wider measure ([BgeTokens.paneMaxWidth]) for list and pane surfaces,
-  /// whose rows are a label plus a trailing control rather than a line to be
-  /// read. Still capped: no surface stretches to the width of a monitor.
-  pane,
-}
-
 /// The standard page scaffold: a scrollable, width-constrained, centered
 /// content column inside a [Scaffold] (#165).
 ///
@@ -256,10 +244,7 @@ class BgePage extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final resolvedPadding = padding ?? EdgeInsets.all(tokens.spaceLg);
 
-    final maxWidth = switch (width) {
-      BgePageWidth.form => tokens.contentMaxWidth,
-      BgePageWidth.pane => tokens.paneMaxWidth,
-    };
+    final maxWidth = width.resolve(tokens);
 
     Widget content = ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),

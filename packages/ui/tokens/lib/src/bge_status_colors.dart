@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 /// Colors for the app's **domain** states — sync, connectivity, ownership —
@@ -107,6 +108,22 @@ class BgeStatusColors extends ThemeExtension<BgeStatusColors> {
     BgeStatus.offline => offline,
     BgeStatus.conflict => conflict,
   };
+
+  /// Every field, in declaration order: the one list [==] and [hashCode] both
+  /// read, as on `BgeTokens` (#212).
+  ///
+  /// `ThemeData` compares its extensions with `==`, and `BgeTheme` derives a
+  /// fresh set for every theme it builds. Without it, two themes built from
+  /// one palette compare unequal.
+  List<Object> get _fields => [synced, pending, offline, conflict, onStatus];
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BgeStatusColors && listEquals(other._fields, _fields);
+
+  @override
+  int get hashCode => Object.hashAll(_fields);
 
   @override
   BgeStatusColors copyWith({

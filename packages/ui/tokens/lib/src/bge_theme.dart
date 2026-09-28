@@ -6,6 +6,23 @@ import 'package:ui_tokens/src/bge_status_colors.dart';
 import 'package:ui_tokens/src/bge_tokens.dart';
 import 'package:ui_tokens/src/bge_typography.dart';
 
+/// The minimum dialog width, where the window has room for it: Flutter's own
+/// default, restated (#207).
+///
+/// `DialogThemeData.constraints` replaces Flutter's default
+/// `BoxConstraints(minWidth: 280)` rather than adding to it, so a theme that
+/// caps dialog width also drops the minimum unless it says it again. Without
+/// it, a short confirmation shrinks to the width of its title. In a window
+/// narrower than 360 (the minimum plus the 40dp insets), it gives way to the
+/// window.
+///
+/// Not a token: it is not a width decision this design system makes, and
+/// nobody is meant to tune it. Named rather than inline for the reason
+/// `BgeTextField`'s semantics anchor is: a literal would need a file-wide
+/// exemption from the enforcement test's width rule, which would then wave
+/// through every later literal width in this file.
+const double _dialogMinWidth = 280;
+
 /// The four application themes (#32), built from a [BgePalette] with the
 /// theme-level accessibility baseline applied uniformly.
 ///
@@ -28,6 +45,13 @@ import 'package:ui_tokens/src/bge_typography.dart';
 ///   default tint drops selected text below the floor in all four schemes:
 ///   under 3:1 in light and dark, and under the 4.5:1 the high-contrast pair
 ///   is held to. See [BgeSelection] for both floors and what they exclude.
+/// - **Dialogs at the reading measure** — capped at
+///   [BgeTokens.contentMaxWidth], because a dialog is a title, a sentence or
+///   two and its buttons: prose. In the theme so that no dialog has to
+///   remember it. Left unset, a dialog may grow to the window minus 40dp
+///   insets, up to 2480dp on a 2560 monitor. The one Flutter dialog the cap
+///   is wrong for is `showDateRangePicker` in its calendar form, which is
+///   built to fill the window; the style guide says how it lifts the cap.
 /// - **Dimensional tokens** — [BgeTokens.standard] and [BgeStatusColors] are
 ///   installed as `ThemeExtension`s on every theme.
 ///
@@ -104,6 +128,14 @@ abstract final class BgeTheme {
       // the AAA large-text bar. See [BgeSelection].
       textSelectionTheme: TextSelectionThemeData(
         selectionColor: BgeSelection.colorFor(scheme),
+      ),
+      // #207: the reading measure, from the theme rather than at each call
+      // site. See the class doc.
+      dialogTheme: DialogThemeData(
+        constraints: BoxConstraints(
+          minWidth: _dialogMinWidth,
+          maxWidth: tokens.contentMaxWidth,
+        ),
       ),
       extensions: [tokens, BgeStatusColors.forScheme(scheme)],
     );
