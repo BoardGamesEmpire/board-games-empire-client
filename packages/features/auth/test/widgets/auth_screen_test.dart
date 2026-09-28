@@ -531,9 +531,8 @@ void main() {
         );
       });
 
-      testWidgets('a registration failure is titled with its own operation', (
-        tester,
-      ) async {
+      testWidgets('a registration failure is titled with its own operation, '
+          'in words true of every registration failure', (tester) async {
         final states = StreamController<AuthBlocState>();
         addTearDown(states.close);
         whenListen(mockBloc, states.stream, initialState: const AuthInitial());
@@ -542,14 +541,17 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text("Don't have an account? Register"));
         await tester.pumpAndSettle();
-        states.add(const AuthFailureNetwork());
+        // The failure a title is easiest to get wrong for: the server
+        // accepted the details and withheld only the session, so the account
+        // may exist, and "Couldn't create account" would say it does not.
+        states.add(const AuthFailureSessionNotGranted());
         await tester.pumpAndSettle();
 
         final banner = find.byKey(AuthScreen.failureBannerKey);
         expect(
           find.descendant(
             of: banner,
-            matching: find.text("Couldn't create account"),
+            matching: find.text("Couldn't finish signing up"),
           ),
           findsOneWidget,
         );
@@ -562,8 +564,8 @@ void main() {
           'not even for a frame', (tester) async {
         // The banner lives in each form now, so a switch unmounts one and
         // mounts the other. A failure still in the bloc when the registration
-        // form first builds would render there under "Couldn't create
-        // account", and announce itself as new. A real bloc, because the
+        // form first builds would render there under "Couldn't finish
+        // signing up", and announce itself as new. A real bloc, because the
         // mock only records that the clear was dispatched — what matters is
         // that it lands before the next frame.
         final repo = MockAuthRepository();

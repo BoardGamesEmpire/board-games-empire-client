@@ -33,13 +33,17 @@ class BgeFormFailure {
   /// | --- | --- |
   /// | Add a server | "Couldn't add server" |
   /// | Sign in | "Couldn't sign in" |
-  /// | Create an account | "Couldn't create account" |
+  /// | Create an account | "Couldn't finish signing up" |
   /// | Create a household | none |
   ///
   /// Always titling was the uniform option, but it adds a redundant line to
   /// the tallest thing on a small screen: a titled banner measured 240dp at
   /// 1.0 text scale (#228). Never titling was the shortest, and the one that
   /// leaves auth's bare causes unexplained.
+  ///
+  /// A title has to be true of every failure the operation can report.
+  /// "Couldn't create account" was not: a server can accept the details and
+  /// withhold only the session, so the account may well exist.
   ///
   /// **Required, and nullable.** Every call site passes it, `null` included,
   /// so leaving a failure untitled is a decision someone wrote down rather
