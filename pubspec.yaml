@@ -159,6 +159,14 @@ melos:
       run: dart run tool/derive_palette.dart
       description: Re-derive the palette and check every contrast target and the ember/error hue separation. Exits 1 on failure. Requires a resolved workspace.
 
+    # ── Test file names (#197) ────────────────────────────────────
+    # `flutter test` runs only `*_test.dart`, so a suite under `test/`
+    # named anything else is skipped without a word. models' achievement
+    # tests were, until #197. CI runs this on every PR.
+    check:test-files:
+      run: dart run tool/check_test_files.dart
+      description: Fail if a Dart file under test/ declares a main but is not named *_test.dart, so flutter test would never run it.
+
     # ── Formatting (#173) ─────────────────────────────────────────
     # The work is in tool/format_workspace.dart, not inline here, for the
     # same reason check:constraints delegates to a script: CI runs the

@@ -109,6 +109,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
 | `check:constraints` | Verify the workspace pubspec invariants |
 | `check:palette` | Re-derive the palette and check its contrast and hue targets |
+| `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
 | `schema:dump` | Refresh the committed Drift schema snapshots |
 | `web` / `web:proxy` / `web:server` | Web dev server, dev proxy, or both together |
 | `mobile` / `desktop-macos` / `desktop-linux` / `desktop-windows` | Run an app |
@@ -187,17 +188,19 @@ CI diffs the snapshots against a fresh dump and fails if they are stale.
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on
-pushes to `master`, in seven jobs:
+pushes to `master`, in nine jobs:
 
 | Job | Gate |
 | --- | --- |
 | `constraints` | `check_sdk_constraints.dart --self-test`, then the real check |
 | `palette` | `derive_palette.dart` re-derives the palette; every contrast target and the ember/error hue separation must hold |
 | `format` | `dart format --set-exit-if-changed` over the workspace source |
+| `test-files` | `check_test_files.dart --self-test`, then the real check |
 | `generate` | Codegen succeeds; Drift schema snapshots are not stale. Publishes generated sources as an artifact the later jobs restore. |
 | `analyze` | One root `dart analyze --fatal-infos .` across the workspace |
 | `discover-tests` | Builds the test matrix by finding `test/` directories |
 | `test` | One job per package, golden tags excluded |
+| `test-web` | The browser-only (`@TestOn('browser')`) suites in Chrome, for the packages that have them |
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline
 so a broken melos script cannot take the build down with it. If you change a
