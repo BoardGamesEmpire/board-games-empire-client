@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -62,13 +64,20 @@ void main() {
   /// Pumps the app at the home drawer with a household cache holding one
   /// household. [withRepository] false is the signed-out native state and
   /// web until its user tier lands (#137).
+  ///
+  /// [laterCache] carries what the cache says after that first answer, to
+  /// every subscriber — for a household that disappears under an open
+  /// screen.
   Future<void> pumpHome(
     WidgetTester tester, {
     bool withRepository = true,
+    Stream<List<Household>>? laterCache,
   }) async {
     final repository = _MockHouseholdRepository();
-    when(repository.watchHouseholds)
-        .thenAnswer((_) => Stream<List<Household>>.value([_household(_id)]));
+    when(repository.watchHouseholds).thenAnswer((_) async* {
+      yield [_household(_id)];
+      if (laterCache != null) yield* laterCache;
+    });
     when(
       () => repository.watchMembers(any()),
     ).thenAnswer((_) => Stream<List<HouseholdMember>>.value([_member('u-me')]));
@@ -139,6 +148,34 @@ void main() {
       expect(find.byType(HouseholdListScreen), findsOneWidget);
     });
 
+    testWidgets('the not-found way back returns to the list, with home still '
+        'beneath it (#308)', (tester) async {
+      // Purge (#268) can delete a household under an open detail screen,
+      // which is how the ordinary drawer path reaches not-found. That
+      // surface's button used to `go` to the list, replacing the whole stack
+      // with it: no back button, no drawer, and on desktop no way out.
+      final cache = StreamController<List<Household>>.broadcast();
+      addTearDown(cache.close);
+      await pumpHome(tester, laterCache: cache.stream);
+      await openDetailFromTheList(tester);
+      expect(find.text('Sunday Crew'), findsOneWidget);
+
+      cache.add(const []);
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.notFoundBackKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
+      expect(find.byType(HouseholdDetailScreen), findsNothing);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
     testWidgets('reaches the detail screen with no HouseholdRemoteDataSource '
         '— the read never calls the server (#269 D4)', (tester) async {
       // Nothing in this file registers a remote. Reinstating that
@@ -154,8 +191,8 @@ void main() {
         'is absent (#135)', (tester) async {
       await pumpHome(tester, withRepository: false);
 
-      // The drawer entry is gated too, so navigate the route directly —
-      // a restored route or a deep link arrives this way.
+      // The drawer entry is gated too, so navigate the route directly, as
+      // a consumed deep link will (#243).
       final router =
           tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
               as GoRouter;

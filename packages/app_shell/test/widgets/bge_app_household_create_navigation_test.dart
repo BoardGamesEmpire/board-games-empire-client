@@ -50,18 +50,16 @@ HouseholdMember _member(String householdId) => HouseholdMember(
 /// `create_household_screen_test.dart` cannot reach, because asserting "back
 /// lands on the list, never on the spent form" needs a real back stack.
 ///
-/// Both of #271's route criteria are here, and they are different mechanisms
-/// rather than one:
+/// Both of #271's route criteria are here, and since #308 they are one
+/// mechanism reached two ways:
 ///
-/// - **The drawer path** (drawer → list → FAB → create) has a list route
-///   beneath the form, so the replace leaves it there and back pops onto it.
-/// - **Direct entry** (a restored route, a typed URL on web, a deep link
-///   later) has nothing beneath. go_router's `pushReplacement` degrades to a
-///   plain `go` when removing the top match empties the stack
-///   (`parser.dart:300-312`), so the detail screen becomes the base location
-///   and the *app-bar* back — `ctx.go(AppRoutes.household)`, wired by #270 —
-///   is what lands on the list. A system or browser back from there leaves
-///   the app: pre-existing #270 behavior, deliberately out of scope (#271 D3).
+/// - **The drawer path** (drawer → list → FAB → create) has the pushed list
+///   route beneath the form, so the replace leaves it there and back pops
+///   onto it, with home still beneath that.
+/// - **Direct entry** (a `go` to the create route; nothing in the app does
+///   this today) has the list beneath too, because create is the list's
+///   child: go_router builds the parent for a `go`. The replace swaps create
+///   for the detail screen within that stack, and back pops onto the list.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late Storage storage;
@@ -218,12 +216,12 @@ void main() {
       );
     });
 
-    testWidgets('direct entry lands on the detail screen, and its back '
-        'affordance goes to the list', (tester) async {
+    testWidgets('direct entry lands on the detail screen, and back goes to '
+        'the list', (tester) async {
       await pumpApp(tester);
 
-      // A restored route or a typed URL arrives this way, with no list
-      // route beneath — the case #162 was reported against.
+      // Nothing pushed first — the case #162 was reported against, when
+      // this left the new household's screen alone on the stack.
       routerOf(tester).go(AppRoutes.householdCreate);
       await tester.pumpAndSettle();
       expect(find.byType(CreateHouseholdScreen), findsOneWidget);
@@ -234,12 +232,13 @@ void main() {
       expect(find.byType(CreateHouseholdScreen), findsNothing);
       expect(find.text('Sunday Crew'), findsOneWidget);
 
-      // The screen supplies this itself: with nothing beneath, the app bar
-      // would imply no leading button at all (#271).
-      await tester.tap(find.byKey(HouseholdDetailScreen.backKey));
+      // The app bar's own back button: the list built beneath the create
+      // route is still there once the form has been replaced (#308).
+      await tester.pageBack();
       await tester.pumpAndSettle();
 
       expect(find.byType(HouseholdListScreen), findsOneWidget);
+      expect(find.byType(CreateHouseholdScreen), findsNothing);
     });
 
     testWidgets('a queued household navigates identically, on its local id', (

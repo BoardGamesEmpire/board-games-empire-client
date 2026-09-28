@@ -693,9 +693,11 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<HouseholdRepository>(),
       hydration: hydration,
       onRetry: _householdRetry(container),
-      // Not a pop: this route can be entered cold (a restored route, and
-      // the invite deep link later), where there is nothing beneath it.
-      onBack: (ctx) => ctx.go(AppRoutes.household),
+      // A pop, not a `go` to the list (#308). The route is the list's child,
+      // so there is always a list beneath it: the pushed one on the drawer
+      // path, where a `go` would also have dropped home, and the one
+      // go_router builds for a `go` straight here.
+      onBack: (ctx) => ctx.pop(),
     );
   }
 
@@ -742,13 +744,10 @@ class _BgeAppState extends State<BgeApp> {
       // that is for swapping a route for a variant of itself, not for
       // substituting an unrelated screen.
       //
-      // On the drawer path (list → FAB → create) the list route is still
-      // beneath, so back pops onto it. On direct entry the stack is one deep
-      // and go_router degrades this to a plain `go`, making the detail screen
-      // the base location; its own back affordance
-      // (`ctx.go(AppRoutes.household)`, above) is what reaches the list
-      // there. A system back from that state leaves the app, as it already
-      // does for a cold-entered detail route (#271 D3).
+      // Either way in, the list route is beneath the form, so back pops onto
+      // it: the pushed one on the drawer path (list → FAB → create), and the
+      // one go_router builds for a `go` straight to the create route, which
+      // is the list's child (#308).
       onCreated: (ctx, householdId) {
         // #300 D3/D9: a create makes the local set stale by definition, so
         // the next entry to the list re-hydrates rather than waiting out
@@ -1125,7 +1124,7 @@ class _BgeAppState extends State<BgeApp> {
         final reporter = widget.feedbackReporter;
         // #302: mounted here, above the Navigator, so it survives every
         // route change. The screens that read a re-hydrated cache (the
-        // household list and detail) are top-level routes outside the auth
+        // household list and detail) are routes outside the auth
         // ShellRoute, so a trigger inside that shell would be unmounted on
         // exactly the screen showing "couldn't refresh". The widget tracks
         // the active server itself; wrapping this subtree in a

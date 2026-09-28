@@ -832,11 +832,11 @@ void main() {
 
     testWidgets('keeps triggering after the app navigates to a route outside '
         'the auth shell', (tester) async {
-      // The household list and detail are top-level routes, NOT children of
-      // the auth ShellRoute — and the list is the screen showing "couldn't
-      // refresh". A trigger mounted inside that shell would be unmounted
-      // here, so the one screen that needs the re-hydrate would never get
-      // one. It lives above the router for this reason.
+      // The household routes sit outside the auth ShellRoute, NOT inside it
+      // — and the list is the screen showing "couldn't refresh". A trigger
+      // mounted inside that shell would be unmounted here, so the one
+      // screen that needs the re-hydrate would never get one. It lives
+      // above the router for this reason.
       final repo = FakeAuthRepository(initialSession: sampleSession());
       final rehydrator = _SpyRehydrator();
       final households = _MockHouseholdRepository();
@@ -870,9 +870,9 @@ void main() {
       // The invariant, stated structurally rather than by walking to a
       // route that drops the shell: the trigger is an ANCESTOR of the
       // router's Navigator. Mounted inside the auth ShellRoute it would be
-      // a descendant, and every `go` to a top-level route — the detail
-      // screen's own back affordance, a restored route, a deep link —
-      // would unmount it for the rest of the session.
+      // a descendant, and every `go` to a top-level route — a consumed deep
+      // link, once #243 lands — would unmount it for the rest of the
+      // session.
       expect(
         find.ancestor(
           of: find.byType(Navigator).last,

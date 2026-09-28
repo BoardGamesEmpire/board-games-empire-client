@@ -467,8 +467,8 @@ void main() {
 
     testWidgets('direct entry (no route beneath) reports the creation like any '
         'other — the fix for #162', (tester) async {
-      // Reachable on web, where /household/create is a real URL that can be
-      // typed or reloaded, and via deep links (#10). This used to be the
+      // The app's route table always puts the list beneath this screen now
+      // (#308), but the screen does not lean on that. This used to be the
       // defect: `maybePop` no-ops on a root route, so the user was told the
       // household was created while still sitting on the submitted form.
       //

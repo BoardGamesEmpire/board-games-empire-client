@@ -145,6 +145,34 @@ void main() {
       expect(find.byKey(_detailMarkerKey), findsNothing);
     });
 
+    testWidgets('entered cold, it has the list beneath it to go back to '
+        '(#308)', (tester) async {
+      // The route table's half of the detail screen's back button, which
+      // is a plain pop: a `go` here, with nothing pushed first, still builds
+      // the list underneath. If the detail route ever stops being the list's
+      // child, this is what fails — not a user stranded on it.
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        householdListBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _listMarkerKey)),
+        householdDetailBuilder: (_, _) =>
+            const Scaffold(body: SizedBox(key: _detailMarkerKey)),
+      );
+
+      router.go(AppRoutes.householdDetailOf('hh_abc123'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_detailMarkerKey), findsOneWidget);
+      expect(router.canPop(), isTrue);
+
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_listMarkerKey), findsOneWidget);
+      expect(find.byKey(_detailMarkerKey), findsNothing);
+    });
+
     testWidgets('an id needing encoding survives the round trip', (
       tester,
     ) async {

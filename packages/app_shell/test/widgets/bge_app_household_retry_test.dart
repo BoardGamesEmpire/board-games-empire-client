@@ -4,6 +4,7 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
@@ -233,6 +234,32 @@ void main() {
       expect(rehydrator.passes, 2);
     });
 
+    testWidgets('entering the detail route cold fires the pass once, from '
+        'the list beneath it (#308)', (tester) async {
+      // The detail route is the list's child, so a `go` straight to it
+      // builds the list underneath — and the list's provider is where the
+      // trigger lives. Once, not twice: the detail screen has no trigger
+      // of its own, and popping back onto the list reveals the page that
+      // already fired rather than building a new one.
+      final rehydrator = _RecordingRehydrator();
+      await pumpHome(tester, rehydrator: rehydrator);
+
+      final router =
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+      router.go(AppRoutes.householdDetailOf(_id));
+      await tester.pumpAndSettle();
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+
+      expect(rehydrator.passes, 1);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
+      expect(rehydrator.passes, 1);
+    });
+
     testWidgets('popping back from the detail screen does not re-fire', (
       tester,
     ) async {
@@ -251,9 +278,7 @@ void main() {
       await tester.tap(find.byKey(HouseholdListScreen.rowKey(_id)));
       await tester.pumpAndSettle();
 
-      // The ordinary pushed path pops, so this is the app bar's own back —
-      // `HouseholdDetailScreen.backKey` is the stranded-entry affordance and
-      // is deliberately absent here.
+      // The app bar's own back, which pops onto the list route beneath.
       await tester.pageBack();
       await tester.pumpAndSettle();
 
