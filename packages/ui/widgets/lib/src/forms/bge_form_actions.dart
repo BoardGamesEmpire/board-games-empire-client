@@ -92,8 +92,11 @@ class BgeFormFailure {
 /// ## What it owns
 ///
 /// - **The gap** between outcome and action: one medium step.
-/// - **The measure**: the banner is exactly as wide as the action, whether or
-///   not the column around it stretches its children.
+/// - **The measure**: the banner and the action both take the unit's full
+///   width, whether or not the column around it stretches its children. An
+///   action that would size to its label, like `BgeSubmitButton(expand:
+///   false)`, is widened too: a form's primary action spans its column, as
+///   [BgeSubmitButton.expand] already assumes.
 /// - **The title rule**, through [BgeFormFailure.title].
 ///
 /// ## What it does not own
