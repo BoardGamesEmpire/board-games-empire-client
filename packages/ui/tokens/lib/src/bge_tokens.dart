@@ -154,7 +154,8 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// Keeps forms and prose at a comfortable measure on desktop and web
   /// instead of stretching them across a 2560px monitor. `BgePage`'s default;
   /// this literal was previously copy-pasted into eleven screens. List and
-  /// pane surfaces take [paneMaxWidth] instead.
+  /// pane surfaces take [paneMaxWidth] instead. Dialogs take this one, through
+  /// the dialog theme `BgeTheme` installs (#207).
   final double contentMaxWidth;
 
   /// Maximum width of a page's primary content column on *list and pane*
@@ -173,13 +174,21 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   final double paneMaxWidth;
 
   /// Width at or above which a layout may use its medium form (logical px).
+  ///
+  /// A threshold, never a width: see [breakpointExpanded].
   final double breakpointMedium;
 
   /// Width at or above which a layout may use its expanded form (logical px).
   ///
   /// Breakpoints exist because desktop and browser are first-class targets
-  /// here, not an afterthought — a phone-shaped layout stretched to a desktop
-  /// window is the most common way a cross-platform Flutter app looks wrong.
+  /// here, not an afterthought. The measures ([contentMaxWidth],
+  /// [paneMaxWidth]) already stop a phone-shaped layout from stretching across
+  /// a desktop window, so a breakpoint never picks a width. It marks where a
+  /// layout should become a different one: a navigation rail, or a list with
+  /// its detail beside it.
+  ///
+  /// Nothing reads the breakpoints yet. The first readers are expected to be
+  /// the navigation shell (#414) and the first two-pane layout (#46).
   final double breakpointExpanded;
 
   // ── Motion durations ───────────────────────────────────────────────
