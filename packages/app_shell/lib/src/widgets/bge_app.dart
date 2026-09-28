@@ -487,12 +487,13 @@ class _BgeAppState extends State<BgeApp> {
 
     // Only surface households where the household scope is actually
     // installed — the same guard _buildHouseholdListRoute applies.
-    // Otherwise the entry would dead-end on the (back-button-less)
-    // NotYetAvailableScreen. Post-#135 the household repository lives in
-    // the per-USER session scope, so on native this is true exactly while
-    // a user session is active — which home's own auth gating already
-    // implies. Web's user tier lands the same repository (#137), so the
-    // same "exactly while a session is active" reading holds there.
+    // Otherwise the entry would open NotYetAvailableScreen: a menu item
+    // for a screen that cannot appear. Post-#135 the household repository
+    // lives in the per-USER session scope, so on native this is true
+    // exactly while a user session is active — which home's own auth
+    // gating already implies. Web's user tier lands the same repository
+    // (#137), so the same "exactly while a session is active" reading holds
+    // there.
     //
     // The repository ALONE (#269 D4): this entry opens the list, which
     // renders from the local cache. A missing HouseholdRemoteDataSource
@@ -777,10 +778,8 @@ class _BgeAppState extends State<BgeApp> {
   /// Not logged, unlike [_buildServerAddRoute]: this route is *pushed*
   /// from the home menu rather than pinned by a bootstrap redirect, so the
   /// fallback is a screen the user chose to open and the app is still
-  /// working. That said, [NotYetAvailableScreen] carries no app bar and so
-  /// no back button, which on desktop (no system back gesture, no hardware
-  /// key) leaves no visible exit — tracked separately rather than papered
-  /// over with a log here.
+  /// working — and [NotYetAvailableScreen]'s app bar gives it the same back
+  /// button as the real flow (#308).
   Widget? _buildFeedbackRoute(BuildContext context) {
     final feedbackService = _rootService<FeedbackService>();
     if (feedbackService == null) return null;
