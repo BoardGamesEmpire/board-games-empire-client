@@ -108,9 +108,9 @@ void main() {
 
   group('while the cache is filling', () {
     testWidgets('shows a spinner rather than a not-found', (tester) async {
-      // A deep link or a restored route can arrive before the drain has
-      // filled the cache. "We couldn't find this household" shown to
-      // someone who has it is the failure #267 exists to fix.
+      // A deep link can arrive before the drain has filled the cache. "We
+      // couldn't find this household" shown to someone who has it is the
+      // failure #267 exists to fix.
       await tester.pumpWidget(harness());
       hydration.add(HouseholdHydrationState.running);
       households.add(const []);
@@ -321,7 +321,8 @@ void main() {
     });
 
     testWidgets('offers a way back to the list', (tester) async {
-      // The route can be entered cold, with nothing beneath it to pop to.
+      // The body's own button, beside the app bar's back: on this surface
+      // leaving is the likely intent.
       var backs = 0;
       await tester.pumpWidget(harness(onBack: (_) => backs++));
       hydration.add(HouseholdHydrationState.refreshed);
@@ -419,77 +420,13 @@ void main() {
     });
   });
 
-  group('the way back off a route with nothing beneath it (#271)', () {
-    // The not-found surface has always carried its own way out. No other
-    // surface did: `AppBar` implies a leading button only when the Navigator
-    // can pop, so a household reached with nothing beneath it — a restored
-    // route, a create that replaced the form it was submitted from — left
-    // the user with no exit at all. One rule now covers all four.
-
-    testWidgets('a found household supplies one when the Navigator has '
-        'nothing to pop', (tester) async {
-      var backs = 0;
-      await tester.pumpWidget(harness(onBack: (_) => backs++));
-      await settleWith(tester);
-
-      await tester.tap(find.byKey(HouseholdDetailScreen.backKey));
-      await tester.pump();
-
-      expect(backs, 1);
-    });
-
-    testWidgets('supplies none where the caller offered no way back', (
-      tester,
-    ) async {
-      await tester.pumpWidget(harness());
-      await settleWith(tester);
-
-      expect(find.byKey(HouseholdDetailScreen.backKey), findsNothing);
-      // And nothing else stands in for it: an app bar with no pop available
-      // and no `onBack` has no leading button to render.
-      expect(find.byType(BackButton), findsNothing);
-    });
-
-    testWidgets('a read that fails under a stranded user is not a dead end', (
-      tester,
-    ) async {
-      // The case that makes this more than symmetry. The error state is
-      // terminal and reachable *after* a household has rendered — the bloc
-      // answers a stream failure unconditionally — so a user who arrived
-      // with nothing beneath them could be left on a page with no app-bar
-      // button, no body action and, on desktop, no system back.
-      var backs = 0;
-      await tester.pumpWidget(harness(onBack: (_) => backs++));
-      await settleWith(tester);
-      expect(find.text('Sunday Crew'), findsOneWidget);
-
-      households.addError(StateError('the cache read broke'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(HouseholdDetailScreen.errorKey), findsOneWidget);
-
-      await tester.tap(find.byKey(HouseholdDetailScreen.backKey));
-      await tester.pump();
-
-      expect(backs, 1);
-    });
-
-    testWidgets('nor is a first read that has not answered yet', (
-      tester,
-    ) async {
-      await tester.pumpWidget(harness(onBack: (_) {}));
-      await tester.pump();
-
-      expect(find.byKey(HouseholdDetailScreen.loadingKey), findsOneWidget);
-      expect(find.byKey(HouseholdDetailScreen.backKey), findsOneWidget);
-    });
-
-    testWidgets('leaves the ordinary pop alone where a route sits beneath', (
-      tester,
-    ) async {
-      // The pushed-from-a-list-row path. Substituting `onBack` here would
-      // trade a real pop, and its animation, for a `go` that rebuilds the
-      // stack underneath the user.
-      var backs = 0;
+  group('pushed over another route, every surface has a way back', () {
+    // The app's route table always puts the list beneath this screen
+    // (#308), and the app bar's back button is the way back to it. Every
+    // surface is titled so that it has one. The error surface is the case
+    // that matters most: it can replace a household that already rendered,
+    // and on desktop there is nothing else to press.
+    Future<void> pushDetail(WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: BgeTheme.light(),
@@ -505,7 +442,6 @@ void main() {
                         householdId: _id,
                         repository: repository,
                         hydration: hydration.stream,
-                        onBack: (_) => backs++,
                       ),
                     ),
                   ),
@@ -517,18 +453,47 @@ void main() {
         ),
       );
       await tester.tap(find.text('open'));
-      // A bare pump, not pumpAndSettle: the first-read spinner animates
-      // forever, so the cache has to land before anything can settle.
+      // Fixed pumps, not pumpAndSettle: the first-read spinner animates
+      // forever. One second covers the push transition.
       await tester.pump();
-      await settleWith(tester);
+      await tester.pump(const Duration(seconds: 1));
+    }
 
-      expect(find.byKey(HouseholdDetailScreen.backKey), findsNothing);
-
+    Future<void> expectBackLeaves(WidgetTester tester) async {
       await tester.pageBack();
       await tester.pumpAndSettle();
 
-      expect(backs, 0, reason: 'the Navigator popped; onBack was not needed');
       expect(find.byType(HouseholdDetailScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    }
+
+    testWidgets('while the first read has not answered', (tester) async {
+      await pushDetail(tester);
+      expect(find.byKey(HouseholdDetailScreen.loadingKey), findsOneWidget);
+
+      await expectBackLeaves(tester);
+    });
+
+    testWidgets('once the household has rendered', (tester) async {
+      await pushDetail(tester);
+      await settleWith(tester);
+      expect(find.text('Sunday Crew'), findsOneWidget);
+
+      await expectBackLeaves(tester);
+    });
+
+    testWidgets('after a read fails under a household that had rendered', (
+      tester,
+    ) async {
+      await pushDetail(tester);
+      await settleWith(tester);
+      expect(find.text('Sunday Crew'), findsOneWidget);
+
+      households.addError(StateError('the cache read broke'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.errorKey), findsOneWidget);
+
+      await expectBackLeaves(tester);
     });
   });
 

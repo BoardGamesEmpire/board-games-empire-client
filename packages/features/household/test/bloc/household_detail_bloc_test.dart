@@ -150,10 +150,10 @@ void main() {
     );
 
     test('an absent household mid-hydrate is loading, not not-found', () async {
-      // The same distinction #269 D1 draws for the list, for the same
-      // reason: a deep link or a restored route can arrive while the cache
-      // is still filling, and "we couldn't find this household" shown to
-      // someone who has it is the failure #267 exists to fix.
+      // The same distinction #269 draws for the list, for the same reason:
+      // a deep link can arrive while the cache is still filling, and "we
+      // couldn't find this household" shown to someone who has it is the
+      // failure #267 exists to fix.
       final bloc = build();
       addTearDown(bloc.close);
 

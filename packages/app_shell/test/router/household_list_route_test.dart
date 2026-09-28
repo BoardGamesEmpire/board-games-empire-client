@@ -98,11 +98,12 @@ void main() {
       expect(find.byKey(_listMarkerKey), findsOneWidget);
     });
 
-    testWidgets('is a different route from household-create, not a prefix '
-        'match for it', (tester) async {
-      // `/household` and `/household/create` differ by one segment. A
-      // route table that matched the list for both would silently retire
-      // the create flow the FAB pushes.
+    testWidgets('answers only for itself — the create path shows the create '
+        'flow, with the list beneath it', (tester) async {
+      // `/household/create` is the list's child (#308), so the list is
+      // built for it too, offstage beneath the form. What must never happen
+      // is the list answering for the path: that would silently retire the
+      // create flow the FAB pushes.
       final router = await pumpRouter(
         tester,
         initialState: const AppBootstrapReady(),
@@ -117,6 +118,7 @@ void main() {
 
       expect(find.byKey(_createMarkerKey), findsOneWidget);
       expect(find.byKey(_listMarkerKey), findsNothing);
+      expect(find.byKey(_listMarkerKey, skipOffstage: false), findsOneWidget);
     });
   });
 }

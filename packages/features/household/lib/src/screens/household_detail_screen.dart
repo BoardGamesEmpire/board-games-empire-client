@@ -66,10 +66,6 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// control on one screen, in whichever place the screen currently is.
   static const Key refreshRetryKey = Key('household_detail.refresh_retry');
 
-  /// Key on the app-bar back button this screen supplies for itself when the
-  /// Navigator has nothing to pop (#271).
-  static const Key backKey = Key('household_detail.back');
-
   /// Key on the failed-read surface.
   static const Key errorKey = Key('household_detail.error');
 
@@ -93,9 +89,10 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// as settled rather than as forever-loading (#269 D1).
   final Stream<HouseholdHydrationState>? hydration;
 
-  /// Returns to the household list from the not-found state, where the
-  /// back button is not enough on its own: this route can be entered
-  /// directly by deep link or a restored route, with nothing beneath it.
+  /// Returns to the household list from the not-found state, as that
+  /// surface's primary action: with no household to show, leaving is the
+  /// likely intent, so it is offered in the body rather than left to the
+  /// app bar's back button alone. Null offers no such button.
   ///
   /// Called with this screen's own context, mirroring the list's
   /// `onCreate` — the feature package does not know the route table.
@@ -150,12 +147,10 @@ class _HouseholdDetailView extends StatelessWidget {
         return switch (state) {
           HouseholdDetailLoading() => _MessagePage(
             title: l10n.householdListTitle,
-            onBack: onBack,
             child: _Loading(message: l10n.householdDetailLoading),
           ),
           HouseholdDetailError() => _MessagePage(
             title: l10n.householdListTitle,
-            onBack: onBack,
             child: BgeInlineBanner(
               key: HouseholdDetailScreen.errorKey,
               tone: BgeBannerTone.error,
@@ -169,7 +164,6 @@ class _HouseholdDetailView extends StatelessWidget {
           ),
           HouseholdDetailReady() => _ReadyPage(
             state: state,
-            onBack: onBack,
             canRetry: canRetry,
           ),
         };
@@ -180,15 +174,12 @@ class _HouseholdDetailView extends StatelessWidget {
 
 /// The household itself.
 class _ReadyPage extends StatelessWidget {
-  const _ReadyPage({required this.state, this.onBack, this.canRetry = false});
+  const _ReadyPage({required this.state, this.canRetry = false});
 
   final HouseholdDetailReady state;
 
   /// Whether a retry can be offered — see [HouseholdDetailScreen.onRetry].
   final bool canRetry;
-
-  /// The way out when the app bar cannot imply one — see [build].
-  final void Function(BuildContext context)? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -198,11 +189,10 @@ class _ReadyPage extends StatelessWidget {
     final hasDescription = description != null && description.isNotEmpty;
 
     return BgePage(
-      // The household's own name, not a generic one: this route can be
-      // arrived at cold from a deep link, and the title is the first thing
-      // that says where you landed.
+      // The household's own name, not a generic one: the title is the first
+      // thing that says where you landed, and the invite deep link (#243)
+      // will land here without the user having walked past the list.
       title: Text(state.household.name),
-      leading: _strandedBackButton(context, onBack),
       width: BgePageWidth.pane,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -336,9 +326,8 @@ class _NotFoundPage extends StatelessWidget {
             style: theme.textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
-          // The route can be entered cold — a deep link, a restored route
-          // — with nothing under it to go back to, so this offers the way
-          // out that the app bar's back button may not have.
+          // The app bar's back button does the same thing. This one is here
+          // because leaving is the likely intent on this surface.
           if (back != null) ...[
             const BgeGap.lg(),
             FilledButton.icon(
@@ -381,51 +370,17 @@ Widget _refreshBanner(
 
 /// A centred single message on an otherwise empty page.
 class _MessagePage extends StatelessWidget {
-  const _MessagePage({required this.title, required this.child, this.onBack});
+  const _MessagePage({required this.title, required this.child});
 
   final String title;
   final Widget child;
 
-  /// The way out, on the same terms as every other surface here — and it
-  /// matters most on this one. The error state is terminal and reachable
-  /// *after* a household has rendered: the bloc answers a failure on either
-  /// stream with `HouseholdDetailError` unconditionally
-  /// (`household_detail_bloc.dart:361-363`), so a read that breaks under a
-  /// user who arrived with nothing beneath them used to strand them here with
-  /// no exit at all.
-  final void Function(BuildContext context)? onBack;
-
   @override
   Widget build(BuildContext context) => BgePage(
     title: Text(title),
-    leading: _strandedBackButton(context, onBack),
     width: BgePageWidth.pane,
     centerVertically: true,
     child: child,
-  );
-}
-
-/// The way back this screen supplies for itself, or null where it should not.
-///
-/// `AppBar` implies a leading button only when the Navigator can pop, and this
-/// route is reachable with nothing beneath it: a restored route, the invite
-/// deep link later (#10), and a create that replaced the form it was submitted
-/// from (#271). Every surface here needs the same answer, so they share one
-/// (#271 D5) — the not-found surface keeps its in-body button as well, being
-/// the one place where leaving is the likely intent rather than a fallback.
-///
-/// Null where the Navigator has a real pop, so the ordinary
-/// pushed-from-a-list-row path keeps it: it animates, and it does not rebuild
-/// the stack underneath the user. Null too where the caller named no
-/// destination, which is a composition that cannot route anywhere anyway.
-Widget? _strandedBackButton(
-  BuildContext context,
-  void Function(BuildContext context)? onBack,
-) {
-  if (onBack == null || Navigator.of(context).canPop()) return null;
-  return BackButton(
-    key: HouseholdDetailScreen.backKey,
-    onPressed: () => onBack(context),
   );
 }
 

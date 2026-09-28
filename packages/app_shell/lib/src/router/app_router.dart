@@ -24,7 +24,7 @@ abstract final class AppRoutes {
   /// [householdCreate] and with the reserved
   /// `/server/:serverId/household/:householdId/invite/:token` deep link.
   static const household = '/household';
-  static const householdCreate = '/household/create';
+  static const householdCreate = '$household/$_householdCreateSegment';
 
   /// One household, read-only (#270).
   ///
@@ -36,10 +36,16 @@ abstract final class AppRoutes {
   /// Build a concrete location with [householdDetailOf] rather than
   /// interpolating: callers that hand-build the string are how a
   /// `:householdId` ends up URL-unsafe.
-  static const householdDetail = '/household/:householdId';
+  static const householdDetail = '$household/$_householdDetailSegment';
 
   /// The id segment of [householdDetail].
   static const householdIdParam = 'householdId';
+
+  // The two household children's paths relative to [household], which is
+  // how the route table declares them (#308). The absolute constants above
+  // are built from these, so the table and its callers cannot drift apart.
+  static const _householdCreateSegment = 'create';
+  static const _householdDetailSegment = ':$householdIdParam';
 
   /// The location of one household's detail screen.
   ///
@@ -134,8 +140,8 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// The route sits **outside** the auth [ShellRoute]: the screen needs no
 /// `AuthBloc`, only the active server's scoped container. Reachability is
 /// still post-auth — the redirect table only admits non-bootstrap
-/// locations once [AppBootstrapReady] — and it is pushed from the home
-/// menu rather than deep-linked.
+/// locations once [AppBootstrapReady] — and it is pushed from the household
+/// list's FAB (#269) rather than deep-linked.
 typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the household list (#269) for the [AppRoutes.household] route.
@@ -282,18 +288,20 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
-      // ── The three household routes, and why their order matters ──
+      // ── The household routes: why they nest, and why their order matters ──
       //
-      // `/household` (#269), `/household/create` (#129) and
-      // `/household/:householdId` (#270) are declared in that order, and
-      // the last two are the pair that cannot be reordered.
+      // `/household/create` (#129) and `/household/:householdId` (#270) are
+      // children of `/household` (#269), not its siblings (#308). A `go` to
+      // either therefore builds the list beneath it, so there is always
+      // something to go back to — which is what lets the detail screen's
+      // way back be a plain pop. A `push` still adds only the leaf page, so
+      // the drawer path keeps home beneath the list.
       //
-      // `/household` is safe wherever it sits: go_router matches on the
-      // full path, and one segment never swallows two. But `create` is a
-      // perfectly legal `:householdId`, so `/household/create` matches
-      // BOTH of the routes below. go_router takes the first declared
-      // match, so create must come first or the create flow silently
-      // becomes a detail screen for a household nobody can have.
+      // Order among the children is the part that cannot change. `create`
+      // is a perfectly legal `:householdId`, so `/household/create` matches
+      // BOTH children. go_router takes the first declared match, so create
+      // must come first or the create flow silently becomes a detail screen
+      // for a household nobody can have.
       //
       // The detail screen also answers a literal `create` id with its
       // not-found state (#270 D6). That is the belt to this ordering's
@@ -304,30 +312,32 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             householdListBuilder?.call(context) ??
             const NotYetAvailableScreen(),
-      ),
-      // #129: create-household flow. Outside the auth ShellRoute (needs no
-      // AuthBloc — only the active server's container; see
-      // [CreateHouseholdScreenBuilder]). Reachable only once
-      // [AppBootstrapReady] admits non-bootstrap locations; pushed from the
-      // list screen's FAB (#269) — until then, from the home menu.
-      //
-      // MUST stay declared above the detail route — see the block above.
-      GoRoute(
-        path: AppRoutes.householdCreate,
-        builder: (context, _) =>
-            createHouseholdBuilder?.call(context) ??
-            const NotYetAvailableScreen(),
-      ),
-      // #270: one household, read-only. Pushed from a list row, and where
-      // the reserved invite deep link eventually lands — which is why the
-      // id-addressed route exists now rather than later.
-      GoRoute(
-        path: AppRoutes.householdDetail,
-        builder: (context, state) {
-          final id = state.pathParameters[AppRoutes.householdIdParam] ?? '';
-          return householdDetailBuilder?.call(context, id) ??
-              const NotYetAvailableScreen();
-        },
+        routes: [
+          // #129: create-household flow. Outside the auth ShellRoute (needs
+          // no AuthBloc — only the active server's container; see
+          // [CreateHouseholdScreenBuilder]). Reachable only once
+          // [AppBootstrapReady] admits non-bootstrap locations; pushed from
+          // the list screen's FAB (#269).
+          //
+          // MUST stay declared above the detail route — see the block above.
+          GoRoute(
+            path: AppRoutes._householdCreateSegment,
+            builder: (context, _) =>
+                createHouseholdBuilder?.call(context) ??
+                const NotYetAvailableScreen(),
+          ),
+          // #270: one household, read-only. Pushed from a list row, and
+          // where the reserved invite deep link eventually lands — which is
+          // why the id-addressed route exists now rather than later.
+          GoRoute(
+            path: AppRoutes._householdDetailSegment,
+            builder: (context, state) {
+              final id = state.pathParameters[AppRoutes.householdIdParam] ?? '';
+              return householdDetailBuilder?.call(context, id) ??
+                  const NotYetAvailableScreen();
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.error,

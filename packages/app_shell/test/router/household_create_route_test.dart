@@ -11,6 +11,7 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 /// route resolved to the builder rather than the [NotYetAvailableScreen]
 /// fallback.
 const _householdMarkerKey = Key('household_create_route_marker');
+const _listMarkerKey = Key('household_list_route_marker');
 
 void main() {
   late _MockAppBootstrapCubit cubit;
@@ -23,6 +24,7 @@ void main() {
     WidgetTester tester, {
     required AppBootstrapState initialState,
     CreateHouseholdScreenBuilder? createHouseholdBuilder,
+    HouseholdListScreenBuilder? householdListBuilder,
   }) async {
     whenListen(
       cubit,
@@ -34,6 +36,7 @@ void main() {
       bootstrapCubit: cubit,
       refreshListenable: listenable,
       createHouseholdBuilder: createHouseholdBuilder,
+      householdListBuilder: householdListBuilder,
     );
     addTearDown(() {
       router.dispose();
@@ -96,6 +99,33 @@ void main() {
       // Present ⟹ we stayed on the route; a bounce to /home would render
       // the fallback instead of the marker.
       expect(find.byKey(_householdMarkerKey), findsOneWidget);
+    });
+
+    testWidgets('entered cold, it has the list beneath it to go back to '
+        '(#308)', (tester) async {
+      // Nothing in the app `go`es here — the FAB pushes — but a create
+      // reached any other way would otherwise be the only route on the
+      // stack, and the replace that follows a submit (#271) would leave the
+      // new household's screen with nothing beneath it either.
+      final router = await pumpRouter(
+        tester,
+        initialState: const AppBootstrapReady(),
+        householdListBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _listMarkerKey)),
+        createHouseholdBuilder: (_) =>
+            const Scaffold(body: SizedBox(key: _householdMarkerKey)),
+      );
+
+      router.go(AppRoutes.householdCreate);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_householdMarkerKey), findsOneWidget);
+      expect(router.canPop(), isTrue);
+
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_listMarkerKey), findsOneWidget);
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +35,59 @@ void main() {
 
       expect(find.text('Not yet available'), findsOneWidget);
       expect(find.textContaining("isn't available yet"), findsOneWidget);
+    });
+
+    testWidgets('titles its app bar, and says the title once (#308)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(const NotYetAvailableScreen()));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text('Not yet available'),
+        ),
+        findsOneWidget,
+      );
+      // Not repeated as a heading in the body under it.
+      expect(find.text('Not yet available'), findsOneWidget);
+    });
+
+    testWidgets('pushed over another screen, has a way back to it (#308)', (
+      tester,
+    ) async {
+      // Most routes that fall back to this screen are pushed (feedback,
+      // settings) or have a parent beneath them (the household routes).
+      // With no app bar there was no back button to imply, and on desktop
+      // nothing else to press.
+      await tester.pumpWidget(
+        _wrap(
+          Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => unawaited(
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const NotYetAvailableScreen(),
+                    ),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget);
     });
   });
 

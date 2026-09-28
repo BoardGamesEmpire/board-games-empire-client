@@ -29,9 +29,9 @@ import 'household_detail_state.dart';
 /// ## Why absence waits on the hydrate
 ///
 /// An id that is not in the cache is not the same as an id that does not
-/// exist, and on a deep link or a restored route the difference is the
-/// whole answer: the drain runs unawaited from session activation (#267
-/// D2), so this screen can be reached before the cache has been filled.
+/// exist, and on a deep link the difference is the whole answer: the
+/// drain runs unawaited from session activation (#267), so this screen
+/// can be reached before the cache has been filled.
 /// Saying "we couldn't find this household" to someone who has it is the
 /// same failure #269 D1 built the list's loading state to avoid.
 ///
@@ -231,9 +231,9 @@ class HouseholdDetailBloc
   /// roster.
   ///
   /// `getCurrentUserMember` reads the **local cache**, which is why this
-  /// cannot be a single shot at construction. On the deep-link and
-  /// restored-route paths this bloc is built for, the cache is cold when
-  /// the screen opens: there is no member row yet, the answer is null, and
+  /// cannot be a single shot at construction. On the deep-link path this
+  /// bloc is built for, the cache is cold when the screen opens: there is
+  /// no member row yet, the answer is null, and
   /// latching that null would leave "Your role" missing for the life of
   /// the screen even after the hydrate lands our own row. So it is asked
   /// again when the roster arrives and we are still unidentified.

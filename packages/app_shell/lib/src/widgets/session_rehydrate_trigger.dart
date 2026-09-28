@@ -25,8 +25,8 @@ import 'detached_rehydrate.dart';
 /// already in hand.
 ///
 /// **Above the router, not inside a route.** The screens that read a
-/// re-hydrated cache — the household list and detail — are top-level
-/// routes *outside* the auth `ShellRoute`, so a trigger mounted in that
+/// re-hydrated cache — the household list and detail — are routes
+/// *outside* the auth `ShellRoute`, so a trigger mounted in that
 /// shell would be unmounted on exactly the screen showing "couldn't
 /// refresh" (a `go` to `/household` drops the shell page; a deep link
 /// there never builds it). It therefore lives in the `MaterialApp.router`
