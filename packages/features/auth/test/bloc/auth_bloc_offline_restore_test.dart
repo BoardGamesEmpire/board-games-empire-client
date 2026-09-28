@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:di/di.dart' show replayThenForward;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
@@ -27,15 +28,10 @@ class FakeConnectivityService implements ConnectivityService {
   ConnectivityState get current => _current;
 
   @override
-  Stream<ConnectivityState> watch() => Stream.multi((controller) {
-    controller.add(_current);
-    final sub = _controller.stream.listen(
-      controller.add,
-      onError: controller.addError,
-      onDone: controller.close,
-    );
-    controller.onCancel = sub.cancel;
-  });
+  Stream<ConnectivityState> watch() => replayThenForward(
+    current: () => _current,
+    updates: () => _controller.stream,
+  );
 
   void emit(ConnectivityState next) {
     _current = next;
