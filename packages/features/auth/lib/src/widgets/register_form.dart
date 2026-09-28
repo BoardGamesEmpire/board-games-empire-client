@@ -49,6 +49,10 @@ class _RegisterFormState extends State<RegisterForm> {
           Validators.minLength(_kMinUsernameLength),
         ],
       ),
+      // Declared in the order the fields render, which is the order a
+      // rejected submit looks for the first error in (#230).
+      'firstName': FormControl<String>(value: ''),
+      'lastName': FormControl<String>(value: ''),
       'password': FormControl<String>(
         value: '',
         validators: [
@@ -56,8 +60,6 @@ class _RegisterFormState extends State<RegisterForm> {
           Validators.minLength(kMinRegistrationPasswordLength),
         ],
       ),
-      'firstName': FormControl<String>(value: ''),
-      'lastName': FormControl<String>(value: ''),
     });
     _editSubscription = _form.valueChanges.listen(_retireFailureOnEdit);
   }
@@ -89,7 +91,7 @@ class _RegisterFormState extends State<RegisterForm> {
 
   void _submit(BuildContext context) {
     if (_form.invalid) {
-      _form.markAllAsTouched();
+      _form.rejectSubmit();
       return;
     }
 

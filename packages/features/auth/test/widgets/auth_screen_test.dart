@@ -339,6 +339,78 @@ void main() {
       });
     });
 
+    group('rejected submit (#230)', () {
+      testWidgets('a rejected sign-in brings its first error into view and '
+          'focuses it, on a small window at 200% text scale', (tester) async {
+        // Measured before `rejectSubmit`: at 320x400 the first error sat 5dp
+        // above the viewport after a tap on "Sign In" with the form empty.
+        _useNarrowWindow(tester);
+        await tester.pumpWidget(
+          MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: _wrap(_screen(testServerIdentity()), mockBloc),
+          ),
+        );
+        await tester.pumpAndSettle();
+        FocusManager.instance.primaryFocus?.unfocus();
+        final position = pageScrollOf(tester).position;
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Sign In'));
+        await tester.pumpAndSettle();
+
+        final email = find.byType(EditableText).first;
+        expect(tester.widget<EditableText>(email).focusNode.hasFocus, isTrue);
+        final errorTop = topInViewport(
+          tester,
+          find.text('This field is required').first,
+        );
+        expect(errorTop, greaterThanOrEqualTo(0));
+        expect(errorTop, lessThan(scrollViewportOf(tester).size.height));
+      });
+
+      testWidgets('a rejected register brings its first error into view and '
+          'focuses it, on a small window at 200% text scale', (tester) async {
+        // Measured before `rejectSubmit`: a user who scrolled down to reach
+        // "Create Account" and tapped it with the form empty was left with the
+        // first error 145dp above the viewport — a button that did nothing.
+        useViewSize(tester, const Size(320, 480));
+        await tester.pumpWidget(
+          MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: _wrap(_screen(testServerIdentity()), mockBloc),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final toggle = find.text("Don't have an account? Register");
+        await tester.ensureVisible(toggle);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        // Autofocus put the caret in the email field; a user who scrolled and
+        // tapped the button has moved off it.
+        FocusManager.instance.primaryFocus?.unfocus();
+        final position = pageScrollOf(tester).position;
+        position.jumpTo(position.maxScrollExtent);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
+
+        final email = find.byType(EditableText).first;
+        expect(tester.widget<EditableText>(email).focusNode.hasFocus, isTrue);
+        final errorTop = topInViewport(
+          tester,
+          find.text('This field is required').first,
+        );
+        expect(errorTop, greaterThanOrEqualTo(0));
+        expect(
+          errorTop,
+          lessThan(scrollViewportOf(tester).size.height),
+        );
+      });
+    });
+
     group('failure banner reveal (#209)', () {
       testWidgets('a failure that appears above the viewport is scrolled into '
           'view on a small window at 200% text scale', (tester) async {

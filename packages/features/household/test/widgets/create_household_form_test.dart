@@ -87,6 +87,21 @@ void main() {
       expect(find.text('Enter a name for your household.'), findsOneWidget);
     });
 
+    testWidgets('a rejected submit moves focus to the name field', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(CreateHouseholdForm(onSubmit: ({required name, description}) {})),
+      );
+
+      await submit(tester);
+      await tester.pumpAndSettle();
+
+      // #230: the error renders on the field, and focus goes with it, so a
+      // keyboard user is not left holding the button the form refused.
+      expect(hasFocus(tester, CreateHouseholdForm.nameFieldKey), isTrue);
+    });
+
     testWidgets('a whitespace-only name is rejected the same way', (
       tester,
     ) async {

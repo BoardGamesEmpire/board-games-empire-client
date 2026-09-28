@@ -75,6 +75,30 @@ void main() {
     );
   });
 
+  testWidgets('an invalid submit moves focus to the first invalid control, '
+      'the severity dropdown', (tester) async {
+    await tester.pumpWidget(
+      wrap(FeedbackComposeForm(model: model, onSubmit: (_) {})),
+    );
+
+    await tester.ensureVisible(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.tap(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.pumpAndSettle();
+
+    // #230. Category is seeded, so severity is the first control a bug report
+    // is missing. Asserted through the focused element's ancestry, because a
+    // dropdown has no EditableText to ask.
+    final focused = FocusManager.instance.primaryFocus?.context;
+    expect(focused, isNotNull);
+    expect(
+      find.ancestor(
+        of: find.byElementPredicate((element) => element == focused),
+        matching: find.byKey(FeedbackComposeForm.severityFieldKey),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a valid bug submit hands up the trimmed result', (tester) async {
     FeedbackComposeResult? submitted;
     await tester.pumpWidget(

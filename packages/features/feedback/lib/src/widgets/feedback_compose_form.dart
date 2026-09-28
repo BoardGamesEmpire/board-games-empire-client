@@ -52,7 +52,12 @@ class FeedbackComposeForm extends StatelessWidget {
   static const Key submitButtonKey = Key('feedback_compose.submit');
 
   void _submit() {
-    if (!model.validateForSubmit()) return;
+    if (!model.validateForSubmit()) {
+      // The model marked the errors; moving focus to the first one and
+      // bringing it on screen is the view's job (#230).
+      model.form.rejectSubmit();
+      return;
+    }
     onSubmit(model.buildResult());
   }
 

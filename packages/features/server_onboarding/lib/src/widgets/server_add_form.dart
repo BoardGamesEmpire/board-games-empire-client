@@ -57,14 +57,10 @@ class ServerAddForm extends StatelessWidget {
     if (bloc.state is ServerOnboardingInProgress) return;
 
     // Marking touched is what renders the message: the control starts
-    // untouched, so validity alone shows nothing.
+    // untouched, so validity alone shows nothing. `rejectSubmit` does that,
+    // then moves focus to the field that was rejected.
     if (!form.valid) {
-      form.markAllAsTouched();
-
-      // Focus follows the error, or a keyboard user is left holding the
-      // submit button with the message somewhere above it.
-      final url = form.control(urlControlName);
-      if (url.invalid) url.focus();
+      form.rejectSubmit();
 
       // Retire an earlier banner, which would otherwise sit above the new
       // inline error contradicting it.

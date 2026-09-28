@@ -81,7 +81,7 @@ class _LoginFormState extends State<LoginForm> {
 
   void _submit(BuildContext context) {
     if (_form.invalid) {
-      _form.markAllAsTouched();
+      _form.rejectSubmit();
       return;
     }
     context.read<AuthBloc>().add(

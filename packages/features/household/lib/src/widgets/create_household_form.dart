@@ -111,7 +111,7 @@ class _CreateHouseholdFormState extends State<CreateHouseholdForm> {
   void _submit() {
     if (widget.submitting) return;
     if (!_form.valid) {
-      _form.markAllAsTouched();
+      _form.rejectSubmit();
       return;
     }
     final name = (_form.control('name').value as String?)?.trim() ?? '';
