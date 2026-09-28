@@ -252,4 +252,49 @@ void main() {
       expect(themes.light.extension<BgeTokens>(), same(BgeTokens.standard));
     });
   });
+
+  group('BgeTheme dialogs (all four themes)', () {
+    Finder dialogSurface(Type dialog) => find
+        .descendant(of: find.byType(dialog), matching: find.byType(Material))
+        .first;
+
+    for (final entry in themes.entries) {
+      final (theme, _) = entry.value;
+
+      testWidgets('${entry.key}: a dialog grows no wider than the reading '
+          'measure', (tester) async {
+        // A child that wants the full width, so the dialog is as wide as its
+        // constraints allow. Here that would be the 800dp test window minus
+        // Flutter's 40dp insets, 720, without the theme's cap.
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: const Dialog(
+              child: SizedBox(width: double.infinity, height: 20),
+            ),
+          ),
+        );
+
+        expect(
+          tester.getSize(dialogSurface(Dialog)).width,
+          BgeTokens.standard.contentMaxWidth,
+        );
+      });
+
+      testWidgets("${entry.key}: a short dialog keeps Flutter's 280dp "
+          'minimum', (tester) async {
+        // A theme's dialog constraints replace Flutter's default
+        // `BoxConstraints(minWidth: 280)` rather than adding to it. A theme
+        // that set only the cap would let this dialog shrink to its title.
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: const AlertDialog(title: Text('Done?')),
+          ),
+        );
+
+        expect(tester.getSize(dialogSurface(AlertDialog)).width, 280);
+      });
+    }
+  });
 }

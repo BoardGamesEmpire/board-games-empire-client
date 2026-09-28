@@ -1,8 +1,11 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
-Widget _wrap(Widget child) => MaterialApp(
+Widget _wrap(Widget child, {ThemeData? theme}) => MaterialApp(
+  theme: theme,
   localizationsDelegates: ShellLocalizations.localizationsDelegates,
   supportedLocales: ShellLocalizations.supportedLocales,
   home: child,
@@ -151,6 +154,63 @@ void main() {
 
       expect(resets, 0);
       expect(find.text('Delete local data?'), findsNothing);
+    });
+
+    group('reset confirmation width', () {
+      /// Opens the confirmation at [window] and returns the dialog's size.
+      ///
+      /// Under `BgeTheme`, because the width comes from the theme (#207). The
+      /// size is the dialog's `Material`, not the `AlertDialog`: the route
+      /// widget fills the window, so measuring it measures nothing.
+      Future<Size> openAt(WidgetTester tester, Size window) async {
+        useViewSize(tester, window);
+        await tester.pumpWidget(
+          _wrap(
+            BootstrapErrorScreen(
+              canOfferReset: true,
+              onRetry: () {},
+              onReset: () {},
+            ),
+            theme: BgeTheme.light(),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(BootstrapErrorScreen.resetButtonKey));
+        await tester.pumpAndSettle();
+
+        return tester.getSize(
+          find
+              .descendant(
+                of: find.byType(AlertDialog),
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+      }
+
+      testWidgets('stops at the reading measure on a wide window', (
+        tester,
+      ) async {
+        // Unthemed, this dialog grew to the window minus Flutter's 40dp
+        // insets: 2480 wide, with its whole warning on one line.
+        final size = await openAt(tester, const Size(2560, 1440));
+
+        expect(
+          size.width,
+          lessThanOrEqualTo(BgeTokens.standard.contentMaxWidth),
+        );
+      });
+
+      testWidgets('still lays out in a 320-wide window', (tester) async {
+        // The theme restates a 280 minimum, which is wider than the 240 left
+        // inside the 40dp insets here. A minimum must yield to the window,
+        // not overflow it, so the dialog takes exactly the 240 and not the
+        // window's 320.
+        final size = await openAt(tester, const Size(320, 640));
+
+        expect(tester.takeException(), isNull);
+        expect(size.width, 240);
+      });
     });
   });
 }
