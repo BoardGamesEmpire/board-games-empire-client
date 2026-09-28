@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 
@@ -25,9 +24,6 @@ class BootstrapErrorScreen extends StatelessWidget {
     'bootstrap_error_reset_cancel_button',
   );
 
-  /// Minimum tap-target size per the a11y baseline.
-  static const _minTapTarget = Size(88, 48);
-
   final bool canOfferReset;
   final VoidCallback onRetry;
   final VoidCallback onReset;
@@ -42,13 +38,11 @@ class BootstrapErrorScreen extends StatelessWidget {
         actions: [
           TextButton(
             key: resetCancelButtonKey,
-            style: TextButton.styleFrom(minimumSize: _minTapTarget),
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: Text(i18n.shellBootstrapErrorResetCancel),
           ),
           FilledButton(
             key: resetConfirmButtonKey,
-            style: FilledButton.styleFrom(minimumSize: _minTapTarget),
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: Text(i18n.shellBootstrapErrorResetConfirmAction),
           ),
@@ -64,50 +58,24 @@ class BootstrapErrorScreen extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return BgePage(
       centerVertically: true,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ExcludeSemantics(
-            child: Icon(
-              Icons.error_outline,
-              size: 48,
-              color: colorScheme.error,
-            ),
-          ),
-          const BgeGap.md(),
-          // Live region so screen readers announce the failure when
-          // it appears, without needing focus to land on it.
-          MergeSemantics(
-            child: Semantics(
-              liveRegion: true,
-              child: Text(
-                i18n.shellBootstrapErrorTitle,
-                style: Theme.of(context).textTheme.headlineSmall,
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-          const BgeGap.sm(),
-          Text(i18n.shellBootstrapErrorBody, textAlign: TextAlign.center),
-          const BgeGap.lg(),
-          FilledButton(
-            key: retryButtonKey,
-            style: FilledButton.styleFrom(minimumSize: _minTapTarget),
-            onPressed: onRetry,
-            child: Text(i18n.shellBootstrapErrorRetry),
-          ),
-          if (canOfferReset) ...[
-            const BgeGap.sm(),
+      child: BgeErrorState(
+        icon: Icons.error_outline,
+        iconColor: colorScheme.error,
+        title: i18n.shellBootstrapErrorTitle,
+        body: i18n.shellBootstrapErrorBody,
+        retryLabel: i18n.shellBootstrapErrorRetry,
+        retryKey: retryButtonKey,
+        onRetry: onRetry,
+        secondaryActions: [
+          if (canOfferReset)
             OutlinedButton(
               key: resetButtonKey,
               style: OutlinedButton.styleFrom(
-                minimumSize: _minTapTarget,
                 foregroundColor: colorScheme.error,
               ),
               onPressed: () => _confirmReset(context),
               child: Text(i18n.shellBootstrapErrorReset),
             ),
-          ],
         ],
       ),
     );

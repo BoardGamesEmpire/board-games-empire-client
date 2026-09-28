@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
-import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 
@@ -73,11 +72,9 @@ class AuthGate extends StatelessWidget {
 
 /// Rendered when the startup session check cannot reach the server (#37).
 ///
-/// Accessibility (mirroring the bootstrap error screen's pattern):
-/// - the title + body are a single live region so screen readers announce
-///   the failure when it appears;
-/// - the retry button is autofocused for keyboard users and carries an
-///   explicit button semantic.
+/// The layout and its accessibility (one live region for the failure, an
+/// autofocused retry) come from [BgeErrorState], shared with the bootstrap
+/// error screen (#102).
 class SessionUnreachableView extends StatelessWidget {
   const SessionUnreachableView({
     super.key,
@@ -91,48 +88,15 @@ class SessionUnreachableView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AuthLocalizations.of(context);
-    final theme = Theme.of(context);
 
     return BgePage(
       centerVertically: true,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Icon(
-            Icons.cloud_off_outlined,
-            size: 48,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const BgeGap.md(),
-          Semantics(
-            liveRegion: true,
-            child: Column(
-              children: [
-                Text(
-                  l10n.authSessionUnreachableTitle(serverDisplayName),
-                  style: theme.textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                ),
-                const BgeGap.sm(),
-                Text(
-                  l10n.authSessionUnreachableBody,
-                  style: theme.textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-          const BgeGap.lg(),
-          Semantics(
-            button: true,
-            child: FilledButton(
-              autofocus: true,
-              onPressed: onRetry,
-              child: Text(l10n.authRetryButton),
-            ),
-          ),
-        ],
+      child: BgeErrorState(
+        icon: Icons.cloud_off_outlined,
+        title: l10n.authSessionUnreachableTitle(serverDisplayName),
+        body: l10n.authSessionUnreachableBody,
+        retryLabel: l10n.authRetryButton,
+        onRetry: onRetry,
       ),
     );
   }
