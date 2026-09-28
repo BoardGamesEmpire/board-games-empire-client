@@ -1,34 +1,18 @@
-import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:models/dto.dart';
 
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/widgets/auth_lifecycle_revalidation_trigger.dart';
 
-class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
-    implements AuthBloc {}
+import '../support/auth_test_fixtures.dart';
 
 const _kChildKey = Key('trigger_child');
-
-AuthResponse _session() => AuthResponse(
-  token: 'tok-abc',
-  user: AuthUser(
-    id: 'u1',
-    username: 'testuser',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
-);
 
 /// Drives the real `flutter/lifecycle` platform channel rather than the
 /// binding's `@protected` `handleAppLifecycleStateChanged`, matching the
@@ -170,7 +154,7 @@ void main() {
       testWidgets('dispatches for a verified session — the handler no-ops, '
           'not this widget', (tester) async {
         when(() => mockBloc.state)
-            .thenReturn(AuthAuthenticated(session: _session()));
+            .thenReturn(AuthAuthenticated(session: testSession()));
         await pumpTrigger(tester);
 
         await _suspendAndResume(tester);
@@ -193,7 +177,7 @@ void main() {
           'trigger exists for', (tester) async {
         when(() => mockBloc.state).thenReturn(
           AuthAuthenticated(
-            session: _session(),
+            session: testSession(),
             verification: SessionVerification.unverifiedOffline,
           ),
         );

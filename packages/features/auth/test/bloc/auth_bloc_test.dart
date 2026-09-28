@@ -4,26 +4,12 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:models/dto.dart';
 
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 
-class MockAuthRepository extends Mock implements AuthRepository {}
-
-AuthResponse _session() => AuthResponse(
-  token: 'tok-abc',
-  user: AuthUser(
-    id: 'u1',
-    username: 'testuser',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
-);
+import '../support/auth_test_fixtures.dart';
 
 /// Lets a `blocTest` `build` hand its sign-out gate to `act` (#280 D1).
 Completer<void>? _signOutGate;
@@ -64,7 +50,7 @@ void main() {
         'leaves an authenticated session alone — clearing a banner must not '
         'look like a sign-out',
         build: () => AuthBloc(authRepository: mockRepo),
-        seed: () => AuthAuthenticated(session: _session()),
+        seed: () => AuthAuthenticated(session: testSession()),
         act: (b) => b.add(const AuthFailureCleared()),
         expect: () => const <AuthBlocState>[],
       );
@@ -83,7 +69,8 @@ void main() {
         'emits [session check in progress, authenticated] when session '
         'exists',
         build: () {
-          when(() => mockRepo.getSession()).thenAnswer((_) async => _session());
+          when(() => mockRepo.getSession())
+              .thenAnswer((_) async => testSession());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -188,7 +175,7 @@ void main() {
           when(() => mockRepo.getSession()).thenAnswer((_) async {
             calls++;
             await Future<void>.delayed(const Duration(milliseconds: 20));
-            return calls == 1 ? _session() : null;
+            return calls == 1 ? testSession() : null;
           });
           return AuthBloc(authRepository: mockRepo);
         },
@@ -214,7 +201,7 @@ void main() {
               email: any(named: 'email'),
               password: any(named: 'password'),
             ),
-          ).thenAnswer((_) async => _session());
+          ).thenAnswer((_) async => testSession());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(
@@ -335,7 +322,7 @@ void main() {
               firstName: any(named: 'firstName'),
               lastName: any(named: 'lastName'),
             ),
-          ).thenAnswer((_) async => _session());
+          ).thenAnswer((_) async => testSession());
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(
@@ -553,7 +540,7 @@ void main() {
               email: any(named: 'email'),
               password: any(named: 'password'),
             ),
-          ).thenAnswer((_) async => _session());
+          ).thenAnswer((_) async => testSession());
           // Handed to `act` through the closure below.
           _signOutGate = signOutGate;
           return AuthBloc(authRepository: mockRepo);
@@ -586,7 +573,7 @@ void main() {
           _signOutGate = signOutGate;
           return AuthBloc(authRepository: mockRepo);
         },
-        seed: () => AuthAuthenticated(session: _session()),
+        seed: () => AuthAuthenticated(session: testSession()),
         act: (b) async {
           b.add(const AuthSignOutRequested());
           await Future<void>.delayed(Duration.zero);

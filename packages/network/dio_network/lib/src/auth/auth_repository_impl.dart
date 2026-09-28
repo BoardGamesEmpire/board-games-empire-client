@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:di/di.dart' show LocalClockService;
+import 'package:di/di.dart' show LocalClockService, replayThenForward;
 import 'package:http_status/http_status.dart';
 import 'package:dio/dio.dart';
 
@@ -767,16 +767,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
 
   @override
   Stream<AuthState> watchAuthState() {
-    return Stream.multi((controller) {
-      controller.add(_currentState);
-      final sub = _stateController.stream.listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: controller.close,
-      );
-
-      controller.onCancel = sub.cancel;
-    });
+    return replayThenForward(
+      current: () => _currentState,
+      updates: () => _stateController.stream,
+    );
   }
 
   void _setState(AuthState next) {

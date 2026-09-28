@@ -105,6 +105,32 @@ jobs:
       - name: Dart source must be formatted
         run: dart run tool/format_workspace.dart --check
 
+  # ── Test file names (#197) ───────────────────────────────────────
+  # `flutter test` runs only files named `*_test.dart`. A suite under
+  # `test/` with any other name is skipped without a word: its tests
+  # exist, read as coverage, and never run. That is how models'
+  # achievement tests went unrun until #197. Codegen-free like the jobs
+  # above, and the same shared-script arrangement: `check:test-files`
+  # runs the identical command. The self-test comes first because this
+  # gate's failure mode is a silent pass, which the check itself cannot
+  # see on a tree that holds nothing for it to catch.
+  test-files:
+    name: Test file names
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: pubspec.yaml
+          channel: stable
+          cache: true
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Test-file check self-test
+        run: dart run tool/check_test_files.dart --self-test
+      - name: Every suite under test/ must be named to run
+        run: dart run tool/check_test_files.dart
+
   # ── Codegen (fresh, once) + schema freshness ────────────────────
   # Generated code (.g.dart / .freezed.dart / .config.dart, and the
   # gen-l10n localizations per #33) is gitignored, so every job that

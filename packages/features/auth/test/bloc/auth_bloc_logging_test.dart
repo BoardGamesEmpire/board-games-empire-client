@@ -10,7 +10,7 @@ import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 
-class MockAuthRepository extends Mock implements AuthRepository {}
+import '../support/auth_test_fixtures.dart';
 
 /// Failure logging (#100) is centralized in `onTransition` (warn/error by
 /// severity bucket) plus `onError` (backstop). These tests drive the bloc

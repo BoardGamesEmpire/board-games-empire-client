@@ -18,6 +18,7 @@
 - [ ] `melos run format:check`
 - [ ] `melos run test`
 - [ ] `melos run check:constraints`
+- [ ] `melos run check:test-files`
 - [ ] `melos run test:goldens` (if anything visual changed)
 - [ ] `melos run check:palette` (if the palette or its generator changed)
 

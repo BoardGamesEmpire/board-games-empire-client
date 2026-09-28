@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
+import 'package:di/di.dart' show replayThenForward;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -145,14 +146,10 @@ class _SwitchableActiveServerScope implements ActiveServerScope {
   ActiveServer? get active => _active;
 
   @override
-  Stream<ActiveServer?> watchActive() => Stream.multi((controller) {
-    controller.add(_active);
-    final sub = _controller.stream.listen(
-      controller.add,
-      onDone: controller.close,
-    );
-    controller.onCancel = sub.cancel;
-  });
+  Stream<ActiveServer?> watchActive() => replayThenForward(
+    current: () => _active,
+    updates: () => _controller.stream,
+  );
 
   void switchTo(ActiveServer next) {
     _active = next;

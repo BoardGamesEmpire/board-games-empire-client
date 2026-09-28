@@ -190,6 +190,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
+| `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
 
 ### List surfaces
 
@@ -257,6 +258,10 @@ question it turns on is **does the screen survive the outcome?**
 | --- | --- |
 | Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) |
 | Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar` |
+
+A failure that leaves the screen nothing else to show — the app could not
+start, the session could not be checked — is not an outcome either. It *is* the
+screen: `BgeErrorState` inside the page's `BgePage`, with a retry.
 
 A state change with no outcome copy — a mode switch, a filter applied — is not
 on this table. It takes a **live region on the text that changed**, per the

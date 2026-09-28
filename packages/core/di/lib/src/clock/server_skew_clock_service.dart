@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:interfaces/services.dart';
 
+import '../streams/replay_then_forward.dart';
+
 /// Skew-corrected [ClockService] fed by server `Date` headers (#12).
 ///
 /// One instance per server scope. The transport layer reports one
@@ -215,23 +217,14 @@ class ServerSkewClockService implements ClockService, ClockSkewRecorder {
 
   @override
   Stream<Duration?> watchSkew() {
-    return Stream<Duration?>.multi((controller) {
-      // Replay the current estimate to every new subscriber (matches
-      // ConnectivityService.watch semantics), then forward updates.
-      controller.add(_estimate);
-      if (_disposed) {
-        controller.close();
-        return;
-      }
-      final subscription = _updates.stream.listen(
-        controller.add,
-        onDone: controller.close,
-      );
-      controller
-        ..onCancel = subscription.cancel
-        ..onPause = subscription.pause
-        ..onResume = subscription.resume;
-    });
+    // Replay the current estimate to every new subscriber (matches
+    // ConnectivityService.watch semantics), then forward updates. After
+    // dispose [_updates] is closed, so a late subscriber gets the last
+    // estimate and then done.
+    return replayThenForward(
+      current: () => _estimate,
+      updates: () => _updates.stream,
+    );
   }
 
   /// Releases the update stream. Owned by the composition root

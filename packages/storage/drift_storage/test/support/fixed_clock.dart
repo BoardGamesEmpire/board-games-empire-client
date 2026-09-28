@@ -1,3 +1,4 @@
+import 'package:di/di.dart' show replayThenForward;
 import 'package:interfaces/services.dart';
 
 /// Deterministic [ClockService] test double.
@@ -35,9 +36,8 @@ class FixedClockService implements ClockService {
   Duration? get skewEstimate => null;
 
   @override
-  Stream<Duration?> watchSkew() => Stream<Duration?>.multi((controller) {
-    controller
-      ..add(null)
-      ..close();
-  });
+  Stream<Duration?> watchSkew() => replayThenForward(
+    current: () => null,
+    updates: () => const Stream.empty(),
+  );
 }

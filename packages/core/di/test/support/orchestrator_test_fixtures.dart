@@ -1,15 +1,12 @@
+import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 
-/// Shared fixtures for the #37 orchestration tests
-/// (`orchestrator_active_server_scope_test.dart`,
-/// `server_orchestrator_active_config_test.dart`).
-///
-/// Mirrors the inline helpers of `server_orchestrator_impl_test.dart`
-/// (deliberately left untouched); a later consolidation can fold that
-/// file onto these.
+/// Shared fixtures for the orchestrator suites: the repository and context
+/// mocks, the config and context builders, and [stubbedOrchestrator] for the
+/// two suites that drive a real orchestrator end to end (#37, #102).
 
 class MockServerRepository extends Mock implements ServerRepository {}
 
@@ -75,4 +72,45 @@ MockServerContext mockServerContext(
   when(() => ctx.watchState())
       .thenAnswer((_) => Stream.value(ServerContextState.active));
   return ctx;
+}
+
+/// A real [ServerOrchestratorImpl] over mocked repositories, stubbed for the
+/// happy path: no connected servers, connection-state writes answer with a
+/// [testServerConfig], and last-active writes succeed. Every context is a
+/// [mockServerContext]; [withContainers] gives each a fresh real container,
+/// for suites that assert on `ActiveServer.container`.
+///
+/// Callers register the `ConnectionState` fallback value (for the
+/// `newState` matcher) in their own `setUpAll`, and dispose the orchestrator.
+({
+  MockServerRepository repo,
+  MockDevicePreferencesRepository prefsRepo,
+  ServerOrchestratorImpl orchestrator,
+})
+stubbedOrchestrator({bool withContainers = false}) {
+  final repo = MockServerRepository();
+  final prefsRepo = MockDevicePreferencesRepository();
+  when(() => prefsRepo.get()).thenAnswer((_) async => DevicePreferences());
+  when(() => repo.getConnectedServers()).thenAnswer((_) async => []);
+  when(
+    () => repo.updateConnectionState(
+      serverId: any(named: 'serverId'),
+      newState: any(named: 'newState'),
+    ),
+  ).thenAnswer(
+    (inv) async =>
+        testServerConfig(id: inv.namedArguments[#serverId] as String),
+  );
+  when(() => repo.updateLastActive(any(), any())).thenAnswer((_) async {});
+
+  final orchestrator = ServerOrchestratorImpl(
+    serverRepository: repo,
+    preferencesRepository: prefsRepo,
+    contextFactory: (config) => mockServerContext(
+      config.id,
+      container: withContainers ? DependencyContainerImpl() : null,
+    ),
+    isDesktopOverride: true,
+  );
+  return (repo: repo, prefsRepo: prefsRepo, orchestrator: orchestrator);
 }

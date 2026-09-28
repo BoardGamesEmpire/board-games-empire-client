@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:di/di.dart' show replayThenForward;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
@@ -11,7 +12,7 @@ import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 
-class MockAuthRepository extends Mock implements AuthRepository {}
+import '../support/auth_test_fixtures.dart';
 
 /// Hand-written rather than mocked: these tests need to push transitions
 /// through `watch()` mid-test, and the replay-on-subscribe contract from #9
@@ -27,15 +28,10 @@ class FakeConnectivityService implements ConnectivityService {
   ConnectivityState get current => _current;
 
   @override
-  Stream<ConnectivityState> watch() => Stream.multi((controller) {
-    controller.add(_current);
-    final sub = _controller.stream.listen(
-      controller.add,
-      onError: controller.addError,
-      onDone: controller.close,
-    );
-    controller.onCancel = sub.cancel;
-  });
+  Stream<ConnectivityState> watch() => replayThenForward(
+    current: () => _current,
+    updates: () => _controller.stream,
+  );
 
   void emit(ConnectivityState next) {
     _current = next;
@@ -44,19 +40,6 @@ class FakeConnectivityService implements ConnectivityService {
 
   Future<void> dispose() => _controller.close();
 }
-
-AuthResponse _session({String token = 'tok-abc'}) => AuthResponse(
-  token: token,
-  user: AuthUser(
-    id: 'u1',
-    username: 'testuser',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
-);
 
 /// #98: optimistic offline session restore, bloc layer.
 void main() {
@@ -101,14 +84,14 @@ void main() {
       build: () {
         connectivity.emit(ConnectivityState.offline);
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
       ],
@@ -145,9 +128,10 @@ void main() {
       'connectivity seed still lies about being online (#98 review)',
       build: () {
         // Connectivity says online (the optimistic seed at cold start).
-        when(() => repo.getCachedSession()).thenAnswer((_) async => _session());
+        when(() => repo.getCachedSession())
+            .thenAnswer((_) async => testSession());
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         // The check never resolves within the test — a dead network.
         when(() => repo.getSession())
             .thenAnswer((_) => Completer<AuthResponse?>().future);
@@ -158,7 +142,7 @@ void main() {
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
       ],
@@ -192,14 +176,14 @@ void main() {
       build: () {
         connectivity.emit(ConnectivityState.unknown);
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
-        when(() => repo.getSession()).thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
+        when(() => repo.getSession()).thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
-        AuthAuthenticated(session: _session()),
+        AuthAuthenticated(session: testSession()),
       ],
       verify: (_) => verify(() => repo.getSession()).called(1),
     );
@@ -212,14 +196,14 @@ void main() {
         when(() => repo.getSession())
             .thenThrow(const AuthNetworkException(message: 'offline'));
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
       ],
@@ -249,14 +233,14 @@ void main() {
       build: () {
         when(() => repo.getSession()).thenThrow(StateError('locked keychain'));
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
       ],
@@ -307,8 +291,8 @@ void main() {
       build: () {
         connectivity.emit(ConnectivityState.offline);
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
-        when(() => repo.getSession()).thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
+        when(() => repo.getSession()).thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) async {
@@ -319,12 +303,12 @@ void main() {
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
         // The transition the widened equality exists to expose: same
         // session, verification only.
-        AuthAuthenticated(session: _session()),
+        AuthAuthenticated(session: testSession()),
       ],
     );
 
@@ -333,7 +317,7 @@ void main() {
       build: () {
         connectivity.emit(ConnectivityState.offline);
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         when(() => repo.getSession()).thenAnswer((_) async => null);
         return build();
       },
@@ -345,7 +329,7 @@ void main() {
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
         const AuthUnauthenticated(),
@@ -358,7 +342,7 @@ void main() {
       build: () {
         connectivity.emit(ConnectivityState.offline);
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         when(() => repo.getSession())
             .thenThrow(const AuthNetworkException(message: 'still offline'));
         return build();
@@ -371,7 +355,7 @@ void main() {
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
       ],
@@ -381,7 +365,7 @@ void main() {
       'is a no-op for an already-verified session — reconnect events must '
       'not re-check a session the server already confirmed',
       build: () {
-        when(() => repo.getSession()).thenAnswer((_) async => _session());
+        when(() => repo.getSession()).thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) async {
@@ -392,7 +376,7 @@ void main() {
       },
       expect: () => [
         const AuthSessionCheckInProgress(),
-        AuthAuthenticated(session: _session()),
+        AuthAuthenticated(session: testSession()),
       ],
       verify: (_) => verify(() => repo.getSession()).called(1),
     );
@@ -410,8 +394,8 @@ void main() {
       'going offline does not trigger revalidation',
       build: () {
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
-        when(() => repo.getSession()).thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
+        when(() => repo.getSession()).thenAnswer((_) async => testSession());
         return build();
       },
       act: (b) async {
@@ -431,22 +415,22 @@ void main() {
       'never have cleared',
       build: build,
       seed: () => AuthAuthenticated(
-        session: _session(),
+        session: testSession(),
         verification: SessionVerification.unverifiedOffline,
       ),
       act: (b) async {
-        repoStates.add(AuthStateAuthenticated(session: _session()));
+        repoStates.add(AuthStateAuthenticated(session: testSession()));
         await Future<void>.delayed(Duration.zero);
       },
-      expect: () => [AuthAuthenticated(session: _session())],
+      expect: () => [AuthAuthenticated(session: testSession())],
     );
 
     blocTest<AuthBloc, AuthBlocState>(
       'does not re-emit for an identical repository state',
       build: build,
-      seed: () => AuthAuthenticated(session: _session()),
+      seed: () => AuthAuthenticated(session: testSession()),
       act: (b) async {
-        repoStates.add(AuthStateAuthenticated(session: _session()));
+        repoStates.add(AuthStateAuthenticated(session: testSession()));
         await Future<void>.delayed(Duration.zero);
       },
       expect: () => const <AuthBlocState>[],
@@ -458,7 +442,7 @@ void main() {
         when(() => repo.getSession()).thenAnswer((_) async {
           repoStates.add(const AuthStateUnauthenticated());
           await Future<void>.delayed(Duration.zero);
-          return _session();
+          return testSession();
         });
         return build();
       },
@@ -475,7 +459,7 @@ void main() {
       wait: const Duration(milliseconds: 20),
       expect: () => [
         const AuthSessionCheckInProgress(),
-        AuthAuthenticated(session: _session()),
+        AuthAuthenticated(session: testSession()),
       ],
     );
   });
@@ -493,10 +477,10 @@ void main() {
           if (calls == 1) {
             throw const AuthServerException(message: '503', statusCode: 503);
           }
-          return _session();
+          return testSession();
         });
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         return build(revalidationInterval: const Duration(milliseconds: 20));
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -504,10 +488,10 @@ void main() {
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
-        AuthAuthenticated(session: _session()),
+        AuthAuthenticated(session: testSession()),
       ],
     );
 
@@ -521,10 +505,10 @@ void main() {
           if (calls == 1) {
             throw const AuthNetworkException(message: 'offline');
           }
-          return _session();
+          return testSession();
         });
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         return build(revalidationInterval: const Duration(milliseconds: 15));
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
@@ -545,17 +529,17 @@ void main() {
       build: () {
         connectivity.emit(ConnectivityState.offline);
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         // The repository never downgrades: it still holds the session as
         // verified and reports so.
         when(() => repo.currentAuthState)
-            .thenReturn(AuthStateAuthenticated(session: _session()));
+            .thenReturn(AuthStateAuthenticated(session: testSession()));
         return build();
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
-        AuthAuthenticated(session: _session()),
+        AuthAuthenticated(session: testSession()),
       ],
     );
   });
@@ -568,14 +552,14 @@ void main() {
         when(() => repo.getSession())
             .thenThrow(const AuthNetworkException(message: 'offline'));
         when(() => repo.restoreCachedSession())
-            .thenAnswer((_) async => _session());
+            .thenAnswer((_) async => testSession());
         return AuthBloc(authRepository: repo);
       },
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
         AuthAuthenticated(
-          session: _session(),
+          session: testSession(),
           verification: SessionVerification.unverifiedOffline,
         ),
       ],
