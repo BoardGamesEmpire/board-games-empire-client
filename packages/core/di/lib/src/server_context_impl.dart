@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 
 import 'dependency_container_impl.dart';
 import 'scope/user_scope_host.dart';
+import 'streams/replay_then_forward.dart';
 
 /// Concrete [ServerContext] implementation.
 ///
@@ -50,7 +51,7 @@ import 'scope/user_scope_host.dart';
 /// caller of lifecycle methods — external code should only observe state
 /// via [watchState] and resolve services via [container].
 ///
-/// ## Stream delivery — async controller + Stream.multi wrapper
+/// ## Stream delivery — async controller + replay wrapper
 ///
 /// [_stateController] uses the default async delivery (no `sync: true`).
 /// Listener callbacks fire in a microtask after [_setState] / `add()`,
@@ -61,12 +62,11 @@ import 'scope/user_scope_host.dart';
 /// another method on the context) executes after the original
 /// transition has fully unwound, not inside the `_transitioning` guard.
 ///
-/// [watchState] still emits the current state on subscribe via the
-/// [Stream.multi] wrapper — which delivers the initial value through
-/// the multi controller's own `add()` (also async, but cheaply: the
-/// first event-loop turn after `listen()`). The Stream.multi approach
-/// is preferred to a sync controller because it gives the
-/// "current-state-on-subscribe" semantic without forcing every
+/// [watchState] still emits the current state on subscribe, via
+/// [replayThenForward] — which delivers the initial value
+/// asynchronously too, but cheaply: the first event-loop turn after
+/// `listen()`. That is preferred to a sync controller because it gives
+/// the "current-state-on-subscribe" semantic without forcing every
 /// subsequent emission to fire synchronously.
 class ServerContextImpl implements ServerContext {
   ServerContextImpl({
@@ -429,25 +429,14 @@ class ServerContextImpl implements ServerContext {
 
   @override
   Stream<ServerContextState> watchState() {
-    // Stream.multi runs the callback synchronously on each listen(),
-    // giving us a hook to push the current state to the new subscriber
-    // before we wire up the underlying broadcast forwarding. The initial
-    // emission is delivered through the multi controller's own `add()`
-    // (async — first microtask after listen), but it's guaranteed to land
-    // ahead of any subsequent state change emitted via [_stateController]
-    // because [_setState] is called synchronously while [_stateController]
-    // delivery is itself async. The combination keeps the
-    // "current state on subscribe" semantic without needing a sync
-    // controller.
-    return Stream.multi((controller) {
-      controller.add(_state);
-      final sub = _stateController.stream.listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: controller.close,
-      );
-      controller.onCancel = sub.cancel;
-    });
+    // The replay is delivered asynchronously, but it is guaranteed to land
+    // ahead of any subsequent state change emitted via [_stateController],
+    // because [_setState] runs synchronously while [_stateController]
+    // delivery is itself async.
+    return replayThenForward(
+      current: () => _state,
+      updates: () => _stateController.stream,
+    );
   }
 
   /// Executes [body] with the transitioning guard held.

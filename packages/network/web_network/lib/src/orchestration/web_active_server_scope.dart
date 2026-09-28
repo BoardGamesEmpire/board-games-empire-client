@@ -1,5 +1,4 @@
-import 'dart:async';
-
+import 'package:di/di.dart' show replayThenForward;
 import 'package:interfaces/orchestration.dart';
 
 /// Web [ActiveServerScope] (#96): a constant, single-value holder.
@@ -26,12 +25,9 @@ class WebActiveServerScope implements ActiveServerScope {
 
   @override
   Stream<ActiveServer?> watchActive() {
-    return Stream.multi((controller) {
-      // Replay the one value on subscribe (the seam's contract), then leave
-      // the stream open: there is no upstream and never a second emission,
-      // so the controller closes only when the listener cancels. Uses the
-      // same Stream.multi replay pattern as OrchestratorActiveServerScope.
-      controller.add(_active);
-    });
+    // Replay the one value on subscribe (the seam's contract), then leave
+    // the stream open: there is no upstream and never a second emission,
+    // so the stream ends only when the listener cancels.
+    return replayThenForward(current: () => _active, updates: null);
   }
 }

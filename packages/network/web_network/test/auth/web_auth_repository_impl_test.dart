@@ -2096,7 +2096,7 @@ void main() {
     // path. That branch does not recheck the epoch, which is only safe
     // because no subscriber can observe an emission and call signOut()
     // before an awaiting caller resumes. `_stateController` is `sync: true`,
-    // but [watchAuthState] bridges it through a `Stream.multi` whose
+    // but [watchAuthState] bridges it through `replayThenForward`, whose
     // delivery is asynchronous, so the synchrony never escapes the class.
     //
     // If this test ever fails, the success path has acquired a real

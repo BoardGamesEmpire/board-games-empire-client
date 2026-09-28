@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:di/di.dart' show replayThenForward;
 import 'package:dio/dio.dart';
 // `decodeJsonBody` only — shared rather than copied so dio's 50 KB
 // isolate threshold lives in one place (#352 D2).
@@ -788,15 +789,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
   @override
   Stream<AuthState> watchAuthState() {
-    return Stream.multi((controller) {
-      controller.add(_currentState);
-      final sub = _stateController.stream.listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: controller.close,
-      );
-      controller.onCancel = sub.cancel;
-    });
+    return replayThenForward(
+      current: () => _currentState,
+      updates: () => _stateController.stream,
+    );
   }
 
   void _setState(AuthState next) {
@@ -1132,10 +1128,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // authenticated state synchronously and then returned, so the only way
     // to move the epoch in between is to observe that emission and call
     // [signOut] before this continuation resumes. Nothing can:
-    // [watchAuthState] wraps the `sync: true` controller in a `Stream.multi`
-    // whose delivery is asynchronous, so subscribers are notified strictly
-    // AFTER an awaiting caller resumes. The controller's synchrony never
-    // leaves this class, and it is pinned by a test.
+    // [watchAuthState] wraps the `sync: true` controller in
+    // `replayThenForward`, whose delivery is asynchronous, so subscribers
+    // are notified strictly AFTER an awaiting caller resumes. The
+    // controller's synchrony never leaves this class, and it is pinned by a
+    // test here and by the helper's own.
     //
     // A guard here would therefore be unreachable — the same reason the
     // dead `on DioException` 401 branch was removed rather than repaired
