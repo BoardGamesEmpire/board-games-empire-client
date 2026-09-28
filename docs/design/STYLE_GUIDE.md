@@ -279,8 +279,10 @@ brings the whole field on screen, label and error included. Focus alone does
 not: a dropdown is not scrolled to at all, and a text field scrolls only as far
 as its caret, which at 200% text left its label clipped above the viewport.
 
-"First" is the order the controls are declared in the `FormGroup`, so declare
-them in the order they render.
+"First" is reading order, the order Tab moves through, taken from where the
+fields are laid out. The order the controls are declared in the `FormGroup`
+does not matter, and an invalid control with no field built for it is passed
+over.
 
 ### Where the primary action goes
 
@@ -469,8 +471,7 @@ legible body text on every surface role.
 - [ ] Forms use `BgeTextField` + `BgeSubmitButton`
 - [ ] A submit that can fail on a screen that stays is wrapped in
       `BgeFormActions`, with its `title` decided by the rule above
-- [ ] A rejected submit calls `rejectSubmit()`, with the `FormGroup`'s controls
-      declared in render order
+- [ ] A rejected submit calls `rejectSubmit()`
 - [ ] Outcomes follow the surface rule above — banner if the screen stays,
       SnackBar if it pops, and never a SnackBar inside a live region
 - [ ] A banner is retired when its failure stops applying (edit, mode switch)

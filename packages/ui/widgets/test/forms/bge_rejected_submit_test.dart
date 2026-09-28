@@ -85,6 +85,85 @@ void main() {
       expect(_focused(tester, _notesKey), isFalse);
     });
 
+    testWidgets('picks the first invalid field in reading order, whatever '
+        'order the controls are declared in', (tester) async {
+      // Declared bottom to top. Register's controls were declared out of
+      // their render order when this landed, which is why the order is taken
+      // from the screen rather than from the group.
+      final form = FormGroup({
+        'notes': FormControl<String>(validators: [Validators.required]),
+        'kind': FormControl<String>(validators: [Validators.required]),
+        'name': FormControl<String>(validators: [Validators.required]),
+      });
+      addTearDown(form.dispose);
+      await tester.pumpWidget(hostAtSize(tester, _page(form)));
+
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+
+      expect(_focused(tester, _nameKey), isTrue);
+    });
+
+    testWidgets('passes over an invalid control with no field, to the first '
+        'one that has a field', (tester) async {
+      final form = FormGroup({
+        // Invalid, and rendered nowhere.
+        'unbound': FormControl<String>(validators: [Validators.required]),
+        'name': FormControl<String>(value: 'filled'),
+        'kind': FormControl<String>(validators: [Validators.required]),
+        'notes': FormControl<String>(validators: [Validators.required]),
+      });
+      addTearDown(form.dispose);
+      await tester.pumpWidget(hostAtSize(tester, _page(form)));
+
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+
+      expect(_focused(tester, _kindKey), isTrue);
+      expect(
+        (form.control('unbound') as FormControl<String>).hasFocus,
+        isFalse,
+        reason:
+            'focusing a control with no field marks it focused for good: '
+            'reactive_forms never clears the flag, so a later focus() on it '
+            'would do nothing',
+      );
+    });
+
+    testWidgets('brings the field back on a second rejected submit that '
+        'changes nothing else', (tester) async {
+      // The second time, every control is already touched and the field
+      // already has focus, so neither step asks for a frame. Without one the
+      // reveal would wait for whatever frame came next.
+      final form = _form();
+      addTearDown(form.dispose);
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          _page(form, spacerHeight: 1200),
+          size: const Size(320, 480),
+          textScale: 2,
+        ),
+      );
+      final position = pageScrollOf(tester).position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(_focused(tester, _kindKey), isTrue, reason: 'sanity');
+      expect(topInViewport(tester, find.byKey(_kindKey)), lessThan(0));
+
+      form.rejectSubmit();
+      await tester.pumpAndSettle();
+
+      expect(
+        topInViewport(tester, find.byKey(_kindKey)),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+    });
+
     testWidgets('brings a first invalid dropdown back into view, which '
         'focusing it alone does not', (tester) async {
       // Measured on compose before this existed: `control.focus()` on its

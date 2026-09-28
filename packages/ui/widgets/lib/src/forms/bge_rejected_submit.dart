@@ -54,55 +54,86 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// first, it was cancelled before it moved, and the label stayed clipped.
 extension BgeRejectedSubmit on FormGroup {
   /// Marks every control touched, so each error renders, then moves focus to
-  /// the first invalid control and brings it into view.
+  /// the first invalid field and brings it into view.
   ///
-  /// **"First" is declaration order**, depth-first through nested groups and
-  /// arrays. That is the visual order on every form here. A form whose
-  /// controls are declared out of the order they render would focus the wrong
-  /// field, so declare them in render order.
+  /// **"First" is reading order**, the order Tab moves through: top to
+  /// bottom, then along the text direction within a row. It is taken from
+  /// where the fields are laid out, not from the order the controls are
+  /// declared in. A group's declaration order is free to drift from its
+  /// layout, and register's had when this landed, with nothing to catch it.
+  ///
+  /// **Only a control with a field built for it is a candidate**, one that
+  /// can take focus. An invalid control rendered nowhere is passed over for
+  /// the next that is, and with none, this only marks the controls touched.
+  /// Focusing an unbound control would not only fail to move focus:
+  /// reactive_forms would mark it focused and never clear the mark, so a later
+  /// `focus()` on it, once its field was built, would do nothing.
   ///
   /// A disabled control is never invalid, so a field hidden by disabling its
   /// control, like compose's severity on a feature request, is passed over.
-  ///
-  /// With no widget bound to the control, this only marks the controls
-  /// touched.
   void rejectSubmit() {
     markAllAsTouched();
 
-    final control = _firstInvalid(this);
-    if (control == null) return;
-    control.focus();
+    final fields = [
+      for (final control in _invalidLeaves(this))
+        if (control.focusController?.focusNode case final node?
+            when _canTakeFocus(node))
+          node,
+    ];
+    if (fields.isEmpty) return;
+    final node = ReadingOrderTraversalPolicy.sort(fields).first;
+    // The node, not `control.focus()`: that call is skipped whenever the
+    // control believes it already has focus, and the node's own change
+    // reaches the control the same way a tap on the field does.
+    node.requestFocus();
 
-    final node = control.focusController?.focusNode;
-    if (node == null || node.context == null) return;
     // Post-frame, because the errors `markAllAsTouched` just rendered change
     // the layout and the reveal has to measure the field where it will be.
     //
     // Registered from a microtask, because of the order it has to run in. The
-    // focus change lands on a microtask that `focus()` has already queued, and
-    // that is where a text field schedules its caret reveal. Queued behind it,
-    // this reveal runs after the caret's in the same frame, cancels it before
-    // it has moved, and lands the whole field instead.
-    scheduleMicrotask(
-      () => WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(node)),
-    );
+    // focus change lands on a microtask that `requestFocus` has already
+    // queued, and that is where a text field schedules its caret reveal.
+    // Queued behind it, this reveal runs after the caret's in the same frame,
+    // cancels it before it has moved, and lands the whole field instead.
+    scheduleMicrotask(() {
+      WidgetsBinding.instance
+        ..addPostFrameCallback((_) => _reveal(node))
+        // A post-frame callback does not ask for a frame. On a repeat submit
+        // nothing else may: every control is already touched and the field
+        // already focused, so neither step changes anything that draws.
+        ..ensureVisualUpdate();
+    });
   }
 }
 
-/// The first invalid leaf under [control], depth-first in declaration order.
-FormControl<dynamic>? _firstInvalid(AbstractControl<dynamic> control) {
-  if (!control.invalid) return null;
-  if (control is FormControl<dynamic>) return control;
+/// The invalid leaves under [control].
+Iterable<FormControl<dynamic>> _invalidLeaves(
+  AbstractControl<dynamic> control,
+) sync* {
+  if (!control.invalid) return;
+  if (control is FormControl<dynamic>) {
+    yield control;
+    return;
+  }
   final children = switch (control) {
     FormGroup(:final controls) => controls.values,
     FormArray<dynamic>(:final controls) => controls,
     _ => const <AbstractControl<dynamic>>[],
   };
   for (final child in children) {
-    final found = _firstInvalid(child);
-    if (found != null) return found;
+    yield* _invalidLeaves(child);
   }
-  return null;
+}
+
+/// Whether [node] belongs to a field that is built, laid out, and able to
+/// take focus. Reading order needs the layout, to place the field.
+bool _canTakeFocus(FocusNode node) {
+  final context = node.context;
+  if (context == null || !context.mounted || !node.canRequestFocus) {
+    return false;
+  }
+  final box = context.findRenderObject();
+  return box is RenderBox && box.hasSize;
 }
 
 /// Shows the focused control on screen, with a spacing step of room above
