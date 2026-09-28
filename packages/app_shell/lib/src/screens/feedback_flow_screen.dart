@@ -1,6 +1,7 @@
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 import 'package:observability/observability.dart';
 
 import '../widgets/feedback_review_screen.dart';
@@ -87,10 +88,18 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
     );
   }
 
+  /// Step one. Built to hand over to step two in place (#211): the review
+  /// surface pins its send button and insets its column by `spaceMd`, so this
+  /// step pins "Review report" and takes the same inset. Anything else and
+  /// the button and the text column visibly move at the handoff — measured,
+  /// by 8dp on a phone and 16dp a side on a desktop window. #191 fixed the
+  /// column's width jump at this handoff; this is the inset mismatch it left.
   Widget _compose(BuildContext context) {
     final l10n = FeedbackLocalizations.of(context);
     return BgePage(
       title: Text(l10n.feedbackComposeTitle),
+      padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
+      footer: FeedbackComposeSubmitButton(model: _model, onSubmit: _onCompose),
       child: FeedbackComposeForm(model: _model, onSubmit: _onCompose),
     );
   }

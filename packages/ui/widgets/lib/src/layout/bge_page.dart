@@ -273,7 +273,7 @@ class BgePage extends StatelessWidget {
       bottomNavigationBar: bottomNavigationBar,
       body: SafeArea(
         child: footer == null
-            // No footer is the common case — 11 of the 12 page screens. Skip
+            // No footer is the common case — 10 of the 12 page screens. Skip
             // the flex entirely rather than make every one of them lay out a
             // Column with a single child.
             ? _pageContent(content, resolvedPadding, maxWidth)
