@@ -86,19 +86,18 @@ void main() {
   /// What the test observes is the id handed to [onCreated] and the fact that
   /// the screen does **not** navigate itself (#271 D2): the route change is
   /// the shell's, so at this seam a success is a callback and nothing else.
-  // NOT themed, deliberately, and this is the one harness in the #213 sweep
-  // left that way. Installing `BgeTheme.light()` here makes the #209 reveal
-  // case below fail with the banner at -227 instead of the intended +16.
+  // Themed, like every other harness in the #213 sweep. This one was left
+  // unthemed while the failure banner sat at the top of the page: with the
+  // real typography, the #209 reveal case below had 243dp to travel back up
+  // to it, the tap on submit cut that scroll short (#233), and the banner
+  // stopped at -227. The banner now sits above the submit (#211), so a tap
+  // there has its answer in place and the case passes themed.
   //
-  // That failure is real and is **#233**, not a test problem. The real
-  // typography makes this form far taller — the pre-submit scroll extent goes
-  // from 56 to 251 — so the reveal has 243dp to travel instead of 48. The tap
-  // on submit calls `position.hold()`, which disposes the running
-  // `DrivenScrollActivity`, and nothing retries it. The short travel survived
-  // that; the long one does not. Measured both ways before writing this.
-  //
-  // Re-theme this harness when #233 lands, and the case should pass as-is.
+  // That does NOT mean #233 is fixed. What still reproduces it is the
+  // skipped case below: submit from the description field's "done" action at
+  // the top of the page, then tap a field while the banner is being revealed.
   Widget harness({required void Function(String) onCreated}) => MaterialApp(
+    theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: Builder(
@@ -320,13 +319,12 @@ void main() {
       expect(find.byKey(CreateHouseholdScreen.errorBannerKey), findsNothing);
     });
 
-    testWidgets('the failure banner is scrolled into view on a small window at '
-        '200% text scale', (tester) async {
-      // #209: the banner announced itself but nothing revealed it. At 200%
-      // text scale on a small window the form overflows, so the user has
-      // scrolled down to reach the submit button — their tap failed, the
-      // banner appeared above the viewport, and the visible result was a
-      // button that did nothing.
+    testWidgets('a failure after the user scrolled to the submit lands '
+        'directly above it', (tester) async {
+      // #209: at 200% text scale on a small window the form overflows, so the
+      // user has scrolled down to reach the submit button. The banner used
+      // to appear at the top of the page, above the viewport, and answering
+      // the tap meant scrolling the user away from the button they pressed.
       useNarrowWindow(tester);
       when(
         () => repo.create(
@@ -345,14 +343,13 @@ void main() {
       );
       await openScreen(tester);
 
-      // The user scrolls down to reach the submit button.
       final position = pageScrollOf(tester).position;
       expect(
         position.maxScrollExtent,
         greaterThan(0),
         reason:
             'sanity: at 200% scale this form must overflow the viewport, '
-            'or there is nothing for the reveal to fix',
+            'or there is nothing to scroll to',
       );
       position.jumpTo(position.maxScrollExtent);
       await tester.pumpAndSettle();
@@ -363,9 +360,7 @@ void main() {
       expect(inErrorBanner(_errorCopy), findsOneWidget, reason: 'sanity');
       // The revealed position, not merely "somewhere on screen": asserting
       // `top >= 0 && top < viewportHeight` would restate the widget's own
-      // visibility guard, so it would pass for any implementation that
-      // satisfies the guard — including one that leaves a few dp of banner
-      // showing above the bottom edge.
+      // visibility guard.
       expect(
         bannerTop(tester),
         moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
@@ -373,7 +368,108 @@ void main() {
             'the banner leads with its top edge, one spacing step below '
             'the viewport start so it is not flush against the app bar',
       );
+      final banner = tester.getRect(
+        find.byKey(CreateHouseholdScreen.errorBannerKey),
+      );
+      final submit = tester.getRect(
+        find.byKey(CreateHouseholdForm.submitButtonKey),
+      );
+      expect(
+        submit.top - banner.bottom,
+        BgeTokens.standard.spaceMd,
+        reason: 'the answer sits on the button it answers (#211)',
+      );
     });
+
+    testWidgets('a failure submitted from the keyboard at the top of the page '
+        'is revealed below it', (tester) async {
+      // The other direction. The description field's "done" action submits
+      // without the user scrolling to the button, so the banner above the
+      // submit arrives below the viewport.
+      useNarrowWindow(tester);
+      when(
+        () => repo.create(
+          name: any(named: 'name'),
+          description: any(named: 'description'),
+        ),
+      ).thenThrow(StateError('db is down'));
+
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: harness(onCreated: (_) {}),
+        ),
+      );
+      await openScreen(tester);
+      await tester.enterText(
+        find.byKey(CreateHouseholdForm.nameFieldKey),
+        'HQ',
+      );
+      pageScrollOf(tester).position.jumpTo(0);
+      await tester.pumpAndSettle();
+
+      await tester.showKeyboard(
+        find.byKey(CreateHouseholdForm.descriptionFieldKey),
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(
+        bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+    });
+
+    testWidgets('a tap on a field while the failure is being revealed does '
+        'not strand the banner (#233)', (tester) async {
+      // #233's repro, and this file's only one since the banner moved above
+      // the submit (#211). The tap's pointer-down holds the page's scroll
+      // position, which cancels the running reveal, and nothing retries it.
+      // Measured: the banner is left at 224 in a 344dp viewport, its top on
+      // screen and the rest below.
+      //
+      // Skipped because it fails until #233 lands. Un-skip it there; it is
+      // the canary the unthemed harness used to be.
+      useNarrowWindow(tester);
+      when(
+        () => repo.create(
+          name: any(named: 'name'),
+          description: any(named: 'description'),
+        ),
+      ).thenThrow(StateError('db is down'));
+
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: harness(onCreated: (_) {}),
+        ),
+      );
+      await openScreen(tester);
+      await tester.enterText(
+        find.byKey(CreateHouseholdForm.nameFieldKey),
+        'HQ',
+      );
+      pageScrollOf(tester).position.jumpTo(0);
+      await tester.pumpAndSettle();
+
+      await tester.showKeyboard(
+        find.byKey(CreateHouseholdForm.descriptionFieldKey),
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      // Let the reveal start, then tap a field before it lands.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.tap(
+        find.byKey(CreateHouseholdForm.nameFieldKey),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+    }, skip: true);
 
     testWidgets('after a failure the form keeps its input and a retry reaches '
         'the repository again', (tester) async {

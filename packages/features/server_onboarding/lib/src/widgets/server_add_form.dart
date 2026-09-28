@@ -138,20 +138,22 @@ class ServerAddForm extends StatelessWidget {
                 ),
                 _RetireFailureOnEdit(control: form.control(urlControlName)),
                 const BgeGap.lg(),
-                if (failure != null) ...[
-                  BgeInlineBanner(
-                    tone: BgeBannerTone.error,
-                    title: l10n.serverAddErrorTitle,
-                    message: _failureMessage(l10n, failure),
+                BgeFormActions(
+                  failure: failure == null
+                      ? null
+                      : BgeFormFailure(
+                          // Titled: "Couldn't reach the server…" names a
+                          // cause, never the operation that failed (#211).
+                          title: l10n.serverAddErrorTitle,
+                          message: _failureMessage(l10n, failure),
+                        ),
+                  action: BgeSubmitButton(
+                    key: submitButtonKey,
+                    label: l10n.serverAddSubmit,
+                    progressLabel: l10n.serverAddInProgress,
+                    submitting: inProgress,
+                    onPressed: () => _submit(context, form),
                   ),
-                  const BgeGap.md(),
-                ],
-                BgeSubmitButton(
-                  key: submitButtonKey,
-                  label: l10n.serverAddSubmit,
-                  progressLabel: l10n.serverAddInProgress,
-                  submitting: inProgress,
-                  onPressed: () => _submit(context, form),
                 ),
               ],
             );

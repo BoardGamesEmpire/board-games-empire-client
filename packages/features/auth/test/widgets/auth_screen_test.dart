@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -404,27 +405,22 @@ void main() {
           find.text('This field is required').first,
         );
         expect(errorTop, greaterThanOrEqualTo(0));
-        expect(
-          errorTop,
-          lessThan(scrollViewportOf(tester).size.height),
-        );
+        expect(errorTop, lessThan(scrollViewportOf(tester).size.height));
       });
     });
 
-    group('failure banner reveal (#209)', () {
-      testWidgets('a failure that appears above the viewport is scrolled into '
-          'view on a small window at 200% text scale', (tester) async {
-        // The banner announces itself, so a screen-reader user is told. A
-        // sighted user who had scrolled down to reach the sign-in button saw a
-        // button that did nothing, with the message above the viewport.
+    group('failure placement (#209, #211)', () {
+      /// Pumps the screen at 320x400 and 200% text with the failure stream
+      /// under the test's control, so a failure can land after the user has
+      /// moved. Returns the stream.
+      Future<StreamController<AuthBlocState>> pumpSmall(
+        WidgetTester tester, {
+        bool register = false,
+      }) async {
         _useNarrowWindow(tester);
-
-        // A controller rather than `Stream.fromIterable` so the failure lands
-        // AFTER the user has scrolled, which is the whole scenario.
         final states = StreamController<AuthBlocState>();
         addTearDown(states.close);
         whenListen(mockBloc, states.stream, initialState: const AuthInitial());
-
         await tester.pumpWidget(
           MediaQuery(
             // Above MaterialApp on purpose: `MediaQuery.fromView` is inserted
@@ -434,14 +430,32 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        if (register) {
+          final toggle = find.text("Don't have an account? Register");
+          await tester.ensureVisible(toggle);
+          await tester.tap(toggle);
+          await tester.pumpAndSettle();
+        }
+        return states;
+      }
 
+      testWidgets('a failure after the user scrolled to the submit lands on '
+          'it, with the submit starting in view beneath', (tester) async {
+        // #209's scenario. The banner used to sit at the top of the page, so
+        // answering this tap scrolled the user away from the button they
+        // pressed: measured, the submit's top edge ended at 474 in this 400dp
+        // viewport, wholly below the window. Above the submit, it starts at
+        // 386. Not wholly in view — at 200% text the titled banner and the
+        // button together are taller than this window — but the answer and
+        // the thing it answers are now read together.
+        final states = await pumpSmall(tester);
         final position = pageScrollOf(tester).position;
         expect(
           position.maxScrollExtent,
           greaterThan(0),
           reason:
               'sanity: at 200% scale this screen must overflow the '
-              'viewport, or there is nothing for the reveal to fix',
+              'viewport, or there is nothing to scroll to',
         );
         position.jumpTo(position.maxScrollExtent);
         await tester.pumpAndSettle();
@@ -449,16 +463,31 @@ void main() {
         states.add(const AuthFailureInvalidCredentials());
         await tester.pumpAndSettle();
 
+        final banner = tester.getRect(find.byKey(AuthScreen.failureBannerKey));
+        final submit = tester.getRect(find.byType(FilledButton).first);
         expect(
-          find.byKey(AuthScreen.failureBannerKey),
-          findsOneWidget,
-          reason: 'sanity',
+          _bannerTop(tester),
+          moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
         );
-        // The revealed position, not merely "somewhere on screen": asserting
-        // `top >= 0 && top < viewportHeight` would restate the widget's own
-        // visibility guard, so it would pass for any implementation that
-        // satisfies the guard — including one that leaves a few dp of banner
-        // showing above the bottom edge.
+        expect(submit.top - banner.bottom, BgeTokens.standard.spaceMd);
+        expect(
+          topInViewport(tester, find.byType(FilledButton).first),
+          lessThan(scrollViewportOf(tester).size.height),
+          reason: 'the button the failure answers starts in view',
+        );
+      });
+
+      testWidgets('a failure submitted from the keyboard at the top of the '
+          'page is revealed below it', (tester) async {
+        // The other direction: the password field's "done" action submits
+        // without the user ever scrolling to the button, so the banner above
+        // the submit arrives below the viewport.
+        final states = await pumpSmall(tester);
+        expect(pageScrollOf(tester).position.pixels, 0, reason: 'sanity');
+
+        states.add(const AuthFailureInvalidCredentials());
+        await tester.pumpAndSettle();
+
         expect(
           _bannerTop(tester),
           moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
@@ -466,6 +495,113 @@ void main() {
               'the banner leads with its top edge, one spacing step below '
               'the viewport start so it is not flush against the window edge',
         );
+      });
+    });
+
+    group('failure title (#211)', () {
+      testWidgets('a sign-in failure is titled with the operation', (
+        tester,
+      ) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureNetwork(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+
+        // "Could not reach the server" never says that signing in failed.
+        final banner = find.byKey(AuthScreen.failureBannerKey);
+        expect(
+          find.descendant(of: banner, matching: find.text("Couldn't sign in")),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: banner,
+            matching: find.text(
+              'Could not reach the server. Check your connection.',
+            ),
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('a registration failure is titled with its own operation', (
+        tester,
+      ) async {
+        final states = StreamController<AuthBlocState>();
+        addTearDown(states.close);
+        whenListen(mockBloc, states.stream, initialState: const AuthInitial());
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text("Don't have an account? Register"));
+        await tester.pumpAndSettle();
+        states.add(const AuthFailureNetwork());
+        await tester.pumpAndSettle();
+
+        final banner = find.byKey(AuthScreen.failureBannerKey);
+        expect(
+          find.descendant(
+            of: banner,
+            matching: find.text("Couldn't create account"),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text("Couldn't sign in"), findsNothing);
+      });
+    });
+
+    group('failure across a mode switch (#211)', () {
+      testWidgets('a sign-in failure never renders in the registration form, '
+          'not even for a frame', (tester) async {
+        // The banner lives in each form now, so a switch unmounts one and
+        // mounts the other. A failure still in the bloc when the registration
+        // form first builds would render there under "Couldn't create
+        // account", and announce itself as new. A real bloc, because the
+        // mock only records that the clear was dispatched — what matters is
+        // that it lands before the next frame.
+        final repo = MockAuthRepository();
+        when(repo.watchAuthState).thenAnswer((_) => const Stream.empty());
+        when(
+          () => repo.signIn(
+            email: any(named: 'email'),
+            password: any(named: 'password'),
+          ),
+        ).thenThrow(const AuthInvalidCredentialsException());
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: BgeTheme.light(),
+            localizationsDelegates: AuthLocalizations.localizationsDelegates,
+            supportedLocales: AuthLocalizations.supportedLocales,
+            // `create`, as the router provides it: the provider closes the
+            // bloc when the tree goes, without the test awaiting a close
+            // that never settles under the fake-async zone.
+            home: BlocProvider<AuthBloc>(
+              create: (_) => AuthBloc(authRepository: repo),
+              child: _screen(testServerIdentity()),
+            ),
+          ),
+        );
+        await tester.enterText(
+          find.byType(TextField).at(0),
+          'someone@example.com',
+        );
+        await tester.enterText(find.byType(TextField).at(1), 'wrong');
+        await tester.tap(find.widgetWithText(FilledButton, 'Sign In'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(AuthScreen.failureBannerKey), findsOneWidget);
+
+        await tester.tap(find.text("Don't have an account? Register"));
+        await tester.pump();
+
+        expect(find.byType(RegisterForm), findsOneWidget, reason: 'sanity');
+        expect(find.byKey(AuthScreen.failureBannerKey), findsNothing);
       });
     });
   });

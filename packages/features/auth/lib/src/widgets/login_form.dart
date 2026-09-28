@@ -20,7 +20,11 @@ import '../bloc/auth_bloc_state.dart';
 /// i18n (#37): all copy — labels, hints, validation messages, button and
 /// loading semantics — comes from [AuthLocalizations].
 class LoginForm extends StatefulWidget {
-  const LoginForm({super.key, this.onSwitchToRegister});
+  const LoginForm({super.key, this.failure, this.onSwitchToRegister});
+
+  /// The failure of the last sign-in, shown above the submit. The screen
+  /// supplies it, with its copy and title.
+  final BgeFormFailure? failure;
 
   /// Called when the user taps the "Create account" link.
   final VoidCallback? onSwitchToRegister;
@@ -142,11 +146,14 @@ class _LoginFormState extends State<LoginForm> {
                   },
                 ),
                 const BgeGap.lg(),
-                BgeSubmitButton(
-                  label: l10n.authSignInButton,
-                  progressLabel: l10n.authLoadingLabel,
-                  submitting: isLoading,
-                  onPressed: () => _submit(context),
+                BgeFormActions(
+                  failure: widget.failure,
+                  action: BgeSubmitButton(
+                    label: l10n.authSignInButton,
+                    progressLabel: l10n.authLoadingLabel,
+                    submitting: isLoading,
+                    onPressed: () => _submit(context),
+                  ),
                 ),
                 if (widget.onSwitchToRegister != null) ...[
                   const BgeGap.md(),

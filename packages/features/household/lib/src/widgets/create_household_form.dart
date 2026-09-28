@@ -36,6 +36,7 @@ class CreateHouseholdForm extends StatefulWidget {
   const CreateHouseholdForm({
     required this.onSubmit,
     this.submitting = false,
+    this.failure,
     this.onEdited,
     super.key,
   });
@@ -46,6 +47,10 @@ class CreateHouseholdForm extends StatefulWidget {
   /// When true, the fields are read-only and the submit button is disabled
   /// and shows the localized progress label with a spinner.
   final bool submitting;
+
+  /// The failure of the last submit, shown directly above the submit button.
+  /// The screen supplies it, since the screen is what knows the outcome.
+  final BgeFormFailure? failure;
 
   /// Invoked on every value change, so the caller can retire an error banner
   /// that describes the value being replaced.
@@ -156,12 +161,15 @@ class _CreateHouseholdFormState extends State<CreateHouseholdForm> {
             onSubmitted: _submit,
           ),
           const BgeGap.lg(),
-          BgeSubmitButton(
-            key: CreateHouseholdForm.submitButtonKey,
-            label: l10n.createHouseholdSubmit,
-            progressLabel: l10n.createHouseholdInProgress,
-            submitting: widget.submitting,
-            onPressed: _submit,
+          BgeFormActions(
+            failure: widget.failure,
+            action: BgeSubmitButton(
+              key: CreateHouseholdForm.submitButtonKey,
+              label: l10n.createHouseholdSubmit,
+              progressLabel: l10n.createHouseholdInProgress,
+              submitting: widget.submitting,
+              onPressed: _submit,
+            ),
           ),
         ],
       ),
