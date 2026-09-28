@@ -18,42 +18,7 @@ import 'package:auth/src/widgets/login_form.dart';
 import 'package:auth/src/widgets/register_form.dart';
 import 'package:auth/src/widgets/oidc_strategy_button.dart';
 
-class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
-    implements AuthBloc {}
-
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity({
-  bool hasEmailPassword = true,
-  bool signUpDisabled = false,
-  bool hasOidc = false,
-}) => ServerIdentity(
-  serverId: 'server-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    if (hasEmailPassword)
-      EmailAndPasswordStrategy(
-        signUpDisabled: signUpDisabled,
-        signInEndpoint: '$_kAuthBase/sign-in/email',
-        signUpEndpoint: signUpDisabled ? null : '$_kAuthBase/sign-up/email',
-      ),
-    if (hasOidc)
-      const OidcStrategy(
-        providerId: 'acme-sso',
-        discoveryUrl: 'https://auth.acme.com/.well-known/openid-configuration',
-        authorizationEndpoint: '$_kAuthBase/sign-in/oauth2',
-      ),
-  ],
-);
+import '../support/auth_test_fixtures.dart';
 
 // #37 i18n: AuthScreen resolves all copy from AuthLocalizations, so the
 // harness must provide the delegates; assertions keep matching the
@@ -104,7 +69,7 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         expect(find.byType(LoginForm), findsOneWidget);
@@ -115,7 +80,7 @@ void main() {
       ) async {
         await tester.pumpWidget(
           _wrap(
-            _screen(_identity(hasEmailPassword: false), mockBloc),
+            _screen(testServerIdentity(hasEmailPassword: false), mockBloc),
             mockBloc,
           ),
         );
@@ -127,7 +92,7 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(hasOidc: true), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(hasOidc: true), mockBloc), mockBloc),
         );
 
         expect(find.byType(OidcStrategyButton), findsOneWidget);
@@ -137,7 +102,7 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(hasOidc: true), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(hasOidc: true), mockBloc), mockBloc),
         );
 
         expect(find.byType(LoginForm), findsOneWidget);
@@ -150,7 +115,7 @@ void main() {
       ) async {
         await tester.pumpWidget(
           _wrap(
-            _screen(_identity(hasEmailPassword: false), mockBloc),
+            _screen(testServerIdentity(hasEmailPassword: false), mockBloc),
             mockBloc,
           ),
         );
@@ -167,7 +132,7 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         expect(find.byType(LoginForm), findsOneWidget);
@@ -183,7 +148,7 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         await tester.tap(find.text("Don't have an account? Register"));
@@ -199,7 +164,10 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(signUpDisabled: true), mockBloc), mockBloc),
+          _wrap(
+            _screen(testServerIdentity(signUpDisabled: true), mockBloc),
+            mockBloc,
+          ),
         );
 
         expect(find.text("Don't have an account? Register"), findsNothing);
@@ -209,7 +177,7 @@ void main() {
     group('server display', () {
       testWidgets('shows server display name', (tester) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         expect(find.textContaining('Test BGE Server'), findsOneWidget);
@@ -230,7 +198,7 @@ void main() {
         );
 
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
         await tester.pumpAndSettle();
 
@@ -256,7 +224,7 @@ void main() {
         );
 
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
         await tester.pumpAndSettle();
 
@@ -289,7 +257,7 @@ void main() {
         );
 
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
         await tester.pumpAndSettle();
 
@@ -320,7 +288,7 @@ void main() {
         );
 
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
         await tester.pumpAndSettle();
         expect(find.byKey(AuthScreen.failureBannerKey), findsOneWidget);
@@ -351,7 +319,7 @@ void main() {
         );
 
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
         await tester.pumpAndSettle();
         expect(find.byKey(AuthScreen.failureBannerKey), findsOneWidget);
@@ -369,7 +337,7 @@ void main() {
     group('accessibility', () {
       testWidgets('server name has descriptive semantic label', (tester) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         final handle = tester.ensureSemantics();
@@ -384,7 +352,7 @@ void main() {
 
       testWidgets('form title is visible to screen readers', (tester) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         expect(find.text('Sign In'), findsWidgets);
@@ -394,7 +362,7 @@ void main() {
         tester,
       ) async {
         await tester.pumpWidget(
-          _wrap(_screen(_identity(), mockBloc), mockBloc),
+          _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
         );
 
         await tester.tap(find.text("Don't have an account? Register"));
@@ -423,7 +391,7 @@ void main() {
             // Above MaterialApp on purpose: `MediaQuery.fromView` is inserted
             // by `View`, higher still, so this one wins for the subtree below.
             data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-            child: _wrap(_screen(_identity(), mockBloc), mockBloc),
+            child: _wrap(_screen(testServerIdentity(), mockBloc), mockBloc),
           ),
         );
         await tester.pumpAndSettle();

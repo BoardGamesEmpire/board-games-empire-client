@@ -1,10 +1,7 @@
-import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:models/domain.dart';
-import 'package:models/dto.dart';
 
 import 'package:auth/l10n/auth_localizations.dart';
 import 'package:auth/src/bloc/auth_bloc.dart';
@@ -13,45 +10,9 @@ import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/screens/auth_gate.dart';
 import 'package:auth/src/screens/auth_screen.dart';
 
-class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
-    implements AuthBloc {}
+import '../support/auth_test_fixtures.dart';
 
 const _kSplashKey = Key('test_splash');
-const _kAuthBase = '/api/auth';
-
-ServerIdentity _identity() => ServerIdentity(
-  serverId: 'server-uuid-1',
-  issuer: 'https://api.example.com',
-  wellKnownSchemaVersion: 1,
-  name: 'Test BGE Server',
-  deviceAuthorizationEndpoint: '$_kAuthBase/device',
-  authBasePath: _kAuthBase,
-  sessionEndpoint: '$_kAuthBase/get-session',
-  signOutEndpoint: '$_kAuthBase/sign-out',
-  passkeySupported: false,
-  twoFactorSupported: false,
-  anonymousAuthSupported: false,
-  strategies: [
-    const EmailAndPasswordStrategy(
-      signUpDisabled: false,
-      signInEndpoint: '$_kAuthBase/sign-in/email',
-      signUpEndpoint: '$_kAuthBase/sign-up/email',
-    ),
-  ],
-);
-
-AuthResponse _session() => AuthResponse(
-  token: 'tok-abc',
-  user: AuthUser(
-    id: 'u1',
-    username: 'testuser',
-    email: 'u1@example.com',
-    emailVerified: true,
-    createdAt: DateTime(2099),
-    updatedAt: DateTime(2099),
-  ),
-  expiresAt: DateTime(2099).toUtc(),
-);
 
 Widget _wrap(MockAuthBloc bloc) => MaterialApp(
   localizationsDelegates: AuthLocalizations.localizationsDelegates,
@@ -59,7 +20,7 @@ Widget _wrap(MockAuthBloc bloc) => MaterialApp(
   home: BlocProvider<AuthBloc>.value(
     value: bloc,
     child: AuthGate(
-      identity: _identity(),
+      identity: testServerIdentity(),
       serverDisplayName: 'My Server',
       splash: const SizedBox(key: _kSplashKey),
     ),
@@ -110,7 +71,7 @@ void main() {
 
     testWidgets('renders splash for AuthAuthenticated — the router is about '
         'to redirect; the gate holds splash for the microtask', (tester) async {
-      await pumpWithState(tester, AuthAuthenticated(session: _session()));
+      await pumpWithState(tester, AuthAuthenticated(session: testSession()));
 
       expect(find.byKey(_kSplashKey), findsOneWidget);
       expect(find.byType(AuthScreen), findsNothing);

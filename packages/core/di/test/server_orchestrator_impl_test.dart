@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:di/di.dart';
@@ -7,64 +5,9 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
-// ── Mocks ────────────────────────────────────────────────────────────────────
-
-class MockServerRepository extends Mock implements ServerRepository {}
-
-class MockDevicePreferencesRepository extends Mock
-    implements DevicePreferencesRepository {}
-
-class MockServerContext extends Mock implements ServerContext {}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
+import 'support/orchestrator_test_fixtures.dart';
 
 const _kPrefs = DevicePreferences();
-
-ServerConfig _config({
-  required String id,
-  ConnectionState state = ConnectionState.disconnected,
-}) => ServerConfig(
-  id: id,
-  displayName: 'Server $id',
-  serverUrl: 'https://$id.example.com',
-  connectionState: state,
-  bgeServerId: 'bge-$id',
-  cachedIdentity: ServerIdentity(
-    serverId: 'bge-$id',
-    issuer: 'https://$id.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
-  ),
-  lastIdentityFetchedAt: DateTime.now().toUtc(),
-);
-
-MockServerContext _mockContext(String serverId) {
-  final ctx = MockServerContext();
-  when(() => ctx.serverId).thenReturn(serverId);
-  when(() => ctx.state).thenReturn(ServerContextState.initializing);
-  when(() => ctx.activate()).thenAnswer((_) async {
-    when(() => ctx.state).thenReturn(ServerContextState.active);
-  });
-  when(() => ctx.background()).thenAnswer((_) async {
-    when(() => ctx.state).thenReturn(ServerContextState.backgrounding);
-  });
-  when(() => ctx.suspend()).thenAnswer((_) async {
-    when(() => ctx.state).thenReturn(ServerContextState.monitoring);
-  });
-  when(() => ctx.dispose()).thenAnswer((_) async {
-    when(() => ctx.state).thenReturn(ServerContextState.disposed);
-  });
-  when(() => ctx.watchState())
-      .thenAnswer((_) => Stream.value(ServerContextState.active));
-  return ctx;
-}
 
 void main() {
   setUpAll(() {
@@ -91,7 +34,7 @@ void main() {
       serverRepository: mockRepo,
       preferencesRepository: mockPrefsRepo,
       contextFactory: (config) {
-        final ctx = _mockContext(config.id);
+        final ctx = mockServerContext(config.id);
         mockContexts[config.id] = ctx;
         return ctx;
       },
@@ -108,7 +51,8 @@ void main() {
         newState: any(named: 'newState'),
       ),
     ).thenAnswer(
-      (inv) async => _config(id: inv.namedArguments[#serverId] as String),
+      (inv) async =>
+          testServerConfig(id: inv.namedArguments[#serverId] as String),
     );
   }
 
@@ -119,7 +63,7 @@ void main() {
 
   void stubGetServer(String id, {ServerConfig? config}) {
     when(() => mockRepo.getServer(id))
-        .thenAnswer((_) async => config ?? _config(id: id));
+        .thenAnswer((_) async => config ?? testServerConfig(id: id));
   }
 
   group('ServerOrchestratorImpl', () {
@@ -138,8 +82,8 @@ void main() {
       test('restores previously active server', () async {
         when(() => mockRepo.getConnectedServers()).thenAnswer(
           (_) async => [
-            _config(id: 'server-a', state: ConnectionState.active),
-            _config(id: 'server-b', state: ConnectionState.monitoring),
+            testServerConfig(id: 'server-a', state: ConnectionState.active),
+            testServerConfig(id: 'server-b', state: ConnectionState.monitoring),
           ],
         );
         stubUpdateConnectionState();
@@ -233,7 +177,7 @@ void main() {
     });
 
     group('addAndActivateServer()', () {
-      final identity = _config(id: 'new').cachedIdentity;
+      final identity = testServerConfig(id: 'new').cachedIdentity;
 
       void stubAddServer({Object? error}) {
         final stub = when(
@@ -247,7 +191,7 @@ void main() {
         if (error != null) {
           stub.thenThrow(error);
         } else {
-          stub.thenAnswer((_) async => _config(id: 'new'));
+          stub.thenAnswer((_) async => testServerConfig(id: 'new'));
         }
       }
 
@@ -321,7 +265,7 @@ void main() {
           serverRepository: mockRepo,
           preferencesRepository: mockPrefsRepo,
           contextFactory: (config) {
-            final ctx = _mockContext(config.id);
+            final ctx = mockServerContext(config.id);
             when(() => ctx.activate()).thenThrow(StateError('boom'));
             mockContexts[config.id] = ctx;
             return ctx;

@@ -18,27 +18,7 @@ void main() {
   late ServerOrchestratorImpl orchestrator;
 
   setUp(() {
-    repo = MockServerRepository();
-    prefsRepo = MockDevicePreferencesRepository();
-    when(() => prefsRepo.get()).thenAnswer((_) async => DevicePreferences());
-    when(() => repo.getConnectedServers()).thenAnswer((_) async => []);
-    when(
-      () => repo.updateConnectionState(
-        serverId: any(named: 'serverId'),
-        newState: any(named: 'newState'),
-      ),
-    ).thenAnswer(
-      (inv) async =>
-          testServerConfig(id: inv.namedArguments[#serverId] as String),
-    );
-    when(() => repo.updateLastActive(any(), any())).thenAnswer((_) async {});
-
-    orchestrator = ServerOrchestratorImpl(
-      serverRepository: repo,
-      preferencesRepository: prefsRepo,
-      contextFactory: (config) => mockServerContext(config.id),
-      isDesktopOverride: true,
-    );
+    (:repo, :prefsRepo, :orchestrator) = stubbedOrchestrator();
   });
 
   tearDown(() async => orchestrator.dispose());

@@ -167,32 +167,12 @@ void main() {
 
   group('OrchestratorActiveServerScope (end-to-end, real orchestrator)', () {
     late MockServerRepository repo;
-    late MockDevicePreferencesRepository prefsRepo;
     late ServerOrchestratorImpl orchestrator;
     late OrchestratorActiveServerScope scope;
 
     setUp(() {
-      repo = MockServerRepository();
-      prefsRepo = MockDevicePreferencesRepository();
-      when(() => prefsRepo.get()).thenAnswer((_) async => DevicePreferences());
-      when(() => repo.getConnectedServers()).thenAnswer((_) async => []);
-      when(
-        () => repo.updateConnectionState(
-          serverId: any(named: 'serverId'),
-          newState: any(named: 'newState'),
-        ),
-      ).thenAnswer(
-        (inv) async =>
-            testServerConfig(id: inv.namedArguments[#serverId] as String),
-      );
-      when(() => repo.updateLastActive(any(), any())).thenAnswer((_) async {});
-
-      orchestrator = ServerOrchestratorImpl(
-        serverRepository: repo,
-        preferencesRepository: prefsRepo,
-        contextFactory: (config) =>
-            mockServerContext(config.id, container: DependencyContainerImpl()),
-        isDesktopOverride: true,
+      (:repo, prefsRepo: _, :orchestrator) = stubbedOrchestrator(
+        withContainers: true,
       );
       scope = OrchestratorActiveServerScope(orchestrator: orchestrator);
     });

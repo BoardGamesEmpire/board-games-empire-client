@@ -5,14 +5,10 @@
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
-import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:mocktail/mocktail.dart';
 
-class _MockServerRepository extends Mock implements ServerRepository {}
-
-class _MockPreferencesRepository extends Mock
-    implements DevicePreferencesRepository {}
+import 'support/orchestrator_test_fixtures.dart';
 
 class _MockDevicePreferences extends Mock implements DevicePreferences {}
 
@@ -38,39 +34,14 @@ class _CountedInstaller implements ServerScopeInstaller {
   }
 }
 
-ServerConfig _makeConfig({
-  required String id,
-  ConnectionState connectionState = ConnectionState.disconnected,
-}) => ServerConfig(
-  id: id,
-  displayName: 'Server $id',
-  serverUrl: 'https://$id.example.com',
-  connectionState: connectionState,
-  bgeServerId: 'bge-$id',
-  cachedIdentity: ServerIdentity(
-    serverId: 'bge-$id',
-    issuer: 'https://$id.example.com',
-    wellKnownSchemaVersion: 1,
-    name: 'Test BGE Server',
-    deviceAuthorizationEndpoint: '/api/auth/device',
-    authBasePath: '/api/auth',
-    sessionEndpoint: '/api/auth/get-session',
-    signOutEndpoint: '/api/auth/sign-out',
-    passkeySupported: true,
-    twoFactorSupported: true,
-    anonymousAuthSupported: true,
-  ),
-  lastIdentityFetchedAt: DateTime.now().toUtc(),
-);
-
 void main() {
   setUpAll(() {
     registerFallbackValue(ConnectionState.disconnected);
     registerFallbackValue(DateTime(2026));
   });
 
-  late _MockServerRepository serverRepository;
-  late _MockPreferencesRepository preferencesRepository;
+  late MockServerRepository serverRepository;
+  late MockDevicePreferencesRepository preferencesRepository;
   late _MockDevicePreferences preferences;
   late Map<String, ServerScopeInstaller> installersById;
   late ServerOrchestratorImpl orchestrator;
@@ -83,8 +54,8 @@ void main() {
   );
 
   setUp(() {
-    serverRepository = _MockServerRepository();
-    preferencesRepository = _MockPreferencesRepository();
+    serverRepository = MockServerRepository();
+    preferencesRepository = MockDevicePreferencesRepository();
     preferences = _MockDevicePreferences();
     installersById = {};
 
@@ -102,9 +73,9 @@ void main() {
         newState: any(named: 'newState'),
       ),
     ).thenAnswer(
-      (i) async => _makeConfig(
+      (i) async => testServerConfig(
         id: i.namedArguments[#serverId] as String,
-        connectionState: i.namedArguments[#newState] as ConnectionState,
+        state: i.namedArguments[#newState] as ConnectionState,
       ),
     );
     when(() => serverRepository.updateLastActive(any(), any()))
@@ -122,14 +93,8 @@ void main() {
 
   group('initialize()', () {
     test('one failing restore does not prevent initialization', () async {
-      final good = _makeConfig(
-        id: 'a',
-        connectionState: ConnectionState.active,
-      );
-      final bad = _makeConfig(
-        id: 'b',
-        connectionState: ConnectionState.monitoring,
-      );
+      final good = testServerConfig(id: 'a', state: ConnectionState.active);
+      final bad = testServerConfig(id: 'b', state: ConnectionState.monitoring);
       installersById['a'] = _CountedInstaller();
       installersById['b'] = _CountedInstaller(failOnCalls: {1});
       when(() => serverRepository.getConnectedServers())
@@ -154,13 +119,10 @@ void main() {
     test(
       'falls back when the previously-active server fails to restore',
       () async {
-        final bad = _makeConfig(
-          id: 'a',
-          connectionState: ConnectionState.active,
-        );
-        final good = _makeConfig(
+        final bad = testServerConfig(id: 'a', state: ConnectionState.active);
+        final good = testServerConfig(
           id: 'b',
-          connectionState: ConnectionState.monitoring,
+          state: ConnectionState.monitoring,
         );
         installersById['a'] = _CountedInstaller(failOnCalls: {1});
         installersById['b'] = _CountedInstaller();
@@ -185,7 +147,7 @@ void main() {
     test(
       'failed connect leaves no orphaned context and can be retried',
       () async {
-        final config = _makeConfig(id: 'x');
+        final config = testServerConfig(id: 'x');
         installersById['x'] = _CountedInstaller(failOnCalls: {1});
         when(() => serverRepository.getServer('x'))
             .thenAnswer((_) async => config);
@@ -210,8 +172,8 @@ void main() {
     );
 
     test('makeActive demotes the current active server', () async {
-      final a = _makeConfig(id: 'a');
-      final b = _makeConfig(id: 'b');
+      final a = testServerConfig(id: 'a');
+      final b = testServerConfig(id: 'b');
       installersById['a'] = _CountedInstaller();
       installersById['b'] = _CountedInstaller();
       when(() => serverRepository.getServer('a')).thenAnswer((_) async => a);
@@ -233,8 +195,8 @@ void main() {
     test(
       'failed demotion rolls back the newcomer, previous stays active',
       () async {
-        final a = _makeConfig(id: 'a');
-        final b = _makeConfig(id: 'b');
+        final a = testServerConfig(id: 'a');
+        final b = testServerConfig(id: 'b');
         installersById['a'] = _CountedInstaller();
         installersById['b'] = _CountedInstaller();
         when(() => serverRepository.getServer('a')).thenAnswer((_) async => a);
@@ -271,8 +233,8 @@ void main() {
     });
 
     Future<void> connectPair({required Set<int> targetFailures}) async {
-      final a = _makeConfig(id: 'a');
-      final b = _makeConfig(id: 'b');
+      final a = testServerConfig(id: 'a');
+      final b = testServerConfig(id: 'b');
       installersById['a'] = _CountedInstaller();
       installersById['b'] = _CountedInstaller(failOnCalls: targetFailures);
       when(() => serverRepository.getServer('a')).thenAnswer((_) async => a);
@@ -356,8 +318,8 @@ void main() {
     test(
       'failed promotion leaves no active server, app keeps running',
       () async {
-        final a = _makeConfig(id: 'a');
-        final b = _makeConfig(id: 'b');
+        final a = testServerConfig(id: 'a');
+        final b = testServerConfig(id: 'b');
         installersById['a'] = _CountedInstaller();
         installersById['b'] = _CountedInstaller(failOnCalls: {2});
         when(() => serverRepository.getServer('a')).thenAnswer((_) async => a);

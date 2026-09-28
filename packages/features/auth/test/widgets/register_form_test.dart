@@ -1,4 +1,3 @@
-import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,8 +9,7 @@ import 'package:auth/src/bloc/auth_event.dart';
 import 'package:auth/src/bloc/auth_bloc_state.dart';
 import 'package:auth/src/widgets/register_form.dart';
 
-class MockAuthBloc extends MockBloc<AuthEvent, AuthBlocState>
-    implements AuthBloc {}
+import '../support/auth_test_fixtures.dart';
 
 // #37 i18n: the form resolves all copy from AuthLocalizations, so the
 // harness must provide the delegates; assertions keep matching the
