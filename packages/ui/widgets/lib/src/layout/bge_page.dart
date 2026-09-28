@@ -197,6 +197,28 @@ class BgePage extends StatelessWidget {
   /// Pinned rather than placed at the end of the content because an action
   /// that scrolls out of reach on a long form is the failure this prevents.
   ///
+  /// ## When to pin (#211)
+  ///
+  /// On a **flow step** or a **long review surface**, and nowhere else. Today
+  /// that means feedback compose and review. Short forms and vertically
+  /// centred pages keep their action inline, at the end of the form:
+  /// server-add, sign-in, register and create-household.
+  ///
+  /// - **A flow step pins because the next step does.** Compose hands over
+  ///   to review, which pins its send button, and an action that scrolls on
+  ///   one step and is pinned on the next moves at the handoff.
+  /// - **A review surface pins because it can be any length**, and its action
+  ///   is the reason the page exists.
+  /// - **A centred first-run page does not.** Auth's column continues past
+  ///   its form with the sign-in alternatives, so a pinned "Sign in" would
+  ///   render below them. Measured at 320×480 and 200% text, a pinned
+  ///   submit band took 100dp of a 424dp body.
+  /// - **A short form does not.** Its button already scrolls into reach, and
+  ///   a pinned band costs content height for as long as the page is open.
+  ///
+  /// A page that pins may pass a [BgeFormActions] here, so that a failure
+  /// still sits on the action it answers.
+  ///
   /// Cannot be combined with [floatingActionButton]: Scaffold floats the FAB
   /// over the body, so it lands on top of the footer band and swallows taps
   /// on its trailing end. Asserted rather than documented-and-hoped, because
