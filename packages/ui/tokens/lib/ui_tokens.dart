@@ -12,6 +12,7 @@ export 'src/accessibility/oklch.dart';
 export 'src/accessibility/wcag_contrast.dart';
 export 'src/bge_color_schemes.dart';
 export 'src/bge_gap.dart';
+export 'src/bge_page_width.dart';
 export 'src/bge_palette.dart';
 export 'src/bge_status_colors.dart';
 export 'src/bge_theme.dart';

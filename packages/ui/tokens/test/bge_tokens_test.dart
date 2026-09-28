@@ -156,6 +156,20 @@ void main() {
     });
   });
 
+  group('BgePageWidth.resolve', () {
+    test('reads each measure from the tokens it is given', () {
+      // Retuned away from `standard`, so a mapping hard-wired to
+      // `BgeTokens.standard`, or one that swapped the two measures, fails.
+      final tokens = BgeTokens.standard.copyWith(
+        contentMaxWidth: 500,
+        paneMaxWidth: 900,
+      );
+
+      expect(BgePageWidth.form.resolve(tokens), 500);
+      expect(BgePageWidth.pane.resolve(tokens), 900);
+    });
+  });
+
   group('BgeTokens.copyWith', () {
     test('replaces only the named field', () {
       final copy = BgeTokens.standard.copyWith(spaceMd: 20);
