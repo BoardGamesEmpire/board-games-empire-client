@@ -8,9 +8,13 @@
 // coverage, and never run. `models`' achievement tests sat like that until
 // #197 renamed the file.
 //
-// Usage, from anywhere in the checkout:
+// Usage, from the workspace root:
 //   dart run tool/check_test_files.dart               # exit 1 on a misnamed suite
 //   dart run tool/check_test_files.dart --self-test
+//
+// Elsewhere in the checkout, run `melos run check:test-files`, or give
+// `dart run` the script's path from where you are. Both check the whole
+// tree, as "Which files" below explains.
 //
 // Invoked by the `check:test-files` melos script and by CI's `test-files`
 // job, so both callers share one definition. That is the same shape as
@@ -73,28 +77,31 @@ void main(List<String> args) {
     workingDirectory: top,
   ).split(_nul).where((p) => p.isNotEmpty && _isUnderTest(p)).toList();
 
-  if (underTest.isEmpty) {
-    // Not a pass: git returned nothing to check, so a clean exit would
-    // report a tree nobody examined.
-    stderr.writeln(
-      'No Dart files under a test/ directory were found. Run this from a git '
-      'checkout of the workspace.',
-    );
-    exit(1);
-  }
-
   final misnamed = <String>[];
+  var checked = 0;
   for (final path in underTest) {
     // Listed by --cached but deleted from the working tree.
     final file = File('$top/$path');
     if (!file.existsSync()) continue;
+    checked++;
     if (_isMisnamedSuite(path, file.readAsStringSync())) misnamed.add(path);
+  }
+
+  if (checked == 0) {
+    // Not a pass: nothing was read, so a clean exit would report a tree
+    // nobody examined. That is git listing nothing, or listing only files
+    // deleted from the working tree.
+    stderr.writeln(
+      'No Dart files under a test/ directory were found on disk. Run this '
+      'from a git checkout of the workspace.',
+    );
+    exit(1);
   }
 
   if (misnamed.isEmpty) {
     stdout.writeln(
-      '${underTest.length} Dart files under test/ checked; every one with a '
-      'main is named *_test.dart.',
+      '$checked Dart files under test/ checked; every one with a main is '
+      'named *_test.dart.',
     );
     return;
   }
