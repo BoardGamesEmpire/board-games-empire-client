@@ -1,8 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+
+import 'support/declared_fields.dart';
 
 void main() {
   group('BgeTokens.standard', () {
@@ -229,17 +229,7 @@ void main() {
     }
 
     test('has a case for every field BgeTokens declares', () {
-      // Read from the source rather than from another hand-kept list, so a
-      // field missing from both `_fields` and the map above still fails.
-      final source = File(
-        '${Directory.current.path}/lib/src/bge_tokens.dart',
-      ).readAsStringSync();
-      final declared = RegExp(
-        r'^  final \S+ (\w+)(?:;| =)',
-        multiLine: true,
-      ).allMatches(source).map((m) => m[1]!).toSet();
-
-      expect(changes.keys.toSet(), declared);
+      expect(changes.keys.toSet(), declaredFields('bge_tokens.dart'));
     });
   });
 

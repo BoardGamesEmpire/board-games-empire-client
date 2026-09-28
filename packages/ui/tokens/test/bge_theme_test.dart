@@ -230,6 +230,26 @@ void main() {
       );
     });
 
+    test('two builds of one palette give equal themes', () {
+      // `from` is not cached, so each call builds new instances. They must
+      // still compare equal: `Theme` repropagates to the whole subtree
+      // whenever its data is unequal, and `ThemeData` compares every
+      // extension it holds with `==` (#212).
+      final first = BgeTheme.from(BgePalette.storm);
+      final second = BgeTheme.from(BgePalette.storm);
+
+      for (final (a, b) in [
+        (first.light, second.light),
+        (first.dark, second.dark),
+        (first.highContrastLight, second.highContrastLight),
+        (first.highContrastDark, second.highContrastDark),
+      ]) {
+        expect(a, isNot(same(b)));
+        expect(a, b);
+        expect(a.hashCode, b.hashCode);
+      }
+    });
+
     test('from() themes an arbitrary palette', () {
       // The seam that makes user-selectable themes an added palette rather
       // than a rewrite of this layer.
