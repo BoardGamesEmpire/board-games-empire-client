@@ -96,11 +96,16 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
   /// column's width jump at this handoff; this is the inset mismatch it left.
   Widget _compose(BuildContext context) {
     final l10n = FeedbackLocalizations.of(context);
+    final spaceMd = BgeTokens.of(context).spaceMd;
     final form = FeedbackComposeForm(model: _model, onSubmit: _onCompose);
     return BgePage(
       title: Text(l10n.feedbackComposeTitle),
-      padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
-      footer: FeedbackComposeSubmitButton(form: form),
+      padding: EdgeInsets.all(spaceMd),
+      // The same gap above the button as review's, for the same reason.
+      footer: Padding(
+        padding: EdgeInsets.only(top: spaceMd),
+        child: FeedbackComposeSubmitButton(form: form),
+      ),
       child: form,
     );
   }

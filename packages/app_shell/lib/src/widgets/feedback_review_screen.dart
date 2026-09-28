@@ -533,21 +533,28 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       );
   }
 
-  /// The bare button. `BgePage` already gives a footer the page's horizontal
-  /// and bottom inset, inside its `SafeArea`. The `Padding` that used to wrap
-  /// this sat inside the footer's width cap, so on a desktop window the button
-  /// came out 32dp narrower than compose's (#211).
+  /// The button, with a gap above it. `BgePage` already gives a footer the
+  /// page's horizontal and bottom inset, inside its `SafeArea`. The
+  /// `Padding(all:)` that used to wrap this sat inside the footer's width
+  /// cap, so on a desktop window the button came out 32dp narrower than
+  /// compose's (#211).
+  ///
+  /// The top inset is the one `BgePage` leaves to the page. Without it, a row
+  /// scrolled under the footer is cut off flush against the top of the
+  /// button.
   // Was a hand-rolled in-flight button with a bare spinner: while sending,
   // it announced as an unnamed disabled button. BgeSubmitButton keeps the
   // accessible name and announces the state change (#165).
-  Widget _footer(ShellLocalizations i18n, {required bool sending}) =>
-      BgeSubmitButton(
-        key: FeedbackReviewScreen.sendButtonKey,
-        label: i18n.feedbackReviewSend,
-        progressLabel: i18n.feedbackReviewSending,
-        submitting: sending,
-        onPressed: _send,
-      );
+  Widget _footer(ShellLocalizations i18n, {required bool sending}) => Padding(
+    padding: EdgeInsets.only(top: BgeTokens.of(context).spaceMd),
+    child: BgeSubmitButton(
+      key: FeedbackReviewScreen.sendButtonKey,
+      label: i18n.feedbackReviewSend,
+      progressLabel: i18n.feedbackReviewSending,
+      submitting: sending,
+      onPressed: _send,
+    ),
+  );
 
   /// Terminal outcome: an announced status line plus a dismiss affordance,
   /// mirroring [CrashReportPrompt]'s outcome states.

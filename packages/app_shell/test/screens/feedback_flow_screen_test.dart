@@ -98,6 +98,22 @@ void main() {
         'rather not share — it will be replaced with a redaction marker. '
         'Nothing is sent until you tap send.';
 
+    Future<void> pumpFlow(WidgetTester tester, {double width = 320}) async {
+      useViewSize(tester, Size(width, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates: [
+            ...ShellLocalizations.localizationsDelegates,
+            FeedbackLocalizations.delegate,
+          ],
+          supportedLocales: ShellLocalizations.supportedLocales,
+          home: FeedbackFlowScreen(feedbackService: service),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
     // A phone, a window just past the 480 column, and a desktop. #191 saw the
     // column jump halfway through this flow on desktop, and the inset
     // mismatch that survived it only shows once the window is wider than the
@@ -105,19 +121,7 @@ void main() {
     for (final width in [320.0, 600.0, 1280.0]) {
       testWidgets('at $width wide, the primary action and the text column '
           'stay put across the handoff', (tester) async {
-        useViewSize(tester, Size(width, 800));
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: BgeTheme.light(),
-            localizationsDelegates: [
-              ...ShellLocalizations.localizationsDelegates,
-              FeedbackLocalizations.delegate,
-            ],
-            supportedLocales: ShellLocalizations.supportedLocales,
-            home: FeedbackFlowScreen(feedbackService: service),
-          ),
-        );
-        await tester.pumpAndSettle();
+        await pumpFlow(tester, width: width);
         final composeText = tester.getTopLeft(find.text(composeExplanation));
         final composeAction = tester.getRect(
           find.byKey(FeedbackComposeSubmitButton.buttonKey),
@@ -141,6 +145,34 @@ void main() {
         );
       });
     }
+
+    testWidgets('on both steps, the pinned action sits a spacing step below '
+        'the content that scrolls under it', (tester) async {
+      // The footer band takes no top inset of its own (BgePage), so without
+      // this gap a row scrolled under the band is cut off flush against the
+      // top of the button. Review had the gap before it took the page's
+      // padding, from its footer's own Padding.
+      double gapAbove(Key action) {
+        final content = scrollViewportOf(tester);
+        final contentBottom = content
+            .localToGlobal(Offset(0, content.size.height))
+            .dy;
+        return tester.getTopLeft(find.byKey(action)).dy - contentBottom;
+      }
+
+      await pumpFlow(tester);
+      expect(
+        gapAbove(FeedbackComposeSubmitButton.buttonKey),
+        BgeTokens.standard.spaceMd,
+      );
+
+      await composeValidBug(tester);
+      await tester.pumpAndSettle();
+      expect(
+        gapAbove(FeedbackReviewScreen.sendButtonKey),
+        BgeTokens.standard.spaceMd,
+      );
+    });
   });
 
   testWidgets('a valid compose submit builds the report (message → '
