@@ -71,8 +71,8 @@ bool _focused(WidgetTester tester, Key fieldKey) {
 
 void main() {
   group('FormGroup.rejectSubmit', () {
-    testWidgets('moves focus to the first invalid control in declaration '
-        'order, passing over a valid one', (tester) async {
+    testWidgets('moves focus to the first invalid field, passing over a '
+        'valid one above it', (tester) async {
       final form = _form();
       addTearDown(form.dispose);
       await tester.pumpWidget(hostAtSize(tester, _page(form)));
