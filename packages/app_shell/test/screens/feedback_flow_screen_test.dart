@@ -1,9 +1,11 @@
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
+import 'package:ui_tokens/ui_tokens.dart';
 
 /// Pinned (#107): the user-initiated feedback flow is ONE route with two
 /// phases. Compose builds the report via `FeedbackService.buildReport`
@@ -64,8 +66,10 @@ void main() {
       find.byKey(FeedbackComposeForm.messageFieldKey),
       'it broke',
     );
-    await tester.ensureVisible(find.byKey(FeedbackComposeForm.submitButtonKey));
-    await tester.tap(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.ensureVisible(
+      find.byKey(FeedbackComposeSubmitButton.buttonKey),
+    );
+    await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
     await tester.pump();
   }
 
@@ -82,6 +86,94 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  group('the compose → review handoff (#211)', () {
+    // The explanations are the first line of each step, and each is the
+    // content column's leading edge.
+    const composeExplanation =
+        "Tell us what went wrong or what you'd like to see. You'll review "
+        'exactly what will be sent before anything leaves this device.';
+    const reviewExplanation =
+        "Check what will be sent. Turn on the switch next to anything you'd "
+        'rather not share — it will be replaced with a redaction marker. '
+        'Nothing is sent until you tap send.';
+
+    Future<void> pumpFlow(WidgetTester tester, {double width = 320}) async {
+      useViewSize(tester, Size(width, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates: [
+            ...ShellLocalizations.localizationsDelegates,
+            FeedbackLocalizations.delegate,
+          ],
+          supportedLocales: ShellLocalizations.supportedLocales,
+          home: FeedbackFlowScreen(feedbackService: service),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    // A phone, a window just past the 480 column, and a desktop. #191 saw the
+    // column jump halfway through this flow on desktop, and the inset
+    // mismatch that survived it only shows once the window is wider than the
+    // column, so 320 alone would not catch it.
+    for (final width in [320.0, 600.0, 1280.0]) {
+      testWidgets('at $width wide, the primary action and the text column '
+          'stay put across the handoff', (tester) async {
+        await pumpFlow(tester, width: width);
+        final composeText = tester.getTopLeft(find.text(composeExplanation));
+        final composeAction = tester.getRect(
+          find.byKey(FeedbackComposeSubmitButton.buttonKey),
+        );
+
+        await composeValidBug(tester);
+        await tester.pumpAndSettle();
+        expect(find.byType(FeedbackReviewScreen), findsOneWidget);
+
+        expect(
+          tester.getTopLeft(find.text(reviewExplanation)).dx,
+          composeText.dx,
+          reason: 'the text column starts at the same x on both steps',
+        );
+        expect(
+          tester.getRect(find.byKey(FeedbackReviewScreen.sendButtonKey)),
+          composeAction,
+          reason:
+              'the primary action is pinned in the same place, at the same '
+              'width, on both steps',
+        );
+      });
+    }
+
+    testWidgets('on both steps, the pinned action sits a spacing step below '
+        'the content that scrolls under it', (tester) async {
+      // The footer band takes no top inset of its own (BgePage), so without
+      // this gap a row scrolled under the band is cut off flush against the
+      // top of the button. Review had the gap before it took the page's
+      // padding, from its footer's own Padding.
+      double gapAbove(Key action) {
+        final content = scrollViewportOf(tester);
+        final contentBottom = content
+            .localToGlobal(Offset(0, content.size.height))
+            .dy;
+        return tester.getTopLeft(find.byKey(action)).dy - contentBottom;
+      }
+
+      await pumpFlow(tester);
+      expect(
+        gapAbove(FeedbackComposeSubmitButton.buttonKey),
+        BgeTokens.standard.spaceMd,
+      );
+
+      await composeValidBug(tester);
+      await tester.pumpAndSettle();
+      expect(
+        gapAbove(FeedbackReviewScreen.sendButtonKey),
+        BgeTokens.standard.spaceMd,
+      );
+    });
+  });
 
   testWidgets('a valid compose submit builds the report (message → '
       'userComment) and swaps to the review surface in place', (tester) async {

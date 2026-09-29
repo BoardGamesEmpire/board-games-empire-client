@@ -57,14 +57,10 @@ class ServerAddForm extends StatelessWidget {
     if (bloc.state is ServerOnboardingInProgress) return;
 
     // Marking touched is what renders the message: the control starts
-    // untouched, so validity alone shows nothing.
+    // untouched, so validity alone shows nothing. `rejectSubmit` does that,
+    // then moves focus to the field that was rejected.
     if (!form.valid) {
-      form.markAllAsTouched();
-
-      // Focus follows the error, or a keyboard user is left holding the
-      // submit button with the message somewhere above it.
-      final url = form.control(urlControlName);
-      if (url.invalid) url.focus();
+      form.rejectSubmit();
 
       // Retire an earlier banner, which would otherwise sit above the new
       // inline error contradicting it.
@@ -142,20 +138,22 @@ class ServerAddForm extends StatelessWidget {
                 ),
                 _RetireFailureOnEdit(control: form.control(urlControlName)),
                 const BgeGap.lg(),
-                if (failure != null) ...[
-                  BgeInlineBanner(
-                    tone: BgeBannerTone.error,
-                    title: l10n.serverAddErrorTitle,
-                    message: _failureMessage(l10n, failure),
+                BgeFormActions(
+                  failure: failure == null
+                      ? null
+                      : BgeFormFailure(
+                          // Titled: "Couldn't reach the server…" names a
+                          // cause, never the operation that failed (#211).
+                          title: l10n.serverAddErrorTitle,
+                          message: _failureMessage(l10n, failure),
+                        ),
+                  action: BgeSubmitButton(
+                    key: submitButtonKey,
+                    label: l10n.serverAddSubmit,
+                    progressLabel: l10n.serverAddInProgress,
+                    submitting: inProgress,
+                    onPressed: () => _submit(context, form),
                   ),
-                  const BgeGap.md(),
-                ],
-                BgeSubmitButton(
-                  key: submitButtonKey,
-                  label: l10n.serverAddSubmit,
-                  progressLabel: l10n.serverAddInProgress,
-                  submitting: inProgress,
-                  onPressed: () => _submit(context, form),
                 ),
               ],
             );

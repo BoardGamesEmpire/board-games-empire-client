@@ -268,8 +268,8 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     // Already readable where it stands, in one of two ways: the whole banner
     // is on screen, or it is taller than the viewport and already starts at
     // the top. Testing the top edge alone would call a 10dp sliver above the
-    // bottom edge "visible" — which is the shape ServerAddForm produces, since
-    // its banner lands in the space the submit button occupied.
+    // bottom edge "visible" — which is the shape `BgeFormActions` produces,
+    // since its banner lands in the space the submit button occupied.
     final endsOnScreen = top + self.size.height <= viewport.size.height;
     if (top >= 0 && (endsOnScreen || top <= inset)) {
       // Releases the queue: the banner is readable where it stands, which is

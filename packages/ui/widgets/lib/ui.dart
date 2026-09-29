@@ -9,7 +9,9 @@
 /// migration is complete rather than aspirational — `BgePage` is used by all
 /// 12 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
 /// `BgeTextField` by every form field in 5 files (#165), `BgeErrorState` by
-/// both whole-surface retry views (#102).
+/// both whole-surface retry views (#102), `BgeFormActions` by all 4 forms
+/// that show a submit's failure (#211), and `rejectSubmit` by all 5 forms
+/// (#230).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -23,6 +25,8 @@ library;
 export 'src/banners/bge_inline_banner.dart';
 export 'src/banners/unverified_session_banner.dart';
 export 'src/buttons/bge_submit_button.dart';
+export 'src/forms/bge_form_actions.dart';
+export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
 export 'src/layout/bge_page.dart';
 export 'src/states/bge_error_state.dart';

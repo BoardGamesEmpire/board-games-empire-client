@@ -207,6 +207,8 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
+| `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
+| `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
 | `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
 
 ### List surfaces
@@ -265,6 +267,43 @@ still closes the keyboard submit path. `BgeTextField` deliberately exposes no
 The in-flight signal is carried by `BgeSubmitButton` — label swap plus spinner,
 in a live region — not by greying the form out.
 
+### Rejected submits
+
+A submit the form refuses calls **`form.rejectSubmit()`**, never
+`markAllAsTouched()` on its own. Marking touched renders the errors wherever the
+fields are, and a user who scrolled down to reach the button is no longer
+looking at them: measured at 320×480 and 200% text, a rejected register left
+its first error 145dp above the viewport. `rejectSubmit` also moves focus to the
+first invalid control, which puts a keyboard or screen-reader user on it, and
+brings the whole field on screen, label and error included. Focus alone does
+not: a dropdown is not scrolled to at all, and a text field scrolls only as far
+as its caret, which at 200% text left its label clipped above the viewport.
+
+"First" is reading order, the order Tab moves through, taken from where the
+fields are laid out. The order the controls are declared in the `FormGroup`
+does not matter, and an invalid control with no field built for it is passed
+over.
+
+### Where the primary action goes
+
+Inline, at the end of the form, unless the page is a **flow step** or a **long
+review surface**. Those pin it with `BgePage.footer`. Today that is feedback
+compose and review. The reasoning, and the measurements behind it, are on
+`BgePage.footer`:
+
+- a flow step pins because the step it hands over to does, and an action that
+  scrolls on one step and is pinned on the next moves at the handoff;
+- a centred first-run page does not, because a pinned action renders below
+  whatever the column continues with (auth's sign-in alternatives), and at 320dp
+  and 200% text the pinned band eats a quarter of the body;
+- a short form does not, because its button already scrolls into reach.
+
+Two steps that hand over to each other also build their insets the same way:
+from the page's `padding`, not from insets inside each row. Review once put its
+16dp inside the column, which lined up with compose on a phone and was 16dp
+narrower a side on a desktop window — no padding compose could pass would have
+closed that.
+
 ### Error and outcome surfaces
 
 Three screens once answered this three different ways, on contradictory
@@ -273,7 +312,7 @@ question it turns on is **does the screen survive the outcome?**
 
 | Situation | Surface |
 | --- | --- |
-| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) |
+| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) — through `BgeFormActions` when it answers a form's submit |
 | Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar` |
 
 A failure that leaves the screen nothing else to show — the app could not
@@ -283,6 +322,20 @@ screen: `BgeErrorState` inside the page's `BgePage`, with a retry.
 A state change with no outcome copy — a mode switch, a filter applied — is not
 on this table. It takes a **live region on the text that changed**, per the
 accessibility rules below; it does not take a `SemanticsService` announcement.
+
+**A form's failure sits on the submit it answers.** `BgeFormActions` puts the
+banner directly above the button, so a user who scrolled down to reach it reads
+the answer where they pressed. At the top of the page, as auth and
+create-household once had it, reading it meant being scrolled away from the
+button — and on create-household, with the real theme, that long scroll was the
+one a tap cuts short, leaving the banner off screen (#233).
+
+**Title a failure when some of its operation's messages state only a cause.**
+"Could not reach the server. Check your connection." never says that *signing
+in* failed, so sign-in and register are titled; create-household's one message
+names the operation, so it is not. The rule is per operation, and
+`BgeFormFailure.title` is required so that every call site writes its answer
+down — `null` included.
 
 The discriminator is survival, not form-ness. `CreateHouseholdScreen` shows
 both rows: success pops the screen, so its confirmation must outlive the route
@@ -401,7 +454,9 @@ legible body text on every surface role.
 ## 7. Checklist for a new screen
 
 - [ ] Built on `BgePage` — `BgePage.slivers` for a list surface, the box
-      constructor otherwise; `footer:` for a pinned action
+      constructor otherwise
+- [ ] The primary action is inline at the end of the form, unless the page is
+      a flow step or a long review surface, which pin it with `footer:`
 - [ ] Measure: `width: BgePageWidth.pane` for rows that are a label plus a
       trailing control; the default 480 for prose, and for a surface mixing
       prose with rows
@@ -414,6 +469,9 @@ legible body text on every surface role.
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`
 - [ ] Forms use `BgeTextField` + `BgeSubmitButton`
+- [ ] A submit that can fail on a screen that stays is wrapped in
+      `BgeFormActions`, with its `title` decided by the rule above
+- [ ] A rejected submit calls `rejectSubmit()`
 - [ ] Outcomes follow the surface rule above — banner if the screen stays,
       SnackBar if it pops, and never a SnackBar inside a live region
 - [ ] A banner is retired when its failure stops applying (edit, mode switch)

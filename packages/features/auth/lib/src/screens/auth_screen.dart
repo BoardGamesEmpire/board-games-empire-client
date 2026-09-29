@@ -19,7 +19,8 @@ import '../widgets/oidc_strategy_button.dart';
 /// the registration form and toggle link are suppressed.
 ///
 /// Accessibility:
-/// - Operation failures surface in a [BgeInlineBanner], which announces
+/// - Operation failures surface in a banner directly above the submit that
+///   produced them, through the form's [BgeFormActions] (#211). It announces
 ///   itself on appearance. The screen stays put through a failure, so the
 ///   message belongs on it rather than in a SnackBar (#191).
 /// - Focus is managed between sign-in/register mode switches
@@ -66,7 +67,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
     // Scoped to the failure surface: the OIDC section and both forms hold
     // their own narrower builders, and an unscoped rebuild here would make
-    // those pointless by rebuilding the whole page on every tick.
+    // those pointless by rebuilding the whole page on every tick. The failure
+    // itself is rendered by the form, above its submit; this screen owns the
+    // copy, the title and the key, and hands them down.
     return BlocBuilder<AuthBloc, AuthBlocState>(
       buildWhen: (previous, current) =>
           previous is AuthOperationFailure || current is AuthOperationFailure,
@@ -85,19 +88,8 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             _buildHeader(context, colorScheme),
             const BgeGap.xl(),
-            if (state case final AuthOperationFailure failure) ...[
-              BgeInlineBanner(
-                key: AuthScreen.failureBannerKey,
-                tone: BgeBannerTone.error,
-                message: _localizedFailure(
-                  AuthLocalizations.of(context),
-                  failure,
-                ),
-              ),
-              const BgeGap.md(),
-            ],
             if (widget.identity.hasEmailAndPassword)
-              _buildEmailPasswordSection(context),
+              _buildEmailPasswordSection(context, state),
             if (widget.identity.hasEmailAndPassword &&
                 widget.identity.hasOidc) ...[
               const BgeGap.lg(),
@@ -160,18 +152,37 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildEmailPasswordSection(BuildContext context) {
+  Widget _buildEmailPasswordSection(BuildContext context, AuthBlocState state) {
     final strategy = widget.identity.emailAndPasswordStrategy!;
     final canRegister = !strategy.signUpDisabled;
+    final l10n = AuthLocalizations.of(context);
+
+    // Only sign-in and register emit an operation failure, so the form that
+    // is showing is the one whose submit it answers — and an OIDC-only
+    // server, which has neither form, has no failure to show.
+    BgeFormFailure? failureTitled(String title) => switch (state) {
+      final AuthOperationFailure kind => BgeFormFailure(
+        key: AuthScreen.failureBannerKey,
+        // Titled because some of the messages give only a cause: "Could not
+        // reach the server" never says that signing in failed (#211).
+        title: title,
+        message: _localizedFailure(l10n, kind),
+      ),
+      _ => null,
+    };
 
     if (_isSignIn) {
       return LoginForm(
+        failure: failureTitled(l10n.authSignInErrorTitle),
         onSwitchToRegister: canRegister
             ? () => _switchMode(signIn: false)
             : null,
       );
     } else {
-      return RegisterForm(onSwitchToSignIn: () => _switchMode(signIn: true));
+      return RegisterForm(
+        failure: failureTitled(l10n.authRegisterErrorTitle),
+        onSwitchToSignIn: () => _switchMode(signIn: true),
+      );
     }
   }
 
@@ -249,6 +260,12 @@ class _AuthScreenState extends State<AuthScreen> {
     // user is leaving, so carrying it over would pin a credentials
     // complaint above the registration form. The banner is bound to bloc
     // state and does not fade the way the SnackBar it replaced did (#191).
+    //
+    // The clear lands before the next frame, which is what keeps the
+    // incoming form from mounting with the outgoing form's failure — each
+    // form holds its own banner, so a stale one would render under the
+    // wrong title and announce itself as new. The screen suite pins this
+    // against a real bloc.
     context.read<AuthBloc>().add(const AuthFailureCleared());
     // The heading is a live region, so changing it announces the new mode.
     setState(() => _isSignIn = signIn);

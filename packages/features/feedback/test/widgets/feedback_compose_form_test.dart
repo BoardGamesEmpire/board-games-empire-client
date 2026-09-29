@@ -20,6 +20,25 @@ void main() {
     home: Scaffold(body: SingleChildScrollView(child: child)),
   );
 
+  /// The form and its button, as the host composes them. The host pins the
+  /// button as a page footer (#211); here it only has to be present.
+  Widget compose({
+    ValueChanged<FeedbackComposeResult>? onSubmit,
+    bool enabled = true,
+  }) {
+    final form = FeedbackComposeForm(
+      model: model,
+      onSubmit: onSubmit ?? (_) {},
+      enabled: enabled,
+    );
+    return Column(
+      children: [
+        form,
+        FeedbackComposeSubmitButton(form: form),
+      ],
+    );
+  }
+
   Future<void> pick(WidgetTester tester, Key field, String option) async {
     await tester.ensureVisible(find.byKey(field));
     await tester.tap(find.byKey(field));
@@ -32,9 +51,7 @@ void main() {
 
   testWidgets('renders category, severity (bug default), message, title, '
       'and the review affordance', (tester) async {
-    await tester.pumpWidget(
-      wrap(FeedbackComposeForm(model: model, onSubmit: (_) {})),
-    );
+    await tester.pumpWidget(wrap(compose()));
 
     expect(find.byKey(FeedbackComposeForm.categoryFieldKey), findsOneWidget);
     expect(find.byKey(FeedbackComposeForm.severityFieldKey), findsOneWidget);
@@ -45,9 +62,7 @@ void main() {
 
   testWidgets('selecting feature request hides the severity field; '
       'selecting bug restores it', (tester) async {
-    await tester.pumpWidget(
-      wrap(FeedbackComposeForm(model: model, onSubmit: (_) {})),
-    );
+    await tester.pumpWidget(wrap(compose()));
 
     await pick(tester, FeedbackComposeForm.categoryFieldKey, 'Feature request');
     expect(find.byKey(FeedbackComposeForm.severityFieldKey), findsNothing);
@@ -59,12 +74,12 @@ void main() {
   testWidgets('an invalid submit surfaces required errors and does not '
       'invoke the callback', (tester) async {
     FeedbackComposeResult? submitted;
-    await tester.pumpWidget(
-      wrap(FeedbackComposeForm(model: model, onSubmit: (r) => submitted = r)),
-    );
+    await tester.pumpWidget(wrap(compose(onSubmit: (r) => submitted = r)));
 
-    await tester.ensureVisible(find.byKey(FeedbackComposeForm.submitButtonKey));
-    await tester.tap(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.ensureVisible(
+      find.byKey(FeedbackComposeSubmitButton.buttonKey),
+    );
+    await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
     await tester.pump();
 
     expect(submitted, isNull);
@@ -75,11 +90,33 @@ void main() {
     );
   });
 
+  testWidgets('an invalid submit moves focus to the first invalid control, '
+      'the severity dropdown', (tester) async {
+    await tester.pumpWidget(wrap(compose()));
+
+    await tester.ensureVisible(
+      find.byKey(FeedbackComposeSubmitButton.buttonKey),
+    );
+    await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
+    await tester.pumpAndSettle();
+
+    // #230. Category is seeded, so severity is the first control a bug report
+    // is missing. Asserted through the focused element's ancestry, because a
+    // dropdown has no EditableText to ask.
+    final focused = FocusManager.instance.primaryFocus?.context;
+    expect(focused, isNotNull);
+    expect(
+      find.ancestor(
+        of: find.byElementPredicate((element) => element == focused),
+        matching: find.byKey(FeedbackComposeForm.severityFieldKey),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('a valid bug submit hands up the trimmed result', (tester) async {
     FeedbackComposeResult? submitted;
-    await tester.pumpWidget(
-      wrap(FeedbackComposeForm(model: model, onSubmit: (r) => submitted = r)),
-    );
+    await tester.pumpWidget(wrap(compose(onSubmit: (r) => submitted = r)));
 
     await pick(tester, FeedbackComposeForm.severityFieldKey, 'High');
     await tester.enterText(
@@ -90,8 +127,10 @@ void main() {
       find.byKey(FeedbackComposeForm.titleFieldKey),
       'Crash on save',
     );
-    await tester.ensureVisible(find.byKey(FeedbackComposeForm.submitButtonKey));
-    await tester.tap(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.ensureVisible(
+      find.byKey(FeedbackComposeSubmitButton.buttonKey),
+    );
+    await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
     await tester.pump();
 
     expect(
@@ -105,20 +144,47 @@ void main() {
     );
   });
 
-  testWidgets('a valid feature-request submit needs no severity and '
-      'carries none', (tester) async {
+  testWidgets("the title field's done action submits the form", (tester) async {
+    // The button moved to the host's footer (#211); the keyboard path stayed
+    // with the form, and takes the same validation.
     FeedbackComposeResult? submitted;
     await tester.pumpWidget(
       wrap(FeedbackComposeForm(model: model, onSubmit: (r) => submitted = r)),
     );
+
+    await pick(tester, FeedbackComposeForm.severityFieldKey, 'Low');
+    await tester.enterText(
+      find.byKey(FeedbackComposeForm.messageFieldKey),
+      'it broke',
+    );
+    await tester.showKeyboard(find.byKey(FeedbackComposeForm.titleFieldKey));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(
+      submitted,
+      const FeedbackComposeResult(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        message: 'it broke',
+      ),
+    );
+  });
+
+  testWidgets('a valid feature-request submit needs no severity and '
+      'carries none', (tester) async {
+    FeedbackComposeResult? submitted;
+    await tester.pumpWidget(wrap(compose(onSubmit: (r) => submitted = r)));
 
     await pick(tester, FeedbackComposeForm.categoryFieldKey, 'Feature request');
     await tester.enterText(
       find.byKey(FeedbackComposeForm.messageFieldKey),
       'please add dice',
     );
-    await tester.ensureVisible(find.byKey(FeedbackComposeForm.submitButtonKey));
-    await tester.tap(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.ensureVisible(
+      find.byKey(FeedbackComposeSubmitButton.buttonKey),
+    );
+    await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
     await tester.pump();
 
     expect(
@@ -132,9 +198,7 @@ void main() {
 
   testWidgets('severity is selectable again after a feature-request '
       'submit round trip', (tester) async {
-    await tester.pumpWidget(
-      wrap(FeedbackComposeForm(model: model, onSubmit: (_) {})),
-    );
+    await tester.pumpWidget(wrap(compose()));
 
     // A feature-request validation disables the severity control…
     await pick(tester, FeedbackComposeForm.categoryFieldKey, 'Feature request');
@@ -142,8 +206,10 @@ void main() {
       find.byKey(FeedbackComposeForm.messageFieldKey),
       'please add dice',
     );
-    await tester.ensureVisible(find.byKey(FeedbackComposeForm.submitButtonKey));
-    await tester.tap(find.byKey(FeedbackComposeForm.submitButtonKey));
+    await tester.ensureVisible(
+      find.byKey(FeedbackComposeSubmitButton.buttonKey),
+    );
+    await tester.tap(find.byKey(FeedbackComposeSubmitButton.buttonKey));
     await tester.pump();
 
     // …and switching back to bug must re-enable it on sight.
@@ -156,14 +222,14 @@ void main() {
     );
   });
 
-  testWidgets('enabled: false disables the review affordance', (tester) async {
-    await tester.pumpWidget(
-      wrap(FeedbackComposeForm(model: model, onSubmit: (_) {}, enabled: false)),
-    );
+  testWidgets('a disabled form disables its review affordance with it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(compose(enabled: false)));
 
     final button = tester.widget<FilledButton>(
       find.descendant(
-        of: find.byKey(FeedbackComposeForm.submitButtonKey),
+        of: find.byKey(FeedbackComposeSubmitButton.buttonKey),
         matching: find.byType(FilledButton),
       ),
     );

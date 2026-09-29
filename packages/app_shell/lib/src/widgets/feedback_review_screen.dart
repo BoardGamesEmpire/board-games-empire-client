@@ -232,20 +232,30 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       // list so it stays reachable on a long report, which is what the
       // Expanded+Column here used to buy.
       footer: reviewing ? _footer(i18n, sending: sending) : null,
-      padding: EdgeInsets.zero,
+      // The page's padding, like every other page, rather than insets inside
+      // each row (#211). With the insets inside, the column was 16dp narrower
+      // a side than compose's once the window outgrew it, so the text and the
+      // button shifted at the handoff on desktop — no padding compose could
+      // pass would have closed that. The rows drop their own horizontal
+      // inset below.
+      padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
       // The count a screen reader reads as "item 3 of 9". CustomScrollView
       // cannot infer it the way ListView(children:) does. Null on the
       // terminal states, which are one message rather than a collection.
       semanticChildCount: rows?.length,
       slivers: switch (_phase) {
         _ReviewPhase.reviewing || _ReviewPhase.sending => [
-          SliverPadding(
-            padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
+          // The page's inset is the column's edge now, so the tiles take none
+          // of their own: their text lines up with the explanation above them
+          // and with the pinned button below. Their ink starts at the inset
+          // too — on a phone, 16dp in from the window edge rather than at it.
+          ListTileTheme.merge(
+            contentPadding: EdgeInsets.zero,
             // A SliverList through BgePage.slivers, so the page keeps one
             // real viewport: these rows are a collection a screen reader
             // navigates, and a list nested inside a box scroll view loses
             // its `scrollChildCount`. See SettingsScreen for the measurement.
-            sliver: SliverList.list(
+            child: SliverList.list(
               key: FeedbackReviewScreen.reviewListKey,
               children: rows!,
             ),
@@ -356,15 +366,9 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
         _breadcrumbsSection(i18n, report.breadcrumbs),
     ];
 
-    final tokens = BgeTokens.of(context);
     return [
       Padding(
-        padding: EdgeInsets.fromLTRB(
-          tokens.spaceMd,
-          tokens.spaceMd,
-          tokens.spaceMd,
-          tokens.spaceSm,
-        ),
+        padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceSm),
         child: Text(i18n.feedbackReviewExplanation),
       ),
       _sectionHeader(i18n.feedbackReviewSectionReport),
@@ -391,11 +395,9 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   }
 
   Widget _sectionHeader(String text) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      BgeTokens.of(context).spaceMd,
-      BgeTokens.of(context).spaceMd,
-      BgeTokens.of(context).spaceMd,
-      BgeTokens.of(context).spaceXs,
+    padding: EdgeInsets.only(
+      top: BgeTokens.of(context).spaceMd,
+      bottom: BgeTokens.of(context).spaceXs,
     ),
     child: Semantics(
       header: true,
@@ -429,12 +431,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       ExpansionTile(
         key: FeedbackReviewScreen.stackTraceSectionKey,
         title: Text(i18n.feedbackReviewStackTrace),
-        childrenPadding: EdgeInsets.fromLTRB(
-          BgeTokens.of(context).spaceMd,
-          0,
-          BgeTokens.of(context).spaceMd,
-          BgeTokens.of(context).spaceMd,
-        ),
+        childrenPadding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
         children: [
           SelectableText(
             trace,
@@ -536,20 +533,26 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       );
   }
 
-  Widget _footer(ShellLocalizations i18n, {required bool sending}) => SafeArea(
-    top: false,
-    child: Padding(
-      padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
-      // Was a hand-rolled in-flight button with a bare spinner: while sending,
-      // it announced as an unnamed disabled button. BgeSubmitButton keeps the
-      // accessible name and announces the state change (#165).
-      child: BgeSubmitButton(
-        key: FeedbackReviewScreen.sendButtonKey,
-        label: i18n.feedbackReviewSend,
-        progressLabel: i18n.feedbackReviewSending,
-        submitting: sending,
-        onPressed: _send,
-      ),
+  /// The button, with a gap above it. `BgePage` already gives a footer the
+  /// page's horizontal and bottom inset, inside its `SafeArea`. The
+  /// `Padding(all:)` that used to wrap this sat inside the footer's width
+  /// cap, so on a desktop window the button came out 32dp narrower than
+  /// compose's (#211).
+  ///
+  /// The top inset is the one `BgePage` leaves to the page. Without it, a row
+  /// scrolled under the footer is cut off flush against the top of the
+  /// button.
+  // Was a hand-rolled in-flight button with a bare spinner: while sending,
+  // it announced as an unnamed disabled button. BgeSubmitButton keeps the
+  // accessible name and announces the state change (#165).
+  Widget _footer(ShellLocalizations i18n, {required bool sending}) => Padding(
+    padding: EdgeInsets.only(top: BgeTokens.of(context).spaceMd),
+    child: BgeSubmitButton(
+      key: FeedbackReviewScreen.sendButtonKey,
+      label: i18n.feedbackReviewSend,
+      progressLabel: i18n.feedbackReviewSending,
+      submitting: sending,
+      onPressed: _send,
     ),
   );
 
@@ -578,36 +581,33 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
     required IconData icon,
     required String text,
   }) {
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.all(BgeTokens.of(context).spaceMd),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Semantics(
-              liveRegion: true,
-              child: Row(
-                key: key,
-                children: [
-                  Icon(icon),
-                  const BgeGap.sm(axis: Axis.horizontal),
-                  Expanded(child: Text(text)),
-                ],
-              ),
-            ),
-            const BgeGap.md(),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                key: FeedbackReviewScreen.closeButtonKey,
-                onPressed: widget.onClose,
-                child: Text(i18n.feedbackReviewClose),
-              ),
-            ),
-          ],
+    // No SafeArea or Padding of its own: the page supplies both, as it does
+    // for the review rows (#211).
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          liveRegion: true,
+          child: Row(
+            key: key,
+            children: [
+              Icon(icon),
+              const BgeGap.sm(axis: Axis.horizontal),
+              Expanded(child: Text(text)),
+            ],
+          ),
         ),
-      ),
+        const BgeGap.md(),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton(
+            key: FeedbackReviewScreen.closeButtonKey,
+            onPressed: widget.onClose,
+            child: Text(i18n.feedbackReviewClose),
+          ),
+        ),
+      ],
     );
   }
 }

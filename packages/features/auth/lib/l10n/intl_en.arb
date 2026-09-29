@@ -124,6 +124,14 @@
       }
     }
   },
+  "authSignInErrorTitle": "Couldn't sign in",
+  "@authSignInErrorTitle": {
+    "description": "Heading shown above any sign-in failure message. Names the operation, because some of the messages beneath it only give a cause (a connection problem, a server fault) and never say that signing in failed."
+  },
+  "authRegisterErrorTitle": "Couldn't finish signing up",
+  "@authRegisterErrorTitle": {
+    "description": "Heading shown above any account-creation failure message. Names the operation for the same reason as authSignInErrorTitle. Must be true of every one of those messages, including a server that accepted the details but started no session, and a reply this device could not read: in both the account may exist, so the heading must not say it was not created."
+  },
   "authErrorInvalidCredentials": "Incorrect email or password.",
   "@authErrorInvalidCredentials": {
     "description": "Submission error: sign-in rejected (401/403)"
