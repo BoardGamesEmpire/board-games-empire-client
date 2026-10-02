@@ -5,7 +5,8 @@
 #   COPY --from=ghcr.io/boardgamesempire/bge-client-web:edge@sha256:<digest> /web <dest>
 #
 # The build context holds tool/build_web.dart's output as `web/`, which
-# has no tooling dotfiles. Locally that context is apps/browser/build.
+# has no tooling dotfiles. Locally that context is apps/browser/build. CI's
+# `publish-web` job assembles it from `build-web`'s artifact.
 #
 # FROM scratch, because the files need no runtime and have no
 # architecture: a consumer on any platform copies the same bytes.
