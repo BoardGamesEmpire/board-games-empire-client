@@ -109,6 +109,8 @@ See [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md).
 - [docs/design/STYLE_GUIDE.md](docs/design/STYLE_GUIDE.md) — identity, tokens,
   the shared widget set, and the accessibility rules
 - [docs/dev/web-proxy.md](docs/dev/web-proxy.md) — local web testing
+- [docs/dev/web-image.md](docs/dev/web-image.md) — the published web image: its
+  tags, what it holds, and how to inspect it
 - [SECURITY.md](SECURITY.md) — reporting a vulnerability
 
 Most packages carry their own README; `app_shell`, `features/household`, and

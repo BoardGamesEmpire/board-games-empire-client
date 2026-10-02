@@ -13,6 +13,11 @@ on:
   issue_comment:
     types: [created]
 
+# Read-only unless a job says otherwise, as in ci.yaml (#326). `review`
+# raises its own. There is no `uses:` to pin: every step runs inline.
+permissions:
+  contents: read
+
 jobs:
   review:
     if: >
