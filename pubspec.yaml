@@ -351,13 +351,12 @@ melos:
     # `web/` into the build output. Without this, a release build ships a
     # web app that cannot open its own database.
     #
-    # Built as #418 publishes it. JS only: no browser suite runs a wasm
-    # build yet (#420). `--no-web-resources-cdn` serves the renderer from
-    # the app's own origin rather than Google's CDN, so a self-hosted
-    # instance does not depend on gstatic.com to draw a frame.
+    # Then tool/build_web.dart, which CI's `build-web` job runs too: the
+    # build #418 publishes, from the flags to the files it may hold. One
+    # definition, so a local production build is the published one.
     build-web:
-      run: melos run web:assets && melos exec -c 1 --scope="browser" -- "flutter build web --release --no-web-resources-cdn"
-      description: Build the web application for production
+      run: melos run web:assets && dart run tool/build_web.dart
+      description: Build the web application for production, as the published image ships it
 
     build-mobile-android:
       run: melos exec -c 1 -- flutter build apk --release
