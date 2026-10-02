@@ -112,6 +112,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
 | `schema:dump` | Refresh the committed Drift schema snapshots |
 | `web` / `web:proxy` / `web:server` | Web dev server, dev proxy, or both together |
+| `build-web` | The release web build the published image ships: the drift fetch, then `tool/build_web.dart`, which CI's `build-web` job also runs |
 | `mobile` / `desktop-macos` / `desktop-linux` / `desktop-windows` | Run an app |
 
 Three scripts assume a POSIX shell and will not run under cmd or PowerShell:
@@ -188,7 +189,7 @@ CI diffs the snapshots against a fresh dump and fails if they are stale.
 ## What CI gates
 
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml) runs on every PR and on
-pushes to `master`, in nine jobs:
+pushes to `master`, in ten jobs:
 
 | Job | Gate |
 | --- | --- |
@@ -201,10 +202,21 @@ pushes to `master`, in nine jobs:
 | `discover-tests` | Builds the test matrix by finding `test/` directories |
 | `test` | One job per package, golden tags excluded |
 | `test-web` | The browser-only (`@TestOn('browser')`) suites in Chrome, for the packages that have them |
+| `build-web` | The release web build succeeds, its drift runtime files match their committed checksums, it holds no dotfile, and the files the app boots from are present |
+
+On a push to `master`, an eleventh job, `publish-web`, publishes that build as
+an image once all ten have passed. [docs/dev/web-image.md](docs/dev/web-image.md)
+covers its tags and contents.
 
 CI deliberately does **not** use melos — it reimplements the equivalents inline
 so a broken melos script cannot take the build down with it. If you change a
 melos script that has a CI counterpart, change both.
+
+Every action in the workflows is pinned to a full commit SHA, with its release
+as a trailing comment (`actions/checkout@<sha> # v4.4.0`), because a tag can be
+moved to new code and a SHA cannot. Pin a new action the same way.
+[.github/renovate.json](.github/renovate.json) has Renovate move each pin and
+its comment together.
 
 ## Conventions
 
