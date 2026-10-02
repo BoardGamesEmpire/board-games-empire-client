@@ -13,15 +13,15 @@ ghcr.io/boardgamesempire/bge-client-web
 
 | Tag | Points at | Moves |
 | --- | --- | --- |
-| `edge` | master's newest commit that passed CI | on every publish |
+| `edge` | the newest commit with a `sha-<short>` tag | whenever a commit gets one |
 | `sha-<short>` | one commit, named by the first 7 characters of its SHA | never |
 
 There are no version tags yet. They arrive with #419, along with a client
 version worth tagging: until then, every build reports the template version
 `1.0.0`.
 
-Pin a digest, not a tag. `edge` moves on every publish, and a digest names
-exactly one image:
+Pin a digest, not a tag. `edge` moves whenever a commit is tagged, and a
+digest names exactly one image:
 
 ```dockerfile
 COPY --from=ghcr.io/boardgamesempire/bge-client-web:edge@sha256:<digest> /web /srv/web

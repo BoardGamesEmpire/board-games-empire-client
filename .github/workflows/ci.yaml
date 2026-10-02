@@ -569,13 +569,13 @@ jobs:
     # only if no other run can write the tags between it and this run's
     # write: otherwise a run that stalled there could land after a newer
     # commit's publish and move `edge` back to the older image.
-    # `queue: max` keeps every waiting job. By default a group holds one
-    # pending job and cancels it when the next arrives, so re-running an
-    # older commit's publish would cancel the tip's.
+    # `queue: max` keeps up to 100 waiting jobs. By default a group holds
+    # one pending job and cancels it when the next arrives, so re-running
+    # an older commit's publish would cancel the tip's.
     concurrency:
       group: bge-client-web
       queue: max
-    # A stuck job holds the queue, for six hours by default.
+    # Without this timeout, a stuck job would hold the queue for six hours.
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
