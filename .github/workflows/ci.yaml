@@ -9,6 +9,19 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only unless a job says otherwise (#326). Nothing here writes to the
+# repository: the jobs check, build and test, and hand files to each other
+# as artifacts. A job that needs more declares it for itself, so a new job
+# starts with a token that can only read.
+permissions:
+  contents: read
+
+# Every action is pinned to a full commit SHA, with its release as a
+# trailing comment (#326). Anyone with write access to an action's
+# repository can move a tag to new code, and every workflow using the tag
+# runs it with no change here. A SHA cannot move. Renovate
+# (.github/renovate.json) moves the pins and their comments together.
+#
 # The Flutter pin lives in the ROOT pubspec's `environment.flutter`, not
 # here (#153). Every job below installs it with `flutter-version-file`,
 # which reads that field literally — so a workflow can no longer disagree
@@ -34,8 +47,8 @@ jobs:
     name: SDK constraints
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -61,8 +74,8 @@ jobs:
     name: Palette
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -94,8 +107,8 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -118,8 +131,8 @@ jobs:
     name: Test file names
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -158,8 +171,8 @@ jobs:
     name: Codegen + schema freshness
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -171,7 +184,7 @@ jobs:
       # most recent prior cache. A dep change (new lockfile) misses and
       # forces a correct full rebuild.
       - name: Restore build_runner cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           # --workspace writes a single build cache at the repo root.
           path: .dart_tool/build
@@ -227,7 +240,7 @@ jobs:
                     -o -name '*_localizations*.dart' \) \
             -not -path '*/.dart_tool/*' -print0 \
             | tar --null -czf "$RUNNER_TEMP/generated.tar.gz" -T -
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: generated-sources
           path: ${{ runner.temp }}/generated.tar.gz
@@ -250,14 +263,14 @@ jobs:
     needs: generate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: generated-sources
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -276,7 +289,7 @@ jobs:
     outputs:
       packages: ${{ steps.find.outputs.packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: find
         run: |
           pkgs=$(find packages apps -type d -name test -not -path '*/.*/*' \
@@ -308,14 +321,14 @@ jobs:
       matrix:
         package: ${{ fromJson(needs.discover-tests.outputs.packages) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: generated-sources
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable
@@ -382,7 +395,7 @@ jobs:
       # Codecov accepts for public repos.
       - name: Upload coverage
         if: steps.coverage.outputs.report != ''
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           files: ${{ steps.coverage.outputs.report }}
           disable_search: true
@@ -419,14 +432,14 @@ jobs:
           - packages/storage/web_storage
           - packages/platform/web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: generated-sources
           path: ${{ runner.temp }}
       - name: Restore generated sources
         run: tar -xzf "$RUNNER_TEMP/generated.tar.gz"
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: pubspec.yaml
           channel: stable

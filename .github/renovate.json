@@ -1,0 +1,9 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Keeps the workflows' action pins current (#326): each action stays pinned to a commit SHA, with its release as a trailing comment.",
+    "Only the github-actions manager is enabled. Nothing else in this repository is updated by Renovate."
+  ],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "enabledManagers": ["github-actions"]
+}
