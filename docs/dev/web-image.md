@@ -95,10 +95,12 @@ time and the rest wait in a queue, so no other run can write the tags
 between that check and the write. If master has moved on, the image stays
 untagged, so the package can hold untagged versions that no tag points at.
 
-A `sha-<short>` never moves. When a publish fails after its image was pushed,
-"Re-run failed jobs" checks and tags that same image rather than pushing
-another, for a week after the run. After that, "Re-run all jobs" builds the
-files again.
+A `sha-<short>` never moves. "Re-run failed jobs" can retry a failed publish
+for a week after the run, while `build-web`'s artifact is kept. After that,
+"Re-run all jobs" builds the files again. If the failed attempt wrote
+`sha-<short>`, which happens only in the job's last step, the re-run checks
+and tags that image rather than pushing another. If it failed before then,
+any image it pushed stays untagged, and the re-run pushes a new one.
 
 The first publish creates the package. GitHub's documentation disagrees on
 whether a package created by a workflow starts public, inheriting the
