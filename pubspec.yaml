@@ -44,6 +44,9 @@ dev_dependencies:
   build_runner: ^2.16.0
   # Read-only pubspec parsing for tool/check_sdk_constraints.dart (#153).
   yaml: ^3.1.2
+  # SHA-256 for tool/fetch_web_assets.dart, which checks each drift
+  # runtime file against a committed digest before placing it (#418).
+  crypto: ^3.0.7
   # tool/derive_palette.dart shares the OKLCH hue math, the sRGB transfer
   # function and the ember/error separation floor with `Oklch` (#172). The
   # imported entry point is Flutter-free so `dart run` can load it. `path:`
@@ -347,8 +350,13 @@ melos:
     # committed (#288), and `flutter build web` copies whatever is in
     # `web/` into the build output. Without this, a release build ships a
     # web app that cannot open its own database.
+    #
+    # Built as #418 publishes it. JS only: no browser suite runs a wasm
+    # build yet (#420). `--no-web-resources-cdn` serves the renderer from
+    # the app's own origin rather than Google's CDN, so a self-hosted
+    # instance does not depend on gstatic.com to draw a frame.
     build-web:
-      run: melos run web:assets && melos exec -c 1 --scope="browser" -- "flutter build web --release --wasm"
+      run: melos run web:assets && melos exec -c 1 --scope="browser" -- "flutter build web --release --no-web-resources-cdn"
       description: Build the web application for production
 
     build-mobile-android:
