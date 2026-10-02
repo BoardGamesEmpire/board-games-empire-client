@@ -90,9 +90,10 @@ master, once every gate job and `build-web` have passed. It builds the image
 with `apps/browser/Dockerfile` from `build-web`'s artifact, the files that
 job checked. It pushes by digest, checks that digest from `linux/amd64` and
 `linux/arm64`, and only then moves the tags. Just before tagging, it checks
-that the commit is still master's tip. If master has moved on, the image
-stays untagged, so the package can hold untagged versions that no tag points
-at.
+that the commit is still master's tip. Only one `publish-web` job runs at a
+time and the rest wait in a queue, so no other run can write the tags
+between that check and the write. If master has moved on, the image stays
+untagged, so the package can hold untagged versions that no tag points at.
 
 A `sha-<short>` never moves. When a publish fails after its image was pushed,
 "Re-run failed jobs" checks and tags that same image rather than pushing

@@ -9,7 +9,8 @@ on:
 # each commit gets a group of its own, so no master run cancels another
 # (#418): a re-run joins its group again, and re-running an older master
 # run would cancel the newest one, which then never publishes. Every
-# master commit runs to the end, and `publish-web` tags only master's tip.
+# master commit runs to the end. `publish-web` runs one at a time across
+# them, and tags only master's tip.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
   cancel-in-progress: true
@@ -539,10 +540,11 @@ jobs:
   #     at it, so a failed check leaves both tags where they were.
   #   - Only master's tip is tagged. Master runs do not cancel each other
   #     (top of this file), so an older commit's run can get here after a
-  #     newer push, and a re-run can get here at any time. The last step
-  #     checks the tip just before it writes, and leaves the image untagged
-  #     if master has moved on. Every step before it is safe to repeat:
-  #     nothing a tag points at changes until then.
+  #     newer push, and a re-run can get here at any time. The job runs one
+  #     at a time across all of them, and its last step checks the tip just
+  #     before it writes, leaving the image untagged if master has moved on.
+  #     Every step before that is safe to repeat: nothing a tag points at
+  #     changes until then.
   #   - A `sha-<short>` never moves. If one already names this commit, an
   #     earlier attempt pushed and checked it, and this one checks and tags
   #     that image instead of pushing another. If it names any other
@@ -563,6 +565,18 @@ jobs:
     name: Publish web image
     needs: [constraints, palette, format, test-files, generate, analyze, test, test-web, build-web]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # One publish at a time, across every master run. The tip check holds
+    # only if no other run can write the tags between it and this run's
+    # write: otherwise a run that stalled there could land after a newer
+    # commit's publish and move `edge` back to the older image.
+    # `queue: max` keeps every waiting job. By default a group holds one
+    # pending job and cancels it when the next arrives, so re-running an
+    # older commit's publish would cancel the tip's.
+    concurrency:
+      group: bge-client-web
+      queue: max
+    # A stuck job holds the queue, for six hours by default.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -675,10 +689,12 @@ jobs:
             echo "::endgroup::"
           done
       # No step before this one changes anything a consumer can see, so the
-      # tip check sits here, just before the write. A step added after it
-      # runs for a commit it left untagged, too. --prefer-index=false copies
-      # the manifest under the new tags as it is. Left to default, a single
-      # source is wrapped in a new index.
+      # tip check sits here, just before the write, and the job's
+      # concurrency group keeps every other run's write out of the gap
+      # between them. A step added after it runs for a commit it left
+      # untagged, too. --prefer-index=false copies the manifest under the
+      # new tags as it is. Left to default, a single source is wrapped in a
+      # new index.
       - name: Tag the checked digest, if this commit is still master's tip
         env:
           DIGEST: ${{ steps.existing.outputs.digest || steps.push.outputs.digest }}
