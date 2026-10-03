@@ -13,14 +13,19 @@ ghcr.io/boardgamesempire/bge-client-web
 
 | Tag | Points at | Moves |
 | --- | --- | --- |
-| `edge` | the newest commit with a `sha-<short>` tag | whenever a commit gets one |
+| `edge` | the files of master's newest published commit | when those files change |
 | `sha-<short>` | one commit, named by the first 7 characters of its SHA | never |
+
+A commit that changes no built file, such as a docs-only one, gets its
+`sha-<short>` but leaves `edge` where it is. So `edge`'s `revision` label
+names the commit that moved it, normally the first to build its files, and
+it can be older than master's newest commit.
 
 There are no version tags yet. They arrive with #419, along with a client
 version worth tagging: until then, every build reports the template version
 `1.0.0`.
 
-Pin a digest, not a tag. `edge` moves whenever a commit is tagged, and a
+Pin a digest, not a tag. `edge` moves whenever the built files change, and a
 digest names exactly one image:
 
 ```dockerfile
@@ -49,7 +54,10 @@ The release build of `apps/browser`, at `/web`:
   committed in `tool/fetch_web_assets.dart`.
 - No tooling dotfiles.
 
-The same commit builds the same files, wherever it is checked out.
+The same commit builds the same files, wherever it is checked out. Flutter
+writes one map into `flutter_bootstrap.js` in the order the filesystem lists
+the CanvasKit files, which differs between machines, so the build script
+sorts it.
 
 | Label | Value |
 | --- | --- |
@@ -57,6 +65,7 @@ The same commit builds the same files, wherever it is checked out.
 | `org.opencontainers.image.revision` | the full commit SHA |
 | `org.opencontainers.image.version` | what the build wrote into `version.json` |
 | `org.opencontainers.image.created` | the commit's date, not the build's |
+| `io.github.boardgamesempire.web.files` | a hash of the files under `/web`, below |
 
 The image is a single manifest, not an index, so `COPY --from` works the
 same on every platform. A build for any platform other than the image's own
@@ -83,17 +92,43 @@ docker buildx imagetools inspect ghcr.io/boardgamesempire/bge-client-web:edge \
   --format '{{json .Image.Config.Labels}}'
 ```
 
+The `files` label is `sha256:` followed by the first field this prints, run
+in a copy of `/web`. It hashes each file's path and contents, and nothing
+else:
+
+```sh
+find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum
+```
+
 ## How it is published
 
 The `publish-web` job in `.github/workflows/ci.yaml` publishes on a push to
 master, once every gate job and `build-web` have passed. It builds the image
 with `apps/browser/Dockerfile` from `build-web`'s artifact, the files that
 job checked. It pushes by digest, checks that digest from `linux/amd64` and
-`linux/arm64`, and only then moves the tags. Just before tagging, it checks
-that the commit is still master's tip. Only one `publish-web` job runs at a
-time and the rest wait in a queue, so no other run can write the tags
-between that check and the write. If master has moved on, the image stays
-untagged, so the package can hold untagged versions that no tag points at.
+`linux/arm64`, and only then writes the tags.
+
+Every commit that gets that far gets its `sha-<short>`. `edge` moves to the
+commit's image only when all three of these hold:
+
+- The commit is on master: master's tip is the commit or a descendant of it.
+- No newer commit on master has a `sha-<short>`. An older commit's publish
+  that runs late, or a re-run of one, leaves `edge` where it is, so `edge`
+  never moves back.
+- The image's `files` label differs from `edge`'s. When there is no `edge`
+  yet, or it has no `files` label, they count as different.
+
+The job reads everything it decides on before it writes a tag, so a run
+that fails while reading writes nothing, and its commit does not count as
+published. It writes `sha-<short>` before moving `edge`. The job's summary
+says whether `edge` moved, and which condition held it back when it did not.
+Only one `publish-web` job runs at a time and the rest wait in a queue, so
+no other run can write a tag between this run reading the tags and writing
+its own.
+
+This relies on CI building the same files for commits that change none of
+them. If that stops being true, `edge` moves on every commit, as it did
+before #424, rather than staying behind.
 
 A `sha-<short>` never moves. "Re-run failed jobs" can retry a failed publish
 for a week after the run, while `build-web`'s artifact is kept. After that,
