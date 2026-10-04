@@ -10,7 +10,7 @@ on:
 # (#418): a re-run joins its group again, and re-running an older master
 # run would cancel the newest one, which then never publishes. Every
 # master commit runs to the end. `publish-web` runs one at a time across
-# them, and tags only master's tip.
+# them, and moves `edge` only forward along master (#424).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
   cancel-in-progress: true
@@ -512,6 +512,10 @@ jobs:
       # placed, and a mismatch fails the step.
       - name: Fetch drift/wasm assets
         run: dart run tool/fetch_web_assets.dart
+      # The build sorts one map Flutter writes in directory order, so that
+      # builds of one commit hold the same files. Its fixtures run first.
+      - name: Web build self-test
+        run: dart run tool/build_web.dart --self-test
       - name: Build the web app as it ships
         run: dart run tool/build_web.dart
       # Only `publish-web` reads this, so only a run that publishes uploads
@@ -533,18 +537,20 @@ jobs:
   # commit is a tested one. `needs:` lists the gates by hand: a new gate
   # job has to be added there, or it will not hold publishing back.
   #
-  # `sha-<short>` names one commit and never moves. `edge` is master's
-  # newest published commit. There are no version tags yet (#419). Three
-  # rules keep the tags honest:
+  # `sha-<short>` names one commit and never moves. `edge` holds the files
+  # of master's newest published commit, and moves only when those files
+  # change (#424), so its revision label names the commit that moved it,
+  # normally the first to build them. There are no version tags yet
+  # (#419). Three rules keep the tags honest:
   #   - The image is pushed by digest and checked before either tag points
   #     at it, so a failed check leaves both tags where they were.
-  #   - Only master's tip is tagged. Master runs do not cancel each other
-  #     (top of this file), so an older commit's run can get here after a
-  #     newer push, and a re-run can get here at any time. The job runs one
-  #     at a time across all of them, and its last step checks the tip just
-  #     before it writes, leaving the image untagged if master has moved on.
-  #     Every step before that is safe to repeat: nothing a tag points at
-  #     changes until then.
+  #   - `edge` only moves forward along master. Master runs do not cancel
+  #     each other (top of this file), so an older commit's run can get
+  #     here after a newer one's, and a re-run can get here at any time.
+  #     The job runs one at a time across all of them, and its last step
+  #     moves `edge` only for a commit that no newer published commit has
+  #     overtaken. Every step before that is safe to repeat: nothing a tag
+  #     points at changes until then.
   #   - A `sha-<short>` never moves. If one already names this commit, an
   #     earlier attempt pushed and checked it, and this one checks and tags
   #     that image instead of pushing another. If it names any other
@@ -557,18 +563,18 @@ jobs:
   # manifest copies on any platform. The check proves it on the two the
   # backend builds.
   #
-  # The package is created on the first push. GitHub's docs disagree on
-  # whether a workflow's new package starts public, inheriting this public
-  # repository's visibility, or private. If it is private, an org owner
-  # makes it public, which cannot be undone.
+  # The package is public, so the backend's source builds and Renovate
+  # pull it without credentials. A public package cannot be made private
+  # again.
   publish-web:
     name: Publish web image
     needs: [constraints, palette, format, test-files, generate, analyze, test, test-web, build-web]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    # One publish at a time, across every master run. The tip check holds
-    # only if no other run can write the tags between it and this run's
-    # write: otherwise a run that stalled there could land after a newer
-    # commit's publish and move `edge` back to the older image.
+    # One publish at a time, across every master run. The last step reads
+    # the tags and then writes `edge`, which is safe only if no other run
+    # can write in between: otherwise an older commit's run could look
+    # before a newer one's tags, then write `edge` after it and move
+    # `edge` back to the older image.
     # `queue: max` keeps up to 100 waiting jobs. By default a group holds
     # one pending job and cancels it when the next arrives, so re-running
     # an older commit's publish would cancel the tip's.
@@ -593,16 +599,25 @@ jobs:
           path: ${{ runner.temp }}/image/web
       # The version label carries what the app reports, and `created` the
       # commit's date rather than the build's (see the Dockerfile).
+      #
+      # `files` hashes the files this job pushes, the ones the check below
+      # compares against: each file's path and SHA-256, sorted by path, then
+      # hashed again. Paths, contents and nothing else, so the artifact's
+      # reset mtimes and modes cannot change it. The tag step compares it
+      # with `edge`'s.
       - name: Read the labels and the short SHA
         id: meta
         run: |
           set -euo pipefail
           version=$(jq -er .version "$RUNNER_TEMP/image/web/version.json")
           created=$(TZ=UTC0 git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd "$GITHUB_SHA")
+          files=$(cd "$RUNNER_TEMP/image/web" \
+            && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum)
           {
             echo "short=${GITHUB_SHA::7}"
             echo "version=$version"
             echo "created=$created"
+            echo "files=sha256:${files%% *}"
           } >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -662,6 +677,7 @@ jobs:
             REVISION=${{ github.sha }}
             VERSION=${{ steps.meta.outputs.version }}
             CREATED=${{ steps.meta.outputs.created }}
+            FILES=${{ steps.meta.outputs.files }}
       - name: Check the digest from amd64 and arm64
         env:
           DIGEST: ${{ steps.existing.outputs.digest || steps.push.outputs.digest }}
@@ -688,33 +704,113 @@ jobs:
             (cd "$out/web" && find . -type f | sort)
             echo "::endgroup::"
           done
-      # No step before this one changes anything a consumer can see, so the
-      # tip check sits here, just before the write, and the job's
-      # concurrency group keeps every other run's write out of the gap
-      # between them. A step added after it runs for a commit it left
-      # untagged, too. --prefer-index=false copies the manifest under the
-      # new tags as it is. Left to default, a single source is wrapped in a
-      # new index.
-      - name: Tag the checked digest, if this commit is still master's tip
+      # No step before this one changes anything a consumer can see. This
+      # one reads everything it decides on before it writes any tag. Then
+      # it writes `sha-<short>`, for every commit that gets that far
+      # (#424), and moves `edge` only if all of these hold:
+      #   - The commit is on master: master's tip is the commit or a
+      #     descendant of it.
+      #   - No newer commit on master has a `sha-<short>`, the record of
+      #     which commits have been published. An older commit's run that
+      #     arrives late, or a re-run of one, leaves `edge` where it is, so
+      #     `edge` never moves back. `edge`'s own revision label cannot
+      #     decide this: it stays on an older commit for as long as the
+      #     files do not change.
+      #   - Its files differ from `edge`'s, or `edge` has no files label.
+      # A run that fails while reading writes nothing, so its commit does
+      # not count as published and cannot hold back an older one.
+      # `sha-<short>` goes before `edge`, in a command of its own, so `edge`
+      # never names a commit without one, which an older commit's run could
+      # then move `edge` back from. The job's concurrency group keeps every
+      # other run's write out of the gap between these reads and the
+      # writes. --prefer-index=false copies the manifest under the new tag
+      # as it is. Left to default, a single source is wrapped in a new
+      # index.
+      - name: Tag the checked digest, and move edge if it should
         env:
           DIGEST: ${{ steps.existing.outputs.digest || steps.push.outputs.digest }}
           SHORT: ${{ steps.meta.outputs.short }}
+          FILES: ${{ steps.meta.outputs.files }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/${GITHUB_REF#refs/}" --jq .object.sha)
-          if [ "$tip" != "$GITHUB_SHA" ]; then
-            echo "::notice::master has moved on to $tip, so $GITHUB_SHA is not tagged."
-            echo "Not tagged: master has moved on to \`$tip\`. \`$DIGEST\` stays untagged." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          docker buildx imagetools create --prefer-index=false \
-            --tag "$IMAGE:sha-$SHORT" --tag "$IMAGE:edge" "$IMAGE@$DIGEST"
-          for tag in "sha-$SHORT" edge; do
-            got=$(docker buildx imagetools inspect "$IMAGE:$tag" --format '{{json .Manifest}}' | jq -r .digest)
+          write_tag() {
+            docker buildx imagetools create --prefer-index=false --tag "$IMAGE:$1" "$IMAGE@$DIGEST"
+            got=$(docker buildx imagetools inspect "$IMAGE:$1" --format '{{json .Manifest}}' | jq -r .digest)
             if [ "$got" != "$DIGEST" ]; then
-              echo "::error::$IMAGE:$tag points at $got, not $DIGEST."
+              echo "::error::$IMAGE:$1 points at $got, not $DIGEST."
               exit 1
             fi
-          done
-          echo "Published \`$IMAGE:edge\` and \`$IMAGE:sha-$SHORT\` as \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
+          }
+          # Whether commit $1 has a `sha-<short>`. One that names another
+          # commit, a short-SHA collision, does not count.
+          published() {
+            local labels
+            if labels=$(docker buildx imagetools inspect "$IMAGE:sha-${1::7}" --format '{{json .Image.Config.Labels}}' 2>"$RUNNER_TEMP/published.err"); then
+              [ "$(jq -r '."org.opencontainers.image.revision" // empty' <<<"$labels")" = "$1" ]
+            elif grep -qF "$IMAGE:sha-${1::7}: not found" "$RUNNER_TEMP/published.err"; then
+              return 1
+            else
+              echo "::error::Could not tell whether $1 was published: $(cat "$RUNNER_TEMP/published.err")"
+              exit 1
+            fi
+          }
+          # Sets `move` to whether `edge` should move, and `reason` to why.
+          decide() {
+            tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/${GITHUB_REF#refs/}" --jq .object.sha)
+            if [ "$tip" != "$GITHUB_SHA" ]; then
+              # GitHub's compare answers "ahead" when the tip descends from
+              # this commit, and lists, oldest first, the commits the tip
+              # has and this one lacks. A 404 means it no longer has this
+              # commit.
+              if ! pages=$(gh api --paginate "repos/$GITHUB_REPOSITORY/compare/$GITHUB_SHA...$tip?per_page=100" \
+                --jq '{status, commits: [.commits[].sha]}' 2>"$RUNNER_TEMP/compare.err"); then
+                if ! grep -q 'HTTP 404' "$RUNNER_TEMP/compare.err"; then
+                  echo "::error::Could not compare $GITHUB_SHA with master: $(cat "$RUNNER_TEMP/compare.err")"
+                  exit 1
+                fi
+                pages='{"status": "missing", "commits": []}'
+              fi
+              if [ "$(jq -rs '.[0].status' <<<"$pages")" != ahead ]; then
+                move=false reason="master's tip, \`$tip\`, does not contain this commit."
+                return
+              fi
+              # Newest first: the newest are the likeliest to be published.
+              while read -r commit; do
+                if published "$commit"; then
+                  move=false reason="\`$commit\`, a newer commit, was published first."
+                  return
+                fi
+              done < <(jq -rs '[.[].commits[]] | reverse | .[]' <<<"$pages")
+            fi
+            if ! labels=$(docker buildx imagetools inspect "$IMAGE:edge" --format '{{json .Image.Config.Labels}}' 2>"$RUNNER_TEMP/edge.err"); then
+              if ! grep -qF "$IMAGE:edge: not found" "$RUNNER_TEMP/edge.err"; then
+                echo "::error::Could not read $IMAGE:edge: $(cat "$RUNNER_TEMP/edge.err")"
+                exit 1
+              fi
+              move=true reason="there was no \`edge\`."
+              return
+            fi
+            edge_revision=$(jq -r '."org.opencontainers.image.revision" // empty' <<<"$labels")
+            edge_files=$(jq -r '."io.github.boardgamesempire.web.files" // empty' <<<"$labels")
+            built_by=${edge_revision:-an unlabelled commit}
+            if [ -z "$edge_files" ]; then
+              move=true reason="\`edge\` had no files label."
+            elif [ "$edge_files" = "$FILES" ]; then
+              move=false reason="its files are this commit's, built by \`$built_by\`."
+            else
+              move=true reason="the files changed since \`$built_by\`."
+            fi
+          }
+
+          decide
+          write_tag "sha-$SHORT"
+          echo "Published \`$IMAGE:sha-$SHORT\` as \`$DIGEST\`." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$move" = true ]; then
+            write_tag edge
+            echo "::notice::edge moved to $DIGEST: ${reason//\`/}"
+            echo "Moved \`$IMAGE:edge\` to \`$DIGEST\`: $reason" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::edge stays where it is: ${reason//\`/}"
+            echo "\`edge\` stays where it is: $reason" >> "$GITHUB_STEP_SUMMARY"
+          fi
