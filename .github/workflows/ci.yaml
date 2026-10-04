@@ -563,10 +563,9 @@ jobs:
   # manifest copies on any platform. The check proves it on the two the
   # backend builds.
   #
-  # The package is created on the first push. GitHub's docs disagree on
-  # whether a workflow's new package starts public, inheriting this public
-  # repository's visibility, or private. If it is private, an org owner
-  # makes it public, which cannot be undone.
+  # The package is public, so the backend's source builds and Renovate
+  # pull it without credentials. A public package cannot be made private
+  # again.
   publish-web:
     name: Publish web image
     needs: [constraints, palette, format, test-files, generate, analyze, test, test-web, build-web]

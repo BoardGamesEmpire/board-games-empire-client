@@ -137,11 +137,8 @@ for a week after the run, while `build-web`'s artifact is kept. After that,
 and tags that image rather than pushing another. If it failed before then,
 any image it pushed stays untagged, and the re-run pushes a new one.
 
-The first publish creates the package. GitHub's documentation disagrees on
-whether a package created by a workflow starts public, inheriting the
-repository's visibility, or private, so check it after that run. If it is
-private, an org owner makes it public in the package's settings, which cannot
-be undone. Source builds of the backend need it public, and so does Renovate.
+The package is public, so source builds of the backend and Renovate pull it
+without credentials. A public package cannot be made private again.
 
 ## Building it locally
 
