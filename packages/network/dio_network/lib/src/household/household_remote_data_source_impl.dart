@@ -115,11 +115,13 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   @override
   Future<Household> createHousehold({
     required String name,
+    required String clientRequestId,
     String? description,
     String? image,
     String? language,
     String? visibility,
   }) async {
+    _checkClientRequestId(clientRequestId);
     const action = 'Household create';
     late final Response<String> response;
     try {
@@ -128,6 +130,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         options: _plainBody,
         data: {
           'name': name,
+          'clientRequestId': clientRequestId,
           'description': ?description,
           'image': ?image,
           'language': ?language,
@@ -313,6 +316,34 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         page,
         'page',
         '(page - 1) * limit must not exceed $maxPageDepth',
+      );
+    }
+  }
+
+  /// The server trims `clientRequestId`, then requires 1 to
+  /// [HouseholdRemoteDataSource.maxClientRequestIdLength] characters, and
+  /// answers a violation with a 400. That is permanent, and once #121 owns
+  /// cancel semantics a permanent create is discarded, so a key the caller
+  /// got wrong is refused here instead, with an error outside the
+  /// transient/permanent split.
+  ///
+  /// This matches the server exactly for ASCII keys, and every key this
+  /// client mints is a cuid2, which is ASCII. Past ASCII the two can
+  /// disagree at the edges: Dart's `trim` also strips U+0085, which the
+  /// server's does not, and the server counts a surrogate pair as one
+  /// character where `length` counts two.
+  ///
+  /// The key is still sent untrimmed: the server trims it before storing or
+  /// matching it, so the two forms are one key.
+  void _checkClientRequestId(String clientRequestId) {
+    const maxLength = HouseholdRemoteDataSource.maxClientRequestIdLength;
+    final length = clientRequestId.trim().length;
+    if (length == 0 || length > maxLength) {
+      throw ArgumentError.value(
+        clientRequestId,
+        'clientRequestId',
+        'must be 1 to $maxLength characters after trimming (the server '
+            'rejects anything else with a 400)',
       );
     }
   }

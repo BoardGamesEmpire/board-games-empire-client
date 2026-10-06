@@ -94,6 +94,10 @@ abstract class HouseholdRemoteDataSource {
   /// empty page. A household drain will never approach it.
   static const int maxPageDepth = 100000;
 
+  /// The server's length ceiling for [createHousehold]'s `clientRequestId`,
+  /// measured after it trims the key. A longer key is a 400.
+  static const int maxClientRequestIdLength = 128;
+
   /// Fetches **one page** of the households the acting user can read, newest
   /// first (`createdAt desc, id desc`), with the members each row embeds.
   ///
@@ -131,8 +135,8 @@ abstract class HouseholdRemoteDataSource {
   /// Creates a household on the server.
   ///
   /// Wire contract (backend `libs/api/household`): `POST /api/households`
-  /// `{ name, description?, image?, language?, visibility? }` → 201
-  /// `{ message, household }`. The creator becomes `HouseholdOwner`
+  /// `{ name, clientRequestId, description?, image?, language?, visibility? }`
+  /// → 201 `{ message, household }`. The creator becomes `HouseholdOwner`
   /// server-side. [language] is an IETF BCP 47 tag; [visibility] is a
   /// `Private` | `Friends` enum name. The server assigns the id (the
   /// create DTO has no id field), so the returned [Household] carries the
@@ -141,9 +145,43 @@ abstract class HouseholdRemoteDataSource {
   /// The returned [Household] has `isDirty` / `isLocalOnly` `false` — it is
   /// the server's confirmed state.
   ///
-  /// Throws [HouseholdRemoteException] (see class doc for classification).
+  /// ### [clientRequestId] makes the create idempotent
+  ///
+  /// The server keeps at most one household per user per key (backend#210).
+  /// A create carrying a key it has already seen creates nothing: it returns
+  /// the household the first one made, **ignoring the repeat's payload**
+  /// beyond validating it, so a retry that changed the name gets the
+  /// original back, not the change. That holds even if the household has
+  /// since been deleted, and the returned [Household] then has `deletedAt`
+  /// set. Keys never expire.
+  ///
+  /// So pass the queued create's `localId`, the same value on every attempt
+  /// at one create: then a response lost in transit cannot turn the retry
+  /// into a second household. A key minted per attempt defeats the guarantee
+  /// without failing anything. The parameter is required so that no caller
+  /// can omit it (#131).
+  ///
+  /// The server trims the key, then rejects it with a 400 if it is empty or
+  /// longer than [maxClientRequestIdLength]. A 400 is permanent, and once
+  /// #121 owns cancel semantics a permanent create is discarded, so
+  /// implementations throw [ArgumentError] before the request instead: a
+  /// caller's bug is not a reason to lose a household. Like the paging checks
+  /// on [fetchHouseholds], that error is not a [HouseholdRemoteException] and
+  /// sits outside the class doc's classification. A cuid2 `localId` never
+  /// trips it.
+  ///
+  /// A server older than backend#210 rejects the unknown field, so every
+  /// create against one is a 400 — permanent, and once #121 owns cancel
+  /// semantics, a discarded household. That is unsupported rather than
+  /// handled: the backend has no releases, so no supported build predates the
+  /// key.
+  ///
+  /// Throws [ArgumentError] for a key the server would reject, and
+  /// [HouseholdRemoteException] for every failure of the request itself (see
+  /// class doc for classification).
   Future<Household> createHousehold({
     required String name,
+    required String clientRequestId,
     String? description,
     String? image,
     String? language,

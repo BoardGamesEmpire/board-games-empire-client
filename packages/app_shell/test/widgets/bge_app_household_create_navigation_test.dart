@@ -137,6 +137,7 @@ void main() {
     when(
       () => remote.createHousehold(
         name: any(named: 'name'),
+        clientRequestId: any(named: 'clientRequestId'),
         description: any(named: 'description'),
       ),
     ).thenAnswer((_) async => _household(_serverId));
@@ -251,6 +252,7 @@ void main() {
       when(
         () => remote.createHousehold(
           name: any(named: 'name'),
+          clientRequestId: any(named: 'clientRequestId'),
           description: any(named: 'description'),
         ),
       ).thenThrow(const HouseholdRemoteTransientException('offline'));
