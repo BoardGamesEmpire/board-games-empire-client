@@ -104,6 +104,30 @@ void main() {
         expect(household.isDeleted, isFalse);
       });
 
+      // The server's replay ignores soft deletion (#131), so a retried create
+      // can get back a household deleted since the first attempt. The
+      // deletion must survive the parse, or a reconcile would revive it.
+      test(
+        'a replay of a since-deleted household keeps its deletedAt',
+        () async {
+          stubPost(
+            _resp(
+              _createEnvelope(
+                _householdJson(deletedAt: '2026-01-16T08:00:00.000Z'),
+              ),
+            ),
+          );
+
+          final household = await remote.createHousehold(
+            name: 'Game Night HQ',
+            clientRequestId: _clientRequestId,
+          );
+
+          expect(household.deletedAt, DateTime.utc(2026, 1, 16, 8));
+          expect(household.isDeleted, isTrue);
+        },
+      );
+
       test('accepts a 200 as success too', () async {
         stubPost(_resp(_createEnvelope(_householdJson()), statusCode: 200));
 

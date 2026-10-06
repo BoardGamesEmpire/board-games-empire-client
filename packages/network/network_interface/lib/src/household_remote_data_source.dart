@@ -152,7 +152,8 @@ abstract class HouseholdRemoteDataSource {
   /// the household the first one made, **ignoring the repeat's payload**
   /// beyond validating it, so a retry that changed the name gets the
   /// original back, not the change. That holds even if the household has
-  /// since been deleted. Keys never expire.
+  /// since been deleted, and the returned [Household] then has `deletedAt`
+  /// set. Keys never expire.
   ///
   /// So pass the queued create's `localId`, the same value on every attempt
   /// at one create: then a response lost in transit cannot turn the retry
