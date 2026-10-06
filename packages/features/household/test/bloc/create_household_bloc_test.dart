@@ -12,6 +12,8 @@ class MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
+class MockSyncQueueRepository extends Mock implements SyncQueueRepository {}
+
 Household _household({String id = 'hh_local', bool localOnly = true}) =>
     Household(
       id: id,
@@ -25,6 +27,7 @@ Household _household({String id = 'hh_local', bool localOnly = true}) =>
 void main() {
   late MockHouseholdRepository repo;
   late MockHouseholdRemoteDataSource remote;
+  late MockSyncQueueRepository syncQueue;
 
   setUpAll(() {
     registerFallbackValue(_household());
@@ -33,6 +36,14 @@ void main() {
   setUp(() {
     repo = MockHouseholdRepository();
     remote = MockHouseholdRemoteDataSource();
+    syncQueue = MockSyncQueueRepository();
+
+    // The inline send claims the op it just queued (#430). The default is
+    // the common case: nothing else holds it.
+    when(() => syncQueue.claim(any())).thenAnswer((_) async => true);
+    when(() => syncQueue.release(any())).thenAnswer((_) async {});
+    when(() => syncQueue.markFailed(any(), error: any(named: 'error')))
+        .thenAnswer((_) async {});
 
     when(
       () => repo.create(
@@ -50,8 +61,26 @@ void main() {
     ).thenAnswer((_) async {});
   });
 
-  CreateHouseholdBloc build() =>
-      CreateHouseholdBloc(repository: repo, remote: remote);
+  CreateHouseholdBloc build() => CreateHouseholdBloc(
+    repository: repo,
+    remote: remote,
+    syncQueue: syncQueue,
+  );
+
+  void verifyNoQueueWrite() {
+    verifyNever(() => syncQueue.markFailed(any(), error: any(named: 'error')));
+    verifyNever(() => syncQueue.release(any()));
+  }
+
+  void verifyNoSend() {
+    verifyNever(
+      () => remote.createHousehold(
+        name: any(named: 'name'),
+        clientRequestId: any(named: 'clientRequestId'),
+        description: any(named: 'description'),
+      ),
+    );
+  }
 
   /// Stubs a successful inline server send returning the canonical row.
   void stubRemoteSuccess() {
@@ -96,13 +125,20 @@ void main() {
             .having((s) => s.pendingSync, 'pendingSync', isFalse),
       ],
       verify: (_) {
-        verify(
+        verifyInOrder([
+          () => syncQueue.claim('q1'),
+          () => remote.createHousehold(
+            name: any(named: 'name'),
+            clientRequestId: any(named: 'clientRequestId'),
+            description: any(named: 'description'),
+          ),
           () => repo.reconcileCreatedHousehold(
             any(),
             localId: 'hh_local',
             completedSyncQueueId: 'q1',
           ),
-        ).called(1);
+        ]);
+        verifyNoQueueWrite();
       },
     );
 
@@ -133,6 +169,14 @@ void main() {
             completedSyncQueueId: any(named: 'completedSyncQueueId'),
           ),
         );
+        // A real attempt that failed: counted, with its error (#430).
+        verify(
+          () => syncQueue.markFailed(
+            'q1',
+            error: any(named: 'error', that: contains('offline')),
+          ),
+        ).called(1);
+        verifyNever(() => syncQueue.release(any()));
       },
     );
 
@@ -158,6 +202,15 @@ void main() {
           isTrue,
         ),
       ],
+      verify: (_) {
+        verify(
+          () => syncQueue.markFailed(
+            'q1',
+            error: any(named: 'error', that: contains('rejected')),
+          ),
+        ).called(1);
+        verifyNever(() => syncQueue.release(any()));
+      },
     );
 
     // The remote refuses a key the server would reject before any request
@@ -191,6 +244,11 @@ void main() {
             completedSyncQueueId: any(named: 'completedSyncQueueId'),
           ),
         );
+        // A client fault, not an attempt: handed back uncounted (#430).
+        verify(() => syncQueue.release('q1')).called(1);
+        verifyNever(
+          () => syncQueue.markFailed(any(), error: any(named: 'error')),
+        );
       },
     );
 
@@ -211,13 +269,8 @@ void main() {
         isA<CreateHouseholdFailure>(),
       ],
       verify: (_) {
-        verifyNever(
-          () => remote.createHousehold(
-            name: any(named: 'name'),
-            clientRequestId: any(named: 'clientRequestId'),
-            description: any(named: 'description'),
-          ),
-        );
+        verifyNoSend();
+        verifyNever(() => syncQueue.claim(any()));
       },
     );
 
@@ -233,6 +286,82 @@ void main() {
             completedSyncQueueId: any(named: 'completedSyncQueueId'),
           ),
         ).thenThrow(StateError('drift boom'));
+      },
+      build: build,
+      act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_local')
+            .having((s) => s.pendingSync, 'pendingSync', isTrue),
+      ],
+      verify: (_) {
+        // The server did its part, and the key dedupes the retry (#131):
+        // handed back uncounted, not failed (#430).
+        verify(() => syncQueue.release('q1')).called(1);
+        verifyNever(
+          () => syncQueue.markFailed(any(), error: any(named: 'error')),
+        );
+      },
+    );
+
+    // #430: a drain (or another tab) can claim the op between the local
+    // create and the inline send. Then it is theirs to deliver.
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'a lost claim -> Success(pendingSync:true) without sending',
+      setUp: () {
+        stubRemoteSuccess();
+        when(() => syncQueue.claim(any())).thenAnswer((_) async => false);
+      },
+      build: build,
+      act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_local')
+            .having((s) => s.pendingSync, 'pendingSync', isTrue),
+      ],
+      verify: (_) {
+        verifyNoSend();
+        verifyNoQueueWrite();
+      },
+    );
+
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'a claim that throws -> Success(pendingSync:true) without sending',
+      setUp: () {
+        stubRemoteSuccess();
+        when(() => syncQueue.claim(any())).thenThrow(StateError('disposed'));
+      },
+      build: build,
+      act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_local')
+            .having((s) => s.pendingSync, 'pendingSync', isTrue),
+      ],
+      verify: (_) {
+        verifyNoSend();
+        verifyNoQueueWrite();
+      },
+    );
+
+    // Recording the failure is bookkeeping: if it throws (the session's
+    // scope popped mid-send, say), the household is still written and
+    // queued, and the screen must still leave Submitting.
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'a failure write that throws still ends in Success(pendingSync:true)',
+      setUp: () {
+        when(
+          () => remote.createHousehold(
+            name: any(named: 'name'),
+            clientRequestId: any(named: 'clientRequestId'),
+            description: any(named: 'description'),
+          ),
+        ).thenThrow(const HouseholdRemoteTransientException('offline'));
+        when(() => syncQueue.markFailed(any(), error: any(named: 'error')))
+            .thenThrow(StateError('disposed'));
       },
       build: build,
       act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),

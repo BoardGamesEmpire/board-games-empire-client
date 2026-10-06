@@ -14,11 +14,12 @@ import '../widgets/create_household_form.dart';
 /// Screen for creating a household (#40).
 ///
 /// Decoupled from DI: the caller (router / app shell) resolves the
-/// per-server [HouseholdRepository] and [HouseholdRemoteDataSource] from the
-/// active server scope and passes them in; the screen provides the
-/// [CreateHouseholdBloc] itself. On success it shows a confirmation (synced
-/// vs. still-queued) and reports the new household to [onCreated]; on an
-/// unexpected local failure it shows an error and stays put.
+/// [HouseholdRepository], [HouseholdRemoteDataSource] and
+/// [SyncQueueRepository] from the active server scope and passes them in;
+/// the screen provides the [CreateHouseholdBloc] itself. On success it shows
+/// a confirmation (synced vs. still-queued) and reports the new household to
+/// [onCreated]; on an unexpected local failure it shows an error and stays
+/// put.
 ///
 /// The two outcomes use different surfaces on purpose (#191). Success takes
 /// the user off this screen, so its confirmation has to outlive the route —
@@ -29,6 +30,7 @@ class CreateHouseholdScreen extends StatelessWidget {
   const CreateHouseholdScreen({
     required this.repository,
     required this.remote,
+    required this.syncQueue,
     required this.onCreated,
     super.key,
   });
@@ -38,6 +40,10 @@ class CreateHouseholdScreen extends StatelessWidget {
 
   final HouseholdRepository repository;
   final HouseholdRemoteDataSource remote;
+
+  /// The queue the inline send claims its op from (#430), so it and a
+  /// drain can't both deliver one create.
+  final SyncQueueRepository syncQueue;
 
   /// Where the created household is shown (#271). Called once, with the id
   /// the household now has: the canonical one when the inline sync
@@ -54,8 +60,11 @@ class CreateHouseholdScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider<CreateHouseholdBloc>(
-      create: (_) =>
-          CreateHouseholdBloc(repository: repository, remote: remote),
+      create: (_) => CreateHouseholdBloc(
+        repository: repository,
+        remote: remote,
+        syncQueue: syncQueue,
+      ),
       child: _CreateHouseholdView(onCreated: onCreated),
     );
   }

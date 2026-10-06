@@ -39,15 +39,36 @@ import 'watch_disposal.dart';
 class SyncQueueRepositoryImpl
     with WatchDisposal
     implements SyncQueueRepository {
-  SyncQueueRepositoryImpl(this._db, this._clock, {required this._userId});
+  /// [localNowUtc] injects the device clock for tests; production uses
+  /// `DateTime.now().toUtc()`.
+  SyncQueueRepositoryImpl(
+    this._db,
+    this._clock, {
+    required this._userId,
+    this._localNowUtc = _systemNowUtc,
+  });
+
+  static DateTime _systemNowUtc() => DateTime.now().toUtc();
 
   final ServerDatabase _db;
 
-  /// Server-corrected time source (#12). Queue timestamps (createdAt,
-  /// lastAttemptAt) use [ClockService.nowUtc] so bookkeeping stays
-  /// consistent with the tombstone/updatedAt timestamps produced by
-  /// the collection repository against the same server.
+  /// Server-corrected time source (#12) for `createdAt`, so the queue's
+  /// bookkeeping stays consistent with the tombstone/updatedAt timestamps
+  /// produced by the collection repository against the same server.
   final ClockService _clock;
+
+  /// The device's own clock, uncorrected, for `lastAttemptAt` and the
+  /// claim lease judged by it (#430).
+  ///
+  /// The lease is between senders on this device, and they all read this
+  /// clock, so it measures how long a claim has really been held. The
+  /// server-corrected [_clock] can't. Each instance of it, one per web
+  /// tab, estimates the skew on its own; a correction steps it forward
+  /// mid-session; and its monotonic guard can hold it still for up to the
+  /// skew. A claim stamped before a slow device's first correction would
+  /// look expired at once, and one stamped before a fast device's would
+  /// look live for the lease plus the skew.
+  final DateTime Function() _localNowUtc;
 
   /// The user this repository instance is scoped to (#147). Stamped on
   /// every enqueue; filtered on by every query.
@@ -104,12 +125,7 @@ class SyncQueueRepositoryImpl
     // gives us free monotonic enqueue-order.
     final rows =
         await (_db.select(_db.syncQueueTable)
-              ..where(
-                (t) =>
-                    t.userId.equals(_userId) &
-                    t.status.isIn(['pending', 'failed']) &
-                    t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries),
-              )
+              ..where((_) => _claimablePredicate())
               ..orderBy([
                 (t) => OrderingTerm.asc(t.createdAt),
                 (t) => OrderingTerm.asc(t.rowId),
@@ -133,16 +149,38 @@ class SyncQueueRepositoryImpl
   }
 
   @override
-  Future<void> markInProgress(String id) async {
+  Future<bool> claim(String id) async {
     checkNotDisposed();
-    await (_db.update(
-      _db.syncQueueTable,
-    )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(
-      SyncQueueTableCompanion(
-        status: const Value('inProgress'),
-        lastAttemptAt: Value(_clock.nowUtc()),
-      ),
-    );
+    // One conditional UPDATE, so the check and the take are a single
+    // statement: of two senders racing for the entry, the second finds
+    // the predicate false and changes no row (#430). Both timestamps come
+    // from one clock read, so the lease is judged at the instant the new
+    // claim is stamped.
+    final now = _localNowUtc();
+    final changed =
+        await (_db.update(
+          _db.syncQueueTable,
+        )..where((t) => t.id.equals(id) & _claimablePredicate(now: now))).write(
+          SyncQueueTableCompanion(
+            status: const Value('inProgress'),
+            lastAttemptAt: Value(now),
+          ),
+        );
+    return changed == 1;
+  }
+
+  @override
+  Future<void> release(String id) async {
+    checkNotDisposed();
+    // Conditional on inProgress, so a release arriving after the entry was
+    // completed or failed (by this sender or another) leaves it alone.
+    await (_db.update(_db.syncQueueTable)..where(
+          (t) =>
+              t.id.equals(id) &
+              t.userId.equals(_userId) &
+              t.status.equals('inProgress'),
+        ))
+        .write(const SyncQueueTableCompanion(status: Value('pending')));
   }
 
   @override
@@ -166,6 +204,10 @@ class SyncQueueRepositoryImpl
     // move on; same effective behaviour as the prior
     // `if (row == null) return` early-return.
     //
+    // A completed entry is left alone too (#430). A sender whose lease
+    // expired can still be waiting on its request after another sender
+    // delivered the op; its failure must not queue the op again.
+    //
     // The `updates: {syncQueueTable}` argument hooks the raw UPDATE
     // into Drift's reactivity so any `.watch()`s on the queue table
     // (notably [watchPendingCount]) re-emit.
@@ -175,41 +217,17 @@ class SyncQueueRepositoryImpl
       '    retry_count = retry_count + 1, '
       '    last_error = ?, '
       '    last_attempt_at = ? '
-      'WHERE id = ? AND user_id = ?',
+      'WHERE id = ? AND user_id = ? AND status <> ?',
       variables: [
         Variable.withString('failed'),
         Variable.withString(error),
-        Variable.withDateTime(_clock.nowUtc()),
+        Variable.withDateTime(_localNowUtc()),
         Variable.withString(id),
         Variable.withString(_userId),
+        Variable.withString('completed'),
       ],
       updates: {_db.syncQueueTable},
     );
-  }
-
-  @override
-  Future<int> resetStaleInProgress() async {
-    checkNotDisposed();
-    // Recovery path for sync-worker crashes. Entries left in the
-    // inProgress state after a crash are counted as outstanding by
-    // [getPendingCount] / [watchPendingCount] (both of which include
-    // 'inProgress') but never returned by [getPendingEntries] (which
-    // only returns 'pending' / 'failed'), so without this method
-    // they'd sit stuck forever — visible to the UI but unreachable
-    // to the worker.
-    //
-    // Scoped to the current user (#147): a stale entry belonging to a
-    // departed user is *their* worker's to recover when they return;
-    // resetting it here would make it drainable under the wrong
-    // session the moment #121 lands.
-    //
-    // Single bulk UPDATE so the reset is atomic; .write() returns
-    // the affected row count which we propagate to the caller for
-    // logging / metrics.
-    return (_db.update(_db.syncQueueTable)..where(
-          (t) => t.userId.equals(_userId) & t.status.equals('inProgress'),
-        ))
-        .write(const SyncQueueTableCompanion(status: Value('pending')));
   }
 
   @override
@@ -234,24 +252,20 @@ class SyncQueueRepositoryImpl
 
     return _db.transaction(() async {
       // We can't push the id filter into SQL because the target id
-      // is buried inside the JSON payload. Fetch all retryable
-      // entries, deserialize each, and rewrite the ones that match.
-      // The SELECT uses the same predicate as [getPendingEntries] —
-      // including the user filter (#147) — and the per-row UPDATE
-      // below re-applies `user_id` alongside the id, so the write
+      // is buried inside the JSON payload. Fetch every entry that will
+      // be sent again, deserialize each, and rewrite the ones that
+      // match. The SELECT uses the same predicate as
+      // [getPendingEntries] — including the user filter (#147) and the
+      // expired claims a sender can retake (#430) — and the per-row
+      // UPDATE below re-applies `user_id` alongside the id, so the write
       // enforces the scope invariant independently of where its id
       // came from: collection ids are cuid2 and cross-user collisions
       // are practically impossible, but the boundary is enforced
       // uniformly on every write rather than reasoned about
       // per-method.
-      final rows =
-          await (_db.select(_db.syncQueueTable)..where(
-                (t) =>
-                    t.userId.equals(_userId) &
-                    t.status.isIn(['pending', 'failed']) &
-                    t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries),
-              ))
-              .get();
+      final rows = await (_db.select(
+        _db.syncQueueTable,
+      )..where((_) => _claimablePredicate())).get();
 
       var remapped = 0;
       for (final row in rows) {
@@ -340,10 +354,43 @@ class SyncQueueRepositoryImpl
     };
   }
 
+  /// Predicate for "a sender may take this entry now": what
+  /// [getPendingEntries] lists, what [claim] accepts, and what
+  /// [remapCollectionId] rewrites (#430). One predicate for all three, so
+  /// they cannot drift apart.
+  ///
+  /// The current user's entries under [SyncQueueEntry.maxRetries] that
+  /// are `pending` or `failed`, or `inProgress` with a claim older than
+  /// [SyncQueueEntry.claimLease]. An `inProgress` entry with no attempt
+  /// stamp counts as expired: [claim] always stamps, so such a row has no
+  /// live sender, and treating it as held would strand it.
+  ///
+  /// [now] defaults to a fresh read of the device clock, which stamps
+  /// every claim (see [_localNowUtc]); [claim] passes the instant it
+  /// stamps.
+  ///
+  /// The comparison goes through `JULIANDAY` because timestamps are stored
+  /// as ISO-8601 text (`build.yaml`), and `toIso8601String` writes three
+  /// or six fractional digits depending on the value, which sorts wrongly
+  /// as text within one millisecond.
+  Expression<bool> _claimablePredicate({DateTime? now}) {
+    final t = _db.syncQueueTable;
+    final leaseCutoff = Variable<DateTime>(
+      (now ?? _localNowUtc()).subtract(SyncQueueEntry.claimLease),
+    );
+    final claimExpired =
+        t.status.equals('inProgress') &
+        (t.lastAttemptAt.isNull() |
+            t.lastAttemptAt.julianday.isSmallerThan(leaseCutoff.julianday));
+    return t.userId.equals(_userId) &
+        t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries) &
+        (t.status.isIn(['pending', 'failed']) | claimExpired);
+  }
+
   /// Predicate for "outstanding sync work" — entries the worker
-  /// will eventually pick up or that are currently locked by the
-  /// worker. Used by [getPendingCount] and [watchPendingCount] to
-  /// feed the UI's sync-queue badge.
+  /// will eventually pick up or that a sender holds now. Used by
+  /// [getPendingCount] and [watchPendingCount] to feed the UI's
+  /// sync-queue badge.
   ///
   /// Four rules, each defended by an existing test in the
   /// `getPendingCount() / watchPendingCount() — _pendingPredicate
@@ -355,19 +402,18 @@ class SyncQueueRepositoryImpl
   ///
   /// 2. **All three live statuses are included**: `pending` and
   ///    `failed` because [getPendingEntries] returns them;
-  ///    `inProgress` because those entries are still outstanding
-  ///    work even though the worker has them locked (they go
-  ///    through [resetStaleInProgress] before becoming retryable
-  ///    again, but until that happens the badge should not lie
-  ///    by hiding them). `completed` is excluded — that's done
-  ///    work.
+  ///    `inProgress` whether its claim is live or expired (#430) —
+  ///    an expired claim is listed again, and a live one is being
+  ///    sent, so neither is done and the badge should not lie by
+  ///    hiding it. `completed` is excluded — that's done work.
   ///
   /// 3. **`retryCount < maxRetries` applies to ALL three**, not
   ///    just `failed`.
   ///
   /// 4. **Symmetry with [getPendingEntries]** is enforced by the
   ///    test group: every change to one predicate gets a
-  ///    corresponding test for the other.
+  ///    corresponding test for the other. The count is the listing
+  ///    plus the entries whose claim is live.
   Expression<bool> _pendingPredicate() {
     final t = _db.syncQueueTable;
     return t.userId.equals(_userId) &

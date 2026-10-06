@@ -24,6 +24,8 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
+class _MockSyncQueueRepository extends Mock implements SyncQueueRepository {}
+
 const _localId = 'hh_local';
 const _serverId = 'hh_server';
 
@@ -65,6 +67,7 @@ void main() {
   late Storage storage;
   late _MockHouseholdRepository repository;
   late _MockHouseholdRemoteDataSource remote;
+  late _MockSyncQueueRepository syncQueue;
 
   /// The local cache, standing in for the drift-backed one. Stateful on
   /// purpose: the destination renders from the cache (#271's third
@@ -91,6 +94,12 @@ void main() {
 
     repository = _MockHouseholdRepository();
     remote = _MockHouseholdRemoteDataSource();
+    // The inline send claims its op first (#430); nothing else holds it.
+    syncQueue = _MockSyncQueueRepository();
+    when(() => syncQueue.claim(any())).thenAnswer((_) async => true);
+    when(() => syncQueue.release(any())).thenAnswer((_) async {});
+    when(() => syncQueue.markFailed(any(), error: any(named: 'error')))
+        .thenAnswer((_) async {});
 
     // Empty to begin with: the list is where the user starts, and the
     // household under test is the one they are about to create.
@@ -152,9 +161,10 @@ void main() {
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           householdRepository: repository,
-          // The create route's guard needs the remote, unlike the list's and
-          // the detail's (#269 D4).
+          // The create route's guard needs the remote and the queue, unlike
+          // the list's and the detail's (#269).
           householdRemoteDataSource: remote,
+          syncQueueRepository: syncQueue,
           householdHydrationStatus: hydrationStatus,
         ),
       ),

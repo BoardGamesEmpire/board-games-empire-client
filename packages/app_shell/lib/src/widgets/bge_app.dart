@@ -703,13 +703,15 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// The #129 create-household wiring: resolves the [HouseholdRepository]
-  /// (per-user session scope, #135) and [HouseholdRemoteDataSource]
-  /// (per-server scope) from the *active server's* scoped container — not
-  /// [BgeApp.rootContainer]. Null (→ [NotYetAvailableScreen]) when no
-  /// active server is resolvable or its container lacks either dependency
-  /// (tests without a scope; no active user session). Both platforms
-  /// register the remote in their network installer, so a real session on
-  /// either reaches this route since #125.
+  /// and [SyncQueueRepository] (per-user session scope, #135) and
+  /// [HouseholdRemoteDataSource] (per-server scope) from the *active
+  /// server's* scoped container — not [BgeApp.rootContainer]. Null (→
+  /// [NotYetAvailableScreen]) when no active server is resolvable or its
+  /// container lacks any of them (tests without a scope; no active user
+  /// session). Both platforms register the remote in their network
+  /// installer, so a real session on either reaches this route since #125.
+  /// The queue is registered beside the repository by the same installer,
+  /// so it never gates a route the repository would have opened.
   ///
   /// ## Captured-repository lifetime (#135)
   ///
@@ -730,13 +732,15 @@ class _BgeAppState extends State<BgeApp> {
 
     final container = active.container;
     if (!container.isRegistered<HouseholdRepository>() ||
-        !container.isRegistered<HouseholdRemoteDataSource>()) {
+        !container.isRegistered<HouseholdRemoteDataSource>() ||
+        !container.isRegistered<SyncQueueRepository>()) {
       return null;
     }
 
     return CreateHouseholdScreen(
       repository: container.get<HouseholdRepository>(),
       remote: container.get<HouseholdRemoteDataSource>(),
+      syncQueue: container.get<SyncQueueRepository>(),
       // #271: the new household's own screen takes the place of the spent
       // form, so back can never land on it again (#162).
       //

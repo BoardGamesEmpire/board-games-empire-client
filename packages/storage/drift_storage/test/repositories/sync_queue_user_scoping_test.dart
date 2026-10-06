@@ -37,8 +37,18 @@ void main() {
   setUp(() {
     db = inMemoryServerDatabase();
     clock = FixedClockService(DateTime.utc(2024, 1, 15, 10, 30));
-    repoA = SyncQueueRepositoryImpl(db, clock, userId: _kUserA);
-    repoB = SyncQueueRepositoryImpl(db, clock, userId: _kUserB);
+    repoA = SyncQueueRepositoryImpl(
+      db,
+      clock,
+      userId: _kUserA,
+      localNowUtc: clock.nowUtc,
+    );
+    repoB = SyncQueueRepositoryImpl(
+      db,
+      clock,
+      userId: _kUserB,
+      localNowUtc: clock.nowUtc,
+    );
   });
 
   tearDown(() async => db.close());
@@ -95,7 +105,7 @@ void main() {
         'its id in hand', () async {
       final entry = await repoA.enqueue(_kOperation);
 
-      await repoB.markInProgress(entry.id);
+      expect(await repoB.claim(entry.id), isFalse);
       await repoB.markCompleted(entry.id);
       await repoB.markFailed(entry.id, error: 'not yours');
 
@@ -122,26 +132,37 @@ void main() {
       },
     );
 
-    test('resetStaleInProgress recovers only the current user\'s stuck '
-        'entries', () async {
+    test('release cannot hand back another user\'s claimed entry', () async {
+      final entry = await repoA.enqueue(_kOperation);
+      expect(await repoA.claim(entry.id), isTrue);
+
+      await repoB.release(entry.id);
+
+      expect((await rawRows()).single.status, 'inProgress');
+    });
+
+    test('an expired claim is listed and retaken only by its own '
+        'user', () async {
       final a = await repoA.enqueue(_kOperation);
       final b = await repoB.enqueue(_kOperation);
-      await repoA.markInProgress(a.id);
-      await repoB.markInProgress(b.id);
+      expect(await repoA.claim(a.id), isTrue);
+      expect(await repoB.claim(b.id), isTrue);
 
-      expect(await repoA.resetStaleInProgress(), 1);
+      clock.current = clock.current.add(
+        SyncQueueEntry.claimLease + const Duration(seconds: 1),
+      );
 
-      final rows = await rawRows();
       expect(
-        rows.singleWhere((r) => r.id == a.id).status,
-        'pending',
-        reason: 'A\'s crash recovery resets A\'s entry',
+        (await repoA.getPendingEntries()).map((e) => e.id),
+        equals([a.id]),
+        reason: 'A\'s crash recovery sees A\'s entry',
       );
       expect(
-        rows.singleWhere((r) => r.id == b.id).status,
-        'inProgress',
-        reason: 'B\'s in-flight entry is not A\'s to recover',
+        await repoA.claim(b.id),
+        isFalse,
+        reason: 'B\'s expired claim is not A\'s to retake',
       );
+      expect(await repoA.claim(a.id), isTrue);
     });
 
     test(

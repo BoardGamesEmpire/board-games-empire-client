@@ -13,6 +13,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
+class _MockSyncQueueRepository extends Mock implements SyncQueueRepository {}
+
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
@@ -50,12 +52,19 @@ const _errorCopy =
 void main() {
   late _MockHouseholdRepository repo;
   late _MockHouseholdRemoteDataSource remote;
+  late _MockSyncQueueRepository syncQueue;
 
   setUpAll(() => registerFallbackValue(_household()));
 
   setUp(() {
     repo = _MockHouseholdRepository();
     remote = _MockHouseholdRemoteDataSource();
+    // The inline send claims its op first (#430); nothing else holds it.
+    syncQueue = _MockSyncQueueRepository();
+    when(() => syncQueue.claim(any())).thenAnswer((_) async => true);
+    when(() => syncQueue.release(any())).thenAnswer((_) async {});
+    when(() => syncQueue.markFailed(any(), error: any(named: 'error')))
+        .thenAnswer((_) async {});
 
     when(
       () => repo.create(
@@ -110,6 +119,7 @@ void main() {
                 builder: (_) => CreateHouseholdScreen(
                   repository: repo,
                   remote: remote,
+                  syncQueue: syncQueue,
                   onCreated: (_, householdId) => onCreated(householdId),
                 ),
               ),
@@ -583,6 +593,7 @@ void main() {
           home: CreateHouseholdScreen(
             repository: repo,
             remote: remote,
+            syncQueue: syncQueue,
             onCreated: (_, householdId) => created = householdId,
           ),
         ),
