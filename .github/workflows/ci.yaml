@@ -43,14 +43,18 @@ permissions:
 # PNGs in the same PR.
 
 jobs:
-  # ── Toolchain constraint consistency (#153) ──────────────────────
+  # ── Workspace invariants (#153, #156, #73) ───────────────────────
   # Fast, dependency-free gate: every package's sdk/flutter constraints
-  # must agree with the root pin. Catches what pub cannot — a floor like
-  # the old `flutter: ">=3.0.0"` never fails a resolve, because the Dart
-  # floor already excludes every Flutter that low, so it drifts in
-  # silence. Runs in parallel with everything else; needs no codegen.
+  # must agree with the root pin, every pubspec must declare
+  # `publish_to: none`, and every app must report the root `version:`.
+  # Catches what pub cannot — a floor like the old `flutter: ">=3.0.0"`
+  # never fails a resolve, because the Dart floor already excludes every
+  # Flutter that low, so it drifts in silence. Likewise a hand-set
+  # version in an Android, iOS, macOS or Windows manifest: no job here
+  # builds any of them.
+  # Runs in parallel with everything else; needs no codegen.
   constraints:
-    name: SDK constraints
+    name: Workspace invariants
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -61,12 +65,14 @@ jobs:
           cache: true
       - name: Resolve workspace
         run: flutter pub get
-      # The rewriter's failure mode is a silent no-op, which the workspace
+      # A rewriter's failure mode is a silent no-op, which the workspace
       # check below cannot see (it only ever reads correct pubspecs), so
-      # the drift shapes it must survive are pinned as fixtures.
-      - name: Constraint tooling self-test
+      # the drift shapes it must survive are pinned as fixtures. The
+      # manifest checks only ever read correct manifests, so the
+      # hand-set versions they must catch are pinned the same way.
+      - name: Invariant tooling self-test
         run: dart run tool/check_sdk_constraints.dart --self-test
-      - name: Constraints must match the root pin
+      - name: Invariants must hold against the root pubspec
         run: dart run tool/check_sdk_constraints.dart
 
   # ── Palette verification (#192) ──────────────────────────────────

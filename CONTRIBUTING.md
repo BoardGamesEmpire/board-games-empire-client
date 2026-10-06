@@ -49,6 +49,25 @@ This exists because `flutter create` leaves `flutter: ">=3.0.0"` behind, and pub
 can never fail on it — the Dart floor already excludes every Flutter that old, so
 the constraint is inert. 17 packages had drifted that way before #153.
 
+### Bumping the client version
+
+The root [pubspec.yaml](pubspec.yaml) holds the client's one version, build
+number included, and every app under `apps/` declares the same string. Each
+platform takes its version from its app's pubspec. Bumping works like the
+toolchain:
+
+```bash
+# 1. edit the root version:, then
+dart run tool/check_sdk_constraints.dart --fix
+```
+
+`--fix` rewrites `version:` in each app's pubspec. Never edit those by hand, and
+never set a version in a native project, such as Xcode's General tab or
+`build.gradle.kts`. The check fails if an app's version differs from the root's,
+and if an Android, iOS, macOS or Windows manifest stops taking its version from
+Flutter (#73). The comment on the root `version:` says which values it accepts
+and how the build number moves.
+
 ### melos
 
 ```bash
@@ -107,7 +126,7 @@ Run `melos run` with no arguments to list everything. The ones worth knowing:
 | `test` | All non-golden tests, 22 packages. Mirrors CI. |
 | `test:goldens` | Golden tests only, against the committed baselines |
 | `goldens:update` | Regenerate golden baselines after an intended visual change |
-| `check:constraints` | Verify the workspace pubspec invariants |
+| `check:constraints` | Verify the workspace invariants: SDK constraints, `publish_to`, and the client version |
 | `check:palette` | Re-derive the palette and check its contrast and hue targets |
 | `check:test-files` | Fail on a `test/` suite not named `*_test.dart`. Mirrors CI. |
 | `schema:dump` | Refresh the committed Drift schema snapshots |

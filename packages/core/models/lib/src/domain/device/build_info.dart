@@ -17,7 +17,9 @@ abstract class BuildInfo with _$BuildInfo {
   const factory BuildInfo({
     /// Semver version string (e.g. `1.2.3`), derived from the app
     /// pubspec `version:` on every platform (native manifests and web's
-    /// generated `version.json` alike; lockstep tracked in #73).
+    /// generated `version.json` alike). Every app's `version:` matches
+    /// the root pubspec's, which `tool/check_sdk_constraints.dart`
+    /// enforces (#73).
     required String version,
 
     /// Platform build identifier. A [String], not an int: build numbers
