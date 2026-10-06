@@ -835,6 +835,23 @@ void _selfTest() {
     ],
   );
 
+  // Both leave every macro line in place and pick the 1.0.0 fallback.
+  expect(
+    "rc: flags a guard that no longer reads Flutter's defines",
+    _rcVersionProblems(
+      rcTemplate
+          .replaceFirst(
+            '#if defined(FLUTTER_VERSION_MAJOR)',
+            '#undef FLUTTER_VERSION_MAJOR\n#if defined(FLUTTER_VERSION_MAJOR)',
+          )
+          .replaceFirst('#if defined(FLUTTER_VERSION)\n', '#if 0\n'),
+    ),
+    [
+      '`#undef FLUTTER_VERSION_MAJOR` overrides the version Flutter sets',
+      'lacks `#if defined(FLUTTER_VERSION)`',
+    ],
+  );
+
   expect(
     'plist: flags a hand-set CFBundleShortVersionString',
     _plistVersionProblems(
@@ -1105,15 +1122,19 @@ List<String> _cmakeVersionProblems(String source) => _templateVersionProblems(
 /// Problems with a Windows runner's `Runner.rc`.
 ///
 /// The template derives both of its version macros from Flutter's
-/// defines, and both numeric fields and both version strings use them.
-/// Beyond those, only the template's `#else` fallbacks may define the
-/// macros: a definition added after them, or an `#undef`, would win over
+/// defines, behind guards that test for them, and both numeric fields
+/// and both version strings use them. Beyond those, only the template's
+/// `#else` fallbacks may define the macros: a definition added after
+/// them, an `#undef`, or one of Flutter's defines undone would win over
 /// Flutter's while every template line stayed in place.
 List<String> _rcVersionProblems(String source) => _templateVersionProblems(
   _stripSlashComments(source).split('\n'),
   const [
+    '#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) '
+        '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)',
     '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
         'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD',
+    '#if defined(FLUTTER_VERSION)',
     '#define VERSION_AS_STRING FLUTTER_VERSION',
     'FILEVERSION VERSION_AS_NUMBER',
     'PRODUCTVERSION VERSION_AS_NUMBER',
@@ -1122,7 +1143,7 @@ List<String> _rcVersionProblems(String source) => _templateVersionProblems(
   ],
   RegExp(
     r'^(FILEVERSION|PRODUCTVERSION)\b|^VALUE\s+"(File|Product)Version"'
-    r'|^#\s*(define|undef)\s+VERSION_AS_(NUMBER|STRING)\b',
+    r'|^#\s*(define|undef)\s+(VERSION_AS_(NUMBER|STRING)|FLUTTER_VERSION\w*)\b',
   ).hasMatch,
   optional: const [
     '#define VERSION_AS_NUMBER 1,0,0,0',
