@@ -191,6 +191,10 @@ void main(List<String> args) {
   final unfixable = <String>[];
   // A set, since one pubspec can need both rewrites.
   final rewrittenPaths = <String>{};
+  // The problems a rewrite cleared, which are all --fix may claim. One
+  // pubspec can have a version it rewrote beside an environment it
+  // could not.
+  final fixed = <String>[];
 
   // The root is a real package too — `dart pub publish` from here would
   // target `board_games_empire` — so it gets the publish_to check even
@@ -217,10 +221,10 @@ void main(List<String> args) {
     if (apps.contains(dir)) {
       final actualVersion = yaml['version']?.toString();
       if (actualVersion != expectedVersion) {
-        versionProblems.add(
-          '$path: version is ${_show(actualVersion)}, expected '
-          '${_show(expectedVersion)}',
-        );
+        final problem =
+            '$path: version is ${_show(actualVersion)}, expected '
+            '${_show(expectedVersion)}';
+        versionProblems.add(problem);
         if (fix) {
           final rewritten = _rewriteVersion(source, expectedVersion);
           if (rewritten == null) {
@@ -234,6 +238,7 @@ void main(List<String> args) {
             // keeps the new version line.
             source = rewritten;
             rewrittenPaths.add(path);
+            fixed.add(problem);
           }
         }
       }
@@ -248,13 +253,14 @@ void main(List<String> args) {
 
     if (actualSdk == expectedSdk && actualFlutter == wantFlutter) continue;
 
+    final drift = <String>[];
     if (actualSdk != expectedSdk) {
-      sdkProblems.add(
+      drift.add(
         '$path: sdk is ${_show(actualSdk)}, expected ${_show(expectedSdk)}',
       );
     }
     if (actualFlutter != wantFlutter) {
-      sdkProblems.add(
+      drift.add(
         wantFlutter == null
             ? '$path: declares flutter ${_show(actualFlutter)} but depends on '
                   'nothing from the Flutter SDK — the key should be removed'
@@ -265,6 +271,7 @@ void main(List<String> args) {
                   '${_show(wantFlutter)}',
       );
     }
+    sdkProblems.addAll(drift);
 
     if (fix) {
       final rewritten = _rewriteEnvironment(source, expectedSdk, wantFlutter);
@@ -278,6 +285,7 @@ void main(List<String> args) {
       } else {
         file.writeAsStringSync(rewritten);
         rewrittenPaths.add(path);
+        fixed.addAll(drift);
       }
     }
   }
@@ -359,9 +367,11 @@ void main(List<String> args) {
   }
 
   if (fix) {
-    stdout.writeln('Rewrote ${rewrittenPaths.length} pubspec(s):');
-    for (final p in problems) {
-      stdout.writeln('  $p');
+    if (fixed.isNotEmpty) {
+      stdout.writeln('Rewrote ${rewrittenPaths.length} pubspec(s):');
+      for (final p in fixed) {
+        stdout.writeln('  $p');
+      }
     }
     if (unfixable.isNotEmpty) {
       stderr.writeln('\nCould not rewrite ${unfixable.length} pubspec(s):');
@@ -804,6 +814,27 @@ void _selfTest() {
     ],
   );
 
+  // Every template line is still there, so only the extra definitions
+  // can give this away.
+  expect(
+    'rc: flags a version macro redefined after the template',
+    _rcVersionProblems(
+      rcTemplate.replaceFirst(
+        'VS_VERSION_INFO',
+        '#undef VERSION_AS_NUMBER\n'
+            '#define VERSION_AS_NUMBER 2,0,0,0\n'
+            '#  define VERSION_AS_STRING "2.0.0"\n'
+            'VS_VERSION_INFO',
+      ),
+    ),
+    [
+      '`#undef VERSION_AS_NUMBER` overrides the version Flutter sets',
+      '`#define VERSION_AS_NUMBER 2,0,0,0` overrides the version Flutter sets',
+      '`#  define VERSION_AS_STRING "2.0.0"` overrides the version Flutter '
+          'sets',
+    ],
+  );
+
   expect(
     'plist: flags a hand-set CFBundleShortVersionString',
     _plistVersionProblems(
@@ -997,7 +1028,8 @@ const _manifests = <(String, List<String> Function(String))>[
 
 /// Holds a manifest's [lines] to the version lines of its Flutter
 /// template: each of [required] must appear, and any other line that
-/// [setsVersion] picks out is an override. Lines compare without their
+/// [setsVersion] picks out is an override, unless it is one of the
+/// template's own [optional] lines. Lines compare without their
 /// whitespace, so indentation and spacing do not matter; callers strip
 /// comments first.
 ///
@@ -1006,17 +1038,19 @@ const _manifests = <(String, List<String> Function(String))>[
 List<String> _templateVersionProblems(
   Iterable<String> lines,
   List<String> required,
-  bool Function(String line) setsVersion,
-) {
+  bool Function(String line) setsVersion, {
+  List<String> optional = const [],
+}) {
   String compact(String line) => line.replaceAll(RegExp(r'\s'), '');
   final wanted = {for (final line in required) compact(line)};
+  final allowed = {for (final line in optional) compact(line)};
   final seen = <String>{};
   final problems = <String>[];
   for (final line in lines.map((l) => l.trim())) {
     final key = compact(line);
     if (wanted.contains(key)) {
       seen.add(key);
-    } else if (setsVersion(line)) {
+    } else if (!allowed.contains(key) && setsVersion(line)) {
       problems.add('`$line` overrides the version Flutter sets');
     }
   }
@@ -1072,7 +1106,9 @@ List<String> _cmakeVersionProblems(String source) => _templateVersionProblems(
 ///
 /// The template derives both of its version macros from Flutter's
 /// defines, and both numeric fields and both version strings use them.
-/// The `#else` fallbacks are the template's own and are left alone.
+/// Beyond those, only the template's `#else` fallbacks may define the
+/// macros: a definition added after them, or an `#undef`, would win over
+/// Flutter's while every template line stayed in place.
 List<String> _rcVersionProblems(String source) => _templateVersionProblems(
   _stripSlashComments(source).split('\n'),
   const [
@@ -1084,8 +1120,14 @@ List<String> _rcVersionProblems(String source) => _templateVersionProblems(
     r'VALUE "FileVersion", VERSION_AS_STRING "\0"',
     r'VALUE "ProductVersion", VERSION_AS_STRING "\0"',
   ],
-  RegExp(r'^(FILEVERSION|PRODUCTVERSION)\b|^VALUE\s+"(File|Product)Version"')
-      .hasMatch,
+  RegExp(
+    r'^(FILEVERSION|PRODUCTVERSION)\b|^VALUE\s+"(File|Product)Version"'
+    r'|^#\s*(define|undef)\s+VERSION_AS_(NUMBER|STRING)\b',
+  ).hasMatch,
+  optional: const [
+    '#define VERSION_AS_NUMBER 1,0,0,0',
+    '#define VERSION_AS_STRING "1.0.0"',
+  ],
 );
 
 /// Problems with an iOS or macOS `Info.plist`'s version entries.
