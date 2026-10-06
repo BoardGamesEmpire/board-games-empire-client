@@ -10,6 +10,9 @@ import 'package:dio_network/dio_network.dart';
 
 class MockDio extends Mock implements Dio {}
 
+// A cuid2, the shape every real key has: the queued create's localId.
+const _clientRequestId = 'tz4a98xxat96iws9zmbrgj3a';
+
 Map<String, dynamic> _householdJson({
   String id = 'hh_server_1',
   String name = 'Game Night HQ',
@@ -89,7 +92,10 @@ void main() {
           ),
         );
 
-        final household = await remote.createHousehold(name: 'Game Night HQ');
+        final household = await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
+        );
 
         expect(household.id, 'hh_server_1');
         expect(household.name, 'Game Night HQ');
@@ -101,14 +107,20 @@ void main() {
       test('accepts a 200 as success too', () async {
         stubPost(_resp(_createEnvelope(_householdJson()), statusCode: 200));
 
-        final household = await remote.createHousehold(name: 'Game Night HQ');
+        final household = await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
+        );
         expect(household.id, 'hh_server_1');
       });
 
       test('server-confirmed row has both sync flags false', () async {
         stubPost(_resp(_createEnvelope(_householdJson())));
 
-        final household = await remote.createHousehold(name: 'Game Night HQ');
+        final household = await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
+        );
         expect(household.isDirty, isFalse);
         expect(household.isLocalOnly, isFalse);
       });
@@ -116,7 +128,10 @@ void main() {
       test('null description / image map to null', () async {
         stubPost(_resp(_createEnvelope(_householdJson())));
 
-        final household = await remote.createHousehold(name: 'Game Night HQ');
+        final household = await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
+        );
         expect(household.description, isNull);
         expect(household.image, isNull);
       });
@@ -124,7 +139,10 @@ void main() {
       test('hits the relative /api/households path', () async {
         stubPost(_resp(_createEnvelope(_householdJson())));
 
-        await remote.createHousehold(name: 'Game Night HQ');
+        await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
+        );
 
         verify(
           () => mockDio.post<String>(
@@ -147,13 +165,35 @@ void main() {
               ).captured.single
               as Map<String, dynamic>;
 
-      test('sends only name when optionals are omitted', () async {
+      test('sends only name and the key when optionals are omitted', () async {
         stubPost(_resp(_createEnvelope(_householdJson())));
 
-        await remote.createHousehold(name: 'Game Night HQ');
+        await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
+        );
 
         final body = capturedBody();
-        expect(body, equals({'name': 'Game Night HQ'}));
+        expect(
+          body,
+          equals({
+            'name': 'Game Night HQ',
+            'clientRequestId': _clientRequestId,
+          }),
+        );
+      });
+
+      // The server trims the key before it stores or matches it, so the
+      // client sends it exactly as given (#131).
+      test('sends the key exactly as given, padding included', () async {
+        stubPost(_resp(_createEnvelope(_householdJson())));
+
+        await remote.createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: '  hh_local_7f3k ',
+        );
+
+        expect(capturedBody()['clientRequestId'], '  hh_local_7f3k ');
       });
 
       test('includes optionals when provided', () async {
@@ -161,6 +201,7 @@ void main() {
 
         await remote.createHousehold(
           name: 'Game Night HQ',
+          clientRequestId: _clientRequestId,
           description: 'Where we play',
           image: 'x.png',
           language: 'pt-BR',
@@ -176,11 +217,79 @@ void main() {
       });
     });
 
+    // Refused before I/O because the server's 400 would be permanent; the
+    // createHousehold doc says why that matters (#131).
+    group('a key the server would reject', () {
+      void expectRejectedBeforeRequest(String clientRequestId) {
+        expect(
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: clientRequestId,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        verifyNever(
+          () => mockDio.post<String>(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        );
+      }
+
+      test('an empty key throws before the request', () {
+        expectRejectedBeforeRequest('');
+      });
+
+      test('a whitespace-only key throws, since the server trims it to '
+          'empty', () {
+        expectRejectedBeforeRequest(' \t\n ');
+      });
+
+      test('a key over 128 characters throws', () {
+        expectRejectedBeforeRequest('a' * 129);
+      });
+
+      test('a key of exactly 128 characters is sent', () async {
+        stubPost(_resp(_createEnvelope(_householdJson())));
+
+        await remote.createHousehold(name: 'HQ', clientRequestId: 'a' * 128);
+
+        verify(
+          () => mockDio.post<String>(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        ).called(1);
+      });
+
+      test('the length is judged after trimming, like the server', () async {
+        stubPost(_resp(_createEnvelope(_householdJson())));
+
+        await remote.createHousehold(
+          name: 'HQ',
+          clientRequestId: '  ${'a' * 128}  ',
+        );
+
+        verify(
+          () => mockDio.post<String>(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        ).called(1);
+      });
+    });
+
     group('transient failures (retryable)', () {
       test('connection error', () {
         stubPostThrows(_dioError(DioExceptionType.connectionError));
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -188,7 +297,10 @@ void main() {
       test('connection timeout', () {
         stubPostThrows(_dioError(DioExceptionType.connectionTimeout));
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -201,7 +313,10 @@ void main() {
           ),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(
             isA<HouseholdRemoteTransientException>().having(
               (e) => e.statusCode,
@@ -221,7 +336,10 @@ void main() {
             ),
           );
           expect(
-            () => remote.createHousehold(name: 'x'),
+            () => remote.createHousehold(
+              name: 'x',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(isA<HouseholdRemoteTransientException>()),
             reason: 'status $status should be transient',
           );
@@ -231,7 +349,10 @@ void main() {
       test('no response status is transient', () {
         stubPostThrows(_dioError(DioExceptionType.unknown));
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -239,7 +360,10 @@ void main() {
       test('a 2xx response with a null status is transient', () {
         stubPost(_resp(_createEnvelope(_householdJson()), statusCode: null));
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -263,7 +387,10 @@ void main() {
           ),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(
             isA<HouseholdRemoteTransientException>().having(
               (e) => e.statusCode,
@@ -287,7 +414,10 @@ void main() {
           ),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -295,7 +425,10 @@ void main() {
       test('on a non-exception 404 response body', () {
         stubPost(_resp(null, statusCode: 404));
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -308,7 +441,10 @@ void main() {
           ),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemotePermanentException>()),
         );
       });
@@ -336,7 +472,10 @@ void main() {
         );
 
         await expectLater(
-          () => remote.createHousehold(name: 'HQ'),
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(
             isA<HouseholdRemoteTransientException>().having(
               (e) => e.statusCode,
@@ -357,7 +496,10 @@ void main() {
         );
 
         await expectLater(
-          () => remote.createHousehold(name: 'HQ'),
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(
             isA<HouseholdRemoteTransientException>().having(
               (e) => e.statusCode,
@@ -380,7 +522,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemoteTransientException>().having(
                 (e) => e.statusCode,
@@ -399,7 +544,10 @@ void main() {
         );
 
         await expectLater(
-          () => remote.createHousehold(name: 'HQ'),
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(
             isA<HouseholdRemotePermanentException>().having(
               (e) => e.statusCode,
@@ -415,7 +563,10 @@ void main() {
         final remote = remoteOver(cannedDio(body: '', statusCode: 403));
 
         await expectLater(
-          () => remote.createHousehold(name: 'HQ'),
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -432,7 +583,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(isA<HouseholdRemotePermanentException>()),
           );
         },
@@ -452,7 +606,10 @@ void main() {
         final remote = remoteOver(cannedDio(body: padded, statusCode: 403));
 
         await expectLater(
-          () => remote.createHousehold(name: 'HQ'),
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemoteTransientException>()),
         );
       });
@@ -469,7 +626,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(isA<HouseholdRemotePermanentException>()),
           );
         },
@@ -491,7 +651,9 @@ void main() {
             )..options.responseType = type;
 
             await expectLater(
-              () => remoteOver(dio).createHousehold(name: 'HQ'),
+              () => remoteOver(
+                dio,
+              ).createHousehold(name: 'HQ', clientRequestId: _clientRequestId),
               throwsA(
                 isA<HouseholdRemotePermanentException>().having(
                   (e) => e.statusCode,
@@ -514,7 +676,10 @@ void main() {
           ),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(
             isA<HouseholdRemotePermanentException>().having(
               (e) => e.statusCode,
@@ -544,7 +709,10 @@ void main() {
           ),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemotePermanentException>()),
         );
       });
@@ -552,7 +720,10 @@ void main() {
       test('2xx with a body missing "household" is permanent', () {
         stubPost(_resp({'message': 'ok'}));
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemotePermanentException>()),
         );
       });
@@ -565,7 +736,10 @@ void main() {
           }),
         );
         expect(
-          () => remote.createHousehold(name: 'x'),
+          () => remote.createHousehold(
+            name: 'x',
+            clientRequestId: _clientRequestId,
+          ),
           throwsA(isA<HouseholdRemotePermanentException>()),
         );
       });
@@ -595,7 +769,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemotePermanentException>().having(
                 (e) => e.statusCode,
@@ -612,7 +789,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemotePermanentException>().having(
                 (e) => e.statusCode,
@@ -638,7 +818,10 @@ void main() {
             );
 
             await expectLater(
-              () => remote.createHousehold(name: 'HQ'),
+              () => remote.createHousehold(
+                name: 'HQ',
+                clientRequestId: _clientRequestId,
+              ),
               throwsA(
                 isA<HouseholdRemotePermanentException>().having(
                   (e) => e.statusCode,
@@ -662,7 +845,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemoteTransientException>().having(
                 (e) => e.statusCode,
@@ -683,7 +869,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemoteTransientException>().having(
                 (e) => e.statusCode,
@@ -708,7 +897,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemotePermanentException>().having(
                 (e) => e.statusCode,
@@ -731,7 +923,10 @@ void main() {
             );
 
             await expectLater(
-              () => remote.createHousehold(name: 'HQ'),
+              () => remote.createHousehold(
+                name: 'HQ',
+                clientRequestId: _clientRequestId,
+              ),
               throwsA(
                 isA<HouseholdRemotePermanentException>().having(
                   (e) => e.statusCode,
@@ -751,7 +946,10 @@ void main() {
             );
 
             await expectLater(
-              () => remote.createHousehold(name: 'HQ'),
+              () => remote.createHousehold(
+                name: 'HQ',
+                clientRequestId: _clientRequestId,
+              ),
               throwsA(
                 isA<HouseholdRemotePermanentException>().having(
                   (e) => e.statusCode,
@@ -769,7 +967,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemotePermanentException>().having(
                 (e) => e.statusCode,
@@ -788,7 +989,10 @@ void main() {
             );
 
             await expectLater(
-              () => remote.createHousehold(name: 'HQ'),
+              () => remote.createHousehold(
+                name: 'HQ',
+                clientRequestId: _clientRequestId,
+              ),
               throwsA(
                 isA<HouseholdRemoteTransientException>().having(
                   (e) => e.statusCode,
@@ -814,7 +1018,10 @@ void main() {
           );
 
           await expectLater(
-            () => remote.createHousehold(name: 'HQ'),
+            () => remote.createHousehold(
+              name: 'HQ',
+              clientRequestId: _clientRequestId,
+            ),
             throwsA(
               isA<HouseholdRemoteTransientException>().having(
                 (e) => e.statusCode,
@@ -833,7 +1040,10 @@ void main() {
             ),
           );
 
-          final household = await remote.createHousehold(name: 'HQ');
+          final household = await remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          );
           expect(household.id, 'hh_server_1');
         });
       },

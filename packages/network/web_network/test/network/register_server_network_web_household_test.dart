@@ -135,7 +135,10 @@ void main() {
       canned(body: '<html>Blocked by corporate proxy</html>', status: 403);
 
       await expectLater(
-        remote().createHousehold(name: 'Game Night HQ'),
+        remote().createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: 'tz4a98xxat96iws9zmbrgj3a',
+        ),
         throwsA(isA<HouseholdRemoteTransientException>()),
       );
     });
@@ -145,7 +148,10 @@ void main() {
       canned(body: _envelopeBody(403), status: 403);
 
       await expectLater(
-        remote().createHousehold(name: 'Game Night HQ'),
+        remote().createHousehold(
+          name: 'Game Night HQ',
+          clientRequestId: 'tz4a98xxat96iws9zmbrgj3a',
+        ),
         throwsA(isA<HouseholdRemotePermanentException>()),
       );
     });

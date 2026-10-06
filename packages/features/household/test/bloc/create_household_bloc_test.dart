@@ -58,6 +58,7 @@ void main() {
     when(
       () => remote.createHousehold(
         name: any(named: 'name'),
+        clientRequestId: any(named: 'clientRequestId'),
         description: any(named: 'description'),
       ),
     ).thenAnswer((_) async => _household(id: 'hh_server', localOnly: false));
@@ -111,6 +112,7 @@ void main() {
         when(
           () => remote.createHousehold(
             name: any(named: 'name'),
+            clientRequestId: any(named: 'clientRequestId'),
             description: any(named: 'description'),
           ),
         ).thenThrow(const HouseholdRemoteTransientException('offline'));
@@ -141,6 +143,7 @@ void main() {
         when(
           () => remote.createHousehold(
             name: any(named: 'name'),
+            clientRequestId: any(named: 'clientRequestId'),
             description: any(named: 'description'),
           ),
         ).thenThrow(const HouseholdRemotePermanentException('rejected'));
@@ -155,6 +158,40 @@ void main() {
           isTrue,
         ),
       ],
+    );
+
+    // The remote refuses a key the server would reject before any request
+    // (#131). The household is already written and queued, so that must not
+    // strand the bloc in Submitting, where the guard drops every resubmit.
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      'an error thrown before the request -> Success(pendingSync:true), '
+      'not stuck in Submitting',
+      setUp: () {
+        when(
+          () => remote.createHousehold(
+            name: any(named: 'name'),
+            clientRequestId: any(named: 'clientRequestId'),
+            description: any(named: 'description'),
+          ),
+        ).thenThrow(ArgumentError.value('', 'clientRequestId'));
+      },
+      build: build,
+      act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
+      expect: () => [
+        isA<CreateHouseholdSubmitting>(),
+        isA<CreateHouseholdSuccess>()
+            .having((s) => s.householdId, 'householdId', 'hh_local')
+            .having((s) => s.pendingSync, 'pendingSync', isTrue),
+      ],
+      verify: (_) {
+        verifyNever(
+          () => repo.reconcileCreatedHousehold(
+            any(),
+            localId: any(named: 'localId'),
+            completedSyncQueueId: any(named: 'completedSyncQueueId'),
+          ),
+        );
+      },
     );
 
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
@@ -177,6 +214,7 @@ void main() {
         verifyNever(
           () => remote.createHousehold(
             name: any(named: 'name'),
+            clientRequestId: any(named: 'clientRequestId'),
             description: any(named: 'description'),
           ),
         );
@@ -224,6 +262,38 @@ void main() {
         verify(
           () => remote.createHousehold(
             name: 'HQ',
+            clientRequestId: any(named: 'clientRequestId'),
+            description: any(named: 'description'),
+          ),
+        ).called(1);
+      },
+    );
+
+    // #131: the key makes a retry of this create idempotent server-side, so it
+    // must be the optimistic row's id. That is the queued op's localId, which
+    // the drain (#121) will send on its retry; a fresh value would let a lost
+    // response here become a second household.
+    blocTest<CreateHouseholdBloc, CreateHouseholdState>(
+      "sends the optimistic row's id as the idempotency key",
+      setUp: () {
+        stubRemoteSuccess();
+        when(
+          () => repo.create(
+            name: any(named: 'name'),
+            description: any(named: 'description'),
+          ),
+        ).thenAnswer(
+          (_) async =>
+              (household: _household(id: 'hh_local_7f3k'), syncQueueId: 'q1'),
+        );
+      },
+      build: build,
+      act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
+      verify: (_) {
+        verify(
+          () => remote.createHousehold(
+            name: any(named: 'name'),
+            clientRequestId: 'hh_local_7f3k',
             description: any(named: 'description'),
           ),
         ).called(1);
@@ -255,8 +325,13 @@ void main() {
       ],
       verify: (_) {
         verify(() => repo.create(name: 'HQ', description: null)).called(1);
-        verify(() => remote.createHousehold(name: 'HQ', description: null))
-            .called(1);
+        verify(
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: any(named: 'clientRequestId'),
+            description: null,
+          ),
+        ).called(1);
       },
     );
 

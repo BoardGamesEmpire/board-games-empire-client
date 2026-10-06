@@ -160,9 +160,9 @@ final class RemoveFromCollectionOperation extends SyncOperation {
 ///
 /// Enqueued by `HouseholdRepositoryImpl.create` after the optimistic
 /// local household row is written. Carries the full backend create
-/// contract; only [localId] is client-internal (it is **not** sent to
-/// the server — the remote data source builds the request body from
-/// the remaining fields).
+/// contract. [localId] is sent too, but as the create's idempotency key
+/// (`clientRequestId`, #131), never as the household's id: the server
+/// assigns that itself.
 ///
 /// ## Why [localId] is essential here
 ///
@@ -197,7 +197,12 @@ final class CreateHouseholdOperation extends SyncOperation {
       );
 
   /// Local cuid2 id of the optimistic [Household] row this op creates.
-  /// Client-internal; not part of the server request body.
+  ///
+  /// Also the create's idempotency key: it goes to the server as
+  /// `clientRequestId`, and the server returns the household the first
+  /// attempt made instead of creating another (#131). That works only
+  /// because this value never changes for the life of the op, so every
+  /// retry carries the same key. Never re-mint it.
   final String localId;
 
   final String name;

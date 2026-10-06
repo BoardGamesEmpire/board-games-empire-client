@@ -13,13 +13,18 @@ import 'create_household_state.dart';
 /// 1. [HouseholdRepository.create] writes the optimistic household + owner
 ///    member and enqueues a `CreateHouseholdOperation` (one transaction).
 ///    The household is visible from this point on.
-/// 2. Best-effort inline send via [HouseholdRemoteDataSource.createHousehold]:
+/// 2. Best-effort inline send via [HouseholdRemoteDataSource.createHousehold],
+///    keyed by the optimistic row's id. That id is the queued op's `localId`,
+///    so the send and every later retry of the op carry one idempotency key,
+///    and a send whose response is lost cannot become a second household on
+///    the retry (#131):
 ///    - success → [HouseholdRepository.reconcileCreatedHousehold] confirms
 ///      the row (canonical id, flags cleared) and closes the queued op, so
 ///      the future sync worker (#121) won't re-create it → `pendingSync: false`.
 ///    - failure (transient **or** permanent) → the optimistic household stays
 ///      queued for a later retry; the create still succeeded locally →
-///      `pendingSync: true`.
+///      `pendingSync: true`. So does an error thrown before any request,
+///      such as an `ArgumentError` for a key the server would reject.
 ///
 /// There is no sync worker yet (#121), so the inline send is the only thing
 /// pushing the create to the server today; when it fails the household is
@@ -82,6 +87,7 @@ class CreateHouseholdBloc
       // reintroduce an untrimmed name.
       final server = await _remote.createHousehold(
         name: draft.household.name,
+        clientRequestId: draft.household.id,
         description: draft.household.description,
       );
       try {
@@ -116,6 +122,22 @@ class CreateHouseholdBloc
         'Inline household sync failed (${error.runtimeType}); '
         'left queued for retry',
         error: error,
+      );
+      emit(
+        CreateHouseholdSuccess(
+          householdId: draft.household.id,
+          pendingSync: true,
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      // Not a failed request but a client fault: an ArgumentError for a key
+      // the server would reject (#131), or a bug. The household is written
+      // and queued all the same, so surface it as pending rather than
+      // stranding the UI in "submitting".
+      _logger.error(
+        'Inline household sync threw before completing a request; left queued',
+        error: error,
+        stackTrace: stackTrace,
       );
       emit(
         CreateHouseholdSuccess(
