@@ -232,25 +232,39 @@ abstract class GameCollectionRepository {
   /// keeps the resurrection alive, and the row identity is owned
   /// by the queue from here on.
   ///
-  /// ### Live-entry upsert
+  /// ### Live-entry upsert, then replay
   ///
   /// When `serverEntry.deletedAt` is null, implementations upsert
   /// the server entry with `isDirty: false, isLocalOnly: false`.
   /// If a local row had a different id, that stale row is dropped
   /// first (after the remap step above).
   ///
-  /// This contract treats every live-entry reconcile as authoritative:
-  /// server wins, `isDirty` is cleared. That is right for the ack of a
-  /// queued mutation, since the local dirty state was that mutation. A
-  /// server-driven pull must not come here; it goes through
+  /// The server's answer covers the acknowledged mutation, not the ones
+  /// still queued for the entry (#429). So implementations then re-apply
+  /// every op for the entry that is queued after the acknowledged one, in
+  /// queue order, and leave the row `isDirty` while any op for it is not
+  /// yet completed — pending, claimed or exhausted, before or after the
+  /// acknowledged one. Without that, an edit queued behind the
+  /// acknowledgement reads as reverted and synced, a queued removal
+  /// brings the entry back, and an edit that later exhausts its retries
+  /// is lost with nothing saying so.
+  ///
+  /// Only later ops are replayed because the answer already reflects the
+  /// acknowledged op: replaying an older op still outstanding would put
+  /// back a value the newer change replaced. When [completedSyncQueueId]
+  /// is omitted, the acknowledged op's place is unknown and every
+  /// outstanding op is replayed.
+  ///
+  /// Replay repeats what the local write did: an update sets only the
+  /// fields it carries, an add sets its absolute quantity and revives the
+  /// entry, a remove tombstones it. An add that revives an entry the
+  /// replay tombstoned is a re-add the server hasn't seen, so the row is
+  /// left `isLocalOnly`, which keeps the tombstone purge above from
+  /// deleting it when the removal is acknowledged.
+  ///
+  /// A server-driven pull must not come here; it goes through
   /// [mergeFromServer] (#259), which leaves a dirty or local-only row
   /// alone.
-  ///
-  /// **TODO(server-driven-dirty-merge)**: what is left is an ack
-  /// arriving while a *second* edit to the same row is still queued
-  /// behind the one acknowledged. The upsert then shows the server's
-  /// answer to the first edit and clears `isDirty`, although the second
-  /// is still queued. The drain worker (#121) owns that case.
   ///
   /// ### Sync-queue closure
   ///

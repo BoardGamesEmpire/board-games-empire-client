@@ -38,6 +38,20 @@ abstract class SyncQueueEntry with _$SyncQueueEntry {
 
   static const int maxRetries = 5;
 
+  /// How long a claim holds an entry before another sender may take it
+  /// (#430). A sender that dies mid-send leaves its claim behind, and the
+  /// lease is what frees it.
+  ///
+  /// Requests time out at 10s to connect plus 10s to receive, and the
+  /// payloads are small JSON, so a live send finishes well inside this. A
+  /// send that outlives it can be delivered twice. For every operation
+  /// type the second delivery adds no data: household create is keyed
+  /// (#131), adding to a collection is an upsert, an update writes
+  /// absolute values, and a second remove reports already-removed. The
+  /// one cost accepted is ordering: a late update can land after a newer
+  /// one.
+  static const Duration claimLease = Duration(minutes: 2);
+
   /// Deserializes the stored payload into a typed [SyncOperation].
   SyncOperation get operation => SyncOperation.deserialize(payload);
 

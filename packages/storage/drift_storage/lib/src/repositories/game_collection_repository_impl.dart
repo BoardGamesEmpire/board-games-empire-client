@@ -14,12 +14,12 @@ import 'watch_disposal.dart';
 /// ## ID generation
 ///
 /// Fresh local rows get a [cuid2] id. This matches the backend's id
-/// format — the backend uses cuid2 explicitly — so a row's id is the
-/// same string from local creation through to the server cache *when
-/// the backend honours the client-supplied id*. Today the backend's
-/// create DTO strips ids before forwarding to Prisma, so the server
-/// returns a freshly-generated cuid2 on insert and
-/// [reconcileFromServer] handles the id-reassignment path via
+/// format — the backend uses cuid2 explicitly — so a row's id would be
+/// the same string from local creation through to the server cache *if
+/// the backend honoured a client-supplied id*. It doesn't: the create DTO
+/// has no id field (and the API rejects undeclared properties), so the
+/// server assigns its own cuid2 on insert and [reconcileFromServer]
+/// handles the id-reassignment path via
 /// [SyncQueueRepository.remapCollectionId].
 ///
 /// ## Atomicity
@@ -272,11 +272,9 @@ class GameCollectionRepositoryImpl
 
       if (existing == null) {
         // Fresh insert. cuid2 id — matches the backend's id format
-        // (the backend uses cuid2 explicitly). When the backend
-        // honours the client-supplied id, the round-trip preserves
-        // this id; today the backend's create DTO strips ids
-        // before reaching Prisma so a different canonical id comes
-        // back and `reconcileFromServer` calls
+        // (the backend uses cuid2 explicitly). The server assigns its
+        // own id (the create DTO has no id field), so a different
+        // canonical id comes back and `reconcileFromServer` calls
         // `_syncQueue.remapCollectionId` to rewrite any pending
         // ops still referencing this local id.
         entryId = cuid();
@@ -534,15 +532,14 @@ class GameCollectionRepositoryImpl
   /// ## Id reassignment + pending-op remap
   ///
   /// If the server returns a canonical id different from the local
-  /// row's id (which is the steady state today: the backend's create
-  /// DTO strips client ids before reaching Prisma), any pending
-  /// Update/Remove ops queued against the local id would otherwise
-  /// be sent to the server with an id the server doesn't know. This
-  /// method calls [SyncQueueRepository.remapCollectionId] to rewrite
-  /// those payloads BEFORE dropping the stale local row. If the
-  /// backend's DTO is later updated to forward client ids, this
-  /// branch becomes a no-op (local.id == serverEntry.id always)
-  /// without any client-side change.
+  /// row's id (always, today: the server assigns ids itself, and the
+  /// create DTO has no id field), every op still queued against the local
+  /// id would otherwise be sent to the server with an id the server
+  /// doesn't know, and drop out of this entry's later acknowledgements.
+  /// This method calls [SyncQueueRepository.remapCollectionId] to rewrite
+  /// those payloads BEFORE dropping the stale local row. If the backend ever honours
+  /// client ids, this branch becomes a no-op (local.id ==
+  /// serverEntry.id always) without any client-side change.
   ///
   /// ## Tombstone confirmation (surgical purge)
   ///
@@ -558,20 +555,17 @@ class GameCollectionRepositoryImpl
   /// No upsert of the server entry happens in this branch; row
   /// identity is owned by the queue from here on.
   ///
-  /// ## Live-entry upsert
+  /// ## Live-entry upsert, then replay
   ///
   /// When `serverEntry.deletedAt` is null, the local row is
   /// upserted with `isDirty: false, isLocalOnly: false`. If the
   /// local row had a different id, that stale row is dropped
-  /// before the upsert (after the remap).
+  /// before the upsert (after the remap). Then the ops still queued
+  /// for the entry are replayed over it, and the row stays dirty while
+  /// any remain (#429) — see [_replayOutstanding].
   ///
   /// A server-driven pull uses [mergeFromServer] instead, which
   /// gives way to a dirty or local-only row (#259).
-  ///
-  /// **TODO(server-driven-dirty-merge)**: see the interface
-  /// `reconcileFromServer` doc — an ack still clears `isDirty` when a
-  /// second edit to the row is queued behind the one acknowledged.
-  /// The drain worker (#121) owns that case.
   ///
   /// ## Sync-queue closure
   ///
@@ -586,10 +580,12 @@ class GameCollectionRepositoryImpl
   /// [checkNotDisposed] guard would not change that — [SyncQueueRepository]
   /// is disposed by the same scope pop, so `markCompleted` (and
   /// `remapCollectionId`) would throw inside the transaction and roll the
-  /// whole thing back anyway. A re-sent create can therefore duplicate the
-  /// server row, because the backend's create DTO strips the
-  /// client-supplied id and so offers no idempotency key. Closing that is
-  /// the drain worker's problem, tracked on #121.
+  /// whole thing back anyway. The op is then sent again. A re-sent add
+  /// can't duplicate the server row, because adding is an upsert on
+  /// `(userId, platformGameId, medium)`; but it re-applies an absolute
+  /// quantity and clears a tombstone, so if the user changed or removed
+  /// the entry since, the stale op overwrites the newer intent. That
+  /// ordering is the drain worker's problem, tracked on #121.
   @override
   Future<void> reconcileFromServer(
     GameCollection serverEntry, {
@@ -604,6 +600,16 @@ class GameCollectionRepositoryImpl
     return _db.transaction(() async {
       await _writeServerEntry(serverEntry);
 
+      // Put back what is still queued for the entry (#429). Before the
+      // markCompleted below, so the lookup still sees the acknowledged op
+      // and can tell which of the others came after it.
+      if (serverEntry.deletedAt == null) {
+        await _replayOutstanding(
+          serverEntry,
+          acknowledgedSyncQueueId: completedSyncQueueId,
+        );
+      }
+
       // Close the loop with the queued op that triggered this server
       // write, if the caller knows which one it was. Drift's
       // zone-scoped transactions mean the sync-queue update
@@ -613,6 +619,99 @@ class GameCollectionRepositoryImpl
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
     });
+  }
+
+  /// Re-applies the ops still queued for [serverEntry] over the clean row
+  /// [_writeServerEntry] just wrote, and keeps it dirty while any remain
+  /// (#429). Runs inside the caller's transaction.
+  ///
+  /// "Still queued" is every op for the entry that isn't completed,
+  /// claimed and exhausted ones included. The remap in [_writeServerEntry]
+  /// has already moved all of them to the server id, so they are found by
+  /// it on this acknowledgement and on every later one.
+  ///
+  /// Only the ops queued **after** the acknowledged one are replayed. The
+  /// server's answer already reflects the acknowledged op, so an older op
+  /// still outstanding (an exhausted one, say) would put back a value the
+  /// newer change replaced. An older op still keeps the row dirty: the
+  /// change it carries never reached the server. The lookup returns the
+  /// acknowledged op even once completed, so a second delivery's
+  /// acknowledgement, after the first completed it, still places it. When
+  /// it can't be placed (the caller didn't name it, or it was purged), its
+  /// position is unknown, and every outstanding op is replayed.
+  ///
+  /// The ops carry what the local writes recorded, so replaying them is
+  /// those writes again: an add sets its absolute quantity and any rating
+  /// or comment it carried, and revives the entry; an update sets the
+  /// fields it carries and leaves the rest; a remove tombstones. An add
+  /// that revives an entry the replay had tombstoned is a re-add the
+  /// server hasn't seen, so the row is local-only, as `addToCollection`
+  /// leaves it. That keeps the tombstone purge, when the removal is
+  /// acknowledged, from deleting the re-add.
+  Future<void> _replayOutstanding(
+    GameCollection serverEntry, {
+    required String? acknowledgedSyncQueueId,
+  }) async {
+    final outstanding = await _syncQueue.getOutstandingOpsFor(
+      serverEntry.id,
+      including: acknowledgedSyncQueueId,
+    );
+    final acknowledgedIndex = outstanding.indexWhere(
+      (queued) => queued.id == acknowledgedSyncQueueId,
+    );
+    final stillQueued = outstanding.length - (acknowledgedIndex < 0 ? 0 : 1);
+    if (stillQueued == 0) return;
+
+    final now = _clock.nowUtc();
+    var replayed = serverEntry;
+    var isLocalOnly = false;
+    for (final queued in outstanding.skip(acknowledgedIndex + 1)) {
+      switch (queued.operation) {
+        case AddToCollectionOperation(
+          :final quantity,
+          :final rating,
+          :final comment,
+        ):
+          if (replayed.deletedAt != null) isLocalOnly = true;
+          replayed = replayed.copyWith(
+            quantity: quantity,
+            rating: rating ?? replayed.rating,
+            comment: comment ?? replayed.comment,
+            deletedAt: null,
+          );
+        case UpdateCollectionOperation(
+          :final quantity,
+          :final rating,
+          :final playAgain,
+          :final favorite,
+          :final comment,
+        ):
+          replayed = replayed.copyWith(
+            quantity: quantity ?? replayed.quantity,
+            rating: rating ?? replayed.rating,
+            playAgain: playAgain ?? replayed.playAgain,
+            favorite: favorite ?? replayed.favorite,
+            comment: comment ?? replayed.comment,
+          );
+        case RemoveFromCollectionOperation():
+          replayed = replayed.copyWith(deletedAt: now);
+        case CreateHouseholdOperation():
+          // The lookup returns collection ops only.
+          break;
+      }
+    }
+
+    await _db
+        .into(_db.gameCollectionsTable)
+        .insertOnConflictUpdate(
+          _modelToCompanion(
+            replayed.copyWith(
+              isDirty: true,
+              isLocalOnly: isLocalOnly,
+              updatedAt: now,
+            ),
+          ),
+        );
   }
 
   /// Merges server entries no local mutation asked for (#259).
@@ -697,10 +796,10 @@ class GameCollectionRepositoryImpl
       wireMedium: serverEntry.medium.toWire(),
     );
 
-    // Id reassignment: rewrite pending Update/Remove ops that
-    // reference the OLD local id so they don't get sent to the
-    // server with an unknown id once we drop the local row
-    // below.
+    // Id reassignment: rewrite every op still queued against the
+    // OLD local id, so none gets sent to the server with an unknown
+    // id once we drop the local row below, and the replay finds
+    // them all under the server id (#429).
     if (local != null && local.id != serverEntry.id) {
       await _syncQueue.remapCollectionId(
         oldCollectionId: local.id,

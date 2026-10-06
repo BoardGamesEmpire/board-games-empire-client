@@ -151,22 +151,264 @@ void main() {
         expect(await repo.getPendingEntries(), isEmpty);
       });
 
-      test('excludes inProgress entries (they go through resetStaleInProgress first)', () async {
+      test('excludes an entry whose claim is live', () async {
         final entry = await repo.enqueue(_kOperation);
-        await repo.markInProgress(entry.id);
+        expect(await repo.claim(entry.id), isTrue);
 
         expect(await repo.getPendingEntries(), isEmpty);
       });
+
+      test('includes an entry whose claim has expired (#430)', () async {
+        // A sender that died mid-send leaves its claim behind. Once the
+        // lease runs out the entry is claimable again, so the listing
+        // returns it: the drain can't list what it can't claim, or miss
+        // what it could.
+        final clock = FixedClockService(DateTime.utc(2026, 10, 5, 12));
+        final clockRepo = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+        final live = await clockRepo.enqueue(_kOperation);
+        final stale = await clockRepo.enqueue(_kOperation);
+        expect(await clockRepo.claim(stale.id), isTrue);
+
+        clock.current = clock.current.add(
+          SyncQueueEntry.claimLease + const Duration(seconds: 1),
+        );
+        expect(await clockRepo.claim(live.id), isTrue);
+
+        final pending = await clockRepo.getPendingEntries();
+        expect(pending.map((e) => e.id), equals([stale.id]));
+        expect(pending.single.status, SyncStatus.inProgress);
+      });
     });
 
-    group('markInProgress()', () {
-      test('sets status and records lastAttemptAt', () async {
-        final entry = await repo.enqueue(_kOperation);
-        await repo.markInProgress(entry.id);
+    group('claim() (#430)', () {
+      final start = DateTime.utc(2026, 10, 5, 12);
+      late FixedClockService clock;
+      late SyncQueueRepositoryImpl clockRepo;
 
-        final updated = (await repo.getAllEntries()).first;
-        expect(updated.status, SyncStatus.inProgress);
-        expect(updated.lastAttemptAt, isNotNull);
+      setUp(() {
+        clock = FixedClockService(start);
+        clockRepo = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+      });
+
+      Future<SyncQueueEntry> entryFor(String id) async =>
+          (await clockRepo.getAllEntries()).singleWhere((e) => e.id == id);
+
+      test(
+        'takes a pending entry: inProgress, stamped with the clock',
+        () async {
+          final entry = await clockRepo.enqueue(_kOperation);
+
+          expect(await clockRepo.claim(entry.id), isTrue);
+
+          final claimed = await entryFor(entry.id);
+          expect(claimed.status, SyncStatus.inProgress);
+          expect(claimed.lastAttemptAt, start);
+          expect(claimed.retryCount, 0);
+        },
+      );
+
+      test('takes a retryable failed entry without touching its retry '
+          'count or error', () async {
+        final entry = await clockRepo.enqueue(_kOperation);
+        await clockRepo.markFailed(entry.id, error: 'timeout');
+
+        expect(await clockRepo.claim(entry.id), isTrue);
+
+        final claimed = await entryFor(entry.id);
+        expect(claimed.status, SyncStatus.inProgress);
+        expect(claimed.retryCount, 1);
+        expect(claimed.lastError, 'timeout');
+      });
+
+      test('refuses an entry whose claim is live, and leaves the claim '
+          'alone', () async {
+        final entry = await clockRepo.enqueue(_kOperation);
+        expect(await clockRepo.claim(entry.id), isTrue);
+
+        // Exactly one lease later is not yet "more than" a lease ago.
+        clock.current = start.add(SyncQueueEntry.claimLease);
+        expect(await clockRepo.claim(entry.id), isFalse);
+
+        final held = await entryFor(entry.id);
+        expect(held.status, SyncStatus.inProgress);
+        expect(held.lastAttemptAt, start);
+      });
+
+      test('takes an entry back once its lease has expired', () async {
+        final entry = await clockRepo.enqueue(_kOperation);
+        expect(await clockRepo.claim(entry.id), isTrue);
+
+        final later = start.add(
+          SyncQueueEntry.claimLease + const Duration(seconds: 1),
+        );
+        clock.current = later;
+        expect(await clockRepo.claim(entry.id), isTrue);
+
+        expect((await entryFor(entry.id)).lastAttemptAt, later);
+      });
+
+      test('judges the lease correctly at microsecond precision', () async {
+        // Stored as ISO-8601 text, a stamp with sub-millisecond digits is
+        // written with six fractional digits and one without them with
+        // three. The comparison must treat both as instants: a parse
+        // failure would make every claim look live forever.
+        final precise = DateTime.utc(2026, 10, 5, 12, 0, 0, 123, 456);
+        clock.current = precise;
+        final entry = await clockRepo.enqueue(_kOperation);
+        expect(await clockRepo.claim(entry.id), isTrue);
+
+        clock.current = precise.add(SyncQueueEntry.claimLease);
+        expect(await clockRepo.claim(entry.id), isFalse);
+
+        clock.current = precise.add(
+          SyncQueueEntry.claimLease + const Duration(milliseconds: 1),
+        );
+        expect(await clockRepo.claim(entry.id), isTrue);
+      });
+
+      test('treats an inProgress entry with no attempt stamp as '
+          'expired', () async {
+        // Not producible through `claim`, which always stamps. A row in
+        // this state would otherwise be stuck: counted as outstanding,
+        // never listed, never claimable.
+        await db
+            .into(db.syncQueueTable)
+            .insert(
+              SyncQueueTableCompanion.insert(
+                id: 'unstamped',
+                userId: _kUserId,
+                payload: _kOperation.serialized,
+                status: const Value('inProgress'),
+                createdAt: start,
+              ),
+            );
+
+        expect(await clockRepo.claim('unstamped'), isTrue);
+      });
+
+      test('refuses a completed entry', () async {
+        final entry = await clockRepo.enqueue(_kOperation);
+        await clockRepo.markCompleted(entry.id);
+
+        expect(await clockRepo.claim(entry.id), isFalse);
+        expect((await entryFor(entry.id)).status, SyncStatus.completed);
+      });
+
+      test('refuses an entry that exhausted its retries', () async {
+        final entry = await clockRepo.enqueue(_kOperation);
+        for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+          await clockRepo.markFailed(entry.id, error: 'error $i');
+        }
+
+        expect(await clockRepo.claim(entry.id), isFalse);
+        expect((await entryFor(entry.id)).status, SyncStatus.failed);
+      });
+
+      test('returns false for an unknown id', () async {
+        expect(await clockRepo.claim('nonexistent'), isFalse);
+      });
+
+      test('exactly one of two concurrent claims wins', () async {
+        // Two senders over one database: a drain and the inline household
+        // send, or two web tabs. On the VM this pins the predicate. That
+        // it holds across tabs rests on drift's durable web storage modes
+        // serializing access (#430).
+        final other = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+        final entry = await clockRepo.enqueue(_kOperation);
+
+        final results = await Future.wait([
+          clockRepo.claim(entry.id),
+          other.claim(entry.id),
+        ]);
+
+        expect(results.where((won) => won), hasLength(1));
+      });
+
+      test('judges the lease by the device clock, not the server-corrected '
+          'one', () async {
+        // The corrected clock steps when a skew estimate lands, and each web
+        // tab estimates its own. Neither may move a lease between senders on
+        // one device, which all read the same device clock.
+        final serverClock = FixedClockService(start);
+        final skewed = SyncQueueRepositoryImpl(
+          db,
+          serverClock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+        final entry = await skewed.enqueue(_kOperation);
+        expect(await skewed.claim(entry.id), isTrue);
+
+        // A slow device's first correction steps the corrected clock ahead.
+        serverClock.current = start.add(const Duration(minutes: 5));
+        expect(await skewed.claim(entry.id), isFalse, reason: 'still live');
+
+        // A fast device's correction holds it still while time passes.
+        serverClock.current = start;
+        clock.current = start.add(
+          SyncQueueEntry.claimLease + const Duration(seconds: 1),
+        );
+        expect(await skewed.claim(entry.id), isTrue, reason: 'expired');
+      });
+    });
+
+    group('release() (#430)', () {
+      test('returns a claimed entry to pending without counting a '
+          'retry', () async {
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+
+        await repo.release(entry.id);
+
+        final released = (await repo.getAllEntries()).single;
+        expect(released.status, SyncStatus.pending);
+        expect(released.retryCount, 0);
+        expect(released.lastError, isNull);
+        expect((await repo.getPendingEntries()).map((e) => e.id), [entry.id]);
+      });
+
+      test('does not reopen a completed entry', () async {
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+        await repo.markCompleted(entry.id);
+
+        await repo.release(entry.id);
+
+        expect(
+          (await repo.getAllEntries()).single.status,
+          SyncStatus.completed,
+        );
+      });
+
+      test('leaves a failed entry failed', () async {
+        final entry = await repo.enqueue(_kOperation);
+        await repo.markFailed(entry.id, error: 'timeout');
+
+        await repo.release(entry.id);
+
+        final failed = (await repo.getAllEntries()).single;
+        expect(failed.status, SyncStatus.failed);
+        expect(failed.retryCount, 1);
+      });
+
+      test('is a no-op for an unknown id', () async {
+        await repo.release('nonexistent');
+        expect(await repo.getAllEntries(), isEmpty);
       });
     });
 
@@ -214,75 +456,24 @@ void main() {
         await repo.markFailed('nonexistent', error: 'oops');
         expect(await repo.getAllEntries(), isEmpty);
       });
-    });
 
-    group('resetStaleInProgress()', () {
-      test('resets all inProgress entries to pending and returns the affected count', () async {
-        final a = await repo.enqueue(_kOperation);
-        final b = await repo.enqueue(
-          const UpdateCollectionOperation(collectionId: 'col-1'),
-        );
-        await repo.markInProgress(a.id);
-        await repo.markInProgress(b.id);
+      test('does not reopen a completed entry (#430)', () async {
+        // A sender whose lease expired can still be waiting on its request
+        // after another sender delivered the op and completed it. Its
+        // failure must not queue the op again: a re-sent add or update
+        // would overwrite whatever the user changed since.
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+        await repo.markCompleted(entry.id);
 
-        final pre = await repo.getAllEntries();
-        expect(
-          pre.where((e) => e.status == SyncStatus.inProgress),
-          hasLength(2),
-        );
+        await repo.markFailed(entry.id, error: 'timeout');
 
-        final reset = await repo.resetStaleInProgress();
-
-        expect(reset, equals(2));
-        final post = await repo.getAllEntries();
-        expect(post.every((e) => e.status == SyncStatus.pending), isTrue);
+        final completed = (await repo.getAllEntries()).single;
+        expect(completed.status, SyncStatus.completed);
+        expect(completed.retryCount, 0);
+        expect(completed.lastError, isNull);
+        expect(await repo.getPendingEntries(), isEmpty);
       });
-
-      test(
-        'returns 0 and writes nothing when no entries are inProgress',
-        () async {
-          await repo.enqueue(_kOperation);
-
-          final reset = await repo.resetStaleInProgress();
-
-          expect(reset, equals(0));
-          final entry = (await repo.getAllEntries()).first;
-          expect(entry.status, SyncStatus.pending);
-        },
-      );
-
-      test('does not affect completed or failed entries', () async {
-        final a = await repo.enqueue(_kOperation);
-        final b = await repo.enqueue(
-          const UpdateCollectionOperation(collectionId: 'col-1'),
-        );
-        await repo.markCompleted(a.id);
-        await repo.markFailed(b.id, error: 'oops');
-
-        final reset = await repo.resetStaleInProgress();
-        expect(reset, equals(0));
-
-        final byId = {for (final e in await repo.getAllEntries()) e.id: e};
-        expect(byId[a.id]!.status, SyncStatus.completed);
-        expect(byId[b.id]!.status, SyncStatus.failed);
-      });
-
-      test(
-        'makes a crash-stuck inProgress entry retryable via getPendingEntries',
-        () async {
-          final entry = await repo.enqueue(_kOperation);
-          await repo.markInProgress(entry.id);
-
-          expect(await repo.getPendingCount(), 1);
-          expect(await repo.getPendingEntries(), isEmpty);
-
-          await repo.resetStaleInProgress();
-
-          final pending = await repo.getPendingEntries();
-          expect(pending.map((e) => e.id), equals([entry.id]));
-          expect(pending.first.status, SyncStatus.pending);
-        },
-      );
     });
 
     group('purgeCompleted()', () {
@@ -480,33 +671,66 @@ void main() {
         expect(op.collectionId, equals('local-1'));
       });
 
-      test('does not touch inProgress entries', () async {
-        // Same rationale as completed — the worker has already sent
-        // the op (or is sending it now) with the old id.
-        // resetStaleInProgress is the only path back to retryable
-        // for an inProgress entry; the remap should run AFTER that.
+      test('rewrites an entry whose claim is live (#429)', () async {
+        // The request already on the wire keeps the old id; rewriting
+        // can't change that. But if that send fails, the retry must carry
+        // the id the server knows, and the entry's later acknowledgements
+        // must find the op under it. Left on the old id, the op would
+        // drop out of both.
         final entry = await repo.enqueue(
           const RemoveFromCollectionOperation(collectionId: 'local-1'),
         );
-        await repo.markInProgress(entry.id);
+        expect(await repo.claim(entry.id), isTrue);
 
         final remapped = await repo.remapCollectionId(
           oldCollectionId: 'local-1',
           newCollectionId: 'server-99',
         );
-        expect(remapped, equals(0));
+        expect(remapped, equals(1));
 
+        final held = (await repo.getAllEntries()).single;
+        expect(held.status, SyncStatus.inProgress, reason: 'claim untouched');
         final op = SyncOperation.deserialize(
-          (await repo.getAllEntries()).single.payload,
+          held.payload,
         ) as RemoveFromCollectionOperation;
-        expect(op.collectionId, equals('local-1'));
+        expect(op.collectionId, equals('server-99'));
       });
 
-      test('does not touch failed entries that exhausted maxRetries', () async {
-        // Symmetric with getPendingEntries: once an entry has burned
-        // its retry budget, the worker won't pick it up, and remap
-        // shouldn't rewrite it either. The op is effectively dead
-        // queue contents waiting to be purged.
+      test('rewrites an entry whose claim has expired (#430)', () async {
+        // An expired claim is claimable again, so its next send must
+        // carry the new id.
+        final clock = FixedClockService(DateTime.utc(2026, 10, 5, 12));
+        final clockRepo = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+        final entry = await clockRepo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'local-1'),
+        );
+        expect(await clockRepo.claim(entry.id), isTrue);
+        clock.current = clock.current.add(
+          SyncQueueEntry.claimLease + const Duration(seconds: 1),
+        );
+
+        final remapped = await clockRepo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-99',
+        );
+        expect(remapped, equals(1));
+
+        final op = SyncOperation.deserialize(
+          (await clockRepo.getAllEntries()).single.payload,
+        ) as RemoveFromCollectionOperation;
+        expect(op.collectionId, equals('server-99'));
+      });
+
+      test('rewrites an entry that exhausted maxRetries (#429)', () async {
+        // The worker won't send it again, but it is still the entry's
+        // change that never landed: an acknowledgement keeps the entry
+        // dirty while it remains, and finds it by the entry's current id.
+        // A hand retry (#190) would need that id too.
         final entry = await repo.enqueue(
           const UpdateCollectionOperation(collectionId: 'local-1', rating: 1),
         );
@@ -518,12 +742,12 @@ void main() {
           oldCollectionId: 'local-1',
           newCollectionId: 'server-99',
         );
-        expect(remapped, equals(0));
+        expect(remapped, equals(1));
 
         final op = SyncOperation.deserialize(
           (await repo.getAllEntries()).single.payload,
         ) as UpdateCollectionOperation;
-        expect(op.collectionId, equals('local-1'));
+        expect(op.collectionId, equals('server-99'));
       });
 
       test(
@@ -593,6 +817,172 @@ void main() {
       });
     });
 
+    // ── getOutstandingOpsFor ────────────────────────────────────────────────────
+
+    group('getOutstandingOpsFor() (#429)', () {
+      List<String> idsOf(List<SyncQueueEntry> entries) =>
+          entries.map((e) => e.id).toList();
+
+      test('returns every op targeting the id, in queue order, across all '
+          'three op types', () async {
+        final add = await repo.enqueue(
+          const AddToCollectionOperation(
+            localId: 'gc-1',
+            platformGameId: 'pg-1',
+            medium: 'Physical',
+            quantity: 1,
+          ),
+        );
+        final update = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        final remove = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [add.id, update.id, remove.id]);
+      });
+
+      test('finds every op the remap moved, under the new id', () async {
+        // The remap and the lookup cover the same set, so an
+        // acknowledgement after a reassignment sees claimed and exhausted
+        // ops as well as pending ones.
+        final claimed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 1),
+        );
+        final exhausted = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 2),
+        );
+        expect(await repo.claim(claimed.id), isTrue);
+        for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(exhausted.id, error: 'error $i');
+        }
+
+        await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-1',
+        );
+
+        expect(idsOf(await repo.getOutstandingOpsFor('server-1')), [
+          claimed.id,
+          exhausted.id,
+        ]);
+        expect(await repo.getOutstandingOpsFor('local-1'), isEmpty);
+      });
+
+      test('includes claimed, failed and exhausted ops — everything not '
+          'completed', () async {
+        // An exhausted op still says the user's change didn't land, and a
+        // claimed one may not land either: an acknowledgement must not
+        // report the entry as synced while either remains (#429).
+        final claimed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 1),
+        );
+        final failed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+        final exhausted = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 3),
+        );
+        final completed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 4),
+        );
+        expect(await repo.claim(claimed.id), isTrue);
+        await repo.markFailed(failed.id, error: 'timeout');
+        for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(exhausted.id, error: 'error $i');
+        }
+        await repo.markCompleted(completed.id);
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [claimed.id, failed.id, exhausted.id]);
+      });
+
+      test('leaves out ops for other entries and household ops', () async {
+        await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'other', rating: 1),
+        );
+        await repo.enqueue(
+          const CreateHouseholdOperation(localId: 'gc-1', name: 'HQ'),
+        );
+        final mine = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [mine.id]);
+      });
+
+      test('returns the entry named by `including` in its place, even once '
+          'completed', () async {
+        // An acknowledgement places the op it acknowledges among the others.
+        // A second delivery's acknowledgement finds that op completed by the
+        // first, and must still be able to place it.
+        final before = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 1),
+        );
+        final acknowledged = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+        final after = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 3),
+        );
+        final otherCompleted = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 4),
+        );
+        await repo.markCompleted(acknowledged.id);
+        await repo.markCompleted(otherCompleted.id);
+
+        final entries = await repo.getOutstandingOpsFor(
+          'gc-1',
+          including: acknowledged.id,
+        );
+
+        expect(idsOf(entries), [before.id, acknowledged.id, after.id]);
+      });
+
+      test('`including` adds nothing for an entry that targets another '
+          'collection entry', () async {
+        final elsewhere = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'other', rating: 1),
+        );
+        final mine = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+
+        final entries = await repo.getOutstandingOpsFor(
+          'gc-1',
+          including: elsewhere.id,
+        );
+
+        expect(idsOf(entries), [mine.id]);
+      });
+
+      test('skips a payload it cannot parse', () async {
+        await db
+            .into(db.syncQueueTable)
+            .insert(
+              SyncQueueTableCompanion.insert(
+                id: 'corrupt',
+                userId: _kUserId,
+                payload: '{"type":"unknown_op"}',
+                createdAt: DateTime.now().toUtc(),
+              ),
+            );
+        final mine = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [mine.id]);
+      });
+    });
+
     group(
       'getPendingCount() / watchPendingCount() — _pendingPredicate symmetry',
       () {
@@ -611,7 +1001,7 @@ void main() {
             const UpdateCollectionOperation(collectionId: 'col-1'),
           );
 
-          await repo.markInProgress(b.id);
+          expect(await repo.claim(b.id), isTrue);
 
           expect(await repo.getPendingCount(), 2);
           expect(
@@ -642,23 +1032,12 @@ void main() {
         test(
           'EXCLUDES pending entries with retryCount >= maxRetries',
           () async {
-            // Reachable in production via:
-            // 1. enqueue → markInProgress → markFailed (loop until
-            //    retryCount == maxRetries-1, status=failed)
-            // 2. a worker manually calls markInProgress on the failed
-            //    row (for diagnostics or a manual retry attempt)
-            // 3. the worker crashes
-            // 4. resetStaleInProgress flips inProgress → pending
-            //    WITHOUT touching retryCount
-            //
-            // Result: status='pending', retryCount=maxRetries-1. One
-            // more failed cycle and we're at retryCount=maxRetries
-            // still in pending after the next resetStaleInProgress.
-            //
-            // Direct-insert is the cleanest way to construct the
-            // state; the multi-step path through the public API
-            // produces the same row but at the cost of test
-            // signal-to-noise.
+            // Not reachable through the public API: markFailed sets
+            // status='failed' in the same write that bumps the count,
+            // and claim and release refuse an exhausted entry. A
+            // direct-DB repair or a future code path could still land
+            // it, and the predicate must exclude it: the worker won't
+            // pick it up, so the badge shouldn't count it.
             await db
                 .into(db.syncQueueTable)
                 .insert(
@@ -686,13 +1065,13 @@ void main() {
           'EXCLUDES inProgress entries with retryCount >= maxRetries',
           () async {
             // Companion to the pending case. Not reachable through the
-            // public API in normal flow (markInProgress doesn't touch
-            // retryCount; markFailed sets status='failed' at the same
-            // time it bumps retry), but a future code path or
-            // direct-DB migration during the recovery scripts could
-            // land it. The predicate must exclude it for the same
-            // reason as the pending case: the worker won't pick it up
-            // anyway, so the badge shouldn't pretend it's outstanding.
+            // public API in normal flow (claim refuses an exhausted
+            // entry; markFailed sets status='failed' at the same time
+            // it bumps retry), but a future code path or direct-DB
+            // migration during the recovery scripts could land it. The
+            // predicate must exclude it for the same reason as the
+            // pending case: the worker won't pick it up anyway, so the
+            // badge shouldn't pretend it's outstanding.
             await db
                 .into(db.syncQueueTable)
                 .insert(
@@ -863,31 +1242,34 @@ void main() {
         expect(entry.createdAt, fixed);
       });
 
-      test(
-        'markInProgress lastAttemptAt comes from the injected clock',
-        () async {
-          final clock = FixedClockService(fixed);
-          final clockRepo = SyncQueueRepositoryImpl(
-            db,
-            clock,
-            userId: _kUserId,
-          );
-          final entry = await clockRepo.enqueue(_kOperation);
-
-          clock.current = fixed.add(const Duration(minutes: 1));
-          await clockRepo.markInProgress(entry.id);
-
-          final updated = (await clockRepo.getAllEntries()).single;
-          expect(updated.lastAttemptAt, fixed.add(const Duration(minutes: 1)));
-        },
-      );
-
-      test('markFailed lastAttemptAt comes from the injected clock', () async {
-        final clock = FixedClockService(fixed);
-        final clockRepo = SyncQueueRepositoryImpl(db, clock, userId: _kUserId);
+      // Attempt stamps are the device's own time, not the server-corrected
+      // time: the claim lease is judged by them (#430).
+      test('claim stamps lastAttemptAt from the device clock', () async {
+        final device = FixedClockService(fixed.add(const Duration(minutes: 1)));
+        final clockRepo = SyncQueueRepositoryImpl(
+          db,
+          FixedClockService(fixed),
+          userId: _kUserId,
+          localNowUtc: device.nowUtc,
+        );
         final entry = await clockRepo.enqueue(_kOperation);
 
-        clock.current = fixed.add(const Duration(minutes: 2));
+        expect(await clockRepo.claim(entry.id), isTrue);
+
+        final updated = (await clockRepo.getAllEntries()).single;
+        expect(updated.lastAttemptAt, fixed.add(const Duration(minutes: 1)));
+      });
+
+      test('markFailed stamps lastAttemptAt from the device clock', () async {
+        final device = FixedClockService(fixed.add(const Duration(minutes: 2)));
+        final clockRepo = SyncQueueRepositoryImpl(
+          db,
+          FixedClockService(fixed),
+          userId: _kUserId,
+          localNowUtc: device.nowUtc,
+        );
+        final entry = await clockRepo.enqueue(_kOperation);
+
         await clockRepo.markFailed(entry.id, error: 'boom');
 
         final updated = (await clockRepo.getAllEntries()).single;

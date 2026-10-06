@@ -181,6 +181,7 @@ ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
+  SyncQueueRepository? syncQueueRepository,
   HouseholdHydrationStatus? householdHydrationStatus,
   HouseholdRefresher? householdRefresher,
   UserSessionScope? userSessionScope,
@@ -204,6 +205,9 @@ ActiveServer buildActiveServer(
     container.registerSingleton<HouseholdRemoteDataSource>(
       householdRemoteDataSource,
     );
+  }
+  if (syncQueueRepository != null) {
+    container.registerSingleton<SyncQueueRepository>(syncQueueRepository);
   }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);
