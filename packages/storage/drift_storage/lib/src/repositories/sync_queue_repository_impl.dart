@@ -251,45 +251,77 @@ class SyncQueueRepositoryImpl
     if (oldCollectionId == newCollectionId) return 0;
 
     return _db.transaction(() async {
-      // We can't push the id filter into SQL because the target id
-      // is buried inside the JSON payload. Fetch every entry that will
-      // be sent again, deserialize each, and rewrite the ones that
-      // match. The SELECT uses the same predicate as
-      // [getPendingEntries] — including the user filter (#147) and the
-      // expired claims a sender can retake (#430) — and the per-row
-      // UPDATE below re-applies `user_id` alongside the id, so the write
-      // enforces the scope invariant independently of where its id
-      // came from: collection ids are cuid2 and cross-user collisions
-      // are practically impossible, but the boundary is enforced
-      // uniformly on every write rather than reasoned about
+      // Every op not yet completed, whatever its status or retry count
+      // (#429): the set the lookup returns, so an acknowledgement's
+      // lookup by the new id finds every op this remap moved. The
+      // per-row UPDATE re-applies `user_id` alongside the id, so the
+      // write enforces the scope invariant (#147) independently of where
+      // its id came from: collection ids are cuid2 and cross-user
+      // collisions are practically impossible, but the boundary is
+      // enforced uniformly on every write rather than reasoned about
       // per-method.
-      final rows = await (_db.select(
-        _db.syncQueueTable,
-      )..where((_) => _claimablePredicate())).get();
+      final targeting = await getOutstandingOpsFor(oldCollectionId);
 
       var remapped = 0;
-      for (final row in rows) {
-        final SyncOperation op;
-        try {
-          op = SyncOperation.deserialize(row.payload);
-        } catch (_) {
-          // Skip un-parseable rows; the worker will surface the
-          // failure on its next pickup attempt.
-          continue;
-        }
-
-        final rewritten = _remapOp(op, oldCollectionId, newCollectionId);
+      for (final entry in targeting) {
+        final rewritten = _remapOp(entry.operation, newCollectionId);
         if (rewritten == null) continue;
 
-        await (_db.update(
-          _db.syncQueueTable,
-        )..where((t) => t.id.equals(row.id) & t.userId.equals(_userId))).write(
-          SyncQueueTableCompanion(payload: Value(rewritten.serialized)),
-        );
+        await (_db.update(_db.syncQueueTable)
+              ..where((t) => t.id.equals(entry.id) & t.userId.equals(_userId)))
+            .write(
+              SyncQueueTableCompanion(payload: Value(rewritten.serialized)),
+            );
         remapped++;
       }
       return remapped;
     });
+  }
+
+  @override
+  Future<List<SyncQueueEntry>> getOutstandingOpsFor(
+    String collectionId, {
+    String? including,
+  }) async {
+    checkNotDisposed();
+    // We can't push the id filter into SQL because the target id is
+    // buried inside the JSON payload: fetch every entry not completed,
+    // plus [including] whatever its status, decode each, and keep the
+    // ones that target [collectionId]. Any retry count (#429).
+    final rows =
+        await (_db.select(_db.syncQueueTable)
+              ..where((t) {
+                final outstanding = t.status.equals('completed').not();
+                return t.userId.equals(_userId) &
+                    (including == null
+                        ? outstanding
+                        : outstanding | t.id.equals(including));
+              })
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.createdAt),
+                (t) => OrderingTerm.asc(t.rowId),
+              ]))
+            .get();
+
+    final outstanding = <SyncQueueEntry>[];
+    for (final row in rows) {
+      final SyncOperation op;
+      try {
+        op = SyncOperation.deserialize(row.payload);
+      } catch (_) {
+        // Skip un-parseable rows; the worker will surface the failure on
+        // its next pickup attempt.
+        continue;
+      }
+      final target = switch (op) {
+        AddToCollectionOperation() => op.localId,
+        UpdateCollectionOperation() => op.collectionId,
+        RemoveFromCollectionOperation() => op.collectionId,
+        CreateHouseholdOperation() => null,
+      };
+      if (target == collectionId) outstanding.add(_mapRow(row));
+    }
+    return outstanding;
   }
 
   @override
@@ -322,42 +354,41 @@ class SyncQueueRepositoryImpl
     });
   }
 
-  /// Returns a rewritten op when [op] targets [oldId], else null.
+  /// Returns [op] pointed at [newId]; null for an op that targets no
+  /// collection entry.
   ///
-  /// Sealed-hierarchy switch with `when` guards: each case both
-  /// narrows the op type AND filters by the relevant id field, so
-  /// we don't accidentally remap unrelated ops that happen to
-  /// stringify to the same id.
-  SyncOperation? _remapOp(SyncOperation op, String oldId, String newId) {
+  /// The caller passes only ops [getOutstandingOpsFor] matched, so which
+  /// ops target the entry is decided there, once. No wildcard: like the
+  /// lookup's switch, this one must name every op type, so a new one can't
+  /// be matched there and silently skipped here.
+  SyncOperation? _remapOp(SyncOperation op, String newId) {
     return switch (op) {
-      AddToCollectionOperation() when op.localId == oldId =>
-        AddToCollectionOperation(
-          localId: newId,
-          platformGameId: op.platformGameId,
-          medium: op.medium,
-          quantity: op.quantity,
-          rating: op.rating,
-          comment: op.comment,
-        ),
-      UpdateCollectionOperation() when op.collectionId == oldId =>
-        UpdateCollectionOperation(
-          collectionId: newId,
-          quantity: op.quantity,
-          rating: op.rating,
-          playAgain: op.playAgain,
-          favorite: op.favorite,
-          comment: op.comment,
-        ),
-      RemoveFromCollectionOperation() when op.collectionId == oldId =>
-        RemoveFromCollectionOperation(collectionId: newId),
-      _ => null,
+      AddToCollectionOperation() => AddToCollectionOperation(
+        localId: newId,
+        platformGameId: op.platformGameId,
+        medium: op.medium,
+        quantity: op.quantity,
+        rating: op.rating,
+        comment: op.comment,
+      ),
+      UpdateCollectionOperation() => UpdateCollectionOperation(
+        collectionId: newId,
+        quantity: op.quantity,
+        rating: op.rating,
+        playAgain: op.playAgain,
+        favorite: op.favorite,
+        comment: op.comment,
+      ),
+      RemoveFromCollectionOperation() => RemoveFromCollectionOperation(
+        collectionId: newId,
+      ),
+      CreateHouseholdOperation() => null,
     };
   }
 
   /// Predicate for "a sender may take this entry now": what
-  /// [getPendingEntries] lists, what [claim] accepts, and what
-  /// [remapCollectionId] rewrites (#430). One predicate for all three, so
-  /// they cannot drift apart.
+  /// [getPendingEntries] lists and what [claim] accepts (#430). One
+  /// predicate for both, so they cannot drift apart.
   ///
   /// The current user's entries under [SyncQueueEntry.maxRetries] that
   /// are `pending` or `failed`, or `inProgress` with a claim older than

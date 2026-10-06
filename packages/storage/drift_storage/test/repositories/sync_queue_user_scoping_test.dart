@@ -132,6 +132,15 @@ void main() {
       },
     );
 
+    test('getOutstandingOpsFor sees only the current user\'s ops', () async {
+      final mine = await repoA.enqueue(_kOperation);
+      await repoB.enqueue(_kOperation);
+
+      final entries = await repoA.getOutstandingOpsFor('local-1');
+
+      expect(entries.map((e) => e.id), [mine.id]);
+    });
+
     test('release cannot hand back another user\'s claimed entry', () async {
       final entry = await repoA.enqueue(_kOperation);
       expect(await repoA.claim(entry.id), isTrue);

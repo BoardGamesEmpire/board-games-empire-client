@@ -671,10 +671,12 @@ void main() {
         expect(op.collectionId, equals('local-1'));
       });
 
-      test('does not touch an entry whose claim is live', () async {
-        // Same rationale as completed — a sender is sending the op now,
-        // with the old id, and rewriting the payload can't change what is
-        // already on the wire.
+      test('rewrites an entry whose claim is live (#429)', () async {
+        // The request already on the wire keeps the old id; rewriting
+        // can't change that. But if that send fails, the retry must carry
+        // the id the server knows, and the entry's later acknowledgements
+        // must find the op under it. Left on the old id, the op would
+        // drop out of both.
         final entry = await repo.enqueue(
           const RemoveFromCollectionOperation(collectionId: 'local-1'),
         );
@@ -684,17 +686,19 @@ void main() {
           oldCollectionId: 'local-1',
           newCollectionId: 'server-99',
         );
-        expect(remapped, equals(0));
+        expect(remapped, equals(1));
 
+        final held = (await repo.getAllEntries()).single;
+        expect(held.status, SyncStatus.inProgress, reason: 'claim untouched');
         final op = SyncOperation.deserialize(
-          (await repo.getAllEntries()).single.payload,
+          held.payload,
         ) as RemoveFromCollectionOperation;
-        expect(op.collectionId, equals('local-1'));
+        expect(op.collectionId, equals('server-99'));
       });
 
       test('rewrites an entry whose claim has expired (#430)', () async {
         // An expired claim is claimable again, so its next send must
-        // carry the new id. The scan shares getPendingEntries' predicate.
+        // carry the new id.
         final clock = FixedClockService(DateTime.utc(2026, 10, 5, 12));
         final clockRepo = SyncQueueRepositoryImpl(
           db,
@@ -722,11 +726,11 @@ void main() {
         expect(op.collectionId, equals('server-99'));
       });
 
-      test('does not touch failed entries that exhausted maxRetries', () async {
-        // Symmetric with getPendingEntries: once an entry has burned
-        // its retry budget, the worker won't pick it up, and remap
-        // shouldn't rewrite it either. The op is effectively dead
-        // queue contents waiting to be purged.
+      test('rewrites an entry that exhausted maxRetries (#429)', () async {
+        // The worker won't send it again, but it is still the entry's
+        // change that never landed: an acknowledgement keeps the entry
+        // dirty while it remains, and finds it by the entry's current id.
+        // A hand retry (#190) would need that id too.
         final entry = await repo.enqueue(
           const UpdateCollectionOperation(collectionId: 'local-1', rating: 1),
         );
@@ -738,12 +742,12 @@ void main() {
           oldCollectionId: 'local-1',
           newCollectionId: 'server-99',
         );
-        expect(remapped, equals(0));
+        expect(remapped, equals(1));
 
         final op = SyncOperation.deserialize(
           (await repo.getAllEntries()).single.payload,
         ) as UpdateCollectionOperation;
-        expect(op.collectionId, equals('local-1'));
+        expect(op.collectionId, equals('server-99'));
       });
 
       test(
@@ -810,6 +814,172 @@ void main() {
           newCollectionId: 'server-99',
         );
         expect(remapped, equals(0));
+      });
+    });
+
+    // ── getOutstandingOpsFor ────────────────────────────────────────────────────
+
+    group('getOutstandingOpsFor() (#429)', () {
+      List<String> idsOf(List<SyncQueueEntry> entries) =>
+          entries.map((e) => e.id).toList();
+
+      test('returns every op targeting the id, in queue order, across all '
+          'three op types', () async {
+        final add = await repo.enqueue(
+          const AddToCollectionOperation(
+            localId: 'gc-1',
+            platformGameId: 'pg-1',
+            medium: 'Physical',
+            quantity: 1,
+          ),
+        );
+        final update = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        final remove = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [add.id, update.id, remove.id]);
+      });
+
+      test('finds every op the remap moved, under the new id', () async {
+        // The remap and the lookup cover the same set, so an
+        // acknowledgement after a reassignment sees claimed and exhausted
+        // ops as well as pending ones.
+        final claimed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 1),
+        );
+        final exhausted = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'local-1', rating: 2),
+        );
+        expect(await repo.claim(claimed.id), isTrue);
+        for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(exhausted.id, error: 'error $i');
+        }
+
+        await repo.remapCollectionId(
+          oldCollectionId: 'local-1',
+          newCollectionId: 'server-1',
+        );
+
+        expect(idsOf(await repo.getOutstandingOpsFor('server-1')), [
+          claimed.id,
+          exhausted.id,
+        ]);
+        expect(await repo.getOutstandingOpsFor('local-1'), isEmpty);
+      });
+
+      test('includes claimed, failed and exhausted ops — everything not '
+          'completed', () async {
+        // An exhausted op still says the user's change didn't land, and a
+        // claimed one may not land either: an acknowledgement must not
+        // report the entry as synced while either remains (#429).
+        final claimed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 1),
+        );
+        final failed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+        final exhausted = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 3),
+        );
+        final completed = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 4),
+        );
+        expect(await repo.claim(claimed.id), isTrue);
+        await repo.markFailed(failed.id, error: 'timeout');
+        for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(exhausted.id, error: 'error $i');
+        }
+        await repo.markCompleted(completed.id);
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [claimed.id, failed.id, exhausted.id]);
+      });
+
+      test('leaves out ops for other entries and household ops', () async {
+        await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'other', rating: 1),
+        );
+        await repo.enqueue(
+          const CreateHouseholdOperation(localId: 'gc-1', name: 'HQ'),
+        );
+        final mine = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [mine.id]);
+      });
+
+      test('returns the entry named by `including` in its place, even once '
+          'completed', () async {
+        // An acknowledgement places the op it acknowledges among the others.
+        // A second delivery's acknowledgement finds that op completed by the
+        // first, and must still be able to place it.
+        final before = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 1),
+        );
+        final acknowledged = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+        final after = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 3),
+        );
+        final otherCompleted = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 4),
+        );
+        await repo.markCompleted(acknowledged.id);
+        await repo.markCompleted(otherCompleted.id);
+
+        final entries = await repo.getOutstandingOpsFor(
+          'gc-1',
+          including: acknowledged.id,
+        );
+
+        expect(idsOf(entries), [before.id, acknowledged.id, after.id]);
+      });
+
+      test('`including` adds nothing for an entry that targets another '
+          'collection entry', () async {
+        final elsewhere = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'other', rating: 1),
+        );
+        final mine = await repo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+
+        final entries = await repo.getOutstandingOpsFor(
+          'gc-1',
+          including: elsewhere.id,
+        );
+
+        expect(idsOf(entries), [mine.id]);
+      });
+
+      test('skips a payload it cannot parse', () async {
+        await db
+            .into(db.syncQueueTable)
+            .insert(
+              SyncQueueTableCompanion.insert(
+                id: 'corrupt',
+                userId: _kUserId,
+                payload: '{"type":"unknown_op"}',
+                createdAt: DateTime.now().toUtc(),
+              ),
+            );
+        final mine = await repo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+
+        final entries = await repo.getOutstandingOpsFor('gc-1');
+
+        expect(idsOf(entries), [mine.id]);
       });
     });
 

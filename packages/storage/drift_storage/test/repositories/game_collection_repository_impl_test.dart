@@ -37,6 +37,14 @@ void _stubMockSyncDefaults(MockSyncQueue mockSync) {
       newCollectionId: any(named: 'newCollectionId'),
     ),
   ).thenAnswer((_) async => 0);
+  // Nothing queued behind an acknowledgement: the replay (#429) is
+  // covered over the real queue in game_collection_reconcile_replay_test.
+  when(
+    () => mockSync.getOutstandingOpsFor(
+      any(),
+      including: any(named: 'including'),
+    ),
+  ).thenAnswer((_) async => const []);
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────

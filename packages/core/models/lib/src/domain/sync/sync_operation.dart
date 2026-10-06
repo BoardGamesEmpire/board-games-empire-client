@@ -59,16 +59,15 @@ final class AddToCollectionOperation extends SyncOperation {
   /// (via `package:cuid2`) **before** the insert, so it's present on
   /// both the local row and the enqueued op.
   ///
-  /// The format matches the backend's id format (cuid2). When the
-  /// backend honours the client-supplied id, this id round-trips
-  /// unchanged through reconciliation. Today the backend's create
-  /// DTO strips ids before reaching Prisma, so the server returns a
-  /// freshly-generated cuid2 instead; `reconcileFromServer` then
-  /// looks up the local row by `(userId, platformGameId, medium)`
-  /// triplet, calls `SyncQueueRepository.remapCollectionId` to
-  /// rewrite any other pending ops still referencing this local id,
-  /// and drops/upserts the row against the server's id (see
-  /// `GameCollectionRepositoryImpl` class doc for the full flow).
+  /// The format matches the backend's id format (cuid2), but the id is
+  /// client-internal: it is never sent. The create DTO has no id field,
+  /// so the server returns a freshly-generated cuid2 instead;
+  /// `reconcileFromServer` then looks up the local row by
+  /// `(userId, platformGameId, medium)` triplet, calls
+  /// `SyncQueueRepository.remapCollectionId` to rewrite any other
+  /// pending ops still referencing this local id, and drops/upserts the
+  /// row against the server's id (see `GameCollectionRepositoryImpl`
+  /// class doc for the full flow).
   ///
   /// Note: Drift does **not** generate this id — the column is a
   /// `TEXT PRIMARY KEY` whose value the repo supplies on insert.
