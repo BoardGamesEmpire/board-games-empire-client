@@ -255,7 +255,9 @@ void main(List<String> args) {
     }
 
     // No block, or an empty one, reads as absent keys. The rewriter fills
-    // an empty block and reports a missing one as unfixable.
+    // an empty block and reports a missing one as unfixable, as it does a
+    // flow-style one such as `environment: {}`, which it cannot edit by
+    // line.
     final env = yaml['environment'] as YamlMap?;
     final wantFlutter = _usesFlutterSdk(yaml) ? expectedFlutter : null;
     final actualSdk = env?['sdk']?.toString();
@@ -546,6 +548,18 @@ void _selfTest() {
   expect(
     'reports failure when there is no environment block',
     _rewriteEnvironment('name: a\nresolution: workspace\n', sdk, null),
+    null,
+  );
+
+  // Rewriting by line would add keys under the one-line map and leave
+  // YAML that does not parse.
+  expect(
+    'reports failure for a flow-style environment',
+    _rewriteEnvironment(
+      'environment: {sdk: ">=3.9.0 <4.0.0"}\nresolution: workspace\n',
+      sdk,
+      null,
+    ),
     null,
   );
 
