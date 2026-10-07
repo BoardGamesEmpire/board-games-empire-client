@@ -848,7 +848,50 @@ void _selfTest() {
     ),
     [
       '`#undef FLUTTER_VERSION_MAJOR` overrides the version Flutter sets',
-      'lacks `#if defined(FLUTTER_VERSION)`',
+      'lacks the unbroken block from `#if defined(FLUTTER_VERSION)` to '
+          '`#endif`',
+    ],
+  );
+
+  // Template lines too, but each defined last before the resource reads
+  // it, so it wins over Flutter's.
+  expect(
+    'rc: flags a 1.0.0 fallback outside its #else',
+    _rcVersionProblems(
+      rcTemplate
+          .replaceFirst(
+            '#if defined(FLUTTER_VERSION)\n',
+            '#define VERSION_AS_NUMBER 1,0,0,0\n#if defined(FLUTTER_VERSION)\n',
+          )
+          .replaceFirst(
+            'VS_VERSION_INFO',
+            '#define VERSION_AS_STRING "1.0.0"\nVS_VERSION_INFO',
+          ),
+    ),
+    [
+      '`#define VERSION_AS_NUMBER 1,0,0,0` overrides the version Flutter '
+          'sets',
+      '`#define VERSION_AS_STRING "1.0.0"` overrides the version Flutter '
+          'sets',
+    ],
+  );
+
+  expect(
+    'rc: flags definitions swapped between the branches',
+    _rcVersionProblems(
+      rcTemplate
+          .replaceFirst(
+            '#define VERSION_AS_STRING FLUTTER_VERSION',
+            '#define VERSION_AS_STRING "1.0.0"',
+          )
+          .replaceFirst(
+            '#else\n#define VERSION_AS_STRING "1.0.0"',
+            '#else\n#define VERSION_AS_STRING FLUTTER_VERSION',
+          ),
+    ),
+    [
+      'lacks the unbroken block from `#if defined(FLUTTER_VERSION)` to '
+          '`#endif`',
     ],
   );
 
@@ -1045,36 +1088,57 @@ const _manifests = <(String, List<String> Function(String))>[
 
 /// Holds a manifest's [lines] to the version lines of its Flutter
 /// template: each of [required] must appear, and any other line that
-/// [setsVersion] picks out is an override, unless it is one of the
-/// template's own [optional] lines. Lines compare without their
-/// whitespace, so indentation and spacing do not matter; callers strip
-/// comments first.
+/// [setsVersion] picks out is an override. An entry of several lines
+/// must appear as an unbroken block, so each of its lines counts only
+/// where the template puts it. Lines compare without their whitespace,
+/// so indentation and spacing do not matter, and blank lines are
+/// skipped; callers strip comments first.
 ///
 /// An allowlist, not a list of known overrides, because each format has
 /// more ways to set a version than a check could name.
 List<String> _templateVersionProblems(
   Iterable<String> lines,
   List<String> required,
-  bool Function(String line) setsVersion, {
-  List<String> optional = const [],
-}) {
+  bool Function(String line) setsVersion,
+) {
   String compact(String line) => line.replaceAll(RegExp(r'\s'), '');
-  final wanted = {for (final line in required) compact(line)};
-  final allowed = {for (final line in optional) compact(line)};
-  final seen = <String>{};
-  final problems = <String>[];
-  for (final line in lines.map((l) => l.trim())) {
-    final key = compact(line);
-    if (wanted.contains(key)) {
-      seen.add(key);
-    } else if (!allowed.contains(key) && setsVersion(line)) {
-      problems.add('`$line` overrides the version Flutter sets');
+  final source = [
+    for (final line in lines)
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  final keys = source.map(compact).toList();
+  final inTemplate = List.filled(source.length, false);
+  final missing = <List<String>>[];
+  for (final entry in required) {
+    final block = entry.split('\n');
+    final want = block.map(compact).toList();
+    var found = false;
+    for (var i = 0; i + want.length <= keys.length; i++) {
+      var j = 0;
+      while (j < want.length && keys[i + j] == want[j]) {
+        j++;
+      }
+      if (j < want.length) continue;
+      found = true;
+      inTemplate.fillRange(i, i + want.length, true);
     }
+    if (!found) missing.add(block);
   }
-  for (final line in required) {
-    if (!seen.contains(compact(line))) problems.add('lacks `$line`');
-  }
-  return problems;
+  // A missing block's own lines, wherever they ended up, are reported
+  // as that block, not as overrides of their own.
+  final explained = {for (final block in missing) ...block.map(compact)};
+  return [
+    for (var i = 0; i < source.length; i++)
+      if (!inTemplate[i] &&
+          !explained.contains(keys[i]) &&
+          setsVersion(source[i]))
+        '`${source[i]}` overrides the version Flutter sets',
+    for (final block in missing)
+      block.length == 1
+          ? 'lacks `${block.single}`'
+          : 'lacks the unbroken block from `${block.first}` to '
+                '`${block.last}`',
+  ];
 }
 
 /// [source] without its `/* */` and `//` comments, for the formats that
@@ -1123,19 +1187,26 @@ List<String> _cmakeVersionProblems(String source) => _templateVersionProblems(
 ///
 /// The template derives both of its version macros from Flutter's
 /// defines, behind guards that test for them, and both numeric fields
-/// and both version strings use them. Beyond those, only the template's
-/// `#else` fallbacks may define the macros: a definition added after
-/// them, an `#undef`, or one of Flutter's defines undone would win over
-/// Flutter's while every template line stayed in place.
+/// and both version strings use them. Each macro's guard, its two
+/// definitions and the `#else` between them must stay one unbroken
+/// block: a 1.0.0 fallback anywhere else, definitions swapped between
+/// the branches, an `#undef`, or one of Flutter's defines undone would
+/// win over Flutter's while every template line stayed in the file.
 List<String> _rcVersionProblems(String source) => _templateVersionProblems(
   _stripSlashComments(source).split('\n'),
   const [
     '#if defined(FLUTTER_VERSION_MAJOR) && defined(FLUTTER_VERSION_MINOR) '
-        '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)',
-    '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
-        'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD',
-    '#if defined(FLUTTER_VERSION)',
-    '#define VERSION_AS_STRING FLUTTER_VERSION',
+        '&& defined(FLUTTER_VERSION_PATCH) && defined(FLUTTER_VERSION_BUILD)\n'
+        '#define VERSION_AS_NUMBER FLUTTER_VERSION_MAJOR,FLUTTER_VERSION_MINOR,'
+        'FLUTTER_VERSION_PATCH,FLUTTER_VERSION_BUILD\n'
+        '#else\n'
+        '#define VERSION_AS_NUMBER 1,0,0,0\n'
+        '#endif',
+    '#if defined(FLUTTER_VERSION)\n'
+        '#define VERSION_AS_STRING FLUTTER_VERSION\n'
+        '#else\n'
+        '#define VERSION_AS_STRING "1.0.0"\n'
+        '#endif',
     'FILEVERSION VERSION_AS_NUMBER',
     'PRODUCTVERSION VERSION_AS_NUMBER',
     r'VALUE "FileVersion", VERSION_AS_STRING "\0"',
@@ -1145,10 +1216,6 @@ List<String> _rcVersionProblems(String source) => _templateVersionProblems(
     r'^(FILEVERSION|PRODUCTVERSION)\b|^VALUE\s+"(File|Product)Version"'
     r'|^#\s*(define|undef)\s+(VERSION_AS_(NUMBER|STRING)|FLUTTER_VERSION\w*)\b',
   ).hasMatch,
-  optional: const [
-    '#define VERSION_AS_NUMBER 1,0,0,0',
-    '#define VERSION_AS_STRING "1.0.0"',
-  ],
 );
 
 /// Problems with an iOS or macOS `Info.plist`'s version entries.
