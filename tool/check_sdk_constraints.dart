@@ -165,6 +165,16 @@ void main(List<String> args) {
     );
     exit(1);
   }
+  // `BuildInfo.unknown` reports 0.0.0 when an app cannot read its own
+  // version, and version negotiation (#13) treats it as the oldest client
+  // there is. A real build at 0.0.0 would look like a failed read.
+  if (parts.take(3).every((p) => int.parse(p) == 0)) {
+    stderr.writeln(
+      'Root `version:` must not be 0.0.0, the version an app reports when '
+      'it cannot read its own. Found: $expectedVersion',
+    );
+    exit(1);
+  }
 
   final members = (rootYaml['workspace'] as YamlList?)?.cast<String>();
   if (members == null || members.isEmpty) {

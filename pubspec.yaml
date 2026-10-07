@@ -15,11 +15,12 @@ publish_to: none
 # an update whose versionCode is lower. #419 decides how it is bumped.
 #
 # Keep it all numeric, major.minor.patch+build, with each part at most
-# 65535 and the build number at least 1; the check refuses anything
-# else. Flutter strips a prerelease suffix from the iOS and macOS
-# version (`1.0.0-beta.1` ships there as `1.0.0.1`) but not from the
-# others, Windows holds each part in a 16-bit field, and Android's
-# versionCode starts at 1.
+# 65535, the build number at least 1, and the version never 0.0.0; the
+# check refuses anything else. Flutter strips a prerelease suffix from
+# the iOS and macOS version (`1.0.0-beta.1` ships there as `1.0.0.1`)
+# but not from the others, Windows holds each part in a 16-bit field,
+# Android's versionCode starts at 1, and 0.0.0 is what an app reports
+# when it cannot read its own version.
 #
 # To bump, edit it here and run
 #   dart run tool/check_sdk_constraints.dart --fix
