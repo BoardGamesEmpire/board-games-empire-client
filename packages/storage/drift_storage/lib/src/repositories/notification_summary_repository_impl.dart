@@ -10,6 +10,17 @@ class NotificationSummaryRepositoryImpl
 
   final MetaDatabase _database;
 
+  /// Newest first, behind every listing. `receivedAt` is compared as an
+  /// instant through `JULIANDAY`: as ISO-8601 text, `…00.345Z` sorts
+  /// after `…00.345001Z` (#441). `JULIANDAY` resolves to the
+  /// millisecond, so within one the later-inserted row comes first. Rows
+  /// are only ever inserted, so rowid is the order they arrived in.
+  static final List<OrderClauseGenerator<$NotificationSummariesTable>>
+  _newestFirst = [
+    (t) => OrderingTerm.desc(t.receivedAt.julianday),
+    (t) => OrderingTerm.desc(t.rowId),
+  ];
+
   @override
   Future<NotificationSummary> add(NotificationSummary summary) async {
     final now = DateTime.now().toUtc();
@@ -65,7 +76,7 @@ class NotificationSummaryRepositoryImpl
     final rows =
         await (_database.select(_database.notificationSummaries)
               ..where((t) => t.isRead.equals(false))
-              ..orderBy([(t) => OrderingTerm.desc(t.receivedAt)]))
+              ..orderBy(_newestFirst))
             .get();
     return rows.map(_mapToModel).toList();
   }
@@ -75,7 +86,7 @@ class NotificationSummaryRepositoryImpl
     final rows =
         await (_database.select(_database.notificationSummaries)
               ..where((t) => t.localServerId.equals(localServerId))
-              ..orderBy([(t) => OrderingTerm.desc(t.receivedAt)]))
+              ..orderBy(_newestFirst))
             .get();
     return rows.map(_mapToModel).toList();
   }
@@ -109,8 +120,7 @@ class NotificationSummaryRepositoryImpl
 
   @override
   Stream<List<NotificationSummary>> watchAll() =>
-      (_database.select(_database.notificationSummaries)
-            ..orderBy([(t) => OrderingTerm.desc(t.receivedAt)]))
+      (_database.select(_database.notificationSummaries)..orderBy(_newestFirst))
           .watch()
           .map((rows) => rows.map(_mapToModel).toList());
 

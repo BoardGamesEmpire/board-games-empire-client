@@ -141,6 +141,42 @@ void main() {
       });
     });
 
+    group('newest first within one millisecond (#441)', () {
+      // As ISO-8601 text the earlier stamp is written `…00.345Z` and the
+      // later `…00.345001Z`, so a descending text sort puts the earlier
+      // one first.
+      late List<String> newestFirst;
+
+      setUp(() async {
+        final earlier = await repository.add(
+          _makeNotification(
+            receivedAt: DateTime.utc(2026, 10, 7, 12, 0, 0, 345),
+          ),
+        );
+        final later = await repository.add(
+          _makeNotification(
+            receivedAt: DateTime.utc(2026, 10, 7, 12, 0, 0, 345, 1),
+          ),
+        );
+        newestFirst = [later.id, earlier.id];
+      });
+
+      test('getUnread', () async {
+        final rows = await repository.getUnread();
+        expect(rows.map((n) => n.id), newestFirst);
+      });
+
+      test('getForServer', () async {
+        final rows = await repository.getForServer('local-server-1');
+        expect(rows.map((n) => n.id), newestFirst);
+      });
+
+      test('watchAll', () async {
+        final rows = await repository.watchAll().first;
+        expect(rows.map((n) => n.id), newestFirst);
+      });
+    });
+
     group('getForServer', () {
       test('returns only notifications for the given server', () async {
         await repository.add(_makeNotification(localServerId: 'server-a'));

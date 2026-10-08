@@ -605,6 +605,12 @@ class HouseholdRepositoryImpl
   /// server-issued cuid2, so ordering on it is arbitrary order wearing
   /// determinism. `createdAt` is a key a person can reason about.
   ///
+  /// `createdAt` is compared as an instant through `JULIANDAY`: as
+  /// ISO-8601 text, `…00.345Z` sorts after `…00.345001Z` (#441).
+  /// `JULIANDAY` resolves to the millisecond, so rowid breaks a tie
+  /// within one. No household write replaces a row (each inserts or
+  /// upserts), so a row keeps the rowid it arrived with.
+  ///
   /// Lower-casing rather than `COLLATE NOCASE` is the same ASCII-only fold
   /// either way; this one is visible in the query drift builds.
   JoinedSelectStatement _householdsQuery(String userId) {
@@ -620,7 +626,8 @@ class HouseholdRepositoryImpl
       ..where(_db.householdsTable.deletedAt.isNull())
       ..orderBy([
         OrderingTerm.asc(_db.householdsTable.name.lower()),
-        OrderingTerm.asc(_db.householdsTable.createdAt),
+        OrderingTerm.asc(_db.householdsTable.createdAt.julianday),
+        OrderingTerm.asc(_db.householdsTable.rowId),
       ]);
   }
 
