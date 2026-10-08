@@ -152,9 +152,10 @@ class HouseholdRepositoryImpl
   @override
   String get disposedRepositoryName => 'HouseholdRepository';
 
-  /// Local id → canonical id, for every create reconciled onto a new id
-  /// ([reconciledHouseholdId]).
-  final Map<String, String> _reconciledIds = {};
+  /// Local id → canonical id, for every household move this repository
+  /// has recorded or read from `household_moves` ([reconciledHouseholdId],
+  /// #442). Never shrinks: a move is never undone.
+  final Map<String, String> _moves = {};
 
   @override
   Future<List<Household>> getHouseholds() async {
@@ -530,6 +531,18 @@ class HouseholdRepositoryImpl
         await (_db.delete(
           _db.householdsTable,
         )..where((t) => t.id.equals(localId))).go();
+
+        // Where it went, committed with the deletion so no reader finds
+        // one without the other, in this tab or another (#442). A rollback
+        // takes it too. A second reconcile of the same local id replaces it.
+        await _db
+            .into(_db.householdMovesTable)
+            .insertOnConflictUpdate(
+              HouseholdMovesTableCompanion.insert(
+                localId: localId,
+                serverId: serverHousehold.id,
+              ),
+            );
       }
 
       // 3. Close the queued op in the same transaction, if the caller
@@ -538,19 +551,13 @@ class HouseholdRepositoryImpl
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
     });
-    if (localId != serverHousehold.id) {
-      _reconciledIds[localId] = serverHousehold.id;
-      // The transaction's own updates went out before the record existed,
-      // and a watcher that re-read on them may already have delivered the
-      // local row's disappearance. This one makes every household watcher
-      // read again with the record in place, whatever order the executor
-      // delivers in (#306).
-      _db.markTablesUpdated([_db.householdsTable]);
-    }
+    // So a caller here can ask at once, without waiting on a household
+    // emission to read the move back.
+    if (localId != serverHousehold.id) _moves[localId] = serverHousehold.id;
   }
 
   @override
-  String? reconciledHouseholdId(String localId) => _reconciledIds[localId];
+  String? reconciledHouseholdId(String localId) => _moves[localId];
 
   @override
   Stream<List<Household>> watchHouseholds() =>
@@ -561,11 +568,32 @@ class HouseholdRepositoryImpl
     // throw surfaces as a stream error the caller can observe (StreamBuilder,
     // handleError, bloc onError), not a synchronous throw at subscribe time.
     final userId = _currentUserId();
-    yield* _householdsQuery(userId).watch().map(
-      (rows) => rows
+    yield* _householdsQuery(userId).watch().asyncMap((rows) async {
+      await _readMoves();
+      return rows
           .map((r) => _mapHousehold(r.readTable(_db.householdsTable)))
-          .toList(),
+          .toList();
+    });
+  }
+
+  /// Refreshes [_moves] from `household_moves`, between a households or
+  /// roster read and the delivery of its rows (#442). Both, because a
+  /// screen makes the move on whichever of the two hears of a reconcile
+  /// first (#306).
+  ///
+  /// A subscriber that asks [reconciledHouseholdId] on an emission then
+  /// finds every move the rows reflect, whichever repository or tab made
+  /// it: a move commits with the deletion of its local row and the
+  /// re-pointing of its roster, is never removed, and this read comes
+  /// after the rows', so it sees at least what they saw. Anything newer it
+  /// finds is just as true.
+  Future<void> _readMoves() async {
+    final moves = await awaitedOnDispose(
+      _db.select(_db.householdMovesTable).get(),
     );
+    for (final move in moves) {
+      _moves[move.localId] = move.serverId;
+    }
   }
 
   @override
@@ -577,11 +605,12 @@ class HouseholdRepositoryImpl
     // unauthenticated throw is delivered as a stream error, not
     // synchronously at subscribe.
     final userId = _currentUserId();
-    yield* _membersQuery(householdId, userId).watch().map(
-      (rows) => rows
+    yield* _membersQuery(householdId, userId).watch().asyncMap((rows) async {
+      await _readMoves();
+      return rows
           .map((r) => _mapMember(r.readTable(_db.householdMembersTable)))
-          .toList(),
-    );
+          .toList();
+    });
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────

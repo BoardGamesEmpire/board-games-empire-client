@@ -8,6 +8,7 @@ import 'generated/schema.dart';
 import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
+import 'generated/schema_v4.dart' as v4;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -313,6 +314,113 @@ void main() {
         );
         // The locked #147 contract: legacy rows are gone, not carried.
         expect(await newDb.select(newDb.syncQueue).get(), isEmpty);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v3 → v4 (#442): the step only creates
+  // `household_moves`. Every existing table must survive byte-for-byte —
+  // households and members seeded with live data (the member FK crossing the
+  // migration) and a queued row, which unlike v2 → v3 is carried, not
+  // dropped — and the new table starts empty.
+  test('migration from v3 to v4 adds an empty household_moves and preserves '
+      'everything else (#442)', () async {
+    const householdId = 'hh_v3_1';
+    const createdAt = '2024-01-15T10:30:00.000Z';
+    const updatedAt = '2024-01-16T09:00:00.000Z';
+    const payload =
+        '{"type":"create_household","local_id":"hh_local_1","name":"HQ"}';
+
+    final oldHouseholdsData = <v3.HouseholdsData>[
+      const v3.HouseholdsData(
+        id: householdId,
+        name: 'Game Night HQ',
+        isDirty: 0,
+        isLocalOnly: 0,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+    final expectedNewHouseholdsData = <v4.HouseholdsData>[
+      const v4.HouseholdsData(
+        id: householdId,
+        name: 'Game Night HQ',
+        isDirty: 0,
+        isLocalOnly: 0,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+
+    final oldHouseholdMembersData = <v3.HouseholdMembersData>[
+      const v3.HouseholdMembersData(
+        id: 'hm_v3_1',
+        userId: 'user_v3_1',
+        householdId: householdId,
+        showAllGames: 1,
+        roleName: 'HouseholdOwner',
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+    final expectedNewHouseholdMembersData = <v4.HouseholdMembersData>[
+      const v4.HouseholdMembersData(
+        id: 'hm_v3_1',
+        userId: 'user_v3_1',
+        householdId: householdId,
+        showAllGames: 1,
+        roleName: 'HouseholdOwner',
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      ),
+    ];
+
+    final oldSyncQueueData = <v3.SyncQueueData>[
+      const v3.SyncQueueData(
+        id: 'sq_v3_1',
+        userId: 'user_v3_1',
+        payload: payload,
+        status: 'pending',
+        retryCount: 0,
+        createdAt: createdAt,
+      ),
+    ];
+    final expectedNewSyncQueueData = <v4.SyncQueueData>[
+      const v4.SyncQueueData(
+        id: 'sq_v3_1',
+        userId: 'user_v3_1',
+        payload: payload,
+        status: 'pending',
+        retryCount: 0,
+        createdAt: createdAt,
+      ),
+    ];
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 3,
+      newVersion: 4,
+      createOld: v3.DatabaseAtV3.new,
+      createNew: v4.DatabaseAtV4.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insertAll(oldDb.households, oldHouseholdsData);
+        batch.insertAll(oldDb.householdMembers, oldHouseholdMembersData);
+        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
+      },
+      validateItems: (newDb) async {
+        expect(
+          expectedNewHouseholdsData,
+          await newDb.select(newDb.households).get(),
+        );
+        expect(
+          expectedNewHouseholdMembersData,
+          await newDb.select(newDb.householdMembers).get(),
+        );
+        expect(
+          expectedNewSyncQueueData,
+          await newDb.select(newDb.syncQueue).get(),
+        );
+        expect(await newDb.select(newDb.householdMoves).get(), isEmpty);
       },
     );
   });

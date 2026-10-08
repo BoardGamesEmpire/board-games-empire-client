@@ -174,7 +174,8 @@ abstract class HouseholdRepository {
   /// cleared. This is the only write that clears them. When the ids differ,
   /// [serverHousehold] is written under the canonical id by the same rule
   /// as [cacheHousehold], the synthesized owner member row is migrated onto
-  /// it, and the stale optimistic household row is dropped. When
+  /// it, the stale optimistic household row is dropped, and the move is
+  /// recorded for [reconciledHouseholdId]. When
   /// [completedSyncQueueId] is provided, that queue entry is marked
   /// completed in the **same transaction**; if any step throws, all of it
   /// rolls back.
@@ -201,14 +202,17 @@ abstract class HouseholdRepository {
   /// id afterwards. The optimistic row is gone by then, so the local id
   /// reads as a household that does not exist.
   ///
-  /// Once the record is readable, [watchHouseholds] emits again, so a
-  /// subscriber that checks this on every emission sees the move even if
-  /// it heard the local row vanish first.
+  /// The move is stored with the reconcile, so it is found whichever
+  /// repository made it, another tab's over the same storage included, and
+  /// after a reload (#442). This answers from the moves this repository
+  /// last recorded or read: its own reconciles, and the moves it reads
+  /// before delivering each [watchHouseholds] or [watchMembers] emission.
+  /// A subscriber that checks this on every emission therefore sees a move
+  /// on the emission that drops the local row or empties its roster. Asked
+  /// before either stream has emitted, it may answer null for a move
+  /// another repository made.
   ///
-  /// Kept in memory, for the life of this repository, which is the user
-  /// session. Nothing restores a route across an app restart, so no route
-  /// can hold a local id longer than that. Never throws, including after
-  /// disposal.
+  /// Never throws, including after disposal.
   String? reconciledHouseholdId(String localId);
 
   /// Upserts a [Household] from a server response. User-agnostic by

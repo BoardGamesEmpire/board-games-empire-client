@@ -38,7 +38,7 @@ library;
 
 import 'package:drift/wasm.dart';
 import 'package:drift_storage/drift_storage.dart';
-import 'package:di/di.dart' show DependencyContainerImpl;
+import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -463,4 +463,96 @@ void main() {
       );
     });
   });
+
+  // ── #442: what one tab writes, another tab's streams hear ───────────────
+  //
+  // Each tab holds its own connection to the server's database, and a screen
+  // in one must hear what the other writes. Drift relays it in every durable
+  // mode, by the shared worker or a `BroadcastChannel`; these pin it for the
+  // mode this harness gets (see the header), not for every mode.
+  group('two connections to one database (#442)', () {
+    Future<(ServerDatabase, ServerDatabase)> openTwice() async {
+      final serverId = _uniqueServerId();
+      final dbs = <ServerDatabase>[];
+      for (var i = 0; i < 2; i++) {
+        final opening = await const WebWasmExecutorFactory().serverDatabase(
+          serverId,
+        );
+        final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
+        addTearDown(db.close);
+        dbs.add(db);
+      }
+      return (dbs[0], dbs[1]);
+    }
+
+    test('a write through one re-runs a stream query on the other', () async {
+      final (writer, watcher) = await openTwice();
+      final seen = <List<String>>[];
+      final sub = GameRepositoryImpl(watcher)
+          .watchGames()
+          .listen((games) => seen.add([for (final g in games) g.id]));
+      addTearDown(sub.cancel);
+      await _eventually(() => seen.isNotEmpty);
+      expect(seen.single, isEmpty);
+
+      await GameRepositoryImpl(writer).cacheGame(_game(title: 'Relayed'));
+
+      await _eventually(() => seen.length > 1);
+      expect(seen.last, ['g-1']);
+    });
+
+    test('a household reconciled through one is followed through the other, '
+        'on the emission that drops the local row', () async {
+      final (writer, watcher) = await openTwice();
+      HouseholdRepositoryImpl repositoryOver(ServerDatabase db) {
+        const clock = LocalClockService();
+        return HouseholdRepositoryImpl(
+          db: db,
+          currentUserId: () => 'user-1',
+          syncQueue: SyncQueueRepositoryImpl(db, clock, userId: 'user-1'),
+          clock: clock,
+        );
+      }
+
+      final here = repositoryOver(writer);
+      final there = repositoryOver(watcher);
+      final created = await here.create(name: 'Game Night HQ');
+      final localId = created.household.id;
+
+      final seen = <({List<String> ids, String? answer})>[];
+      final sub = there.watchHouseholds().listen(
+        (households) => seen.add((
+          ids: [for (final h in households) h.id],
+          answer: there.reconciledHouseholdId(localId),
+        )),
+      );
+      addTearDown(sub.cancel);
+      await _eventually(() => seen.any((s) => s.ids.contains(localId)));
+
+      await here.reconcileCreatedHousehold(
+        created.household.copyWith(
+          id: 'hh_server',
+          isDirty: false,
+          isLocalOnly: false,
+        ),
+        localId: localId,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      await _eventually(() => seen.any((s) => !s.ids.contains(localId)));
+      final moved = seen.firstWhere((s) => !s.ids.contains(localId));
+      expect(moved.ids, ['hh_server']);
+      expect(moved.answer, 'hh_server');
+    });
+  });
+}
+
+/// Waits for [condition], which another connection's relay makes true in
+/// its own time: a message through a worker, not a microtask.
+Future<void> _eventually(bool Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('timed out waiting');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
 }

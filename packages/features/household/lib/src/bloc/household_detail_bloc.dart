@@ -256,9 +256,10 @@ class HouseholdDetailBloc
       return;
     }
     _identityInFlight = true;
+    final householdId = _householdId;
     String? userId;
     try {
-      userId = (await _repository.getCurrentUserMember(_householdId))?.userId;
+      userId = (await _repository.getCurrentUserMember(householdId))?.userId;
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Could not resolve the current user for this household',
@@ -268,7 +269,7 @@ class HouseholdDetailBloc
     }
     _identityInFlight = false;
     if (isClosed) return;
-    add(HouseholdDetailIdentityResolved(userId));
+    add(HouseholdDetailIdentityResolved(userId, householdId: householdId));
 
     // Only when this attempt came up empty: an answer ends the question,
     // and each dropped request is honoured once, so this cannot spin.
@@ -312,13 +313,10 @@ class HouseholdDetailBloc
   /// can land at any point in the screen's life, and both of its streams
   /// emit when it does: the household list loses the local row and gains
   /// the server's, and the old roster empties. Whichever arrives first
-  /// makes the move. A roster failure or end asks too, since it may be the
-  /// first thing handled after the move, and it is judged against the id
-  /// the screen should be on.
-  ///
-  /// Both may arrive before the record exists, and then read as a removal.
-  /// The repository emits the household list again once the record is
-  /// readable, and that emission makes the move.
+  /// makes the move, since the repository reads the moves before delivering
+  /// either, in whichever tab the reconcile ran (#442). A roster failure or
+  /// end asks too, since it may be the first thing handled after the move,
+  /// and it is judged against the id the screen should be on.
   ///
   /// Moving on a roster emission leaves the household as last picked, under
   /// the local id, until the household list answers; that emission is
@@ -329,12 +327,21 @@ class HouseholdDetailBloc
     _householdId = movedTo;
     unawaited(_members.cancel());
     _members = _watchMembers(movedTo);
+    // Not knowing which member row is ours was an answer about the id the
+    // reconcile moved the rows off, as when a screen is built on the old id
+    // before its repository has read the move (#442). Ask about this one —
+    // before the role is first painted, or, on a rendered screen, without
+    // putting it back on a spinner.
+    if (_currentUserId == null) {
+      if (state is! HouseholdDetailReady) _identityResolved = false;
+      unawaited(_resolveIdentity());
+    }
   }
 
-  /// Whether a roster event was read for an id this screen has moved off
-  /// (#306): queued before the move, and saying nothing about the roster
-  /// now on screen.
-  bool _isStaleRoster(String? householdId) =>
+  /// Whether a roster or identity event was read for an id this screen has
+  /// moved off (#306): queued before the move, and saying nothing about the
+  /// household now on screen.
+  bool _isStale(String? householdId) =>
       householdId != null && householdId != _householdId;
 
   void _onHouseholdsUpdated(
@@ -362,7 +369,7 @@ class HouseholdDetailBloc
     // A roster read for an id this screen has moved off: the old rows
     // emptying as the reconcile moved them, which says nothing about who
     // is in the household. The move itself may have changed what to show.
-    if (_isStaleRoster(event.householdId)) return _emitDerived(emit);
+    if (_isStale(event.householdId)) return _emitDerived(emit);
     _membersFailed = false;
     _members0 = event.members;
     // The roster just changed, and if we still do not know which row is
@@ -378,6 +385,10 @@ class HouseholdDetailBloc
     HouseholdDetailIdentityResolved event,
     Emitter<HouseholdDetailState> emit,
   ) {
+    // No row of ours under the id the screen left: the reconcile moved it,
+    // and the move asked again about the new id. An answer naming us holds
+    // for either id, since who we are does not depend on which was asked.
+    if (event.userId == null && _isStale(event.householdId)) return;
     _identityResolved = true;
     // A later null is "still could not tell", not "we are nobody" — it
     // must not erase an id an earlier pass established.
@@ -394,7 +405,7 @@ class HouseholdDetailBloc
         _householdFailed = true;
       case HouseholdDetailSource.members:
         _followReconcile();
-        if (_isStaleRoster(event.householdId)) return;
+        if (_isStale(event.householdId)) return;
         _membersFailed = true;
     }
     _emitDerived(emit);
@@ -409,7 +420,7 @@ class HouseholdDetailBloc
         _householdDone = true;
       case HouseholdDetailSource.members:
         _followReconcile();
-        if (_isStaleRoster(event.householdId)) return;
+        if (_isStale(event.householdId)) return;
         _membersDone = true;
     }
     // Whatever is already on screen stays — the route is being popped
