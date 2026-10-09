@@ -364,6 +364,41 @@ void main() {
         expect(entry.id, equals('tomb-later'));
       });
 
+      test('resurrects the later tombstone even when it was inserted first '
+          '(#441)', () async {
+        // Rowid only breaks ties. Here it would pick the earlier tombstone,
+        // inserted last, so only `updatedAt`, one millisecond later, can
+        // pick the right one.
+        final earlier = DateTime.utc(2026, 10, 7, 12, 0, 0, 345);
+        final later = DateTime.utc(2026, 10, 7, 12, 0, 0, 346);
+        for (final (id, at) in [
+          ('tomb-later', later),
+          ('tomb-earlier', earlier),
+        ]) {
+          await db
+              .into(db.gameCollectionsTable)
+              .insert(
+                GameCollectionsTableCompanion.insert(
+                  id: id,
+                  userId: _kUserId,
+                  platformGameId: kFixturePlatformGameId,
+                  medium: 'Physical',
+                  deletedAt: Value(at),
+                  isDirty: const Value(true),
+                  createdAt: at,
+                  updatedAt: at,
+                ),
+              );
+        }
+
+        final entry = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+        );
+
+        expect(entry.id, equals('tomb-later'));
+      });
+
       test('resurrection preserves play history and prior rating/comment '
           'when caller omits them', () async {
         // The design call, documented in

@@ -177,6 +177,42 @@ void main() {
       });
     });
 
+    group('newest first when added out of order (#441)', () {
+      // Rowid only breaks ties. Here it would put the earlier notification
+      // first, added last, so only `receivedAt`, one millisecond later, can
+      // put the newer one first.
+      late List<String> newestFirst;
+
+      setUp(() async {
+        final later = await repository.add(
+          _makeNotification(
+            receivedAt: DateTime.utc(2026, 10, 7, 12, 0, 0, 346),
+          ),
+        );
+        final earlier = await repository.add(
+          _makeNotification(
+            receivedAt: DateTime.utc(2026, 10, 7, 12, 0, 0, 345),
+          ),
+        );
+        newestFirst = [later.id, earlier.id];
+      });
+
+      test('getUnread', () async {
+        final rows = await repository.getUnread();
+        expect(rows.map((n) => n.id), newestFirst);
+      });
+
+      test('getForServer', () async {
+        final rows = await repository.getForServer('local-server-1');
+        expect(rows.map((n) => n.id), newestFirst);
+      });
+
+      test('watchAll', () async {
+        final rows = await repository.watchAll().first;
+        expect(rows.map((n) => n.id), newestFirst);
+      });
+    });
+
     group('getForServer', () {
       test('returns only notifications for the given server', () async {
         await repository.add(_makeNotification(localServerId: 'server-a'));

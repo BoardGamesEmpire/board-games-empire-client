@@ -228,6 +228,44 @@ void main() {
       });
     });
 
+    group('queue order when enqueued out of time order (#441)', () {
+      // Rowid only breaks ties. Here it would list the later op first,
+      // enqueued first, so only `createdAt`, one millisecond earlier, can
+      // list the other op first.
+      final earlier = DateTime.utc(2026, 10, 7, 12, 0, 0, 345);
+      final later = DateTime.utc(2026, 10, 7, 12, 0, 0, 346);
+      late List<String> byCreatedAt;
+      late SyncQueueRepositoryImpl clockRepo;
+
+      setUp(() async {
+        final clock = FixedClockService(later);
+        clockRepo = SyncQueueRepositoryImpl(db, clock, userId: _kUserId);
+        final stampedLater = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 7),
+        );
+        clock.current = earlier;
+        final stampedEarlier = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        byCreatedAt = [stampedEarlier.id, stampedLater.id];
+      });
+
+      test('getPendingEntries()', () async {
+        final entries = await clockRepo.getPendingEntries();
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
+
+      test('getAllEntries()', () async {
+        final entries = await clockRepo.getAllEntries();
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
+
+      test('getOutstandingOpsFor()', () async {
+        final entries = await clockRepo.getOutstandingOpsFor('gc-1');
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
+    });
+
     group('claim() (#430)', () {
       final start = DateTime.utc(2026, 10, 5, 12);
       late FixedClockService clock;
