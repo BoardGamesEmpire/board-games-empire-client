@@ -36,6 +36,7 @@
 @TestOn('browser')
 library;
 
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/wasm.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:di/di.dart' show DependencyContainerImpl, LocalClockService;
@@ -452,12 +453,16 @@ void main() {
       );
 
       // Closing the `ServerDatabase` closes the executor under it, so a
-      // fresh database over the same executor can no longer query.
+      // fresh database over the same executor can no longer query. The probe
+      // is closed too: drift counts the databases left open, and one left
+      // open makes every later open in the run warn of a second instance.
+      final probe = ServerDatabase(
+        real.resolvedExecutor,
+        enableWriteAheadLog: false,
+      );
+      addTearDown(probe.close);
       await expectLater(
-        ServerDatabase(
-          real.resolvedExecutor,
-          enableWriteAheadLog: false,
-        ).customSelect('SELECT 1').get(),
+        probe.customSelect('SELECT 1').get(),
         throwsA(anything),
         reason: 'the stranded database should have been closed',
       );
@@ -472,6 +477,13 @@ void main() {
   // mode this harness gets (see the header), not for every mode.
   group('two connections to one database (#442)', () {
     Future<(ServerDatabase, ServerDatabase)> openTwice() async {
+      // Two databases, each on its own executor: not the race drift warns
+      // of.
+      final warned = driftRuntimeOptions.dontWarnAboutMultipleDatabases;
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      addTearDown(
+        () => driftRuntimeOptions.dontWarnAboutMultipleDatabases = warned,
+      );
       final serverId = _uniqueServerId();
       final dbs = <ServerDatabase>[];
       for (var i = 0; i < 2; i++) {
