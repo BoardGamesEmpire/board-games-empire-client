@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 3`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 4`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -27,10 +27,14 @@ Server schema history:
   backfilled (attributing them to the migrating session's user would be
   wrong), so the step drops and recreates the table. `sync_queue` has no FK
   edges, so the FK-off wrapper question (#54) stays deferred.
+- **v3 → v4 (#442):** adds `household_moves` (`local_id` primary key,
+  `server_id`), the persisted record of where a reconciled household went.
+  A new table with no FK edges, created by one `createTable`, so #54 stays
+  deferred.
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v3.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v4.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live
@@ -72,11 +76,13 @@ schema.
 > **Deferred to #54 — the FK-off + transaction wrapper.** Destructive migrations
 > need to run with foreign keys off, inside a transaction. Where that wrapper
 > lives — owned by `bgeMigrationStrategy` around `steps`, or written by the
-> migration author — depends on whether drift's generated `stepByStep` already
-> manages its own transaction and foreign-key handling. That is checked against
-> drift's real behaviour when the first migration lands, not guessed now. Until
-> then the factory does **not** wrap `steps`, and no hand-rolled wrapper should
-> be added speculatively.
+> migration author — is #54's decision. Drift's generated `stepByStep` does not
+> settle it: in drift 2.34.3, `runMigrationSteps` only dispatches the steps,
+> and its doc comment has the caller turn foreign keys off, open the
+> transaction, and check foreign keys after
+> (`lib/src/runtime/query_builder/migration.dart`; read from the source, not
+> run). Until #54 decides, the factory does **not** wrap `steps`, and no
+> hand-rolled wrapper should be added speculatively.
 
 ## Invariants
 
@@ -96,8 +102,8 @@ in `beforeOpen` via `applyStandardPragmas()`, which drift runs *after*
 migrations — `beforeOpen` is the single place FKs are turned on; never enable
 them in `onCreate` or `onUpgrade`. The exact placement of the `foreign_keys =
 OFF` + `transaction(...)` wrapper around migration steps is deferred to #54 (see
-the note under "Adding a schema change"); until a real migration exists,
-`bgeMigrationStrategy` does not wrap `steps` and nothing should hand-roll it.
+the note under "Adding a schema change"); until then, `bgeMigrationStrategy`
+does not wrap `steps` and nothing should hand-roll it.
 
 **Migrations are pure and server-agnostic.** `ServerDatabase` has one file per
 connected server, but every file shares one class, one schema, and one
@@ -115,9 +121,11 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 
 ## Deferred items
 
-- **#54 — step-by-step harness activation.** The `stepByStep` dispatcher, the
-  generated `test/drift/**` migration tests, and the FK-off + transaction
-  wrapper decision above all land with the first real schema change.
+- **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
+  the FK-off + transaction wrapper decision above. Three additive or FK-free
+  migrations have shipped without them; the trigger is the first destructive
+  migration of an FK-referenced table (see "Adding a schema change"). The
+  generated `test/drift/**` migration tests already exist and are committed.
 - **#55 — app-layer downgrade handling.** Catching `SchemaDowngradeError`,
   refusing to open the affected database, and rendering the localized
   `storageSchemaDowngradeMessage` are the app layer's responsibility, pending

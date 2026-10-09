@@ -185,6 +185,87 @@ void main() {
       });
     });
 
+    group('queue order within one millisecond (#441)', () {
+      // Stored as ISO-8601 text, the earlier instant is written
+      // `…00.345Z` and the later `…00.345001Z`, which sorts first as
+      // text. Each listing must still return the earlier op first.
+      final earlier = DateTime.utc(2026, 10, 7, 12, 0, 0, 345);
+      final later = DateTime.utc(2026, 10, 7, 12, 0, 0, 345, 1);
+      late List<String> enqueued;
+      late SyncQueueRepositoryImpl clockRepo;
+
+      setUp(() async {
+        final clock = FixedClockService(earlier);
+        clockRepo = SyncQueueRepositoryImpl(db, clock, userId: _kUserId);
+        final add = await clockRepo.enqueue(
+          const AddToCollectionOperation(
+            localId: 'gc-1',
+            platformGameId: 'pg-1',
+            medium: 'Physical',
+            quantity: 1,
+          ),
+        );
+        clock.current = later;
+        final update = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        enqueued = [add.id, update.id];
+      });
+
+      test('getPendingEntries()', () async {
+        final entries = await clockRepo.getPendingEntries();
+        expect(entries.map((e) => e.id), enqueued);
+      });
+
+      test('getAllEntries()', () async {
+        final entries = await clockRepo.getAllEntries();
+        expect(entries.map((e) => e.id), enqueued);
+      });
+
+      test('getOutstandingOpsFor()', () async {
+        final entries = await clockRepo.getOutstandingOpsFor('gc-1');
+        expect(entries.map((e) => e.id), enqueued);
+      });
+    });
+
+    group('queue order when enqueued out of time order (#441)', () {
+      // Rowid only breaks ties. Here it would list the later op first,
+      // enqueued first, so only `createdAt`, one millisecond earlier, can
+      // list the other op first.
+      final earlier = DateTime.utc(2026, 10, 7, 12, 0, 0, 345);
+      final later = DateTime.utc(2026, 10, 7, 12, 0, 0, 346);
+      late List<String> byCreatedAt;
+      late SyncQueueRepositoryImpl clockRepo;
+
+      setUp(() async {
+        final clock = FixedClockService(later);
+        clockRepo = SyncQueueRepositoryImpl(db, clock, userId: _kUserId);
+        final stampedLater = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 7),
+        );
+        clock.current = earlier;
+        final stampedEarlier = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        byCreatedAt = [stampedEarlier.id, stampedLater.id];
+      });
+
+      test('getPendingEntries()', () async {
+        final entries = await clockRepo.getPendingEntries();
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
+
+      test('getAllEntries()', () async {
+        final entries = await clockRepo.getAllEntries();
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
+
+      test('getOutstandingOpsFor()', () async {
+        final entries = await clockRepo.getOutstandingOpsFor('gc-1');
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
+    });
+
     group('claim() (#430)', () {
       final start = DateTime.utc(2026, 10, 5, 12);
       late FixedClockService clock;

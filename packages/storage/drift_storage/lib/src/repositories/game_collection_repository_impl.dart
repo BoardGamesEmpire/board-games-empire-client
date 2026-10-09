@@ -151,13 +151,15 @@ import 'watch_disposal.dart';
 /// use the same ordered+limited lookup helper, [_findCanonicalRow]:
 ///
 /// ```text
-/// ORDER BY (deletedAt IS NULL) DESC, updatedAt DESC, rowId DESC LIMIT 1
+/// ORDER BY (deletedAt IS NULL) DESC, JULIANDAY(updatedAt) DESC,
+///   rowId DESC LIMIT 1
 /// ```
 ///
 /// which picks the live row if any, else the most recent tombstone,
-/// else nothing — deterministically, never throws. The `rowId DESC`
-/// tail breaks ties when multiple rows share the same `updatedAt`
-/// (microsecond-precision collision on a fast machine).
+/// else nothing — deterministically, never throws. `updatedAt` is
+/// compared as an instant, not as its ISO-8601 text, which misorders
+/// two values within one millisecond (#441). The `rowId DESC` tail
+/// breaks ties when multiple rows fall in the same millisecond.
 ///
 /// `addToCollection` branches on the result:
 ///
@@ -927,13 +929,15 @@ class GameCollectionRepositoryImpl
             // Among tombstones (or as tiebreaker among live rows —
             // there's at most one but the partial index doesn't
             // prevent older orphans from a corrupt state), prefer
-            // the most recently touched row.
-            (t) => OrderingTerm.desc(t.updatedAt),
+            // the most recently touched row, compared as an instant:
+            // as ISO-8601 text, `…00.345Z` sorts after `…00.345001Z`
+            // (#441).
+            (t) => OrderingTerm.desc(t.updatedAt.julianday),
             // Deterministic tiebreaker when multiple rows share the
-            // same updatedAt. ClockService.nowUtc() resolves to
-            // microseconds, so two tombstones produced by a fast
+            // same updatedAt to the millisecond, which is all
+            // `JULIANDAY` resolves. Two tombstones produced by a fast
             // addToCollection → removeFromCollection burst on a
-            // quick machine can land on the same microsecond (the
+            // quick machine can land within one millisecond (the
             // skew clock's monotonic guard can even pin successive
             // calls to an identical instant) — in
             // which case the prior `(deletedAt IS NULL) DESC,

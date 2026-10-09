@@ -15,9 +15,14 @@
 # repository write is `DateTime.now().toUtc()`).
 #
 # SQL ordering note: ISO-8601 strings order correctly under SQLite's
-# lexicographic comparison *provided values share an offset*. All
-# writes in this package are UTC, so orderings (e.g.
-# notification_summary's receivedAt DESC) remain sound.
+# lexicographic comparison only between values written at the same
+# precision. All writes in this package are UTC, so they share an
+# offset, but `toIso8601String` writes three fractional digits for a
+# whole millisecond and six otherwise: `…00.345Z` sorts after
+# `…00.345001Z`. Sorts and comparisons on a DateTime column therefore
+# go through `JULIANDAY` (drift's `.julianday`), which compares
+# instants to the millisecond; a sort that needs a stable order within
+# one adds a rowid tiebreaker (#441).
 #
 # Migration note: none shipped. Pre-production — no end-user databases
 # exist, and the client DB is a server-recoverable cache. Existing

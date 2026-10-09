@@ -50,14 +50,19 @@ final class HouseholdDetailMembersUpdated extends HouseholdDetailEvent {
 /// The current user's own member row resolved, giving the bloc the user id
 /// it needs to find itself in the roster (#270 D4). [userId] is null when
 /// the row could not be read — the screen renders without a role rather
-/// than not at all.
+/// than not at all. [householdId] is the id it was asked about, which a
+/// reconcile may have moved this screen off since (#442).
 final class HouseholdDetailIdentityResolved extends HouseholdDetailEvent {
-  const HouseholdDetailIdentityResolved(this.userId);
+  const HouseholdDetailIdentityResolved(
+    this.userId, {
+    required this.householdId,
+  });
 
   final String? userId;
+  final String householdId;
 
   @override
-  List<Object?> get props => [userId];
+  List<Object?> get props => [userId, householdId];
 }
 
 /// Which of the two cache streams an event is about.
