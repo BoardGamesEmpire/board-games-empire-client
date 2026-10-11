@@ -344,14 +344,26 @@ class HouseholdDetailBloc
   bool _isStale(String? householdId) =>
       householdId != null && householdId != _householdId;
 
+  /// This screen's household in [households]: the row under the id it
+  /// reads, or else a row a reconcile moved onto that id.
+  ///
+  /// The second is the local row the move deleted, still in an emission
+  /// read before the move committed, while the move itself is already
+  /// known (#442). It is this household as it stood just before, so it is
+  /// shown rather than reported missing, and the reconcile's write brings
+  /// the server's row on the next emission.
+  Household? _pick(List<Household> households) =>
+      households.where((h) => h.id == _householdId).firstOrNull ??
+      households
+          .where((h) => _repository.reconciledHouseholdId(h.id) == _householdId)
+          .firstOrNull;
+
   void _onHouseholdsUpdated(
     HouseholdDetailHouseholdsUpdated event,
     Emitter<HouseholdDetailState> emit,
   ) {
     _followReconcile();
-    final household = event.households
-        .where((h) => h.id == _householdId)
-        .firstOrNull;
+    final household = _pick(event.households);
     // An emission is proof THIS stream recovered — the one thing that
     // clears its failure, and it says nothing about the other one.
     _householdFailed = false;

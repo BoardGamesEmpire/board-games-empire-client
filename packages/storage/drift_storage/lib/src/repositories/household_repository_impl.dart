@@ -585,8 +585,12 @@ class HouseholdRepositoryImpl
   /// finds every move the rows reflect, whichever repository or tab made
   /// it: a move commits with the deletion of its local row and the
   /// re-pointing of its roster, is never removed, and this read comes
-  /// after the rows', so it sees at least what they saw. Anything newer it
-  /// finds is just as true.
+  /// after the rows', so it sees at least what they saw.
+  ///
+  /// It can also see more. A reconcile that commits between the two reads
+  /// delivers the local row with the move that deleted it, so a subscriber
+  /// that follows the move must still take that row as the household. The
+  /// reconcile's write brings the server's row on the next emission.
   Future<void> _readMoves() async {
     final moves = await awaitedOnDispose(
       _db.select(_db.householdMovesTable).get(),

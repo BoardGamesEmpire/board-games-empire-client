@@ -998,6 +998,11 @@ void main() {
 
     tearDown(() => unawaited(serverMembers.close()));
 
+    final ownerOnServerId = isA<HouseholdDetailReady>()
+        .having((s) => s.household.id, 'household.id', serverId)
+        .having((s) => s.memberCount, 'memberCount', 1)
+        .having((s) => s.role, 'role', HouseholdRole.householdOwner);
+
     Future<List<HouseholdDetailState>> openAndRender(
       HouseholdDetailBloc bloc,
     ) async {
@@ -1205,11 +1210,6 @@ void main() {
         return states;
       }
 
-      final ownerOnServerId = isA<HouseholdDetailReady>()
-          .having((s) => s.household.id, 'household.id', serverId)
-          .having((s) => s.memberCount, 'memberCount', 1)
-          .having((s) => s.role, 'role', HouseholdRole.householdOwner);
-
       test('first paints the role, when the old id was asked about before '
           'the move', () async {
         when(() => repository.getCurrentUserMember(_id))
@@ -1275,6 +1275,52 @@ void main() {
         final states = await moveAndRender(bloc);
 
         expect(states, everyElement(isA<HouseholdDetailReady>()));
+        expect(bloc.state, ownerOnServerId);
+      });
+    });
+
+    group('when the move arrives with rows read before it (#442)', () {
+      // The repository reads the moves after the rows it delivers with
+      // them, so a reconcile that commits between the two reads delivers
+      // the local row with the move that deleted it. That row is still
+      // this household, and the reconcile's write brings the server's row
+      // on the next emission.
+      Future<void> deliverPreMoveRowsThenServerRows() async {
+        reconciledTo = serverId;
+        households.add([_household(_id)]);
+        await settle();
+        households.add([_household(serverId)]);
+        serverMembers.add([
+          _member(
+            'u-me',
+            role: HouseholdRole.householdOwner,
+            householdId: serverId,
+          ),
+        ]);
+        await settle();
+      }
+
+      test('an open screen stays rendered', () async {
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        final states = await openAndRender(bloc);
+
+        await deliverPreMoveRowsThenServerRows();
+
+        expect(states, everyElement(isA<HouseholdDetailReady>()));
+        expect(bloc.state, ownerOnServerId);
+      });
+
+      test('a first paint is not the not-found page', () async {
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        final states = <HouseholdDetailState>[];
+        final sub = bloc.stream.listen(states.add);
+        addTearDown(sub.cancel);
+
+        await deliverPreMoveRowsThenServerRows();
+
+        expect(states, isNot(contains(isA<HouseholdDetailNotFound>())));
         expect(bloc.state, ownerOnServerId);
       });
     });
