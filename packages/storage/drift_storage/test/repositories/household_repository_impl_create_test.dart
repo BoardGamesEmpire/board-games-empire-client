@@ -1,4 +1,13 @@
-import 'package:drift/drift.dart' show TableUpdateQuery, Value;
+import 'dart:async';
+
+import 'package:drift/drift.dart'
+    show
+        ApplyInterceptor,
+        QueryExecutor,
+        QueryInterceptor,
+        Value,
+        driftRuntimeOptions;
+import 'package:drift/native.dart' show NativeDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
@@ -276,59 +285,126 @@ void main() {
     group('the id it records', () {
       // A screen holding the local id — open when the reconcile runs, or
       // rebuilt on that id afterwards — needs to find where the household
-      // went (#306).
+      // went (#306), in whichever tab it is open (#442).
+
+      // Reconciles [created] onto `hh_server`, closing its queued op.
+      Future<void> reconcile(
+        ({Household household, String syncQueueId}) created,
+      ) => repo.reconcileCreatedHousehold(
+        created.household.copyWith(
+          id: 'hh_server',
+          isDirty: false,
+          isLocalOnly: false,
+        ),
+        localId: created.household.id,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      // A second repository over the same database: what another web tab
+      // holds.
+      HouseholdRepositoryImpl otherTab() => HouseholdRepositoryImpl(
+        db: db,
+        currentUserId: () => _kUserId,
+        syncQueue: syncQueue,
+        clock: clock,
+      );
+
+      // Each emission's ids, with what [of] answered for [localId] when it
+      // was delivered.
+      Future<List<({List<String> ids, String? answer})>> watchAnswers(
+        HouseholdRepositoryImpl of,
+        String localId,
+      ) async {
+        final seen = <({List<String> ids, String? answer})>[];
+        final sub = of.watchHouseholds().listen(
+          (households) => seen.add((
+            ids: households.map((h) => h.id).toList(),
+            answer: of.reconciledHouseholdId(localId),
+          )),
+        );
+        addTearDown(sub.cancel);
+        await pumpEventQueue();
+        return seen;
+      }
+
       test('answers the server id for a local id it reconciled', () async {
         final created = await repo.create(name: 'HQ');
 
-        await repo.reconcileCreatedHousehold(
-          created.household.copyWith(
-            id: 'hh_server',
-            isDirty: false,
-            isLocalOnly: false,
-          ),
-          localId: created.household.id,
-          completedSyncQueueId: created.syncQueueId,
-        );
+        await reconcile(created);
 
         expect(repo.reconciledHouseholdId(created.household.id), 'hh_server');
       });
 
-      test(
-        'tells the household watchers once the record is readable',
-        () async {
-          // The reconcile's own table updates go out inside its transaction,
-          // before the record exists, and a screen that hears them first
-          // would take the vanished local row for a removal. An update after
-          // the record makes every watcher re-read with it in place. Each
-          // capture is the record as it stood when the update was delivered,
-          // which for the transaction's own is before the record exists.
-          final created = await repo.create(name: 'HQ');
-          final seenAtDelivery = <String?>[];
-          final sub = db
-              .tableUpdates(TableUpdateQuery.onTable(db.householdsTable))
-              .listen(
-                (_) => seenAtDelivery.add(
-                  repo.reconciledHouseholdId(created.household.id),
-                ),
-              );
-          addTearDown(sub.cancel);
+      test('a household watcher sees the move on the emission that drops '
+          'the local row', () async {
+        // The screen asks on every emission, and the one without the local
+        // row must already answer, or the screen takes it for a removal.
+        final created = await repo.create(name: 'HQ');
+        final seen = await watchAnswers(repo, created.household.id);
 
-          await repo.reconcileCreatedHousehold(
-            created.household.copyWith(
-              id: 'hh_server',
-              isDirty: false,
-              isLocalOnly: false,
-            ),
-            localId: created.household.id,
-            completedSyncQueueId: created.syncQueueId,
-          );
+        await reconcile(created);
+        await pumpEventQueue();
 
-          await pumpEventQueue();
+        final moved = seen.firstWhere(
+          (s) => !s.ids.contains(created.household.id),
+        );
+        expect(moved.ids, ['hh_server']);
+        expect(moved.answer, 'hh_server');
+      });
 
-          expect(seenAtDelivery, isNotEmpty);
-          expect(seenAtDelivery.last, 'hh_server');
-        },
-      );
+      test('another repository over the database sees the move on the '
+          'emission that drops the local row (#442)', () async {
+        final created = await repo.create(name: 'HQ');
+        final other = otherTab();
+        final seen = await watchAnswers(other, created.household.id);
+
+        await reconcile(created);
+        await pumpEventQueue();
+
+        final moved = seen.firstWhere(
+          (s) => !s.ids.contains(created.household.id),
+        );
+        expect(moved.ids, ['hh_server']);
+        expect(moved.answer, 'hh_server');
+      });
+
+      test('another repository over the database sees the move on the '
+          'emission that empties the local roster (#442)', () async {
+        // A screen makes the move on whichever of its streams hears of the
+        // reconcile first (#306), and in another tab the roster can be
+        // first.
+        final created = await repo.create(name: 'HQ');
+        final other = otherTab();
+        final seen = <({int members, String? answer})>[];
+        final sub = other
+            .watchMembers(created.household.id)
+            .listen(
+              (members) => seen.add((
+                members: members.length,
+                answer: other.reconciledHouseholdId(created.household.id),
+              )),
+            );
+        addTearDown(sub.cancel);
+        await pumpEventQueue();
+
+        await reconcile(created);
+        await pumpEventQueue();
+
+        final emptied = seen.firstWhere((s) => s.members == 0);
+        expect(emptied.answer, 'hh_server');
+      });
+
+      test('a repository opened after the reconcile answers once its '
+          'household stream has emitted (#442)', () async {
+        final created = await repo.create(name: 'HQ');
+        await reconcile(created);
+        final later = otherTab();
+
+        // Nothing read yet: the screen recovers on the first emission.
+        expect(later.reconciledHouseholdId(created.household.id), isNull);
+        await later.watchHouseholds().first;
+        expect(later.reconciledHouseholdId(created.household.id), 'hh_server');
+      });
 
       test('answers null when the server kept the local id', () async {
         final created = await repo.create(name: 'HQ');
@@ -359,27 +435,54 @@ void main() {
         );
       });
 
+      test('disposal waits for a moves read a watch has under way', () async {
+        // The suspend path closes the database as soon as disposal returns,
+        // and cancelling a watch does not wait for a read it started.
+        final reads = _HeldMovesReads();
+        // A second database, on its own executor: not the race drift warns
+        // of.
+        final warned = driftRuntimeOptions.dontWarnAboutMultipleDatabases;
+        driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+        addTearDown(
+          () => driftRuntimeOptions.dontWarnAboutMultipleDatabases = warned,
+        );
+        final held = ServerDatabase(
+          NativeDatabase.memory().interceptWith(reads),
+        );
+        addTearDown(held.close);
+        final heldRepo = HouseholdRepositoryImpl(
+          db: held,
+          currentUserId: () => _kUserId,
+          syncQueue: SyncQueueRepositoryImpl(held, clock, userId: _kUserId),
+          clock: clock,
+        );
+        final sub = heldRepo.watchHouseholds().listen((_) {});
+        addTearDown(sub.cancel);
+        await reads.started;
+
+        var disposed = false;
+        final disposing = heldRepo.onDispose().then((_) => disposed = true);
+        await pumpEventQueue();
+        expect(disposed, isFalse);
+
+        reads.release();
+        await disposing;
+      });
+
       test('records nothing when the reconcile rolls back', () async {
         final created = await repo.create(name: 'HQ');
         // The session scope popping between send and reconcile: completing
         // the queue entry throws inside the transaction.
         await syncQueue.onDispose();
 
-        await expectLater(
-          repo.reconcileCreatedHousehold(
-            created.household.copyWith(
-              id: 'hh_server',
-              isDirty: false,
-              isLocalOnly: false,
-            ),
-            localId: created.household.id,
-            completedSyncQueueId: created.syncQueueId,
-          ),
-          throwsStateError,
-        );
+        await expectLater(reconcile(created), throwsStateError);
 
         expect(repo.reconciledHouseholdId(created.household.id), isNull);
         expect(await rawHousehold(created.household.id), isNotNull);
+        // Nor does the database: another repository reads no move.
+        final other = otherTab();
+        await other.watchHouseholds().first;
+        expect(other.reconciledHouseholdId(created.household.id), isNull);
       });
     });
 
@@ -401,4 +504,29 @@ void main() {
       },
     );
   });
+}
+
+/// Holds every `household_moves` read until [release], so a test can act
+/// while one is under way.
+class _HeldMovesReads extends QueryInterceptor {
+  final _started = Completer<void>();
+  final _released = Completer<void>();
+
+  /// Completes when the first moves read reaches the database.
+  Future<void> get started => _started.future;
+
+  void release() => _released.complete();
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) async {
+    if (statement.contains('household_moves')) {
+      if (!_started.isCompleted) _started.complete();
+      await _released.future;
+    }
+    return executor.runSelect(statement, args);
+  }
 }

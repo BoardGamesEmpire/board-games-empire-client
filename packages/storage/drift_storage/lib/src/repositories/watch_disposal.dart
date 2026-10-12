@@ -25,15 +25,18 @@ import 'package:interfaces/orchestration.dart';
 ///   `onError` and `.handleError` can only observe what arrives on the
 ///   stream — and [untilDisposed] already handles the disposed case by
 ///   closing immediately);
-/// - route every vended stream through [untilDisposed];
+/// - route every vended stream through [untilDisposed], and any read such
+///   a stream makes besides its own Drift query through
+///   [awaitedOnDispose];
 /// - override [disposedRepositoryName] for the post-disposal error text.
 ///
 /// [onDispose] cancels every live source subscription and **awaits** the
-/// cancellation before returning: the suspend path closes the
-/// per-server database right after the scope's dispose callbacks return,
-/// so Drift teardown must have fully completed by then, not merely
-/// started. It then closes every vended outer stream (the done event of
-/// the close-not-error contract) and is idempotent.
+/// cancellation, and any [awaitedOnDispose] read still under way, before
+/// returning: the suspend path closes the per-server database right after
+/// the scope's dispose callbacks return, so Drift teardown must have fully
+/// completed by then, not merely started. It then closes every vended
+/// outer stream (the done event of the close-not-error contract) and is
+/// idempotent.
 ///
 /// Post-disposal behaviour therefore splits by return type, deliberately:
 /// `Future`-returning methods throw [StateError] via [checkNotDisposed]
@@ -52,6 +55,10 @@ mixin WatchDisposal implements Disposable {
   /// [onDispose] so every vended stream ends with a done event.
   final Set<MultiStreamController<dynamic>> _watchControllers = {};
 
+  /// [awaitedOnDispose] reads still under way, each settled whether it
+  /// succeeds or fails.
+  final Set<Future<void>> _pendingReads = {};
+
   /// The interface name used in the post-disposal [StateError], e.g.
   /// `'HouseholdRepository'`.
   String get disposedRepositoryName;
@@ -64,12 +71,27 @@ mixin WatchDisposal implements Disposable {
     final subscriptions = List.of(_watchSubscriptions);
     _watchSubscriptions.clear();
     await Future.wait(subscriptions.map((sub) => sub.cancel()));
+    // The cancellations stop new ones, but not those already started.
+    await Future.wait(List.of(_pendingReads));
 
     final controllers = List.of(_watchControllers);
     _watchControllers.clear();
     for (final controller in controllers) {
       controller.close();
     }
+  }
+
+  /// Returns [read], which [onDispose] waits for if it is still under way.
+  ///
+  /// For a read a vended stream makes besides its own Drift query, as in an
+  /// `asyncMap` step: cancelling the stream does not wait for a step
+  /// already started, which would leave the read to run against a closed
+  /// database. Its result and any error still reach the caller.
+  Future<T> awaitedOnDispose<T>(Future<T> read) {
+    final settled = read.then<void>((_) {}, onError: (Object _) {});
+    _pendingReads.add(settled);
+    unawaited(settled.whenComplete(() => _pendingReads.remove(settled)));
+    return read;
   }
 
   /// Throws [StateError] once the owning user-session scope has popped.

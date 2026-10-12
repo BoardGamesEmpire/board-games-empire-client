@@ -166,6 +166,30 @@ void main() {
         final ids = (await repo.getHouseholds()).map((h) => h.id).toList();
         expect(ids, equals(['h-older', 'h-newer']));
       });
+
+      test('breaks a name tie within one millisecond oldest first '
+          '(#441)', () async {
+        // As ISO-8601 text the earlier stamp is written `…00.345Z` and the
+        // later `…00.345001Z`, which sorts first as text.
+        await _seedHousehold(
+          db,
+          id: 'h-earlier',
+          name: 'Game Night',
+          createdAt: DateTime.utc(2026, 10, 7, 12, 0, 0, 345),
+        );
+        await _seedHousehold(
+          db,
+          id: 'h-later',
+          name: 'Game Night',
+          createdAt: DateTime.utc(2026, 10, 7, 12, 0, 0, 345, 1),
+        );
+        for (final (i, h) in ['h-earlier', 'h-later'].indexed) {
+          await _seedMember(db, id: 'm-$i', userId: _kUserId, householdId: h);
+        }
+
+        final ids = (await repo.getHouseholds()).map((h) => h.id).toList();
+        expect(ids, equals(['h-earlier', 'h-later']));
+      });
     });
 
     group('getHousehold()', () {

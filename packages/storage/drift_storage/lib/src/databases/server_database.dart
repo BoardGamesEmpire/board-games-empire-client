@@ -4,6 +4,7 @@ import '../tables/game_table.dart';
 import '../tables/platform_game_table.dart';
 import '../tables/game_collection_table.dart';
 import '../tables/household_table.dart';
+import '../tables/household_moves_table.dart';
 import '../tables/household_members_table.dart';
 import '../tables/sync_queue_table.dart';
 import 'migration_policy.dart';
@@ -31,7 +32,7 @@ part 'server_database.g.dart';
 /// ## Schema
 ///
 /// Tables: games, platform_games, game_collections, households,
-/// household_members, sync_queue.
+/// household_members, household_moves, sync_queue.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -41,7 +42,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **3**.
+/// `schemaVersion` is **4**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -60,6 +61,10 @@ part 'server_database.g.dart';
 ///   outcome, honest mechanics. `sync_queue` has no foreign-key edges in
 ///   either direction, so the #54 FK-off + transaction wrapper question
 ///   stays dormant.
+/// - **v3 → v4 (#442):** adds `household_moves` (`local_id` primary key,
+///   `server_id`), where the household reconcile records where an
+///   optimistic household went, so every tab and a reload can follow it.
+///   A new table with no foreign keys, created by one `createTable`.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -68,14 +73,14 @@ part 'server_database.g.dart';
 /// journalling only where the platform supports it (`enableWriteAheadLog`,
 /// #288).
 ///
-/// Both steps are hand-written [OnUpgrade] closures using the live table
-/// definitions — sufficient and safe for a purely-additive column change
-/// and for a rebuild of an FK-free table whose rows are deliberately
-/// discarded. If/when the generated step-by-step harness is activated
-/// (#54), swap the closure below for the generated `stepByStep(...)`
-/// dispatcher. Either way, the committed schema snapshot must be
-/// refreshed: `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v3.json`, and
+/// Every step is a hand-written [OnUpgrade] closure using the live table
+/// definitions — sufficient and safe for purely-additive changes and for
+/// a rebuild of an FK-free table whose rows are deliberately discarded.
+/// If/when the generated step-by-step harness is activated (#54), swap the
+/// closure below for the generated `stepByStep(...)` dispatcher. Either
+/// way, the committed schema snapshot must be refreshed:
+/// `melos run schema:dump` writes
+/// `drift_schemas/server/drift_schema_v4.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -86,6 +91,7 @@ part 'server_database.g.dart';
     GameCollectionsTable,
     HouseholdsTable,
     HouseholdMembersTable,
+    HouseholdMovesTable,
     SyncQueueTable,
   ],
 )
@@ -110,7 +116,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -144,6 +150,12 @@ class ServerDatabase extends _$ServerDatabase {
         await m.deleteTable('sync_queue');
         await m.createTable(syncQueueTable);
         await m.createIndex(syncQueueUserStatusIdx);
+      }
+      if (from < 4 && to >= 4) {
+        // v3 → v4 (#442): where reconciled households went. A new table
+        // with no FK edges and no rows to carry, so no FK-off wrapper is
+        // needed (#54 stays deferred).
+        await m.createTable(householdMovesTable);
       }
     },
   );

@@ -74,6 +74,24 @@ class SyncQueueRepositoryImpl
   /// every enqueue; filtered on by every query.
   final String _userId;
 
+  /// Queue order, behind every listing: primary by createdAt (ASC, FIFO),
+  /// tiebroken by SQLite rowid (ASC, monotonic insertion order).
+  ///
+  /// createdAt is compared as an instant through `JULIANDAY`, not as its
+  /// ISO-8601 text: an instant with no sub-millisecond digits is written
+  /// `…00.345Z`, which sorts after `…00.345001Z` (#441). `JULIANDAY`
+  /// resolves to the millisecond, so enqueues within one millisecond tie —
+  /// as do back-to-back enqueues on one microsecond (the skew clock's
+  /// monotonic guard can even pin successive calls to an identical
+  /// instant) — and without the tiebreaker dependent ops
+  /// (add → update → remove) could be processed out of order. SQLite
+  /// assigns rowids in insertion order on tables that aren't
+  /// `WITHOUT ROWID`, so it gives us free monotonic enqueue-order.
+  static final List<OrderClauseGenerator<$SyncQueueTableTable>> _queueOrder = [
+    (t) => OrderingTerm.asc(t.createdAt.julianday),
+    (t) => OrderingTerm.asc(t.rowId),
+  ];
+
   @override
   String get disposedRepositoryName => 'SyncQueueRepository';
 
@@ -112,24 +130,10 @@ class SyncQueueRepositoryImpl
   @override
   Future<List<SyncQueueEntry>> getPendingEntries() async {
     checkNotDisposed();
-    // Ordering: primary by createdAt (ASC, FIFO), tiebroken by SQLite
-    // rowid (ASC, monotonic insertion order). The tiebreaker is
-    // necessary because [ClockService.nowUtc] resolves to microseconds
-    // and two back-to-back enqueues on a fast machine can land on the
-    // same microsecond (the skew clock's monotonic guard can even pin
-    // successive calls to an identical instant) — in which case
-    // createdAt-only ordering is
-    // not deterministic and dependent ops (add → update → remove)
-    // could be processed out of order. SQLite assigns rowids in
-    // insertion order on tables that aren't `WITHOUT ROWID`, so it
-    // gives us free monotonic enqueue-order.
     final rows =
         await (_db.select(_db.syncQueueTable)
               ..where((_) => _claimablePredicate())
-              ..orderBy([
-                (t) => OrderingTerm.asc(t.createdAt),
-                (t) => OrderingTerm.asc(t.rowId),
-              ]))
+              ..orderBy(_queueOrder))
             .get();
     return rows.map(_mapRow).toList();
   }
@@ -140,10 +144,7 @@ class SyncQueueRepositoryImpl
     final rows =
         await (_db.select(_db.syncQueueTable)
               ..where((t) => t.userId.equals(_userId))
-              ..orderBy([
-                (t) => OrderingTerm.asc(t.createdAt),
-                (t) => OrderingTerm.asc(t.rowId),
-              ]))
+              ..orderBy(_queueOrder))
             .get();
     return rows.map(_mapRow).toList();
   }
@@ -297,10 +298,7 @@ class SyncQueueRepositoryImpl
                         ? outstanding
                         : outstanding | t.id.equals(including));
               })
-              ..orderBy([
-                (t) => OrderingTerm.asc(t.createdAt),
-                (t) => OrderingTerm.asc(t.rowId),
-              ]))
+              ..orderBy(_queueOrder))
             .get();
 
     final outstanding = <SyncQueueEntry>[];

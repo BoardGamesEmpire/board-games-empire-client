@@ -998,6 +998,11 @@ void main() {
 
     tearDown(() => unawaited(serverMembers.close()));
 
+    final ownerOnServerId = isA<HouseholdDetailReady>()
+        .having((s) => s.household.id, 'household.id', serverId)
+        .having((s) => s.memberCount, 'memberCount', 1)
+        .having((s) => s.role, 'role', HouseholdRole.householdOwner);
+
     Future<List<HouseholdDetailState>> openAndRender(
       HouseholdDetailBloc bloc,
     ) async {
@@ -1091,8 +1096,9 @@ void main() {
     test('recovers on the household emission that follows the record, if '
         'both streams answered before it existed', () async {
       // Hearing the local row vanish, and the old roster empty, before the
-      // record exists reads as a removal. The repository emits the
-      // household list again once it has recorded the move, which is what
+      // record exists reads as a removal. The repository reads the moves
+      // before delivering a household emission (#442), so it no longer
+      // delivers this order, but any later emission that carries the move
       // corrects it.
       final bloc = build(withHydration: false);
       addTearDown(bloc.close);
@@ -1178,6 +1184,145 @@ void main() {
           serverId,
         ),
       );
+    });
+
+    group('on a repository that has not read the move yet (#442)', () {
+      // Another tab's repository learns of a move when its streams next
+      // read, so a screen built there on the old id asks who we are about
+      // the old id, whose rows the reconcile moved away. That answer must
+      // not be the role the first paint shows.
+      Future<List<HouseholdDetailState>> moveAndRender(
+        HouseholdDetailBloc bloc,
+      ) async {
+        final states = <HouseholdDetailState>[];
+        final sub = bloc.stream.listen(states.add);
+        addTearDown(sub.cancel);
+        reconciledTo = serverId;
+        households.add([_household(serverId)]);
+        serverMembers.add([
+          _member(
+            'u-me',
+            role: HouseholdRole.householdOwner,
+            householdId: serverId,
+          ),
+        ]);
+        await settle();
+        return states;
+      }
+
+      test('first paints the role, when the old id was asked about before '
+          'the move', () async {
+        when(() => repository.getCurrentUserMember(_id))
+            .thenAnswer((_) async => null);
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        await settle();
+
+        final states = await moveAndRender(bloc);
+
+        expect(states.whereType<HouseholdDetailReady>(), [ownerOnServerId]);
+      });
+
+      test('first paints the role, when the answer about the old id lands '
+          'after the move', () async {
+        final oldIdAnswer = Completer<HouseholdMember?>();
+        when(() => repository.getCurrentUserMember(_id))
+            .thenAnswer((_) => oldIdAnswer.future);
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+
+        final states = await moveAndRender(bloc);
+        oldIdAnswer.complete(null);
+        await settle();
+
+        expect(states.whereType<HouseholdDetailReady>(), [ownerOnServerId]);
+      });
+
+      test(
+        'keeps an answer that names us, though it was about the old id',
+        () async {
+          // Who we are does not depend on the id asked about; only "no row
+          // of ours" does. So an answer naming us still counts once the
+          // screen has moved, even when asking about the new id finds nothing.
+          final oldIdAnswer = Completer<HouseholdMember?>();
+          when(() => repository.getCurrentUserMember(_id))
+              .thenAnswer((_) => oldIdAnswer.future);
+          when(() => repository.getCurrentUserMember(serverId))
+              .thenAnswer((_) async => null);
+          final bloc = build(withHydration: false);
+          addTearDown(bloc.close);
+
+          final states = await moveAndRender(bloc);
+          oldIdAnswer.complete(
+            _member('u-me', role: HouseholdRole.householdOwner),
+          );
+          await settle();
+
+          expect(states.whereType<HouseholdDetailReady>(), [ownerOnServerId]);
+        },
+      );
+
+      test('an open screen that could not tell who we are stays rendered '
+          'through the move, and learns the role after it', () async {
+        // The re-ask the move makes must not put a rendered screen back on
+        // a spinner: identity gates only the first paint.
+        when(() => repository.getCurrentUserMember(_id))
+            .thenAnswer((_) async => null);
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        await openAndRender(bloc);
+
+        final states = await moveAndRender(bloc);
+
+        expect(states, everyElement(isA<HouseholdDetailReady>()));
+        expect(bloc.state, ownerOnServerId);
+      });
+    });
+
+    group('when the move arrives with rows read before it (#442)', () {
+      // The repository reads the moves after the rows it delivers with
+      // them, so a reconcile that commits between the two reads delivers
+      // the local row with the move that deleted it. That row is still
+      // this household, and the reconcile's write brings the server's row
+      // on the next emission.
+      Future<void> deliverPreMoveRowsThenServerRows() async {
+        reconciledTo = serverId;
+        households.add([_household(_id)]);
+        await settle();
+        households.add([_household(serverId)]);
+        serverMembers.add([
+          _member(
+            'u-me',
+            role: HouseholdRole.householdOwner,
+            householdId: serverId,
+          ),
+        ]);
+        await settle();
+      }
+
+      test('an open screen stays rendered', () async {
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        final states = await openAndRender(bloc);
+
+        await deliverPreMoveRowsThenServerRows();
+
+        expect(states, everyElement(isA<HouseholdDetailReady>()));
+        expect(bloc.state, ownerOnServerId);
+      });
+
+      test('a first paint is not the not-found page', () async {
+        final bloc = build(withHydration: false);
+        addTearDown(bloc.close);
+        final states = <HouseholdDetailState>[];
+        final sub = bloc.stream.listen(states.add);
+        addTearDown(sub.cancel);
+
+        await deliverPreMoveRowsThenServerRows();
+
+        expect(states, isNot(contains(isA<HouseholdDetailNotFound>())));
+        expect(bloc.state, ownerOnServerId);
+      });
     });
 
     test(
