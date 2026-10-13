@@ -462,15 +462,20 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// - **403** — transient unless the body carries the API's error envelope.
   ///   The application can genuinely emit a 403, so this one is gated on
   ///   evidence rather than settled by the status (#350).
-  /// - **Any other 4xx** — permanent. A 400, 409 or 422 on these routes is the
-  ///   application rejecting the request's content, and the content will not
-  ///   change on retry. #122 adds the first routes whose 4xx can carry row
-  ///   semantics; that is when this grows a per-call-site meaning.
+  /// - **409 saying `retryable: true`** — transient. It is the backend's
+  ///   answer to a deadlock that outlived its own retry: a concurrency
+  ///   accident on the server, not a judgement on the request (#431).
+  /// - **Any other 4xx** — permanent. A 400, any other 409, or a 422 on these
+  ///   routes is the application rejecting the request's content, and the
+  ///   content will not change on retry. #122 adds the first routes whose 4xx
+  ///   can carry row semantics; that is when this grows a per-call-site
+  ///   meaning.
   /// - **1xx / 3xx** — transient. Surfaced only by the permissive
   ///   `validateStatus`, and carrying no rejection semantics at all.
   ///
-  /// [body] is the raw, undecoded body when there is one. It is read only by
-  /// the 403 branch, and only through [isApiErrorEnvelope]'s bounded probe.
+  /// [body] is the raw, undecoded body when there is one. Only the 403 and
+  /// 409 branches read it, and only through the bounded probes in
+  /// `api_error_envelope.dart`.
   HouseholdRemoteException _classifyStatus(
     int status,
     String message, {
@@ -546,6 +551,18 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // mechanism that would.
       return HouseholdRemoteTransientException(
         '$message — the request did not reach the household module',
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    if (status == HttpStatusCode.conflict && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). The backend
+      // answers 409 because the cure is the caller's, and says
+      // `retryable: true` because the request itself was fine: the same
+      // create is expected to succeed. Read the field, not the message,
+      // which is translated.
+      return HouseholdRemoteTransientException(
+        '$message — the server hit a deadlock and asked for a retry',
         cause: cause,
         statusCode: status,
       );

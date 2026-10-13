@@ -660,6 +660,84 @@ void main() {
       );
     });
 
+    // The backend renders a deadlock that outlived its own retry as a 409
+    // whose body says `retryable: true` (backend #398). Nothing about the
+    // request was wrong, so it must not read as a rejection (#431).
+    group('a deadlock 409 is transient (#431)', () {
+      HouseholdRemoteDataSource remoteOver(Dio dio) =>
+          HouseholdRemoteDataSourceImpl(dio);
+
+      // The body the backend's `TransactionDeadlockError` renders: the
+      // translated message beside the machine-readable fields.
+      String conflict({Object? retryable = true}) => jsonEncode({
+        'statusCode': 409,
+        'error': 'Conflict',
+        'message': 'Another change to the same data got in the way.',
+        'code': 'TransactionDeadlockError',
+        'retryable': ?retryable,
+      });
+
+      test('a returned 409 saying retryable: true is transient', () async {
+        final remote = remoteOver(cannedDio(body: conflict(), statusCode: 409));
+
+        await expectLater(
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
+          throwsA(
+            isA<HouseholdRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      });
+
+      test('a thrown one is classified the same way', () async {
+        final remote = remoteOver(
+          cannedDio(body: conflict(), statusCode: 409, permissiveStatus: false),
+        );
+
+        await expectLater(
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
+          throwsA(isA<HouseholdRemoteTransientException>()),
+        );
+      });
+
+      test('a 409 without the field keeps its permanence', () async {
+        final remote = remoteOver(
+          cannedDio(body: conflict(retryable: null), statusCode: 409),
+        );
+
+        await expectLater(
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
+          throwsA(isA<HouseholdRemotePermanentException>()),
+        );
+      });
+
+      test('retryable: false is not read as true', () async {
+        final remote = remoteOver(
+          cannedDio(body: conflict(retryable: false), statusCode: 409),
+        );
+
+        await expectLater(
+          () => remote.createHousehold(
+            name: 'HQ',
+            clientRequestId: _clientRequestId,
+          ),
+          throwsA(isA<HouseholdRemotePermanentException>()),
+        );
+      });
+    });
+
     group('responseType is pinned per request (#360)', () {
       HouseholdRemoteDataSource remoteOver(Dio dio) =>
           HouseholdRemoteDataSourceImpl(dio);

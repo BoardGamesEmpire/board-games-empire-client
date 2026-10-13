@@ -37,19 +37,18 @@ typedef HouseholdWithMembers = ({
 ///
 /// - [HouseholdRemoteTransientException] (**retryable**): connection errors,
 ///   timeouts, 401 (a session can expire mid-flight), 408, 429, all 5xx, any
-///   failure without a response status, and the three 4xx the rules below
-///   carve out — every 404, every 407, and a 403 without the API's error
-///   envelope. The caller should keep the queued create operation for a later
-///   retry.
+///   failure without a response status, and the four 4xx the rules below
+///   carve out — every 404, every 407, a 403 without the API's error
+///   envelope, and a 409 whose body says `retryable: true`. The caller should
+///   keep the queued create operation for a later retry.
 /// - [HouseholdRemotePermanentException]: 400 (validation), every 4xx the
-///   three rules below do not carve out, and a 2xx whose body doesn't carry a
+///   four rules below do not carve out, and a 2xx whose body doesn't carry a
 ///   parseable household — retrying cannot succeed.
 ///
 /// The governing question is not "did this fail" but **"will the same request
 /// fail the same way again?"**, because that is what the drain acts on. So the
 /// bar for permanent is evidence that the household API itself rejected the
-/// request — not merely that something did. Three 4xx statuses do not clear
-/// it:
+/// request — not merely that something did. Four 4xx answers do not clear it:
 ///
 /// **No 404 from any household route is permanent** (#297). Every household
 /// route is fixed server-side, so a 404 reports a routing or deployment fault
@@ -73,6 +72,12 @@ typedef HouseholdWithMembers = ({
 /// answers an unmatched route with a 404 carrying that envelope, but does not
 /// answer one with a 403 — so an envelope-free 403 was written by a proxy or
 /// WAF in front of the API, not by the application refusing the caller.
+///
+/// **A 409 whose body says `retryable: true` is never permanent** (#431). The
+/// backend sends it for a deadlock that outlived its own retry: two writers
+/// wanted the same rows and Postgres aborted one. Nothing about the request
+/// was wrong, so the same request is expected to succeed. Every other 409 is
+/// the application rejecting the request and stays permanent.
 ///
 /// Implementations must not gate the **404** rule on the API's own error
 /// envelope.
@@ -209,10 +214,10 @@ sealed class HouseholdRemoteException implements Exception {
 
 /// A retryable failure — the caller should keep the queued operation and
 /// let it retry later. Covers connection errors, timeouts, 401/407/408/429,
-/// 5xx, status-less failures, every 404, and a 403 that does not carry the
-/// API's error envelope.
+/// 5xx, status-less failures, every 404, a 403 that does not carry the API's
+/// error envelope, and a 409 whose body says `retryable: true`.
 ///
-/// The 404, 407 and 403 rules each have a reason worth reading before
+/// The 404, 407, 403 and 409 rules each have a reason worth reading before
 /// depending on them — see the classification section on
 /// [HouseholdRemoteDataSource].
 final class HouseholdRemoteTransientException extends HouseholdRemoteException {

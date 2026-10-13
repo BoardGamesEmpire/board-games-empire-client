@@ -107,8 +107,14 @@ typedef GameCollectionWithSummary = ({
 ///   errors, timeouts, 401 (a session can expire mid-flight), 407, 408, 429,
 ///   all 5xx, any failure without a response status, and the 4xx the rules
 ///   below carve out — a 403 without the API's error envelope, a 404 without
-///   it, and **every** 404 from [fetchCollectionPage], envelope or not, since
-///   that list route is never legitimately absent.
+///   it, **every** 404 from [fetchCollectionPage], envelope or not, since
+///   that list route is never legitimately absent, and a 409 whose body says
+///   `retryable: true`.
+///
+///   That 409 is the backend's answer to a deadlock that outlived its own
+///   retry (#431): two writers wanted the same rows and Postgres aborted one.
+///   Nothing about the request was wrong, so the same request is expected to
+///   succeed. Every other 409 stays permanent.
 ///
 ///   407 is here because it is defined to come from a proxy and no collection
 ///   route emits one, so it reports that the request never reached the
@@ -125,8 +131,9 @@ typedef GameCollectionWithSummary = ({
 ///   and is simply not what was expected stays permanent; the split is between
 ///   "the response is wrong" and "this device could not read it".
 /// - [GameCollectionRemotePermanentException]: 400 (validation), a 403 that
-///   carries the API's error envelope, every other 4xx that is neither a 404
-///   nor retryable, and a 2xx whose body carries no parseable entry — empty,
+///   carries the API's error envelope, a 409 that does not say it is
+///   retryable, every other 4xx that is neither a 404 nor retryable, and a
+///   2xx whose body carries no parseable entry — empty,
 ///   not JSON, or decoding to the wrong shape. The one unparseable 2xx that is
 ///   **not** permanent is the decode-execution failure described above; every
 ///   other unreadable body is.
@@ -385,9 +392,9 @@ sealed class GameCollectionRemoteException implements Exception {
 /// A retryable failure — the caller should keep the queued operation and let
 /// it retry later. Covers connection errors, timeouts, 401/407/408/429, 5xx,
 /// status-less failures, a 404 that does not carry the API's error envelope, a
-/// 403 that does not either, and the one 2xx that belongs here: a body this
-/// device could not decode at all, as opposed to one that decoded and was
-/// wrong.
+/// 403 that does not either, a 409 whose body says `retryable: true`, and the
+/// one 2xx that belongs here: a body this device could not decode at all, as
+/// opposed to one that decoded and was wrong.
 ///
 /// See the classification section on [GameCollectionRemoteDataSource] for why
 /// each of those is retryable.

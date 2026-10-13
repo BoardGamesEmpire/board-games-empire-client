@@ -1442,6 +1442,66 @@ void main() {
       );
     });
 
+    // The backend renders a deadlock that outlived its own retry as a 409
+    // saying `retryable: true` (backend #398). The request was fine, so the
+    // queued write must not read as rejected (#431). The plain 409 in the
+    // permanent row above carries no such field.
+    group('a deadlock 409 (#431)', () {
+      Map<String, dynamic> deadlock({required Object retryable}) => {
+        ..._errorEnvelope(409),
+        'code': 'TransactionDeadlockError',
+        'retryable': retryable,
+      };
+
+      test('thrown, saying retryable: true, is transient', () async {
+        stubPatchThrows(
+          _dioError(
+            DioExceptionType.badResponse,
+            status: 409,
+            body: deadlock(retryable: true),
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateEntry(id: 'gc_1', quantity: 2),
+          throwsA(
+            isA<GameCollectionRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              409,
+            ),
+          ),
+        );
+      });
+
+      test('returned, saying retryable: true, is transient', () async {
+        stubPost(_resp2(deadlock(retryable: true), statusCode: 409));
+
+        await expectLater(
+          () => remote.addToCollection(
+            platformGameId: 'pg_1',
+            medium: GameMedium.physical,
+          ),
+          throwsA(isA<GameCollectionRemoteTransientException>()),
+        );
+      });
+
+      test('retryable: false keeps it permanent', () async {
+        stubPatchThrows(
+          _dioError(
+            DioExceptionType.badResponse,
+            status: 409,
+            body: deadlock(retryable: false),
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateEntry(id: 'gc_1', quantity: 2),
+          throwsA(isA<GameCollectionRemotePermanentException>()),
+        );
+      });
+    });
+
     test('connection faults without a status are transient', () async {
       for (final type in [
         DioExceptionType.connectionError,

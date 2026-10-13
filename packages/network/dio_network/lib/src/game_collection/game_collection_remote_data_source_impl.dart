@@ -644,6 +644,18 @@ class GameCollectionRemoteDataSourceImpl
           ),
       };
     }
+    if (status == 409 && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). The backend
+      // answers 409 because the cure is the caller's, and says
+      // `retryable: true` because the request itself was fine: the same write
+      // is expected to succeed. Every other 409 stays permanent below. Read
+      // the field, not the message, which is translated.
+      return GameCollectionRemoteTransientException(
+        '$message — the server hit a deadlock and asked for a retry',
+        cause: cause,
+        statusCode: status,
+      );
+    }
     if (status >= 400) {
       return GameCollectionRemotePermanentException(
         message,
