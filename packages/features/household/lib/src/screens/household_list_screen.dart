@@ -279,10 +279,11 @@ class _HouseholdRow extends StatelessWidget {
   /// Local work the server has not acknowledged: created offline
   /// ([Household.isLocalOnly]) or edited since ([Household.isDirty]).
   ///
-  /// One badge for both, deliberately (#269): until the queue drains
-  /// (#121) a created household can sit local-only indefinitely, and a
-  /// list that silently shows a household the server has never heard of is
-  /// worse than no list. The pending-count plumbing and the shared
+  /// One badge for both, deliberately (#269): a created household stays
+  /// local-only until the queue delivers it, which can be indefinitely when
+  /// the server refused it and its op is parked for a retry by hand (#121),
+  /// and a list that silently shows a household the server has never heard
+  /// of is worse than no list. The pending-count plumbing and the shared
   /// indicator are #47's.
   bool get _pending => household.isLocalOnly || household.isDirty;
 

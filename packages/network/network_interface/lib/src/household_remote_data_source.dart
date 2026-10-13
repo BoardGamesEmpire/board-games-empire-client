@@ -59,9 +59,9 @@ typedef HouseholdWithMembers = ({
 /// On [fetchHouseholds] the cost of getting this wrong is a hydrate that
 /// ends for the life of the process, including after the server is fixed
 /// (#266). On [createHousehold] it is worse, and is why the rule is not
-/// per-route: once #121 owns cancel semantics, a permanent classification
-/// cancels the queue entry and **discards the user's household** for a
-/// failure a later retry would have survived.
+/// per-route: a permanent classification **parks the queued create**
+/// (#121), so it stops retrying and waits for someone to retry or discard it
+/// by hand (#190), over a failure a later retry would have survived.
 ///
 /// **407 is never permanent** (#350). It is defined to come from a proxy, and
 /// no household route emits one, so it says the request did not reach the
@@ -167,19 +167,19 @@ abstract class HouseholdRemoteDataSource {
   /// can omit it (#131).
   ///
   /// The server trims the key, then rejects it with a 400 if it is empty or
-  /// longer than [maxClientRequestIdLength]. A 400 is permanent, and once
-  /// #121 owns cancel semantics a permanent create is discarded, so
-  /// implementations throw [ArgumentError] before the request instead: a
-  /// caller's bug is not a reason to lose a household. Like the paging checks
-  /// on [fetchHouseholds], that error is not a [HouseholdRemoteException] and
-  /// sits outside the class doc's classification. A cuid2 `localId` never
-  /// trips it.
+  /// longer than [maxClientRequestIdLength]. A 400 is permanent, and a
+  /// permanent create is parked on its first attempt (#121), so
+  /// implementations throw [ArgumentError] before the request instead. That
+  /// keeps a caller's bug out of the server's verdicts: the sender counts it
+  /// as a client fault, retried on a cooldown rather than parked (#131).
+  /// Like the paging checks on [fetchHouseholds], that error is not a
+  /// [HouseholdRemoteException] and sits outside the class doc's
+  /// classification. A cuid2 `localId` never trips it.
   ///
   /// A server older than backend#210 rejects the unknown field, so every
-  /// create against one is a 400 — permanent, and once #121 owns cancel
-  /// semantics, a discarded household. That is unsupported rather than
-  /// handled: the backend has no releases, so no supported build predates the
-  /// key.
+  /// create against one is a 400 — permanent, so every create is parked
+  /// (#121). That is unsupported rather than handled: the backend has no
+  /// releases, so no supported build predates the key.
   ///
   /// Throws [ArgumentError] for a key the server would reject, and
   /// [HouseholdRemoteException] for every failure of the request itself (see

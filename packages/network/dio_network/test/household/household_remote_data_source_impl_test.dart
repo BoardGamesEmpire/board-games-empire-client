@@ -398,9 +398,9 @@ void main() {
     // `/api/households` is a fixed route: it exists in every deployed
     // server, so a 404 on it means the request did not reach the household
     // module — a misrouted prefix, a partial deploy, a proxy answering for
-    // it. Classifying that permanent is a data-loss shape once #121 owns
-    // cancel semantics: the queue entry is cancelled and the user's
-    // household is discarded, for a failure a retry would have survived.
+    // it. Classifying that permanent would park the queued create (#121),
+    // leaving the user's household for someone to retry by hand, for a
+    // failure a retry would have survived.
 
     group('404 on the create route is transient (#297)', () {
       test('with no body — a proxy or gateway answered', () {

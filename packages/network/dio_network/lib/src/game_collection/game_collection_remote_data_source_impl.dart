@@ -73,9 +73,9 @@ class GameCollectionRemoteDataSourceImpl
   /// 407 is here for the reason #350 put it in the household set: it is
   /// defined to come from a proxy and no collection route emits one, so it
   /// says the request never reached the application. That matters more here
-  /// than there — `_send` is shared by three queued writes, and once #121 owns
-  /// cancel semantics a permanent classification discards the user's edit or
-  /// deletion. 511 needs no entry, being a 5xx already covered.
+  /// than there — `_send` is shared by three queued writes, and a permanent
+  /// classification parks the user's edit or deletion (#121) until someone
+  /// retries it by hand. 511 needs no entry, being a 5xx already covered.
   ///
   /// 403 is deliberately **not** a member: it is envelope-gated in
   /// `_classifyStatus` rather than blanket-retryable, and the reasoning lives
@@ -333,8 +333,8 @@ class GameCollectionRemoteDataSourceImpl
       // Not a statement about the response. `decodeJsonBody` hands a body over
       // 50 KB to another isolate, and a failure to spawn one is local and
       // momentary — so this is the one decode failure that must stay
-      // transient. Permanent would cancel the queued operation and discard the
-      // user's edit over a fault the server had no part in (#297).
+      // transient. Permanent says a retry cannot succeed, over a fault the
+      // server had no part in (#297).
       //
       // This clause sits outside the `on Object` net around the Dio call
       // above, because decoding moved out from under it when the body became a
@@ -600,11 +600,11 @@ class GameCollectionRemoteDataSourceImpl
       // application — a corporate proxy or WAF blocked the request, and the
       // status says nothing about what was asked.
       //
-      // The cost runs one way. `_send` is shared by three queued writes, so
-      // once #121 owns cancel semantics a permanent classification discards
-      // the user's edit or deletion over a block that a retry from another
-      // network would have survived. A genuine refusal misread as transient
-      // will only retry to the cap #121 introduces.
+      // The cost runs one way. `_send` is shared by three queued writes, so a
+      // permanent classification parks the user's edit or deletion (#121)
+      // over a block that a retry from another network would have survived. A
+      // genuine refusal misread as transient is only retried, at most once a
+      // drain pass.
       //
       // There is no per-call-site reading of a 403 to express here, which is
       // why this needs no equivalent of _NotFoundMeaning: the API refuses an
@@ -637,8 +637,8 @@ class GameCollectionRemoteDataSourceImpl
       // mark the operation completed, and doing that for a request the
       // service never saw silently discards the user's deletion (the entry
       // then reappears on the next hydrate). A patch has the same shape one
-      // step removed: `missingRow` is permanent, so a proxy 404 would discard
-      // the user's edit.
+      // step removed: `missingRow` is permanent, so a proxy 404 would park
+      // the user's edit (#121).
       if (!_isApplicationError(body, status)) {
         return GameCollectionRemoteTransientException(
           '$message — the route was not reachable',

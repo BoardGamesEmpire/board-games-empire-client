@@ -32,7 +32,8 @@ import '../sync/household_hydration_status.dart';
 ///
 /// **No avatars** (#124, the media pipeline) and **no membership actions**
 /// — no rename, no delete, no leave, no kick. Those need sync-queue op
-/// types and a drain worker (#121) to behave, and they stay with #246.
+/// types of their own for the drain (#121) to send, and they stay with
+/// #246.
 ///
 /// ## Not-found is an answer, not an error
 ///
