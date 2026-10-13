@@ -5,6 +5,7 @@ import 'package:game_collection/game_collection.dart'
     show GameCollectionHydrateInstaller;
 import 'package:household/household.dart' show HouseholdHydrateInstaller;
 import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
+import 'package:sync_queue/sync_queue.dart' show SyncSenderInstaller;
 
 /// The per-user session-scope installers for web (#137), run on every
 /// sign-in by `UserSessionScope.activate()` and disposed on any transition
@@ -43,6 +44,13 @@ import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
 /// `SessionRehydrateTrigger` lives in `app_shell` and is driven by
 /// connectivity edges and app-lifecycle resumes on both platforms.
 ///
+/// [SyncSenderInstaller] runs last, as on native: it registers the sender
+/// the create screen's inline send goes through (#121), over the repositories
+/// above it. Native also starts a drain over that sender; web does not yet,
+/// because two tabs share one database and the drain needs a Web Lock and a
+/// check of whose session is sending first. That is #447. Until then a web
+/// create whose inline send fails stays queued.
+///
 /// This lives on the VM-compilable side of the package split so its
 /// membership can be asserted without a browser, the way native's is.
 /// `buildWebServerScope` — which is browser-only, because it composes the
@@ -52,4 +60,5 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
+  SyncSenderInstaller(),
 ];

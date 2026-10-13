@@ -5,12 +5,17 @@ import 'package:drift_storage/drift_storage_native.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
+import 'package:sync_queue/sync_queue.dart';
 
 /// #306's acceptance, over the real repository and database: a created
 /// household reconciled onto the server's id while its detail screen is
 /// open stays rendered, and a screen built on the local id afterwards
 /// renders it too. #442's: the same holds for a screen in another tab,
 /// whose repository is a second one over the same database.
+///
+/// And #121's: the same holds when the reconcile is a real drain's
+/// acknowledgement, through the real sender, rather than a direct call.
 ///
 /// The bloc suite covers the same behaviour against a mocked repository.
 /// This exists for what a mock cannot reproduce: when drift delivers the
@@ -56,16 +61,22 @@ void main() {
     return other;
   }
 
-  Future<void> reconcile(({Household household, String syncQueueId}) created) =>
-      repo.reconcileCreatedHousehold(
-        created.household.copyWith(
-          id: _kServerId,
-          isDirty: false,
-          isLocalOnly: false,
-        ),
-        localId: created.household.id,
-        completedSyncQueueId: created.syncQueueId,
-      );
+  Future<void> reconcile(
+    ({
+      Household household,
+      String syncQueueId,
+      CreateHouseholdOperation operation,
+    })
+    created,
+  ) => repo.reconcileCreatedHousehold(
+    created.household.copyWith(
+      id: _kServerId,
+      isDirty: false,
+      isLocalOnly: false,
+    ),
+    localId: created.household.id,
+    completedSyncQueueId: created.syncQueueId,
+  );
 
   test('an open detail screen keeps the household rendered through the '
       'reconcile, and ends on the server id', () async {
@@ -91,6 +102,56 @@ void main() {
       isA<HouseholdDetailReady>()
           .having((s) => s.memberCount, 'memberCount', 1)
           .having((s) => s.role, 'role', HouseholdRole.householdOwner),
+    );
+
+    await sub.cancel();
+    await bloc.close();
+  });
+
+  test('an open detail screen keeps the household rendered when a real '
+      'drain delivers its create (#121)', () async {
+    final created = await repo.create(name: 'Game Night HQ');
+    final bloc = HouseholdDetailBloc(
+      householdId: created.household.id,
+      repository: repo,
+    );
+    final states = <HouseholdDetailState>[];
+    final sub = bloc.stream.listen(states.add);
+    await _until(bloc, (s) => s is HouseholdDetailReady);
+    states.clear();
+
+    final collection = GameCollectionRepositoryImpl(
+      db: db,
+      syncQueue: syncQueue,
+      currentUserId: _kUserId,
+      clock: const LocalClockService(),
+    );
+    addTearDown(collection.onDispose);
+    final drain = SyncQueueDrain(
+      queue: syncQueue,
+      sender: SyncOperationSenderImpl(
+        queue: syncQueue,
+        households: repo,
+        householdRemote: _ServerCreates(),
+        collection: collection,
+        collectionRemote: _NoCollectionWrites(),
+      ),
+    );
+    addTearDown(drain.close);
+
+    await drain.drain();
+    await _until(
+      bloc,
+      (s) => s is HouseholdDetailReady && s.household.id == _kServerId,
+    );
+
+    expect(
+      states,
+      everyElement(
+        isA<HouseholdDetailReady>()
+            .having((s) => s.memberCount, 'memberCount', 1)
+            .having((s) => s.role, 'role', HouseholdRole.householdOwner),
+      ),
     );
 
     await sub.cancel();
@@ -185,4 +246,34 @@ Future<void> _until(
 ) async {
   if (test(bloc.state)) return;
   await bloc.stream.firstWhere(test).timeout(const Duration(seconds: 5));
+}
+
+/// A server that creates every household it is sent under [_kServerId].
+class _ServerCreates implements HouseholdRemoteDataSource {
+  @override
+  Future<Household> createHousehold({
+    required String name,
+    required String clientRequestId,
+    String? description,
+    String? image,
+    String? language,
+    String? visibility,
+  }) async => Household(
+    id: _kServerId,
+    name: name,
+    description: description,
+    createdAt: DateTime.utc(2026, 10),
+    updatedAt: DateTime.utc(2026, 10),
+  );
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not a send');
+}
+
+/// Nothing in this suite queues a collection op.
+class _NoCollectionWrites implements GameCollectionRemoteDataSource {
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} was not expected');
 }

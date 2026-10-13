@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -24,7 +25,34 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
-class _MockSyncQueueRepository extends Mock implements SyncQueueRepository {}
+/// Delivers a create the way the real sender does when the server answers:
+/// the optimistic row is reconciled onto the server's id, then reported
+/// delivered. With [offline] set it fails instead, leaving it queued.
+class _FakeSender implements SyncOperationSender {
+  _FakeSender(this._repository);
+
+  final HouseholdRepository _repository;
+
+  bool offline = false;
+
+  @override
+  Future<SyncDelivery> deliver(String entryId, SyncOperation operation) async {
+    if (offline) {
+      return SyncFailed(SyncFailure.unreachable, Exception('offline'));
+    }
+    final create = operation as CreateHouseholdOperation;
+    await _repository.reconcileCreatedHousehold(
+      _household(_serverId),
+      localId: create.localId,
+      completedSyncQueueId: entryId,
+    );
+    return const SyncDelivered(householdId: _serverId);
+  }
+
+  @override
+  Future<SyncDelivery> deliverEntry(SyncQueueEntry entry) =>
+      deliver(entry.id, entry.operation);
+}
 
 const _localId = 'hh_local';
 const _serverId = 'hh_server';
@@ -66,8 +94,7 @@ void main() {
   late _MockAppBootstrapCubit cubit;
   late Storage storage;
   late _MockHouseholdRepository repository;
-  late _MockHouseholdRemoteDataSource remote;
-  late _MockSyncQueueRepository syncQueue;
+  late _FakeSender sender;
 
   /// The local cache, standing in for the drift-backed one. Stateful on
   /// purpose: the destination renders from the cache (#271's third
@@ -93,13 +120,7 @@ void main() {
     HydratedBloc.storage = storage;
 
     repository = _MockHouseholdRepository();
-    remote = _MockHouseholdRemoteDataSource();
-    // The inline send claims its op first (#430); nothing else holds it.
-    syncQueue = _MockSyncQueueRepository();
-    when(() => syncQueue.claim(any())).thenAnswer((_) async => true);
-    when(() => syncQueue.release(any())).thenAnswer((_) async {});
-    when(() => syncQueue.markFailed(any(), error: any(named: 'error')))
-        .thenAnswer((_) async {});
+    sender = _FakeSender(repository);
 
     // Empty to begin with: the list is where the user starts, and the
     // household under test is the one they are about to create.
@@ -130,7 +151,14 @@ void main() {
     ).thenAnswer((_) async {
       final local = _household(_localId, localOnly: true);
       cacheHolds([local]);
-      return (household: local, syncQueueId: 'q1');
+      return (
+        household: local,
+        syncQueueId: 'q1',
+        operation: CreateHouseholdOperation(
+          localId: local.id,
+          name: local.name,
+        ),
+      );
     });
     when(
       () => repository.reconcileCreatedHousehold(
@@ -143,28 +171,23 @@ void main() {
       // replaced by the server-confirmed one, under the canonical id.
       cacheHolds([invocation.positionalArguments.first as Household]);
     });
-    when(
-      () => remote.createHousehold(
-        name: any(named: 'name'),
-        clientRequestId: any(named: 'clientRequestId'),
-        description: any(named: 'description'),
-      ),
-    ).thenAnswer((_) async => _household(_serverId));
   });
 
   Future<void> pumpApp(
     WidgetTester tester, {
     HouseholdHydrationStatus? hydrationStatus,
+    bool withSender = true,
+    HouseholdRemoteDataSource? remote,
   }) async {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           householdRepository: repository,
-          // The create route's guard needs the remote and the queue, unlike
-          // the list's and the detail's (#269).
+          // The create route's guard needs the sender, unlike the list's
+          // and the detail's (#269).
+          syncOperationSender: withSender ? sender : null,
           householdRemoteDataSource: remote,
-          syncQueueRepository: syncQueue,
           householdHydrationStatus: hydrationStatus,
         ),
       ),
@@ -190,6 +213,39 @@ void main() {
     await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
     await tester.pumpAndSettle();
   }
+
+  // The create route sends through the sender (#121), so a container
+  // without one can't create, whatever else it holds. The household client
+  // alone used to be the gate.
+  group('a container without the sender offers no create (#121)', () {
+    testWidgets('the list shows no create button', (tester) async {
+      await pumpApp(
+        tester,
+        withSender: false,
+        remote: _MockHouseholdRemoteDataSource(),
+      );
+
+      routerOf(tester).go(AppRoutes.household);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
+      expect(find.byKey(HouseholdListScreen.createFabKey), findsNothing);
+    });
+
+    testWidgets('the create route falls back', (tester) async {
+      await pumpApp(
+        tester,
+        withSender: false,
+        remote: _MockHouseholdRemoteDataSource(),
+      );
+
+      routerOf(tester).go(AppRoutes.householdCreate);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateHouseholdScreen), findsNothing);
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
+  });
 
   group('BgeApp create-household navigation (#271)', () {
     testWidgets('the drawer path lands on the detail screen, and back goes to '
@@ -259,13 +315,7 @@ void main() {
       // left queued. It is still a household, and #269's badge carries the
       // state — so the destination is the same, addressed by the optimistic
       // local id. (A later reconcile remapping that id is #306.)
-      when(
-        () => remote.createHousehold(
-          name: any(named: 'name'),
-          clientRequestId: any(named: 'clientRequestId'),
-          description: any(named: 'description'),
-        ),
-      ).thenThrow(const HouseholdRemoteTransientException('offline'));
+      sender.offline = true;
 
       await pumpApp(tester);
       routerOf(tester).go(AppRoutes.householdCreate);

@@ -9,8 +9,8 @@ part 'sync_queue_entry.g.dart';
 /// A pending write operation waiting to reach the server.
 ///
 /// Entries are created immediately when the user performs an offline-capable
-/// write. The sync engine processes them in [createdAt] order when
-/// connectivity is available.
+/// write. The drain sends them in [createdAt] order whenever a pass runs
+/// (#121).
 @freezed
 abstract class SyncQueueEntry with _$SyncQueueEntry {
   const SyncQueueEntry._();
@@ -23,7 +23,9 @@ abstract class SyncQueueEntry with _$SyncQueueEntry {
 
     @Default(SyncStatus.pending) SyncStatus status,
 
-    /// Number of send attempts. Capped at [maxRetries] before marking failed.
+    /// Counted failed attempts (#121). At [maxRetries] the entry is
+    /// exhausted and no pass sends it again; a parked entry is raised to it
+    /// at once.
     @Default(0) int retryCount,
 
     /// Last error message for diagnostics. Null on first attempt.

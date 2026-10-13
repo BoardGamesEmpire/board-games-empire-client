@@ -10,6 +10,7 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
+import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
@@ -496,8 +497,9 @@ class _BgeAppState extends State<BgeApp> {
     // there.
     //
     // The repository ALONE (#269 D4): this entry opens the list, which
-    // renders from the local cache. A missing HouseholdRemoteDataSource
-    // costs the list its create affordance, not its existence — so gating
+    // renders from the local cache. A missing create path (the
+    // SyncOperationSender since #121, the HouseholdRemoteDataSource before
+    // it) costs the list its create affordance, not its existence — so gating
     // the entry on it, as the create entry this replaces had to, would
     // hide a screen that works.
     //
@@ -590,9 +592,10 @@ class _BgeAppState extends State<BgeApp> {
   /// any work lives in the registry's `isStale` (#300 D8) rather than being
   /// re-answered here.
   ///
-  /// Once #121 registers the sync-queue drain, entering the household list
-  /// will drive that too. That is a trigger behaving like a trigger; the
-  /// button deliberately does not (#300 D13).
+  /// On native the rehydrator also holds the sync-queue drain (#121), so
+  /// entering the household list drives that too, when it has something to
+  /// send. That is a trigger behaving like a trigger; the button
+  /// deliberately does not (#300).
   VoidCallback? _householdEntryRefresh(DependencyContainer container) {
     if (!container.isRegistered<SessionRehydrator>()) return null;
     final rehydrator = container.get<SessionRehydrator>();
@@ -623,10 +626,10 @@ class _BgeAppState extends State<BgeApp> {
   /// - the **hydration status** is absent on any composition that runs no
   ///   drain, and the screen reads absent as settled rather than as
   ///   forever-loading;
-  /// - the **remote data source** decides only whether `onCreate` is
-  ///   offered. A container without one still gets a working list (#269
-  ///   D4), which is the whole reason this route's gate is narrower than
-  ///   the create route's.
+  /// - the **sender** decides only whether `onCreate` is offered, because
+  ///   the create route needs it to send (#121). A container without one
+  ///   still gets a working list (#269), which is the whole reason this
+  ///   route's gate is narrower than the create route's.
   ///
   /// Captured-instance lifetime is the create route's, for the create
   /// route's reasons: a session ending disposes the repository and the auth
@@ -650,7 +653,7 @@ class _BgeAppState extends State<BgeApp> {
       hydration: hydration,
       onRetry: _householdRetry(container),
       onEnter: _householdEntryRefresh(container),
-      onCreate: container.isRegistered<HouseholdRemoteDataSource>()
+      onCreate: container.isRegistered<SyncOperationSender>()
           ? (ctx) => ctx.push(AppRoutes.householdCreate)
           : null,
       // #270: rows became controls when there was somewhere for them to
@@ -703,15 +706,14 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// The #129 create-household wiring: resolves the [HouseholdRepository]
-  /// and [SyncQueueRepository] (per-user session scope, #135) and
-  /// [HouseholdRemoteDataSource] (per-server scope) from the *active
-  /// server's* scoped container — not [BgeApp.rootContainer]. Null (→
-  /// [NotYetAvailableScreen]) when no active server is resolvable or its
-  /// container lacks any of them (tests without a scope; no active user
-  /// session). Both platforms register the remote in their network
-  /// installer, so a real session on either reaches this route since #125.
-  /// The queue is registered beside the repository by the same installer,
-  /// so it never gates a route the repository would have opened.
+  /// and the [SyncOperationSender] (both per-user session scope, #135,
+  /// #121) from the *active server's* scoped container — not
+  /// [BgeApp.rootContainer]. Null (→ [NotYetAvailableScreen]) when no
+  /// active server is resolvable or its container lacks either (tests
+  /// without a scope; no active user session). Both platforms register the
+  /// sender in their user tier, so a real session on either reaches this
+  /// route. The inline send goes through it, the delivery path the queue
+  /// drain shares, so the two can't both deliver one create.
   ///
   /// ## Captured-repository lifetime (#135)
   ///
@@ -732,15 +734,13 @@ class _BgeAppState extends State<BgeApp> {
 
     final container = active.container;
     if (!container.isRegistered<HouseholdRepository>() ||
-        !container.isRegistered<HouseholdRemoteDataSource>() ||
-        !container.isRegistered<SyncQueueRepository>()) {
+        !container.isRegistered<SyncOperationSender>()) {
       return null;
     }
 
     return CreateHouseholdScreen(
       repository: container.get<HouseholdRepository>(),
-      remote: container.get<HouseholdRemoteDataSource>(),
-      syncQueue: container.get<SyncQueueRepository>(),
+      sender: container.get<SyncOperationSender>(),
       // #271: the new household's own screen takes the place of the spent
       // form, so back can never land on it again (#162).
       //

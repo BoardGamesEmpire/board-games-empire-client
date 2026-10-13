@@ -142,6 +142,16 @@ void main() {
       expect(entries.map((e) => e.id), [mine.id]);
     });
 
+    test('getOutstandingEntries sees only the current user\'s '
+        'entries', () async {
+      final mine = await repoA.enqueue(_kOperation);
+      await repoB.enqueue(_kOperation);
+
+      final entries = await repoA.getOutstandingEntries();
+
+      expect(entries.map((e) => e.id), [mine.id]);
+    });
+
     test('release cannot hand back another user\'s claimed entry', () async {
       final entry = await repoA.enqueue(_kOperation);
       expect(await repoA.claim(entry.id), isTrue);
@@ -240,6 +250,7 @@ void main() {
       await expectLater(repoA.getPendingCount(), throwsStateError);
       await expectLater(repoA.purgeCompleted(), throwsStateError);
       await expectLater(repoA.park('id', error: 'e'), throwsStateError);
+      await expectLater(repoA.getOutstandingEntries(), throwsStateError);
     });
 
     test('onDispose is idempotent', () async {

@@ -154,8 +154,18 @@ abstract class HouseholdRepository {
   /// `syncQueueId` of the enqueued `CreateHouseholdOperation`, which the
   /// coordinator threads into [reconcileCreatedHousehold] so the op is
   /// closed once the server confirms (otherwise the sync worker would
-  /// re-create the household). Throws [ArgumentError] if [name] is blank.
-  Future<({Household household, String syncQueueId})> create({
+  /// re-create the household), and the `operation` itself as it was
+  /// queued. A caller that sends it inline sends that `operation`, so the
+  /// send carries every field a later drain's would (#121). Throws
+  /// [ArgumentError] if [name] is blank.
+  Future<
+    ({
+      Household household,
+      String syncQueueId,
+      CreateHouseholdOperation operation,
+    })
+  >
+  create({
     required String name,
     String? description,
     String? image,

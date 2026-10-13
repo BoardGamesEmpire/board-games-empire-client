@@ -578,16 +578,17 @@ class GameCollectionRepositoryImpl
   /// This is the one method whose caller is a background drain (#121)
   /// rather than the UI, so its post-disposal behaviour is worth stating:
   /// if the user-session scope pops between the send and the reconcile,
-  /// this throws and the queue entry stays `pending`. Relaxing the
-  /// [checkNotDisposed] guard would not change that — [SyncQueueRepository]
-  /// is disposed by the same scope pop, so `markCompleted` (and
-  /// `remapCollectionId`) would throw inside the transaction and roll the
-  /// whole thing back anyway. The op is then sent again. A re-sent add
-  /// can't duplicate the server row, because adding is an upsert on
-  /// `(userId, platformGameId, medium)`; but it re-applies an absolute
-  /// quantity and clears a tombstone, so if the user changed or removed
-  /// the entry since, the stale op overwrites the newer intent. That
-  /// ordering is the drain worker's problem, tracked on #121.
+  /// this throws and the queue entry stays claimed until its lease runs
+  /// out. Relaxing the [checkNotDisposed] guard would not change that —
+  /// [SyncQueueRepository] is disposed by the same scope pop, so
+  /// `markCompleted` (and `remapCollectionId`) would throw inside the
+  /// transaction and roll the whole thing back anyway. The op is then sent
+  /// again. A re-sent add can't duplicate the server row, because adding is
+  /// an upsert on `(userId, platformGameId, medium)`. The drain keeps one
+  /// entry's ops in queue order, so the re-send goes out before any op
+  /// queued behind it; the cost accepted is an op delivered while the
+  /// re-send's claim still held it, which the re-send then overwrites
+  /// (#430).
   @override
   Future<void> reconcileFromServer(
     GameCollection serverEntry, {

@@ -39,6 +39,17 @@ abstract class SyncQueueRepository {
   /// (#147).
   Future<List<SyncQueueEntry>> getAllEntries();
 
+  /// Returns every entry not yet completed, in queue order: pending, claimed
+  /// and failed alike, whatever its retry count (#121).
+  ///
+  /// That is what [getPendingCount] counts, plus the exhausted entries a
+  /// drain needs to see to hold an op back behind an add no pass will send.
+  /// Unlike [getAllEntries] it leaves out completed history, which nothing
+  /// purges yet (#190), so a drain that reads it on every pass reads only
+  /// the work still open. A row whose status this build doesn't know is
+  /// passed over, as [getPendingEntries] passes over it.
+  Future<List<SyncQueueEntry>> getOutstandingEntries();
+
   /// Takes [id] for sending: marks it [SyncStatus.inProgress], stamps the
   /// attempt time, and returns whether this caller won it (#430).
   ///
@@ -57,17 +68,25 @@ abstract class SyncQueueRepository {
   /// The lease is judged by the device's own clock, not the
   /// server-corrected one: the senders sharing the queue share the device,
   /// and a skew correction must not shorten or stretch a claim.
-  Future<bool> claim(String id);
+  ///
+  /// [payload], when given, must still be the entry's payload, or the claim
+  /// fails and changes nothing. A sender working from an earlier read passes
+  /// the payload it read, so an op rewritten since, as an add's
+  /// acknowledgement rewrites the ops queued behind it (#429), is never sent
+  /// as it was read (#121).
+  Future<bool> claim(String id, {String? payload});
 
   /// Hands a claimed [id] back as [SyncStatus.pending] without counting a
   /// retry (#430).
   ///
-  /// For an attempt that didn't really happen: a client-side fault before
-  /// any request, a send the server accepted but whose local acknowledgement
-  /// failed, or a drain stopping on a lost session. A real failed attempt
-  /// is [markFailed]. Only an [SyncStatus.inProgress] entry moves, so a late
-  /// release can't reopen a completed entry or clear a failure. A silent
-  /// no-op otherwise.
+  /// For an attempt the application never processed: no response, a
+  /// timed-out or throttled request, a proxy's answer, or a refused session
+  /// (#121). A failed attempt is [markFailed], and that includes a
+  /// client-side fault and a send the server accepted whose local
+  /// acknowledgement then failed: either can recur on every attempt, and an
+  /// uncounted retry would never end. Only an [SyncStatus.inProgress] entry
+  /// moves, so a late release can't reopen a completed entry or clear a
+  /// failure. A silent no-op otherwise.
   ///
   /// Like [markFailed], it doesn't check whose claim it is: a sender whose
   /// lease expired and was retaken can hand back the other sender's claim.

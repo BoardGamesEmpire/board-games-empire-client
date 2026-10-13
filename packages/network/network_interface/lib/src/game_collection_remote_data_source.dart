@@ -210,9 +210,16 @@ typedef GameCollectionWithSummary = ({
 /// ### Argument violations are not part of that taxonomy
 ///
 /// A call that cannot produce a valid request throws [ArgumentError],
-/// unwrapped — an out-of-range page, a non-positive quantity, an empty patch.
-/// These are caller bugs, not server answers, and a drain that catches
+/// unwrapped — an out-of-range page, a non-positive quantity, an empty patch,
+/// an entry id that isn't one path segment of URL-safe characters. These are
+/// caller bugs, not server answers, and a drain that catches
 /// [GameCollectionRemoteException] will not catch them.
+///
+/// The id check keeps the 404 rules above honest (#121). An id goes into the
+/// path as it stands, and an empty one, or one carrying a slash, a space or a
+/// query, reaches another route or none. Nest answers an unmatched route with
+/// the envelope 404 a missing row gets, so a fetch or an update would report
+/// the row missing, and a removal would report it already removed.
 abstract class GameCollectionRemoteDataSource {
   /// The backend's `limit` ceiling for this endpoint
   /// (`GAME_COLLECTION_MAX_PAGE_SIZE`). A larger `limit` is rejected with a
@@ -286,7 +293,8 @@ abstract class GameCollectionRemoteDataSource {
   ///
   /// Throws [GameCollectionNotFoundException] if the row does not exist for
   /// this actor (missing, another user's, or outside the actor's read scope —
-  /// the server collapses all three into a 404).
+  /// the server collapses all three into a 404). An [id] that isn't one path
+  /// segment throws [ArgumentError] before the request.
   Future<GameCollectionWithSummary> fetchEntry(String id);
 
   /// Adds a game to the acting user's collection.
@@ -328,7 +336,8 @@ abstract class GameCollectionRemoteDataSource {
   /// the server rejects an empty patch with a 400, so implementations throw
   /// [ArgumentError] before the request instead.
   ///
-  /// Throws [GameCollectionNotFoundException] on a 404.
+  /// Throws [GameCollectionNotFoundException] on a 404. An [id] that isn't
+  /// one path segment throws [ArgumentError] before the request.
   Future<GameCollection> updateEntry({
     required String id,
     int? quantity,
@@ -355,7 +364,9 @@ abstract class GameCollectionRemoteDataSource {
   /// actor), which for a re-sent removal means the work is done. Callers should
   /// treat it as completion, not failure. A 404 without the API's error
   /// envelope is transient instead; see "A row-level 404 requires evidence"
-  /// on this class.
+  /// on this class. An [id] that isn't one path segment throws
+  /// [ArgumentError] before the request, since an unmatched route's 404 would
+  /// read as this one.
   Future<GameCollection> removeEntry(String id, {String? reason});
 }
 

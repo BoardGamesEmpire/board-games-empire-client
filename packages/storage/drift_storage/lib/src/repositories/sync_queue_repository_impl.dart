@@ -150,23 +150,41 @@ class SyncQueueRepositoryImpl
   }
 
   @override
-  Future<bool> claim(String id) async {
+  Future<List<SyncQueueEntry>> getOutstandingEntries() async {
+    checkNotDisposed();
+    final rows =
+        await (_db.select(_db.syncQueueTable)
+              ..where(
+                (t) => t.userId.equals(_userId) & t.status.isIn(_liveStatuses),
+              )
+              ..orderBy(_queueOrder))
+            .get();
+    return rows.map(_mapRow).toList();
+  }
+
+  @override
+  Future<bool> claim(String id, {String? payload}) async {
     checkNotDisposed();
     // One conditional UPDATE, so the check and the take are a single
     // statement: of two senders racing for the entry, the second finds
     // the predicate false and changes no row (#430). Both timestamps come
     // from one clock read, so the lease is judged at the instant the new
-    // claim is stamped.
+    // claim is stamped. The payload check is part of the same statement,
+    // so nothing can rewrite the op between the check and the take.
     final now = _localNowUtc();
     final changed =
-        await (_db.update(
-          _db.syncQueueTable,
-        )..where((t) => t.id.equals(id) & _claimablePredicate(now: now))).write(
-          SyncQueueTableCompanion(
-            status: const Value('inProgress'),
-            lastAttemptAt: Value(now),
-          ),
-        );
+        await (_db.update(_db.syncQueueTable)..where((t) {
+              final claimable = t.id.equals(id) & _claimablePredicate(now: now);
+              return payload == null
+                  ? claimable
+                  : claimable & t.payload.equals(payload);
+            }))
+            .write(
+              SyncQueueTableCompanion(
+                status: const Value('inProgress'),
+                lastAttemptAt: Value(now),
+              ),
+            );
     return changed == 1;
   }
 
@@ -411,6 +429,10 @@ class SyncQueueRepositoryImpl
     };
   }
 
+  /// The statuses of an entry not yet done: everything but `completed`
+  /// that this build knows.
+  static const List<String> _liveStatuses = ['pending', 'inProgress', 'failed'];
+
   /// Predicate for "a sender may take this entry now": what
   /// [getPendingEntries] lists and what [claim] accepts (#430). One
   /// predicate for both, so they cannot drift apart.
@@ -473,7 +495,7 @@ class SyncQueueRepositoryImpl
   Expression<bool> _pendingPredicate() {
     final t = _db.syncQueueTable;
     return t.userId.equals(_userId) &
-        t.status.isIn(['pending', 'inProgress', 'failed']) &
+        t.status.isIn(_liveStatuses) &
         t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries);
   }
 

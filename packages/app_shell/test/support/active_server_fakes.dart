@@ -4,6 +4,7 @@ import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:network_interface/network_interface.dart';
@@ -181,7 +182,7 @@ ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
-  SyncQueueRepository? syncQueueRepository,
+  SyncOperationSender? syncOperationSender,
   HouseholdHydrationStatus? householdHydrationStatus,
   HouseholdRefresher? householdRefresher,
   UserSessionScope? userSessionScope,
@@ -206,8 +207,8 @@ ActiveServer buildActiveServer(
       householdRemoteDataSource,
     );
   }
-  if (syncQueueRepository != null) {
-    container.registerSingleton<SyncQueueRepository>(syncQueueRepository);
+  if (syncOperationSender != null) {
+    container.registerSingleton<SyncOperationSender>(syncOperationSender);
   }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);

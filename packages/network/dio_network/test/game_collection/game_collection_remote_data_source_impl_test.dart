@@ -1378,6 +1378,43 @@ void main() {
     });
   });
 
+  group('an entry id that could reach another route is rejected before the '
+      'request (#121)', () {
+    // Empty, a second segment, a space, a parent segment, a query: each
+    // leaves the entry route, and Nest answers an unmatched route with the
+    // envelope 404 a missing row gets, which a removal reads as done.
+    for (final id in ['', 'gc/server', 'gc server', '../gc', 'gc?x=1']) {
+      test('${id.isEmpty ? '(empty)' : id}, on a fetch, an update and a '
+          'removal', () {
+        expect(() => remote.fetchEntry(id), throwsArgumentError);
+        expect(
+          () => remote.updateEntry(id: id, quantity: 2),
+          throwsArgumentError,
+        );
+        expect(() => remote.removeEntry(id), throwsArgumentError);
+        verifyZeroInteractions(mockDio);
+      });
+    }
+
+    test('a cuid2, the shape of every id the server mints, goes out', () async {
+      stubDelete(
+        _resp({
+          'collection': _entryJson(deletedAt: '2026-03-01T12:00:00.000Z'),
+        }),
+      );
+
+      await remote.removeEntry('tz4a98xxat96iws9zmbrgj3a');
+
+      verify(
+        () => mockDio.delete<String>(
+          '$_path/tz4a98xxat96iws9zmbrgj3a',
+          options: any(named: 'options'),
+          queryParameters: any(named: 'queryParameters'),
+        ),
+      ).called(1);
+    });
+  });
+
   group('status classification', () {
     test('401, 408, 429 and every 5xx are transient', () async {
       for (final status in [401, 408, 429, 500, 502, 503]) {

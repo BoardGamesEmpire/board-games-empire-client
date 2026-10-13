@@ -133,6 +133,8 @@ class GameCollectionRemoteDataSourceImpl
 
   @override
   Future<GameCollectionWithSummary> fetchEntry(String id) async {
+    _checkEntryId(id);
+
     const action = 'Collection fetch';
     final response = await _send(
       request: () => _dio.get<String>(
@@ -192,6 +194,7 @@ class GameCollectionRemoteDataSourceImpl
     bool? playAgain,
     String? releaseId,
   }) async {
+    _checkEntryId(id);
     _checkQuantity(quantity);
 
     // Omitted, not nulled: on this endpoint an explicit null CLEARS the field,
@@ -228,6 +231,8 @@ class GameCollectionRemoteDataSourceImpl
 
   @override
   Future<GameCollection> removeEntry(String id, {String? reason}) async {
+    _checkEntryId(id);
+
     const action = 'Collection remove';
     final response = await _send(
       request: () => _dio.delete<String>(
@@ -488,6 +493,25 @@ class GameCollectionRemoteDataSourceImpl
         quantity,
         'quantity',
         'must be greater than zero — use removeEntry to delete an entry',
+      );
+    }
+  }
+
+  /// One path segment of URL-safe characters: an entry id that can only
+  /// reach the route it names. Every id the server mints is a cuid2, which
+  /// this accepts.
+  static final RegExp _wellFormedId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+
+  /// The id goes into the path as it stands, so one that could leave the
+  /// entry route is refused before the request; see the argument section on
+  /// [GameCollectionRemoteDataSource] (#121).
+  void _checkEntryId(String id) {
+    if (!_wellFormedId.hasMatch(id)) {
+      throw ArgumentError.value(
+        id,
+        'id',
+        'is not a well-formed entry id, so the request could reach another '
+            'route',
       );
     }
   }

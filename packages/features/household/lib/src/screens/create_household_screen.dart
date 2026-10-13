@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
-import 'package:network_interface/network_interface.dart';
+import 'package:interfaces/sync.dart';
 
 import 'package:household/l10n/household_localizations.dart';
 
@@ -14,12 +14,11 @@ import '../widgets/create_household_form.dart';
 /// Screen for creating a household (#40).
 ///
 /// Decoupled from DI: the caller (router / app shell) resolves the
-/// [HouseholdRepository], [HouseholdRemoteDataSource] and
-/// [SyncQueueRepository] from the active server scope and passes them in;
-/// the screen provides the [CreateHouseholdBloc] itself. On success it shows
-/// a confirmation (synced vs. still-queued) and reports the new household to
-/// [onCreated]; on an unexpected local failure it shows an error and stays
-/// put.
+/// [HouseholdRepository] and [SyncOperationSender] from the active server
+/// scope and passes them in; the screen provides the [CreateHouseholdBloc]
+/// itself. On success it shows a confirmation (synced vs. still-queued) and
+/// reports the new household to [onCreated]; on an unexpected local failure
+/// it shows an error and stays put.
 ///
 /// The two outcomes use different surfaces on purpose (#191). Success takes
 /// the user off this screen, so its confirmation has to outlive the route —
@@ -29,8 +28,7 @@ import '../widgets/create_household_form.dart';
 class CreateHouseholdScreen extends StatelessWidget {
   const CreateHouseholdScreen({
     required this.repository,
-    required this.remote,
-    required this.syncQueue,
+    required this.sender,
     required this.onCreated,
     super.key,
   });
@@ -39,11 +37,11 @@ class CreateHouseholdScreen extends StatelessWidget {
   static const Key errorBannerKey = Key('create_household.error_banner');
 
   final HouseholdRepository repository;
-  final HouseholdRemoteDataSource remote;
 
-  /// The queue the inline send claims its op from (#430), so it and a
-  /// drain can't both deliver one create.
-  final SyncQueueRepository syncQueue;
+  /// The inline send's delivery path, shared with the queue drain (#121).
+  /// It claims the queued op first (#430), so the two can't both deliver
+  /// one create.
+  final SyncOperationSender sender;
 
   /// Where the created household is shown (#271). Called once, with the id
   /// the household now has: the canonical one when the inline sync
@@ -60,11 +58,8 @@ class CreateHouseholdScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider<CreateHouseholdBloc>(
-      create: (_) => CreateHouseholdBloc(
-        repository: repository,
-        remote: remote,
-        syncQueue: syncQueue,
-      ),
+      create: (_) =>
+          CreateHouseholdBloc(repository: repository, sender: sender),
       child: _CreateHouseholdView(onCreated: onCreated),
     );
   }
