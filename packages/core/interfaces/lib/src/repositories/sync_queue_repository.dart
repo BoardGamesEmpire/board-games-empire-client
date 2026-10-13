@@ -94,6 +94,20 @@ abstract class SyncQueueRepository {
   /// a failure against an op someone else now holds.
   Future<void> markFailed(String id, {required String error});
 
+  /// Parks [id] (#121): marks it [SyncStatus.failed], raises its retry count
+  /// to [SyncQueueEntry.maxRetries], and stores [error].
+  ///
+  /// For an op the server refused as it stands, which no retry can change.
+  /// One write leaves it exhausted, so [getPendingEntries] skips it and
+  /// [claim] refuses it. Nothing drops it, though: it stays in
+  /// [getAllEntries] and [getOutstandingOpsFor], and the rows it would have
+  /// confirmed stay dirty until someone retries or discards it by hand
+  /// (#190). A retry count already past the cap is kept, not lowered.
+  ///
+  /// A completed entry is left alone, as [markFailed] leaves it, and so is an
+  /// id that doesn't exist or belongs to another user.
+  Future<void> park(String id, {required String error});
+
   /// Removes all completed entries. Called periodically to keep the queue lean.
   Future<int> purgeCompleted();
 

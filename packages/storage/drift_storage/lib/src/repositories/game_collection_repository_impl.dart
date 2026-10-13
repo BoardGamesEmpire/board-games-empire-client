@@ -623,6 +623,37 @@ class GameCollectionRepositoryImpl
     });
   }
 
+  /// Purges the triplet of the row [collectionId] names, as a tombstone
+  /// confirmation does, and completes [completedSyncQueueId] in the same
+  /// transaction (#121).
+  ///
+  /// The drain's answer to an already-removed 404, which carries no entry to
+  /// reconcile. The triplet comes from the local row instead; with no row
+  /// under that id there is nothing to purge, and only the op is completed.
+  /// Like [reconcileFromServer], a scope popping mid-call throws and rolls
+  /// both writes back, and the op is sent again.
+  @override
+  Future<void> confirmRemoved(
+    String collectionId, {
+    required String completedSyncQueueId,
+  }) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      final local =
+          await (_db.select(_db.gameCollectionsTable)..where(
+                (t) => t.id.equals(collectionId) & t.userId.equals(_userId),
+              ))
+              .getSingleOrNull();
+      if (local != null) {
+        await _purgeRemovedTriplet(
+          platformGameId: local.platformGameId,
+          wireMedium: local.medium,
+        );
+      }
+      await _syncQueue.markCompleted(completedSyncQueueId);
+    });
+  }
+
   /// Re-applies the ops still queued for [serverEntry] over the clean row
   /// [_writeServerEntry] just wrote, and keeps it dirty while any remain
   /// (#429). Runs inside the caller's transaction.
@@ -812,14 +843,10 @@ class GameCollectionRepositoryImpl
     final serverIsTombstone = serverEntry.deletedAt != null;
 
     if (serverIsTombstone) {
-      await (_db.delete(_db.gameCollectionsTable)..where(
-            (t) =>
-                t.userId.equals(_userId) &
-                t.platformGameId.equals(serverEntry.platformGameId) &
-                t.medium.equals(serverEntry.medium.toWire()) &
-                (t.deletedAt.isNotNull() | t.isLocalOnly.equals(false)),
-          ))
-          .go();
+      await _purgeRemovedTriplet(
+        platformGameId: serverEntry.platformGameId,
+        wireMedium: serverEntry.medium.toWire(),
+      );
     } else {
       // Live entry path. Drop the stale local row if its id
       // differs (after we already remapped any pending ops
@@ -838,6 +865,27 @@ class GameCollectionRepositoryImpl
             ),
           );
     }
+  }
+
+  /// Deletes what a confirmed removal leaves behind for a triplet: every
+  /// tombstone and every server-confirmed live row. A local-only live row is
+  /// kept, because it is a re-add the queue has yet to send (see
+  /// [reconcileFromServer]'s race). Runs inside the caller's transaction.
+  ///
+  /// Shared by the two confirmations, a tombstone the server returned and a
+  /// removal it reports as already done, so they spare the same rows.
+  Future<void> _purgeRemovedTriplet({
+    required String platformGameId,
+    required String wireMedium,
+  }) async {
+    await (_db.delete(_db.gameCollectionsTable)..where(
+          (t) =>
+              t.userId.equals(_userId) &
+              t.platformGameId.equals(platformGameId) &
+              t.medium.equals(wireMedium) &
+              (t.deletedAt.isNotNull() | t.isLocalOnly.equals(false)),
+        ))
+        .go();
   }
 
   // ── Streams ──────────────────────────────────────────────────────────────────

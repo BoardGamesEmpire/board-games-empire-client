@@ -232,6 +232,33 @@ class SyncQueueRepositoryImpl
   }
 
   @override
+  Future<void> park(String id, {required String error}) async {
+    checkNotDisposed();
+    // One statement, as in markFailed, and for the same reasons: the cap is a
+    // column expression, so a markFailed racing this one can't leave the
+    // entry under it, and a completed entry is left alone. MAX keeps a count
+    // that is already past the cap.
+    await _db.customUpdate(
+      'UPDATE sync_queue '
+      'SET status = ?, '
+      '    retry_count = MAX(retry_count, ?), '
+      '    last_error = ?, '
+      '    last_attempt_at = ? '
+      'WHERE id = ? AND user_id = ? AND status <> ?',
+      variables: [
+        Variable.withString('failed'),
+        Variable.withInt(SyncQueueEntry.maxRetries),
+        Variable.withString(error),
+        Variable.withDateTime(_localNowUtc()),
+        Variable.withString(id),
+        Variable.withString(_userId),
+        Variable.withString('completed'),
+      ],
+      updates: {_db.syncQueueTable},
+    );
+  }
+
+  @override
   Future<int> purgeCompleted() async {
     checkNotDisposed();
     return (_db.delete(_db.syncQueueTable)..where(

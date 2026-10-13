@@ -557,6 +557,90 @@ void main() {
       });
     });
 
+    // A permanently rejected op is parked rather than cancelled (#121): kept
+    // with its error, sent by no pass, and left for someone to retry or
+    // discard by hand (#190).
+    group('park() (#121)', () {
+      test('fails the entry at the retry cap and keeps its error', () async {
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        final parked = (await repo.getAllEntries()).single;
+        expect(parked.status, SyncStatus.failed);
+        expect(parked.retryCount, SyncQueueEntry.maxRetries);
+        expect(parked.lastError, 'rejected: 400');
+        expect(parked.isExhausted, isTrue);
+      });
+
+      test('takes it out of the listing, and claim refuses it', () async {
+        final entry = await repo.enqueue(_kOperation);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect(await repo.getPendingEntries(), isEmpty);
+        expect(await repo.claim(entry.id), isFalse);
+      });
+
+      test('keeps it where an acknowledgement looks for it', () async {
+        // Parked, not dropped: a later op for the same collection entry must
+        // still see it outstanding (#429), so the entry stays dirty.
+        final entry = await repo.enqueue(_kOperation);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect((await repo.getOutstandingOpsFor('local-1')).map((e) => e.id), [
+          entry.id,
+        ]);
+      });
+
+      test('does not lower a retry count already past the cap', () async {
+        final entry = await repo.enqueue(_kOperation);
+        for (var i = 0; i <= SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(entry.id, error: 'timeout $i');
+        }
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect(
+          (await repo.getAllEntries()).single.retryCount,
+          SyncQueueEntry.maxRetries + 1,
+        );
+      });
+
+      test('does not reopen a completed entry', () async {
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+        await repo.markCompleted(entry.id);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        final completed = (await repo.getAllEntries()).single;
+        expect(completed.status, SyncStatus.completed);
+        expect(completed.retryCount, 0);
+        expect(completed.lastError, isNull);
+      });
+
+      test('re-emits the pending count', () async {
+        final entry = await repo.enqueue(_kOperation);
+        final emissions = repo.watchPendingCount().take(2).toList();
+        await Future<void>.delayed(Duration.zero);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect(
+          await emissions.timeout(const Duration(seconds: 5)),
+          equals([1, 0]),
+        );
+      });
+
+      test('is a no-op for an unknown id', () async {
+        await repo.park('nonexistent', error: 'rejected: 400');
+        expect(await repo.getAllEntries(), isEmpty);
+      });
+    });
+
     group('purgeCompleted()', () {
       test('removes completed entries and returns count', () async {
         final a = await repo.enqueue(_kOperation);
@@ -1108,6 +1192,15 @@ void main() {
           }
 
           expect(await repo.getPendingCount(), 0);
+        });
+
+        test('EXCLUDES a parked entry, as the listing does (#121)', () async {
+          final entry = await repo.enqueue(_kOperation);
+          await repo.park(entry.id, error: 'rejected: 400');
+
+          expect(await repo.getPendingCount(), 0);
+          await expectLater(repo.watchPendingCount().take(1), emits(0));
+          expect(await repo.getPendingEntries(), isEmpty);
         });
 
         test(

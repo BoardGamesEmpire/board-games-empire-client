@@ -282,6 +282,27 @@ abstract class GameCollectionRepository {
     String? completedSyncQueueId,
   });
 
+  /// Settles a removal the server reports as already done (#121).
+  ///
+  /// A re-sent removal of an entry the server has already tombstoned gets a
+  /// 404, and that answer carries no entry for [reconcileFromServer]. So this
+  /// does the tombstone confirmation that method describes, from the local
+  /// row [collectionId] names instead of a server copy: it purges every
+  /// tombstone and every server-confirmed live row for that row's triplet,
+  /// and keeps a local-only live row for the reason given there. That row
+  /// is a re-add the queue has yet to send.
+  ///
+  /// [completedSyncQueueId] is marked completed in the same transaction, so
+  /// the purge and the completion land together or not at all. Completing
+  /// the op alone would leave a dirty tombstone that [mergeFromServer]
+  /// never writes over, hiding the entry for good.
+  ///
+  /// With no local row under [collectionId], only the op is completed.
+  Future<void> confirmRemoved(
+    String collectionId, {
+    required String completedSyncQueueId,
+  });
+
   /// Merges server state that no local mutation asked for, such as a
   /// hydrate's page (#259).
   ///

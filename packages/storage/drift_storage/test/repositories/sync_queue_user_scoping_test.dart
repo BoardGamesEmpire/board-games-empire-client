@@ -108,6 +108,7 @@ void main() {
       expect(await repoB.claim(entry.id), isFalse);
       await repoB.markCompleted(entry.id);
       await repoB.markFailed(entry.id, error: 'not yours');
+      await repoB.park(entry.id, error: 'not yours');
 
       final row = (await rawRows()).single;
       expect(row.status, 'pending', reason: 'no cross-user transition');
@@ -238,6 +239,7 @@ void main() {
       await expectLater(repoA.getPendingEntries(), throwsStateError);
       await expectLater(repoA.getPendingCount(), throwsStateError);
       await expectLater(repoA.purgeCompleted(), throwsStateError);
+      await expectLater(repoA.park('id', error: 'e'), throwsStateError);
     });
 
     test('onDispose is idempotent', () async {
