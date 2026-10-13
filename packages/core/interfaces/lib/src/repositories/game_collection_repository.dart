@@ -303,6 +303,23 @@ abstract class GameCollectionRepository {
     required String completedSyncQueueId,
   });
 
+  /// How many removals this repository has confirmed, as a mark to pass to
+  /// [mergeFromServer] (#121).
+  ///
+  /// A confirmation is the server's answer to a removal this device sent:
+  /// [reconcileFromServer] with a tombstone, or [confirmRemoved]. A
+  /// tombstone a hydrate merges is not one.
+  ///
+  /// Read it **before** requesting the entries a merge will write, and pass
+  /// it with every [mergeFromServer] call they go into. A removal confirmed
+  /// after this read may have been confirmed after the server answered, so
+  /// those entries can still show it live.
+  ///
+  /// The count lives in this instance, not the database, so a confirmation
+  /// made through another instance over the same database, such as another
+  /// browser tab's, is not counted.
+  Future<int> removalMark();
+
   /// Merges server state that no local mutation asked for, such as a
   /// hydrate's page (#259).
   ///
@@ -340,6 +357,16 @@ abstract class GameCollectionRepository {
   /// stamp is the server's, so the two compare on one clock. An equal
   /// stamp still writes.
   ///
+  /// ### A removal confirmed after the read is kept
+  ///
+  /// With [removalsSince], a live entry also writes nothing when this
+  /// repository has confirmed a removal of its triplet since that
+  /// [removalMark] was read. The server may have answered the read before
+  /// it removed the entry, and the confirmation purged the rows the rules
+  /// above compare against, so writing it would bring the entry back. A
+  /// later read writes it, if the entry is live again by then. A server
+  /// tombstone is applied as usual.
+  ///
   /// ### Otherwise it is the reconcile without the queue step
   ///
   /// With no such row, a live entry is upserted clean and a
@@ -349,7 +376,10 @@ abstract class GameCollectionRepository {
   ///
   /// Throws [StateError] if any entry's `userId` is not this
   /// repository's user, before any write.
-  Future<void> mergeFromServer(List<GameCollection> serverEntries);
+  Future<void> mergeFromServer(
+    List<GameCollection> serverEntries, {
+    int? removalsSince,
+  });
 
   /// Watches the full collection, emitting on any change.
   Stream<List<GameCollection>> watchCollection();

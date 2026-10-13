@@ -25,6 +25,10 @@ import 'sync_queue_drain.dart';
 ///   after both hydrates, so each pass runs it after them, though each
 ///   entry's failure is isolated, so "after" is not "after a successful".
 ///
+/// Either way it can confirm a removal while a collection hydrate's page is
+/// in flight. That hydrate merges with [GameCollectionRepository.removalMark],
+/// so the entry stays removed.
+///
 /// Nothing wakes it on an enqueue: the inline create sends its own op, and
 /// a wake would race that send for the claim.
 ///

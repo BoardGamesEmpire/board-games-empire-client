@@ -109,6 +109,9 @@ import 'watch_disposal.dart';
 /// an unsynced re-add intent. See [reconcileFromServer] for the
 /// race scenario the carve-out defends against.
 ///
+/// A confirmed removal is also counted, so a hydrate page the server
+/// answered before it cannot write the entry back: see [removalMark].
+///
 /// ## Resurrection preserves play history
 ///
 /// When [addToCollection] finds a tombstoned row for the same
@@ -202,6 +205,14 @@ class GameCollectionRepositoryImpl
   /// carried on the model (`lastPlayed`, `lastUpdated`) are caller- or
   /// server-supplied and are not produced here.
   final ClockService _clock;
+
+  /// Removals [reconcileFromServer] and [confirmRemoved] have confirmed
+  /// through this instance: what [removalMark] reads.
+  int _removals = 0;
+
+  /// Where [_removals] stood after each triplet's latest confirmed removal,
+  /// keyed by `(platformGameId, wire medium)`.
+  final Map<(String, String), int> _removedAt = {};
 
   @override
   String get disposedRepositoryName => 'GameCollectionRepository';
@@ -555,7 +566,8 @@ class GameCollectionRepositoryImpl
   /// the predicate's exclusion clause is the carve-out.
   ///
   /// No upsert of the server entry happens in this branch; row
-  /// identity is owned by the queue from here on.
+  /// identity is owned by the queue from here on. The removal is counted
+  /// for [removalMark].
   ///
   /// ## Live-entry upsert, then replay
   ///
@@ -621,6 +633,13 @@ class GameCollectionRepositoryImpl
       if (completedSyncQueueId != null) {
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
+
+      if (serverEntry.deletedAt != null) {
+        _countRemoval(
+          platformGameId: serverEntry.platformGameId,
+          wireMedium: serverEntry.medium.toWire(),
+        );
+      }
     });
   }
 
@@ -631,6 +650,7 @@ class GameCollectionRepositoryImpl
   /// The drain's answer to an already-removed 404, which carries no entry to
   /// reconcile. The triplet comes from the local row instead; with no row
   /// under that id there is nothing to purge, and only the op is completed.
+  /// A purge is counted for [removalMark], as a returned tombstone's is.
   /// Like [reconcileFromServer], a scope popping mid-call throws and rolls
   /// both writes back, and the op is sent again.
   @override
@@ -652,6 +672,12 @@ class GameCollectionRepositoryImpl
         );
       }
       await _syncQueue.markCompleted(completedSyncQueueId);
+      if (local != null) {
+        _countRemoval(
+          platformGameId: local.platformGameId,
+          wireMedium: local.medium,
+        );
+      }
     });
   }
 
@@ -748,6 +774,12 @@ class GameCollectionRepositoryImpl
         );
   }
 
+  @override
+  Future<int> removalMark() async {
+    checkNotDisposed();
+    return _removals;
+  }
+
   /// Merges server entries no local mutation asked for (#259).
   ///
   /// The checks and the writes share one transaction, so a local edit
@@ -755,7 +787,10 @@ class GameCollectionRepositoryImpl
   /// overwrite it. See the interface doc for the
   /// cases the check covers.
   @override
-  Future<void> mergeFromServer(List<GameCollection> serverEntries) async {
+  Future<void> mergeFromServer(
+    List<GameCollection> serverEntries, {
+    int? removalsSince,
+  }) async {
     checkNotDisposed();
     for (final serverEntry in serverEntries) {
       _checkServerEntryUser(serverEntry, caller: 'mergeFromServer');
@@ -765,9 +800,32 @@ class GameCollectionRepositoryImpl
     return _db.transaction(() async {
       for (final serverEntry in serverEntries) {
         if (await _localRowWins(serverEntry)) continue;
+        if (_removedSince(serverEntry, removalsSince)) continue;
         await _writeServerEntry(serverEntry);
       }
     });
+  }
+
+  /// Counts a confirmed removal of the triplet, for [mergeFromServer]'s
+  /// `removalsSince`.
+  ///
+  /// Called inside the confirming transaction, after its last write. A
+  /// merge's transaction then either runs before this one, while the row
+  /// is still dirty, or after it commits, and finds the count.
+  void _countRemoval({
+    required String platformGameId,
+    required String wireMedium,
+  }) {
+    _removedAt[(platformGameId, wireMedium)] = ++_removals;
+  }
+
+  /// Whether [serverEntry] is a live copy of a triplet this instance
+  /// confirmed removed after [removalsSince] was read.
+  bool _removedSince(GameCollection serverEntry, int? removalsSince) {
+    if (removalsSince == null || serverEntry.deletedAt != null) return false;
+    final removedAt =
+        _removedAt[(serverEntry.platformGameId, serverEntry.medium.toWire())];
+    return removedAt != null && removedAt > removalsSince;
   }
 
   /// Throws [StateError] when [serverEntry] belongs to another user.
