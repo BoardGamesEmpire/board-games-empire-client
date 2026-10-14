@@ -792,7 +792,7 @@ class GameCollectionRepositoryImpl
   @override
   Future<void> mergeFromServer(
     List<GameCollection> serverEntries, {
-    int? removalsSince,
+    required int removalsSince,
   }) async {
     checkNotDisposed();
     for (final serverEntry in serverEntries) {
@@ -824,8 +824,8 @@ class GameCollectionRepositoryImpl
 
   /// Whether [serverEntry] is a live copy of a triplet this instance
   /// confirmed removed after [removalsSince] was read.
-  bool _removedSince(GameCollection serverEntry, int? removalsSince) {
-    if (removalsSince == null || serverEntry.deletedAt != null) return false;
+  bool _removedSince(GameCollection serverEntry, int removalsSince) {
+    if (serverEntry.deletedAt != null) return false;
     final removedAt =
         _removedAt[(serverEntry.platformGameId, serverEntry.medium.toWire())];
     return removedAt != null && removedAt > removalsSince;

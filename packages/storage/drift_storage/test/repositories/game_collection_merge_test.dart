@@ -55,6 +55,11 @@ void main() {
   late _MockSyncQueue queue;
   late GameCollectionRepositoryImpl repo;
 
+  /// The removal mark every page here is merged with, read before any of
+  /// them. No test here confirms a removal, so it holds nothing back; the
+  /// rule it feeds is tested in game_collection_removal_mark_test.dart.
+  late int mark;
+
   setUp(() async {
     db = inMemoryServerDatabase();
     queue = _MockSyncQueue();
@@ -77,6 +82,7 @@ void main() {
       currentUserId: _kUserId,
       clock: const SystemClockService(),
     );
+    mark = await repo.removalMark();
     await seedPlatformGame(db);
   });
 
@@ -88,7 +94,7 @@ void main() {
 
   group('mergeFromServer (#259)', () {
     test('stores a server entry the cache does not have, clean', () async {
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
 
       final entry = (await repo.getCollection()).single;
       expect(entry.id, 'gc-server');
@@ -98,8 +104,10 @@ void main() {
     });
 
     test('refreshes a clean row with the server values', () async {
-      await repo.mergeFromServer([_server()]);
-      await repo.mergeFromServer([_server(quantity: 5, comment: 'Edited')]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
+      await repo.mergeFromServer([
+        _server(quantity: 5, comment: 'Edited'),
+      ], removalsSince: mark);
 
       final entry = (await repo.getCollection()).single;
       expect(entry.quantity, 5);
@@ -107,10 +115,10 @@ void main() {
     });
 
     test('leaves a dirty row untouched, values and flags', () async {
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
       await repo.updateCollectionEntry(id: 'gc-server', quantity: 9);
 
-      await repo.mergeFromServer([_server(quantity: 3)]);
+      await repo.mergeFromServer([_server(quantity: 3)], removalsSince: mark);
 
       final entry = (await repo.getCollection()).single;
       expect(entry.quantity, 9);
@@ -119,10 +127,10 @@ void main() {
 
     test('leaves a local tombstone in place rather than bringing the entry '
         'back', () async {
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
       await repo.removeFromCollection('gc-server');
 
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
 
       expect(await repo.getCollection(), isEmpty);
       expect((await allRows()).single.deletedAt, isNotNull);
@@ -136,7 +144,9 @@ void main() {
         quantity: 2,
       );
 
-      await repo.mergeFromServer([_server(id: 'gc-other-device')]);
+      await repo.mergeFromServer([
+        _server(id: 'gc-other-device'),
+      ], removalsSince: mark);
 
       final entry = (await repo.getCollection()).single;
       expect(entry.id, local.id);
@@ -151,18 +161,22 @@ void main() {
     });
 
     test('a server tombstone purges a clean row', () async {
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
 
-      await repo.mergeFromServer([_server(deletedAt: DateTime.utc(2026, 3))]);
+      await repo.mergeFromServer([
+        _server(deletedAt: DateTime.utc(2026, 3)),
+      ], removalsSince: mark);
 
       expect(await allRows(), isEmpty);
     });
 
     test('a server tombstone skips a dirty row', () async {
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
       await repo.updateCollectionEntry(id: 'gc-server', quantity: 9);
 
-      await repo.mergeFromServer([_server(deletedAt: DateTime.utc(2026, 3))]);
+      await repo.mergeFromServer([
+        _server(deletedAt: DateTime.utc(2026, 3)),
+      ], removalsSince: mark);
 
       final entry = (await repo.getCollection()).single;
       expect(entry.quantity, 9);
@@ -174,22 +188,24 @@ void main() {
     test('keeps a clean row the server stamped later than this copy', () async {
       await repo.mergeFromServer([
         _server(quantity: 5, updatedAt: DateTime.utc(2026, 3)),
-      ]);
+      ], removalsSince: mark);
 
-      await repo.mergeFromServer([_server(quantity: 3)]);
+      await repo.mergeFromServer([_server(quantity: 3)], removalsSince: mark);
 
       expect((await repo.getCollection()).single.quantity, 5);
     });
 
     test('an older server tombstone keeps a clean row stamped later', () async {
-      await repo.mergeFromServer([_server(updatedAt: DateTime.utc(2026, 4))]);
+      await repo.mergeFromServer([
+        _server(updatedAt: DateTime.utc(2026, 4)),
+      ], removalsSince: mark);
 
       await repo.mergeFromServer([
         _server(
           deletedAt: DateTime.utc(2026, 3),
           updatedAt: DateTime.utc(2026, 3),
         ),
-      ]);
+      ], removalsSince: mark);
 
       expect(await repo.getCollection(), hasLength(1));
     });
@@ -200,14 +216,14 @@ void main() {
           .copyWith(userId: 'someone-else');
 
       await expectLater(
-        repo.mergeFromServer([_server(), foreign]),
+        repo.mergeFromServer([_server(), foreign], removalsSince: mark),
         throwsStateError,
       );
       expect(await allRows(), isEmpty);
     });
 
     test('never closes a queue entry', () async {
-      await repo.mergeFromServer([_server()]);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
 
       verifyNever(() => queue.markCompleted(any()));
     });

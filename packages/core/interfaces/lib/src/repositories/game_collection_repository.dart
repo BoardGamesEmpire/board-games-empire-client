@@ -361,13 +361,15 @@ abstract class GameCollectionRepository {
   ///
   /// ### A removal confirmed after the read is kept
   ///
-  /// With [removalsSince], a live entry also writes nothing when this
-  /// repository has confirmed a removal of its triplet since that
-  /// [removalMark] was read. The server may have answered the read before
-  /// it removed the entry, and the confirmation purged the rows the rules
-  /// above compare against, so writing it would bring the entry back. A
-  /// later read writes it, if the entry is live again by then. A server
-  /// tombstone is applied as usual.
+  /// A live entry also writes nothing when this repository has confirmed
+  /// a removal of its triplet since [removalsSince], the [removalMark]
+  /// read before the entries were requested. The server may have answered
+  /// the read before it removed the entry, and the confirmation purged the
+  /// rows the rules above compare against, so writing it would bring the
+  /// entry back. A later read writes it, if the entry is live again by
+  /// then. A server tombstone is applied as usual.
+  ///
+  /// The mark is required because any read can race a confirmation.
   ///
   /// ### Otherwise it is the reconcile without the queue step
   ///
@@ -380,7 +382,7 @@ abstract class GameCollectionRepository {
   /// repository's user, before any write.
   Future<void> mergeFromServer(
     List<GameCollection> serverEntries, {
-    int? removalsSince,
+    required int removalsSince,
   });
 
   /// Watches the full collection, emitting on any change.

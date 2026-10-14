@@ -178,14 +178,16 @@ class Harness {
   Future<GameCollection> onlyEntry() async =>
       (await collection.getCollection()).single;
 
-  /// Whether a hydrate can write the fixture game: a newer server copy
-  /// merges in only when no dirty or local-only row, tombstone included,
-  /// sits on its triplet. That is how a purge shows through the public API,
-  /// since reads hide a tombstone either way. Writes the copy if it can.
+  /// Whether a hydrate starting now can write the fixture game: a newer
+  /// server copy merges in only when no dirty or local-only row, tombstone
+  /// included, sits on its triplet. That is how a purge shows through the
+  /// public API, since reads hide a tombstone either way. Writes the copy if
+  /// it can.
   Future<bool> hydrateCanWriteFixtureGame() async {
+    final mark = await collection.removalMark();
     await collection.mergeFromServer([
       serverEntry(id: 'gc-hydrated', quantity: 9, updatedAt: DateTime(2027)),
-    ]);
+    ], removalsSince: mark);
     final live = await collection.getCollection();
     return live.length == 1 && live.single.quantity == 9;
   }

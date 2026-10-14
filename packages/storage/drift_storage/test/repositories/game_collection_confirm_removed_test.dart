@@ -87,9 +87,10 @@ void main() {
       final removeOp = await removedEntry();
       await repo.confirmRemoved(_kServerId, completedSyncQueueId: removeOp);
 
+      final mark = await repo.removalMark();
       await repo.mergeFromServer([
         _server(quantity: 3, updatedAt: DateTime.utc(2026, 11)),
-      ]);
+      ], removalsSince: mark);
 
       final row = (await rows()).single;
       expect(row.id, _kServerId);

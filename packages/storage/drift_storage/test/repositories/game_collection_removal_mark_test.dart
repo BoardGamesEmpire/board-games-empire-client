@@ -64,10 +64,16 @@ void main() {
   Future<List<GameCollectionsTableData>> rows() =>
       db.select(db.gameCollectionsTable).get();
 
+  /// An entry an earlier hydrate wrote: clean and server-confirmed.
+  Future<void> hydratedEntry() async {
+    final mark = await repo.removalMark();
+    await repo.mergeFromServer([_server()], removalsSince: mark);
+  }
+
   /// A hydrated entry the user then removed: a dirty tombstone, with its
   /// removal queued. Returns the removal's queue id.
   Future<String> removedEntry() async {
-    await repo.mergeFromServer([_server()]);
+    await hydratedEntry();
     await repo.removeFromCollection(_kServerId);
     return (await queue.getPendingEntries()).single.id;
   }
@@ -132,7 +138,7 @@ void main() {
   test('a tombstone a hydrate merges holds nothing back', () async {
     // Removed and then re-added on another device: one pass can read the
     // tombstone on a page and the re-add on its catch-up.
-    await repo.mergeFromServer([_server()]);
+    await hydratedEntry();
     final mark = await repo.removalMark();
 
     await repo.mergeFromServer([_tombstone()], removalsSince: mark);
