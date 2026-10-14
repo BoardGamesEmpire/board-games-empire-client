@@ -101,10 +101,12 @@ import 'watch_disposal.dart';
 ///   tombstoned row is a silent no-op, neither bumping `deletedAt`
 ///   nor enqueuing a second `RemoveFromCollectionOperation`.
 ///
-/// Tombstones are physically purged by [reconcileFromServer] when
-/// the server confirms a removal. The purge is SURGICAL: it
-/// deletes tombstones and server-confirmed live rows for the
-/// matching triplet, but preserves any local-only live row
+/// Tombstones are physically purged when the server confirms a
+/// removal: by [reconcileFromServer] when it returns a tombstone, or
+/// by [confirmRemoved] when it reports the removal already done. The
+/// purge is SURGICAL, and the same for both: it deletes tombstones
+/// and server-confirmed live rows for the matching triplet, but
+/// preserves any local-only live row
 /// (`deletedAt == null && isLocalOnly == true`) that represents
 /// an unsynced re-add intent. See [reconcileFromServer] for the
 /// race scenario the carve-out defends against.
@@ -517,7 +519,8 @@ class GameCollectionRepositoryImpl
       // Tombstone via deletedAt. The partial unique index ignores
       // tombstoned rows, so a subsequent addToCollection on the same
       // triplet can resurrect this row (see addToCollection).
-      // Physical purge happens later via reconcileFromServer.
+      // Physical purge happens later, via reconcileFromServer or
+      // confirmRemoved.
       await (_db.update(
         _db.gameCollectionsTable,
       )..where((t) => t.id.equals(id) & t.userId.equals(_userId))).write(

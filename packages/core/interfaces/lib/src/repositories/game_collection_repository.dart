@@ -145,16 +145,16 @@ abstract class GameCollectionRepository {
   ///
   /// ### Physical purge
   ///
-  /// The tombstone is physically deleted by [reconcileFromServer]
-  /// when the server replies with a `serverEntry` whose
-  /// `deletedAt` is non-null — see that method's doc for the full
-  /// flow, including the resurrection-race carve-out. There is
-  /// intentionally no separate `purge` method on this interface:
-  /// tombstone lifecycle is owned by the sync engine, not by
-  /// callers, so the only paths that remove rows are
-  /// [removeFromCollection] (tombstone), and [reconcileFromServer] or
-  /// [mergeFromServer] with a tombstoned server entry (physical
-  /// purge).
+  /// The tombstone is physically deleted when the server confirms the
+  /// removal: by [reconcileFromServer] when it replies with a
+  /// `serverEntry` whose `deletedAt` is non-null, or by [confirmRemoved]
+  /// when it reports the removal already done. See [reconcileFromServer]
+  /// for the full flow, including the resurrection-race carve-out.
+  /// There is intentionally no `purge` method for callers: tombstone
+  /// lifecycle is owned by the sync engine, so the only paths that
+  /// remove rows are [removeFromCollection] (tombstone), and
+  /// [reconcileFromServer] or [mergeFromServer] with a tombstoned
+  /// server entry, or [confirmRemoved] (physical purge).
   ///
   /// ### Re-adding before purge
   ///
@@ -306,9 +306,10 @@ abstract class GameCollectionRepository {
   /// How many removals this repository has confirmed, as a mark to pass to
   /// [mergeFromServer] (#121).
   ///
-  /// A confirmation is the server's answer to a removal this device sent:
-  /// [reconcileFromServer] with a tombstone, or [confirmRemoved]. A
-  /// tombstone a hydrate merges is not one.
+  /// A confirmation is the server's answer, to an op this device sent,
+  /// that the entry is removed: [reconcileFromServer] with a tombstone,
+  /// whatever the op, or [confirmRemoved]. A tombstone a hydrate merges is
+  /// not one.
   ///
   /// Read it **before** requesting the entries a merge will write, and pass
   /// it with every [mergeFromServer] call they go into. A removal confirmed
@@ -335,7 +336,8 @@ abstract class GameCollectionRepository {
   /// holds an edit, a removal or an add the sync queue has yet to
   /// send, and the server's copy predates it. The queued operation
   /// settles the row when the drain acknowledges it through
-  /// [reconcileFromServer]. That covers three cases:
+  /// [reconcileFromServer], or through [confirmRemoved] for a removal
+  /// the server had already made. That covers three cases:
   ///
   /// - a dirty entry keeps its values and stays dirty;
   /// - a local tombstone stays in place, rather than the entry coming
