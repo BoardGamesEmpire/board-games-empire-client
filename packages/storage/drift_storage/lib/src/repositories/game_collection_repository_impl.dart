@@ -697,7 +697,11 @@ class GameCollectionRepositoryImpl
   /// server's answer already reflects the acknowledged op, so an older op
   /// still outstanding (an exhausted one, say) would put back a value the
   /// newer change replaced. An older op still keeps the row dirty: the
-  /// change it carries never reached the server. The lookup returns the
+  /// change it carries never reached the server. Its edit stops showing,
+  /// though, even in fields the newer change didn't carry: an exhausted
+  /// rating edit is gone from the row once a later quantity edit is
+  /// acknowledged. Replaying just those fields is left to #190, which
+  /// decides what the row shows for an exhausted op. The lookup returns the
   /// acknowledged op even once completed, so a second delivery's
   /// acknowledgement, after the first completed it, still places it. When
   /// it can't be placed (the caller didn't name it, or it was purged), its

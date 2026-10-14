@@ -42,6 +42,16 @@ import 'package:observability/observability.dart';
 /// holds the payload this pass read ([SyncOperationSender.deliverEntry]), so
 /// an op rewritten since is left for the next pass, never sent stale.
 ///
+/// An update that has exhausted its retries, parked or not, holds back
+/// nothing from the next pass on: the ops queued behind it name the entry
+/// by an id the server knows, and holding them would freeze the entry's
+/// newer edits behind one that may never be sent again. The cost is on the
+/// row. A newer op's acknowledgement writes the server's answer, which
+/// lacks the exhausted edit, so that edit stops showing even in fields the
+/// newer op didn't carry, though the row stays dirty
+/// ([GameCollectionRepository.reconcileFromServer]). What the row should
+/// show for an exhausted op is #190's to decide.
+///
 /// ## Spacing out counted retries
 ///
 /// A failed entry waits [cooldownAfter] its retry count before it is tried

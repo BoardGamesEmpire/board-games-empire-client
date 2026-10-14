@@ -251,9 +251,12 @@ abstract class GameCollectionRepository {
   ///
   /// Only later ops are replayed because the answer already reflects the
   /// acknowledged op: replaying an older op still outstanding would put
-  /// back a value the newer change replaced. When [completedSyncQueueId]
-  /// is omitted, the acknowledged op's place is unknown and every
-  /// outstanding op is replayed.
+  /// back a value the newer change replaced. The cost is that the older
+  /// op's edit stops showing even in fields the newer change didn't carry,
+  /// though the row stays dirty. What the row should show for such an op
+  /// is #190's to decide. When [completedSyncQueueId] is omitted, the
+  /// acknowledged op's place is unknown and every outstanding op is
+  /// replayed.
   ///
   /// Replay repeats what the local write did: an update sets only the
   /// fields it carries, an add sets its absolute quantity and revives the
