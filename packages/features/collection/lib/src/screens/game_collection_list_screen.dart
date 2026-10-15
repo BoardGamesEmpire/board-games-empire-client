@@ -319,8 +319,10 @@ class _Thumbnail extends StatelessWidget {
                 // Decorative: the title beside it names the game.
                 excludeFromSemantics: true,
                 webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : placeholder,
+                // Keyed on the first frame, not on load progress: a request
+                // that has no response yet reports no progress at all.
+                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
+                    frame == null ? placeholder : child,
                 errorBuilder: (context, error, stackTrace) => placeholder,
               ),
       ),

@@ -131,6 +131,33 @@ void main() {
     );
   });
 
+  test('a failing status stream leaves the rows up', () async {
+    // The status annotates the list; losing it must not lose the list.
+    final hydration = StreamController<GameCollectionHydration>();
+    final bloc = GameCollectionListBloc(
+      repository: repository,
+      hydration: hydration.stream,
+    );
+    addTearDown(() {
+      unawaited(hydration.close());
+      return bloc.close();
+    });
+
+    items.add([listItem('e-1')]);
+    await settle();
+    hydration.addError(StateError('status failed'));
+    await settle();
+
+    expect(
+      bloc.state,
+      isA<GameCollectionListReady>().having(
+        (s) => s.items,
+        'items',
+        hasLength(1),
+      ),
+    );
+  });
+
   group('when the cache read fails', () {
     test('surfaces an error state', () async {
       final bloc = build();
@@ -487,6 +514,26 @@ void main() {
       },
     );
 
+    test('a pass that throws still ends the refresh', () async {
+      // Passes report failure through the status, not by throwing. If one
+      // throws anyway, "refreshing" must not stick where nothing clears it.
+      final bloc = build(onRetry: () => Future.error(StateError('escaped')));
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh();
+
+      bloc.add(const GameCollectionListRetryRequested());
+      await settle();
+
+      expect(
+        bloc.state,
+        isA<GameCollectionListReady>().having(
+          (s) => s.refreshing,
+          'refreshing',
+          isFalse,
+        ),
+      );
+    });
+
     test('is a no-op where no pass was supplied', () async {
       final bloc = build();
       addTearDown(bloc.close);
@@ -506,6 +553,35 @@ void main() {
           'refreshing',
           isFalse,
         ),
+      );
+    });
+  });
+
+  group('values', () {
+    test('states compare by value', () {
+      // A bloc drops an emit equal to its current state, so re-deriving
+      // the state the screen already shows does not rebuild it.
+      expect(GameCollectionListLoading(), GameCollectionListLoading());
+      expect(GameCollectionListError(), GameCollectionListError());
+      expect(GameCollectionListLoading(), isNot(GameCollectionListError()));
+    });
+
+    test('events compare by value', () {
+      final rows = [listItem('e-1')];
+      const reading = GameCollectionHydration();
+
+      expect(
+        GameCollectionListCacheUpdated(rows),
+        GameCollectionListCacheUpdated(rows),
+      );
+      expect(
+        GameCollectionListHydrationUpdated(reading),
+        GameCollectionListHydrationUpdated(reading),
+      );
+      expect(GameCollectionListCacheFailed(), GameCollectionListCacheFailed());
+      expect(
+        GameCollectionListCacheFailed(),
+        isNot(GameCollectionListCacheEnded()),
       );
     });
   });

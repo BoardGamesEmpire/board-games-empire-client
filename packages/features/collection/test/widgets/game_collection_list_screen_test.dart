@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,6 +18,13 @@ import '../support/list_items.dart';
 
 class _MockGameCollectionRepository extends Mock
     implements GameCollectionRepository {}
+
+/// An image host that has not answered yet: no headers, no bytes.
+class _UnansweredHttpClient extends Fake implements HttpClient {
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) =>
+      Completer<HttpClientRequest>().future;
+}
 
 const _emptyTitleCopy = 'No games yet';
 const _refreshFailedCopy =
@@ -387,6 +396,72 @@ void main() {
           ),
         ),
         findsOneWidget,
+      );
+    });
+
+    testWidgets('shows the placeholder before the first byte arrives', (
+      tester,
+    ) async {
+      // A request with no response yet has no progress to report, so a
+      // placeholder keyed on progress would leave the square blank here.
+      debugNetworkImageHttpClientProvider = _UnansweredHttpClient.new;
+      try {
+        await show(tester, [
+          listItem('e-1', thumbnail: 'https://images.example.com/slow.jpg'),
+        ]);
+
+        expect(
+          find.descendant(
+            of: find.byKey(GameCollectionListScreen.thumbnailKey('e-1')),
+            matching: find.byKey(
+              GameCollectionListScreen.thumbnailPlaceholderKey,
+            ),
+          ),
+          findsOneWidget,
+        );
+      } finally {
+        debugNetworkImageHttpClientProvider = null;
+        imageCache.clear();
+      }
+    });
+
+    testWidgets('shows the image in place of the placeholder once it has one', (
+      tester,
+    ) async {
+      const url = 'https://images.example.com/cached.jpg';
+      final image = (await tester.runAsync(
+        () => createTestImage(width: 1, height: 1),
+      ))!;
+      // Primes the cache as a finished load would, so no request goes out.
+      imageCache.putIfAbsent(
+        const NetworkImage(url),
+        () => OneFrameImageStreamCompleter(
+          SynchronousFuture(ImageInfo(image: image)),
+        ),
+      );
+      addTearDown(imageCache.clear);
+
+      await show(tester, [listItem('e-1', thumbnail: url)]);
+
+      final thumbnail = find.byKey(
+        GameCollectionListScreen.thumbnailKey('e-1'),
+      );
+      expect(
+        find.descendant(
+          of: thumbnail,
+          matching: find.byKey(
+            GameCollectionListScreen.thumbnailPlaceholderKey,
+          ),
+        ),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<RawImage>(
+              find.descendant(of: thumbnail, matching: find.byType(RawImage)),
+            )
+            .image,
+        isNotNull,
       );
     });
 
