@@ -23,6 +23,7 @@ void main() {
   SyncQueueDrain openDrain() => SyncQueueDrain(
     queue: h.queue,
     sender: h.sender,
+    collection: h.collection,
     revalidateSession: () async => revalidations++,
     now: h.deviceNow,
   );
@@ -396,7 +397,12 @@ void main() {
         : serverEntry(quantity: write.fields['quantity']! as int);
     final counted = CountingQueue(h.queue);
     await drain.close();
-    drain = SyncQueueDrain(queue: counted, sender: h.sender, now: h.deviceNow);
+    drain = SyncQueueDrain(
+      queue: counted,
+      sender: h.sender,
+      collection: h.collection,
+      now: h.deviceNow,
+    );
 
     await drain.drain();
 
@@ -477,6 +483,77 @@ void main() {
       ]);
       expect(await h.collection.getCollection(), isEmpty);
     });
+
+    test('a removal behind a parked add for a confirmed entry goes out: '
+        'the server knows its id', () async {
+      await h.confirmedEntry();
+      // Adding it again raises the quantity, under the server's id.
+      await h.queuedAdd();
+      await h.collection.removeFromCollection('gc-server');
+      h.collectionRemote.respond = (write) => write.method == 'POST'
+          ? throw const GameCollectionNotFoundException(
+              'Collection add returned 404',
+              statusCode: 404,
+            )
+          : serverEntry(deletedAt: DateTime.utc(2026, 10, 3));
+
+      await drain.drain();
+      await drain.drain();
+
+      expect(h.collectionRemote.writes.map((w) => (w.method, w.id)), [
+        ('POST', null),
+        ('DELETE', 'gc-server'),
+      ]);
+      expect(await h.collection.getCollection(), isEmpty);
+    });
+
+    test('an update behind an older parked add goes out once a newer add '
+        'lands', () async {
+      await h.queuedAdd();
+      h.collectionRemote.respond = (_) =>
+          throw const GameCollectionNotFoundException(
+            'Collection add returned 404',
+            statusCode: 404,
+          );
+      await drain.drain();
+      // Adding it again lands, and the acknowledgement remaps the parked add
+      // onto the server's id.
+      await h.queuedAdd();
+      h.collectionRemote.respond = (write) =>
+          serverEntry(quantity: write.fields['quantity']! as int);
+      await drain.drain();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 5);
+
+      await drain.drain();
+
+      expect(h.collectionRemote.writes.map((w) => (w.method, w.id)), [
+        ('POST', null),
+        ('POST', null),
+        ('PATCH', 'gc-server'),
+      ]);
+    });
+
+    test('an update behind a parked re-add is held: the removal ahead of it '
+        'takes its id away', () async {
+      await h.confirmedEntry();
+      await h.collection.removeFromCollection('gc-server');
+      await h.queuedAdd();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 5);
+      h.collectionRemote.respond = (write) => write.method == 'DELETE'
+          ? serverEntry(deletedAt: DateTime.utc(2026, 10, 3))
+          : throw const GameCollectionNotFoundException(
+              'Collection add returned 404',
+              statusCode: 404,
+            );
+
+      await drain.drain();
+      await drain.drain();
+
+      expect(h.collectionRemote.writes.map((w) => (w.method, w.id)), [
+        ('DELETE', 'gc-server'),
+        ('POST', null),
+      ]);
+    });
   });
 
   test('an op rewritten after the listing waits for a pass that reads '
@@ -523,6 +600,7 @@ void main() {
       drain = SyncQueueDrain(
         queue: h.queue,
         sender: h.sender,
+        collection: h.collection,
         now: h.deviceNow,
         logger: logger,
       );
@@ -561,6 +639,7 @@ void main() {
       final open = SyncQueueDrain(
         queue: queue,
         sender: h.sender,
+        collection: h.collection,
         now: h.deviceNow,
         logger: logger,
       );
@@ -674,6 +753,7 @@ void main() {
       drain = SyncQueueDrain(
         queue: h.queue,
         sender: h.sender,
+        collection: h.collection,
         revalidateSession: () async => throw StateError('auth is down'),
         now: h.deviceNow,
       );

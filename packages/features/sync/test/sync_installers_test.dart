@@ -185,5 +185,18 @@ void main() {
       expect(container.isRegistered<SyncQueueDrain>(), isFalse);
       expect(h.householdRemote.creates, isEmpty);
     });
+
+    test('without the collection repository it starts nothing, and does not '
+        'throw', () async {
+      register(collection: false);
+      container.registerSingleton<SyncOperationSender>(h.sender);
+      await h.queuedCreate();
+
+      await installDrain();
+      await pumpEventQueue();
+
+      expect(container.isRegistered<SyncQueueDrain>(), isFalse);
+      expect(h.householdRemote.creates, isEmpty);
+    });
   });
 }

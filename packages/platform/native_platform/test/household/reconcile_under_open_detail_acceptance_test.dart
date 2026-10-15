@@ -136,6 +136,7 @@ void main() {
         collection: collection,
         collectionRemote: _NoCollectionWrites(),
       ),
+      collection: collection,
     );
     addTearDown(drain.close);
 

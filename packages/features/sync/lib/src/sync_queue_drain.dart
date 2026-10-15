@@ -30,11 +30,13 @@ import 'package:observability/observability.dart';
 /// The queue entries for one collection entry go out in queue order. Within
 /// a pass, once an op for an entry isn't delivered, for whatever reason, the
 /// entry's later ops wait for a later pass. Across passes, an update or a
-/// removal queued behind an add that isn't acknowledged yet is held, parked
-/// adds included: it still names the entry by its local id, which the
-/// server has never seen, and the add's acknowledgement is what remaps it.
-/// The read a pass works from includes exhausted entries for that reason.
-/// An add names the game rather than the id, so nothing holds an add.
+/// removal queued behind an add that isn't acknowledged yet is held while
+/// its entry is local-only, parked adds included: the server has yet to
+/// confirm the entry, and the add's acknowledgement is what gives it the id
+/// the server knows it by, remapping the op onto it. The read a pass works
+/// from includes exhausted entries for that reason, and which entries are
+/// local-only. An add names the game rather than the id, so nothing holds
+/// an add.
 ///
 /// That acknowledgement rewrites the ops queued behind the add, so after a
 /// delivered add that has any, the pass reads the queue again and sends them
@@ -42,8 +44,11 @@ import 'package:observability/observability.dart';
 /// holds the payload this pass read ([SyncOperationSender.deliverEntry]), so
 /// an op rewritten since is left for the next pass, never sent stale.
 ///
-/// An update that has exhausted its retries, parked or not, holds back
-/// nothing from the next pass on: the ops queued behind it name the entry
+/// An op that has exhausted its retries, parked or not, holds back nothing
+/// from the next pass on, unless it is an add for a local-only entry. That
+/// covers an update, a removal, and an add for an entry the server has
+/// confirmed, such as one raising its quantity or an older add that a newer
+/// one's acknowledgement remapped. The ops queued behind it name the entry
 /// by an id the server knows, and holding them would freeze the entry's
 /// newer edits behind one that may never be sent again. The cost is on the
 /// row. A newer op's acknowledgement writes the server's answer, which
@@ -70,13 +75,15 @@ import 'package:observability/observability.dart';
 /// wake would race it. It runs when its installer starts it and whenever the
 /// session's rehydrator asks, which consults [isStale] first.
 class SyncQueueDrain {
-  /// [revalidateSession] asks the auth layer whether the session still
-  /// stands after a refused send; null skips the question. [now] is the
-  /// device clock, which stamps every attempt; a test drives it so a
-  /// cooldown costs no real time.
+  /// [collection] says which entries the server has yet to confirm, which
+  /// the ordering rules need. [revalidateSession] asks the auth layer
+  /// whether the session still stands after a refused send; null skips the
+  /// question. [now] is the device clock, which stamps every attempt; a test
+  /// drives it so a cooldown costs no real time.
   SyncQueueDrain({
     required this._queue,
     required this._sender,
+    required this._collection,
     this._revalidateSession,
     DateTime Function()? now,
     BgeLogger? logger,
@@ -112,6 +119,7 @@ class SyncQueueDrain {
 
   final SyncQueueRepository _queue;
   final SyncOperationSender _sender;
+  final GameCollectionRepository _collection;
   final Future<void> Function()? _revalidateSession;
   final DateTime Function() _now;
   final BgeLogger _log;
@@ -260,9 +268,19 @@ class SyncQueueDrain {
     }
   }
 
-  /// Every entry not yet completed, as one read finds them.
-  Future<_Snapshot> _read() async =>
-      _Snapshot(await _queue.getOutstandingEntries());
+  /// Every entry not yet completed, as one read finds them, and which
+  /// collection entries the server has yet to confirm.
+  ///
+  /// The queue is read first. Each add is queued in one transaction with the
+  /// write to its entry, so the second read finds every listed add's entry
+  /// at least as that write left it.
+  Future<_Snapshot> _read() async {
+    final outstanding = await _queue.getOutstandingEntries();
+    return _Snapshot(
+      outstanding,
+      localOnly: await _collection.getLocalOnlyIds(),
+    );
+  }
 
   /// What the rules say about [listed] at [now], given the targets this walk
   /// already holds back in [waiting].
@@ -373,7 +391,10 @@ class SyncQueueDrain {
 /// order, each decoded once, with what the ordering rules need to know about
 /// it.
 class _Snapshot {
-  factory _Snapshot(List<SyncQueueEntry> outstanding) {
+  factory _Snapshot(
+    List<SyncQueueEntry> outstanding, {
+    required Set<String> localOnly,
+  }) {
     final entries = <_Listed>[];
     final sharing = <String, int>{};
     final added = <String>{};
@@ -396,7 +417,9 @@ class _Snapshot {
       );
       if (target != null) {
         sharing[target] = (sharing[target] ?? 0) + 1;
-        if (op is AddToCollectionOperation) added.add(target);
+        if (op is AddToCollectionOperation && localOnly.contains(op.localId)) {
+          added.add(target);
+        }
       }
     }
     return _Snapshot._(entries, sharing);
@@ -446,8 +469,9 @@ class _Listed {
   final String? target;
 
   /// An update or a removal queued behind an add for its entry that this
-  /// read still holds, parked or not: it names the entry by an id the
-  /// server has yet to give.
+  /// read still holds, parked or not, while the entry is local-only: until
+  /// the server confirms the entry, the add's acknowledgement can still
+  /// change the id the op names.
   final bool behindAdd;
 }
 

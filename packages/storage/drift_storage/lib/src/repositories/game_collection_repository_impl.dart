@@ -248,6 +248,17 @@ class GameCollectionRepositoryImpl
     return row == null ? null : _mapRow(row);
   }
 
+  @override
+  Future<Set<String>> getLocalOnlyIds() async {
+    checkNotDisposed();
+    final rows =
+        await (_db.select(_db.gameCollectionsTable)..where(
+              (t) => t.userId.equals(_userId) & t.isLocalOnly.equals(true),
+            ))
+            .get();
+    return {for (final row in rows) row.id};
+  }
+
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   @override

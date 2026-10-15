@@ -1461,6 +1461,48 @@ void main() {
       });
     });
 
+    group('getLocalOnlyIds()', () {
+      test('lists the entries the server has yet to confirm, removed ones '
+          "included, and only the current user's", () async {
+        final unsent = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+        );
+        final removed = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: GameMedium.digital,
+        );
+        await repo.removeFromCollection(removed.id);
+
+        await seedPlatformGame(db, id: 'pg-confirmed');
+        final confirmed = await repo.addToCollection(
+          platformGameId: 'pg-confirmed',
+          medium: _kMedium,
+        );
+        await repo.reconcileFromServer(
+          confirmed.copyWith(
+            id: 'server-confirmed-id',
+            isDirty: false,
+            isLocalOnly: false,
+          ),
+        );
+
+        await seedPlatformGame(db, id: 'pg-other');
+        final otherRepo = GameCollectionRepositoryImpl(
+          db: db,
+          syncQueue: mockSync,
+          currentUserId: 'other-user',
+          clock: const SystemClockService(),
+        );
+        await otherRepo.addToCollection(
+          platformGameId: 'pg-other',
+          medium: GameMedium.digital,
+        );
+
+        expect(await repo.getLocalOnlyIds(), {unsent.id, removed.id});
+      });
+    });
+
     group('watchCollection()', () {
       test('emits current collection on subscribe', () async {
         await repo.addToCollection(

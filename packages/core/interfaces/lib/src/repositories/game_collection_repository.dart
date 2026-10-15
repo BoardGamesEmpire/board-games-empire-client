@@ -37,6 +37,14 @@ abstract class GameCollectionRepository {
     required GameMedium medium,
   });
 
+  /// The ids of the current user's entries the server has yet to confirm:
+  /// every row with [GameCollection.isLocalOnly] set, removed ones included.
+  ///
+  /// The sync queue drain reads it to tell which adds still hold back the
+  /// ops queued behind them (#121). Until the server confirms an entry, its
+  /// add's acknowledgement can still change the id those ops name.
+  Future<Set<String>> getLocalOnlyIds();
+
   /// Adds a game to the collection.
   ///
   /// [quantity] must be `> 0`. Implementations should throw

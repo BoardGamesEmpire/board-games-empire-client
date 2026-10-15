@@ -50,7 +50,8 @@ import 'sync_queue_drain.dart';
 /// ## Nothing here may throw
 ///
 /// A throw from [install] aborts activation, which signs the user out. So
-/// the pass is unawaited, and a missing sender or queue starts nothing.
+/// the pass is unawaited, and a missing sender, queue or collection
+/// repository starts nothing.
 class SyncQueueDrainInstaller implements UserScopeInstaller {
   /// [now] overrides the device clock the drain measures cooldowns on.
   /// Production leaves it null.
@@ -68,9 +69,10 @@ class SyncQueueDrainInstaller implements UserScopeInstaller {
     String userId,
   ) async {
     if (!container.isRegistered<SyncOperationSender>() ||
-        !container.isRegistered<SyncQueueRepository>()) {
+        !container.isRegistered<SyncQueueRepository>() ||
+        !container.isRegistered<GameCollectionRepository>()) {
       _log.debug(
-        'No sender or queue on this server; skipping the drain',
+        'No sender, queue or collection on this server; skipping the drain',
         context: {'serverId': server.serverId},
       );
       return;
@@ -82,6 +84,7 @@ class SyncQueueDrainInstaller implements UserScopeInstaller {
     final drain = SyncQueueDrain(
       queue: container.get<SyncQueueRepository>(),
       sender: container.get<SyncOperationSender>(),
+      collection: container.get<GameCollectionRepository>(),
       // A definitive "no session" signs the user out through the auth
       // layer's own path; the queue survives it (#98).
       revalidateSession: auth?.getSession,
