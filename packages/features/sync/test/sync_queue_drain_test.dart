@@ -13,6 +13,23 @@ class _MockLogger extends Mock implements BgeLogger {}
 
 class _MockQueue extends Mock implements SyncQueueRepository {}
 
+/// A queue that passes every call through, as [CountingQueue] does, but
+/// runs [beforeListing] ahead of each listing of what is outstanding, given
+/// how many listings came before: a write by another sender, landing
+/// between the drain's reads.
+class _InterleavingQueue extends CountingQueue {
+  _InterleavingQueue(super.inner, this.beforeListing);
+
+  final Future<void> Function(int listing) beforeListing;
+  int _listings = 0;
+
+  @override
+  Future<List<SyncQueueEntry>> getOutstandingEntries() async {
+    await beforeListing(_listings++);
+    return super.getOutstandingEntries();
+  }
+}
+
 /// The drain over the real sender, the real repositories and fake remotes
 /// (#121): what one pass sends, where it stops, and what it holds back.
 void main() {
@@ -336,6 +353,33 @@ void main() {
       expect(drain.isStale, isTrue);
     });
 
+    test("turns true when an op is queued after another sender's send lands "
+        'mid-settle', () async {
+      // The inline create holds its op through the pass and completes it as
+      // the pass settles, just before the settling read lists the queue. The
+      // next create then brings the pending count back to what it was while
+      // the first was held.
+      final first = await h.queuedCreate(name: 'First');
+      expect(await h.queue.claim(first.id), isTrue);
+      await drain.close();
+      drain = SyncQueueDrain(
+        queue: _InterleavingQueue(h.queue, (listing) async {
+          // A pass lists once to send and once to settle.
+          if (listing == 1) await h.queue.markCompleted(first.id);
+        }),
+        sender: h.sender,
+        collection: h.collection,
+        now: h.deviceNow,
+      );
+      await drain.drain();
+      await h.queuedCreate(name: 'Second');
+      await pumpEventQueue();
+
+      expect(drain.isStale, isTrue);
+      await drain.drain();
+      expect(h.householdRemote.creates.map((c) => c.name), ['Second']);
+    });
+
     test('waits out a claim stamped ahead of a clock set back, as a claim '
         'does', () async {
       // A sender died holding the claim, and the clock was then set back an
@@ -354,6 +398,26 @@ void main() {
             const Duration(seconds: 1),
       );
       expect(drain.isStale, isTrue);
+      await drain.drain();
+      expect((await entry(queued.id)).status, SyncStatus.completed);
+    });
+
+    test('turns true when the clock is set back past a failure, which then '
+        'waits no longer', () async {
+      final queued = await h.queuedCreate();
+      h.householdRemote.respond = (_) =>
+          throw const HouseholdRemoteTransientException(
+            'Household create failed',
+            statusCode: 503,
+          );
+      await drain.drain();
+      await pumpEventQueue();
+      expect(drain.isStale, isFalse, reason: 'cooling');
+
+      h.advance(const Duration(hours: -1));
+
+      expect(drain.isStale, isTrue);
+      h.householdRemote.respond = (_) => serverHousehold();
       await drain.drain();
       expect((await entry(queued.id)).status, SyncStatus.completed);
     });
@@ -634,7 +698,6 @@ void main() {
       final logger = _MockLogger();
       final queue = _MockQueue();
       when(queue.watchPendingCount).thenAnswer((_) => Stream.value(1));
-      when(queue.getPendingCount).thenAnswer((_) async => 1);
       when(queue.getOutstandingEntries).thenThrow(StateError('unreadable row'));
       final open = SyncQueueDrain(
         queue: queue,

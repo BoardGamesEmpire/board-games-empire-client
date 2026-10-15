@@ -134,11 +134,12 @@ class SyncQueueDrain {
   /// The pending count the queue last reported.
   int? _seenCount;
 
-  /// The pending count when the last pass settled, and when that pass's
-  /// schedule says something can next be sent. Null until a pass settles.
+  /// When the last pass settled, the pending count then, and when that
+  /// pass's schedule says something can next be sent. Null until a pass
+  /// settles.
+  DateTime? _settledAt;
   int? _settledCount;
   DateTime? _nextSendableAt;
-  bool _settled = false;
 
   /// Whether a pass would find anything to send now.
   ///
@@ -146,13 +147,19 @@ class SyncQueueDrain {
   /// answers from what the last pass left: whether the queue has changed
   /// since, and when its earliest cooldown or claim runs out. A trigger with
   /// nothing sendable, such as a visit to the household list while every op
-  /// is cooling, therefore costs nothing. False while a pass is running,
-  /// which drops a trigger rather than queueing it, as the hydrates do.
+  /// is cooling, therefore costs nothing. A clock set back since that pass
+  /// makes it true: a failure stamped ahead of the clock waits no longer,
+  /// which that pass's schedule could not foresee. False while a pass is
+  /// running, which drops a trigger rather than queueing it, as the hydrates
+  /// do.
   bool get isStale {
     if (_closed || _inFlight != null) return false;
-    if (!_settled || _seenCount != _settledCount) return true;
+    final settledAt = _settledAt;
+    if (settledAt == null || _seenCount != _settledCount) return true;
+    final now = _now();
+    if (now.isBefore(settledAt)) return true;
     final at = _nextSendableAt;
-    return at != null && !_now().isBefore(at);
+    return at != null && !now.isBefore(at);
   }
 
   /// Runs one pass. Never throws. A call while a pass is running joins it.
@@ -341,14 +348,21 @@ class SyncQueueDrain {
   /// inline create can be mid-send while this settles, and if its send
   /// fails without changing the count, its claim's expiry is the only thing
   /// left that would make the drain look again.
+  ///
+  /// The count comes from that same read, so the two describe one queue.
+  /// Read apart, a write landing between them, such as that create's
+  /// completion, would cache a count from before it with a schedule from
+  /// after: once a new op brought the count back to the cached one,
+  /// [isStale] would find nothing scheduled, and the op would wait for the
+  /// count to move again.
   Future<void> _settle() async {
     if (_closed) return;
     try {
-      final count = await _queue.getPendingCount();
       final snapshot = await _read();
-      _nextSendableAt = _nextSendable(snapshot, _now());
-      _settledCount = count;
-      _settled = true;
+      final now = _now();
+      _nextSendableAt = _nextSendable(snapshot, now);
+      _settledCount = snapshot.pendingCount;
+      _settledAt = now;
     } on Object catch (error, stackTrace) {
       // The schedule stays as it was: stale until a pass settles, so the
       // next trigger tries again.
@@ -428,6 +442,12 @@ class _Snapshot {
   _Snapshot._(this.entries, this._sharing);
 
   final List<_Listed> entries;
+
+  /// The pending count as this read found it:
+  /// [SyncQueueRepository.getPendingCount] counts every entry not yet
+  /// completed except the exhausted ones.
+  int get pendingCount =>
+      entries.where((listed) => !listed.entry.isExhausted).length;
 
   /// How many entries in this read share each target.
   final Map<String, int> _sharing;
