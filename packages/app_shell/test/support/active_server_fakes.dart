@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:di/di.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
@@ -170,13 +171,13 @@ AuthResponse sampleSession() => AuthResponse(
 );
 
 /// An [ActiveServer] whose scoped container carries [repo] (and optionally
-/// the household deps and the user-session seam), mirroring the production
-/// per-server scope the shell reads its dependencies from. Pass the
-/// household deps to model a server whose user-session scope is active
-/// (native, post-#135/#129); omit them to model web or a signed-out
-/// server. Pass [userSessionScope] to observe or script the shell's
-/// #135 activate/deactivate wiring; omit it to model a platform without
-/// the seam (web until #137).
+/// the household deps, the collection deps and the user-session seam),
+/// mirroring the production per-server scope the shell reads its
+/// dependencies from. Pass the household or collection deps to model a
+/// server whose user-session scope is active (native, post-#135/#129);
+/// omit them to model web or a signed-out server. Pass [userSessionScope]
+/// to observe or script the shell's #135 activate/deactivate wiring; omit
+/// it to model a platform without the seam (web until #137).
 ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
@@ -184,6 +185,9 @@ ActiveServer buildActiveServer(
   SyncQueueRepository? syncQueueRepository,
   HouseholdHydrationStatus? householdHydrationStatus,
   HouseholdRefresher? householdRefresher,
+  GameCollectionRepository? gameCollectionRepository,
+  GameCollectionHydrationStatus? gameCollectionHydrationStatus,
+  GameCollectionRefresher? gameCollectionRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
   String serverId = 'server-uuid-1',
@@ -208,6 +212,21 @@ ActiveServer buildActiveServer(
   }
   if (syncQueueRepository != null) {
     container.registerSingleton<SyncQueueRepository>(syncQueueRepository);
+  }
+  if (gameCollectionRepository != null) {
+    container.registerSingleton<GameCollectionRepository>(
+      gameCollectionRepository,
+    );
+  }
+  if (gameCollectionHydrationStatus != null) {
+    container.registerSingleton<GameCollectionHydrationStatus>(
+      gameCollectionHydrationStatus,
+    );
+  }
+  if (gameCollectionRefresher != null) {
+    container.registerSingleton<GameCollectionRefresher>(
+      gameCollectionRefresher,
+    );
   }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);

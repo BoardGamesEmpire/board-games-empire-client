@@ -161,9 +161,10 @@ Backend: `game-gateways` CRUD + connect/disconnect, `GET /games/search`
 
 ### P6 — Collection feature (#29) — critical-path long pole
 
-**Backend-blocked on #114 (GameCollection REST CRUD — net-new server work).**
+~~**Backend-blocked on #114 (GameCollection REST CRUD — net-new server work).**~~
+Unblocked: backend #114 closed on 2026-07-06.
 
-- #44 Collection list (reactive read)
+- #44 ~~Collection list (reactive read)~~
 - #45 Add-to-collection (`platformGameId` + `GameMedium` + quantity)
 - #46 Collection item detail / edit / remove (resurrection-aware)
 - #47 Sync-status indicators (`isDirty` / `isLocalOnly` / pending count)
@@ -189,8 +190,9 @@ tradeoff.
 
 ## Backend dependencies
 
-- **#114 — GameCollection REST CRUD** (new). Hard blocker for P6. No collection
-  controller exists server-side today (`games` is the admin catalog).
+- **#114 — GameCollection REST CRUD** ~~(new). Hard blocker for P6. No collection
+  controller exists server-side today (`games` is the admin catalog).~~ Closed
+  on 2026-07-06.
 - **#115 — REST import-status endpoint** (new). Import is async; the REST-only
   alpha needs to observe completion (P5).
 - **#47 — well-known version/features/sinks** (existing). Client #13 (P1) consumes

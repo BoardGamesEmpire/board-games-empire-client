@@ -2,7 +2,7 @@ name: game_collection
 # Not `collection`: that name is dart-lang's `package:collection`, already in
 # the workspace's dependency graph. The directory keeps the feature's name, as
 # `packages/platform/web` does for `web_platform`.
-description: "Game collection feature — the hydrate today, the list screen next (#44)"
+description: "Game collection feature — the hydrate and the list screen (#44)"
 publish_to: none
 
 environment:
@@ -11,9 +11,9 @@ environment:
 resolution: workspace
 
 dependencies:
-  # A Flutter package from the start, although the hydrate needs none of it:
-  # #44's list screen builds here (#259).
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
   interfaces:
@@ -24,6 +24,16 @@ dependencies:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
+
+  flutter_bloc: ^9.1.1
+  equatable: ^2.1.0
+  intl: ^0.20.2
+  # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
+  # scale; both declared directly because this package imports from both.
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
 
 dev_dependencies:
   flutter_test:
@@ -43,3 +53,13 @@ dev_dependencies:
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
+  l10n_test_support:
+    path: ../../testing/l10n
+  # Shared widget-test helpers: viewport sizing for the list's narrow-window
+  # and large-text checks.
+  bge_test_support:
+    path: ../../testing/support
+
+flutter:
+  generate: true
+  uses-material-design: true
