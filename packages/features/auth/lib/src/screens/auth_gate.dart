@@ -36,6 +36,7 @@ class AuthGate extends StatelessWidget {
     required this.identity,
     required this.serverDisplayName,
     required this.splash,
+    this.unsentChangesCount,
   });
 
   /// The active server's identity — drives which strategies [AuthScreen]
@@ -49,7 +50,14 @@ class AuthGate extends StatelessWidget {
   /// Rendered while the session check is unresolved (and for the redirect
   /// microtask after authentication). The shell passes its
   /// `SplashScreen` so cold start reads as one continuous splash.
+  ///
+  /// [AuthScreen] holds it too, while it reads [unsentChangesCount].
   final Widget splash;
+
+  /// Passed to [AuthScreen.unsentChangesCount] (#142). Injected for the same
+  /// reason as [splash]: the count lives in a per-server scope this feature
+  /// doesn't reach into.
+  final Future<int> Function()? unsentChangesCount;
 
   @override
   Widget build(BuildContext context) {
@@ -63,8 +71,14 @@ class AuthGate extends StatelessWidget {
           onRetry: () =>
               context.read<AuthBloc>().add(const AuthSessionCheckRequested()),
         ),
-        AuthLoading() || AuthUnauthenticated() || AuthOperationFailure() =>
-          AuthScreen(identity: identity, serverDisplayName: serverDisplayName),
+        AuthLoading() ||
+        AuthUnauthenticated() ||
+        AuthOperationFailure() => AuthScreen(
+          identity: identity,
+          serverDisplayName: serverDisplayName,
+          unsentChangesCount: unsentChangesCount,
+          splash: splash,
+        ),
       },
     );
   }

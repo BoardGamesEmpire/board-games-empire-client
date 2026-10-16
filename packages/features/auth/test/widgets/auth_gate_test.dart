@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,6 +103,38 @@ void main() {
 
       expect(find.byType(AuthScreen), findsOneWidget);
       expect(find.byKey(_kSplashKey), findsNothing);
+    });
+
+    testWidgets("hands the shell's unsent-changes count to the sign-in screen, "
+        'and its splash to hold while the count is read (#142)', (
+      tester,
+    ) async {
+      when(() => mockBloc.state).thenReturn(const AuthUnauthenticated());
+      final count = Completer<int>();
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AuthLocalizations.localizationsDelegates,
+          supportedLocales: AuthLocalizations.supportedLocales,
+          home: BlocProvider<AuthBloc>.value(
+            value: mockBloc,
+            child: AuthGate(
+              identity: testServerIdentity(),
+              serverDisplayName: 'My Server',
+              splash: const SizedBox(key: _kSplashKey),
+              unsentChangesCount: () => count.future,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(_kSplashKey), findsOneWidget);
+
+      count.complete(2);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_kSplashKey), findsNothing);
+      expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
     });
 
     testWidgets('renders AuthScreen (not splash) for interactive '
