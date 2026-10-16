@@ -435,6 +435,16 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
               statusCode: status,
             );
     }
+    if (status == 409 && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). Nothing
+      // about the request was wrong, so the same write is expected to
+      // succeed. Read the field, not the message, which is translated.
+      return DataGatewayTransientException(
+        '$message; the server hit a deadlock and asked for a retry',
+        cause: cause,
+        statusCode: status,
+      );
+    }
     if (status == 409 && fromApi) {
       return DataGatewayNameInUseException(
         message,

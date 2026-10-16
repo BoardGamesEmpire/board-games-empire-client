@@ -18,7 +18,8 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 
 class _MockStorage extends Mock implements Storage {}
 
-/// Answers every list read with [read]; nothing else is called here.
+/// Answers every list read with [read] and every row read with a DataGateway
+/// named after its id; nothing else is called here.
 class _ListingRemote implements DataGatewayRemoteDataSource {
   _ListingRemote(this.read);
 
@@ -29,6 +30,16 @@ class _ListingRemote implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.maxPageSize,
   }) => read();
+
+  @override
+  Future<DataGateway> fetchOne(String id) async => DataGateway(
+    id: id,
+    name: 'Named $id',
+    connectionUrl: 'bgg.internal',
+    connectionPort: 50051,
+    enabled: true,
+    authType: DataGatewayAuthType.none,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -196,5 +207,23 @@ void main() {
 
     expect(find.text('No data gateways yet'), findsOneWidget);
     expect(reads, readsBeneathTheForm + 1);
+  });
+
+  testWidgets('going from one edit form straight to another edits the second '
+      '(#41)', (tester) async {
+    access.readGranted();
+    await pumpHome(tester);
+    final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
+
+    router.go(AppRoutes.dataGatewayEditOf('dg_a'));
+    await tester.pumpAndSettle();
+    expect(find.text('Named dg_a'), findsOneWidget);
+
+    // go_router keys a page by its path pattern, so this reuses the screen.
+    router.go(AppRoutes.dataGatewayEditOf('dg_b'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Named dg_b'), findsOneWidget);
+    expect(find.text('Named dg_a'), findsNothing);
   });
 }

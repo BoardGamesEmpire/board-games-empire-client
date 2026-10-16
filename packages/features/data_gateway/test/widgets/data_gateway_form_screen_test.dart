@@ -213,6 +213,26 @@ void main() {
 
       expect(find.text("This data gateway doesn't exist"), findsOneWidget);
     });
+
+    testWidgets('rebuilt for another row, opens on that row and saves to it, '
+        'as when a router reuses the page', (tester) async {
+      final other = gateway('dg_2', name: 'Other', connectionUrl: 'other.host');
+      remote.onFetchOne = (id) async => id == 'dg_1' ? bgg : other;
+      remote.onUpdate = (_, _) async => changed(other);
+      await pumpForm(tester, editingId: 'dg_1');
+
+      await pumpForm(tester, editingId: 'dg_2');
+
+      expect(find.text('other.host'), findsOneWidget);
+      expect(find.text('bgg.internal'), findsNothing);
+      await enter(tester, DataGatewayForm.portFieldKey, '50060');
+      await submit(tester);
+      expect(remote.calls, [
+        'fetchOne(dg_1)',
+        'fetchOne(dg_2)',
+        'update(dg_2)',
+      ]);
+    });
   });
 
   group('access (#41)', () {

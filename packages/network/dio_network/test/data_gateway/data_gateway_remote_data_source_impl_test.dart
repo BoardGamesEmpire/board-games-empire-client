@@ -393,6 +393,26 @@ void main() {
         throwsA(isA<DataGatewayNotFoundException>()),
       );
     });
+
+    test('a 409 for a deadlock is transient, not the name being in use: '
+        'nothing about the edit was wrong', () async {
+      // The backend's rendering of a deadlock that outlived its own retry.
+      final remote = answering(
+        jsonEncode({
+          'statusCode': 409,
+          'error': 'Conflict',
+          'message': 'The request collided with another; try it again.',
+          'code': 'TransactionDeadlockError',
+          'retryable': true,
+        }),
+        status: 409,
+      );
+
+      await expectLater(
+        remote.update('dg_1', const DataGatewayChanges(connectionPort: 8443)),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
   });
 
   group('delete, connect and disconnect', () {

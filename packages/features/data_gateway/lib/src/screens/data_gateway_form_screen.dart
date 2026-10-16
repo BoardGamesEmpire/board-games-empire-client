@@ -42,6 +42,11 @@ class DataGatewayFormScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider<DataGatewayFormBloc>(
+    // Keyed on the row: go_router keys a page by its path pattern, so going
+    // from one edit location straight to another rebuilds this screen in
+    // place. A new id has to start a new bloc and new fields, or the form
+    // would show and save the first row under the second's URL.
+    key: ValueKey<String?>(editingId),
     create: (_) => DataGatewayFormBloc(
       remote: remote,
       access: access,

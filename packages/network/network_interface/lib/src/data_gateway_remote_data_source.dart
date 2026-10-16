@@ -49,17 +49,19 @@ import 'paginated_result.dart';
 /// - [DataGatewayForbiddenException]: a 403 carrying the API's error envelope.
 /// - [DataGatewayNotFoundException]: a 404 carrying the envelope, from a route
 ///   naming one DataGateway. It does not exist, or was deleted.
-/// - [DataGatewayNameInUseException]: a 409 carrying the envelope. Another live
-///   DataGateway has the name. The backend answers a duplicate name with a 500
-///   until backend#754 lands, which is a [DataGatewayTransientException].
+/// - [DataGatewayNameInUseException]: a 409 carrying the envelope and not
+///   `retryable: true`. Another live DataGateway has the name. The backend
+///   answers a duplicate name with a 500 until backend#754 lands, which is a
+///   [DataGatewayTransientException].
 /// - [DataGatewayPermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, mostly), and a 2xx
 ///   whose body cannot be read as the contract above.
 /// - [DataGatewayTransientException]: no response at all, 401, 407, 408, 429,
 ///   every 5xx, a 403 or 404 without the envelope (a proxy answered, not the
 ///   API), a 404 from [fetchPage] even with it (a list route is never absent,
-///   so the route is not deployed), and a 2xx body this device could not
-///   decode at all.
+///   so the route is not deployed), a 409 saying `retryable: true` (a
+///   deadlock the server asks the caller to retry), and a 2xx body this device
+///   could not decode at all.
 ///
 /// The envelope requirement is the household and collection rule (#350, #365,
 /// #253): only the application's own answer licenses a conclusion about the
