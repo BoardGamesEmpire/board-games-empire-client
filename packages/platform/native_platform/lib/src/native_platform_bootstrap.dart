@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:dio_network/dio_network.dart';
 import 'package:drift/drift.dart';
@@ -80,11 +81,17 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// hydrate (#259). Each starts its drain unawaited — activation is the
 /// bootstrap gate, and a throw here signs the user out, so an unreachable
 /// server must not reach this list's caller.
+///
+/// [DataGatewayAccessInstaller] runs after the rehydrator too, which it
+/// registers its re-check with (#41). It reads one DataGateway row, unawaited,
+/// to learn whether the home drawer offers the Admin entry; it needs nothing
+/// the storage tier registers.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
+  DataGatewayAccessInstaller(),
 ];
 
 /// Composes the real per-server [ServerContextFactory] from

@@ -1,5 +1,6 @@
 library;
 
+export 'src/data_gateway_remote_data_source.dart';
 export 'src/game_collection_remote_data_source.dart';
 export 'src/household_remote_data_source.dart';
 export 'src/http_date.dart';

@@ -16,6 +16,8 @@ dependencies:
 
   auth:
     path: ../features/auth
+  data_gateway:
+    path: ../features/data_gateway
   di:
     path: ../core/di
   feedback:

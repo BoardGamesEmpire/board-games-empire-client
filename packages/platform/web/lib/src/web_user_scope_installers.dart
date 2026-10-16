@@ -1,3 +1,4 @@
+import 'package:data_gateway/data_gateway.dart' show DataGatewayAccessInstaller;
 import 'package:di/di.dart' show SessionRehydratorInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
@@ -43,6 +44,12 @@ import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
 /// `SessionRehydrateTrigger` lives in `app_shell` and is driven by
 /// connectivity edges and app-lifecycle resumes on both platforms.
 ///
+/// [DataGatewayAccessInstaller] is native's own as well (#41): one unawaited
+/// read of a DataGateway row that decides whether the home drawer offers the
+/// Admin entry. It resolves the `DataGatewayRemoteDataSource` that
+/// `registerServerNetworkWeb` registers in the origin scope, and registers
+/// its re-check with the rehydrator above.
+///
 /// This lives on the VM-compilable side of the package split so its
 /// membership can be asserted without a browser, the way native's is.
 /// `buildWebServerScope` — which is browser-only, because it composes the
@@ -52,4 +59,5 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
+  DataGatewayAccessInstaller(),
 ];

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:auth/auth.dart';
+import 'package:data_gateway/data_gateway.dart';
+import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -312,6 +314,8 @@ class _BgeAppState extends State<BgeApp> {
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
+      dataGatewayListBuilder: _buildDataGatewayListRoute,
+      dataGatewayFormBuilder: _buildDataGatewayFormRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
@@ -519,7 +523,7 @@ class _BgeAppState extends State<BgeApp> {
     final container = active.container;
     final canReadHouseholds = container.isRegistered<HouseholdRepository>();
 
-    return HomeScreen(
+    HomeScreen home({required bool admin}) => HomeScreen(
       activeServerName: active.displayName,
       entries: [
         if (canReadHouseholds)
@@ -535,6 +539,16 @@ class _BgeAppState extends State<BgeApp> {
           label: feedbackL10n.feedbackComposeTitle,
           onSelected: (ctx) => ctx.push(AppRoutes.feedback),
         ),
+        if (admin)
+          HomeMenuEntry(
+            id: 'admin',
+            icon: Icons.admin_panel_settings_outlined,
+            label: shellL10n.homeMenuAdmin,
+            // Straight to the DataGateway list: it is the only admin screen
+            // so far. #274's dashboard takes the entry over and keeps the
+            // route.
+            onSelected: (ctx) => ctx.push(AppRoutes.adminDataGateways),
+          ),
         HomeMenuEntry(
           id: 'settings',
           icon: Icons.settings_outlined,
@@ -550,6 +564,23 @@ class _BgeAppState extends State<BgeApp> {
               ctx.read<AuthBloc>().add(const AuthSignOutRequested()),
         ),
       ],
+    );
+
+    // #41: the Admin entry shows only once the session's one-row read of
+    // DataGateways has succeeded. A refused read, and one that has not
+    // answered yet, both leave it hidden; it appears when the read lands,
+    // and goes when a screen later finds the read refused. Moderators can
+    // read DataGateways too, so the entry says nothing about changing them:
+    // the screen hides its change actions on the first refusal.
+    //
+    // No access check registered (no DataGateway client, or no user
+    // session) is no entry.
+    final access = _dataGatewayAccess(container);
+    if (access == null) return home(admin: false);
+    return ValueListenableBuilder<DataGatewayAccessState>(
+      valueListenable: access,
+      builder: (_, access, _) =>
+          home(admin: access.read == DataGatewayRead.granted),
     );
   }
 
@@ -769,6 +800,63 @@ class _BgeAppState extends State<BgeApp> {
         }
         ctx.pushReplacement(AppRoutes.householdDetailOf(householdId));
       },
+    );
+  }
+
+  /// The session's [DataGatewayAccess], or null where the session runs no
+  /// access check (#41).
+  static DataGatewayAccess? _dataGatewayAccess(DependencyContainer container) =>
+      container.isRegistered<DataGatewayAccess>()
+      ? container.get<DataGatewayAccess>()
+      : null;
+
+  /// The #41 DataGateway list: the per-server [DataGatewayRemoteDataSource]
+  /// and the session's [DataGatewayAccess] from the active server's
+  /// container. Null (→ [NotYetAvailableScreen]) when no active server is
+  /// resolvable or it has no DataGateway client.
+  ///
+  /// Guarded on the client alone, not on access: a deep link by a user the
+  /// server refuses reaches the screen, which says so (#41).
+  ///
+  /// The forms are pushed and awaited, and the list reads itself again when
+  /// one returns. A save made after a `go` straight to a form returns to the
+  /// list go_router built beneath it, which read the list before the save
+  /// and does not read it again.
+  Widget? _buildDataGatewayListRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<DataGatewayRemoteDataSource>()) return null;
+
+    return DataGatewayListScreen(
+      remote: container.get<DataGatewayRemoteDataSource>(),
+      access: _dataGatewayAccess(container),
+      onAdd: (ctx) => ctx.push<void>(AppRoutes.dataGatewayAdd),
+      onEdit: (ctx, id) => ctx.push<void>(AppRoutes.dataGatewayEditOf(id)),
+    );
+  }
+
+  /// The #41 DataGateway add form, or the edit form for [dataGatewayId].
+  /// Same resolution and null contract as [_buildDataGatewayListRoute].
+  ///
+  /// Leaving after a save is a pop either way in: the forms are children of
+  /// the list route, so a `go` straight to one builds the list beneath it.
+  Widget? _buildDataGatewayFormRoute(
+    BuildContext context,
+    String? dataGatewayId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<DataGatewayRemoteDataSource>()) return null;
+
+    return DataGatewayFormScreen(
+      remote: container.get<DataGatewayRemoteDataSource>(),
+      access: _dataGatewayAccess(container),
+      editingId: dataGatewayId,
+      onDone: (ctx) => ctx.pop(),
     );
   }
 
@@ -1275,6 +1363,7 @@ class _BgeAppState extends State<BgeApp> {
         AuthLocalizations.delegate,
         FeedbackLocalizations.delegate,
         HouseholdLocalizations.delegate,
+        DataGatewayLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],
       supportedLocales: ShellLocalizations.supportedLocales,

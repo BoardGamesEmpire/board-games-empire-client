@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
@@ -186,6 +187,8 @@ ActiveServer buildActiveServer(
   HouseholdRefresher? householdRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
+  DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
+  DataGatewayAccess? dataGatewayAccess,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -214,6 +217,14 @@ ActiveServer buildActiveServer(
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
+  }
+  if (dataGatewayRemoteDataSource != null) {
+    container.registerSingleton<DataGatewayRemoteDataSource>(
+      dataGatewayRemoteDataSource,
+    );
+  }
+  if (dataGatewayAccess != null) {
+    container.registerSingleton<DataGatewayAccess>(dataGatewayAccess);
   }
   return ActiveServer(
     serverId: serverId,

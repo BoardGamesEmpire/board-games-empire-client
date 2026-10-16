@@ -6,11 +6,15 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
-    show GameCollectionRemoteDataSource, HouseholdRemoteDataSource;
+    show
+        DataGatewayRemoteDataSource,
+        GameCollectionRemoteDataSource,
+        HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
+import '../data_gateway/data_gateway_remote_data_source_impl.dart';
 import '../feedback/feedback_dio_transport.dart';
 import '../game_collection/game_collection_remote_data_source_impl.dart';
 import '../household/household_remote_data_source_impl.dart';
@@ -124,5 +128,14 @@ void registerServerNetwork({
   // pushes queued collection operations through.
   container.registerSingleton<GameCollectionRemoteDataSource>(
     GameCollectionRemoteDataSourceImpl(dio),
+  );
+
+  // #41: the per-server DataGateway remote, for the admin screen and the read
+  // that decides whether the drawer offers it. Same convention and placement
+  // as the two remotes above: the per-server Dio carries the base URL and the
+  // session `/api/data-gateways` requires. Const and stateless; the container
+  // owns the Dio.
+  container.registerSingleton<DataGatewayRemoteDataSource>(
+    DataGatewayRemoteDataSourceImpl(dio),
   );
 }

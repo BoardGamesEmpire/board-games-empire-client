@@ -152,11 +152,13 @@ Asking the server *again* is deliberately three answers, not one:
 
 ### P5 — Gateways admin + game discovery (#28)
 
-- #41 Gateway admin UI (role-gated): list / add / connect / disconnect
+- #41 DataGateway admin UI (admin-gated): list / add / edit / delete / connect /
+  disconnect. Its review UI moved to #457, which waits on backend #715.
 - #42 Game browse + search UI (in-system + external gateway results)
 - #43 Game import flow + completion handling (REST) — **depends on backend #115**
 
-Backend: `game-gateways` CRUD + connect/disconnect, `GET /games/search`
+Backend: `data-gateways` CRUD + connect/disconnect (renamed from
+`game-gateways` by backend #710), `GET /games/search`
 (local+external unified), `GET /games`, `POST /games/import` (async) all exist.
 
 ### P6 — Collection feature (#29) — critical-path long pole
@@ -196,7 +198,7 @@ tradeoff.
 - **#47 — well-known version/features/sinks** (existing). Client #13 (P1) consumes
   it; degrades gracefully (open bounds) until it lands.
 - Already present and consumed as-is: auth (BetterAuth), households CRUD,
-  game-gateways CRUD + connect/disconnect, `games/search` (local + external),
+  data-gateways CRUD + connect/disconnect, `games/search` (local + external),
   `games/import`, `games` catalog, `.well-known/bge-identity`.
 
 ## What's deferred to post-alpha (v0.2+)

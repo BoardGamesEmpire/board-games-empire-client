@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart'
     show
         ClockSkewInterceptor,
+        DataGatewayRemoteDataSourceImpl,
         DioFactory,
         FeedbackDioTransport,
         GameCollectionRemoteDataSourceImpl,
@@ -13,7 +14,10 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart' show ClockService;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
-    show GameCollectionRemoteDataSource, HouseholdRemoteDataSource;
+    show
+        DataGatewayRemoteDataSource,
+        GameCollectionRemoteDataSource,
+        HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/web_auth_repository_impl.dart';
@@ -134,5 +138,13 @@ void registerServerNetworkWeb({
   // it, and #121's drain pushes queued collection operations through it.
   container.registerSingleton<GameCollectionRemoteDataSource>(
     GameCollectionRemoteDataSourceImpl(dio),
+  );
+
+  // #41: the per-origin DataGateway remote. Same convention, placement and
+  // reuse argument as the two remotes above: native's implementation over
+  // this origin's Dio, whose permissive validateStatus is what lets it read
+  // the 403 envelope the admin gating turns on.
+  container.registerSingleton<DataGatewayRemoteDataSource>(
+    DataGatewayRemoteDataSourceImpl(dio),
   );
 }

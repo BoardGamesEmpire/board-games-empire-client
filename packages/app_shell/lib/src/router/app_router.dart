@@ -54,6 +54,33 @@ abstract final class AppRoutes {
   static String householdDetailOf(String householdId) =>
       '$household/${Uri.encodeComponent(householdId)}';
 
+  /// The DataGateway admin list (#41).
+  ///
+  /// Under `/admin` because DataGateways belong to the admin dashboard
+  /// (#274). When that lands it takes over the drawer entry and keeps this
+  /// path.
+  static const adminDataGateways = '/admin/data-gateways';
+
+  /// The add form, beneath the list.
+  static const dataGatewayAdd = '$adminDataGateways/$_dataGatewayAddSegment';
+
+  /// The edit form for one DataGateway, beneath the list. Build a concrete
+  /// location with [dataGatewayEditOf].
+  ///
+  /// No overlap with [dataGatewayAdd]: this pattern has two segments below
+  /// the list, and that one has one.
+  static const dataGatewayEdit = '$adminDataGateways/$_dataGatewayEditSegment';
+
+  /// The id segment of [dataGatewayEdit].
+  static const dataGatewayIdParam = 'dataGatewayId';
+
+  static const _dataGatewayAddSegment = 'new';
+  static const _dataGatewayEditSegment = ':$dataGatewayIdParam/edit';
+
+  /// The location of one DataGateway's edit form.
+  static String dataGatewayEditOf(String id) =>
+      '$adminDataGateways/${Uri.encodeComponent(id)}/edit';
+
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
@@ -180,6 +207,25 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
   String householdId,
 );
 
+/// Builds the DataGateway admin list (#41) for the
+/// [AppRoutes.adminDataGateways] route. Supplied by [BgeApp]; returns null
+/// when no active server is resolvable or its container carries no
+/// `DataGatewayRemoteDataSource`, in which case the route falls back to
+/// [NotYetAvailableScreen].
+///
+/// Not gated on the user's access. A deep link by a user the server refuses
+/// reaches the screen, which says they have no access; hiding the route
+/// would answer the same question with a less useful page.
+typedef DataGatewayListScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds the DataGateway add form, or the edit form for [dataGatewayId]
+/// (#41). Null [dataGatewayId] is the add form. Same null contract as
+/// [DataGatewayListScreenBuilder].
+typedef DataGatewayFormScreenBuilder = Widget? Function(
+  BuildContext context,
+  String? dataGatewayId,
+);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -201,6 +247,8 @@ GoRouter buildAppRouter({
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
+  DataGatewayListScreenBuilder? dataGatewayListBuilder,
+  DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -334,6 +382,33 @@ GoRouter buildAppRouter({
             builder: (context, state) {
               final id = state.pathParameters[AppRoutes.householdIdParam] ?? '';
               return householdDetailBuilder?.call(context, id) ??
+                  const NotYetAvailableScreen();
+            },
+          ),
+        ],
+      ),
+      // #41: the DataGateway admin screens. The forms are children of the
+      // list, as the household children are of theirs (#308), so a deep link
+      // to a form builds the list beneath it and leaving the form is a plain
+      // pop.
+      GoRoute(
+        path: AppRoutes.adminDataGateways,
+        builder: (context, _) =>
+            dataGatewayListBuilder?.call(context) ??
+            const NotYetAvailableScreen(),
+        routes: [
+          GoRoute(
+            path: AppRoutes._dataGatewayAddSegment,
+            builder: (context, _) =>
+                dataGatewayFormBuilder?.call(context, null) ??
+                const NotYetAvailableScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes._dataGatewayEditSegment,
+            builder: (context, state) {
+              final id =
+                  state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
+              return dataGatewayFormBuilder?.call(context, id) ??
                   const NotYetAvailableScreen();
             },
           ),
