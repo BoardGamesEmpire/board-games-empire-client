@@ -7,6 +7,7 @@ import '../tables/household_table.dart';
 import '../tables/household_moves_table.dart';
 import '../tables/household_members_table.dart';
 import '../tables/sync_queue_table.dart';
+import '../tables/unsent_changes_users_table.dart';
 import 'migration_policy.dart';
 
 part 'server_database.g.dart';
@@ -32,7 +33,7 @@ part 'server_database.g.dart';
 /// ## Schema
 ///
 /// Tables: games, platform_games, game_collections, households,
-/// household_members, household_moves, sync_queue.
+/// household_members, household_moves, sync_queue, unsent_changes_users.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -42,7 +43,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **4**.
+/// `schemaVersion` is **5**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -65,6 +66,10 @@ part 'server_database.g.dart';
 ///   `server_id`), where the household reconcile records where an
 ///   optimistic household went, so every tab and a reload can follow it.
 ///   A new table with no foreign keys, created by one `createTable`.
+/// - **v4 → v5 (#142):** adds `unsent_changes_users`, the users whose
+///   unsent `sync_queue` rows the sign-in screen may mention. A new table
+///   with no foreign keys, created by one `createTable`. Starts empty:
+///   nothing before it recorded whose session was open.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -80,7 +85,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v4.json`, and
+/// `drift_schemas/server/drift_schema_v5.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -93,6 +98,7 @@ part 'server_database.g.dart';
     HouseholdMembersTable,
     HouseholdMovesTable,
     SyncQueueTable,
+    UnsentChangesUsersTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -116,7 +122,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -156,6 +162,12 @@ class ServerDatabase extends _$ServerDatabase {
         // with no FK edges and no rows to carry, so no FK-off wrapper is
         // needed (#54 stays deferred).
         await m.createTable(householdMovesTable);
+      }
+      if (from < 5 && to >= 5) {
+        // v4 → v5 (#142): whose unsent changes the sign-in screen may
+        // mention. A new table with no FK edges, created empty, so no
+        // FK-off wrapper is needed (#54 stays deferred).
+        await m.createTable(unsentChangesUsersTable);
       }
     },
   );

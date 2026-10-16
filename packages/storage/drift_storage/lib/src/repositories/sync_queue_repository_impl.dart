@@ -5,6 +5,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import '../tables/sync_queue_table.dart' show syncQueueOutstandingStatuses;
 import 'watch_disposal.dart';
 
 /// Per-user implementation of [SyncQueueRepository] over the per-server
@@ -155,7 +156,9 @@ class SyncQueueRepositoryImpl
     final rows =
         await (_db.select(_db.syncQueueTable)
               ..where(
-                (t) => t.userId.equals(_userId) & t.status.isIn(_liveStatuses),
+                (t) =>
+                    t.userId.equals(_userId) &
+                    t.status.isIn(syncQueueOutstandingStatuses),
               )
               ..orderBy(_queueOrder))
             .get();
@@ -429,10 +432,6 @@ class SyncQueueRepositoryImpl
     };
   }
 
-  /// The statuses of an entry not yet done: everything but `completed`
-  /// that this build knows.
-  static const List<String> _liveStatuses = ['pending', 'inProgress', 'failed'];
-
   /// Predicate for "a sender may take this entry now": what
   /// [getPendingEntries] lists and what [claim] accepts (#430). One
   /// predicate for both, so they cannot drift apart.
@@ -495,7 +494,7 @@ class SyncQueueRepositoryImpl
   Expression<bool> _pendingPredicate() {
     final t = _db.syncQueueTable;
     return t.userId.equals(_userId) &
-        t.status.isIn(_liveStatuses) &
+        t.status.isIn(syncQueueOutstandingStatuses) &
         t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries);
   }
 

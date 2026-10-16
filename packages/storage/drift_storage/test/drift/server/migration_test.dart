@@ -9,6 +9,7 @@ import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
 import 'generated/schema_v4.dart' as v4;
+import 'generated/schema_v5.dart' as v5;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -421,6 +422,70 @@ void main() {
           await newDb.select(newDb.syncQueue).get(),
         );
         expect(await newDb.select(newDb.householdMoves).get(), isEmpty);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v4 → v5 (#142): the step only creates
+  // `unsent_changes_users`. The queue is what the new table counts, so its
+  // rows above all must be carried, not dropped; the new table starts empty,
+  // because nothing before it recorded whose session was open.
+  test('migration from v4 to v5 adds an empty unsent_changes_users and '
+      'carries the queue (#142)', () async {
+    const createdAt = '2024-01-15T10:30:00.000Z';
+    const payload =
+        '{"type":"create_household","local_id":"hh_local_1","name":"HQ"}';
+
+    final oldSyncQueueData = <v4.SyncQueueData>[
+      const v4.SyncQueueData(
+        id: 'sq_v4_1',
+        userId: 'user_v4_1',
+        payload: payload,
+        status: 'failed',
+        retryCount: 3,
+        lastError: 'rejected',
+        createdAt: createdAt,
+      ),
+    ];
+    final expectedNewSyncQueueData = <v5.SyncQueueData>[
+      const v5.SyncQueueData(
+        id: 'sq_v4_1',
+        userId: 'user_v4_1',
+        payload: payload,
+        status: 'failed',
+        retryCount: 3,
+        lastError: 'rejected',
+        createdAt: createdAt,
+      ),
+    ];
+
+    final oldHouseholdMovesData = <v4.HouseholdMovesData>[
+      const v4.HouseholdMovesData(localId: 'hh_local_1', serverId: 'hh_1'),
+    ];
+    final expectedNewHouseholdMovesData = <v5.HouseholdMovesData>[
+      const v5.HouseholdMovesData(localId: 'hh_local_1', serverId: 'hh_1'),
+    ];
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 4,
+      newVersion: 5,
+      createOld: v4.DatabaseAtV4.new,
+      createNew: v5.DatabaseAtV5.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insertAll(oldDb.syncQueue, oldSyncQueueData);
+        batch.insertAll(oldDb.householdMoves, oldHouseholdMovesData);
+      },
+      validateItems: (newDb) async {
+        expect(
+          expectedNewSyncQueueData,
+          await newDb.select(newDb.syncQueue).get(),
+        );
+        expect(
+          expectedNewHouseholdMovesData,
+          await newDb.select(newDb.householdMoves).get(),
+        );
+        expect(await newDb.select(newDb.unsentChangesUsers).get(), isEmpty);
       },
     );
   });

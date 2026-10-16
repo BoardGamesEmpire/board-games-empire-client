@@ -9,6 +9,7 @@ import 'package:storage_interface/storage_interface.dart';
 import '../databases/encrypted_executor_factory.dart';
 import '../databases/server_database.dart';
 import '../repositories/game_repository_impl.dart';
+import '../repositories/unsent_changes_notice_repository_impl.dart';
 
 /// [ServerScopeInstaller] for per-server storage: opens the
 /// encrypted [ServerDatabase] and registers it in the server's scope.
@@ -43,7 +44,8 @@ import '../repositories/game_repository_impl.dart';
 /// ## Registrations
 ///
 /// The [ServerDatabase], and the per-server repositories that hold nothing
-/// but it — today [GameRepository] (#251).
+/// but it — [GameRepository] (#251) and [UnsentChangesNoticeRepository]
+/// (#142).
 ///
 /// [GameRepository] belongs in this tier rather than the user-session tier
 /// because it takes **no user id**: it holds only the [ServerDatabase], so
@@ -53,15 +55,26 @@ import '../repositories/game_repository_impl.dart';
 /// `watchGame` / `watchGames` subscription is tied to the very database
 /// this scope owns, so the stream's lifetime already *is* the scope's.
 ///
-/// That is also why the registration carries **no `dispose:` hook**. The
-/// database's own hook closes it on scope teardown, and closing a drift
-/// database closes every stream vended from it. A hook here would be a
-/// second, redundant closer of streams that are already gone. The
-/// installer test pins this rather than trusting the reasoning.
+/// [UnsentChangesNoticeRepository] is here for a different reason. It
+/// counts one user's sync-queue rows on the sign-in screen, after that
+/// user's scope has been torn down, and at a cold start before any user
+/// scope exists. Only this tier is alive at both moments. It reads the
+/// queue and never writes it, so the user-session tier's rule that queue
+/// writes belong to the session that owns them (#147) still holds.
 ///
-/// The web counterpart registers the same repository over its own
+/// Neither registration carries a **`dispose:` hook**: each holds nothing
+/// but the database. The database's own hook closes it on scope teardown,
+/// and closing a drift database closes every stream vended from it. A hook
+/// on [GameRepository] would be a second, redundant closer of streams that
+/// are already gone, and [UnsentChangesNoticeRepository] vends none. The
+/// installer test pins the [GameRepository] half rather than trusting the
+/// reasoning.
+///
+/// The web counterpart registers the same [GameRepository] over its own
 /// `ServerDatabase` (`WebStorageInstaller`, #288) — web never runs a
-/// `ServerScopeInstaller`, so a registration here reaches native only.
+/// `ServerScopeInstaller`, so a registration here reaches native only. It
+/// registers no [UnsentChangesNoticeRepository]: web has nothing to count
+/// until it restores sessions offline (#144) and drains its queue (#447).
 ///
 /// ## Keying
 ///
@@ -108,6 +121,9 @@ class StorageScopeInstaller implements ServerScopeInstaller {
     // repository holds nothing but the database above, and closing that
     // closes every stream it vended.
     container.registerSingleton<GameRepository>(GameRepositoryImpl(db));
+    container.registerSingleton<UnsentChangesNoticeRepository>(
+      UnsentChangesNoticeRepositoryImpl(db),
+    );
   }
 
   /// Constructs the database over the encrypted executor and forces the

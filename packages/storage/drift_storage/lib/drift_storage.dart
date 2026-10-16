@@ -25,3 +25,4 @@ export 'src/repositories/household_repository_impl.dart';
 export 'src/repositories/notification_summary_repository_impl.dart';
 export 'src/repositories/server_repository_impl.dart';
 export 'src/repositories/sync_queue_repository_impl.dart';
+export 'src/repositories/unsent_changes_notice_repository_impl.dart';
