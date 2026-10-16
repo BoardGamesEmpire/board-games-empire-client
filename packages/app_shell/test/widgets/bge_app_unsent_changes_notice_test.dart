@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_shell/app_shell.dart';
 import 'package:auth/auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -141,6 +142,33 @@ void main() {
     );
     addTearDown(cubit.close);
     await startApp(tester, cubit);
+
+    expect(find.byType(AuthScreen), findsOneWidget);
+    expect(find.text(_twoWaiting), findsOneWidget);
+  });
+
+  testWidgets('and the same after a sign-in from the sign-in screen, when '
+      'the activation fails before the next frame', (tester) async {
+    // u1 signed out on purpose earlier, so the screen opens with no notice.
+    final repo = FakeAuthRepository();
+    final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2});
+    final cubit = buildCubit(
+      repo,
+      notice,
+      sessionScope: _ThrowingUserSessionScope(),
+    );
+    addTearDown(cubit.close);
+    await startApp(tester, cubit);
+    expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
+
+    // Dispatched rather than typed, so nothing pumps a frame between the
+    // session starting and the recovery ending it: the gate never shows its
+    // splash, and the sign-in screen stays up throughout.
+    BlocProvider.of<AuthBloc>(
+      tester.element(find.byType(AuthLifecycleRevalidationTrigger)),
+    ).add(const AuthSignInRequested(email: 'u1@example.com', password: 'pw'));
+    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.byType(AuthScreen), findsOneWidget);
     expect(find.text(_twoWaiting), findsOneWidget);

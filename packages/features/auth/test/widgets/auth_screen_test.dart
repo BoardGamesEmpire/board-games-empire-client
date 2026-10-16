@@ -748,6 +748,38 @@ void main() {
         expect(reads, 1);
         expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
       });
+
+      // The gate swaps this screen for its splash while a session is live.
+      // A session that starts and ends before the next frame never shows
+      // that splash, so the screen stays up through it: the shell's
+      // recovery sign-out after an activation that fails at once.
+      testWidgets('reads the count again when a session ends while the '
+          'screen is still up', (tester) async {
+        final states = StreamController<AuthBlocState>();
+        addTearDown(states.close);
+        whenListen(
+          mockBloc,
+          states.stream,
+          initialState: const AuthUnauthenticated(),
+        );
+        final counts = [0, 2];
+        var reads = 0;
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() async => counts[reads++]), mockBloc),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
+
+        states
+          ..add(const AuthLoading())
+          ..add(AuthAuthenticated(session: testSession()))
+          ..add(const AuthLoading())
+          ..add(const AuthUnauthenticated());
+        await tester.pumpAndSettle();
+
+        expect(reads, 2);
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
+      });
     });
   });
 }

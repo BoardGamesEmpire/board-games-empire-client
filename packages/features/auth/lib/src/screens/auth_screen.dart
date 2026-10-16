@@ -85,19 +85,36 @@ class _AuthScreenState extends State<AuthScreen> {
   /// Only relevant when [EmailAndPasswordStrategy.signUpDisabled] is false.
   bool _isSignIn = true;
 
-  /// Read in [initState] rather than in build: the page rebuilds on every
-  /// failure, and the count only changes when someone signs in, which takes
-  /// the user off this screen.
+  /// Read when the screen appears rather than in build: the page rebuilds on
+  /// every failure, and the count only changes when a session starts. That
+  /// normally takes the user off this screen, and the one that comes back
+  /// reads afresh. A session that starts and ends before the next frame
+  /// never shows the gate's splash, so this screen stays up and reads again
+  /// itself (#142).
   Future<int>? _unsentChangesCount;
 
   @override
   void initState() {
     super.initState();
+    _readUnsentChangesCount();
+  }
+
+  // A block body: as an arrow, it would hand setState the future.
+  void _readUnsentChangesCount() {
     _unsentChangesCount = widget.unsentChangesCount?.call();
   }
 
   @override
   Widget build(BuildContext context) {
+    return BlocListener<AuthBloc, AuthBlocState>(
+      listenWhen: (previous, current) =>
+          previous is AuthAuthenticated && current is! AuthAuthenticated,
+      listener: (_, _) => setState(_readUnsentChangesCount),
+      child: _buildCounted(context),
+    );
+  }
+
+  Widget _buildCounted(BuildContext context) {
     final count = _unsentChangesCount;
     if (count == null) return _buildPage(context, unsentChanges: 0);
     return FutureBuilder<int>(
