@@ -21,7 +21,10 @@ enum SyncStatus {
   /// Currently being sent to the server.
   inProgress,
 
-  /// Server rejected or network failure. Will retry.
+  /// A counted failed attempt. Retried once its cooldown runs out while its
+  /// retry count is under the cap. At the cap it is exhausted, or parked
+  /// when the server refused it as it stands (#121), and waits for a retry
+  /// or a discard by hand (#190).
   failed,
 
   /// Successfully synced. Entry can be purged.

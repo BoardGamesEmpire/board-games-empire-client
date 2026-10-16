@@ -134,8 +134,9 @@ void registerServerNetworkWeb({
   // `/api/game-collections` requires) and adds no auth of its own. Const and
   // stateless; the container owns the Dio.
   //
-  // Nothing resolves it yet on either platform. #44's hydrate reads through
-  // it, and #121's drain pushes queued collection operations through it.
+  // The collection hydrate reads through it on both platforms (#259), and
+  // the sync queue's sender writes through it (#121). Only native runs a
+  // drain over that sender so far; the web drain is #447.
   container.registerSingleton<GameCollectionRemoteDataSource>(
     GameCollectionRemoteDataSourceImpl(dio),
   );

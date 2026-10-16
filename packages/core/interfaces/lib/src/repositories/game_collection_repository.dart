@@ -37,6 +37,14 @@ abstract class GameCollectionRepository {
     required GameMedium medium,
   });
 
+  /// The ids of the current user's entries the server has yet to confirm:
+  /// every row with [GameCollection.isLocalOnly] set, removed ones included.
+  ///
+  /// The sync queue drain reads it to tell which adds still hold back the
+  /// ops queued behind them (#121). Until the server confirms an entry, its
+  /// add's acknowledgement can still change the id those ops name.
+  Future<Set<String>> getLocalOnlyIds();
+
   /// Adds a game to the collection.
   ///
   /// [quantity] must be `> 0`. Implementations should throw
@@ -145,16 +153,16 @@ abstract class GameCollectionRepository {
   ///
   /// ### Physical purge
   ///
-  /// The tombstone is physically deleted by [reconcileFromServer]
-  /// when the server replies with a `serverEntry` whose
-  /// `deletedAt` is non-null — see that method's doc for the full
-  /// flow, including the resurrection-race carve-out. There is
-  /// intentionally no separate `purge` method on this interface:
-  /// tombstone lifecycle is owned by the sync engine, not by
-  /// callers, so the only paths that remove rows are
-  /// [removeFromCollection] (tombstone), and [reconcileFromServer] or
-  /// [mergeFromServer] with a tombstoned server entry (physical
-  /// purge).
+  /// The tombstone is physically deleted when the server confirms the
+  /// removal: by [reconcileFromServer] when it replies with a
+  /// `serverEntry` whose `deletedAt` is non-null, or by [confirmRemoved]
+  /// when it reports the removal already done. See [reconcileFromServer]
+  /// for the full flow, including the resurrection-race carve-out.
+  /// There is intentionally no `purge` method for callers: tombstone
+  /// lifecycle is owned by the sync engine, so the only paths that
+  /// remove rows are [removeFromCollection] (tombstone), and
+  /// [reconcileFromServer] or [mergeFromServer] with a tombstoned
+  /// server entry, or [confirmRemoved] (physical purge).
   ///
   /// ### Re-adding before purge
   ///
@@ -251,9 +259,12 @@ abstract class GameCollectionRepository {
   ///
   /// Only later ops are replayed because the answer already reflects the
   /// acknowledged op: replaying an older op still outstanding would put
-  /// back a value the newer change replaced. When [completedSyncQueueId]
-  /// is omitted, the acknowledged op's place is unknown and every
-  /// outstanding op is replayed.
+  /// back a value the newer change replaced. The cost is that the older
+  /// op's edit stops showing even in fields the newer change didn't carry,
+  /// though the row stays dirty. What the row should show for such an op
+  /// is #190's to decide. When [completedSyncQueueId] is omitted, the
+  /// acknowledged op's place is unknown and every outstanding op is
+  /// replayed.
   ///
   /// Replay repeats what the local write did: an update sets only the
   /// fields it carries, an add sets its absolute quantity and revives the
@@ -282,6 +293,45 @@ abstract class GameCollectionRepository {
     String? completedSyncQueueId,
   });
 
+  /// Settles a removal the server reports as already done (#121).
+  ///
+  /// A re-sent removal of an entry the server has already tombstoned gets a
+  /// 404, and that answer carries no entry for [reconcileFromServer]. So this
+  /// does the tombstone confirmation that method describes, from the local
+  /// row [collectionId] names instead of a server copy: it purges every
+  /// tombstone and every server-confirmed live row for that row's triplet,
+  /// and keeps a local-only live row for the reason given there. That row
+  /// is a re-add the queue has yet to send.
+  ///
+  /// [completedSyncQueueId] is marked completed in the same transaction, so
+  /// the purge and the completion land together or not at all. Completing
+  /// the op alone would leave a dirty tombstone that [mergeFromServer]
+  /// never writes over, hiding the entry for good.
+  ///
+  /// With no local row under [collectionId], only the op is completed.
+  Future<void> confirmRemoved(
+    String collectionId, {
+    required String completedSyncQueueId,
+  });
+
+  /// How many removals this repository has confirmed, as a mark to pass to
+  /// [mergeFromServer] (#121).
+  ///
+  /// A confirmation is the server's answer, to an op this device sent,
+  /// that the entry is removed: [reconcileFromServer] with a tombstone,
+  /// whatever the op, or [confirmRemoved]. A tombstone a hydrate merges is
+  /// not one.
+  ///
+  /// Read it **before** requesting the entries a merge will write, and pass
+  /// it with every [mergeFromServer] call they go into. A removal confirmed
+  /// after this read may have been confirmed after the server answered, so
+  /// those entries can still show it live.
+  ///
+  /// The count lives in this instance, not the database, so a confirmation
+  /// made through another instance over the same database, such as another
+  /// browser tab's, is not counted.
+  Future<int> removalMark();
+
   /// Merges server state that no local mutation asked for, such as a
   /// hydrate's page (#259).
   ///
@@ -297,7 +347,8 @@ abstract class GameCollectionRepository {
   /// holds an edit, a removal or an add the sync queue has yet to
   /// send, and the server's copy predates it. The queued operation
   /// settles the row when the drain acknowledges it through
-  /// [reconcileFromServer]. That covers three cases:
+  /// [reconcileFromServer], or through [confirmRemoved] for a removal
+  /// the server had already made. That covers three cases:
   ///
   /// - a dirty entry keeps its values and stays dirty;
   /// - a local tombstone stays in place, rather than the entry coming
@@ -319,6 +370,18 @@ abstract class GameCollectionRepository {
   /// stamp is the server's, so the two compare on one clock. An equal
   /// stamp still writes.
   ///
+  /// ### A removal confirmed after the read is kept
+  ///
+  /// A live entry also writes nothing when this repository has confirmed
+  /// a removal of its triplet since [removalsSince], the [removalMark]
+  /// read before the entries were requested. The server may have answered
+  /// the read before it removed the entry, and the confirmation purged the
+  /// rows the rules above compare against, so writing it would bring the
+  /// entry back. A later read writes it, if the entry is live again by
+  /// then. A server tombstone is applied as usual.
+  ///
+  /// The mark is required because any read can race a confirmation.
+  ///
   /// ### Otherwise it is the reconcile without the queue step
   ///
   /// With no such row, a live entry is upserted clean and a
@@ -328,7 +391,10 @@ abstract class GameCollectionRepository {
   ///
   /// Throws [StateError] if any entry's `userId` is not this
   /// repository's user, before any write.
-  Future<void> mergeFromServer(List<GameCollection> serverEntries);
+  Future<void> mergeFromServer(
+    List<GameCollection> serverEntries, {
+    required int removalsSince,
+  });
 
   /// Watches the full collection, emitting on any change.
   Stream<List<GameCollection>> watchCollection();

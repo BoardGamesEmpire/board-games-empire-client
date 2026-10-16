@@ -221,5 +221,59 @@ void main() {
       expect(row.isDirty, isFalse);
       expect(row.isLocalOnly, isFalse);
     });
+
+    // A create whose answer was lost, retried by the drain after the
+    // household was deleted on another device: the key's replay returns the
+    // server's tombstone (#131). Over a fresh canonical id the household
+    // drops out of view. Over a server row this device already holds with
+    // changes the queue has yet to send, the tombstone is skipped like any
+    // other server copy (#298), and the op that owns that row settles it.
+    // No household op makes a server row dirty yet (#122), so the row is
+    // seeded.
+    for (final (flag, isDirty, isLocalOnly) in [
+      ('dirty', true, false),
+      ('local-only', false, true),
+    ]) {
+      test("a replayed create's tombstone leaves a $flag server row to the "
+          'queue, and still completes the create (#121)', () async {
+        final created = await repo.create(name: 'Optimistic');
+        await _seedHousehold(
+          db,
+          id: 'hh-server',
+          name: 'Edited',
+          isDirty: isDirty,
+          isLocalOnly: isLocalOnly,
+        );
+        await _seedMember(
+          db,
+          id: 'm-server',
+          userId: _kUserId,
+          householdId: 'hh-server',
+        );
+        final deletedAt = DateTime.utc(2024, 1, 16);
+
+        await repo.reconcileCreatedHousehold(
+          Household(
+            id: 'hh-server',
+            name: 'Optimistic',
+            deletedAt: deletedAt,
+            createdAt: deletedAt,
+            updatedAt: deletedAt,
+          ),
+          localId: created.household.id,
+          completedSyncQueueId: created.syncQueueId,
+        );
+
+        final row = await _rawRow(db, 'hh-server');
+        expect(row.name, 'Edited');
+        expect(row.deletedAt, isNull);
+        expect(row.isDirty, isDirty);
+        expect(row.isLocalOnly, isLocalOnly);
+        expect(await repo.getHousehold(created.household.id), isNull);
+        expect(repo.reconciledHouseholdId(created.household.id), 'hh-server');
+        final entries = await db.select(db.syncQueueTable).get();
+        expect(entries.single.status, 'completed');
+      });
+    }
   });
 }

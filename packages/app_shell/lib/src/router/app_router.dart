@@ -54,6 +54,12 @@ abstract final class AppRoutes {
   static String householdDetailOf(String householdId) =>
       '$household/${Uri.encodeComponent(householdId)}';
 
+  /// The signed-in user's collection list (#44). Singular, like
+  /// [household]. Not the reserved `/server/:serverId/collection/:userId`
+  /// deep link, which names a server and a user; this is always the
+  /// active session's own.
+  static const collection = '/collection';
+
   /// The DataGateway admin list (#41).
   ///
   /// Under `/admin` because DataGateways belong to the admin dashboard
@@ -159,10 +165,10 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the create-household flow (#129) for the
 /// [AppRoutes.householdCreate] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
-/// carries no `HouseholdRepository` / `HouseholdRemoteDataSource` (tests
-/// without a container; no active user session), in which case the route
-/// falls back to [NotYetAvailableScreen]. Both platforms wire both halves in
-/// a real session since #125.
+/// carries no `HouseholdRepository` / `SyncOperationSender` (tests without a
+/// container; no active user session), in which case the route falls back
+/// to [NotYetAvailableScreen]. Both platforms wire both halves in a real
+/// session.
 ///
 /// The route sits **outside** the auth [ShellRoute]: the screen needs no
 /// `AuthBloc`, only the active server's scoped container. Reachability is
@@ -180,7 +186,7 @@ typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 ///
 /// Guarded on the repository **alone**, unlike
 /// [CreateHouseholdScreenBuilder]: the list reads the local cache and needs
-/// no `HouseholdRemoteDataSource` (#269 D4). Where the remote is missing the
+/// no way to send (#269). Where the `SyncOperationSender` is missing the
 /// list still renders — it simply offers no create affordance.
 ///
 /// Sits outside the auth [ShellRoute] for the same reason the create route
@@ -206,6 +212,19 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
   BuildContext context,
   String householdId,
 );
+
+/// Builds the collection list (#44) for the [AppRoutes.collection] route.
+/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container carries no
+/// `GameCollectionRepository` (tests without a container; no active user
+/// session), in which case the route falls back to [NotYetAvailableScreen].
+///
+/// Guarded on the repository alone, like the household list: the list reads
+/// the local cache, and a missing hydrate costs it only the retry.
+///
+/// Sits outside the auth [ShellRoute] for the household list's reason: it
+/// needs the active server's scoped container, not an `AuthBloc`.
+typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the DataGateway admin list (#41) for the
 /// [AppRoutes.adminDataGateways] route. Supplied by [BgeApp]; returns null
@@ -247,6 +266,7 @@ GoRouter buildAppRouter({
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
+  CollectionListScreenBuilder? collectionListBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
 }) {
@@ -386,6 +406,16 @@ GoRouter buildAppRouter({
             },
           ),
         ],
+      ),
+      // #44: the collection list. Outside the auth ShellRoute (no AuthBloc
+      // needed; see [CollectionListScreenBuilder]), pushed from the home
+      // drawer, and reachable only once [AppBootstrapReady] admits
+      // non-bootstrap locations. A top-level destination is #414's.
+      GoRoute(
+        path: AppRoutes.collection,
+        builder: (context, _) =>
+            collectionListBuilder?.call(context) ??
+            const NotYetAvailableScreen(),
       ),
       // #41: the DataGateway admin screens. The forms are children of the
       // list, as the household children are of theirs (#308), so a deep link

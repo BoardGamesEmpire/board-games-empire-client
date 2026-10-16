@@ -279,7 +279,12 @@ void main() {
 
     Future<void> reconcile(
       HouseholdRepositoryImpl on,
-      ({Household household, String syncQueueId}) created, {
+      ({
+        Household household,
+        String syncQueueId,
+        CreateHouseholdOperation operation,
+      })
+      created, {
       required String serverId,
     }) => on.reconcileCreatedHousehold(
       created.household.copyWith(

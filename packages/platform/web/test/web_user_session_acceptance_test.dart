@@ -41,6 +41,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
+import 'package:sync_queue/sync_queue.dart';
 import 'package:web_network/web_network.dart';
 import 'package:web_storage/web_storage.dart';
 
@@ -175,11 +176,11 @@ void main() {
     session = ContainerUserSessionScope(
       host: host,
       // `buildWebUserScopeInstallers()`'s membership, in its order, per the
-      // note at the top of this file. Three of the four are inert against
+      // note at the top of this file. Four of the five are inert against
       // this origin container and are here to keep the assembly honest rather
       // than to be exercised: the re-hydrate seam has nothing registering
-      // with it that this suite drives, and both hydrate installers no-op
-      // because no `HouseholdRemoteDataSource` or
+      // with it that this suite drives, and both hydrate installers and the
+      // sync queue sender no-op because no `HouseholdRemoteDataSource` or
       // `GameCollectionRemoteDataSource` is registered here. Driving the
       // hydrates for real over this database is #369.
       installers: const [
@@ -187,6 +188,7 @@ void main() {
         UserSessionScopeInstaller(),
         HouseholdHydrateInstaller(),
         GameCollectionHydrateInstaller(),
+        SyncSenderInstaller(),
       ],
       server: _server,
     );

@@ -156,6 +156,7 @@ void main() {
         ),
         throwsStateError,
       );
+      await expectLater(repoA.getLocalOnlyIds(), throwsStateError);
     });
 
     test('mutation methods after disposal throw StateError', () async {

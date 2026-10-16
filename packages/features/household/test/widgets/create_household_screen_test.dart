@@ -6,17 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
-import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
-class _MockSyncQueueRepository extends Mock implements SyncQueueRepository {}
-
-class _MockHouseholdRemoteDataSource extends Mock
-    implements HouseholdRemoteDataSource {}
+class _MockSyncOperationSender extends Mock implements SyncOperationSender {}
 
 Household _household({String id = 'hh_local', bool localOnly = true}) =>
     Household(
@@ -28,6 +25,20 @@ Household _household({String id = 'hh_local', bool localOnly = true}) =>
       updatedAt: DateTime.utc(2024, 1, 15),
     );
 
+/// What the repository hands back for a create: the optimistic row, the
+/// entry it queued, and the op as queued.
+typedef _Draft = ({
+  Household household,
+  String syncQueueId,
+  CreateHouseholdOperation operation,
+});
+
+_Draft _draft() => (
+  household: _household(),
+  syncQueueId: 'q1',
+  operation: const CreateHouseholdOperation(localId: 'hh_local', name: 'HQ'),
+);
+
 const _syncedCopy = 'Household created.';
 const _queuedCopy =
     "Household created. It'll finish syncing when you're back online.";
@@ -35,7 +46,7 @@ const _errorCopy =
     'Something went wrong creating your household. Please try again.';
 
 /// Pins the #40 create-household screen end to end over a mocked repository
-/// and remote: the confirmed / still-queued outcomes surface their distinct
+/// and sender: the confirmed / still-queued outcomes surface their distinct
 /// localized messages and report the right id, a local failure surfaces the
 /// localized error and reports nothing, and the in-flight state disables
 /// submit.
@@ -51,43 +62,28 @@ const _errorCopy =
 /// the button disappeared entirely.
 void main() {
   late _MockHouseholdRepository repo;
-  late _MockHouseholdRemoteDataSource remote;
-  late _MockSyncQueueRepository syncQueue;
+  late _MockSyncOperationSender sender;
 
-  setUpAll(() => registerFallbackValue(_household()));
+  setUpAll(
+    () => registerFallbackValue(
+      const CreateHouseholdOperation(localId: 'x', name: 'x'),
+    ),
+  );
 
   setUp(() {
     repo = _MockHouseholdRepository();
-    remote = _MockHouseholdRemoteDataSource();
-    // The inline send claims its op first (#430); nothing else holds it.
-    syncQueue = _MockSyncQueueRepository();
-    when(() => syncQueue.claim(any())).thenAnswer((_) async => true);
-    when(() => syncQueue.release(any())).thenAnswer((_) async {});
-    when(() => syncQueue.markFailed(any(), error: any(named: 'error')))
-        .thenAnswer((_) async {});
+    sender = _MockSyncOperationSender();
 
     when(
       () => repo.create(
         name: any(named: 'name'),
         description: any(named: 'description'),
       ),
-    ).thenAnswer((_) async => (household: _household(), syncQueueId: 'q1'));
+    ).thenAnswer((_) async => _draft());
 
-    when(
-      () => repo.reconcileCreatedHousehold(
-        any(),
-        localId: any(named: 'localId'),
-        completedSyncQueueId: any(named: 'completedSyncQueueId'),
-      ),
-    ).thenAnswer((_) async {});
-
-    when(
-      () => remote.createHousehold(
-        name: any(named: 'name'),
-        clientRequestId: any(named: 'clientRequestId'),
-        description: any(named: 'description'),
-      ),
-    ).thenAnswer((_) async => _household(id: 'hh_server', localOnly: false));
+    // The inline send delivers it, and the row moves onto the server's id.
+    when(() => sender.deliver(any(), any()))
+        .thenAnswer((_) async => const SyncDelivered(householdId: 'hh_server'));
   });
 
   /// Hosts the screen behind a pushed route — the shape of the drawer path,
@@ -118,8 +114,7 @@ void main() {
               MaterialPageRoute(
                 builder: (_) => CreateHouseholdScreen(
                   repository: repo,
-                  remote: remote,
-                  syncQueue: syncQueue,
+                  sender: sender,
                   onCreated: (_, householdId) => onCreated(householdId),
                 ),
               ),
@@ -211,24 +206,14 @@ void main() {
 
       expect(inSnackBar(_syncedCopy), findsOneWidget);
       expect(created, 'hh_server');
-      verify(
-        () => repo.reconcileCreatedHousehold(
-          any(),
-          localId: 'hh_local',
-          completedSyncQueueId: 'q1',
-        ),
-      ).called(1);
+      verify(() => sender.deliver('q1', any())).called(1);
     });
 
-    testWidgets('a remote failure shows the queued message and hands the local '
+    testWidgets('a failed send shows the queued message and hands the local '
         'id to onCreated (the household still exists)', (tester) async {
-      when(
-        () => remote.createHousehold(
-          name: any(named: 'name'),
-          clientRequestId: any(named: 'clientRequestId'),
-          description: any(named: 'description'),
-        ),
-      ).thenThrow(const HouseholdRemoteTransientException('offline'));
+      when(() => sender.deliver(any(), any())).thenAnswer(
+        (_) async => SyncFailed(SyncFailure.unreachable, Exception('offline')),
+      );
 
       String? created;
       await tester.pumpWidget(harness(onCreated: (id) => created = id));
@@ -242,13 +227,6 @@ void main() {
       // The optimistic local id, which is what the shell will put on the
       // route. A reconcile that later remaps it is #306, not this seam.
       expect(created, 'hh_local');
-      verifyNever(
-        () => repo.reconcileCreatedHousehold(
-          any(),
-          localId: any(named: 'localId'),
-          completedSyncQueueId: any(named: 'completedSyncQueueId'),
-        ),
-      );
     });
 
     testWidgets('a local failure surfaces the localized error and never '
@@ -494,7 +472,7 @@ void main() {
       ).thenAnswer((_) async {
         attempt++;
         if (attempt == 1) throw StateError('db is down');
-        return (household: _household(), syncQueueId: 'q1');
+        return _draft();
       });
 
       String? created;
@@ -519,7 +497,7 @@ void main() {
 
     testWidgets('while the create is in flight the submit button is disabled '
         'and shows the localized progress label', (tester) async {
-      final gate = Completer<({Household household, String syncQueueId})>();
+      final gate = Completer<_Draft>();
       when(
         () => repo.create(
           name: any(named: 'name'),
@@ -553,7 +531,7 @@ void main() {
         findsNothing,
       );
 
-      gate.complete((household: _household(), syncQueueId: 'q1'));
+      gate.complete(_draft());
       await tester.pumpAndSettle();
     });
 
@@ -592,8 +570,7 @@ void main() {
           supportedLocales: HouseholdLocalizations.supportedLocales,
           home: CreateHouseholdScreen(
             repository: repo,
-            remote: remote,
-            syncQueue: syncQueue,
+            sender: sender,
             onCreated: (_, householdId) => created = householdId,
           ),
         ),

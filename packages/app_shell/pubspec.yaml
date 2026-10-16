@@ -22,6 +22,8 @@ dependencies:
     path: ../core/di
   feedback:
     path: ../features/feedback
+  game_collection:
+    path: ../features/collection
   household:
     path: ../features/household
   interfaces:

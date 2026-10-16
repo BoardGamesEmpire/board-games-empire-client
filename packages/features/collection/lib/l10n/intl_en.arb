@@ -1,0 +1,108 @@
+{
+  "@@locale": "en",
+  "collectionListTitle": "Collection",
+  "@collectionListTitle": {
+    "description": "Title of the screen listing the games the user owns, and the label of the drawer entry that opens it."
+  },
+  "collectionListLoading": "Loading your collection…",
+  "@collectionListLoading": {
+    "description": "Announced and shown while the collection is still being fetched for the first time."
+  },
+  "collectionListEmptyTitle": "No games yet",
+  "@collectionListEmptyTitle": {
+    "description": "Heading of the empty state shown when the user's collection holds no games."
+  },
+  "collectionListEmptyBody": "Games in your collection will appear here.",
+  "@collectionListEmptyBody": {
+    "description": "Body of the empty state shown when the user's collection holds no games. Deliberately offers no action: this screen cannot add games yet."
+  },
+  "collectionListRefreshFailed": "This list may be out of date — we couldn't refresh it.",
+  "@collectionListRefreshFailed": {
+    "description": "Banner shown when the collection could not be refreshed from the server, for ANY reason: the server was unreachable, or it answered with an error. The cached games are still shown. Deliberately does not name a cause — the screen does not know which one it was."
+  },
+  "collectionRefreshRetry": "Try again",
+  "@collectionRefreshRetry": {
+    "description": "Button on the refresh banner that asks the server for the collection again. Kept as a plain retry: the refresh reports one undifferentiated failure, so nothing here can promise the next attempt will work."
+  },
+  "collectionRefreshInProgress": "Refreshing…",
+  "@collectionRefreshInProgress": {
+    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled. Shown ONLY for a user-initiated retry — a refresh triggered by reconnecting, by resuming the app or by opening the screen is not narrated."
+  },
+  "collectionListError": "We couldn't open your collection.",
+  "@collectionListError": {
+    "description": "Shown when the local collection could not be read at all, so no games can be displayed."
+  },
+  "collectionListTitleWithSubtitle": "{title}: {subtitle}",
+  "@collectionListTitleWithSubtitle": {
+    "description": "A game's name on its collection row when the game also has a subtitle, for example 'Catan: Seafarers'. Rows are sorted by the title alone, so the subtitle is often what tells two rows apart. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "subtitle": {
+        "type": "String",
+        "example": "Seafarers"
+      }
+    }
+  },
+  "collectionListDetailSeparator": " · ",
+  "@collectionListDetailSeparator": {
+    "description": "Shown between the parts of a collection row's second line, for example 'Board game · Physical · 2 copies'. Keep or drop the surrounding spaces as your language's punctuation needs."
+  },
+  "collectionListDetailSpokenSeparator": ", ",
+  "@collectionListDetailSpokenSeparator": {
+    "description": "Joins the same parts when a screen reader reads a collection row aloud, in place of collectionListDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
+  },
+  "collectionListMediumPhysical": "Physical",
+  "@collectionListMediumPhysical": {
+    "description": "On a collection row: the user owns a physical copy of the game, such as a boxed board game or a game disc."
+  },
+  "collectionListMediumDigital": "Digital",
+  "@collectionListMediumDigital": {
+    "description": "On a collection row: the user owns a digital copy of the game, such as a download or an app."
+  },
+  "collectionListQuantity": "{count, plural, =1{1 copy} other{{count} copies}}",
+  "@collectionListQuantity": {
+    "description": "On a collection row: how many copies of the game the user owns. Shown only when it is more than one.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionListRating": "{rating}/10",
+  "@collectionListRating": {
+    "description": "On a collection row: the user's own rating of the game, out of ten. The short visual form; screen readers hear collectionListRatingSpoken instead.",
+    "placeholders": {
+      "rating": {
+        "type": "int",
+        "example": "7"
+      }
+    }
+  },
+  "collectionListRatingSpoken": "Rated {rating} out of 10",
+  "@collectionListRatingSpoken": {
+    "description": "What a screen reader says for the user's own rating of a game on a collection row, in place of the short visual form '7/10'.",
+    "placeholders": {
+      "rating": {
+        "type": "int",
+        "example": "7"
+      }
+    }
+  },
+  "collectionListLastPlayed": "Last played {date}",
+  "@collectionListLastPlayed": {
+    "description": "On a collection row: the date the user last played the game.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "collectionListFavorite": "Favorite",
+  "@collectionListFavorite": {
+    "description": "Spoken by screen readers for the heart icon on a collection row, which marks a game the user has favorited."
+  }
+}

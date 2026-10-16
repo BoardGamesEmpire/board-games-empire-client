@@ -10,6 +10,7 @@ import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
+import 'package:sync_queue/sync_queue.dart';
 import 'package:web_platform/web.dart';
 
 void main() {
@@ -20,12 +21,13 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(5));
+      expect(installers, hasLength(6));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
       expect(installers[3], isA<GameCollectionHydrateInstaller>());
       expect(installers[4], isA<DataGatewayAccessInstaller>());
+      expect(installers[5], isA<SyncSenderInstaller>());
     });
 
     test('runs the same DataGateway access installer native does, after the '
@@ -39,6 +41,17 @@ void main() {
           installers.indexWhere((i) => i is SessionRehydratorInstaller),
         ),
       );
+    });
+
+    test('holds the sync queue sender, not the drain (#121, #447)', () {
+      // The create screen sends through the sender on both platforms, so it
+      // is composed here as on native. The drain over it is not, yet: on web
+      // it needs a Web Lock and a check of whose session is sending, which
+      // is #447.
+      final installers = buildWebUserScopeInstallers();
+
+      expect(installers.whereType<SyncSenderInstaller>(), hasLength(1));
+      expect(installers.whereType<SyncQueueDrainInstaller>(), isEmpty);
     });
 
     test('runs the same installer native does, not a web copy of it', () {

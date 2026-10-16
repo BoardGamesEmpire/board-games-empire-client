@@ -78,6 +78,17 @@ enum CollectionHydrateOutcome {
 /// The catch-up pass follows `hasMore` too, and takes no catch-up of its own.
 /// A change landing during it is found by the next hydrate.
 ///
+/// ## A removal the sync drain confirms during a pass
+///
+/// The drain can confirm a removal while a page is in flight, and the server
+/// may have answered that page before it removed the entry. Merged as read,
+/// the page's live copy would bring the entry back, because the confirmation
+/// purged the rows the merge compares against. So a pass reads
+/// [GameCollectionRepository.removalMark] before requesting page 1 and passes
+/// it with every page, the catch-up's included, and the merge skips a live
+/// copy of anything confirmed removed since. The next pass writes it, if the
+/// entry is live again by then.
+///
 /// ## Nothing is purged
 ///
 /// The hydrate upserts entries and applies server tombstones. It never
@@ -122,7 +133,21 @@ class GameCollectionHydrator {
   Future<CollectionHydrateOutcome>? _inFlight;
 
   Future<CollectionHydrateOutcome> _pass() async {
-    final drain = await _drain();
+    final int mark;
+    try {
+      mark = await _collection.removalMark();
+    } on Object catch (error, stackTrace) {
+      // A disposed repository, in practice; every write after it would fail
+      // the same way. See the class doc.
+      _logger.warn(
+        'Collection hydrate could not read the cache before starting',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return CollectionHydrateOutcome.failed;
+    }
+
+    final drain = await _drain(removalsSince: mark);
     if (drain == null) return CollectionHydrateOutcome.failed;
 
     final since = drain.newestOnPageOne;
@@ -130,7 +155,7 @@ class GameCollectionHydrator {
       return CollectionHydrateOutcome.complete;
     }
 
-    final catchUp = await _drain(updatedSince: since);
+    final catchUp = await _drain(updatedSince: since, removalsSince: mark);
     return catchUp == null
         ? CollectionHydrateOutcome.failed
         : CollectionHydrateOutcome.complete;
@@ -142,6 +167,7 @@ class GameCollectionHydrator {
   /// null when it ended on a failure.
   Future<({int pages, DateTime? newestOnPageOne})?> _drain({
     DateTime? updatedSince,
+    required int removalsSince,
   }) async {
     final pass = updatedSince == null ? 'drain' : 'catch-up';
     DateTime? newestOnPageOne;
@@ -172,7 +198,7 @@ class GameCollectionHydrator {
       if (page == 1) newestOnPageOne = _newest(result.items);
 
       try {
-        await _cache(result.items);
+        await _cache(result.items, removalsSince: removalsSince);
       } on Object catch (error, stackTrace) {
         // A disposed repository is a real fault, but not one to throw from
         // here. See the class doc.
@@ -216,14 +242,17 @@ class GameCollectionHydrator {
   /// A tombstone's summary is skipped. Merging a tombstone only ever
   /// deletes, so its entry needs no parent row, and writing one would cache
   /// a game for every entry the user has ever removed.
-  Future<void> _cache(List<GameCollectionWithSummary> items) async {
+  Future<void> _cache(
+    List<GameCollectionWithSummary> items, {
+    required int removalsSince,
+  }) async {
     await _games.cachePlatformGameSummaries([
       for (final (:entry, :summary) in items)
         if (!entry.isDeleted) summary,
     ]);
     await _collection.mergeFromServer([
       for (final (:entry, summary: _) in items) entry,
-    ]);
+    ], removalsSince: removalsSince);
   }
 
   /// The newest `updatedAt` among [items], or null for an empty page.

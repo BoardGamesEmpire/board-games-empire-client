@@ -226,6 +226,11 @@ void main() {
         final entries = await clockRepo.getOutstandingOpsFor('gc-1');
         expect(entries.map((e) => e.id), enqueued);
       });
+
+      test('getOutstandingEntries()', () async {
+        final entries = await clockRepo.getOutstandingEntries();
+        expect(entries.map((e) => e.id), enqueued);
+      });
     });
 
     group('queue order when enqueued out of time order (#441)', () {
@@ -264,6 +269,11 @@ void main() {
         final entries = await clockRepo.getOutstandingOpsFor('gc-1');
         expect(entries.map((e) => e.id), byCreatedAt);
       });
+
+      test('getOutstandingEntries()', () async {
+        final entries = await clockRepo.getOutstandingEntries();
+        expect(entries.map((e) => e.id), byCreatedAt);
+      });
     });
 
     group('claim() (#430)', () {
@@ -297,6 +307,40 @@ void main() {
           expect(claimed.retryCount, 0);
         },
       );
+
+      test('given the payload it read, takes an entry that still holds '
+          'it', () async {
+        final entry = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-local', rating: 9),
+        );
+
+        expect(await clockRepo.claim(entry.id, payload: entry.payload), isTrue);
+        expect((await entryFor(entry.id)).status, SyncStatus.inProgress);
+      });
+
+      test('given the payload it read, refuses an entry rewritten since, and '
+          'leaves it alone (#121)', () async {
+        final entry = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-local', rating: 9),
+        );
+        await clockRepo.remapCollectionId(
+          oldCollectionId: 'gc-local',
+          newCollectionId: 'gc-server',
+        );
+
+        expect(
+          await clockRepo.claim(entry.id, payload: entry.payload),
+          isFalse,
+        );
+        final untouched = await entryFor(entry.id);
+        expect(untouched.status, SyncStatus.pending);
+        expect(untouched.lastAttemptAt, isNull);
+        expect(
+          await clockRepo.claim(entry.id, payload: untouched.payload),
+          isTrue,
+          reason: 'a sender that reads it again can take it',
+        );
+      });
 
       test('takes a retryable failed entry without touching its retry '
           'count or error', () async {
@@ -554,6 +598,90 @@ void main() {
         expect(completed.retryCount, 0);
         expect(completed.lastError, isNull);
         expect(await repo.getPendingEntries(), isEmpty);
+      });
+    });
+
+    // A permanently rejected op is parked rather than cancelled (#121): kept
+    // with its error, sent by no pass, and left for someone to retry or
+    // discard by hand (#190).
+    group('park() (#121)', () {
+      test('fails the entry at the retry cap and keeps its error', () async {
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        final parked = (await repo.getAllEntries()).single;
+        expect(parked.status, SyncStatus.failed);
+        expect(parked.retryCount, SyncQueueEntry.maxRetries);
+        expect(parked.lastError, 'rejected: 400');
+        expect(parked.isExhausted, isTrue);
+      });
+
+      test('takes it out of the listing, and claim refuses it', () async {
+        final entry = await repo.enqueue(_kOperation);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect(await repo.getPendingEntries(), isEmpty);
+        expect(await repo.claim(entry.id), isFalse);
+      });
+
+      test('keeps it where an acknowledgement looks for it', () async {
+        // Parked, not dropped: a later op for the same collection entry must
+        // still see it outstanding (#429), so the entry stays dirty.
+        final entry = await repo.enqueue(_kOperation);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect((await repo.getOutstandingOpsFor('local-1')).map((e) => e.id), [
+          entry.id,
+        ]);
+      });
+
+      test('does not lower a retry count already past the cap', () async {
+        final entry = await repo.enqueue(_kOperation);
+        for (var i = 0; i <= SyncQueueEntry.maxRetries; i++) {
+          await repo.markFailed(entry.id, error: 'timeout $i');
+        }
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect(
+          (await repo.getAllEntries()).single.retryCount,
+          SyncQueueEntry.maxRetries + 1,
+        );
+      });
+
+      test('does not reopen a completed entry', () async {
+        final entry = await repo.enqueue(_kOperation);
+        expect(await repo.claim(entry.id), isTrue);
+        await repo.markCompleted(entry.id);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        final completed = (await repo.getAllEntries()).single;
+        expect(completed.status, SyncStatus.completed);
+        expect(completed.retryCount, 0);
+        expect(completed.lastError, isNull);
+      });
+
+      test('re-emits the pending count', () async {
+        final entry = await repo.enqueue(_kOperation);
+        final emissions = repo.watchPendingCount().take(2).toList();
+        await Future<void>.delayed(Duration.zero);
+
+        await repo.park(entry.id, error: 'rejected: 400');
+
+        expect(
+          await emissions.timeout(const Duration(seconds: 5)),
+          equals([1, 0]),
+        );
+      });
+
+      test('is a no-op for an unknown id', () async {
+        await repo.park('nonexistent', error: 'rejected: 400');
+        expect(await repo.getAllEntries(), isEmpty);
       });
     });
 
@@ -900,6 +1028,51 @@ void main() {
 
     // ── getOutstandingOpsFor ────────────────────────────────────────────────────
 
+    group('getOutstandingEntries() (#121)', () {
+      test('returns every entry not completed, in queue order, whatever its '
+          'status or retry count', () async {
+        final pending = await repo.enqueue(_kOperation);
+        final claimed = await repo.enqueue(_kOperation);
+        final failed = await repo.enqueue(_kOperation);
+        final parked = await repo.enqueue(_kOperation);
+        final completed = await repo.enqueue(_kOperation);
+        await repo.claim(claimed.id);
+        await repo.markFailed(failed.id, error: 'timeout');
+        await repo.park(parked.id, error: 'refused');
+        await repo.markCompleted(completed.id);
+
+        final outstanding = await repo.getOutstandingEntries();
+
+        expect(outstanding.map((e) => e.id), [
+          pending.id,
+          claimed.id,
+          failed.id,
+          parked.id,
+        ]);
+        expect(outstanding[3].isExhausted, isTrue);
+      });
+
+      test('passes over a status it does not know rather than failing the '
+          'read', () async {
+        final known = await repo.enqueue(_kOperation);
+        await db
+            .into(db.syncQueueTable)
+            .insert(
+              SyncQueueTableCompanion.insert(
+                id: 'corrupt-1',
+                userId: _kUserId,
+                payload: '{}',
+                status: const Value('mystery-state'),
+                createdAt: DateTime.now().toUtc(),
+              ),
+            );
+
+        final outstanding = await repo.getOutstandingEntries();
+
+        expect(outstanding.map((e) => e.id), [known.id]);
+      });
+    });
+
     group('getOutstandingOpsFor() (#429)', () {
       List<String> idsOf(List<SyncQueueEntry> entries) =>
           entries.map((e) => e.id).toList();
@@ -1108,6 +1281,15 @@ void main() {
           }
 
           expect(await repo.getPendingCount(), 0);
+        });
+
+        test('EXCLUDES a parked entry, as the listing does (#121)', () async {
+          final entry = await repo.enqueue(_kOperation);
+          await repo.park(entry.id, error: 'rejected: 400');
+
+          expect(await repo.getPendingCount(), 0);
+          await expectLater(repo.watchPendingCount().take(1), emits(0));
+          expect(await repo.getPendingEntries(), isEmpty);
         });
 
         test(

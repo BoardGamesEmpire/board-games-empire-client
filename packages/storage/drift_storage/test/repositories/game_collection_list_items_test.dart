@@ -88,8 +88,9 @@ void main() {
     PlatformGameSummary summary,
     GameCollection entry,
   ) async {
+    final mark = await collection.removalMark();
     await games.cachePlatformGameSummaries([summary]);
-    await collection.mergeFromServer([entry]);
+    await collection.mergeFromServer([entry], removalsSince: mark);
   }
 
   group('watchCollectionListItems (#259)', () {

@@ -19,6 +19,7 @@ import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:storage_interface/storage_interface.dart';
+import 'package:sync_queue/sync_queue.dart';
 
 import 'deep_links/app_links_deep_link_source.dart';
 import 'logging/rotating_file_log_sink.dart';
@@ -86,12 +87,22 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// registers its re-check with (#41). It reads one DataGateway row, unawaited,
 /// to learn whether the home drawer offers the Admin entry; it needs nothing
 /// the storage tier registers.
+///
+/// The sync queue's installers run **last** (#121). [SyncSenderInstaller]
+/// registers the one sender the create screen and the drain share, over the
+/// repositories above it. [SyncQueueDrainInstaller] starts the drain over
+/// that sender, unawaited like the hydrates, and registers it with the
+/// rehydrator after them, so a rehydrator pass runs it after their turns.
+/// Its first pass runs alongside theirs, which [SyncQueueDrainInstaller]
+/// says is safe.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
   DataGatewayAccessInstaller(),
+  SyncSenderInstaller(),
+  SyncQueueDrainInstaller(),
 ];
 
 /// Composes the real per-server [ServerContextFactory] from
