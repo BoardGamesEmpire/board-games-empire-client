@@ -32,6 +32,23 @@ bool isApiErrorEnvelope(Object? body, int status) {
       decoded['error'] is String;
 }
 
+/// Whether [body] says the request that drew it can be sent again unchanged:
+/// a `retryable: true` field beside the error.
+///
+/// The backend sets it on the 409 it renders for a deadlock that outlived the
+/// call site's own retry (backend #398). Two writers wanted the same rows and
+/// Postgres aborted one; nothing about the request was wrong, so the same
+/// request is expected to succeed (#431). The field is read, never the
+/// message, which is translated per request locale.
+///
+/// [body] arrives in the same two shapes [isApiErrorEnvelope] accepts and goes
+/// through the same bounded probe, for the same reason: the body is about to
+/// be discarded on its status.
+bool isRetryableRefusal(Object? body) {
+  final decoded = body is String ? _probeJson(body) : body;
+  return decoded is Map && decoded['retryable'] == true;
+}
+
 /// Ceiling on the synchronous probe below.
 ///
 /// An error envelope is a few hundred bytes — Nest's is about a hundred — so

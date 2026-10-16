@@ -108,6 +108,7 @@ void main() {
       expect(await repoB.claim(entry.id), isFalse);
       await repoB.markCompleted(entry.id);
       await repoB.markFailed(entry.id, error: 'not yours');
+      await repoB.park(entry.id, error: 'not yours');
 
       final row = (await rawRows()).single;
       expect(row.status, 'pending', reason: 'no cross-user transition');
@@ -137,6 +138,16 @@ void main() {
       await repoB.enqueue(_kOperation);
 
       final entries = await repoA.getOutstandingOpsFor('local-1');
+
+      expect(entries.map((e) => e.id), [mine.id]);
+    });
+
+    test('getOutstandingEntries sees only the current user\'s '
+        'entries', () async {
+      final mine = await repoA.enqueue(_kOperation);
+      await repoB.enqueue(_kOperation);
+
+      final entries = await repoA.getOutstandingEntries();
 
       expect(entries.map((e) => e.id), [mine.id]);
     });
@@ -238,6 +249,8 @@ void main() {
       await expectLater(repoA.getPendingEntries(), throwsStateError);
       await expectLater(repoA.getPendingCount(), throwsStateError);
       await expectLater(repoA.purgeCompleted(), throwsStateError);
+      await expectLater(repoA.park('id', error: 'e'), throwsStateError);
+      await expectLater(repoA.getOutstandingEntries(), throwsStateError);
     });
 
     test('onDispose is idempotent', () async {

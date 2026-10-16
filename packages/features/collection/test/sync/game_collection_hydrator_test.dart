@@ -328,6 +328,27 @@ void main() {
     });
   });
 
+  // The sync drain runs beside the hydrate, at install and on the same
+  // triggers, so it can confirm a removal while a page is in flight.
+  group('a removal confirmed while a page is in flight (#121)', () {
+    test('stays removed, though the page still holds the entry', () async {
+      await build(FakeCollectionRemote((_) => _page([_row(1)]))).hydrate();
+      await collection.removeFromCollection('gc-1');
+      final removal = (await queue.getPendingEntries()).single;
+      final answer = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      final remote = FakeCollectionRemote((_) => answer.future);
+
+      final pass = build(remote).hydrate();
+      await Future<void>.delayed(Duration.zero);
+      expect(remote.requests, hasLength(1));
+      await collection.confirmRemoved('gc-1', completedSyncQueueId: removal.id);
+      answer.complete(_page([_row(1)]));
+
+      expect(await pass, CollectionHydrateOutcome.complete);
+      expect(await listedTitles(), isEmpty);
+    });
+  });
+
   group('dirty entries', () {
     test('a dirty entry keeps its edit through a hydrate', () async {
       await build(FakeCollectionRemote((_) => _page([_row(1)]))).hydrate();

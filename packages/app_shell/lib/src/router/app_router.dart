@@ -138,10 +138,10 @@ typedef SettingsScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the create-household flow (#129) for the
 /// [AppRoutes.householdCreate] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
-/// carries no `HouseholdRepository` / `HouseholdRemoteDataSource` (tests
-/// without a container; no active user session), in which case the route
-/// falls back to [NotYetAvailableScreen]. Both platforms wire both halves in
-/// a real session since #125.
+/// carries no `HouseholdRepository` / `SyncOperationSender` (tests without a
+/// container; no active user session), in which case the route falls back
+/// to [NotYetAvailableScreen]. Both platforms wire both halves in a real
+/// session.
 ///
 /// The route sits **outside** the auth [ShellRoute]: the screen needs no
 /// `AuthBloc`, only the active server's scoped container. Reachability is
@@ -159,7 +159,7 @@ typedef CreateHouseholdScreenBuilder = Widget? Function(BuildContext context);
 ///
 /// Guarded on the repository **alone**, unlike
 /// [CreateHouseholdScreenBuilder]: the list reads the local cache and needs
-/// no `HouseholdRemoteDataSource` (#269 D4). Where the remote is missing the
+/// no way to send (#269). Where the `SyncOperationSender` is missing the
 /// list still renders — it simply offers no create affordance.
 ///
 /// Sits outside the auth [ShellRoute] for the same reason the create route

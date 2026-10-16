@@ -120,8 +120,9 @@ void registerServerNetwork({
   // session `/api/game-collections` requires) and adds no auth of its own.
   // Const and stateless; the container owns the Dio.
   //
-  // The read side feeds #44's hydrate, the write side is what #121's drain
-  // pushes queued collection operations through.
+  // The read side feeds the collection hydrate (#259), and the write side is
+  // what the sync queue's sender pushes queued collection operations through
+  // (#121).
   container.registerSingleton<GameCollectionRemoteDataSource>(
     GameCollectionRemoteDataSourceImpl(dio),
   );

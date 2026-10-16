@@ -13,12 +13,17 @@ online-first optimistic-write path.
    (`isLocalOnly = true`) plus a synthesized `HouseholdOwner` member row, and
    enqueues a `CreateHouseholdOperation` — one transaction. The household is
    visible from this point (the read gate needs the member row).
-2. Best-effort inline send via `HouseholdRemoteDataSource.createHousehold`:
-   - **success** → `HouseholdRepository.reconcileCreatedHousehold` swaps the
-     optimistic id for the server's canonical id, clears the sync flags, and
-     closes the queued op → `CreateHouseholdSuccess(pendingSync: false)`;
-   - **failure** (transient *or* permanent) → the household stays queued for a
-     later retry → `CreateHouseholdSuccess(pendingSync: true)`.
+2. Best-effort inline send of the op as `create` queued it, through
+   `SyncOperationSender.deliver`, the one delivery path the sync queue's drain
+   takes too (#121). It claims the queued op, sends it keyed by its `localId`
+   (#131), and records the outcome:
+   - **delivered** → `HouseholdRepository.reconcileCreatedHousehold` has
+     swapped the optimistic id for the server's canonical id, cleared the
+     sync flags, and closed the queued op →
+     `CreateHouseholdSuccess(pendingSync: false)`;
+   - **anything else** → the household stays queued, and the sender has
+     recorded why on the queue entry → `CreateHouseholdSuccess(pendingSync:
+     true)`.
 
 An unexpected *local* failure (the form prevents the only expected one, a
 blank name) surfaces as `CreateHouseholdFailure`. The bloc is the only
@@ -28,15 +33,20 @@ touches storage.
 ## Offline-first
 
 The queued `CreateHouseholdOperation` is the durable source of truth; the
-inline send is only an accelerator. There is no sync-drain worker yet (#121),
-so on any remote failure the household simply stays `isLocalOnly` and queued.
-Distinguishing permanent rejections (rollback + cancel the queue entry) is
-deferred to #121, which will own retry / failure / cancel semantics.
+inline send is only an accelerator. On native, the sync queue's drain
+(`packages/features/sync`, #121) sends what the inline send could not, on the
+session's re-hydrate triggers. On web it does not yet (#447), so a web create
+whose inline send fails stays queued.
+
+A create the server refuses as it stands is **parked**, not rolled back: the
+household stays `isLocalOnly`, its op stays queued with the server's error,
+and nothing sends it again until someone retries or discards it by hand
+(#190). The list's pending badge shows it as unsynced throughout.
 
 ## Shape
 
 - `CreateHouseholdScreen` — the entry point. Decoupled from DI: the caller
-  passes the per-server `HouseholdRepository` and `HouseholdRemoteDataSource`
+  passes the per-user `HouseholdRepository` and `SyncOperationSender`
   (resolved from the active server scope); the screen provides the bloc.
 - `CreateHouseholdBloc` / `CreateHouseholdEvent` / `CreateHouseholdState` —
   sealed events and states; success carries the `householdId` and a
@@ -51,8 +61,10 @@ deferred to #121, which will own retry / failure / cancel semantics.
 ## Wiring (owned by `app_shell` / platform composition)
 
 - **Route**: supply `CreateHouseholdScreen` to its route, resolving
-  `HouseholdRepository` + `HouseholdRemoteDataSource` from the **active**
-  server scope's container.
+  `HouseholdRepository` + `SyncOperationSender` from the **active** server
+  scope's container. The sender is registered by `SyncSenderInstaller` from
+  `packages/features/sync`, which runs after `UserSessionScopeInstaller` in
+  the per-*user* installer list.
 - **Scope**: add `UserSessionScopeInstaller()` (renamed from
   `HouseholdScopeInstaller` in #150) to the per-*user* installer list — it
   registers `SyncQueueRepository`, `HouseholdRepository` and

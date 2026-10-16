@@ -50,10 +50,17 @@ void main() {
     bool collection = true,
     bool games = true,
   }) {
-    // Every page is written, empty ones too, so both writes must answer.
+    // A pass reads the removal mark first, and every page is written, empty
+    // ones too, so the read and both writes must answer.
     if (collection) {
       final repository = _MockGameCollectionRepository();
-      when(() => repository.mergeFromServer(any())).thenAnswer((_) async {});
+      when(() => repository.removalMark()).thenAnswer((_) async => 0);
+      when(
+        () => repository.mergeFromServer(
+          any(),
+          removalsSince: any(named: 'removalsSince'),
+        ),
+      ).thenAnswer((_) async {});
       container.registerSingleton<GameCollectionRepository>(repository);
     }
     if (games) {

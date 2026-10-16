@@ -70,6 +70,23 @@ void main() {
       expect(created.syncQueueId, entry.id);
     });
 
+    test('returns the op exactly as it was queued', () async {
+      final created = await repo.create(
+        name: '  HQ  ',
+        description: 'Fridays',
+        language: 'en-GB',
+        visibility: 'Friends',
+      );
+      final entry = (await syncQueue.getPendingEntries()).single;
+      // An inline send of this op carries what a drain would send from the
+      // entry: the trimmed name, and the fields the row has no column for.
+      expect(created.operation.serialized, entry.payload);
+      expect(created.operation.localId, created.household.id);
+      expect(created.operation.name, 'HQ');
+      expect(created.operation.language, 'en-GB');
+      expect(created.operation.visibility, 'Friends');
+    });
+
     test('synthesizes a HouseholdOwner member for the current user', () async {
       final created = await repo.create(name: 'HQ');
 
@@ -289,7 +306,12 @@ void main() {
 
       // Reconciles [created] onto `hh_server`, closing its queued op.
       Future<void> reconcile(
-        ({Household household, String syncQueueId}) created,
+        ({
+          Household household,
+          String syncQueueId,
+          CreateHouseholdOperation operation,
+        })
+        created,
       ) => repo.reconcileCreatedHousehold(
         created.household.copyWith(
           id: 'hh_server',

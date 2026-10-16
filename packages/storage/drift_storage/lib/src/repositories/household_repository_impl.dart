@@ -404,7 +404,14 @@ class HouseholdRepositoryImpl
   // ── Mutations (P4, #39) ──────────────────────────────────────────────────────────
 
   @override
-  Future<({Household household, String syncQueueId})> create({
+  Future<
+    ({
+      Household household,
+      String syncQueueId,
+      CreateHouseholdOperation operation,
+    })
+  >
+  create({
     required String name,
     String? description,
     String? image,
@@ -462,21 +469,24 @@ class HouseholdRepositoryImpl
           );
 
       // Durable create op. If this throws, the writes above roll back.
-      final entry = await _syncQueue.enqueue(
-        CreateHouseholdOperation(
-          localId: localId,
-          name: trimmedName,
-          description: description,
-          image: image,
-          language: language,
-          visibility: visibility,
-        ),
+      final operation = CreateHouseholdOperation(
+        localId: localId,
+        name: trimmedName,
+        description: description,
+        image: image,
+        language: language,
+        visibility: visibility,
       );
+      final entry = await _syncQueue.enqueue(operation);
 
       final row = await (_db.select(
         _db.householdsTable,
       )..where((t) => t.id.equals(localId))).getSingle();
-      return (household: _mapHousehold(row), syncQueueId: entry.id);
+      return (
+        household: _mapHousehold(row),
+        syncQueueId: entry.id,
+        operation: operation,
+      );
     });
   }
 

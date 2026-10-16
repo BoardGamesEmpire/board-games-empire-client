@@ -73,9 +73,9 @@ class GameCollectionRemoteDataSourceImpl
   /// 407 is here for the reason #350 put it in the household set: it is
   /// defined to come from a proxy and no collection route emits one, so it
   /// says the request never reached the application. That matters more here
-  /// than there — `_send` is shared by three queued writes, and once #121 owns
-  /// cancel semantics a permanent classification discards the user's edit or
-  /// deletion. 511 needs no entry, being a 5xx already covered.
+  /// than there — `_send` is shared by three queued writes, and a permanent
+  /// classification parks the user's edit or deletion (#121) until someone
+  /// retries it by hand. 511 needs no entry, being a 5xx already covered.
   ///
   /// 403 is deliberately **not** a member: it is envelope-gated in
   /// `_classifyStatus` rather than blanket-retryable, and the reasoning lives
@@ -133,6 +133,8 @@ class GameCollectionRemoteDataSourceImpl
 
   @override
   Future<GameCollectionWithSummary> fetchEntry(String id) async {
+    _checkEntryId(id);
+
     const action = 'Collection fetch';
     final response = await _send(
       request: () => _dio.get<String>(
@@ -192,6 +194,7 @@ class GameCollectionRemoteDataSourceImpl
     bool? playAgain,
     String? releaseId,
   }) async {
+    _checkEntryId(id);
     _checkQuantity(quantity);
 
     // Omitted, not nulled: on this endpoint an explicit null CLEARS the field,
@@ -228,6 +231,8 @@ class GameCollectionRemoteDataSourceImpl
 
   @override
   Future<GameCollection> removeEntry(String id, {String? reason}) async {
+    _checkEntryId(id);
+
     const action = 'Collection remove';
     final response = await _send(
       request: () => _dio.delete<String>(
@@ -328,8 +333,8 @@ class GameCollectionRemoteDataSourceImpl
       // Not a statement about the response. `decodeJsonBody` hands a body over
       // 50 KB to another isolate, and a failure to spawn one is local and
       // momentary — so this is the one decode failure that must stay
-      // transient. Permanent would cancel the queued operation and discard the
-      // user's edit over a fault the server had no part in (#297).
+      // transient. Permanent says a retry cannot succeed, over a fault the
+      // server had no part in (#297).
       //
       // This clause sits outside the `on Object` net around the Dio call
       // above, because decoding moved out from under it when the body became a
@@ -492,6 +497,25 @@ class GameCollectionRemoteDataSourceImpl
     }
   }
 
+  /// One path segment of URL-safe characters: an entry id that can only
+  /// reach the route it names. Every id the server mints is a cuid2, which
+  /// this accepts.
+  static final RegExp _wellFormedId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+
+  /// The id goes into the path as it stands, so one that could leave the
+  /// entry route is refused before the request; see the argument section on
+  /// [GameCollectionRemoteDataSource] (#121).
+  void _checkEntryId(String id) {
+    if (!_wellFormedId.hasMatch(id)) {
+      throw ArgumentError.value(
+        id,
+        'id',
+        'is not a well-formed entry id, so the request could reach another '
+            'route',
+      );
+    }
+  }
+
   // ── Failure classification ──────────────────────────────────────────
 
   /// Whether [body] is the API's own error envelope for a response carrying
@@ -576,11 +600,11 @@ class GameCollectionRemoteDataSourceImpl
       // application — a corporate proxy or WAF blocked the request, and the
       // status says nothing about what was asked.
       //
-      // The cost runs one way. `_send` is shared by three queued writes, so
-      // once #121 owns cancel semantics a permanent classification discards
-      // the user's edit or deletion over a block that a retry from another
-      // network would have survived. A genuine refusal misread as transient
-      // will only retry to the cap #121 introduces.
+      // The cost runs one way. `_send` is shared by three queued writes, so a
+      // permanent classification parks the user's edit or deletion (#121)
+      // over a block that a retry from another network would have survived. A
+      // genuine refusal misread as transient is only retried, at most once a
+      // drain pass.
       //
       // There is no per-call-site reading of a 403 to express here, which is
       // why this needs no equivalent of _NotFoundMeaning: the API refuses an
@@ -613,8 +637,8 @@ class GameCollectionRemoteDataSourceImpl
       // mark the operation completed, and doing that for a request the
       // service never saw silently discards the user's deletion (the entry
       // then reappears on the next hydrate). A patch has the same shape one
-      // step removed: `missingRow` is permanent, so a proxy 404 would discard
-      // the user's edit.
+      // step removed: `missingRow` is permanent, so a proxy 404 would park
+      // the user's edit (#121).
       if (!_isApplicationError(body, status)) {
         return GameCollectionRemoteTransientException(
           '$message — the route was not reachable',
@@ -643,6 +667,18 @@ class GameCollectionRemoteDataSourceImpl
             statusCode: status,
           ),
       };
+    }
+    if (status == 409 && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). The backend
+      // answers 409 because the cure is the caller's, and says
+      // `retryable: true` because the request itself was fine: the same write
+      // is expected to succeed. Every other 409 stays permanent below. Read
+      // the field, not the message, which is translated.
+      return GameCollectionRemoteTransientException(
+        '$message — the server hit a deadlock and asked for a retry',
+        cause: cause,
+        statusCode: status,
+      );
     }
     if (status >= 400) {
       return GameCollectionRemotePermanentException(

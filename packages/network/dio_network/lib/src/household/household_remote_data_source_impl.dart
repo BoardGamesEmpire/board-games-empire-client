@@ -322,10 +322,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
 
   /// The server trims `clientRequestId`, then requires 1 to
   /// [HouseholdRemoteDataSource.maxClientRequestIdLength] characters, and
-  /// answers a violation with a 400. That is permanent, and once #121 owns
-  /// cancel semantics a permanent create is discarded, so a key the caller
-  /// got wrong is refused here instead, with an error outside the
-  /// transient/permanent split.
+  /// answers a violation with a 400. That is permanent, and a permanent
+  /// create is parked on its first attempt (#121), so a key the caller got
+  /// wrong is refused here instead, with an error outside the
+  /// transient/permanent split: the sender counts it as a client fault
+  /// rather than parking it as the server's verdict.
   ///
   /// This matches the server exactly for ASCII keys, and every key this
   /// client mints is a cuid2, which is ASCII. Past ASCII the two can
@@ -399,8 +400,8 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // Not a statement about the response. `decodeJsonBody` hands a large body
       // to another isolate, and a failure to spawn one is a local, momentary
       // condition — so this is the one decode failure that must stay
-      // **transient**. Permanent would cancel the queued operation and discard
-      // the user's household over a fault the server had no part in, which is
+      // **transient**. Permanent says a retry cannot succeed, and a caller that
+      // believes it gives up over a fault the server had no part in, which is
       // the shape #297 exists to prevent.
       //
       // This sits outside the `on Object` net around the Dio call above,
@@ -447,10 +448,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   ///
   /// The question is never "did this fail" — the status already says so — but
   /// **"will the same request fail the same way again?"**, because that is
-  /// what the drain worker acts on. Permanent cancels the queue entry and
-  /// discards the user's work; transient keeps it and retries to the cap. So
-  /// the bar for permanent is evidence that the household API itself rejected
-  /// the request, not merely that something rejected it.
+  /// what the drain acts on. Permanent parks the queue entry, so it stops
+  /// retrying until someone retries or discards it by hand (#121); transient
+  /// keeps it queued. So the bar for permanent is evidence that the household
+  /// API itself rejected the request, not merely that something rejected
+  /// it.
   ///
   /// - **5xx, and 401 / 407 / 408 / 429** — transient. Expired session,
   ///   timeout, throttle, proxy auth: all conditions a later attempt can
@@ -462,15 +464,20 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// - **403** — transient unless the body carries the API's error envelope.
   ///   The application can genuinely emit a 403, so this one is gated on
   ///   evidence rather than settled by the status (#350).
-  /// - **Any other 4xx** — permanent. A 400, 409 or 422 on these routes is the
-  ///   application rejecting the request's content, and the content will not
-  ///   change on retry. #122 adds the first routes whose 4xx can carry row
-  ///   semantics; that is when this grows a per-call-site meaning.
+  /// - **409 saying `retryable: true`** — transient. It is the backend's
+  ///   answer to a deadlock that outlived its own retry: a concurrency
+  ///   accident on the server, not a judgement on the request (#431).
+  /// - **Any other 4xx** — permanent. A 400, any other 409, or a 422 on these
+  ///   routes is the application rejecting the request's content, and the
+  ///   content will not change on retry. #122 adds the first routes whose 4xx
+  ///   can carry row semantics; that is when this grows a per-call-site
+  ///   meaning.
   /// - **1xx / 3xx** — transient. Surfaced only by the permissive
   ///   `validateStatus`, and carrying no rejection semantics at all.
   ///
-  /// [body] is the raw, undecoded body when there is one. It is read only by
-  /// the 403 branch, and only through [isApiErrorEnvelope]'s bounded probe.
+  /// [body] is the raw, undecoded body when there is one. Only the 403 and
+  /// 409 branches read it, and only through the bounded probes in
+  /// `api_error_envelope.dart`.
   HouseholdRemoteException _classifyStatus(
     int status,
     String message, {
@@ -491,10 +498,10 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // the request did not reach the household module: a misrouted path
       // prefix, an API not deployed yet, a proxy or gateway answering for
       // it. Permanent would end a hydrate for the life of the process, and
-      // on the create path it is worse than that: once #121 owns cancel
-      // semantics, permanent cancels the queue entry and discards the
-      // user's household for a failure a retry thirty seconds later would
-      // have survived (#297).
+      // on the create path it is worse than that: permanent parks the queued
+      // create (#121), stranding the user's household until someone retries
+      // it by hand, for a failure a retry thirty seconds later would have
+      // survived (#297).
       //
       // Note what is deliberately NOT consulted here: the API's own error
       // envelope. The collection data source requires that envelope before
@@ -532,11 +539,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // blocked the POST.
       //
       // The cost of getting this wrong runs one way. Permanent does not merely
-      // fail the attempt: once #121 owns cancel semantics it cancels the queue
-      // entry and discards the household the user just created, for a block
-      // that a retry after they leave the network would have survived. A
-      // genuine authorization refusal misread as transient only retries to the
-      // cap (#350).
+      // fail the attempt: it parks the queued create (#121), so the household
+      // the user just created waits for someone to retry it by hand, over a
+      // block that a retry after they leave the network would have survived. A
+      // genuine authorization refusal misread as transient is only retried, at
+      // most once a drain pass (#350).
       //
       // What this rests on: every production 403 on these routes is raised
       // with a message, so Nest renders the envelope. A bare
@@ -546,6 +553,18 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // mechanism that would.
       return HouseholdRemoteTransientException(
         '$message — the request did not reach the household module',
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    if (status == HttpStatusCode.conflict && isRetryableRefusal(body)) {
+      // A deadlock that outlived the server's own retry (#431). The backend
+      // answers 409 because the cure is the caller's, and says
+      // `retryable: true` because the request itself was fine: the same
+      // create is expected to succeed. Read the field, not the message,
+      // which is translated.
+      return HouseholdRemoteTransientException(
+        '$message — the server hit a deadlock and asked for a retry',
         cause: cause,
         statusCode: status,
       );

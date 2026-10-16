@@ -1,0 +1,45 @@
+name: sync_queue
+# Not `sync`: that is a Dart contextual keyword (`sync*`). The directory keeps
+# the feature's name, as `features/collection` does for `game_collection`.
+description: "The sync queue's delivery: one sender for every queued op, and the drain that runs it (#121)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  # Nothing here draws, but the suite runs the real repositories, and
+  # `drift_storage` is a Flutter package, so this is one too. Its feature
+  # siblings are the same.
+  flutter:
+    sdk: flutter
+
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # A real container for the installers' tests. Dev-only: nothing under `lib/`
+  # names `di` — the installers take the `DependencyContainer` abstraction
+  # from `interfaces`. Same shape as `game_collection`'s.
+  di:
+    path: ../../core/di
+  # The real repositories over an in-memory database. Dev-only, and the reason
+  # this package exists: the drain spans two features and needs
+  # `network_interface`, which `drift_storage` must stay off (#121). The
+  # reconciles it acknowledges through run in one transaction with the queue,
+  # so a fake could not prove what lands together.
+  drift_storage:
+    path: ../../storage/drift_storage
+  mocktail: ^1.0.5
+  very_good_analysis: ^10.2.0
+  flutter_lints: ^6.0.0

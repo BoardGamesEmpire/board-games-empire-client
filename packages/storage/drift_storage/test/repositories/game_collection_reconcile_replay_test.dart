@@ -307,7 +307,8 @@ void main() {
       // Replaying the exhausted rating 9 over the server's answer to the
       // newer rating 7 would show a value neither the server holds nor the
       // user last chose. The row still says it isn't synced.
-      await repo.mergeFromServer([_server(rating: 5)]);
+      final mark = await repo.removalMark();
+      await repo.mergeFromServer([_server(rating: 5)], removalsSince: mark);
       await repo.updateCollectionEntry(id: _kServerId, rating: 9);
       await repo.updateCollectionEntry(id: _kServerId, rating: 7);
       final [olderOp, newerOp] = await queue.getAllEntries();
@@ -329,7 +330,8 @@ void main() {
       // acknowledgement the first has completed it, so it is no longer
       // outstanding; it must still be placed among the others, or the
       // exhausted quantity 2 is replayed over the server's 5.
-      await repo.mergeFromServer([_server(quantity: 1)]);
+      final mark = await repo.removalMark();
+      await repo.mergeFromServer([_server(quantity: 1)], removalsSince: mark);
       await repo.updateCollectionEntry(id: _kServerId, quantity: 2);
       await repo.updateCollectionEntry(id: _kServerId, quantity: 5);
       await repo.updateCollectionEntry(id: _kServerId, rating: 4);

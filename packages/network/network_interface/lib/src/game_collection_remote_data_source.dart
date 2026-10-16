@@ -107,8 +107,14 @@ typedef GameCollectionWithSummary = ({
 ///   errors, timeouts, 401 (a session can expire mid-flight), 407, 408, 429,
 ///   all 5xx, any failure without a response status, and the 4xx the rules
 ///   below carve out — a 403 without the API's error envelope, a 404 without
-///   it, and **every** 404 from [fetchCollectionPage], envelope or not, since
-///   that list route is never legitimately absent.
+///   it, **every** 404 from [fetchCollectionPage], envelope or not, since
+///   that list route is never legitimately absent, and a 409 whose body says
+///   `retryable: true`.
+///
+///   That 409 is the backend's answer to a deadlock that outlived its own
+///   retry (#431): two writers wanted the same rows and Postgres aborted one.
+///   Nothing about the request was wrong, so the same request is expected to
+///   succeed. Every other 409 stays permanent.
 ///
 ///   407 is here because it is defined to come from a proxy and no collection
 ///   route emits one, so it reports that the request never reached the
@@ -120,16 +126,18 @@ typedef GameCollectionWithSummary = ({
 ///   permanent rule below: a 2xx whose body could not be **decoded at all**
 ///   because the decode could not be performed — in practice an isolate that
 ///   would not spawn under memory pressure. That says nothing about the
-///   response, and filing it as permanent would cancel a queued operation over
-///   a local, momentary fault the server had no part in. A body that decodes
-///   and is simply not what was expected stays permanent; the split is between
-///   "the response is wrong" and "this device could not read it".
+///   response, and filing it as permanent would say a retry cannot succeed,
+///   over a local, momentary fault the server had no part in. A body
+///   that decodes and is simply not what was expected stays permanent; the
+///   split is between "the response is wrong" and "this device could not
+///   read it".
 /// - [GameCollectionRemotePermanentException]: 400 (validation), a 403 that
-///   carries the API's error envelope, every other 4xx that is neither a 404
-///   nor retryable, and a 2xx whose body carries no parseable entry — empty,
-///   not JSON, or decoding to the wrong shape. The one unparseable 2xx that is
-///   **not** permanent is the decode-execution failure described above; every
-///   other unreadable body is.
+///   carries the API's error envelope, a 409 that does not say it is
+///   retryable, every other 4xx that is neither a 404 nor retryable, and a
+///   2xx whose body carries no parseable entry — empty, not JSON, or
+///   decoding to the wrong shape. The one unparseable 2xx that is **not**
+///   permanent is the decode-execution failure described above; every other
+///   unreadable body is.
 ///
 ///   403 is permanent only when the response carries the API's own error
 ///   envelope, matching the household source (#350). An envelope-free 403 is
@@ -144,7 +152,7 @@ typedef GameCollectionWithSummary = ({
 ///   carries the API's error envelope (see below). **Not a failure to retry.**
 ///   The backend's delete filter includes `deletedAt: null`, so a re-sent
 ///   removal 404s from a server that has already done exactly what was asked;
-///   a drain should mark the operation completed.
+///   a drain settles it as done, tombstone and operation together (#121).
 ///
 /// A 404 from [fetchCollectionPage] is none of those — it is **transient**. An
 /// authenticated user's collection is never absent (an empty one is a 200 with
@@ -191,7 +199,7 @@ typedef GameCollectionWithSummary = ({
 /// mark the operation **completed**: doing that for a request the service
 /// never saw silently discards the user's deletion, and the entry reappears on
 /// the next hydrate. A patch is the same hazard one step removed — missing-row
-/// is permanent, so a proxy 404 would discard the user's edit.
+/// is permanent, so a proxy 404 would park the user's edit (#121).
 ///
 /// Known residual: if the collection module itself is not deployed, Nest's own
 /// route-not-found *is* that envelope. Telling it apart would mean matching
@@ -203,9 +211,16 @@ typedef GameCollectionWithSummary = ({
 /// ### Argument violations are not part of that taxonomy
 ///
 /// A call that cannot produce a valid request throws [ArgumentError],
-/// unwrapped — an out-of-range page, a non-positive quantity, an empty patch.
-/// These are caller bugs, not server answers, and a drain that catches
+/// unwrapped — an out-of-range page, a non-positive quantity, an empty patch,
+/// an entry id that isn't one path segment of URL-safe characters. These are
+/// caller bugs, not server answers, and a drain that catches
 /// [GameCollectionRemoteException] will not catch them.
+///
+/// The id check keeps the 404 rules above honest (#121). An id goes into the
+/// path as it stands, and an empty one, or one carrying a slash, a space or a
+/// query, reaches another route or none. Nest answers an unmatched route with
+/// the envelope 404 a missing row gets, so a fetch or an update would report
+/// the row missing, and a removal would report it already removed.
 abstract class GameCollectionRemoteDataSource {
   /// The backend's `limit` ceiling for this endpoint
   /// (`GAME_COLLECTION_MAX_PAGE_SIZE`). A larger `limit` is rejected with a
@@ -279,7 +294,8 @@ abstract class GameCollectionRemoteDataSource {
   ///
   /// Throws [GameCollectionNotFoundException] if the row does not exist for
   /// this actor (missing, another user's, or outside the actor's read scope —
-  /// the server collapses all three into a 404).
+  /// the server collapses all three into a 404). An [id] that isn't one path
+  /// segment throws [ArgumentError] before the request.
   Future<GameCollectionWithSummary> fetchEntry(String id);
 
   /// Adds a game to the acting user's collection.
@@ -321,7 +337,8 @@ abstract class GameCollectionRemoteDataSource {
   /// the server rejects an empty patch with a 400, so implementations throw
   /// [ArgumentError] before the request instead.
   ///
-  /// Throws [GameCollectionNotFoundException] on a 404.
+  /// Throws [GameCollectionNotFoundException] on a 404. An [id] that isn't
+  /// one path segment throws [ArgumentError] before the request.
   Future<GameCollection> updateEntry({
     required String id,
     int? quantity,
@@ -348,7 +365,9 @@ abstract class GameCollectionRemoteDataSource {
   /// actor), which for a re-sent removal means the work is done. Callers should
   /// treat it as completion, not failure. A 404 without the API's error
   /// envelope is transient instead; see "A row-level 404 requires evidence"
-  /// on this class.
+  /// on this class. An [id] that isn't one path segment throws
+  /// [ArgumentError] before the request, since an unmatched route's 404 would
+  /// read as this one.
   Future<GameCollection> removeEntry(String id, {String? reason});
 }
 
@@ -385,9 +404,9 @@ sealed class GameCollectionRemoteException implements Exception {
 /// A retryable failure — the caller should keep the queued operation and let
 /// it retry later. Covers connection errors, timeouts, 401/407/408/429, 5xx,
 /// status-less failures, a 404 that does not carry the API's error envelope, a
-/// 403 that does not either, and the one 2xx that belongs here: a body this
-/// device could not decode at all, as opposed to one that decoded and was
-/// wrong.
+/// 403 that does not either, a 409 whose body says `retryable: true`, and the
+/// one 2xx that belongs here: a body this device could not decode at all, as
+/// opposed to one that decoded and was wrong.
 ///
 /// See the classification section on [GameCollectionRemoteDataSource] for why
 /// each of those is retryable.
@@ -434,8 +453,9 @@ final class GameCollectionNotFoundException
 /// **Not a failure to retry, and not a failure to report.** The backend's
 /// delete filter includes `deletedAt: null`, so a re-sent
 /// `RemoveFromCollectionOperation` 404s from a server that has already applied
-/// the removal. A drain should mark the operation completed; treating it as a
-/// permanent failure would discard a successful sync, and treating it as
+/// the removal. A drain should settle it as done: purge the entry's
+/// tombstone and complete the operation together (#121). Treating it as a
+/// permanent failure would park a sync that succeeded, and treating it as
 /// transient would retry it forever.
 final class GameCollectionAlreadyRemovedException
     extends GameCollectionRemoteException {

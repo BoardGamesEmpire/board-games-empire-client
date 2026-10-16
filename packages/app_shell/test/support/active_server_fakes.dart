@@ -5,6 +5,7 @@ import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:network_interface/network_interface.dart';
@@ -182,7 +183,7 @@ ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
-  SyncQueueRepository? syncQueueRepository,
+  SyncOperationSender? syncOperationSender,
   HouseholdHydrationStatus? householdHydrationStatus,
   HouseholdRefresher? householdRefresher,
   GameCollectionRepository? gameCollectionRepository,
@@ -210,8 +211,8 @@ ActiveServer buildActiveServer(
       householdRemoteDataSource,
     );
   }
-  if (syncQueueRepository != null) {
-    container.registerSingleton<SyncQueueRepository>(syncQueueRepository);
+  if (syncOperationSender != null) {
+    container.registerSingleton<SyncOperationSender>(syncOperationSender);
   }
   if (gameCollectionRepository != null) {
     container.registerSingleton<GameCollectionRepository>(
