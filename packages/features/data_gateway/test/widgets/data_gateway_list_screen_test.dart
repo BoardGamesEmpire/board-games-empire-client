@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
@@ -29,8 +31,8 @@ void main() {
 
   Future<void> pumpScreen(
     WidgetTester tester, {
-    Future<void> Function(BuildContext context)? onAdd,
-    Future<void> Function(BuildContext context, String id)? onEdit,
+    void Function(BuildContext context)? onAdd,
+    void Function(BuildContext context, String id)? onEdit,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -40,11 +42,26 @@ void main() {
         home: DataGatewayListScreen(
           remote: remote,
           access: access,
-          onAdd: onAdd ?? (_) async {},
-          onEdit: onEdit ?? (_, _) async {},
+          onAdd: onAdd ?? (_) {},
+          onEdit: onEdit ?? (_, _) {},
         ),
       ),
     );
+    await tester.pumpAndSettle();
+  }
+
+  /// Stands in for the add or edit form: a page over the list.
+  void openForm(BuildContext context) => unawaited(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('the form')),
+      ),
+    ),
+  );
+
+  /// Leaves the form opened by [openForm].
+  Future<void> leaveForm(WidgetTester tester) async {
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
   }
 
@@ -231,24 +248,85 @@ void main() {
         'when it returns', (tester) async {
       String? edited;
       remote.listing([bgg]);
-      await pumpScreen(tester, onEdit: (_, id) async => edited = id);
+      await pumpScreen(
+        tester,
+        onEdit: (context, id) {
+          edited = id;
+          openForm(context);
+        },
+      );
+
+      await choose(tester, 'dg_1', DataGatewayListScreen.editKey);
+      expect(edited, 'dg_1');
+      expect(find.text('the form'), findsOneWidget);
 
       remote.listing([bgg.copyWith(name: 'BGG renamed')]);
-      await choose(tester, 'dg_1', DataGatewayListScreen.editKey);
+      await leaveForm(tester);
 
-      expect(edited, 'dg_1');
       expect(find.text('BGG renamed'), findsOneWidget);
     });
 
     testWidgets('add reads the list again when it returns', (tester) async {
       remote.listing(const []);
-      await pumpScreen(tester);
+      await pumpScreen(tester, onAdd: openForm);
 
-      remote.listing([bgg]);
       await tester.tap(find.byKey(DataGatewayListScreen.addKey));
       await tester.pumpAndSettle();
+      expect(find.text('the form'), findsOneWidget);
+
+      remote.listing([bgg]);
+      await leaveForm(tester);
 
       expect(find.text('BGG'), findsOneWidget);
+    });
+
+    testWidgets('a dialog over the list does not read it again', (
+      tester,
+    ) async {
+      remote.listing([bgg]);
+      await pumpScreen(tester);
+      await choose(tester, 'dg_1', DataGatewayListScreen.deleteKey);
+
+      // The delete confirmation is open over the list. Dismiss it.
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+
+      expect(
+        remote.calls.where((c) => c.startsWith('fetchPage')),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('reads the list again on coming back from a form it did not '
+        'open, as after a deep link or a web reload on the form', (
+      tester,
+    ) async {
+      var reads = 0;
+      remote.onFetchPage = (_, _) async =>
+          pageOf(++reads == 1 ? [bgg] : [bgg, steam]);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates:
+              DataGatewayLocalizations.localizationsDelegates,
+          supportedLocales: DataGatewayLocalizations.supportedLocales,
+          // Builds the list beneath the form, as go_router does for a form
+          // it is sent to directly.
+          initialRoute: '/form',
+          routes: {
+            '/': (_) => DataGatewayListScreen(remote: remote, access: access),
+            '/form': (_) => const Scaffold(body: Text('the form')),
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('the form'), findsOneWidget);
+
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+
+      expect(reads, 2);
+      expect(find.text('Steam'), findsOneWidget);
     });
   });
 }

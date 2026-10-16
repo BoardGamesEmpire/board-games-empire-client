@@ -29,3 +29,9 @@ final class DataGatewayFormSubmitted extends DataGatewayFormEvent {
 final class DataGatewayFormFailureCleared extends DataGatewayFormEvent {
   const DataGatewayFormFailureCleared();
 }
+
+/// The session's access changed under the form, because another screen
+/// learned something. Internal.
+final class DataGatewayFormAccessChanged extends DataGatewayFormEvent {
+  const DataGatewayFormAccessChanged();
+}

@@ -267,6 +267,8 @@ void main() {
   });
 
   group('access (#41)', () {
+    late Completer<DataGatewayChangeResult> pending;
+
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'a refused read opens as access-denied, and the session learns it',
       setUp: () => remote.onFetchOne = (_) async => throw forbidden(),
@@ -288,6 +290,22 @@ void main() {
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an edit asks the server even after a refused read, so a role raised '
+      'since then gets the form',
+      setUp: () {
+        access.readDenied();
+        remote.onFetchOne = (_) async => bgg;
+      },
+      build: () => editing('dg_1'),
+      act: (bloc) => bloc.add(const DataGatewayFormStarted()),
+      expect: () => [
+        const DataGatewayFormLoading(),
+        DataGatewayFormEditing(original: bgg),
+      ],
+      verify: (_) => expect(access.value.read, DataGatewayRead.granted),
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'a refused save says the role may not change DataGateways, stops '
       'offering the save, and tells the session',
       setUp: () => remote.onCreate = (_) async => throw forbidden(),
@@ -306,6 +324,53 @@ void main() {
       build: creating,
       act: (bloc) => bloc.add(const DataGatewayFormStarted()),
       expect: () => [const DataGatewayFormEditing(mayChange: false)],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'stops offering the save when a change is refused elsewhere while it '
+      'is open',
+      // An action the list started before the form opened can be refused
+      // after it has.
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.changeDenied();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormEditing(),
+        const DataGatewayFormEditing(mayChange: false),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a refusal elsewhere during a save leaves the save running, and a save '
+      'that then fails does not offer the save again',
+      setUp: () {
+        pending = Completer<DataGatewayChangeResult>();
+        remote.onCreate = (_) => pending.future;
+      },
+      build: creating,
+      act: (bloc) async {
+        bloc
+          ..add(const DataGatewayFormStarted())
+          ..add(const DataGatewayFormSubmitted(input));
+        await pumpEventQueue();
+        access.changeDenied();
+        await pumpEventQueue();
+        pending.completeError(unreachable());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormEditing(),
+        const DataGatewayFormEditing(submitting: true),
+        const DataGatewayFormEditing(submitting: true, mayChange: false),
+        const DataGatewayFormEditing(
+          mayChange: false,
+          failure: DataGatewayFormFailure.failed,
+        ),
+      ],
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(

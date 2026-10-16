@@ -11,8 +11,8 @@ sealed class DataGatewayListEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// Read the list from the server: on opening, on retry, and on returning
-/// from the add or edit form.
+/// Read the list from the server: on opening, on retry, and on coming back
+/// into view, as from the add or edit form.
 final class DataGatewayListLoadRequested extends DataGatewayListEvent {
   const DataGatewayListLoadRequested();
 }

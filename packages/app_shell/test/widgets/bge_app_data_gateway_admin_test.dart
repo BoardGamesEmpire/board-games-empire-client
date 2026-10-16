@@ -174,4 +174,27 @@ void main() {
     expect(find.text("You don't have access to data gateways"), findsOneWidget);
     expect(access.value.read, DataGatewayRead.denied);
   });
+
+  testWidgets('the list beneath a deep-linked form reads itself again when '
+      'the form is left (#41)', (tester) async {
+    var reads = 0;
+    remote.read = () async {
+      reads++;
+      return _empty();
+    };
+    access.readGranted();
+    await pumpHome(tester);
+
+    GoRouter.of(tester.element(find.byType(HomeScreen)))
+        .go(AppRoutes.dataGatewayAdd);
+    await tester.pumpAndSettle();
+    expect(find.byType(DataGatewayFormScreen), findsOneWidget);
+    final readsBeneathTheForm = reads;
+
+    GoRouter.of(tester.element(find.byType(DataGatewayFormScreen))).pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('No data gateways yet'), findsOneWidget);
+    expect(reads, readsBeneathTheForm + 1);
+  });
 }

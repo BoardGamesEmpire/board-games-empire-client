@@ -546,6 +546,52 @@ void main() {
         ),
       ),
     );
+
+    for (final (ends, error, result) in [
+      ('fails', unreachable, DataGatewayActionResult.failed),
+      ('is refused', forbidden, DataGatewayActionResult.refused),
+    ]) {
+      blocTest<DataGatewayListBloc, DataGatewayListState>(
+        'an action that $ends after a reload landed keeps the reloaded row: '
+        'it says nothing about the row',
+        setUp: () {
+          var reads = 0;
+          remote.onFetchPage = (_, _) async =>
+              pageOf(++reads == 1 ? [bgg] : [bggOff]);
+          pending = Completer<DataGatewayChangeResult>();
+          remote.onDisconnect = (_) => pending.future;
+        },
+        build: build,
+        act: (bloc) async {
+          bloc.add(const DataGatewayListLoadRequested());
+          await pumpEventQueue();
+          bloc.add(
+            const DataGatewayListActionRequested(
+              DataGatewayRowAction.disconnect,
+              'dg_1',
+            ),
+          );
+          await pumpEventQueue();
+          // Someone else disabled it meanwhile, and the reload saw that.
+          bloc.add(const DataGatewayListLoadRequested());
+          await pumpEventQueue();
+          pending.completeError(error());
+          await pumpEventQueue();
+        },
+        verify: (bloc) => expect(
+          bloc.state,
+          DataGatewayListReady(
+            gateways: [bggOff],
+            mayChange: result != DataGatewayActionResult.refused,
+            outcome: DataGatewayListOutcome(
+              action: DataGatewayRowAction.disconnect,
+              result: result,
+              name: 'BGG',
+            ),
+          ),
+        ),
+      );
+    }
   });
 
   blocTest<DataGatewayListBloc, DataGatewayListState>(

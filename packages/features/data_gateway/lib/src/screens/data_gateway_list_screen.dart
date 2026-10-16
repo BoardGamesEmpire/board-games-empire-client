@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -21,8 +22,12 @@ import '../widgets/data_gateway_message.dart';
 /// Decoupled from DI like the household screens: the caller resolves the
 /// per-server [DataGatewayRemoteDataSource] and the session's
 /// [DataGatewayAccess], and owns the routes to the form through [onAdd] and
-/// [onEdit]. Each is awaited, and the list is read again when it returns, so
-/// a save shows up without the form having to hand anything back.
+/// [onEdit].
+///
+/// The list is read again whenever it comes back into view, so a save shows
+/// up without the form having to hand anything back. That includes a form
+/// this screen did not open: a deep link or a web reload on a form builds
+/// the list beneath it.
 ///
 /// ## What a row says
 ///
@@ -68,35 +73,90 @@ class DataGatewayListScreen extends StatelessWidget {
   /// The session's access, or null for a composition without one.
   final DataGatewayAccess? access;
 
-  /// Opens the add form, completing when the user leaves it. Null hides the
-  /// add button.
-  final Future<void> Function(BuildContext context)? onAdd;
+  /// Opens the add form. Null hides the add button.
+  final void Function(BuildContext context)? onAdd;
 
-  /// Opens the edit form for one DataGateway, completing when the user leaves
-  /// it. Null leaves edit out of the row menu.
-  final Future<void> Function(BuildContext context, String id)? onEdit;
+  /// Opens the edit form for one DataGateway. Null leaves edit out of the row
+  /// menu.
+  final void Function(BuildContext context, String id)? onEdit;
 
   @override
   Widget build(BuildContext context) => BlocProvider<DataGatewayListBloc>(
     create: (_) =>
         DataGatewayListBloc(remote: remote, access: access)
           ..add(const DataGatewayListLoadRequested()),
-    child: _DataGatewayListView(onAdd: onAdd, onEdit: onEdit),
+    child: _ReadAgainWhenUncovered(
+      child: _DataGatewayListView(onAdd: onAdd, onEdit: onEdit),
+    ),
   );
+}
+
+/// Reads the list again when the screen comes back into view.
+///
+/// Watches [TickerMode], which turns off while an opaque route covers the
+/// screen and back on as that route starts to leave. So it covers a form this
+/// screen opened and one it did not, such as a form a deep link built the
+/// list beneath. Dialogs and menus are not opaque, so they never turn it off.
+class _ReadAgainWhenUncovered extends StatefulWidget {
+  const _ReadAgainWhenUncovered({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ReadAgainWhenUncovered> createState() =>
+      _ReadAgainWhenUncoveredState();
+}
+
+class _ReadAgainWhenUncoveredState extends State<_ReadAgainWhenUncovered> {
+  ValueListenable<TickerModeData>? _tickerMode;
+  bool _covered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _watch();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    // Moved in the tree, maybe under another TickerMode.
+    _watch();
+  }
+
+  void _watch() {
+    final tickerMode = TickerMode.getValuesNotifier(context);
+    if (identical(tickerMode, _tickerMode)) return;
+    _tickerMode?.removeListener(_changed);
+    _tickerMode = tickerMode..addListener(_changed);
+    _covered = !tickerMode.value.enabled;
+  }
+
+  void _changed() {
+    final visible = _tickerMode!.value.enabled;
+    if (_covered && visible) {
+      context.read<DataGatewayListBloc>().add(
+        const DataGatewayListLoadRequested(),
+      );
+    }
+    _covered = !visible;
+  }
+
+  @override
+  void dispose() {
+    _tickerMode?.removeListener(_changed);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _DataGatewayListView extends StatelessWidget {
   const _DataGatewayListView({this.onAdd, this.onEdit});
 
-  final Future<void> Function(BuildContext context)? onAdd;
-  final Future<void> Function(BuildContext context, String id)? onEdit;
-
-  /// Runs a trip to the form, then reads the list again.
-  Future<void> _thenReload(BuildContext context, Future<void> trip) async {
-    final bloc = context.read<DataGatewayListBloc>();
-    await trip;
-    if (!bloc.isClosed) bloc.add(const DataGatewayListLoadRequested());
-  }
+  final void Function(BuildContext context)? onAdd;
+  final void Function(BuildContext context, String id)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -119,8 +179,7 @@ class _DataGatewayListView extends StatelessWidget {
               ? null
               : FloatingActionButton.extended(
                   key: DataGatewayListScreen.addKey,
-                  onPressed: () =>
-                      unawaited(_thenReload(context, add(context))),
+                  onPressed: () => add(context),
                   icon: const Icon(Icons.add),
                   label: Text(l10n.dataGatewayAdd),
                 ),
@@ -184,11 +243,7 @@ class _DataGatewayListView extends StatelessWidget {
                       gateway: row,
                       busy: busy.contains(row.id),
                       mayChange: mayChange,
-                      onEdit: edit == null
-                          ? null
-                          : () => unawaited(
-                              _thenReload(context, edit(context, row.id)),
-                            ),
+                      onEdit: edit == null ? null : () => edit(context, row.id),
                     );
                   },
                 ),

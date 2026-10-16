@@ -142,17 +142,20 @@ class DataGatewayListBloc
     _outcome = null;
     _emitReady(emit);
 
-    final (replacement, result) = await _attempt(event.action, row);
+    final (after, result) = await _attempt(event.action, row);
 
     // Settled against the rows as they are now, not as they were when the
-    // action started: a reload or another row's action may have landed.
+    // action started: a reload or another row's action may have landed. A
+    // failed or refused action says nothing about the row, so whatever is
+    // there now stays.
     _busy.remove(event.id);
-    _rows = _rows == null
-        ? null
-        : [
-            for (final g in _rows!)
-              if (g.id != event.id) g else ?replacement,
-          ];
+    final rows = _rows;
+    if (rows != null && _answered(result)) {
+      _rows = [
+        for (final g in rows)
+          if (g.id != event.id) g else ?after,
+      ];
+    }
     _outcome = DataGatewayListOutcome(
       action: event.action,
       result: result,
@@ -165,8 +168,17 @@ class DataGatewayListBloc
     if (_reading && !isClosed) add(const DataGatewayListLoadRequested());
   }
 
-  /// Runs [action] on [row]. Answers with what should replace the row (null
-  /// removes it) and how the action ended. Never throws.
+  /// Whether [result] came with the server's word on the row.
+  static bool _answered(DataGatewayActionResult result) => switch (result) {
+    DataGatewayActionResult.done ||
+    DataGatewayActionResult.attemptFailed ||
+    DataGatewayActionResult.gone => true,
+    DataGatewayActionResult.refused || DataGatewayActionResult.failed => false,
+  };
+
+  /// Runs [action] on [row]. Answers with the row as the server left it and
+  /// how the action ended. The row is null when it is gone, and when the
+  /// action failed or was refused, which says nothing about it. Never throws.
   Future<(DataGateway?, DataGatewayActionResult)> _attempt(
     DataGatewayRowAction action,
     DataGateway row,
@@ -192,7 +204,7 @@ class DataGatewayListBloc
     } on DataGatewayForbiddenException {
       _mayChange = false;
       _access?.changeDenied();
-      return (row, DataGatewayActionResult.refused);
+      return (null, DataGatewayActionResult.refused);
     } on DataGatewayNotFoundException {
       return (null, DataGatewayActionResult.gone);
     } on Object catch (error, stackTrace) {
@@ -201,7 +213,7 @@ class DataGatewayListBloc
         error: error,
         stackTrace: stackTrace,
       );
-      return (row, DataGatewayActionResult.failed);
+      return (null, DataGatewayActionResult.failed);
     }
   }
 

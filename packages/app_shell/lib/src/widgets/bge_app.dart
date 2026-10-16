@@ -896,10 +896,9 @@ class _BgeAppState extends State<BgeApp> {
   /// Guarded on the client alone, not on access: a deep link by a user the
   /// server refuses reaches the screen, which says so (#41).
   ///
-  /// The forms are pushed and awaited, and the list reads itself again when
-  /// one returns. A save made after a `go` straight to a form returns to the
-  /// list go_router built beneath it, which read the list before the save
-  /// and does not read it again.
+  /// The forms are pushed. The list reads itself again whenever it comes back
+  /// into view, including the list go_router builds beneath a form reached
+  /// by a `go` straight to it.
   Widget? _buildDataGatewayListRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -910,8 +909,9 @@ class _BgeAppState extends State<BgeApp> {
     return DataGatewayListScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
       access: _dataGatewayAccess(container),
-      onAdd: (ctx) => ctx.push<void>(AppRoutes.dataGatewayAdd),
-      onEdit: (ctx, id) => ctx.push<void>(AppRoutes.dataGatewayEditOf(id)),
+      onAdd: (ctx) => unawaited(ctx.push<void>(AppRoutes.dataGatewayAdd)),
+      onEdit: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.dataGatewayEditOf(id))),
     );
   }
 

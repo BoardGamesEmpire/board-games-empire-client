@@ -16,7 +16,8 @@ import 'data_gateway_form_state.dart';
 ///
 /// Refusals reach [access] the way the list's do: a refused read is
 /// [DataGatewayFormDenied], and a refused save stops offering the save here
-/// and hides the change actions everywhere else for the session.
+/// and hides the change actions everywhere else for the session. A change
+/// refused elsewhere while the form is open stops offering the save here too.
 class DataGatewayFormBloc
     extends Bloc<DataGatewayFormEvent, DataGatewayFormState> {
   DataGatewayFormBloc({
@@ -29,6 +30,8 @@ class DataGatewayFormBloc
     on<DataGatewayFormStarted>(_onStarted);
     on<DataGatewayFormSubmitted>(_onSubmitted);
     on<DataGatewayFormFailureCleared>(_onFailureCleared);
+    on<DataGatewayFormAccessChanged>(_onAccessChanged);
+    _access?.addListener(_accessListener);
   }
 
   final DataGatewayRemoteDataSource _remote;
@@ -38,16 +41,20 @@ class DataGatewayFormBloc
 
   bool get _mayChange => _access?.value.mayChange ?? true;
 
+  void _accessListener() => add(const DataGatewayFormAccessChanged());
+
   Future<void> _onStarted(
     DataGatewayFormStarted event,
     Emitter<DataGatewayFormState> emit,
   ) async {
-    if (_access?.value.read == DataGatewayRead.denied) {
-      return emit(const DataGatewayFormDenied());
-    }
-
     final id = _editingId;
     if (id == null) {
+      // An add has no read of its own to ask, so it goes by what the session
+      // last heard. An edit reads its row below, and that read answers afresh
+      // for a user whose role was raised since.
+      if (_access?.value.read == DataGatewayRead.denied) {
+        return emit(const DataGatewayFormDenied());
+      }
       return emit(DataGatewayFormEditing(mayChange: _mayChange));
     }
 
@@ -101,18 +108,26 @@ class DataGatewayFormBloc
       _access?.changeDenied();
       emit(editing.next(mayChange: false));
     } on DataGatewayNameInUseException {
-      emit(editing.next(failure: DataGatewayFormFailure.nameInUse));
+      emit(_unsaved(editing, DataGatewayFormFailure.nameInUse));
     } on DataGatewayNotFoundException {
-      emit(editing.next(failure: DataGatewayFormFailure.gone));
+      emit(_unsaved(editing, DataGatewayFormFailure.gone));
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'DataGateway save failed',
         error: error,
         stackTrace: stackTrace,
       );
-      emit(editing.next(failure: DataGatewayFormFailure.failed));
+      emit(_unsaved(editing, DataGatewayFormFailure.failed));
     }
   }
+
+  /// [editing] after a save that did not happen. It offers the save again
+  /// only if the session still allows it: a change refused elsewhere while
+  /// this one was in flight has withdrawn it.
+  DataGatewayFormEditing _unsaved(
+    DataGatewayFormEditing editing,
+    DataGatewayFormFailure failure,
+  ) => editing.next(mayChange: _mayChange, failure: failure);
 
   void _onFailureCleared(
     DataGatewayFormFailureCleared event,
@@ -121,5 +136,34 @@ class DataGatewayFormBloc
     final editing = state;
     if (editing is! DataGatewayFormEditing || editing.failure == null) return;
     emit(editing.next());
+  }
+
+  /// Withdraws the save when the session learns elsewhere that the user may
+  /// not change DataGateways. A save already in flight runs on and answers
+  /// for itself.
+  void _onAccessChanged(
+    DataGatewayFormAccessChanged event,
+    Emitter<DataGatewayFormState> emit,
+  ) {
+    final editing = state;
+    if (editing is! DataGatewayFormEditing ||
+        !editing.mayChange ||
+        _mayChange) {
+      return;
+    }
+    emit(
+      DataGatewayFormEditing(
+        original: editing.original,
+        submitting: editing.submitting,
+        mayChange: false,
+        failure: editing.failure,
+      ),
+    );
+  }
+
+  @override
+  Future<void> close() {
+    _access?.removeListener(_accessListener);
+    return super.close();
   }
 }
