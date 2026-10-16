@@ -280,12 +280,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
     try {
       final session = await _authRepository.getSession();
+      // The answer is about the session this check started from. If the
+      // state has moved since, that move is newer and owns what follows.
+      // Most often it's a sign-out, whose own null this would otherwise
+      // report as a lost session (#142).
+      if (!identical(state, current)) return;
       emit(
         session != null
             ? AuthAuthenticated(session: session)
             : const AuthUnauthenticated(cause: SignOutCause.sessionLost),
       );
     } on AuthInvalidCredentialsException {
+      if (!identical(state, current)) return;
       emit(const AuthUnauthenticated(cause: SignOutCause.sessionLost));
     } on AuthException {
       // Still unreachable. Keep the optimistic session and its banner: the

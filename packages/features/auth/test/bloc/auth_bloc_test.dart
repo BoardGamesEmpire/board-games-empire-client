@@ -4,6 +4,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/dto.dart';
 
 import 'package:auth/src/bloc/auth_bloc.dart';
 import 'package:auth/src/bloc/auth_event.dart';
@@ -683,6 +684,41 @@ void main() {
         },
         seed: () => AuthAuthenticated(session: testSession()),
         act: (b) async {
+          b.add(const AuthSignOutRequested());
+          await Future<void>.delayed(Duration.zero);
+          _signOutGate!.complete();
+          await Future<void>.delayed(Duration.zero);
+        },
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
+      );
+
+      // A revalidation can still be waiting on the server when the user
+      // signs out. The repository answers it null once the sign-out has
+      // started, and that null is the sign-out's doing, not the server's.
+      blocTest<AuthBloc, AuthBlocState>(
+        'a revalidation that comes back during a sign-out leaves the cause '
+        'to the sign-out',
+        build: () {
+          final session = Completer<AuthResponse?>();
+          when(() => mockRepo.getSession()).thenAnswer((_) => session.future);
+          final signOutGate = Completer<void>();
+          when(() => mockRepo.signOut()).thenAnswer((_) {
+            session.complete(null);
+            return signOutGate.future;
+          });
+          _signOutGate = signOutGate;
+          return AuthBloc(authRepository: mockRepo, revalidationInterval: null);
+        },
+        seed: () => AuthAuthenticated(
+          session: testSession(),
+          verification: SessionVerification.unverifiedOffline,
+        ),
+        act: (b) async {
+          b.add(const AuthSessionRevalidationRequested());
+          await Future<void>.delayed(Duration.zero);
           b.add(const AuthSignOutRequested());
           await Future<void>.delayed(Duration.zero);
           _signOutGate!.complete();
