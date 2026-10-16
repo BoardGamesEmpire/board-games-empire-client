@@ -455,7 +455,10 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSignOutRequested()),
-        expect: () => [const AuthLoading(), const AuthUnauthenticated()],
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
         verify: (_) => verify(() => mockRepo.signOut()).called(1),
       );
 
@@ -473,7 +476,10 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSignOutRequested()),
-        expect: () => [const AuthLoading(), const AuthUnauthenticated()],
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
         errors: () => [isA<AuthSignOutPersistenceException>()],
       );
 
@@ -487,7 +493,10 @@ void main() {
           return AuthBloc(authRepository: mockRepo);
         },
         act: (b) => b.add(const AuthSignOutRequested()),
-        expect: () => [const AuthLoading(), const AuthUnauthenticated()],
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
         errors: () => [isA<StateError>()],
       );
 
@@ -516,7 +525,10 @@ void main() {
         },
         expect: () => isNot(contains(isA<AuthAuthenticated>())),
         errors: () => [isA<AuthSignOutPersistenceException>()],
-        verify: (b) => expect(b.state, const AuthUnauthenticated()),
+        verify: (b) => expect(
+          b.state,
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ),
       );
 
       // ── #280 D1: the terminal emit must not clobber a live session ──
@@ -580,7 +592,10 @@ void main() {
           _signOutGate!.complete();
           await Future<void>.delayed(Duration.zero);
         },
-        expect: () => [const AuthLoading(), const AuthUnauthenticated()],
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
       );
 
       blocTest<AuthBloc, AuthBlocState>(
@@ -608,8 +623,189 @@ void main() {
           _signOutGate!.complete();
           await Future<void>.delayed(Duration.zero);
         },
-        verify: (b) => expect(b.state, const AuthUnauthenticated()),
+        verify: (b) => expect(
+          b.state,
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ),
       );
+    });
+
+    // #142: the shell keeps the unsent-changes notice for a session the user
+    // didn't end, so unauthenticated says which kind this was.
+    group('sign-out cause', () {
+      blocTest<AuthBloc, AuthBlocState>(
+        'a sign-out the user asked for lands with cause user',
+        build: () {
+          when(() => mockRepo.signOut()).thenAnswer((_) async {});
+          return AuthBloc(authRepository: mockRepo);
+        },
+        seed: () => AuthAuthenticated(session: testSession()),
+        act: (b) => b.add(const AuthSignOutRequested()),
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'a sign-out the app runs to recover lands with cause sessionLost',
+        build: () {
+          when(() => mockRepo.signOut()).thenAnswer((_) async {});
+          return AuthBloc(authRepository: mockRepo);
+        },
+        seed: () => AuthAuthenticated(session: testSession()),
+        act: (b) =>
+            b.add(const AuthSignOutRequested(cause: SignOutCause.sessionLost)),
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+        ],
+      );
+
+      // Both repositories publish unauthenticated BEFORE signOut() resolves
+      // (#280), so the mirror reaches the bloc while the sign-out is still
+      // in flight. Labelled a loss, it would reach the shell first.
+      blocTest<AuthBloc, AuthBlocState>(
+        "the repository's mirror during a sign-out carries the sign-out's "
+        'cause, never sessionLost',
+        build: () {
+          final repoStates = StreamController<AuthState>();
+          addTearDown(repoStates.close);
+          when(() => mockRepo.watchAuthState())
+              .thenAnswer((_) => repoStates.stream);
+          final signOutGate = Completer<void>();
+          when(() => mockRepo.signOut()).thenAnswer((_) {
+            repoStates.add(const AuthStateUnauthenticated());
+            return signOutGate.future;
+          });
+          _signOutGate = signOutGate;
+          return AuthBloc(authRepository: mockRepo);
+        },
+        seed: () => AuthAuthenticated(session: testSession()),
+        act: (b) async {
+          b.add(const AuthSignOutRequested());
+          await Future<void>.delayed(Duration.zero);
+          _signOutGate!.complete();
+          await Future<void>.delayed(Duration.zero);
+        },
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.user),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        "outside a sign-out, the repository's unauthenticated is a lost "
+        'session — an interceptor or drain 401',
+        build: () {
+          when(
+            () => mockRepo.watchAuthState(),
+          ).thenAnswer((_) => Stream.value(const AuthStateUnauthenticated()));
+          return AuthBloc(authRepository: mockRepo);
+        },
+        seed: () => AuthAuthenticated(session: testSession()),
+        expect: () => [
+          const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+        ],
+      );
+
+      // A sign-out the bloc didn't run can overtake a sign-in (#146). The
+      // repository publishes it, so the mirror has usually said why by the
+      // time the sign-in hears; the sign-in mustn't say it again differently.
+      blocTest<AuthBloc, AuthBlocState>(
+        "a sign-in overtaken after the mirror's unauthenticated adds no "
+        'second one',
+        build: () {
+          final repoStates = StreamController<AuthState>();
+          addTearDown(repoStates.close);
+          when(() => mockRepo.watchAuthState())
+              .thenAnswer((_) => repoStates.stream);
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenAnswer((_) async {
+            repoStates.add(const AuthStateUnauthenticated());
+            await Future<void>.delayed(Duration.zero);
+            throw const AuthSupersededException();
+          });
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthSignInRequested(email: 'u1@example.com', password: 'x'),
+        ),
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'a sign-in overtaken by a sign-out the bloc never ran is a lost '
+        'session',
+        build: () {
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(const AuthSupersededException());
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthSignInRequested(email: 'u1@example.com', password: 'x'),
+        ),
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'and the same for a registration it overtakes',
+        build: () {
+          when(
+            () => mockRepo.signUp(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+              username: any(named: 'username'),
+            ),
+          ).thenThrow(const AuthSupersededException());
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(
+          const AuthRegisterRequested(
+            email: 'u1@example.com',
+            password: 'x',
+            username: 'u',
+          ),
+        ),
+        expect: () => [
+          const AuthLoading(),
+          const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'a stored session the server rejects at startup is a lost session',
+        build: () {
+          when(() => mockRepo.getSession()).thenAnswer((_) async => null);
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) => b.add(const AuthSessionCheckRequested()),
+        expect: () => [
+          const AuthSessionCheckInProgress(),
+          const AuthUnauthenticated(cause: SignOutCause.sessionLost),
+        ],
+      );
+
+      test('the two causes are different states', () {
+        expect(
+          const AuthUnauthenticated(cause: SignOutCause.user),
+          isNot(const AuthUnauthenticated(cause: SignOutCause.sessionLost)),
+        );
+      });
     });
 
     group('repository state mirroring', () {

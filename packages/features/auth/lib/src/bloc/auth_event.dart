@@ -2,6 +2,8 @@ import 'package:equatable/equatable.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:observability/observability.dart';
 
+import 'auth_bloc_state.dart' show SignOutCause;
+
 sealed class AuthEvent extends Equatable {
   const AuthEvent();
 
@@ -88,7 +90,17 @@ final class AuthRegisterRequested extends AuthEvent {
 }
 
 final class AuthSignOutRequested extends AuthEvent {
-  const AuthSignOutRequested();
+  const AuthSignOutRequested({this.cause = SignOutCause.user});
+
+  /// Carried through to the [AuthUnauthenticated] this produces (#142).
+  /// Defaults to [SignOutCause.user]: every dispatch but one is the user's
+  /// own. The exception is the shell's recovery from a failed user-scope
+  /// activation, which passes [SignOutCause.sessionLost]: the user didn't
+  /// ask for that one either (#142).
+  final SignOutCause cause;
+
+  @override
+  List<Object?> get props => [cause];
 }
 
 /// Internal — re-checks a session that was entered without server
