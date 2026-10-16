@@ -17,7 +17,8 @@ import 'data_gateway_form_state.dart';
 /// Refusals reach [access] the way the list's do: a refused read is
 /// [DataGatewayFormDenied], and a refused save stops offering the save here
 /// and hides the change actions everywhere else for the session. A change
-/// refused elsewhere while the form is open stops offering the save here too.
+/// refused elsewhere while the form is open stops offering the save here too,
+/// and an open add follows the reads refused or granted elsewhere.
 class DataGatewayFormBloc
     extends Bloc<DataGatewayFormEvent, DataGatewayFormState> {
   DataGatewayFormBloc({
@@ -41,6 +42,15 @@ class DataGatewayFormBloc
 
   bool get _mayChange => _access?.value.mayChange ?? true;
 
+  /// Whether this is an add and the session has heard that the user may not
+  /// read DataGateways.
+  ///
+  /// An add has no read of its own to ask, so it goes by what the session
+  /// hears, for as long as it is open. An edit reads its row, and that read
+  /// answers afresh for a user whose role was raised since.
+  bool get _addDenied =>
+      _editingId == null && _access?.value.read == DataGatewayRead.denied;
+
   void _accessListener() => add(const DataGatewayFormAccessChanged());
 
   Future<void> _onStarted(
@@ -49,12 +59,7 @@ class DataGatewayFormBloc
   ) async {
     final id = _editingId;
     if (id == null) {
-      // An add has no read of its own to ask, so it goes by what the session
-      // last heard. An edit reads its row below, and that read answers afresh
-      // for a user whose role was raised since.
-      if (_access?.value.read == DataGatewayRead.denied) {
-        return emit(const DataGatewayFormDenied());
-      }
+      if (_addDenied) return emit(const DataGatewayFormDenied());
       return emit(DataGatewayFormEditing(mayChange: _mayChange));
     }
 
@@ -106,7 +111,11 @@ class DataGatewayFormBloc
       emit(DataGatewayFormSaved(result: result, created: original == null));
     } on DataGatewayForbiddenException {
       _access?.changeDenied();
-      emit(editing.next(mayChange: false));
+      emit(
+        _addDenied
+            ? const DataGatewayFormDenied()
+            : editing.next(mayChange: false),
+      );
     } on DataGatewayNameInUseException {
       emit(_unsaved(editing, DataGatewayFormFailure.nameInUse));
     } on DataGatewayNotFoundException {
@@ -123,11 +132,14 @@ class DataGatewayFormBloc
 
   /// [editing] after a save that did not happen. It offers the save again
   /// only if the session still allows it: a change refused elsewhere while
-  /// this one was in flight has withdrawn it.
-  DataGatewayFormEditing _unsaved(
+  /// this one was in flight has withdrawn it, and a read refused elsewhere
+  /// has closed an add.
+  DataGatewayFormState _unsaved(
     DataGatewayFormEditing editing,
     DataGatewayFormFailure failure,
-  ) => editing.next(mayChange: _mayChange, failure: failure);
+  ) => _addDenied
+      ? const DataGatewayFormDenied()
+      : editing.next(mayChange: _mayChange, failure: failure);
 
   void _onFailureCleared(
     DataGatewayFormFailureCleared event,
@@ -138,14 +150,26 @@ class DataGatewayFormBloc
     emit(editing.next());
   }
 
-  /// Withdraws the save when the session learns elsewhere that the user may
-  /// not change DataGateways. A save already in flight runs on and answers
-  /// for itself.
+  /// Keeps the open form in step with what the session learns elsewhere.
+  ///
+  /// An add shows access-denied once a read is refused, and opens again once
+  /// one is granted. Any form withdraws the save once a change is refused. A
+  /// save already in flight runs on and answers for itself.
   void _onAccessChanged(
     DataGatewayFormAccessChanged event,
     Emitter<DataGatewayFormState> emit,
   ) {
     final editing = state;
+    if (_editingId == null) {
+      if (editing is DataGatewayFormDenied && !_addDenied) {
+        return emit(DataGatewayFormEditing(mayChange: _mayChange));
+      }
+      if (editing is DataGatewayFormEditing &&
+          !editing.submitting &&
+          _addDenied) {
+        return emit(const DataGatewayFormDenied());
+      }
+    }
     if (editing is! DataGatewayFormEditing ||
         !editing.mayChange ||
         _mayChange) {

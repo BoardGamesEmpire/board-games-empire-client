@@ -345,6 +345,66 @@ void main() {
     );
 
     blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add opened before the session heard shows access-denied when a '
+      'read is refused elsewhere',
+      // A deep link or a web reload on the add form can open it before the
+      // sign-in check or the list beneath has answered.
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.readDenied();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormEditing(),
+        const DataGatewayFormDenied(),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'an add opened as access-denied opens the form when a read is granted '
+      'later, so a role raised since then gets it',
+      setUp: () => access.readDenied(),
+      build: creating,
+      act: (bloc) async {
+        bloc.add(const DataGatewayFormStarted());
+        await pumpEventQueue();
+        access.readGranted();
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormDenied(),
+        const DataGatewayFormEditing(),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
+      'a read refused elsewhere during an add leaves the save running, and a '
+      'save that then fails shows access-denied, not the save again',
+      setUp: () {
+        pending = Completer<DataGatewayChangeResult>();
+        remote.onCreate = (_) => pending.future;
+      },
+      build: creating,
+      act: (bloc) async {
+        bloc
+          ..add(const DataGatewayFormStarted())
+          ..add(const DataGatewayFormSubmitted(input));
+        await pumpEventQueue();
+        access.readDenied();
+        await pumpEventQueue();
+        pending.completeError(unreachable());
+        await pumpEventQueue();
+      },
+      expect: () => [
+        const DataGatewayFormEditing(),
+        const DataGatewayFormEditing(submitting: true),
+        const DataGatewayFormDenied(),
+      ],
+    );
+
+    blocTest<DataGatewayFormBloc, DataGatewayFormState>(
       'a refusal elsewhere during a save leaves the save running, and a save '
       'that then fails does not offer the save again',
       setUp: () {
