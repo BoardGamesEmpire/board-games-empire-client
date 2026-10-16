@@ -54,6 +54,12 @@ abstract final class AppRoutes {
   static String householdDetailOf(String householdId) =>
       '$household/${Uri.encodeComponent(householdId)}';
 
+  /// The signed-in user's collection list (#44). Singular, like
+  /// [household]. Not the reserved `/server/:serverId/collection/:userId`
+  /// deep link, which names a server and a user; this is always the
+  /// active session's own.
+  static const collection = '/collection';
+
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
@@ -180,6 +186,19 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
   String householdId,
 );
 
+/// Builds the collection list (#44) for the [AppRoutes.collection] route.
+/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container carries no
+/// `GameCollectionRepository` (tests without a container; no active user
+/// session), in which case the route falls back to [NotYetAvailableScreen].
+///
+/// Guarded on the repository alone, like the household list: the list reads
+/// the local cache, and a missing hydrate costs it only the retry.
+///
+/// Sits outside the auth [ShellRoute] for the household list's reason: it
+/// needs the active server's scoped container, not an `AuthBloc`.
+typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -201,6 +220,7 @@ GoRouter buildAppRouter({
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
+  CollectionListScreenBuilder? collectionListBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -338,6 +358,16 @@ GoRouter buildAppRouter({
             },
           ),
         ],
+      ),
+      // #44: the collection list. Outside the auth ShellRoute (no AuthBloc
+      // needed; see [CollectionListScreenBuilder]), pushed from the home
+      // drawer, and reachable only once [AppBootstrapReady] admits
+      // non-bootstrap locations. A top-level destination is #414's.
+      GoRoute(
+        path: AppRoutes.collection,
+        builder: (context, _) =>
+            collectionListBuilder?.call(context) ??
+            const NotYetAvailableScreen(),
       ),
       GoRoute(
         path: AppRoutes.error,

@@ -1,7 +1,6 @@
 # game_collection
 
-The game collection feature. Today it holds the hydrate (#259); the list
-screen (#44) builds here next.
+The game collection feature: the hydrate (#259) and the list screen (#44).
 
 The directory is `features/collection`, but the package is `game_collection`:
 `collection` is dart-lang's `package:collection`, already in the workspace's
@@ -27,8 +26,31 @@ send.
 The class docs carry the rest: the drain and its one catch-up pass, why the
 catch-up is dated from the server's clock, and why nothing here may throw.
 
-## Reading the list
+The installer also publishes what the pass is doing, as a
+`GameCollectionHydrationStatus`, and a `GameCollectionRefresher` that runs one
+more pass on demand. The list reads the first and its retry calls the second.
+
+## The list
 
 `GameCollectionRepository.watchCollectionListItems()` streams the entries with
 their title, subtitle, platform name and thumbnail, and re-emits when a
 hydrate refreshes any of them.
+
+`GameCollectionListScreen` shows that stream. Its `GameCollectionListBloc`
+combines it with the hydration status, so an empty cache that is still filling
+shows a spinner rather than "no games yet", and a failed refresh shows a
+banner over the rows the cache still holds until a pass completes. The
+status carries which passes completed or failed, so a list opened mid-pass
+still knows. The shell passes in the
+repository, the status, the retry and an entry trigger; the screen resolves
+nothing itself.
+
+The list body is `GameCollectionListSliver`, separate from the page, so a
+two-pane layout can host it under its own app bar.
+
+Thumbnails load with `Image.network` and are cached in memory only (#449). On
+web they fall back to an HTML image element when the image host sends no CORS
+header, which BoardGameGeek's does not.
+
+Run `melos run generate` once after checkout: the localizations under
+`lib/l10n/` are generated and gitignored.

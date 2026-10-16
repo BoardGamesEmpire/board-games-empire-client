@@ -117,8 +117,120 @@ void main() {
         await Future<void>.delayed(Duration.zero);
 
         expect(remote.requests.length, 0);
+        // An absent status reads as idle, and an absent refresher as no
+        // retry to offer. A registered one would claim a hydrate that
+        // cannot run.
+        expect(
+          container.isRegistered<GameCollectionHydrationStatus>(),
+          isFalse,
+        );
+        expect(container.isRegistered<GameCollectionRefresher>(), isFalse);
       });
     }
+  });
+
+  group('hydration status (#44)', () {
+    test('reads running before install returns, then refreshed', () async {
+      register();
+      final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => blocked.future;
+
+      await install();
+      final status = container.get<GameCollectionHydrationStatus>();
+
+      // Before the drain's first turn: the list can be built in that window,
+      // and an idle status there would say the collection is empty while
+      // the cache is about to fill.
+      expect(status.state, GameCollectionHydrationState.running);
+
+      blocked.complete(_empty());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(status.state, GameCollectionHydrationState.refreshed);
+    });
+
+    test('reports a failed pass as failed', () async {
+      register();
+      remote.respond = (_) => _offline();
+
+      await install();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        GameCollectionHydrationState.failed,
+      );
+    });
+
+    test('a pass landing after the scope pops does not throw', () async {
+      // The drain is unawaited, so it outlives the scope that started it.
+      register();
+      final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => blocked.future;
+      await install();
+      final status = container.get<GameCollectionHydrationStatus>();
+
+      await container.dispose();
+      blocked.complete(_empty());
+      await Future<void>.delayed(Duration.zero);
+
+      // Closed by the teardown, so the late outcome is dropped.
+      expect(status.state, GameCollectionHydrationState.running);
+    });
+  });
+
+  group('the retry the list calls (#44)', () {
+    test('runs a pass inside the window, where a trigger would not', () async {
+      register();
+      await install();
+      await Future<void>.delayed(Duration.zero);
+
+      await container.get<GameCollectionRefresher>().refresh();
+
+      // Once at install, once for the press: someone asked.
+      expect(remote.requests.length, 2);
+    });
+
+    test('drives the status the list already watches', () async {
+      register();
+      remote.respond = (_) => _offline();
+      await install();
+      await Future<void>.delayed(Duration.zero);
+      final seen = <GameCollectionHydrationState>[];
+      final watching = container
+          .get<GameCollectionHydrationStatus>()
+          .watch()
+          .map((h) => h.state)
+          .listen(seen.add);
+      addTearDown(watching.cancel);
+
+      remote.respond = (_) => _empty();
+      await container.get<GameCollectionRefresher>().refresh();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [
+        GameCollectionHydrationState.failed,
+        GameCollectionHydrationState.running,
+        GameCollectionHydrationState.refreshed,
+      ]);
+    });
+
+    test('a press during the install-time pass joins it', () async {
+      register();
+      final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => blocked.future;
+      await install();
+
+      final retry = container.get<GameCollectionRefresher>().refresh();
+      blocked.complete(_empty());
+      await retry;
+
+      expect(remote.requests.length, 1);
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        GameCollectionHydrationState.refreshed,
+      );
+    });
   });
 
   group('re-hydrate registration', () {

@@ -4,6 +4,8 @@ import 'package:auth/auth.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_collection/game_collection.dart';
+import 'package:game_collection/l10n/game_collection_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:household/household.dart';
 import 'package:household/l10n/household_localizations.dart';
@@ -312,6 +314,7 @@ class _BgeAppState extends State<BgeApp> {
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
+      collectionListBuilder: _buildCollectionListRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
@@ -481,6 +484,7 @@ class _BgeAppState extends State<BgeApp> {
     if (active == null) return null;
 
     final authL10n = AuthLocalizations.of(context);
+    final collectionL10n = GameCollectionLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
@@ -518,10 +522,23 @@ class _BgeAppState extends State<BgeApp> {
     // right if a composition without a client ever ships again.
     final container = active.container;
     final canReadHouseholds = container.isRegistered<HouseholdRepository>();
+    // #44: the collection list's gate is the household list's — the
+    // repository alone, which the user tier registers, so the entry shows
+    // exactly while a session is active. A drawer entry rather than a
+    // top-level destination until #414 decides those.
+    final canReadCollection = container
+        .isRegistered<GameCollectionRepository>();
 
     return HomeScreen(
       activeServerName: active.displayName,
       entries: [
+        if (canReadCollection)
+          HomeMenuEntry(
+            id: 'collection',
+            icon: Icons.casino_outlined,
+            label: collectionL10n.collectionListTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.collection),
+          ),
         if (canReadHouseholds)
           HomeMenuEntry(
             id: 'households',
@@ -769,6 +786,67 @@ class _BgeAppState extends State<BgeApp> {
         }
         ctx.pushReplacement(AppRoutes.householdDetailOf(householdId));
       },
+    );
+  }
+
+  /// The collection list's retry (#44): the session-scoped
+  /// [GameCollectionRefresher] the hydrate installer registers, or null
+  /// where this composition runs no collection hydrate, in which case the
+  /// banner offers nothing to press.
+  ///
+  /// The collection's own pass, not the [SessionRehydrator], for
+  /// [_householdRetry]'s reason: the rehydrator drops a pass while one is
+  /// running, and a button someone pressed must not do nothing.
+  Future<void> Function()? _collectionRetry(DependencyContainer container) =>
+      container.isRegistered<GameCollectionRefresher>()
+      ? container.get<GameCollectionRefresher>().refresh
+      : null;
+
+  /// The collection list's entry trigger (#44): the session's
+  /// [SessionRehydrator], through the shell's shared guard, as
+  /// [_householdEntryRefresh] does. The staleness window in the registry
+  /// decides whether any work happens. Once #121 registers the sync-queue
+  /// drain, entering the list drives that too.
+  VoidCallback? _collectionEntryRefresh(DependencyContainer container) {
+    if (!container.isRegistered<SessionRehydrator>()) return null;
+    final rehydrator = container.get<SessionRehydrator>();
+    return () => startDetachedRehydrate(
+      trigger: 'collection_entry',
+      resolve: () => rehydrator,
+    );
+  }
+
+  /// The collection-list wiring (#44): resolves the
+  /// [GameCollectionRepository] (user-session scope) from the active
+  /// server's container, plus the optional [GameCollectionHydrationStatus],
+  /// the retry and the entry trigger. Null (→ [NotYetAvailableScreen]) when
+  /// no active server is resolvable or its container has no repository.
+  ///
+  /// Everything is resolved when the route is built rather than held on
+  /// this state, as [_buildHouseholdListRoute] does: a callback held across
+  /// a session change would reach a disposed scope's hydrator. A mounted
+  /// route needs nothing more, because the list's bloc keeps what its first
+  /// build gave it, and a session ending under it closes the list's stream
+  /// while the auth redirect pops the route.
+  ///
+  /// No `onOpen` yet: rows stay inert content until #46 gives them a
+  /// detail route (#44).
+  Widget? _buildCollectionListRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<GameCollectionRepository>()) return null;
+
+    final hydration = container.isRegistered<GameCollectionHydrationStatus>()
+        ? container.get<GameCollectionHydrationStatus>().watch()
+        : null;
+
+    return GameCollectionListScreen(
+      repository: container.get<GameCollectionRepository>(),
+      hydration: hydration,
+      onRetry: _collectionRetry(container),
+      onEnter: _collectionEntryRefresh(container),
     );
   }
 
@@ -1275,6 +1353,7 @@ class _BgeAppState extends State<BgeApp> {
         AuthLocalizations.delegate,
         FeedbackLocalizations.delegate,
         HouseholdLocalizations.delegate,
+        GameCollectionLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],
       supportedLocales: ShellLocalizations.supportedLocales,
