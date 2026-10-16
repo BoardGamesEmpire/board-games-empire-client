@@ -86,8 +86,9 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// registers the one sender the create screen and the drain share, over the
 /// repositories above it. [SyncQueueDrainInstaller] starts the drain over
 /// that sender, unawaited like the hydrates, and registers it with the
-/// rehydrator after them, so each pass sends the queue after both hydrates
-/// have run.
+/// rehydrator after them, so a rehydrator pass runs it after their turns.
+/// Its first pass runs alongside theirs, which [SyncQueueDrainInstaller]
+/// says is safe.
 List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   SessionRehydratorInstaller(),
   UserSessionScopeInstaller(),

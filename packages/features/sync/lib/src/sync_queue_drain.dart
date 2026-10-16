@@ -35,8 +35,15 @@ import 'package:observability/observability.dart';
 /// confirm the entry, and the add's acknowledgement is what gives it the id
 /// the server knows it by, remapping the op onto it. The read a pass works
 /// from includes exhausted entries for that reason, and which entries are
-/// local-only. An add names the game rather than the id, so nothing holds
-/// an add.
+/// local-only. An add names the game rather than the id, so this rule holds
+/// no add, though the order can: an add queued behind an op the rule holds
+/// waits with it.
+///
+/// So while a parked add holds its entry's ops, a later add for the entry
+/// waits with them, and nothing more goes out for the entry until the
+/// parked add is retried or discarded by hand (#190). Sending the later add
+/// first would not be safe: an update queued before it would then land
+/// after it, and could undo what it set.
 ///
 /// That acknowledgement rewrites the ops queued behind the add, so after a
 /// delivered add that has any, the pass reads the queue again and sends them

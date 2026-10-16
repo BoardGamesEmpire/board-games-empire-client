@@ -597,6 +597,29 @@ void main() {
       ]);
     });
 
+    test('a newer add behind an update a parked add holds waits with it: '
+        'sent first, it could be undone by the update', () async {
+      final add = await h.queuedAdd();
+      h.collectionRemote.respond = (_) =>
+          throw const GameCollectionNotFoundException(
+            'Collection add returned 404',
+            statusCode: 404,
+          );
+      await drain.drain();
+      await h.collection.updateCollectionEntry(id: add.local.id, quantity: 2);
+      // Adding it again raises the quantity, still under the local id.
+      await h.queuedAdd();
+      h.collectionRemote.respond = (write) =>
+          serverEntry(quantity: write.fields['quantity']! as int);
+
+      await drain.drain();
+      await drain.drain();
+
+      expect(h.collectionRemote.writes.map((w) => (w.method, w.id)), [
+        ('POST', null),
+      ]);
+    });
+
     test('an update behind a parked re-add is held: the removal ahead of it '
         'takes its id away', () async {
       await h.confirmedEntry();

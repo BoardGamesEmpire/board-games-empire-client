@@ -25,9 +25,13 @@ import 'sync_queue_drain.dart';
 ///   after both hydrates, so each pass runs it after them, though each
 ///   entry's failure is isolated, so "after" is not "after a successful".
 ///
-/// Either way it can confirm a removal while a collection hydrate's page is
-/// in flight. That hydrate merges with [GameCollectionRepository.removalMark],
-/// so the entry stays removed.
+/// Either way, a send can be acknowledged while a hydrate's request is in
+/// flight, and the answer that request brings back, read before the send
+/// landed, doesn't undo it. A collection hydrate keeps a row the server
+/// stamped later than its own copy, and merges with
+/// [GameCollectionRepository.removalMark], so an entry confirmed removed
+/// stays removed. A household hydrate purges only the memberships it read
+/// before asking for page 1, so a household created meanwhile stays.
 ///
 /// Nothing wakes it on an enqueue: the inline create sends its own op, and
 /// a wake would race that send for the claim.
