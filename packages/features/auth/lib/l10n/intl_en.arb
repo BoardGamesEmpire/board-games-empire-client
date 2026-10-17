@@ -196,5 +196,14 @@
   "authSignOutButton": "Sign Out",
   "@authSignOutButton": {
     "description": "Sign-out control label (#37)"
+  },
+  "authUnsentChangesNotice": "{count, plural, =1{1 change hasn't reached the server yet. Sign in with the same account to send it.} other{{count} changes haven't reached the server yet. Sign in with the same account to send them.}}",
+  "@authUnsentChangesNotice": {
+    "description": "Notice on the sign-in screen after a session ended without the user signing out (the server rejected it, or the app had to sign out to recover) while changes made on this device were still waiting to be sent (#142). Counts the changes and never names the account: on a shared device, the next person may see it. Must not read as an error or say anything was lost. The changes are kept, and signing in with the account that made them sends them.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

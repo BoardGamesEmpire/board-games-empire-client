@@ -75,8 +75,42 @@ final class AuthAuthenticated extends AuthBlocState {
   List<Object?> get props => [session, verification];
 }
 
+/// No session. [cause] says whether the user asked for that (#142).
+///
+/// [cause] participates in [props], so two values differing only in cause
+/// are different states. The bloc never emits one straight after the other
+/// (its mirror and an overtaken sign-in check the type, and a sign-out
+/// passes through [AuthLoading]), and the shell's session-end listener
+/// checks the type as well, so a change of cause alone never re-runs
+/// sign-out work.
 final class AuthUnauthenticated extends AuthBlocState {
-  const AuthUnauthenticated();
+  const AuthUnauthenticated({this.cause = SignOutCause.sessionLost});
+
+  final SignOutCause cause;
+
+  @override
+  List<Object?> get props => [cause];
+}
+
+/// Whether the user asked to be signed out (#142).
+///
+/// The shell keeps the unsent-changes notice on the sign-in screen for a
+/// session the user didn't end, and lets a deliberate sign-out retire it.
+/// This is how it tells the two apart. It is an auth fact, so the bloc
+/// still knows nothing of the sync queue.
+enum SignOutCause {
+  /// The user asked to sign out, from the sign-out control.
+  user,
+
+  /// Anything the user didn't ask for: the server rejected the session, at
+  /// startup, on revalidation or on any request; the app signed out to
+  /// recover from a failure; or there was no session to begin with.
+  ///
+  /// The default, because the two ways of getting it wrong differ in cost.
+  /// An emit site that forgets to say keeps a notice the user can read
+  /// past. Defaulting to [user] would retire it, and their unsent changes
+  /// would go unmentioned.
+  sessionLost,
 }
 
 /// The startup session check could not be completed AND no cached session

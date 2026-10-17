@@ -177,6 +177,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
   Timer? _revalidationTimer;
 
+  /// The cause of the sign-out in flight, if any (#142).
+  ///
+  /// The repository publishes unauthenticated before `signOut()` resolves
+  /// (#280), so the mirror reaches the bloc in the middle of a sign-out. It
+  /// takes the cause from here; otherwise it would label the user's own
+  /// sign-out a lost session, and the shell would act on that first.
+  SignOutCause? _inFlightSignOutCause;
+
   late final StreamSubscription<AuthState> _authStateSubscription;
   StreamSubscription<ConnectivityState>? _connectivitySubscription;
 
@@ -231,7 +239,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(
         session != null
             ? AuthAuthenticated(session: session)
-            : const AuthUnauthenticated(),
+            : const AuthUnauthenticated(cause: SignOutCause.sessionLost),
       );
     } on TimeoutException catch (e, s) {
       // Budget expended with restorable material in hand: enter on it.
@@ -240,7 +248,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // Rejected, not indeterminate. Defensive: the repository normally
       // expresses rejection by returning null (see the class docs), so
       // this covers a transport-level 401/403 surfacing as an exception.
-      emit(const AuthUnauthenticated());
+      emit(const AuthUnauthenticated(cause: SignOutCause.sessionLost));
     } on AuthException catch (e, s) {
       // Indeterminate (network, timeout, 5xx).
       await _emitRestoreOrFailed(emit, e, s);
@@ -272,13 +280,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
     try {
       final session = await _authRepository.getSession();
+      // The answer is about the session this check started from. If the
+      // state has moved since, that move is newer and owns what follows.
+      // Most often it's a sign-out, whose own null this would otherwise
+      // report as a lost session (#142).
+      if (!identical(state, current)) return;
       emit(
         session != null
             ? AuthAuthenticated(session: session)
-            : const AuthUnauthenticated(),
+            : const AuthUnauthenticated(cause: SignOutCause.sessionLost),
       );
     } on AuthInvalidCredentialsException {
-      emit(const AuthUnauthenticated());
+      if (!identical(state, current)) return;
+      emit(const AuthUnauthenticated(cause: SignOutCause.sessionLost));
     } on AuthException {
       // Still unreachable. Keep the optimistic session and its banner: the
       // user is working offline and nothing about their situation changed.
@@ -304,8 +318,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     } on AuthSupersededException {
       // A sign-out overtook the grant (#146): the system is already
       // unauthenticated and storage already reflects it. Not a failure the
-      // user needs to hear about — their own newer intent won.
-      emit(const AuthUnauthenticated());
+      // user needs to hear about. The repository published that sign-out,
+      // so this lands the way the mirror does, usually by adding nothing.
+      _mirrorUnauthenticated(emit);
     } on AuthInvalidCredentialsException {
       emit(const AuthFailureInvalidCredentials());
     } on AuthSessionNotGrantedException {
@@ -335,7 +350,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(AuthAuthenticated(session: session));
     } on AuthSupersededException {
       // See _onSignIn: the sign-out already won; return quietly.
-      emit(const AuthUnauthenticated());
+      _mirrorUnauthenticated(emit);
     } on AuthRegistrationDisabledException {
       emit(const AuthFailureRegistrationDisabled());
     } on AuthEmailAlreadyExistsException {
@@ -356,6 +371,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     Emitter<AuthBlocState> emit,
   ) async {
     emit(const AuthLoading());
+    _inFlightSignOutCause = event.cause;
     try {
       await _authRepository.signOut();
     } on Object catch (error, stackTrace) {
@@ -369,6 +385,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // the session. Any error — typed or not — is surfaced via addError
       // for the crash channel, then we flip.
       addError(error, stackTrace);
+    } finally {
+      _inFlightSignOutCause = null;
     }
 
     // Conditional, not unconditional (#280). `_onSignIn` and this handler
@@ -386,7 +404,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     // better to land.
     if (state is AuthAuthenticated) return;
 
-    emit(const AuthUnauthenticated());
+    emit(AuthUnauthenticated(cause: event.cause));
   }
 
   /// Drops a spent failure back to unauthenticated so its banner stops
@@ -408,6 +426,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     AuthFailureCleared event,
     Emitter<AuthBlocState> emit,
   ) {
+    // The default cause: no session ended here, and the user didn't sign out
+    // (#142).
     if (state is AuthOperationFailure) emit(const AuthUnauthenticated());
   }
 
@@ -434,13 +454,31 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       // safe to hand the same value repeatedly.
       case AuthStateAuthenticated(:final session, :final verification):
         emit(AuthAuthenticated(session: session, verification: verification));
+      // By TYPE, unlike the case above; see [_mirrorUnauthenticated].
       case AuthStateUnauthenticated():
-        if (state is! AuthUnauthenticated) {
-          emit(const AuthUnauthenticated());
-        }
+        _mirrorUnauthenticated(emit);
       case AuthStateUnknown():
         break;
     }
+  }
+
+  /// Follows the repository to unauthenticated, from the mirror or from a
+  /// sign-in a sign-out overtook (#146).
+  ///
+  /// Checked by TYPE: if the bloc is already unauthenticated, a state
+  /// differing only in cause is not a new fact, and emitting it would
+  /// relabel the one the shell has acted on (#142). Otherwise the cause is
+  /// that of the bloc's own sign-out in flight. Failing that, the user
+  /// didn't ask here: the server ended the session (an interceptor 401, or
+  /// the sync drain's 401 check), or the repository signed out without this
+  /// bloc.
+  void _mirrorUnauthenticated(Emitter<AuthBlocState> emit) {
+    if (state is AuthUnauthenticated) return;
+    emit(
+      AuthUnauthenticated(
+        cause: _inFlightSignOutCause ?? SignOutCause.sessionLost,
+      ),
+    );
   }
 
   /// Emits the restored session with the verification the REPOSITORY

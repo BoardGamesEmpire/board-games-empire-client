@@ -192,6 +192,7 @@ ActiveServer buildActiveServer(
   GameCollectionRefresher? gameCollectionRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
+  UnsentChangesNoticeRepository? unsentChangesNotice,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
   DataGatewayAccess? dataGatewayAccess,
   String serverId = 'server-uuid-1',
@@ -237,6 +238,11 @@ ActiveServer buildActiveServer(
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
+  }
+  if (unsentChangesNotice != null) {
+    container.registerSingleton<UnsentChangesNoticeRepository>(
+      unsentChangesNotice,
+    );
   }
   if (dataGatewayRemoteDataSource != null) {
     container.registerSingleton<DataGatewayRemoteDataSource>(

@@ -285,6 +285,11 @@ class _BgeAppState extends State<BgeApp> {
   StreamSubscription<ThemeMode>? _themeModeSub;
   StreamSubscription<Locale?>? _localeSub;
 
+  /// The unsent-changes record (#142): written by [_AuthScope], counted for
+  /// the auth route. Held here because both reach it, and its count waits
+  /// for its writes.
+  final _UnsentChanges _unsentChanges = _UnsentChanges();
+
   @override
   void initState() {
     super.initState();
@@ -434,6 +439,7 @@ class _BgeAppState extends State<BgeApp> {
     onAuthenticated: widget.bootstrapCubit.onAuthenticated,
     onSignedOut: widget.bootstrapCubit.onSignedOut,
     connectivity: _rootConnectivity(),
+    unsentChanges: _unsentChanges,
     child: child,
   );
 
@@ -474,6 +480,7 @@ class _BgeAppState extends State<BgeApp> {
       identity: active.identity,
       serverDisplayName: active.displayName,
       splash: const SplashScreen(),
+      unsentChangesCount: _unsentChanges.countOf(active),
     );
   }
 
@@ -1499,12 +1506,16 @@ class _BgeAppState extends State<BgeApp> {
 /// [UserSessionScope] (shell tests that don't provide one; any composition
 /// with no per-user services) skips the scope step entirely, keeping the
 /// prior behavior.
+///
+/// The same two transitions are reported to [unsentChanges] (#142), which
+/// keeps the record behind the sign-in screen's unsent-changes notice.
 class _AuthScope extends StatefulWidget {
   const _AuthScope({
     required this.scope,
     required this.onAuthenticated,
     required this.onSignedOut,
     this.connectivity,
+    required this.unsentChanges,
     required this.child,
   });
 
@@ -1516,6 +1527,9 @@ class _AuthScope extends StatefulWidget {
   /// compositions without it. Handed to the [AuthBloc], which owns every
   /// decision made on it.
   final ConnectivityService? connectivity;
+
+  /// Told when a session starts and ends (#142).
+  final _UnsentChanges unsentChanges;
 
   final Widget child;
 
@@ -1583,16 +1597,25 @@ class _AuthScopeState extends State<_AuthScope> {
             // non-authenticated keeps this listener to what it owns —
             // session start and session end — while verification-only
             // changes flow to presentation via BlocBuilder below.
+            //
+            // The same reasoning on the way out (#142): unauthenticated
+            // carries a cause, so a cause-only change would be a real
+            // state change too, and must not re-run the sign-out work.
             listenWhen: (previous, current) =>
                 (current is AuthAuthenticated &&
                     previous is! AuthAuthenticated) ||
-                current is AuthUnauthenticated,
+                (current is AuthUnauthenticated &&
+                    previous is! AuthUnauthenticated),
             listener: (context, state) {
               // Bumped for every transition this listener acts on, before
               // anything is dispatched, so a handler's captured value is
               // stale the moment the next one starts (#383).
               final epoch = ++_authEpoch;
               if (state is AuthAuthenticated) {
+                final userId = state.session.user.id;
+                // Before activation, so a recovery sign-out's count waits
+                // for this record (#142).
+                widget.unsentChanges.sessionStarted(active, userId);
                 // Captured synchronously — the async handler outlives this
                 // listener frame and needs the bloc for the sign-out
                 // fallback on activation failure.
@@ -1603,14 +1626,13 @@ class _AuthScopeState extends State<_AuthScope> {
                 // serializes scope operations, so overlapping handlers
                 // cannot interleave scope mutations (#135).
                 unawaited(
-                  _handleAuthenticated(
-                    active,
-                    authBloc,
-                    state.session.user.id,
-                    epoch,
-                  ),
+                  _handleAuthenticated(active, authBloc, userId, epoch),
                 );
               } else if (state is AuthUnauthenticated) {
+                widget.unsentChanges.sessionEnded(
+                  active,
+                  deliberately: state.cause == SignOutCause.user,
+                );
                 // Route first: the gate callback is synchronous here (its
                 // original pre-#135 semantics — a throw surfaces through
                 // the listener, not as an unhandled zone error), and the
@@ -1637,9 +1659,7 @@ class _AuthScopeState extends State<_AuthScope> {
   /// now (#135 native, #137 web); a composition without per-user services
   /// still legitimately has none.
   UserSessionScope? _userSessionScopeOf(ActiveServer active) =>
-      active.container.isRegistered<UserSessionScope>()
-      ? active.container.get<UserSessionScope>()
-      : null;
+      _serverService<UserSessionScope>(active);
 
   /// Whether [active] is still the server the app is living in.
   ///
@@ -1720,7 +1740,11 @@ class _AuthScopeState extends State<_AuthScope> {
           },
         );
         if (recovering) {
-          authBloc.add(const AuthSignOutRequested());
+          // Not the user's request, so the sign-in screen keeps the notice
+          // if they have changes waiting (#142).
+          authBloc.add(
+            const AuthSignOutRequested(cause: SignOutCause.sessionLost),
+          );
         }
         return;
       }
@@ -1812,6 +1836,131 @@ class _AuthScopeState extends State<_AuthScope> {
         context: {'serverId': active.serverId},
       );
     }
+  }
+}
+
+/// Resolves [T] from [active]'s per-server container, or null where the
+/// composition registers none. The per-server counterpart of
+/// `_BgeAppState._rootService`.
+T? _serverService<T extends Object>(ActiveServer active) =>
+    active.container.isRegistered<T>() ? active.container.get<T>() : null;
+
+/// The shell's half of the unsent-changes notice (#142).
+///
+/// Keeps the per-server [UnsentChangesNoticeRepository] told whose session
+/// is open, and reads its count for the sign-in screen. Session start
+/// records the user. A sign-out the user asked for retires them. Every
+/// other ending leaves them recorded, so the sign-in screen can say how many
+/// of their changes are waiting. That covers the server rejecting the
+/// session, the shell's recovery sign-out after a failed activation, and
+/// the app being killed while they were signed in.
+///
+/// Recorded at the start rather than the end because one ending has no
+/// user in memory: a stored session rejected at the next launch never
+/// reaches [AuthAuthenticated].
+///
+/// ## Order
+///
+/// The writes are fire-and-forget, since neither may hold up routing. They
+/// run one after another, though, and a count waits for every write asked
+/// for before it. So a deliberate sign-out's retire lands before the
+/// sign-in screen reads, and so does the record of a session whose
+/// activation failed, whatever order the database runs statements in.
+///
+/// Failures are logged with the server and never the user id, the rule the
+/// auth scope's channel has always kept, and never thrown. A failed write
+/// logs its error by type alone, since the error's own text can carry the
+/// id the write bound. Web registers no repository (#144, #447), so there
+/// all of this is a no-op.
+class _UnsentChanges {
+  static final BgeLogger _log = BgeLogger('bge.shell.unsent_changes');
+
+  /// How long the sign-in screen may hold its splash for the count. A cold
+  /// read opens the server database first, and that takes well under this.
+  /// A read that runs past it is a fault: it's logged, and the screen shows
+  /// without the notice rather than keeping the user from signing in.
+  static const Duration _countBudget = Duration(seconds: 2);
+
+  /// The user whose session last started, until it ends.
+  ///
+  /// Not keyed by server. A server switch can carry it over, but on the new
+  /// server a session has to start before one can end deliberately, and the
+  /// start replaces it.
+  String? _openUserId;
+
+  /// The last record write asked for; each one waits for the one before.
+  Future<void> _writes = Future<void>.value();
+
+  void sessionStarted(ActiveServer active, String userId) {
+    _openUserId = userId;
+    _write(
+      active,
+      'Recording the session start for unsent changes failed',
+      (notice) => notice.recordSessionStarted(userId),
+    );
+  }
+
+  void sessionEnded(ActiveServer active, {required bool deliberately}) {
+    final userId = _openUserId;
+    _openUserId = null;
+    if (!deliberately || userId == null) return;
+    _write(
+      active,
+      'Recording the sign-out for unsent changes failed',
+      (notice) => notice.recordSignedOut(userId),
+    );
+  }
+
+  /// The sign-in screen's count of unsent changes on [active], or null
+  /// where there's nothing to count them with. A failed or overdue read is
+  /// logged and counts zero: the user came to sign in, and an error there
+  /// would be about a notice they never saw.
+  Future<int> Function()? countOf(ActiveServer active) {
+    final notice = _serverService<UnsentChangesNoticeRepository>(active);
+    if (notice == null) return null;
+    Future<int> afterWrites() async {
+      await _writes;
+      return notice.unsentChangesCount();
+    }
+
+    return () async {
+      try {
+        return await afterWrites().timeout(_countBudget);
+      } on Object catch (error, stackTrace) {
+        _log.error(
+          'Unsent-changes count failed; the sign-in screen shows no notice',
+          error: error,
+          stackTrace: stackTrace,
+          context: {'serverId': active.serverId},
+        );
+        return 0;
+      }
+    };
+  }
+
+  void _write(
+    ActiveServer active,
+    String failure,
+    Future<void> Function(UnsentChangesNoticeRepository notice) write,
+  ) {
+    final notice = _serverService<UnsentChangesNoticeRepository>(active);
+    if (notice == null) return;
+    _writes = _writes.then((_) async {
+      try {
+        await write(notice);
+      } on Object catch (error, stackTrace) {
+        // The type only: a database error's text lists the statement's bound
+        // values, and both writes bind the user id.
+        _log.error(
+          failure,
+          stackTrace: stackTrace,
+          context: {
+            'serverId': active.serverId,
+            'cause': error.runtimeType.toString(),
+          },
+        );
+      }
+    });
   }
 }
 

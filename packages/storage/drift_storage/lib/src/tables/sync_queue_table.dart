@@ -36,3 +36,16 @@ class SyncQueueTable extends Table {
   @override
   String get tableName => 'sync_queue';
 }
+
+/// The statuses of an entry that hasn't reached the server: everything but
+/// `completed` that this build knows.
+///
+/// Shared by `getOutstandingEntries` and by the sign-in screen's count of
+/// unsent changes (#142), so the two can't disagree about what
+/// "outstanding" means. Both count entries parked at the retry limit. The
+/// pending count doesn't, since no pass will send those.
+const List<String> syncQueueOutstandingStatuses = [
+  'pending',
+  'inProgress',
+  'failed',
+];

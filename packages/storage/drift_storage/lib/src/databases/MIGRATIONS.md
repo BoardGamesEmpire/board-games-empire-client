@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 4`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 5`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -31,10 +31,14 @@ Server schema history:
   `server_id`), the persisted record of where a reconciled household went.
   A new table with no FK edges, created by one `createTable`, so #54 stays
   deferred.
+- **v4 → v5 (#142):** adds `unsent_changes_users` (`user_id` primary key,
+  `recorded_order`), the users whose unsent `sync_queue` rows the sign-in
+  screen may mention. A new, empty table with no FK edges, created by one
+  `createTable`, so #54 stays deferred.
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v4.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v5.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live
@@ -122,7 +126,7 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 ## Deferred items
 
 - **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
-  the FK-off + transaction wrapper decision above. Three additive or FK-free
+  the FK-off + transaction wrapper decision above. Four additive or FK-free
   migrations have shipped without them; the trigger is the first destructive
   migration of an FK-referenced table (see "Adding a schema change"). The
   generated `test/drift/**` migration tests already exist and are committed.
