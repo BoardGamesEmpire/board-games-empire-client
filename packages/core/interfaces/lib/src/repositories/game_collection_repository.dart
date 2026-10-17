@@ -261,8 +261,10 @@ abstract class GameCollectionRepository {
   /// acknowledged op: replaying an older op still outstanding would put
   /// back a value the newer change replaced. The cost is that the older
   /// op's edit stops showing even in fields the newer change didn't carry,
-  /// though the row stays dirty. What the row should show for such an op
-  /// is #190's to decide. When [completedSyncQueueId] is omitted, the
+  /// though the row stays dirty. That is what the row shows for a stuck op
+  /// (#190): the server's value, never the stuck edit re-applied. A retry
+  /// that lands restores the edit through its own acknowledgement, and a
+  /// discard drops it. When [completedSyncQueueId] is omitted, the
   /// acknowledged op's place is unknown and every outstanding op is
   /// replayed.
   ///
@@ -313,6 +315,48 @@ abstract class GameCollectionRepository {
     String collectionId, {
     required String completedSyncQueueId,
   });
+
+  /// Discards the queued collection op [syncQueueId] names, and undoes what
+  /// it did to the local row (#190).
+  ///
+  /// Only for an op that is stuck: the server refused it, or its retries ran
+  /// out. The queue entry is deleted through
+  /// [SyncQueueRepository.discardStuck] in the same transaction as the undo,
+  /// so either both land or neither does, and an op that isn't stuck by
+  /// then, such as one another tab retried, changes nothing. What the undo
+  /// does depends on the op:
+  ///
+  /// - **An add for an entry the server has never seen** (the row is
+  ///   [GameCollection.isLocalOnly]): the row is deleted, and so is every op
+  ///   queued for it after the add. Those ops are held behind the add and
+  ///   name an entry the server will never know. If the add revived an entry
+  ///   whose removal is still queued, the row goes back to that removal's
+  ///   tombstone instead, local-only still if an add before the removal is
+  ///   queued too. If an earlier add for the row is still queued, it still
+  ///   stands for the row, and only this op is dropped.
+  /// - **Any other add, or an update**: the op is dropped. The row stays
+  ///   dirty while any other op for it is outstanding.
+  /// - **A removal**: the op is dropped and the entry comes back.
+  ///
+  /// When nothing is left queued for the row, it is left clean and older
+  /// than any copy the server holds. Its values are still the discarded
+  /// op's, so the next [mergeFromServer] writes over them with the server's.
+  /// Until that hydrate runs, the row shows what the discarded op set.
+  ///
+  /// A completed or unknown entry changes nothing, and so does a payload
+  /// that won't decode, beyond deleting the entry. Returns whether the entry
+  /// was deleted. Throws [ArgumentError] for a household op, before any
+  /// write.
+  Future<bool> discardQueuedOp(String syncQueueId);
+
+  /// The title of the game the entry [collectionId] names, or null for an
+  /// id this user has no entry under (#190).
+  ///
+  /// For describing a queued op in words. Unlike the other reads it finds a
+  /// removed entry too, since a queued removal names one. It returns only
+  /// the title, so a removed entry still never reads as part of the
+  /// collection.
+  Future<String?> titleOf(String collectionId);
 
   /// How many removals this repository has confirmed, as a mark to pass to
   /// [mergeFromServer] (#121).

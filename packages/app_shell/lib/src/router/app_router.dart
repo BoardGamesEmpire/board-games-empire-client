@@ -60,6 +60,10 @@ abstract final class AppRoutes {
   /// active session's own.
   static const collection = '/collection';
 
+  /// The changes that couldn't sync, each with a retry and a discard
+  /// (#190). Always the active session's own, like [collection].
+  static const stuckChanges = '/stuck-changes';
+
   static const error = '/error';
 
   /// The bootstrap-owned locations a ready app is bounced away from.
@@ -199,6 +203,18 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
 /// needs the active server's scoped container, not an `AuthBloc`.
 typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the retry-or-discard screen (#190) for the
+/// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
+/// navigation time when no active server is resolvable or its container
+/// lacks the queue or either repository a discard undoes through (tests
+/// without a container; no active user session), in which case the route
+/// falls back to [NotYetAvailableScreen].
+///
+/// Outside the auth [ShellRoute] for the collection list's reason: it needs
+/// the active server's scoped container, not an `AuthBloc`. Pushed from the
+/// home screen's notice.
+typedef StuckChangesScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -221,6 +237,7 @@ GoRouter buildAppRouter({
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
+  StuckChangesScreenBuilder? stuckChangesBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -368,6 +385,15 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             collectionListBuilder?.call(context) ??
             const NotYetAvailableScreen(),
+      ),
+      // #190: the changes that couldn't sync. Outside the auth ShellRoute
+      // (see [StuckChangesScreenBuilder]), pushed from the home notice, and
+      // reachable only once [AppBootstrapReady] admits non-bootstrap
+      // locations.
+      GoRoute(
+        path: AppRoutes.stuckChanges,
+        builder: (context, _) =>
+            stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
       GoRoute(
         path: AppRoutes.error,

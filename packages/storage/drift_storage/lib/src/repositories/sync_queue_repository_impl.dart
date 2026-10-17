@@ -280,10 +280,16 @@ class SyncQueueRepositoryImpl
   }
 
   @override
-  Future<int> purgeCompleted() async {
+  Future<int> purgeCompleted({Duration olderThan = Duration.zero}) async {
     checkNotDisposed();
+    // Through JULIANDAY, as the claim lease compares, for the same reason.
+    final cutoff = Variable<DateTime>(_localNowUtc().subtract(olderThan));
     return (_db.delete(_db.syncQueueTable)..where(
-          (t) => t.userId.equals(_userId) & t.status.equals('completed'),
+          (t) =>
+              t.userId.equals(_userId) &
+              t.status.equals('completed') &
+              (t.lastAttemptAt.isNull() |
+                  t.lastAttemptAt.julianday.isSmallerOrEqual(cutoff.julianday)),
         ))
         .go();
   }
@@ -400,6 +406,71 @@ class SyncQueueRepositoryImpl
     });
   }
 
+  @override
+  Stream<List<SyncQueueEntry>> watchStuckEntries() {
+    // Closed on disposal, like [watchPendingCount], for the same reason.
+    return untilDisposed(
+      () =>
+          (_db.select(_db.syncQueueTable)
+                ..where((_) => _stuckPredicate())
+                ..orderBy(_queueOrder))
+              .watch()
+              .map((rows) => rows.map(_mapRow).toList()),
+    );
+  }
+
+  @override
+  Future<SyncQueueEntry?> getEntry(String id) async {
+    checkNotDisposed();
+    final row =
+        await (_db.select(_db.syncQueueTable)
+              ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+            .getSingleOrNull();
+    return row == null ? null : _mapRow(row);
+  }
+
+  @override
+  Future<bool> retry(String id) async {
+    checkNotDisposed();
+    // Conditional on the stuck predicate, in one statement, so of two web
+    // tabs retrying one entry only one reopens it.
+    final changed =
+        await (_db.update(
+          _db.syncQueueTable,
+        )..where((t) => t.id.equals(id) & _stuckPredicate())).write(
+          const SyncQueueTableCompanion(
+            status: Value('pending'),
+            retryCount: Value(0),
+            lastAttemptAt: Value(null),
+          ),
+        );
+    return changed == 1;
+  }
+
+  @override
+  Future<bool> discard(String id) async {
+    checkNotDisposed();
+    final deleted =
+        await (_db.delete(_db.syncQueueTable)..where(
+              (t) =>
+                  t.id.equals(id) &
+                  t.userId.equals(_userId) &
+                  t.status.equals('completed').not(),
+            ))
+            .go();
+    return deleted == 1;
+  }
+
+  @override
+  Future<bool> discardStuck(String id) async {
+    checkNotDisposed();
+    // Conditional on the stuck predicate, in one statement, as [retry] is.
+    final deleted = await (_db.delete(
+      _db.syncQueueTable,
+    )..where((t) => t.id.equals(id) & _stuckPredicate())).go();
+    return deleted == 1;
+  }
+
   /// Returns [op] pointed at [newId]; null for an op that targets no
   /// collection entry.
   ///
@@ -496,6 +567,16 @@ class SyncQueueRepositoryImpl
     return t.userId.equals(_userId) &
         t.status.isIn(syncQueueOutstandingStatuses) &
         t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries);
+  }
+
+  /// Predicate for a stuck entry (#190): [_pendingPredicate]'s statuses at
+  /// or past the retry cap, so the two split the outstanding set between
+  /// them.
+  Expression<bool> _stuckPredicate() {
+    final t = _db.syncQueueTable;
+    return t.userId.equals(_userId) &
+        t.status.isIn(syncQueueOutstandingStatuses) &
+        t.retryCount.isBiggerOrEqualValue(SyncQueueEntry.maxRetries);
   }
 
   SyncQueueEntry _mapRow(SyncQueueTableData row) => SyncQueueEntry(

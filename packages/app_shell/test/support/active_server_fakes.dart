@@ -192,6 +192,7 @@ ActiveServer buildActiveServer(
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
   UnsentChangesNoticeRepository? unsentChangesNotice,
+  SyncQueueRepository? syncQueueRepository,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -235,6 +236,9 @@ ActiveServer buildActiveServer(
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
+  }
+  if (syncQueueRepository != null) {
+    container.registerSingleton<SyncQueueRepository>(syncQueueRepository);
   }
   if (unsentChangesNotice != null) {
     container.registerSingleton<UnsentChangesNoticeRepository>(

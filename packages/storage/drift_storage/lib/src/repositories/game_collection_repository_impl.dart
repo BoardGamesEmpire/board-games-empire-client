@@ -695,6 +695,135 @@ class GameCollectionRepositoryImpl
     });
   }
 
+  /// The stamp a discard leaves on a row it settles (#190): older than any
+  /// copy the server holds.
+  ///
+  /// A clean row's `updatedAt` is otherwise the server's, and a merge keeps
+  /// a clean row stamped later than the copy it brings. The settled row
+  /// holds values the server never had, so it must lose that comparison.
+  static final DateTime _olderThanAnyServerCopy = DateTime.utc(1970);
+
+  @override
+  Future<bool> discardQueuedOp(String syncQueueId) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      final entry = await _syncQueue.getEntry(syncQueueId);
+      if (entry == null) return false;
+
+      final SyncOperation op;
+      try {
+        op = entry.operation;
+      } on Object {
+        // Nothing it did can be read back, so there is nothing to undo.
+        return _syncQueue.discardStuck(entry.id);
+      }
+      final target = switch (op) {
+        AddToCollectionOperation(:final localId) => localId,
+        UpdateCollectionOperation(:final collectionId) => collectionId,
+        RemoveFromCollectionOperation(:final collectionId) => collectionId,
+        CreateHouseholdOperation() => throw ArgumentError.value(
+          syncQueueId,
+          'syncQueueId',
+          'names a household op; HouseholdRepository discards those',
+        ),
+      };
+
+      final row =
+          await (_db.select(_db.gameCollectionsTable)
+                ..where((t) => t.id.equals(target) & t.userId.equals(_userId)))
+              .getSingleOrNull();
+      final queued = await _syncQueue.getOutstandingOpsFor(target);
+      final at = queued.indexWhere((q) => q.id == entry.id);
+      final earlier = queued.take(at < 0 ? queued.length : at).toList();
+      final later = at < 0 ? const <SyncQueueEntry>[] : queued.sublist(at + 1);
+
+      // Checked in the statement that deletes it: an op another tab retried
+      // since may be on its way to the server, so nothing is undone for it.
+      if (!await _syncQueue.discardStuck(entry.id)) return false;
+
+      if (op is AddToCollectionOperation && row != null && row.isLocalOnly) {
+        final revivedFrom = earlier.lastOrNull?.operation;
+        if (earlier.isEmpty || revivedFrom is RemoveFromCollectionOperation) {
+          for (final held in later) {
+            await _syncQueue.discard(held.id);
+          }
+          if (earlier.isEmpty) {
+            await (_db.delete(
+              _db.gameCollectionsTable,
+            )..where((t) => t.id.equals(row.id))).go();
+          } else {
+            // A re-add the server never saw, over a removal it hasn't seen
+            // either: back to that removal's tombstone. The server knows the
+            // entry unless an add queued before the removal is still
+            // outstanding, as it was before the re-add.
+            final now = _clock.nowUtc();
+            final unseen = earlier.any(
+              (queuedOp) => queuedOp.operation is AddToCollectionOperation,
+            );
+            await (_db.update(
+              _db.gameCollectionsTable,
+            )..where((t) => t.id.equals(row.id))).write(
+              GameCollectionsTableCompanion(
+                deletedAt: Value(now),
+                isDirty: const Value(true),
+                isLocalOnly: Value(unseen),
+                updatedAt: Value(now),
+              ),
+            );
+          }
+          return true;
+        }
+        // An earlier add still stands for the row: drop only this one.
+      }
+
+      if (row == null) return true;
+      final settled = earlier.isEmpty && later.isEmpty;
+      await (_db.update(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(row.id))).write(
+        GameCollectionsTableCompanion(
+          deletedAt: op is RemoveFromCollectionOperation
+              ? const Value(null)
+              : const Value.absent(),
+          isDirty: Value(!settled),
+          updatedAt: settled
+              ? Value(_olderThanAnyServerCopy)
+              : const Value.absent(),
+        ),
+      );
+      return true;
+    });
+  }
+
+  @override
+  Future<String?> titleOf(String collectionId) async {
+    checkNotDisposed();
+    final entries = _db.gameCollectionsTable;
+    final platformGames = _db.platformGamesTable;
+    final games = _db.gamesTable;
+    // Inner joins, as the list query's: both parents are enforced keys.
+    final row =
+        await (_db.selectOnly(entries).join([
+                innerJoin(
+                  platformGames,
+                  platformGames.id.equalsExp(entries.platformGameId),
+                  useColumns: false,
+                ),
+                innerJoin(
+                  games,
+                  games.id.equalsExp(platformGames.gameId),
+                  useColumns: false,
+                ),
+              ])
+              ..addColumns([games.title])
+              ..where(
+                entries.id.equals(collectionId) &
+                    entries.userId.equals(_userId),
+              ))
+            .getSingleOrNull();
+    return row?.read(games.title);
+  }
+
   /// Re-applies the ops still queued for [serverEntry] over the clean row
   /// [_writeServerEntry] just wrote, and keeps it dirty while any remain
   /// (#429). Runs inside the caller's transaction.
@@ -711,12 +840,13 @@ class GameCollectionRepositoryImpl
   /// change it carries never reached the server. Its edit stops showing,
   /// though, even in fields the newer change didn't carry: an exhausted
   /// rating edit is gone from the row once a later quantity edit is
-  /// acknowledged. Replaying just those fields is left to #190, which
-  /// decides what the row shows for an exhausted op. The lookup returns the
-  /// acknowledged op even once completed, so a second delivery's
-  /// acknowledgement, after the first completed it, still places it. When
-  /// it can't be placed (the caller didn't name it, or it was purged), its
-  /// position is unknown, and every outstanding op is replayed.
+  /// acknowledged. Those fields are not replayed (#190): the row shows the
+  /// server's value until the stuck op is retried or discarded. The lookup
+  /// returns the acknowledged op even once completed, so a second
+  /// delivery's acknowledgement, after the first completed it, still places
+  /// it. When it can't be placed (the caller didn't name it, or it was
+  /// purged), its position is unknown, and every outstanding op is
+  /// replayed.
   ///
   /// The ops carry what the local writes recorded, so replaying them is
   /// those writes again: an add sets its absolute quantity and any rating

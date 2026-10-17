@@ -133,6 +133,20 @@ void main() {
       },
     );
 
+    test("retry, discard and the stuck stream reach only the current user's "
+        'rows (#190)', () async {
+      final b = await repoB.enqueue(_kOperation);
+      await repoB.park(b.id, error: 'rejected: 400');
+
+      expect(await repoA.watchStuckEntries().first, isEmpty);
+      expect(await repoA.retry(b.id), isFalse);
+      expect(await repoA.discard(b.id), isFalse);
+
+      final untouched = (await rawRows()).single;
+      expect(untouched.id, b.id);
+      expect(untouched.retryCount, SyncQueueEntry.maxRetries);
+    });
+
     test('getOutstandingOpsFor sees only the current user\'s ops', () async {
       final mine = await repoA.enqueue(_kOperation);
       await repoB.enqueue(_kOperation);
@@ -251,6 +265,17 @@ void main() {
       await expectLater(repoA.purgeCompleted(), throwsStateError);
       await expectLater(repoA.park('id', error: 'e'), throwsStateError);
       await expectLater(repoA.getOutstandingEntries(), throwsStateError);
+      await expectLater(repoA.getEntry('id'), throwsStateError);
+      await expectLater(repoA.retry('id'), throwsStateError);
+      await expectLater(repoA.discard('id'), throwsStateError);
+      await expectLater(repoA.discardStuck('id'), throwsStateError);
+    });
+
+    test('watchStuckEntries after disposal returns an already-closed '
+        'stream', () async {
+      await repoA.onDispose();
+
+      await expectLater(repoA.watchStuckEntries(), emitsDone);
     });
 
     test('onDispose is idempotent', () async {

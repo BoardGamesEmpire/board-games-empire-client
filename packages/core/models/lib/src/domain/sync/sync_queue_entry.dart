@@ -60,4 +60,9 @@ abstract class SyncQueueEntry with _$SyncQueueEntry {
   bool get isPending => status == SyncStatus.pending;
   bool get isExhausted => retryCount >= maxRetries;
   bool get canRetry => status == SyncStatus.failed && !isExhausted;
+
+  /// Out of retries, parked included, and not yet completed: no sender takes
+  /// it and nothing drops it until someone retries or discards it by hand
+  /// (#190). The rule `SyncQueueRepository.watchStuckEntries` lists by.
+  bool get isStuck => isExhausted && status != SyncStatus.completed;
 }

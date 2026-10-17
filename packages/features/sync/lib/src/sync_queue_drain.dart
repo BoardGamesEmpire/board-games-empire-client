@@ -61,8 +61,8 @@ import 'package:observability/observability.dart';
 /// row. A newer op's acknowledgement writes the server's answer, which
 /// lacks the exhausted edit, so that edit stops showing even in fields the
 /// newer op didn't carry, though the row stays dirty
-/// ([GameCollectionRepository.reconcileFromServer]). What the row should
-/// show for an exhausted op is #190's to decide.
+/// ([GameCollectionRepository.reconcileFromServer]). That is what the row
+/// shows until the exhausted op is retried or discarded (#190).
 ///
 /// ## Spacing out counted retries
 ///
@@ -75,6 +75,16 @@ import 'package:observability/observability.dart';
 /// only once any earlier wait was over. An entry whose payload won't decode
 /// waits the same way; the wait reads only its status, retry count and last
 /// attempt.
+///
+/// ## Completed history
+///
+/// A delivered op's entry is kept as completed for [completedRetention],
+/// then deleted by a pass (#190): the first one, and after that at most one
+/// per [purgeInterval], so a session that stays signed in for weeks keeps
+/// its history bounded too. It is kept that long because a late
+/// acknowledgement of an op delivered twice finds its place by it. A stuck
+/// entry is never deleted here: it stays until the user retries or discards
+/// it.
 ///
 /// ## When it runs
 ///
@@ -124,6 +134,17 @@ class SyncQueueDrain {
     _ => const Duration(hours: 6),
   };
 
+  /// How long a completed entry is kept before a pass's purge deletes it.
+  ///
+  /// Far longer than any request outlives the claim lease, and so than any
+  /// acknowledgement that still needs the entry.
+  static const Duration completedRetention = Duration(hours: 24);
+
+  /// The least time between two purges, so a busy session doesn't run one
+  /// on every pass. A completed entry can outlive [completedRetention] by up
+  /// to this much.
+  static const Duration purgeInterval = Duration(hours: 1);
+
   final SyncQueueRepository _queue;
   final SyncOperationSender _sender;
   final GameCollectionRepository _collection;
@@ -137,6 +158,10 @@ class SyncQueueDrain {
   Future<void>? _inFlight;
 
   bool _closed = false;
+
+  /// When a pass last purged completed history, on the device clock. Null
+  /// until the first pass.
+  DateTime? _purgedAt;
 
   /// The pending count the queue last reported.
   int? _seenCount;
@@ -181,6 +206,18 @@ class SyncQueueDrain {
     });
   }
 
+  /// Runs a pass that reads the queue after this call. Never throws.
+  ///
+  /// For a write the user is waiting on, such as a retried op (#190).
+  /// [drain] joins a pass in flight, and that pass read the queue before the
+  /// write, so this waits for it to finish and then runs or joins the next.
+  /// That next pass started after the call either way.
+  Future<void> drainAfterChange() async {
+    final inFlight = _inFlight;
+    if (inFlight != null) await inFlight;
+    return drain();
+  }
+
   /// Stops the drain. A pass in flight stops at its next op; nothing runs
   /// after this. Idempotent.
   ///
@@ -196,6 +233,12 @@ class SyncQueueDrain {
 
   Future<void> _pass() async {
     final tally = _Tally();
+    final now = _now();
+    final purgedAt = _purgedAt;
+    if (purgedAt == null || !now.isBefore(purgedAt.add(purgeInterval))) {
+      _purgedAt = now;
+      await _purgeHistory();
+    }
     try {
       await _send(tally);
     } on Object catch (error, stackTrace) {
@@ -278,6 +321,28 @@ class SyncQueueDrain {
             tally.stoppedBy = failure.name;
             return;
           }
+      }
+    }
+  }
+
+  /// Deletes completed entries older than [completedRetention]. Its failure
+  /// costs nothing but space, so it is logged and the pass goes on.
+  Future<void> _purgeHistory() async {
+    try {
+      final purged = await _queue.purgeCompleted(olderThan: completedRetention);
+      if (purged > 0) {
+        _log.debug(
+          'Purged completed sync queue history',
+          context: {'purged': purged},
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      if (!_closed) {
+        _log.warn(
+          'Could not purge completed sync queue history',
+          error: error,
+          stackTrace: stackTrace,
+        );
       }
     }
   }

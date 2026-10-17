@@ -42,6 +42,9 @@ _Draft _draft() => (
 const _syncedCopy = 'Household created.';
 const _queuedCopy =
     "Household created. It'll finish syncing when you're back online.";
+const _refusedCopy =
+    "The server didn't accept this household. It's saved on this device: "
+    'review it from the home screen to try again or discard it.';
 const _errorCopy =
     'Something went wrong creating your household. Please try again.';
 
@@ -226,6 +229,23 @@ void main() {
       expect(inSnackBar(_syncedCopy), findsNothing);
       // The optimistic local id, which is what the shell will put on the
       // route. A reconcile that later remaps it is #306, not this seam.
+      expect(created, 'hh_local');
+    });
+
+    testWidgets('a refused create says so, rather than promising a sync '
+        'that will not come (#190)', (tester) async {
+      when(() => sender.deliver(any(), any()))
+          .thenAnswer((_) async => SyncParked(Exception('rejected: 400')));
+
+      String? created;
+      await tester.pumpWidget(harness(onCreated: (id) => created = id));
+      await openScreen(tester);
+
+      await fillAndSubmit(tester);
+      await tester.pumpAndSettle();
+
+      expect(inSnackBar(_refusedCopy), findsOneWidget);
+      expect(inSnackBar(_queuedCopy), findsNothing);
       expect(created, 'hh_local');
     });
 

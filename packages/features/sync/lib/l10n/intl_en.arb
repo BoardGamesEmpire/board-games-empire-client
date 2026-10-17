@@ -1,0 +1,128 @@
+{
+  "@@locale": "en",
+  "syncStuckTitle": "Changes that couldn't sync",
+  "@syncStuckTitle": {
+    "description": "Title of the screen listing changes made on this device that the server refused or that ran out of attempts to send (#190)."
+  },
+  "syncStuckIntro": "These changes didn't reach the server, and won't be sent again on their own. Try one again, or discard it to undo it on this device.",
+  "@syncStuckIntro": {
+    "description": "Explanation at the top of the stuck-changes screen (#190). Covers both causes, a refusal and running out of attempts, without naming either: the app can't tell them apart. Must not blame the user or say anything was lost."
+  },
+  "syncStuckEmpty": "Every change has reached the server.",
+  "@syncStuckEmpty": {
+    "description": "Shown on the stuck-changes screen when nothing is stuck, for example after the last one was retried or discarded (#190)."
+  },
+  "syncStuckLoading": "Loading changes…",
+  "@syncStuckLoading": {
+    "description": "Announced while the stuck-changes screen reads its list (#190)."
+  },
+  "syncStuckError": "Couldn't read the changes waiting to sync.",
+  "@syncStuckError": {
+    "description": "Shown on the stuck-changes screen when its list can't be read (#190). Names no cause."
+  },
+  "syncStuckAddToCollection": "Add {title} to your collection",
+  "@syncStuckAddToCollection": {
+    "description": "A stuck change that adds a game to the user's collection (#190). {title} is the game's title.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStuckAddToCollectionUnnamed": "Add a game to your collection",
+  "@syncStuckAddToCollectionUnnamed": {
+    "description": "A stuck change that adds a game to the collection, when the game's title isn't known on this device (#190)."
+  },
+  "syncStuckUpdateCollection": "Change {title} in your collection",
+  "@syncStuckUpdateCollection": {
+    "description": "A stuck change that edits an entry in the user's collection, such as its quantity or rating (#190). {title} is the game's title.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStuckUpdateCollectionUnnamed": "Change a game in your collection",
+  "@syncStuckUpdateCollectionUnnamed": {
+    "description": "A stuck change that edits a collection entry, when the game's title isn't known on this device (#190)."
+  },
+  "syncStuckRemoveFromCollection": "Remove {title} from your collection",
+  "@syncStuckRemoveFromCollection": {
+    "description": "A stuck change that removes a game from the user's collection (#190). {title} is the game's title.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStuckRemoveFromCollectionUnnamed": "Remove a game from your collection",
+  "@syncStuckRemoveFromCollectionUnnamed": {
+    "description": "A stuck change that removes a collection entry, when the game's title isn't known on this device (#190)."
+  },
+  "syncStuckCreateHousehold": "Create the household “{name}”",
+  "@syncStuckCreateHousehold": {
+    "description": "A stuck change that creates a household (#190). {name} is the name the user gave it.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "syncStuckUnreadable": "A change this version of the app can't read",
+  "@syncStuckUnreadable": {
+    "description": "A stuck change whose stored form this build can't decode, such as one saved by a newer version (#190). It can be discarded; trying it again won't help."
+  },
+  "syncStuckStatus": "Couldn't sync",
+  "@syncStuckStatus": {
+    "description": "Status shown under each stuck change (#190). Paired with an icon, so the state isn't conveyed by colour alone."
+  },
+  "syncStuckRetry": "Try again",
+  "@syncStuckRetry": {
+    "description": "Button that sends one stuck change to the server again (#190)."
+  },
+  "syncStuckRetrying": "Sending…",
+  "@syncStuckRetrying": {
+    "description": "Label the retry button takes while its send is running (#190). The button stays in place, disabled, so focus doesn't move."
+  },
+  "syncStuckDiscard": "Discard",
+  "@syncStuckDiscard": {
+    "description": "Button that drops one stuck change and undoes it on this device, after a confirmation (#190)."
+  },
+  "syncStuckDiscardTitle": "Discard this change?",
+  "@syncStuckDiscardTitle": {
+    "description": "Title of the confirmation before a stuck change is discarded (#190)."
+  },
+  "syncStuckDiscardBody": "It won't be sent, and it's undone on this device. This can't be reversed.",
+  "@syncStuckDiscardBody": {
+    "description": "Body of the confirmation before a stuck change is discarded (#190). Discarding can delete what the change created locally, such as a household that only exists on this device."
+  },
+  "syncStuckDiscardConfirm": "Discard",
+  "@syncStuckDiscardConfirm": {
+    "description": "Confirms discarding a stuck change (#190)."
+  },
+  "syncStuckDiscardCancel": "Keep it",
+  "@syncStuckDiscardCancel": {
+    "description": "Dismisses the discard confirmation and keeps the stuck change (#190)."
+  },
+  "syncStuckActionFailed": "That didn't work. Please try again.",
+  "@syncStuckActionFailed": {
+    "description": "Shown when a retry or discard of a stuck change failed on this device (#190). Names no cause."
+  },
+  "syncStuckRefusedAgain": "The server still didn't accept that change. You can try again later or discard it.",
+  "@syncStuckRefusedAgain": {
+    "description": "Shown when a retried stuck change reached the server and was refused again (#190). Names no cause: the server's reason is not shown to users."
+  },
+  "syncStuckNotice": "{count, plural, =1{1 change couldn't be sent to the server.} other{{count} changes couldn't be sent to the server.}}",
+  "@syncStuckNotice": {
+    "description": "Notice shown while any change made on this device is stuck: refused by the server or out of attempts (#190). Must not read as an error the user caused, and must not say anything was lost: the changes are kept until the user retries or discards them.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncStuckNoticeAction": "Review",
+  "@syncStuckNoticeAction": {
+    "description": "Button on the stuck-changes notice that opens the screen where each one can be retried or discarded (#190)."
+  }
+}

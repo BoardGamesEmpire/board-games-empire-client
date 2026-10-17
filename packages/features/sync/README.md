@@ -1,7 +1,7 @@
 # sync_queue
 
-The sync queue's delivery: one sender for every queued op, and the drain that
-runs it (#121).
+The sync queue's delivery: one sender for every queued op, the drain that runs
+it (#121), and the screen where a stuck op is retried or discarded (#190).
 
 The directory is `features/sync`, but the package is `sync_queue`: `sync` is a
 Dart contextual keyword.
@@ -21,7 +21,7 @@ remote that owns it, and records what happened:
 - **Refused as it stands** (a permanent or not-found answer that isn't a
   success): the entry is **parked**. It is kept with its error, its rows stay
   dirty, and nothing sends it again until someone retries or discards it by
-  hand (#190).
+  hand (see Stuck ops below).
 - **Processed and failed** (a 5xx, a retryable 409), answered with a success
   this device couldn't read, or the client faulted: counted against the
   entry's retries.
@@ -48,6 +48,31 @@ It runs once when a user session activates, and again whenever the session's
 `SessionRehydrator` runs a pass (connectivity edge, app resume, entering the
 household list) and the drain has something to send. Nothing wakes it on an
 enqueue.
+
+A drain's first pass, and then at most one pass an hour, also deletes completed
+entries older than a day. They are kept that long so a late acknowledgement of
+an op delivered twice still finds its place. Web has no drain until #447, so
+nothing deletes them there yet.
+
+## Stuck ops
+
+An op the server refused, or one that ran out of retries, is **stuck**: no pass
+sends it, and nothing drops it (#190). `SyncRecovery` is the way out:
+
+- **Retry** puts it back as new, with no cooldown, and sends it through the
+  drain on native. On web, until #447, a household create goes out inline
+  through the sender; a collection op waits for the drain, which is what keeps
+  one entry's ops in order. A retry the server refuses again says so.
+- **Discard** deletes it and undoes what it did on this device, through the
+  repository that owns its rows, then refreshes that cache. The repository
+  checks that the op is still stuck in the statement that deletes it, so an op
+  another tab retried meanwhile is left alone. A discarded add
+  for an entry the server never saw deletes the entry, along with the ops
+  queued behind it. A discarded household create deletes the household.
+
+`StuckSyncOpsScreen` lists them in plain words, never with the error the queue
+recorded, and asks before a discard. `StuckSyncOpsNotice` leads to it from the
+home screen while anything is stuck.
 
 ## Composition
 

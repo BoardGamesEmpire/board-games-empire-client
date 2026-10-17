@@ -30,7 +30,12 @@ import 'home_menu_entry.dart';
 /// platform-localized "open navigation menu" affordance. The no-active-
 /// server case is handled defensively by omitting the header.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.entries, this.activeServerName, super.key});
+  const HomeScreen({
+    required this.entries,
+    this.activeServerName,
+    this.notice,
+    super.key,
+  });
 
   /// Menu entries in display order. Navigational entries render as drawer
   /// destinations; destructive entries (e.g. sign out) render apart.
@@ -39,6 +44,11 @@ class HomeScreen extends StatefulWidget {
   /// Active server's display name for the drawer header, or null when none
   /// is active (defensive — `/home` is only reached post-auth).
   final String? activeServerName;
+
+  /// Shown above the page's content when given: the notice that leads to
+  /// the changes that couldn't sync (#190), which draws nothing while none
+  /// are stuck.
+  final Widget? notice;
 
   /// Key on the [NavigationDrawer], for tests.
   static const Key drawerKey = Key('home_navigation_drawer');
@@ -138,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          ?widget.notice,
           Icon(
             Icons.dashboard_customize_outlined,
             size: 48,
