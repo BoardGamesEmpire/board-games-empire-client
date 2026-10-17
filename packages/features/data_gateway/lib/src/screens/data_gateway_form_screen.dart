@@ -38,6 +38,8 @@ class DataGatewayFormScreen extends StatelessWidget {
 
   /// Leaves the form after a save. Required: a save with nowhere to go
   /// strands the user on a spent form (#162, #271).
+  ///
+  /// Not called for a save that lands once the user has gone back.
   final void Function(BuildContext context) onDone;
 
   @override
@@ -96,11 +98,15 @@ class _DataGatewayFormView extends StatelessWidget {
       listenWhen: (_, state) => state is DataGatewayFormSaved,
       listener: (context, state) {
         if (state is! DataGatewayFormSaved) return;
-        // Shown before leaving, while this route's context is still current;
+        // Shown before leaving, while this route's context is still mounted;
         // the messenger outlives the route.
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(_savedMessage(l10n, state))));
-        onDone(context);
+        // A save can land after the user went back, while this route is still
+        // on its way out. The save still happened, so it is still confirmed,
+        // but the user has already left: leaving again would close the
+        // screen beneath.
+        if (ModalRoute.of(context)?.isCurrent ?? true) onDone(context);
       },
       builder: (context, state) => switch (state) {
         DataGatewayFormLoading() => BgePage(

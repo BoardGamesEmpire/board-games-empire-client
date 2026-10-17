@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
@@ -155,6 +157,63 @@ void main() {
         findsOneWidget,
       );
       expect(doneCount, 0);
+    });
+
+    testWidgets('a save that lands after the user went back says it saved, '
+        'and leaves nothing more', (tester) async {
+      final pending = Completer<DataGatewayChangeResult>();
+      remote.onCreate = (_) => pending.future;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates:
+              DataGatewayLocalizations.localizationsDelegates,
+          supportedLocales: DataGatewayLocalizations.supportedLocales,
+          home: const Scaffold(body: Text('home')),
+        ),
+      );
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('list')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => DataGatewayFormScreen(
+              remote: remote,
+              access: access,
+              // As the shell's does: leaving is a pop.
+              onDone: (context) {
+                doneCount++;
+                Navigator.of(context).pop();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await fillValid(tester);
+      await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
+      await tester.tap(find.byKey(DataGatewayForm.submitKey));
+      await tester.pump();
+
+      await tester.tap(find.byType(BackButton));
+      // Partway through the form's way out, while it still listens.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      pending.complete(
+        changed(bgg, attempted: DataGatewayConnectionAction.connect),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Added BGG and connected to it.'), findsOneWidget);
+      expect(doneCount, 0);
+      expect(find.text('list'), findsOneWidget);
     });
   });
 

@@ -329,4 +329,38 @@ void main() {
       expect(find.text('Steam'), findsOneWidget);
     });
   });
+
+  for (final (label, window) in [
+    ('a phone', const Size(360, 640)),
+    ('a phone on its side', const Size(640, 360)),
+    ('a desktop window', const Size(1024, 768)),
+  ]) {
+    testWidgets('on $label, the last row scrolls clear of the add button, so '
+        'its menu opens rather than the add form', (tester) async {
+      tester.view
+        ..devicePixelRatio = 1
+        ..physicalSize = window;
+      addTearDown(tester.view.reset);
+      remote.listing([for (var i = 1; i <= 20; i++) gateway('dg_$i')]);
+      var adds = 0;
+      await pumpScreen(tester, onAdd: (_) => adds++);
+
+      // To the very end. The rows are built as they come into view, so the
+      // end is known only once it is reached.
+      final list = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      double? end;
+      while (end != list.maxScrollExtent) {
+        end = list.maxScrollExtent;
+        list.jumpTo(end);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.byKey(DataGatewayListScreen.rowMenuKey('dg_20')));
+      await tester.pumpAndSettle();
+
+      expect(adds, 0);
+      expect(find.byKey(DataGatewayListScreen.editKey), findsOneWidget);
+    });
+  }
 }

@@ -168,6 +168,7 @@ class _DataGatewayListView extends StatelessWidget {
         final add = onAdd;
         final edit = onEdit;
         final mayChange = ready?.mayChange ?? false;
+        final tokens = BgeTokens.of(context);
 
         return BgePage.slivers(
           title: Text(l10n.dataGatewayListTitle),
@@ -187,9 +188,7 @@ class _DataGatewayListView extends StatelessWidget {
             if (ready?.outcome case final outcome?)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom: BgeTokens.of(context).spaceMd,
-                  ),
+                  padding: EdgeInsets.only(bottom: tokens.spaceMd),
                   child: _OutcomeBanner(outcome: outcome),
                 ),
               ),
@@ -235,17 +234,31 @@ class _DataGatewayListView extends StatelessWidget {
                   ),
                 ),
               DataGatewayListReady(:final gateways, :final busy) =>
-                SliverList.builder(
-                  itemCount: gateways.length,
-                  itemBuilder: (context, index) {
-                    final row = gateways[index];
-                    return _DataGatewayRow(
-                      gateway: row,
-                      busy: busy.contains(row.id),
-                      mayChange: mayChange,
-                      onEdit: edit == null ? null : () => edit(context, row.id),
-                    );
-                  },
+                SliverPadding(
+                  // The add button floats over the end of the list, and its
+                  // label makes it wide enough to cover the last row's menu.
+                  // Room below the rows lets that menu scroll clear: the
+                  // button's 56dp and its 16dp margin, less the page's own
+                  // 24dp, and a 16dp gap.
+                  padding: add == null || !mayChange
+                      ? EdgeInsets.zero
+                      : EdgeInsets.only(
+                          bottom: tokens.spaceXxl + tokens.spaceMd,
+                        ),
+                  sliver: SliverList.builder(
+                    itemCount: gateways.length,
+                    itemBuilder: (context, index) {
+                      final row = gateways[index];
+                      return _DataGatewayRow(
+                        gateway: row,
+                        busy: busy.contains(row.id),
+                        mayChange: mayChange,
+                        onEdit: edit == null
+                            ? null
+                            : () => edit(context, row.id),
+                      );
+                    },
+                  ),
                 ),
             },
           ],

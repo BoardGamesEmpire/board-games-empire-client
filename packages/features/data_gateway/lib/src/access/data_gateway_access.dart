@@ -45,7 +45,8 @@ final class DataGatewayAccessState extends Equatable {
 /// - [check] reads one row. A 200 grants the read, and the home drawer offers
 ///   the admin entry; a 403 denies it, and the entry stays hidden.
 /// - A screen that reads the list reports what it found the same way, so a
-///   deep link keeps this in step with what the user actually saw.
+///   deep link keeps this in step with what the user actually saw. Its
+///   report outranks a [check] already in flight.
 /// - The first 403 on a change calls [changeDenied], which hides every change
 ///   action until the session ends.
 ///
@@ -63,6 +64,10 @@ class DataGatewayAccess implements ValueListenable<DataGatewayAccessState> {
 
   Future<void>? _checking;
   bool _disposed = false;
+
+  /// Counts the reads screens have reported, so a [check] can tell whether
+  /// one answered while it was in flight.
+  int _reported = 0;
 
   @override
   DataGatewayAccessState get value => _state.value;
@@ -82,15 +87,22 @@ class DataGatewayAccess implements ValueListenable<DataGatewayAccessState> {
   /// an unreachable server says nothing about the role, and an entry already
   /// shown should not vanish over a dropped connection. Calls made while one
   /// is in flight join it.
+  ///
+  /// A screen that reports a read while this is in flight has the newer
+  /// answer, and this one is dropped. The two disagree only when the role
+  /// changed between them. Kept, a refusal from the check would hide the
+  /// admin entry from a user just let in, and nothing would ask again,
+  /// because a refusal is settled.
   Future<void> check() =>
       _checking ??= _check().whenComplete(() => _checking = null);
 
   Future<void> _check() async {
+    final reported = _reported;
     try {
       await _remote.fetchPage(limit: 1);
-      readGranted();
+      if (_reported == reported) _settleRead(DataGatewayRead.granted);
     } on DataGatewayForbiddenException {
-      readDenied();
+      if (_reported == reported) _settleRead(DataGatewayRead.denied);
     } on Object catch (error, stackTrace) {
       _logger.info(
         'Could not learn whether this user may read DataGateways',
@@ -101,24 +113,23 @@ class DataGatewayAccess implements ValueListenable<DataGatewayAccessState> {
   }
 
   /// A read of DataGateways succeeded.
-  void readGranted() => _emit(
-    DataGatewayAccessState(
-      read: DataGatewayRead.granted,
-      mayChange: value.mayChange,
-    ),
-  );
+  void readGranted() {
+    _reported++;
+    _settleRead(DataGatewayRead.granted);
+  }
 
   /// A read of DataGateways was refused.
   ///
   /// Says nothing about changes: every screen that offers one shows its
   /// access-denied state instead, and a user let in later in the session
   /// (their role was raised) should find the change actions there.
-  void readDenied() => _emit(
-    DataGatewayAccessState(
-      read: DataGatewayRead.denied,
-      mayChange: value.mayChange,
-    ),
-  );
+  void readDenied() {
+    _reported++;
+    _settleRead(DataGatewayRead.denied);
+  }
+
+  void _settleRead(DataGatewayRead read) =>
+      _emit(DataGatewayAccessState(read: read, mayChange: value.mayChange));
 
   /// A change to a DataGateway was refused. Lasts for the session.
   void changeDenied() =>

@@ -120,6 +120,48 @@ void main() {
     pending.complete(pageOf(const []));
   });
 
+  group('a screen that reads while the check is in flight', () {
+    late Completer<PaginatedResult<DataGateway>> pending;
+
+    setUp(() {
+      pending = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => pending.future;
+    });
+
+    test('keeps its grant over the check refused before it, as when a role '
+        'was raised meanwhile', () async {
+      final access = await install();
+
+      access.readGranted();
+      pending.completeError(forbidden());
+      await pumpEventQueue();
+
+      expect(access.value.read, DataGatewayRead.granted);
+    });
+
+    test('keeps its refusal over the check granted before it, as when a role '
+        'was lowered meanwhile', () async {
+      final access = await install();
+
+      access.readDenied();
+      pending.complete(pageOf(const []));
+      await pumpEventQueue();
+
+      expect(access.value.read, DataGatewayRead.denied);
+    });
+  });
+
+  test('a check started after a screen read answers for itself', () async {
+    remote.refusingReads();
+    final access = await install();
+    await pumpEventQueue();
+    access.readGranted();
+
+    await access.check();
+
+    expect(access.value.read, DataGatewayRead.denied);
+  });
+
   test('registers nothing where no DataGateway client is reachable', () async {
     final bare = DependencyContainerImpl();
     addTearDown(bare.dispose);
