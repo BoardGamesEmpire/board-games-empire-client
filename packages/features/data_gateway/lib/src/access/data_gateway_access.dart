@@ -53,9 +53,17 @@ final class DataGatewayAccessState extends Equatable {
 /// Registered per user session by [DataGatewayAccessInstaller], so a sign-out
 /// discards it and the next user starts from unknown.
 class DataGatewayAccess implements ValueListenable<DataGatewayAccessState> {
-  DataGatewayAccess({required this._remote, BgeLogger? logger})
-    : _logger = logger ?? BgeLogger('bge.data_gateway.access');
+  DataGatewayAccess({
+    required this._remote,
+    this.refusalRecheckDelay = defaultRefusalRecheckDelay,
+    BgeLogger? logger,
+  }) : _logger = logger ?? BgeLogger('bge.data_gateway.access');
 
+  static const Duration defaultRefusalRecheckDelay = Duration(seconds: 2);
+
+  /// How long [check] waits before asking a 403 again. On a fresh server the
+  /// owner's roles commit about 60ms after sign-up answers.
+  final Duration refusalRecheckDelay;
   final DataGatewayRemoteDataSource _remote;
   final BgeLogger _logger;
   final ValueNotifier<DataGatewayAccessState> _state = ValueNotifier(
@@ -93,13 +101,25 @@ class DataGatewayAccess implements ValueListenable<DataGatewayAccessState> {
   /// changed between them. Kept, a refusal from the check would hide the
   /// admin entry from a user just let in, and nothing would ask again,
   /// because a refusal is settled.
+  ///
+  /// A 403 is asked once more, after [refusalRecheckDelay], before it
+  /// settles. The server writes a new user's roles after sign-up has
+  /// answered, so a read sent straight after it is refused even for the
+  /// server's first owner (backend#490), the one user who has to add the
+  /// first DataGateway.
   Future<void> check() =>
       _checking ??= _check().whenComplete(() => _checking = null);
 
   Future<void> _check() async {
     final reported = _reported;
     try {
-      await _remote.fetchPage(limit: 1);
+      try {
+        await _remote.fetchPage(limit: 1);
+      } on DataGatewayForbiddenException {
+        await Future<void>.delayed(refusalRecheckDelay);
+        if (_disposed) return;
+        await _remote.fetchPage(limit: 1);
+      }
       if (_reported == reported) _settleRead(DataGatewayRead.granted);
     } on DataGatewayForbiddenException {
       if (_reported == reported) _settleRead(DataGatewayRead.denied);

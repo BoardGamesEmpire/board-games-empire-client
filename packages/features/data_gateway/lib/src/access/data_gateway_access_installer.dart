@@ -29,13 +29,22 @@ import 'data_gateway_access.dart';
 ///
 /// ## Asking again
 ///
+/// A 403 is asked once more after [refusalRecheckDelay] before it settles
+/// (see [DataGatewayAccess.check]): a sign-up answers before the server has
+/// written the new user's roles.
+///
 /// A check that failed for a reason other than a 403 leaves the answer
 /// unknown. It is registered with the session's [SessionRehydrator] so the
 /// next connectivity edge or app resume asks again; once the answer is
 /// settled, it is not asked again. A composition without the rehydrator
 /// skips that, and the screen's own read still keeps the answer current.
 class DataGatewayAccessInstaller implements UserScopeInstaller {
-  const DataGatewayAccessInstaller();
+  const DataGatewayAccessInstaller({
+    this.refusalRecheckDelay = DataGatewayAccess.defaultRefusalRecheckDelay,
+  });
+
+  /// Passed to [DataGatewayAccess.refusalRecheckDelay].
+  final Duration refusalRecheckDelay;
 
   static final BgeLogger _log = BgeLogger('bge.data_gateway.access.install');
 
@@ -55,6 +64,7 @@ class DataGatewayAccessInstaller implements UserScopeInstaller {
 
     final access = DataGatewayAccess(
       remote: container.get<DataGatewayRemoteDataSource>(),
+      refusalRecheckDelay: refusalRecheckDelay,
     );
     container.registerSingleton<DataGatewayAccess>(
       access,

@@ -19,7 +19,10 @@ of these the user is, so `DataGatewayAccess` learns it from the API's own
 refusals:
 
 - `DataGatewayAccessInstaller` runs on every sign-in and reads one row,
-  unawaited. A 200 shows the Admin entry in the home drawer; a 403 hides it.
+  unawaited. A 200 shows the Admin entry in the home drawer; a 403 hides it,
+  once a second read two seconds later is refused too. The server writes a
+  new user's roles after sign-up has answered, so a read sent straight after
+  it is refused even for the first owner (backend#490).
   A read that fails for another reason leaves the answer unknown, and the
   session's rehydrator asks again on the next connectivity edge or resume.
 - A deep link to the screen reaches it either way. A refused read shows an

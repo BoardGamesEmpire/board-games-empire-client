@@ -69,11 +69,8 @@ void main() {
   tearDown(() async => container.dispose());
 
   Future<DataGatewayAccess> install() async {
-    await const DataGatewayAccessInstaller().install(
-      container,
-      _server(),
-      'user-1',
-    );
+    await const DataGatewayAccessInstaller(refusalRecheckDelay: Duration.zero)
+        .install(container, _server(), 'user-1');
     return container.get<DataGatewayAccess>();
   }
 
@@ -97,6 +94,70 @@ void main() {
     await pumpEventQueue();
 
     expect(access.value.read, DataGatewayRead.denied);
+  });
+
+  group('a 403 is asked once more before it settles', () {
+    // The server writes a new user's roles after sign-up answers, so a read
+    // sent straight after it is refused even for the server's first owner
+    // (backend#490).
+    test('so an owner refused before their roles landed is let in', () async {
+      final second = Completer<PaginatedResult<DataGateway>>();
+      var reads = 0;
+      remote.onFetchPage = (_, _) =>
+          ++reads == 1 ? Future.error(forbidden()) : second.future;
+
+      final access = await install();
+      await pumpEventQueue();
+
+      expect(remote.calls, hasLength(2));
+      expect(access.value.read, DataGatewayRead.unknown);
+
+      second.complete(pageOf(const []));
+      await pumpEventQueue();
+
+      expect(access.value.read, DataGatewayRead.granted);
+    });
+
+    test('and a second 403 settles it', () async {
+      remote.refusingReads();
+
+      final access = await install();
+      await pumpEventQueue();
+
+      expect(remote.calls, hasLength(2));
+      expect(access.value.read, DataGatewayRead.denied);
+    });
+
+    test('unless a screen answered meanwhile', () async {
+      final second = Completer<PaginatedResult<DataGateway>>();
+      var reads = 0;
+      remote.onFetchPage = (_, _) =>
+          ++reads == 1 ? Future.error(forbidden()) : second.future;
+      final access = await install();
+      await pumpEventQueue();
+
+      access.readGranted();
+      second.completeError(forbidden());
+      await pumpEventQueue();
+
+      expect(access.value.read, DataGatewayRead.granted);
+    });
+
+    test('and not once the session has ended', () async {
+      final first = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => first.future;
+      final access = DataGatewayAccess(
+        remote: remote,
+        refusalRecheckDelay: Duration.zero,
+      );
+
+      final checking = access.check();
+      access.dispose();
+      first.completeError(forbidden());
+      await checking;
+
+      expect(remote.calls, hasLength(1));
+    });
   });
 
   test('a failed read leaves the answer unknown rather than denied', () async {
@@ -171,6 +232,13 @@ void main() {
     expect(bare.isRegistered<DataGatewayAccess>(), isFalse);
   });
 
+  test('waits two seconds before asking a 403 again', () {
+    expect(
+      const DataGatewayAccessInstaller().refusalRecheckDelay,
+      const Duration(seconds: 2),
+    );
+  });
+
   group('asking again', () {
     late _RecordingRehydrator rehydrator;
 
@@ -194,10 +262,11 @@ void main() {
       remote.refusingReads();
       await install();
       await pumpEventQueue();
+      final settledAfter = remote.calls.length;
 
       await rehydrator.rehydrateStale();
 
-      expect(remote.calls, hasLength(1));
+      expect(remote.calls, hasLength(settledAfter));
     });
   });
 }
