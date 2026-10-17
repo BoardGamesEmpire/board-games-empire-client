@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:models/domain.dart';
+import 'package:models/domain.dart' hide ConnectionState;
 
 import '../../l10n/auth_localizations.dart';
 import '../bloc/auth_bloc.dart';
@@ -26,6 +26,8 @@ import '../widgets/oidc_strategy_button.dart';
 /// - Focus is managed between sign-in/register mode switches
 /// - Server name displayed so screen readers can identify which server
 ///   the user is authenticating against
+/// - The unsent-changes notice (#142) sits above the forms in reading order
+///   and announces itself once when it appears, without taking focus.
 ///
 /// i18n (#37): all copy comes from [AuthLocalizations]; the bloc emits
 /// semantic failure kinds ([AuthOperationFailure]) which
@@ -39,10 +41,15 @@ class AuthScreen extends StatefulWidget {
     super.key,
     required this.identity,
     required this.serverDisplayName,
+    this.unsentChangesCount,
+    this.splash,
   });
 
   /// Key on the operation-failure banner, for tests.
   static const Key failureBannerKey = Key('auth_failure_banner');
+
+  /// Key on the unsent-changes notice, for tests.
+  static const Key unsentChangesNoticeKey = Key('auth_unsent_changes_notice');
 
   /// The server identity for this auth context. Drives which strategies
   /// are shown and which endpoints are used.
@@ -50,6 +57,24 @@ class AuthScreen extends StatefulWidget {
 
   /// Human-readable server name shown above the form for context.
   final String serverDisplayName;
+
+  /// How many changes made on this device haven't reached the server, for a
+  /// session that ended without the user signing out (#142). Read once when
+  /// the screen appears; above zero, a notice says so above the forms.
+  ///
+  /// Null where nothing can count them: web until it restores sessions
+  /// offline (#144) and drains its queue (#447), and compositions without
+  /// the per-server count. The screen never learns whose changes they are.
+  final Future<int> Function()? unsentChangesCount;
+
+  /// Shown in place of the page while [unsentChangesCount] is read, so the
+  /// notice arrives with the forms rather than pushing them down after they
+  /// have painted (#142). Blank where none is given.
+  ///
+  /// [AuthGate] passes its own splash, so a cold start reads as one
+  /// continuous splash. The caller bounds the read; this screen waits for
+  /// it.
+  final Widget? splash;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -60,8 +85,50 @@ class _AuthScreenState extends State<AuthScreen> {
   /// Only relevant when [EmailAndPasswordStrategy.signUpDisabled] is false.
   bool _isSignIn = true;
 
+  /// Read when the screen appears rather than in build: the page rebuilds on
+  /// every failure, and the count only changes when a session starts. That
+  /// normally takes the user off this screen, and the one that comes back
+  /// reads afresh. A session that starts and ends before the next frame
+  /// never shows the gate's splash, so this screen stays up and reads again
+  /// itself (#142).
+  Future<int>? _unsentChangesCount;
+
+  @override
+  void initState() {
+    super.initState();
+    _readUnsentChangesCount();
+  }
+
+  // A block body: as an arrow, it would hand setState the future.
+  void _readUnsentChangesCount() {
+    _unsentChangesCount = widget.unsentChangesCount?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
+    return BlocListener<AuthBloc, AuthBlocState>(
+      listenWhen: (previous, current) =>
+          previous is AuthAuthenticated && current is! AuthAuthenticated,
+      listener: (_, _) => setState(_readUnsentChangesCount),
+      child: _buildCounted(context),
+    );
+  }
+
+  Widget _buildCounted(BuildContext context) {
+    final count = _unsentChangesCount;
+    if (count == null) return _buildPage(context, unsentChanges: 0);
+    return FutureBuilder<int>(
+      future: count,
+      builder: (context, snapshot) =>
+          snapshot.connectionState == ConnectionState.done
+          // A count that can't be read shows no notice rather than an error:
+          // the user came here to sign in, and the shell logs the failure.
+          ? _buildPage(context, unsentChanges: snapshot.data ?? 0)
+          : widget.splash ?? const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildPage(BuildContext context, {required int unsentChanges}) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -88,6 +155,10 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             _buildHeader(context, colorScheme),
             const BgeGap.xl(),
+            if (unsentChanges > 0) ...[
+              _buildUnsentChangesNotice(context, unsentChanges),
+              const BgeGap.lg(),
+            ],
             if (widget.identity.hasEmailAndPassword)
               _buildEmailPasswordSection(context, state),
             if (widget.identity.hasEmailAndPassword &&
@@ -151,6 +222,22 @@ class _AuthScreenState extends State<AuthScreen> {
       ],
     );
   }
+
+  /// The #142 notice. Says how many changes are waiting and that signing in
+  /// with the same account sends them; never whose they are, nor that
+  /// anything failed or was lost.
+  ///
+  /// [BgeBannerTone.warning]: it needs the user's attention, and nothing has
+  /// failed.
+  Widget _buildUnsentChangesNotice(BuildContext context, int waiting) =>
+      BgeInlineBanner(
+        key: AuthScreen.unsentChangesNoticeKey,
+        tone: BgeBannerTone.warning,
+        // Furniture for as long as the screen stays up, already near its
+        // top: announced on arrival, but not an outcome to scroll to.
+        reveal: false,
+        message: AuthLocalizations.of(context).authUnsentChangesNotice(waiting),
+      );
 
   Widget _buildEmailPasswordSection(BuildContext context, AuthBlocState state) {
     final strategy = widget.identity.emailAndPasswordStrategy!;

@@ -191,6 +191,7 @@ ActiveServer buildActiveServer(
   GameCollectionRefresher? gameCollectionRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
+  UnsentChangesNoticeRepository? unsentChangesNotice,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -234,6 +235,11 @@ ActiveServer buildActiveServer(
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
+  }
+  if (unsentChangesNotice != null) {
+    container.registerSingleton<UnsentChangesNoticeRepository>(
+      unsentChangesNotice,
+    );
   }
   return ActiveServer(
     serverId: serverId,

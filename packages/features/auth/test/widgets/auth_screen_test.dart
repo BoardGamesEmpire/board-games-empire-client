@@ -606,5 +606,180 @@ void main() {
         expect(find.byKey(AuthScreen.failureBannerKey), findsNothing);
       });
     });
+
+    // #142: a session the user didn't end can leave changes queued on the
+    // device. The sign-in screen says how many, never whose.
+    group('unsent changes notice', () {
+      const splashKey = Key('splash');
+
+      AuthScreen screenWithCount(Future<int> Function()? count) => AuthScreen(
+        identity: testServerIdentity(),
+        serverDisplayName: 'Test BGE Server',
+        unsentChangesCount: count,
+        splash: const SizedBox(key: splashKey),
+      );
+
+      // A cold read opens the server database first. Painted before it
+      // lands, the fields would jump down under a finger when the notice
+      // arrived.
+      testWidgets('holds the splash until the count is in, then shows the '
+          'notice and the fields together', (tester) async {
+        final count = Completer<int>();
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() => count.future), mockBloc),
+        );
+        await tester.pump();
+
+        expect(find.byKey(splashKey), findsOneWidget);
+        expect(find.byType(LoginForm), findsNothing);
+
+        count.complete(2);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(splashKey), findsNothing);
+        expect(find.byType(LoginForm), findsOneWidget);
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
+      });
+
+      testWidgets('holds nothing where the count is unavailable', (
+        tester,
+      ) async {
+        await tester.pumpWidget(_wrap(screenWithCount(null), mockBloc));
+
+        expect(find.byKey(splashKey), findsNothing);
+        expect(find.byType(LoginForm), findsOneWidget);
+      });
+
+      testWidgets('says how many changes are waiting, above the sign-in '
+          'fields', (tester) async {
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() async => 3), mockBloc),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            "3 changes haven't reached the server yet. Sign in with the "
+            'same account to send them.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester.getTopLeft(find.byKey(AuthScreen.unsentChangesNoticeKey)).dy,
+          lessThan(tester.getTopLeft(find.byType(LoginForm)).dy),
+        );
+      });
+
+      testWidgets('announces itself as one live region, and nothing in it '
+          'takes focus', (tester) async {
+        final handle = tester.ensureSemantics();
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() async => 2), mockBloc),
+        );
+        await tester.pumpAndSettle();
+
+        // Through the message text, as the banner's own suite does: the merge
+        // boundary sits below the banner's root.
+        const message =
+            "2 changes haven't reached the server yet. Sign in with the same "
+            'account to send them.';
+        expect(
+          tester.getSemantics(find.text(message)),
+          isSemantics(label: message, isLiveRegion: true, isFocusable: false),
+        );
+        handle.dispose();
+      });
+
+      testWidgets('uses the singular for one change', (tester) async {
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() async => 1), mockBloc),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            "1 change hasn't reached the server yet. Sign in with the same "
+            'account to send it.',
+          ),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('shows nothing when no changes are waiting', (tester) async {
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() async => 0), mockBloc),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
+      });
+
+      testWidgets('shows nothing where the count is unavailable — web, or a '
+          'composition without it', (tester) async {
+        await tester.pumpWidget(_wrap(screenWithCount(null), mockBloc));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
+      });
+
+      testWidgets('reads the count once when the screen appears, not on every '
+          'rebuild', (tester) async {
+        var reads = 0;
+        whenListen(
+          mockBloc,
+          Stream<AuthBlocState>.fromIterable(const [
+            AuthLoading(),
+            AuthFailureInvalidCredentials(),
+            AuthUnauthenticated(),
+          ]),
+          initialState: const AuthUnauthenticated(),
+        );
+        await tester.pumpWidget(
+          _wrap(
+            screenWithCount(() async {
+              reads++;
+              return 2;
+            }),
+            mockBloc,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(reads, 1);
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
+      });
+
+      // The gate swaps this screen for its splash while a session is live.
+      // A session that starts and ends before the next frame never shows
+      // that splash, so the screen stays up through it: the shell's
+      // recovery sign-out after an activation that fails at once.
+      testWidgets('reads the count again when a session ends while the '
+          'screen is still up', (tester) async {
+        final states = StreamController<AuthBlocState>();
+        addTearDown(states.close);
+        whenListen(
+          mockBloc,
+          states.stream,
+          initialState: const AuthUnauthenticated(),
+        );
+        final counts = [0, 2];
+        var reads = 0;
+        await tester.pumpWidget(
+          _wrap(screenWithCount(() async => counts[reads++]), mockBloc),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
+
+        states
+          ..add(const AuthLoading())
+          ..add(AuthAuthenticated(session: testSession()))
+          ..add(const AuthLoading())
+          ..add(const AuthUnauthenticated());
+        await tester.pumpAndSettle();
+
+        expect(reads, 2);
+        expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsOneWidget);
+      });
+    });
   });
 }

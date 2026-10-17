@@ -17,6 +17,8 @@ import 'package:models/domain.dart';
 import 'package:path/path.dart' as p;
 import 'package:storage_interface/storage_interface.dart';
 
+import '../support/fixed_clock.dart';
+
 /// In-memory key service; `loseServerKey` simulates keychain loss.
 class _FakeKeyService implements EncryptionKeyService {
   final Map<String, String> _keys = {};
@@ -254,6 +256,35 @@ void main() {
             'closing the ServerDatabase must close every vended watch '
             'stream; if this fails the registration needs a dispose hook',
       );
+    });
+
+    // #142: the sign-in screen's count has to answer after the user's scope
+    // is gone and before anyone signs in, so it lives in this tier.
+    test('registers UnsentChangesNoticeRepository over the same '
+        'ServerDatabase the sync queue writes to', () async {
+      await makeInstaller().install(container, config);
+
+      expect(container.isRegistered<UnsentChangesNoticeRepository>(), isTrue);
+
+      final db = container.get<ServerDatabase>();
+      final clock = FixedClockService(DateTime.utc(2024, 1, 15));
+      await SyncQueueRepositoryImpl(
+        db,
+        clock,
+        userId: 'user-a',
+        localNowUtc: clock.nowUtc,
+      ).enqueue(
+        const AddToCollectionOperation(
+          localId: 'local-1',
+          platformGameId: 'pg-1',
+          medium: 'Physical',
+          quantity: 1,
+        ),
+      );
+      final notice = container.get<UnsentChangesNoticeRepository>();
+      await notice.recordSessionStarted('user-a');
+
+      expect(await notice.unsentChangesCount(), 1);
     });
   });
 
