@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
@@ -192,6 +193,8 @@ ActiveServer buildActiveServer(
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
   UnsentChangesNoticeRepository? unsentChangesNotice,
+  DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
+  DataGatewayAccess? dataGatewayAccess,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -240,6 +243,14 @@ ActiveServer buildActiveServer(
     container.registerSingleton<UnsentChangesNoticeRepository>(
       unsentChangesNotice,
     );
+  }
+  if (dataGatewayRemoteDataSource != null) {
+    container.registerSingleton<DataGatewayRemoteDataSource>(
+      dataGatewayRemoteDataSource,
+    );
+  }
+  if (dataGatewayAccess != null) {
+    container.registerSingleton<DataGatewayAccess>(dataGatewayAccess);
   }
   return ActiveServer(
     serverId: serverId,

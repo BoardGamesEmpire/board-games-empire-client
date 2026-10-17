@@ -4,6 +4,7 @@
 @TestOn('vm')
 library;
 
+import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,12 +21,26 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(5));
+      expect(installers, hasLength(6));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
       expect(installers[3], isA<GameCollectionHydrateInstaller>());
-      expect(installers[4], isA<SyncSenderInstaller>());
+      expect(installers[4], isA<DataGatewayAccessInstaller>());
+      expect(installers[5], isA<SyncSenderInstaller>());
+    });
+
+    test('runs the same DataGateway access installer native does, after the '
+        'rehydrator it registers with (#41)', () {
+      final installers = buildWebUserScopeInstallers();
+
+      expect(installers.whereType<DataGatewayAccessInstaller>(), hasLength(1));
+      expect(
+        installers.indexWhere((i) => i is DataGatewayAccessInstaller),
+        greaterThan(
+          installers.indexWhere((i) => i is SessionRehydratorInstaller),
+        ),
+      );
     });
 
     test('holds the sync queue sender, not the drain (#121, #447)', () {
