@@ -27,6 +27,11 @@ import 'data_gateway_list_state.dart';
 /// The server may have answered that read before the action's write, and its
 /// rows would then put the action's row back the way it was.
 ///
+/// So does an action that ends after a read landed while it ran, when it
+/// settles its row over that read's rows. A connect or disconnect answers
+/// with the row the server saved before its attempt, and a read during the
+/// attempt may already hold a change someone made since.
+///
 /// A reload that fails takes the rows down with it. An action that ends
 /// meanwhile keeps its outcome, which shows once a read brings the rows back.
 ///
@@ -141,6 +146,7 @@ class DataGatewayListBloc
     _busy.add(event.id);
     _outcome = null;
     _emitReady(emit);
+    final answeredBefore = _readAnswered;
 
     final (after, result) = await _attempt(event.action, row);
 
@@ -150,7 +156,8 @@ class DataGatewayListBloc
     // there now stays.
     _busy.remove(event.id);
     final rows = _rows;
-    if (rows != null && _answered(result)) {
+    final settled = rows != null && _answered(result);
+    if (settled) {
       _rows = [
         for (final g in rows)
           if (g.id != event.id) g else ?after,
@@ -163,9 +170,13 @@ class DataGatewayListBloc
     );
     _emitReady(emit);
 
-    // The read in flight is dropped when it lands; this one is answered
-    // after the action's write.
-    if (_reading && !isClosed) add(const DataGatewayListLoadRequested());
+    // The read in flight is dropped when it lands, and the row just settled
+    // may be older than a read that landed meanwhile; this one is answered
+    // after both.
+    final landed = _readAnswered != answeredBefore;
+    if ((_reading || (settled && landed)) && !isClosed) {
+      add(const DataGatewayListLoadRequested());
+    }
   }
 
   /// Whether [result] came with the server's word on the row.

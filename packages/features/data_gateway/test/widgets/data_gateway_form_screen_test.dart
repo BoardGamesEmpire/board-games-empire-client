@@ -215,6 +215,66 @@ void main() {
       expect(doneCount, 0);
       expect(find.text('list'), findsOneWidget);
     });
+
+    testWidgets('a save that lands while a page covers the form says it '
+        'saved, and leaves once the user comes back', (tester) async {
+      final pending = Completer<DataGatewayChangeResult>();
+      remote.onCreate = (_) => pending.future;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          localizationsDelegates:
+              DataGatewayLocalizations.localizationsDelegates,
+          supportedLocales: DataGatewayLocalizations.supportedLocales,
+          home: const Scaffold(body: Text('list')),
+        ),
+      );
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => DataGatewayFormScreen(
+              remote: remote,
+              access: access,
+              // As the shell's does: leaving is a pop.
+              onDone: (context) {
+                doneCount++;
+                Navigator.of(context).pop();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await fillValid(tester);
+      await tester.ensureVisible(find.byKey(DataGatewayForm.submitKey));
+      await tester.tap(find.byKey(DataGatewayForm.submitKey));
+      await tester.pump();
+
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('cover')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      pending.complete(
+        changed(bgg, attempted: DataGatewayConnectionAction.connect),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Added BGG and connected to it.'), findsOneWidget);
+      expect(doneCount, 0);
+      expect(find.text('cover'), findsOneWidget);
+
+      navigator.pop();
+      await tester.pumpAndSettle();
+
+      expect(doneCount, 1);
+      expect(find.text('list'), findsOneWidget);
+      expect(find.byType(DataGatewayFormScreen), findsNothing);
+    });
   });
 
   group('editing', () {
@@ -262,6 +322,45 @@ void main() {
 
       expect(find.text('Nothing has changed yet.'), findsOneWidget);
       expect(remote.calls, ['fetchOne(dg_1)']);
+    });
+
+    group('a row saved elsewhere with spaces around its values', () {
+      // The server keeps what it is sent; only this form trims.
+      final padded = bgg.copyWith(
+        name: ' BGG ',
+        description: ' The BGG bridge ',
+        connectionUrl: ' bgg.internal ',
+      );
+
+      testWidgets("left as it was, can't be saved with nothing changed", (
+        tester,
+      ) async {
+        remote.onFetchOne = (_) async => padded;
+        await pumpForm(tester, editingId: 'dg_1');
+
+        await submit(tester);
+
+        expect(find.text('Nothing has changed yet.'), findsOneWidget);
+        expect(remote.calls, ['fetchOne(dg_1)']);
+      });
+
+      testWidgets('with only its port edited, sends only the port, so the '
+          "fields left alone can't overwrite someone else's change", (
+        tester,
+      ) async {
+        DataGatewayChanges? sent;
+        remote.onFetchOne = (_) async => padded;
+        remote.onUpdate = (_, changes) async {
+          sent = changes;
+          return changed(padded.copyWith(connectionPort: 50060));
+        };
+        await pumpForm(tester, editingId: 'dg_1');
+
+        await enter(tester, DataGatewayForm.portFieldKey, '50060');
+        await submit(tester);
+
+        expect(sent, const DataGatewayChanges(connectionPort: 50060));
+      });
     });
 
     testWidgets('a row that does not exist says so', (tester) async {

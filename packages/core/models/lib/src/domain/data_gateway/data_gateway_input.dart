@@ -44,15 +44,20 @@ abstract class DataGatewayChanges with _$DataGatewayChanges {
   ///
   /// A blank description in the input against a set one in the original is a
   /// change to empty, which clears it.
+  ///
+  /// The original's text is compared trimmed, as the form reads its own. The
+  /// server keeps a value as sent, so a row saved elsewhere can have spaces
+  /// around one; compared as stored, a field the form left alone would read
+  /// as changed and be sent.
   factory DataGatewayChanges.between(
     DataGateway original,
     DataGatewayInput input,
   ) {
-    final before = original.description ?? '';
+    final before = original.description?.trim() ?? '';
     final after = input.description ?? '';
     return DataGatewayChanges(
-      name: input.name == original.name ? null : input.name,
-      connectionUrl: input.connectionUrl == original.connectionUrl
+      name: input.name == original.name.trim() ? null : input.name,
+      connectionUrl: input.connectionUrl == original.connectionUrl.trim()
           ? null
           : input.connectionUrl,
       connectionPort: input.connectionPort == original.connectionPort

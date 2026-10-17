@@ -395,6 +395,8 @@ void main() {
           bloc.state,
           DataGatewayListReady(gateways: [bgg, steam], busy: const {'dg_2'}),
         );
+        // The server lists the connect's write once it has made it.
+        remote.listing([bgg, steam.copyWith(enabled: true)]);
         pending.complete(
           changed(
             steam.copyWith(enabled: true),
@@ -495,6 +497,57 @@ void main() {
             action: DataGatewayRowAction.disconnect,
             result: DataGatewayActionResult.done,
             name: 'BGG',
+          ),
+        ),
+      ),
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a connect that ends after a reload landed does not put back the row '
+      'it saved before: the list is read again',
+      // The server answers a connect with the row it saved before the
+      // attempt, and the attempt can outlast a reload that saw someone
+      // else's change to the same row.
+      setUp: () {
+        final renamed = steam.copyWith(enabled: true, name: 'Steam EU');
+        var reads = 0;
+        remote.onFetchPage = (_, _) async =>
+            pageOf(++reads == 1 ? [bgg, steam] : [bgg, renamed]);
+        pending = Completer<DataGatewayChangeResult>();
+        remote.onConnect = (_) => pending.future;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        bloc.add(
+          const DataGatewayListActionRequested(
+            DataGatewayRowAction.connect,
+            'dg_2',
+          ),
+        );
+        await pumpEventQueue();
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        pending.complete(
+          changed(
+            steam.copyWith(enabled: true),
+            attempted: DataGatewayConnectionAction.connect,
+          ),
+        );
+        await pumpEventQueue();
+      },
+      verify: (bloc) => expect(
+        bloc.state,
+        DataGatewayListReady(
+          gateways: [
+            bgg,
+            steam.copyWith(enabled: true, name: 'Steam EU'),
+          ],
+          outcome: const DataGatewayListOutcome(
+            action: DataGatewayRowAction.connect,
+            result: DataGatewayActionResult.done,
+            name: 'Steam',
           ),
         ),
       ),

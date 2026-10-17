@@ -39,7 +39,9 @@ class DataGatewayFormScreen extends StatelessWidget {
   /// Leaves the form after a save. Required: a save with nowhere to go
   /// strands the user on a spent form (#162, #271).
   ///
-  /// Not called for a save that lands once the user has gone back.
+  /// Called once the form's route is current: after the page covering the
+  /// form leaves, for a save that lands under it. Not called for a save that
+  /// lands once the user has gone back.
   final void Function(BuildContext context) onDone;
 
   @override
@@ -99,14 +101,10 @@ class _DataGatewayFormView extends StatelessWidget {
       listener: (context, state) {
         if (state is! DataGatewayFormSaved) return;
         // Shown before leaving, while this route's context is still mounted;
-        // the messenger outlives the route.
+        // the messenger outlives the route. Shown however the save finds the
+        // form, because the save happened either way.
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(_savedMessage(l10n, state))));
-        // A save can land after the user went back, while this route is still
-        // on its way out. The save still happened, so it is still confirmed,
-        // but the user has already left: leaving again would close the
-        // screen beneath.
-        if (ModalRoute.of(context)?.isCurrent ?? true) onDone(context);
       },
       builder: (context, state) => switch (state) {
         DataGatewayFormLoading() => BgePage(
@@ -183,13 +181,50 @@ class _DataGatewayFormView extends StatelessWidget {
               ),
             ),
           ),
-        // The listener above leaves the route. Until it is gone, keep the
-        // form's shape rather than flashing an empty page.
+        // Until the route is gone, keep the form's shape rather than flashing
+        // an empty page.
         DataGatewayFormSaved() => BgePage(
           title: title,
-          child: const SizedBox.shrink(),
+          child: _LeaveWhenCurrent(onDone: onDone),
         ),
       },
     );
   }
+}
+
+/// Calls [onDone] once the form's route is the current one.
+///
+/// That is at once for a save that lands in view. A save can also land while
+/// a page covers the form, and then the form leaves when the user comes back
+/// to it; leaving at once would close the page on top. And a save can land
+/// after the user went back, while the form is still on its way out. Its
+/// route is never current again, so it never leaves: the user already has,
+/// and leaving again would close the screen beneath.
+class _LeaveWhenCurrent extends StatefulWidget {
+  const _LeaveWhenCurrent({required this.onDone});
+
+  final void Function(BuildContext context) onDone;
+
+  @override
+  State<_LeaveWhenCurrent> createState() => _LeaveWhenCurrentState();
+}
+
+class _LeaveWhenCurrentState extends State<_LeaveWhenCurrent> {
+  bool _left = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Depends on whether the route is current, so this runs again when it
+    // becomes so.
+    if (_left || !(ModalRoute.isCurrentOf(context) ?? true)) return;
+    _left = true;
+    // Leaving is a navigation, which may not start while widgets build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onDone(context);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
