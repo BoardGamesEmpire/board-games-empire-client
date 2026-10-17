@@ -1779,8 +1779,10 @@ T? _serverService<T extends Object>(ActiveServer active) =>
 /// activation failed, whatever order the database runs statements in.
 ///
 /// Failures are logged with the server and never the user id, the rule the
-/// auth scope's channel has always kept, and never thrown. Web registers no
-/// repository (#144, #447), so there all of this is a no-op.
+/// auth scope's channel has always kept, and never thrown. A failed write
+/// logs its error by type alone, since the error's own text can carry the
+/// id the write bound. Web registers no repository (#144, #447), so there
+/// all of this is a no-op.
 class _UnsentChanges {
   static final BgeLogger _log = BgeLogger('bge.shell.unsent_changes');
 
@@ -1858,11 +1860,15 @@ class _UnsentChanges {
       try {
         await write(notice);
       } on Object catch (error, stackTrace) {
+        // The type only: a database error's text lists the statement's bound
+        // values, and both writes bind the user id.
         _log.error(
           failure,
-          error: error,
           stackTrace: stackTrace,
-          context: {'serverId': active.serverId},
+          context: {
+            'serverId': active.serverId,
+            'cause': error.runtimeType.toString(),
+          },
         );
       }
     });

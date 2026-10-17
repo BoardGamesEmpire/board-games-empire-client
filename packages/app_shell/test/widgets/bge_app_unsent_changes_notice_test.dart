@@ -7,6 +7,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:logging/logging.dart';
+import 'package:observability/observability.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
@@ -33,21 +35,41 @@ class _FakeUnsentChangesNotice implements UnsentChangesNoticeRepository {
   /// A count that never comes back.
   bool countHangs = false;
 
+  /// When set, record calls fail the way SQLite does: the error's text
+  /// lists the statement's bound values, the user id among them.
+  bool writesFail = false;
+
   @override
   Future<void> recordSessionStarted(String userId) async {
     await holdWrites?.future;
+    if (writesFail) throw _BoundValuesError(userId);
     recorded = userId;
   }
 
   @override
   Future<void> recordSignedOut(String userId) async {
     await holdWrites?.future;
+    if (writesFail) throw _BoundValuesError(userId);
     if (recorded == userId) recorded = null;
   }
 
   @override
   Future<int> unsentChangesCount() async =>
       countHangs ? Completer<int>().future : unsent[recorded] ?? 0;
+}
+
+/// Rendered like `SqliteException`, which drift's background isolate passes
+/// through as its own text.
+class _BoundValuesError implements Exception {
+  _BoundValuesError(this.userId);
+
+  final String userId;
+
+  @override
+  String toString() =>
+      'SqliteException(5): while executing, database is locked\n'
+      '  Causing statement: INSERT INTO "unsent_changes_users" '
+      '("user_id", "recorded_order") VALUES (?, ?), parameters: $userId, 1';
 }
 
 /// Activation always fails, so the shell signs out to recover.
@@ -278,5 +300,36 @@ void main() {
 
     expect(find.byType(SplashScreen), findsNothing);
     expect(find.byKey(AuthScreen.unsentChangesNoticeKey), findsNothing);
+  });
+
+  testWidgets("a record write that fails is logged without the user id the "
+      "database's error carries", (tester) async {
+    final records = <LogRecord>[];
+    final previousLevel = Logger.root.level;
+    Logger.root.level = Level.ALL;
+    final subscription = Logger.root.onRecord.listen(records.add);
+    addTearDown(() async {
+      await subscription.cancel();
+      Logger.root.level = previousLevel;
+    });
+    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final notice = _FakeUnsentChangesNotice(unsent: {'u1': 2})
+      ..writesFail = true;
+    final cubit = buildCubit(repo, notice);
+    addTearDown(cubit.close);
+    await startApp(tester, cubit);
+    await signOutFromDrawer(tester);
+
+    // As the console and the log file write them.
+    final failures = [
+      for (final record in records)
+        if (record.loggerName == 'bge.shell.unsent_changes')
+          const LogRecordFormatter().formatLine(record),
+    ];
+    expect(failures, hasLength(2), reason: 'the start and the retire');
+    for (final line in failures) {
+      expect(line, isNot(contains('u1')));
+      expect(line, contains('_BoundValuesError'), reason: 'the cause, by type');
+    }
   });
 }
