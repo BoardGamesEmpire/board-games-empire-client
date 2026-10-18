@@ -155,12 +155,17 @@ Asking the server *again* is deliberately three answers, not one:
 
 - #41 DataGateway admin UI (admin-gated): list / add / edit / delete / connect /
   disconnect. Its review UI moved to #457, which waits on backend #715.
-- #42 Game browse + search UI (in-system + external gateway results)
+- #42 ~~Game browse + search UI (in-system + external gateway results)~~, with
+  #472's Markdown descriptions. Split out: streamed search over the WebSocket
+  (#473) and a platform-type filter on screen (#474).
 - #43 Game import flow + completion handling (REST) — **depends on backend #115**
 
 Backend: `data-gateways` CRUD + connect/disconnect (renamed from
 `game-gateways` by backend #710), `GET /games/search`
 (local+external unified), `GET /games`, `POST /games/import` (async) all exist.
+Two gaps #42 found: `GET /games/:id` sends no platform games, so a game already
+on the server cannot be added to a collection (backend #791, which blocks #45),
+and search cannot be paged (backend #792), so the client reads one page.
 
 ### P6 — Collection feature (#29) — critical-path long pole
 
