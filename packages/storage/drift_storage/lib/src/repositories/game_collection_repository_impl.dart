@@ -208,19 +208,21 @@ class GameCollectionRepositoryImpl
   /// server-supplied and are not produced here.
   final ClockService _clock;
 
-  /// Removals [reconcileFromServer] and [confirmRemoved] have confirmed
-  /// through this instance: what [removalMark] reads.
-  int _removals = 0;
+  /// What [removalMark] reads. It moves on each removal
+  /// [reconcileFromServer] and [confirmRemoved] confirm through this
+  /// instance, and on each discard that leaves a row to rebuild (#190).
+  int _mark = 0;
 
-  /// Where [_removals] stood after each triplet's latest confirmed removal,
+  /// Where [_mark] stood after each triplet's latest confirmed removal,
   /// keyed by `(platformGameId, wire medium)`.
   final Map<(String, String), int> _removedAt = {};
 
   /// Entries a discard left holding values no queued op set, while another
-  /// op keeps them dirty: the next [mergeFromServer] rebuilds each from the
-  /// server's copy (#190). In memory, so a restart before that merge leaves
-  /// the values until the other ops settle.
-  final Set<String> _rebuildFromServer = {};
+  /// op keeps them dirty, each with where [_mark] stood after the discard:
+  /// the first [mergeFromServer] of a read made since rebuilds the entry
+  /// from the server's copy (#190). In memory, so a restart before that
+  /// merge leaves the values until the other ops settle.
+  final Map<String, int> _rebuildFromServer = {};
 
   @override
   String get disposedRepositoryName => 'GameCollectionRepository';
@@ -788,7 +790,7 @@ class GameCollectionRepositoryImpl
                 : const Value.absent(),
           ),
         );
-        if (!settled && !row.isLocalOnly) _rebuildFromServer.add(row.id);
+        if (!settled && !row.isLocalOnly) _rebuildFromServer[row.id] = ++_mark;
         return true;
       }
 
@@ -836,7 +838,7 @@ class GameCollectionRepositoryImpl
           updatedAt: Value(settled ? _olderThanAnyServerCopy : now),
         ),
       );
-      if (!settled && !unseen) _rebuildFromServer.add(row.id);
+      if (!settled && !unseen) _rebuildFromServer[row.id] = ++_mark;
       return true;
     });
   }
@@ -976,7 +978,7 @@ class GameCollectionRepositoryImpl
   @override
   Future<int> removalMark() async {
     checkNotDisposed();
-    return _removals;
+    return _mark;
   }
 
   /// Merges server entries no local mutation asked for (#259).
@@ -998,9 +1000,14 @@ class GameCollectionRepositoryImpl
 
     return _db.transaction(() async {
       for (final serverEntry in serverEntries) {
-        if (_rebuildFromServer.remove(serverEntry.id) &&
-            await _rebuild(serverEntry, removalsSince: removalsSince)) {
-          continue;
+        // A read made before the discard can predate an acknowledgement
+        // that came before it, so it leaves the rebuild to a later read.
+        final discardedAt = _rebuildFromServer[serverEntry.id];
+        if (discardedAt != null && removalsSince >= discardedAt) {
+          _rebuildFromServer.remove(serverEntry.id);
+          if (await _rebuild(serverEntry, removalsSince: removalsSince)) {
+            continue;
+          }
         }
         if (await _localRowWins(serverEntry)) continue;
         if (_removedSince(serverEntry, removalsSince)) continue;
@@ -1010,14 +1017,16 @@ class GameCollectionRepositoryImpl
   }
 
   /// Writes [serverEntry] over the dirty row a discard left under its id,
-  /// then replays every op still queued for it, in queue order (#190).
-  /// Returns false, writing nothing, when anything else would keep the row:
-  /// a server tombstone, a removal confirmed since the read, the row being
+  /// then replays the ops still queued for it (#190). Returns false,
+  /// writing nothing, when anything else would keep the row: a server
+  /// tombstone, a removal confirmed since the read, the row being
   /// local-only, or another row for the triplet that is dirty or local-only.
   ///
-  /// With no acknowledgement to place them against, the stuck ops are
-  /// replayed too. So an older stuck edit shows again over a newer one the
-  /// server has, as it did before that one was acknowledged.
+  /// The ops are placed against the one delivered last, as its
+  /// acknowledgement placed them, so a stuck op queued before it stays out
+  /// of the row. Once the queue has purged that op, every op still queued
+  /// is replayed, and an older stuck edit shows again over a newer one the
+  /// server has.
   Future<bool> _rebuild(
     GameCollection serverEntry, {
     required int removalsSince,
@@ -1042,7 +1051,11 @@ class GameCollectionRepositoryImpl
       return false;
     }
     await _writeServerEntry(serverEntry);
-    await _replayOutstanding(serverEntry, acknowledgedSyncQueueId: null);
+    final lastDelivered = await _syncQueue.lastDeliveredOpFor(serverEntry.id);
+    await _replayOutstanding(
+      serverEntry,
+      acknowledgedSyncQueueId: lastDelivered?.id,
+    );
     return true;
   }
 
@@ -1056,7 +1069,7 @@ class GameCollectionRepositoryImpl
     required String platformGameId,
     required String wireMedium,
   }) {
-    _removedAt[(platformGameId, wireMedium)] = ++_removals;
+    _removedAt[(platformGameId, wireMedium)] = ++_mark;
   }
 
   /// Whether [serverEntry] is a live copy of a triplet this instance

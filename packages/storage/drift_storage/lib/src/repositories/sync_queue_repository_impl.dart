@@ -355,25 +355,51 @@ class SyncQueueRepositoryImpl
               ..orderBy(_queueOrder))
             .get();
 
-    final outstanding = <SyncQueueEntry>[];
+    return [
+      for (final row in rows)
+        if (_targets(row.payload, collectionId)) _mapRow(row),
+    ];
+  }
+
+  @override
+  Future<SyncQueueEntry?> lastDeliveredOpFor(String collectionId) async {
+    checkNotDisposed();
+    // Newest delivery first, then the target matched in Dart, as the lookup
+    // above matches it. Completed entries stay only until the next purge.
+    final rows =
+        await (_db.select(_db.syncQueueTable)
+              ..where(
+                (t) => t.userId.equals(_userId) & t.status.equals('completed'),
+              )
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.lastAttemptAt.julianday),
+                (t) => OrderingTerm.desc(t.createdAt.julianday),
+                (t) => OrderingTerm.desc(t.rowId),
+              ]))
+            .get();
     for (final row in rows) {
-      final SyncOperation op;
-      try {
-        op = SyncOperation.deserialize(row.payload);
-      } catch (_) {
-        // Skip un-parseable rows; the worker will surface the failure on
-        // its next pickup attempt.
-        continue;
-      }
-      final target = switch (op) {
-        AddToCollectionOperation() => op.localId,
-        UpdateCollectionOperation() => op.collectionId,
-        RemoveFromCollectionOperation() => op.collectionId,
-        CreateHouseholdOperation() => null,
-      };
-      if (target == collectionId) outstanding.add(_mapRow(row));
+      if (_targets(row.payload, collectionId)) return _mapRow(row);
     }
-    return outstanding;
+    return null;
+  }
+
+  /// Whether [payload] is an op that targets the collection entry
+  /// [collectionId]. False for one that won't decode: the worker surfaces
+  /// that failure on its next pickup attempt.
+  static bool _targets(String payload, String collectionId) {
+    final SyncOperation op;
+    try {
+      op = SyncOperation.deserialize(payload);
+    } catch (_) {
+      return false;
+    }
+    final target = switch (op) {
+      AddToCollectionOperation() => op.localId,
+      UpdateCollectionOperation() => op.collectionId,
+      RemoveFromCollectionOperation() => op.collectionId,
+      CreateHouseholdOperation() => null,
+    };
+    return target == collectionId;
   }
 
   @override
@@ -476,8 +502,8 @@ class SyncQueueRepositoryImpl
   ///
   /// The caller passes only ops [getOutstandingOpsFor] matched, so which
   /// ops target the entry is decided there, once. No wildcard: like the
-  /// lookup's switch, this one must name every op type, so a new one can't
-  /// be matched there and silently skipped here.
+  /// switch in [_targets], this one must name every op type, so a new one
+  /// can't be matched there and silently skipped here.
   SyncOperation? _remapOp(SyncOperation op, String newId) {
     return switch (op) {
       AddToCollectionOperation() => AddToCollectionOperation(

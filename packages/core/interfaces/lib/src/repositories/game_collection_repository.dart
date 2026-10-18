@@ -354,10 +354,10 @@ abstract class GameCollectionRepository {
   /// Until that hydrate runs, the row shows what the discarded op set.
   ///
   /// When an op is left queued for a row the server has, the row stays
-  /// dirty, and the next [mergeFromServer] rebuilds it rather than keeping
-  /// it: see that method. A row the server has yet to see keeps the
-  /// discarded op's values until the add that creates it is acknowledged,
-  /// which rebuilds it the same way.
+  /// dirty, and the next [mergeFromServer] of a read made after the discard
+  /// rebuilds it rather than keeping it: see that method. A row the server
+  /// has yet to see keeps the discarded op's values until the add that
+  /// creates it is acknowledged, which rebuilds it the same way.
   ///
   /// A completed or unknown entry changes nothing, and so does a payload
   /// that won't decode, beyond deleting the entry. Returns whether the entry
@@ -376,8 +376,9 @@ abstract class GameCollectionRepository {
   /// collection.
   Future<String?> titleOf(String collectionId);
 
-  /// How many removals this repository has confirmed, as a mark to pass to
-  /// [mergeFromServer] (#121).
+  /// A mark to pass to [mergeFromServer] (#121): it moves each time this
+  /// repository confirms a removal, and each time [discardQueuedOp] leaves
+  /// a row for a merge to rebuild (#190).
   ///
   /// A confirmation is the server's answer, to an op this device sent,
   /// that the entry is removed: [reconcileFromServer] with a tombstone,
@@ -387,11 +388,13 @@ abstract class GameCollectionRepository {
   /// Read it **before** requesting the entries a merge will write, and pass
   /// it with every [mergeFromServer] call they go into. A removal confirmed
   /// after this read may have been confirmed after the server answered, so
-  /// those entries can still show it live.
+  /// those entries can still show it live. A read made before a discard may
+  /// predate an acknowledgement that came before it, so it doesn't rebuild
+  /// the row.
   ///
-  /// The count lives in this instance, not the database, so a confirmation
+  /// The mark lives in this instance, not the database, so a confirmation
   /// made through another instance over the same database, such as another
-  /// browser tab's, is not counted.
+  /// browser tab's, doesn't move it.
   Future<int> removalMark();
 
   /// Merges server state that no local mutation asked for, such as a
@@ -447,13 +450,16 @@ abstract class GameCollectionRepository {
   /// ### A row a discard left is rebuilt
   ///
   /// A row [discardQueuedOp] left dirty, with another op still queued, holds
-  /// values no queued op set. The first live entry for it after the discard
-  /// is written as [reconcileFromServer] writes one, and every op still
-  /// queued for it is replayed over that, stuck ones included, in queue
-  /// order. It stays dirty while any remain. An acknowledgement for the
-  /// entry before then does that rebuild itself, from a newer copy, so the
-  /// merge then keeps the row as above. A restart before then forgets the
-  /// row, and its values stay until its ops settle.
+  /// values no queued op set. The first live entry for it from a read made
+  /// after the discard, by [removalsSince], is written as
+  /// [reconcileFromServer] writes one. The ops still queued for it are
+  /// replayed over that as the acknowledgement of the one delivered last
+  /// replayed them, so a stuck op queued before that one stays out. Once
+  /// the queue has purged the delivered op, every op still queued is
+  /// replayed, stuck ones included. The row stays dirty while any remain.
+  /// An acknowledgement for the entry before then does that rebuild itself,
+  /// from a newer copy, so the merge then keeps the row as above. A restart
+  /// before then forgets the row, and its values stay until its ops settle.
   ///
   /// The rules above still apply first: the merge rebuilds nothing over a
   /// server tombstone, a removal confirmed since [removalsSince], or a row

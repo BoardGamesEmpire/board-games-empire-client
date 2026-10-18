@@ -39,6 +39,10 @@ class CountingQueue implements SyncQueueRepository {
   );
 
   @override
+  Future<SyncQueueEntry?> lastDeliveredOpFor(String collectionId) =>
+      _read(() => _inner.lastDeliveredOpFor(collectionId));
+
+  @override
   Future<SyncQueueEntry> enqueue(SyncOperation operation) =>
       _inner.enqueue(operation);
 

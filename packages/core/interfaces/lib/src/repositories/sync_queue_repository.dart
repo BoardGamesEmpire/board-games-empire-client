@@ -210,6 +210,19 @@ abstract class SyncQueueRepository {
     String? including,
   });
 
+  /// Returns the completed entry targeting the collection entry
+  /// [collectionId] that was delivered last, or null when the queue holds
+  /// none (#190).
+  ///
+  /// A completed entry's last attempt is the claim that delivered it, so
+  /// the latest is the last delivery, with the later in queue order
+  /// winning a tie. [GameCollectionRepository.mergeFromServer] places the
+  /// ops it replays against it, as the acknowledgement of that delivery
+  /// placed them. [purgeCompleted] deletes completed entries, so one
+  /// delivered before the last purge isn't found. The target is matched as
+  /// [getOutstandingOpsFor] matches it.
+  Future<SyncQueueEntry?> lastDeliveredOpFor(String collectionId);
+
   /// Total count of outstanding sync work. Matches the same set
   /// [getPendingEntries] returns plus entries whose claim is live, i.e.
   /// entries under `SyncQueueEntry.maxRetries` in:

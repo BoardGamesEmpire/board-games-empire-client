@@ -427,6 +427,64 @@ void main() {
       expect(row.rating, 7);
       expect(row.favorite, isTrue);
     });
+
+    test('with another op still queued, waits for a hydrate that asked '
+        'after the discard', () async {
+      await seedConfirmed();
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 2);
+      final quantityOp = (await queue.getPendingEntries()).single;
+      // A hydrate asks for its page before that update is acknowledged.
+      final askedBefore = await repo.removalMark();
+      await repo.reconcileFromServer(
+        _server(quantity: 2),
+        completedSyncQueueId: quantityOp.id,
+      );
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, favorite: true);
+      final favoriteOp = await parkNewest();
+
+      await repo.discardQueuedOp(favoriteOp.id);
+      await repo.mergeFromServer([_server()], removalsSince: askedBefore);
+
+      var row = (await rows()).single;
+      expect(row.quantity, 2, reason: 'the acknowledged copy, not the page');
+      expect(row.rating, 7);
+
+      await hydrate(_server(quantity: 2));
+
+      row = (await rows()).single;
+      expect(row.quantity, 2);
+      expect(row.rating, 7, reason: 'the op still queued');
+      expect(row.favorite, isNull, reason: 'the discarded update is undone');
+      expect(row.isDirty, isTrue);
+    });
+
+    test('with another op still queued, leaves out a stuck edit that one '
+        'acknowledged since replaced', () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 9);
+      final stuckRating = await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final laterRating = (await queue.getPendingEntries()).single;
+      await repo.reconcileFromServer(
+        _server(rating: 7),
+        completedSyncQueueId: laterRating.id,
+      );
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 3);
+      final quantityOp = await parkNewest();
+
+      await repo.discardQueuedOp(quantityOp.id);
+      await hydrate(_server(rating: 7));
+
+      final row = (await rows()).single;
+      expect(row.rating, 7, reason: 'as the acknowledgement left it');
+      expect(row.quantity, 1, reason: "the server's");
+      expect(row.isDirty, isTrue);
+      expect((await queue.getOutstandingEntries()).map((e) => e.id), [
+        stuckRating.id,
+      ]);
+    });
   });
 
   group('a removal', () {

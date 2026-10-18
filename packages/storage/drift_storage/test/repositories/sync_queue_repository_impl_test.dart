@@ -1239,6 +1239,89 @@ void main() {
       });
     });
 
+    group('lastDeliveredOpFor() (#190)', () {
+      late FixedClockService clock;
+      late SyncQueueRepositoryImpl clockRepo;
+
+      setUp(() {
+        clock = FixedClockService(DateTime.utc(2026, 10, 18, 12));
+        clockRepo = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+      });
+
+      Future<SyncQueueEntry> deliverAt(
+        SyncQueueEntry entry,
+        DateTime at,
+      ) async {
+        clock.current = at;
+        expect(await clockRepo.claim(entry.id), isTrue);
+        await clockRepo.markCompleted(entry.id);
+        return entry;
+      }
+
+      test("returns the entry's op delivered last, ahead of one queued "
+          'after it but delivered first', () async {
+        final first = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        final second = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 7),
+        );
+        await deliverAt(second, DateTime.utc(2026, 10, 18, 13));
+        // Retried by hand, and delivered after it.
+        await deliverAt(first, DateTime.utc(2026, 10, 18, 14));
+
+        expect((await clockRepo.lastDeliveredOpFor('gc-1'))?.id, first.id);
+      });
+
+      test('breaks a tie by queue order', () async {
+        final first = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        final second = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 7),
+        );
+        final at = DateTime.utc(2026, 10, 18, 13);
+        await deliverAt(second, at);
+        await deliverAt(first, at);
+
+        expect((await clockRepo.lastDeliveredOpFor('gc-1'))?.id, second.id);
+      });
+
+      test("passes over ops still outstanding and other entries' ops, and is "
+          'null with none delivered', () async {
+        final delivered = await clockRepo.enqueue(
+          const RemoveFromCollectionOperation(collectionId: 'gc-1'),
+        );
+        await deliverAt(delivered, DateTime.utc(2026, 10, 18, 13));
+        final elsewhere = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-2', rating: 1),
+        );
+        await deliverAt(elsewhere, DateTime.utc(2026, 10, 18, 14));
+        await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 2),
+        );
+
+        expect((await clockRepo.lastDeliveredOpFor('gc-1'))?.id, delivered.id);
+        expect(await clockRepo.lastDeliveredOpFor('gc-3'), isNull);
+      });
+
+      test('is null once the delivered op is purged', () async {
+        final delivered = await clockRepo.enqueue(
+          const UpdateCollectionOperation(collectionId: 'gc-1', rating: 9),
+        );
+        await deliverAt(delivered, DateTime.utc(2026, 10, 18, 13));
+
+        await clockRepo.purgeCompleted();
+
+        expect(await clockRepo.lastDeliveredOpFor('gc-1'), isNull);
+      });
+    });
+
     group(
       'getPendingCount() / watchPendingCount() — _pendingPredicate symmetry',
       () {
