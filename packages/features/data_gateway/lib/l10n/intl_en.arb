@@ -1,0 +1,331 @@
+{
+  "@@locale": "en",
+  "dataGatewayListTitle": "Data gateways",
+  "@dataGatewayListTitle": {
+    "description": "Title of the admin screen listing the server's data gateways. A data gateway is the server's connection to an outside source of game data, such as BoardGameGeek."
+  },
+  "dataGatewayListLoading": "Loading data gateways…",
+  "@dataGatewayListLoading": {
+    "description": "Announced and shown while the list of data gateways is being read from the server."
+  },
+  "dataGatewayListEmptyTitle": "No data gateways yet",
+  "@dataGatewayListEmptyTitle": {
+    "description": "Heading of the empty state shown when the server has no data gateways."
+  },
+  "dataGatewayListEmptyBody": "A data gateway connects this server to a source of game data, such as BoardGameGeek.",
+  "@dataGatewayListEmptyBody": {
+    "description": "Body of the empty state shown when the server has no data gateways. Explains what one is."
+  },
+  "dataGatewayListErrorTitle": "We couldn't load the data gateways",
+  "@dataGatewayListErrorTitle": {
+    "description": "Heading shown when the list of data gateways could not be read, for a reason other than the user's role: the server was unreachable, or it answered with an error."
+  },
+  "dataGatewayListErrorBody": "Check your connection, then try again.",
+  "@dataGatewayListErrorBody": {
+    "description": "Body under the could-not-load heading, on the data gateway list and on the edit form when the data gateway to edit could not be read."
+  },
+  "dataGatewayRetry": "Try again",
+  "@dataGatewayRetry": {
+    "description": "Button that reads the data gateway list, or the data gateway being edited, from the server again."
+  },
+  "dataGatewayDeniedTitle": "You don't have access to data gateways",
+  "@dataGatewayDeniedTitle": {
+    "description": "Heading shown when the server refuses to show data gateways to the signed-in user, because of their role on the server."
+  },
+  "dataGatewayDeniedBody": "Ask an admin of this server if you need to manage them.",
+  "@dataGatewayDeniedBody": {
+    "description": "Body under the access-denied heading on the data gateway screens."
+  },
+  "dataGatewayEnabled": "Enabled",
+  "@dataGatewayEnabled": {
+    "description": "Status on a data gateway row: the server uses this data gateway. It does not say whether the server is connected to it right now; the server does not record that."
+  },
+  "dataGatewayDisabled": "Disabled",
+  "@dataGatewayDisabled": {
+    "description": "Status on a data gateway row: the server does not use this data gateway. An admin turned it off, or the server turned it off after repeated connection failures."
+  },
+  "dataGatewayAdd": "Add data gateway",
+  "@dataGatewayAdd": {
+    "description": "Button that opens the form to add a data gateway, and the title of that form."
+  },
+  "dataGatewayRowActions": "Actions for {name}",
+  "@dataGatewayRowActions": {
+    "description": "Accessible name and tooltip of the menu button on a data gateway row.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayEdit": "Edit",
+  "@dataGatewayEdit": {
+    "description": "Menu item on a data gateway row that opens its edit form."
+  },
+  "dataGatewayConnect": "Connect",
+  "@dataGatewayConnect": {
+    "description": "Menu item on a data gateway row: enable it and have the server connect to it. Offered on an enabled one too, to try connecting again."
+  },
+  "dataGatewayDisconnect": "Disconnect",
+  "@dataGatewayDisconnect": {
+    "description": "Menu item on an enabled data gateway row: disable it and have the server disconnect from it."
+  },
+  "dataGatewayDelete": "Delete",
+  "@dataGatewayDelete": {
+    "description": "Menu item on a data gateway row that asks to delete it, and the confirming button of that question."
+  },
+  "dataGatewayDeleteConfirmTitle": "Delete {name}?",
+  "@dataGatewayDeleteConfirmTitle": {
+    "description": "Title of the dialog confirming that a data gateway should be deleted.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDeleteConfirmBody": "The server stops using it right away. This can't be undone.",
+  "@dataGatewayDeleteConfirmBody": {
+    "description": "Body of the dialog confirming that a data gateway should be deleted."
+  },
+  "dataGatewayCancel": "Cancel",
+  "@dataGatewayCancel": {
+    "description": "Button that closes the delete confirmation without deleting."
+  },
+  "dataGatewayBusy": "Working on {name}…",
+  "@dataGatewayBusy": {
+    "description": "Accessible label of the progress indicator shown on a data gateway row while an action on it is in flight.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayConnected": "Connected to {name}.",
+  "@dataGatewayConnected": {
+    "description": "Banner after the server connected to a data gateway.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayConnectAttemptFailed": "{name} is enabled, but the server couldn't connect to it.",
+  "@dataGatewayConnectAttemptFailed": {
+    "description": "Banner after a connect the server could not complete. The data gateway stays enabled, and the server may turn it off by itself after repeated failures.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDisconnected": "Disconnected from {name}.",
+  "@dataGatewayDisconnected": {
+    "description": "Banner after the server disconnected from a data gateway.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDisconnectAttemptFailed": "{name} is disabled, but the server couldn't disconnect from it.",
+  "@dataGatewayDisconnectAttemptFailed": {
+    "description": "Banner after a disconnect the server could not complete. The data gateway is disabled all the same.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDeleted": "Deleted {name}.",
+  "@dataGatewayDeleted": {
+    "description": "Banner after a data gateway was deleted.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayGone": "{name} no longer exists.",
+  "@dataGatewayGone": {
+    "description": "Banner when an action found that the data gateway had already been deleted, by someone else. Its row is removed.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayConnectFailed": "We couldn't connect to {name}. Try again.",
+  "@dataGatewayConnectFailed": {
+    "description": "Banner when a connect request failed without an answer about the data gateway: the server was unreachable, or it answered with an error.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDisconnectFailed": "We couldn't disconnect from {name}. Try again.",
+  "@dataGatewayDisconnectFailed": {
+    "description": "Banner when a disconnect request failed without an answer about the data gateway.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDeleteFailed": "We couldn't delete {name}. Try again.",
+  "@dataGatewayDeleteFailed": {
+    "description": "Banner when a delete request failed without an answer about the data gateway.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayChangeRefused": "Your role can't change data gateways.",
+  "@dataGatewayChangeRefused": {
+    "description": "Shown when the server refused a change to a data gateway because of the user's role. The user can still see data gateways; the change actions are hidden afterwards."
+  },
+  "dataGatewayDismiss": "Dismiss",
+  "@dataGatewayDismiss": {
+    "description": "Button that closes the banner reporting the last action on the data gateway list."
+  },
+  "dataGatewayFormEditTitle": "Edit data gateway",
+  "@dataGatewayFormEditTitle": {
+    "description": "Title of the form that edits an existing data gateway."
+  },
+  "dataGatewayFormNameLabel": "Name",
+  "@dataGatewayFormNameLabel": {
+    "description": "Label of the data gateway's name field. Names are unique on the server."
+  },
+  "dataGatewayFormNameRequired": "Enter a name.",
+  "@dataGatewayFormNameRequired": {
+    "description": "Validation message when the name field is blank."
+  },
+  "dataGatewayFormAddressLabel": "Connection address",
+  "@dataGatewayFormAddressLabel": {
+    "description": "Label of the field holding the host the server connects to for this data gateway."
+  },
+  "dataGatewayFormAddressHelper": "The host the server connects to, such as bgg-gateway.internal.",
+  "@dataGatewayFormAddressHelper": {
+    "description": "Helper text under the connection address field. Keep the example host name as is."
+  },
+  "dataGatewayFormAddressRequired": "Enter a connection address.",
+  "@dataGatewayFormAddressRequired": {
+    "description": "Validation message when the connection address field is blank."
+  },
+  "dataGatewayFormPortLabel": "Port",
+  "@dataGatewayFormPortLabel": {
+    "description": "Label of the field holding the network port the server connects to for this data gateway."
+  },
+  "dataGatewayFormPortInvalid": "Enter a port from 1 to 65535.",
+  "@dataGatewayFormPortInvalid": {
+    "description": "Validation message when the port field is blank, not a whole number, or out of range."
+  },
+  "dataGatewayFormDescriptionLabel": "Description (optional)",
+  "@dataGatewayFormDescriptionLabel": {
+    "description": "Label of the optional free-text description field."
+  },
+  "dataGatewayFormNoCredentials": "The server connects without credentials. Other sign-in methods aren't supported yet.",
+  "@dataGatewayFormNoCredentials": {
+    "description": "Note on the add and edit forms explaining why there is no credentials field: only the no-authentication method works today."
+  },
+  "dataGatewayFormKeepsCredentials": "This data gateway uses a sign-in method this app can't change yet. Saving leaves it as it is.",
+  "@dataGatewayFormKeepsCredentials": {
+    "description": "Note on the edit form, in place of the no-credentials note, for a data gateway created elsewhere with a sign-in method other than none. An edit sends only the fields that changed, so its sign-in method and credentials stay as they are."
+  },
+  "dataGatewayFormSubmitAdd": "Add",
+  "@dataGatewayFormSubmitAdd": {
+    "description": "Submit button of the add form."
+  },
+  "dataGatewayFormSubmitEdit": "Save",
+  "@dataGatewayFormSubmitEdit": {
+    "description": "Submit button of the edit form."
+  },
+  "dataGatewayFormInProgress": "Saving…",
+  "@dataGatewayFormInProgress": {
+    "description": "Label the submit button shows, and announces, while the form is being saved."
+  },
+  "dataGatewayFormNothingChanged": "Nothing has changed yet.",
+  "@dataGatewayFormNothingChanged": {
+    "description": "Shown when the edit form is submitted without any change. Nothing is sent to the server."
+  },
+  "dataGatewayFormNameInUse": "Another data gateway already uses this name.",
+  "@dataGatewayFormNameInUse": {
+    "description": "Shown when the server refused the save because another data gateway has the same name."
+  },
+  "dataGatewayFormGone": "This data gateway was deleted while you were editing it.",
+  "@dataGatewayFormGone": {
+    "description": "Shown when the edit could not be saved because the data gateway no longer exists."
+  },
+  "dataGatewayFormFailed": "We couldn't save this data gateway. Try again.",
+  "@dataGatewayFormFailed": {
+    "description": "Shown when a save failed for any other reason: the server was unreachable, refused the values, or answered with an error. Deliberately names no cause."
+  },
+  "dataGatewayFormLoading": "Loading this data gateway…",
+  "@dataGatewayFormLoading": {
+    "description": "Announced and shown while the data gateway to edit is being read."
+  },
+  "dataGatewayFormMissingTitle": "This data gateway doesn't exist",
+  "@dataGatewayFormMissingTitle": {
+    "description": "Heading shown when the data gateway to edit could not be found."
+  },
+  "dataGatewayFormMissingBody": "It may have been deleted.",
+  "@dataGatewayFormMissingBody": {
+    "description": "Body under the not-found heading on the edit form."
+  },
+  "dataGatewayFormLoadFailedTitle": "We couldn't load this data gateway",
+  "@dataGatewayFormLoadFailedTitle": {
+    "description": "Heading shown when the data gateway to edit could not be read, for a reason other than access or it being missing."
+  },
+  "dataGatewayAddedConnected": "Added {name} and connected to it.",
+  "@dataGatewayAddedConnected": {
+    "description": "Message after a data gateway was added and the server connected to it.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayAddedNotConnected": "Added {name}, but the server couldn't connect to it.",
+  "@dataGatewayAddedNotConnected": {
+    "description": "Message after a data gateway was added but the server's first connect failed. It stays enabled.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayAdded": "Added {name}.",
+  "@dataGatewayAdded": {
+    "description": "Message after a data gateway was added and the server did not try to connect to it.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewaySaved": "Saved {name}.",
+  "@dataGatewaySaved": {
+    "description": "Message after an edit to a data gateway was saved. The server reconnects with the new settings on its own.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "BoardGameGeek"
+      }
+    }
+  }
+}

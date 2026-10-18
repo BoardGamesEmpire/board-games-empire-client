@@ -1,0 +1,52 @@
+name: data_gateway
+description: "DataGateway admin feature: list, add, edit, delete, connect and disconnect the server's DataGateways"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+
+  flutter_bloc: ^9.1.1
+  equatable: ^2.1.0
+  reactive_forms: ^18.1.1
+  intl: ^0.20.2
+  # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
+  # scale — both declared directly because this package imports from both.
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  bloc_test: ^10.0.0
+  # A real container for the access installer's tests. Dev-only: nothing
+  # under `lib/` names `di`; the installer takes the `DependencyContainer`
+  # abstraction from `interfaces`, as household's does.
+  di:
+    path: ../../core/di
+  very_good_analysis: ^10.2.0
+  flutter_lints: ^6.0.0
+  l10n_test_support:
+    path: ../../testing/l10n
+
+flutter:
+  generate: true
+  uses-material-design: true

@@ -47,6 +47,8 @@ dependencies:
   # the symbol.
   household:
     path: ../../features/household
+  data_gateway:
+    path: ../../features/data_gateway
 
   # The collection feature, for the shared `GameCollectionHydrateInstaller`
   # (#259), on the same rule as `household` above.
