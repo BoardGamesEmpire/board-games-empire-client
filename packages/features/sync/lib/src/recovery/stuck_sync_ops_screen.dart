@@ -136,8 +136,14 @@ class _StuckSyncOpsView extends StatelessWidget {
                 when ops.isNotEmpty)
               SliverList.list(
                 children: [
+                  // Keyed here, on the list's own child, so a row keeps its
+                  // controls and their focus when a row above it leaves.
                   for (final op in ops)
-                    _StuckRow(op: op, busy: busy.contains(op.entryId)),
+                    _StuckRow(
+                      key: StuckSyncOpsScreen.rowKey(op.entryId),
+                      op: op,
+                      busy: busy.contains(op.entryId),
+                    ),
                 ],
               ),
           ],
@@ -148,7 +154,7 @@ class _StuckSyncOpsView extends StatelessWidget {
 }
 
 class _StuckRow extends StatelessWidget {
-  const _StuckRow({required this.op, required this.busy});
+  const _StuckRow({required this.op, required this.busy, super.key});
 
   final StuckSyncOp op;
   final bool busy;
@@ -160,7 +166,6 @@ class _StuckRow extends StatelessWidget {
     final bloc = context.read<StuckSyncOpsBloc>();
 
     return Padding(
-      key: StuckSyncOpsScreen.rowKey(op.entryId),
       padding: EdgeInsets.symmetric(vertical: tokens.spaceSm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

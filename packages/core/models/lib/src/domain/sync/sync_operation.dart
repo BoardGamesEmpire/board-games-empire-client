@@ -86,8 +86,10 @@ final class AddToCollectionOperation extends SyncOperation {
   ///
   /// A discard of a raise leaves the entry where it was; a discard of any
   /// other add takes the entry away again. Null on any other add, and on an
-  /// add queued before this was recorded, which a discard then treats as one
-  /// that created the entry. Client-internal, like [localId]: never sent.
+  /// add queued before this was recorded. A discard treats that one as a
+  /// raise when it follows a queued add that created the entry, and
+  /// otherwise as one that created it. Client-internal, like [localId]:
+  /// never sent.
   final bool? raised;
 
   @override

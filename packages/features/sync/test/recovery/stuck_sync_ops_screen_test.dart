@@ -140,6 +140,27 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('a row keeps its focus when a row above it leaves', (
+    tester,
+  ) async {
+    await show(tester, _ops.take(2).toList());
+    FocusNode focusOf(String entryId) => Focus.of(
+      tester.element(
+        find.descendant(
+          of: find.byKey(StuckSyncOpsScreen.retryKey(entryId)),
+          matching: find.byType(Text),
+        ),
+      ),
+    );
+    focusOf('q2').requestFocus();
+    await tester.pump();
+
+    stuck.add([_ops[1]]);
+    await tester.pumpAndSettle();
+
+    expect(focusOf('q2').hasPrimaryFocus, isTrue);
+  });
+
   testWidgets('an unreadable op offers only a discard', (tester) async {
     await show(tester, [_ops.last]);
 

@@ -216,6 +216,12 @@ class GameCollectionRepositoryImpl
   /// keyed by `(platformGameId, wire medium)`.
   final Map<(String, String), int> _removedAt = {};
 
+  /// Entries a discard left holding values no queued op set, while another
+  /// op keeps them dirty: the next [mergeFromServer] rebuilds each from the
+  /// server's copy (#190). In memory, so a restart before that merge leaves
+  /// the values until the other ops settle.
+  final Set<String> _rebuildFromServer = {};
+
   @override
   String get disposedRepositoryName => 'GameCollectionRepository';
 
@@ -629,6 +635,9 @@ class GameCollectionRepositoryImpl
     // misrouted server response.
     _checkServerEntryUser(serverEntry, caller: 'reconcileFromServer');
 
+    // The acknowledgement rebuilds the row itself, from a newer copy than a
+    // hydrate page read before it.
+    _rebuildFromServer.remove(serverEntry.id);
     return _db.transaction(() async {
       await _writeServerEntry(serverEntry);
 
@@ -676,6 +685,7 @@ class GameCollectionRepositoryImpl
     required String completedSyncQueueId,
   }) async {
     checkNotDisposed();
+    _rebuildFromServer.remove(collectionId);
     return _db.transaction(() async {
       final local =
           await (_db.select(_db.gameCollectionsTable)..where(
@@ -778,6 +788,7 @@ class GameCollectionRepositoryImpl
                 : const Value.absent(),
           ),
         );
+        if (!settled && !row.isLocalOnly) _rebuildFromServer.add(row.id);
         return true;
       }
 
@@ -799,6 +810,10 @@ class GameCollectionRepositoryImpl
         if (before is RemoveFromCollectionOperation) {
           // A re-add over a removal still queued: back to its tombstone.
           removed = true;
+        } else if (before != null && _createsEntry(before)) {
+          // Queued over an entry an earlier add still queued created, so it
+          // raised the quantity, though an add queued before raises were
+          // recorded doesn't say so. The entry stays that add's.
         } else if (row.isLocalOnly) {
           // It created the entry, or revived it once the server had
           // confirmed the removal. Nothing else on this device holds it.
@@ -821,6 +836,7 @@ class GameCollectionRepositoryImpl
           updatedAt: Value(settled ? _olderThanAnyServerCopy : now),
         ),
       );
+      if (!settled && !unseen) _rebuildFromServer.add(row.id);
       return true;
     });
   }
@@ -982,11 +998,52 @@ class GameCollectionRepositoryImpl
 
     return _db.transaction(() async {
       for (final serverEntry in serverEntries) {
+        if (_rebuildFromServer.remove(serverEntry.id) &&
+            await _rebuild(serverEntry, removalsSince: removalsSince)) {
+          continue;
+        }
         if (await _localRowWins(serverEntry)) continue;
         if (_removedSince(serverEntry, removalsSince)) continue;
         await _writeServerEntry(serverEntry);
       }
     });
+  }
+
+  /// Writes [serverEntry] over the dirty row a discard left under its id,
+  /// then replays every op still queued for it, in queue order (#190).
+  /// Returns false, writing nothing, when anything else would keep the row:
+  /// a server tombstone, a removal confirmed since the read, the row being
+  /// local-only, or another row for the triplet that is dirty or local-only.
+  ///
+  /// With no acknowledgement to place them against, the stuck ops are
+  /// replayed too. So an older stuck edit shows again over a newer one the
+  /// server has, as it did before that one was acknowledged.
+  Future<bool> _rebuild(
+    GameCollection serverEntry, {
+    required int removalsSince,
+  }) async {
+    if (serverEntry.deletedAt != null) return false;
+    if (_removedSince(serverEntry, removalsSince)) return false;
+    final rows =
+        await (_db.select(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  (t.id.equals(serverEntry.id) |
+                      (t.platformGameId.equals(serverEntry.platformGameId) &
+                          t.medium.equals(serverEntry.medium.toWire()))),
+            ))
+            .get();
+    final ownsIt = rows.every(
+      (row) => row.id == serverEntry.id
+          ? !row.isLocalOnly
+          : !row.isDirty && !row.isLocalOnly,
+    );
+    if (!ownsIt || rows.every((row) => row.id != serverEntry.id)) {
+      return false;
+    }
+    await _writeServerEntry(serverEntry);
+    await _replayOutstanding(serverEntry, acknowledgedSyncQueueId: null);
+    return true;
   }
 
   /// Counts a confirmed removal of the triplet, for [mergeFromServer]'s

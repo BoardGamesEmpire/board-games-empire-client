@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
@@ -240,6 +243,29 @@ void main() {
       expect(await queue.getOutstandingEntries(), isEmpty);
     });
 
+    test('of a raise queued before raises were recorded, keeps the entry the '
+        'add before it created', () async {
+      await add();
+      final [addOp] = await queue.getOutstandingEntries();
+      await add();
+      final raiseOp = (await queue.getOutstandingEntries()).last;
+      // As an older version queued it: nothing says it raised the quantity.
+      final payload = jsonDecode(raiseOp.payload) as Map<String, Object?>;
+      expect(payload.remove('raised'), isTrue);
+      await (db.update(db.syncQueueTable)
+            ..where((t) => t.id.equals(raiseOp.id)))
+          .write(SyncQueueTableCompanion(payload: Value(jsonEncode(payload))));
+      await queue.park(raiseOp.id, error: 'rejected: 400');
+
+      expect(await repo.discardQueuedOp(raiseOp.id), isTrue);
+
+      final row = (await rows()).single;
+      expect(row.deletedAt, isNull);
+      expect(row.isLocalOnly, isTrue, reason: 'the first add is still queued');
+      expect(row.isDirty, isTrue);
+      expect((await queue.getAllEntries()).map((e) => e.id), [addOp.id]);
+    });
+
     test('refuses while a later add for the entry is being sent, changing '
         'nothing', () async {
       await add();
@@ -361,6 +387,46 @@ void main() {
         3,
       );
     });
+
+    test('with another op still queued, has the next hydrate put back the '
+        "server's values, with that op's over them", () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final ratingOp = await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 3);
+      final quantityOp = await parkNewest();
+
+      await repo.discardQueuedOp(quantityOp.id);
+      await hydrate(_server(rating: 5));
+
+      final row = (await rows()).single;
+      expect(row.quantity, 1, reason: "the server's, as before the discard");
+      expect(row.rating, 7, reason: 'the op still queued');
+      expect(row.isDirty, isTrue);
+      expect((await queue.getAllEntries()).map((e) => e.id), [ratingOp.id]);
+    });
+
+    test('with another op still queued, leaves the row alone once that op '
+        'is acknowledged before the hydrate', () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final ratingOp = await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 3);
+      final quantityOp = await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, favorite: true);
+
+      await repo.discardQueuedOp(quantityOp.id);
+      await repo.reconcileFromServer(
+        _server(rating: 7),
+        completedSyncQueueId: ratingOp.id,
+      );
+      // Read before that acknowledgement.
+      await hydrate(_server(rating: 5));
+
+      final row = (await rows()).single;
+      expect(row.rating, 7);
+      expect(row.favorite, isTrue);
+    });
   });
 
   group('a removal', () {
@@ -419,6 +485,26 @@ void main() {
       expect(row.deletedAt, isNull);
       expect(row.isDirty, isFalse);
       expect(await queue.getAllEntries(), isEmpty);
+    });
+
+    test('after an update still queued, has the next hydrate put back the '
+        "server's values under that update's", () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final ratingOp = await parkNewest();
+      await repo.removeFromCollection(_kServerId);
+      final removeOp = await parkNewest();
+      await add(quantity: 3);
+
+      await repo.discardQueuedOp(removeOp.id);
+      await hydrate(_server(rating: 5));
+
+      final row = (await rows()).single;
+      expect(row.deletedAt, isNull);
+      expect(row.quantity, 1, reason: 'the re-add went with the removal');
+      expect(row.rating, 7);
+      expect(row.isDirty, isTrue);
+      expect((await queue.getAllEntries()).map((e) => e.id), [ratingOp.id]);
     });
 
     test('refuses while a later op for the entry is being sent, changing '

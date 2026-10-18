@@ -334,7 +334,10 @@ abstract class GameCollectionRepository {
   /// which this device doesn't record:
   ///
   /// - **A removal**: the entry comes back.
-  /// - **An add that raised the quantity**: the entry stays.
+  /// - **An add that raised the quantity**: the entry stays. So does any add
+  ///   queued after an add still queued that created the entry, since the
+  ///   entry was there for it; an add from before raises were recorded
+  ///   doesn't say which it was.
   /// - **An add that created the entry, or revived it from a removal the
   ///   server has confirmed**: the row is deleted. If an add after it has
   ///   reached the server meanwhile (the row isn't
@@ -349,6 +352,12 @@ abstract class GameCollectionRepository {
   /// than any copy the server holds. Its values are still the discarded
   /// op's, so the next [mergeFromServer] writes over them with the server's.
   /// Until that hydrate runs, the row shows what the discarded op set.
+  ///
+  /// When an op is left queued for a row the server has, the row stays
+  /// dirty, and the next [mergeFromServer] rebuilds it rather than keeping
+  /// it: see that method. A row the server has yet to see keeps the
+  /// discarded op's values until the add that creates it is acknowledged,
+  /// which rebuilds it the same way.
   ///
   /// A completed or unknown entry changes nothing, and so does a payload
   /// that won't decode, beyond deleting the entry. Returns whether the entry
@@ -434,6 +443,21 @@ abstract class GameCollectionRepository {
   /// then. A server tombstone is applied as usual.
   ///
   /// The mark is required because any read can race a confirmation.
+  ///
+  /// ### A row a discard left is rebuilt
+  ///
+  /// A row [discardQueuedOp] left dirty, with another op still queued, holds
+  /// values no queued op set. The first live entry for it after the discard
+  /// is written as [reconcileFromServer] writes one, and every op still
+  /// queued for it is replayed over that, stuck ones included, in queue
+  /// order. It stays dirty while any remain. An acknowledgement for the
+  /// entry before then does that rebuild itself, from a newer copy, so the
+  /// merge then keeps the row as above. A restart before then forgets the
+  /// row, and its values stay until its ops settle.
+  ///
+  /// The rules above still apply first: the merge rebuilds nothing over a
+  /// server tombstone, a removal confirmed since [removalsSince], or a row
+  /// for the triplet that is local-only or, under another id, dirty.
   ///
   /// ### Otherwise it is the reconcile without the queue step
   ///
