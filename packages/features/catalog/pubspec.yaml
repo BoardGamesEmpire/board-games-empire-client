@@ -1,0 +1,40 @@
+name: game_catalog
+# Not `catalog`, to sit beside `game_collection`, which could not be
+# `collection`. The directory keeps the feature's name, as `collection` does.
+description: "Game catalog feature: browse, search and game detail (#42)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+
+  flutter_bloc: ^9.1.1
+  # `restartable()` for the search's query events (#42). Already in the
+  # workspace through `auth`.
+  bloc_concurrency: ^0.3.0
+  equatable: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  bloc_test: ^10.0.0
+  # The real games cache over an in-memory database, for the blocs' offline
+  # paths. Dev-only: nothing under `lib/` names it, as in `game_collection`.
+  drift_storage:
+    path: ../../storage/drift_storage
+  very_good_analysis: ^10.2.0
+  flutter_lints: ^6.0.0

@@ -1,0 +1,229 @@
+import 'package:bloc_concurrency/bloc_concurrency.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
+
+import 'game_browse_event.dart';
+import 'game_browse_state.dart';
+
+/// Drives the browse screen (#42): the server's catalog, a page at a time.
+///
+/// ## Online, every page is cached
+///
+/// Each page `GET /games` returns is written to the games cache
+/// ([GameRepository.cacheGames]) before it is shown, so the catalog the
+/// user has paged through is there offline. A failed write is logged and
+/// otherwise ignored: the page is still the server's answer.
+///
+/// A page that repeats a game already shown is not shown twice. The catalog
+/// is a live list ordered by title, so a game added mid-browse pushes every
+/// row after it back one.
+///
+/// ## The deepest page
+///
+/// The server refuses a page that starts past
+/// [GamesRemoteDataSource.maxDepth] rows, so the list ends there, whatever
+/// `hasMore` says. Search reaches the rest.
+///
+/// ## When the server refuses
+///
+/// A 403 says this user may not read the server's games at all: the route
+/// checks that before it reads a row. So the screen says so,
+/// [GameBrowseDenied], rather than showing the cache: the server's answer
+/// wins over an old copy, as it does on the detail.
+///
+/// ## When the server fails, the cache in the catalog's order
+///
+/// When the first page cannot be fetched, for any other reason, the screen
+/// shows the games cached on this device instead, read a page at a time in
+/// the catalog's own order ([GameRepository.getGamesPage]), as
+/// [GameBrowseReady.fromCache]. "More" then reads the cache's next page.
+///
+/// A retry asks the server for its first page again, and keeps the rows
+/// already shown up while it asks ([GameBrowseReady.retrying]). One that
+/// fails leaves them as they were, every page of them, rather than reading
+/// the cache again from the top.
+///
+/// It never falls back on a page the server did answer: an empty catalog is
+/// an empty catalog, whatever the cache holds.
+///
+/// ## One thing at a time
+///
+/// Every event is dropped while another is running (`droppable()`), so a
+/// scroll that asks for more twice reads one page, not two.
+class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
+  GameBrowseBloc({
+    required this._remote,
+    this._cache,
+    this.pageSize = defaultPageSize,
+    BgeLogger? logger,
+  }) : _logger = logger ?? BgeLogger('bge.catalog.browse'),
+       super(const GameBrowseLoading()) {
+    on<GameBrowseEvent>(
+      (event, emit) => switch (event) {
+        GameBrowseLoadRequested() => _load(emit),
+        GameBrowseMoreRequested() => _loadMore(emit),
+      },
+      transformer: droppable(),
+    );
+  }
+
+  /// Games a page, online and offline alike.
+  static const int defaultPageSize = 50;
+
+  final int pageSize;
+  final GamesRemoteDataSource _remote;
+  final GameRepository? _cache;
+  final BgeLogger _logger;
+
+  List<Game> _games = const [];
+  bool _hasMore = false;
+  bool _fromCache = false;
+
+  /// The server's next page, while online.
+  int _nextPage = 1;
+
+  Future<void> _load(Emitter<GameBrowseState> emit) async {
+    final retrying = state is GameBrowseReady;
+    if (retrying) {
+      _emitReady(emit, retrying: true);
+    } else {
+      emit(const GameBrowseLoading());
+    }
+
+    final PaginatedResult<Game> page;
+    try {
+      page = await _remote.fetchPage(limit: pageSize);
+    } on GamesForbiddenException {
+      _games = const [];
+      return emit(const GameBrowseDenied());
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Game catalog read failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      // A failed retry leaves the rows shown as they were.
+      if (retrying) return _emitReady(emit);
+      return _loadFromCache(emit);
+    }
+
+    await _write(page.items);
+    _games = [];
+    _append(page.items);
+    _fromCache = false;
+    _nextPage = 2;
+    _hasMore = page.meta.hasMore && _served(_nextPage);
+    _emitReady(emit);
+  }
+
+  Future<void> _loadFromCache(Emitter<GameBrowseState> emit) async {
+    final rows = await _readCache(offset: 0);
+    if (rows == null || rows.isEmpty) {
+      _games = const [];
+      return emit(const GameBrowseFailed());
+    }
+    _games = [];
+    _appendCached(rows);
+    _fromCache = true;
+    _emitReady(emit);
+  }
+
+  Future<void> _loadMore(Emitter<GameBrowseState> emit) async {
+    if (state is! GameBrowseReady || !_hasMore) return;
+    _emitReady(emit, loadingMore: true);
+
+    if (_fromCache) {
+      final rows = await _readCache(offset: _games.length);
+      if (rows == null) return _emitReady(emit, loadMoreFailed: true);
+      _appendCached(rows);
+      return _emitReady(emit);
+    }
+
+    final PaginatedResult<Game> page;
+    try {
+      page = await _remote.fetchPage(page: _nextPage, limit: pageSize);
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Game catalog page $_nextPage failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return _emitReady(emit, loadMoreFailed: true);
+    }
+
+    await _write(page.items);
+    _append(page.items);
+    _nextPage++;
+    _hasMore = page.meta.hasMore && _served(_nextPage);
+    _emitReady(emit);
+  }
+
+  /// Whether the server serves [page]: see "The deepest page".
+  bool _served(int page) =>
+      (page - 1) * pageSize <= GamesRemoteDataSource.maxDepth;
+
+  /// One page of the cache, plus one row to tell whether there is another.
+  /// Null when there is no cache or the read failed.
+  Future<List<Game>?> _readCache({required int offset}) async {
+    final cache = _cache;
+    if (cache == null) return null;
+    try {
+      return await cache.getGamesPage(offset: offset, limit: pageSize + 1);
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Reading cached games failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  void _appendCached(List<Game> rows) {
+    _hasMore = rows.length > pageSize;
+    _append(rows.take(pageSize));
+  }
+
+  void _append(Iterable<Game> games) {
+    final shown = {for (final game in _games) game.id};
+    _games = [
+      ..._games,
+      for (final game in games)
+        if (shown.add(game.id)) game,
+    ];
+  }
+
+  Future<void> _write(List<Game> games) async {
+    final cache = _cache;
+    if (cache == null || games.isEmpty) return;
+    try {
+      await cache.cacheGames(games);
+    } on Object catch (error, stackTrace) {
+      // A session ending mid-read lands here, as a disposed cache.
+      _logger.warn(
+        'Caching a catalog page failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  void _emitReady(
+    Emitter<GameBrowseState> emit, {
+    bool retrying = false,
+    bool loadingMore = false,
+    bool loadMoreFailed = false,
+  }) => emit(
+    GameBrowseReady(
+      games: _games,
+      hasMore: _hasMore,
+      fromCache: _fromCache,
+      retrying: retrying,
+      loadingMore: loadingMore,
+      loadMoreFailed: loadMoreFailed,
+    ),
+  );
+}
