@@ -38,6 +38,7 @@ Future<List<Object?>> _everyRead(GameRepositoryImpl repo) async => [
   await repo.getGame('g-1'),
   await repo.getGames(['g-1']),
   await repo.searchGames('brass'),
+  await repo.getGamesPage(limit: 10),
   await repo.watchGame('g-1').first,
   await repo.watchGames().first,
   await repo.getPlatformGame('pg-1'),
@@ -46,6 +47,7 @@ Future<List<Object?>> _everyRead(GameRepositoryImpl repo) async => [
 
 const _seesNothing = [
   null,
+  <Game>[],
   <Game>[],
   <Game>[],
   null,
@@ -137,5 +139,50 @@ void main() {
       <String>[],
       ['g-1'],
     ]);
+  });
+
+  group('forgetGame', () {
+    test('hides the game and its platform games from the user, whatever '
+        'cached them', () async {
+      final a = repoFor(_kUserA);
+      await a.cachePlatformGameSummaries([_summary()]);
+      await a.cacheGame(_game());
+      await a.cachePlatformGame(_platformGame());
+
+      await a.forgetGame('g-1');
+
+      expect(await _everyRead(a), _seesNothing);
+    });
+
+    test("leaves another user's copy readable", () async {
+      final a = repoFor(_kUserA);
+      final b = repoFor(_kUserB);
+      for (final repo in [a, b]) {
+        await repo.cacheGame(_game());
+        await repo.cachePlatformGame(_platformGame());
+      }
+
+      await a.forgetGame('g-1');
+
+      expect(await b.getGame('g-1'), isNotNull);
+      expect(await b.getPlatformGame('pg-1'), isNotNull);
+    });
+
+    test('the game reads again once the server sends it again', () async {
+      final a = repoFor(_kUserA);
+      await a.cacheGame(_game());
+      await a.forgetGame('g-1');
+
+      await a.cacheGame(_game());
+
+      expect(await a.getGame('g-1'), isNotNull);
+    });
+
+    test('throws once the session has ended', () async {
+      final a = repoFor(_kUserA);
+      await a.onDispose();
+
+      expect(() => a.forgetGame('g-1'), throwsStateError);
+    });
   });
 }

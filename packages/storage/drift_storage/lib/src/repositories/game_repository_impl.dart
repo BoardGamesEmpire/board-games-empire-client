@@ -111,6 +111,28 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     });
   }
 
+  @override
+  Future<void> forgetGame(String id) async {
+    checkNotDisposed();
+    final games = _db.gameAccessTable;
+    final platformGames = _db.platformGameAccessTable;
+    await _db.transaction(() async {
+      await (_db.delete(platformGames)..where(
+            (t) =>
+                t.userId.equals(_userId) &
+                t.platformGameId.isInQuery(
+                  _db.selectOnly(_db.platformGamesTable)
+                    ..addColumns([_db.platformGamesTable.id])
+                    ..where(_db.platformGamesTable.gameId.equals(id)),
+                ),
+          ))
+          .go();
+      await (_db.delete(
+        games,
+      )..where((t) => t.userId.equals(_userId) & t.gameId.equals(id))).go();
+    });
+  }
+
   /// Matches LIKE-wildcard metacharacters: `%` and `_`.
   static final RegExp _likeWildcardChars = RegExp(r'[%_]');
 
@@ -172,6 +194,30 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
               ..limit(limit))
             .get();
 
+    return rows.map(_mapGame).toList();
+  }
+
+  @override
+  Future<List<Game>> getGamesPage({int offset = 0, required int limit}) async {
+    checkNotDisposed();
+    // Checked rather than passed through: SQLite reads a negative LIMIT as no
+    // limit at all, which would turn a page into the whole cache.
+    if (offset < 0) {
+      throw ArgumentError.value(offset, 'offset', 'must not be negative');
+    }
+    if (limit < 1) {
+      throw ArgumentError.value(limit, 'limit', 'must be at least 1');
+    }
+
+    final rows =
+        await (_db.select(_db.gamesTable)
+              ..where(_readableGame)
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.title.collate(Collate.noCase)),
+                (t) => OrderingTerm.asc(t.id),
+              ])
+              ..limit(limit, offset: offset))
+            .get();
     return rows.map(_mapGame).toList();
   }
 

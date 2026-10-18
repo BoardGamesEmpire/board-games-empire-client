@@ -27,7 +27,8 @@ import 'package:models/domain.dart';
 ///
 /// The cache schema has a `deletedAt` column on [Game] for server-driven
 /// soft-deletes (a game removed from the server catalog). All read paths
-/// — [getGame], [getGames], [searchGames], [watchGame], [watchGames] —
+/// — [getGame], [getGames], [searchGames], [getGamesPage], [watchGame],
+/// [watchGames] —
 /// filter out tombstoned rows, so callers never have to special-case
 /// `deletedAt != null` themselves. Tombstoned rows physically remain in
 /// the cache until a full re-sync purges them; this happens in a phase
@@ -84,6 +85,15 @@ abstract class GameRepository {
   /// Upserts a batch of games, as [cacheGame] does for each, in one batch.
   Future<void> cacheGames(List<Game> games);
 
+  /// Stops reading the game [id] and its platform games as cached for this
+  /// user, whatever cached them: for when the server answers that this user
+  /// can't read the game, as `GET /games/:id`'s 404 and 403 do (#42).
+  ///
+  /// Other users' records are left alone, and so are the rows themselves:
+  /// removing rows no user can read is #469's. Caching the game again makes
+  /// it readable again.
+  Future<void> forgetGame(String id);
+
   /// Upserts [platformGame]'s full record into the local cache, and records
   /// it for this user. Its game must already be cached.
   Future<void> cachePlatformGame(PlatformGame platformGame);
@@ -129,6 +139,20 @@ abstract class GameRepository {
   /// positive; non-positive values short-circuit to an empty list
   /// without touching the database.
   Future<List<Game>> searchGames(String query, {int limit = 20});
+
+  /// One page of this user's cached games, in the order `GET /games` pages
+  /// the catalog: by title, then by id where titles tie (#42).
+  ///
+  /// Offline browse reads this when the catalog cannot be fetched, so a page
+  /// of the cache lines up with a page of the server. Titles are compared
+  /// without regard to case. The server's order is its database collation,
+  /// which the cache cannot match exactly, so two titles that differ only in
+  /// case or accents may come back in a different order than online.
+  ///
+  /// Tombstoned and summary-only games are left out, as every read leaves
+  /// them out. [offset] must be at least 0 and [limit] at least 1; anything
+  /// else throws [ArgumentError].
+  Future<List<Game>> getGamesPage({int offset = 0, required int limit});
 
   /// Watches a single [Game] for changes. Emits null if deleted from cache.
   ///
