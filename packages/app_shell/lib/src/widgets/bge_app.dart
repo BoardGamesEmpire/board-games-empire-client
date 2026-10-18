@@ -852,6 +852,15 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<GameCollectionRefresher>().refresh
       : null;
 
+  /// A collection pass that starts after the call, for a discard (#190):
+  /// the list's retry joins a pass in flight, which may have merged the
+  /// discarded row's page already.
+  Future<void> Function()? _collectionRefreshAfterChange(
+    DependencyContainer container,
+  ) => container.isRegistered<GameCollectionRefresher>()
+      ? container.get<GameCollectionRefresher>().refreshAfterChange
+      : null;
+
   /// The collection list's entry trigger (#44): the session's
   /// [SessionRehydrator], through the shell's shared guard, as
   /// [_householdEntryRefresh] does. The staleness window in the registry
@@ -939,7 +948,7 @@ class _BgeAppState extends State<BgeApp> {
         drain: container.isRegistered<SyncQueueDrain>()
             ? container.get<SyncQueueDrain>().drainAfterChange
             : null,
-        refreshCollection: _collectionRetry(container),
+        refreshCollection: _collectionRefreshAfterChange(container),
         refreshHouseholds: _householdRetry(container),
       ),
     );

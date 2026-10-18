@@ -129,11 +129,15 @@ void main() {
   });
 
   testWidgets("a discard undoes through the session's repository and "
-      "refreshes the collection", (tester) async {
+      "refreshes the collection with a pass of its own", (tester) async {
+    var joins = 0;
     var refreshes = 0;
     await pumpHome(
       tester,
-      refresher: GameCollectionRefresher(() async => refreshes++),
+      refresher: GameCollectionRefresher(
+        () async => joins++,
+        afterChange: () async => refreshes++,
+      ),
     );
     await tester.tap(find.byKey(StuckSyncOpsNotice.reviewKey));
     await tester.pumpAndSettle();
@@ -145,5 +149,6 @@ void main() {
 
     verify(() => collection.discardQueuedOp('q1')).called(1);
     expect(refreshes, 1);
+    expect(joins, 0, reason: 'a pass in flight may have passed the row');
   });
 }

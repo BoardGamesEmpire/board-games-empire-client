@@ -557,6 +557,26 @@ void main() {
       await drain.drain();
       expect(await left(), isEmpty);
     });
+
+    test('with nothing to send, a due purge makes the drain stale, so the '
+        "rehydrator's next trigger runs it", () async {
+      const interval = SyncQueueDrain.purgeInterval;
+      await h.queuedCreate(name: 'Old');
+      await drain.drain();
+      h.advance(SyncQueueDrain.completedRetention - interval * 0.5);
+      // Purges, but Old is not old enough yet; settles with nothing to send.
+      await drain.drain();
+      expect(await h.queue.getAllEntries(), hasLength(1));
+
+      h.advance(interval * 0.75);
+      expect(drain.isStale, isFalse, reason: 'the last purge is too recent');
+
+      h.advance(interval * 0.25);
+      expect(drain.isStale, isTrue);
+      await drain.drain();
+      expect(await h.queue.getAllEntries(), isEmpty);
+      expect(drain.isStale, isFalse);
+    });
   });
 
   group("one entry's ops stay in order", () {

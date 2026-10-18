@@ -181,17 +181,24 @@ class SyncQueueDrain {
   /// nothing sendable, such as a visit to the household list while every op
   /// is cooling, therefore costs nothing. A clock set back since that pass
   /// makes it true: a failure stamped ahead of the clock waits no longer,
-  /// which that pass's schedule could not foresee. False while a pass is
-  /// running, which drops a trigger rather than queueing it, as the hydrates
-  /// do.
+  /// which that pass's schedule could not foresee. A purge that is due
+  /// makes it true too, so a session left signed in with nothing to send
+  /// still keeps its history bounded. False while a pass is running, which
+  /// drops a trigger rather than queueing it, as the hydrates do.
   bool get isStale {
     if (_closed || _inFlight != null) return false;
     final settledAt = _settledAt;
     if (settledAt == null || _seenCount != _settledCount) return true;
     final now = _now();
-    if (now.isBefore(settledAt)) return true;
+    if (now.isBefore(settledAt) || _purgeDue(now)) return true;
     final at = _nextSendableAt;
     return at != null && !now.isBefore(at);
+  }
+
+  /// Whether a pass at [now] would purge completed history.
+  bool _purgeDue(DateTime now) {
+    final purgedAt = _purgedAt;
+    return purgedAt == null || !now.isBefore(purgedAt.add(purgeInterval));
   }
 
   /// Runs one pass. Never throws. A call while a pass is running joins it.
@@ -234,8 +241,7 @@ class SyncQueueDrain {
   Future<void> _pass() async {
     final tally = _Tally();
     final now = _now();
-    final purgedAt = _purgedAt;
-    if (purgedAt == null || !now.isBefore(purgedAt.add(purgeInterval))) {
+    if (_purgeDue(now)) {
       _purgedAt = now;
       await _purgeHistory();
     }

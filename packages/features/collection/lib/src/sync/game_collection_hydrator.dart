@@ -129,6 +129,16 @@ class GameCollectionHydrator {
     });
   }
 
+  /// Completes once no pass is in flight: at once when none is, else when
+  /// the running one ends. Never throws.
+  ///
+  /// For a caller that must start a pass of its own after a local write
+  /// (#190): [hydrate] joins the running pass, which may have merged the
+  /// written row's page already.
+  Future<void> get settled async {
+    await _inFlight;
+  }
+
   /// The pass currently running, or null when none is.
   Future<CollectionHydrateOutcome>? _inFlight;
 

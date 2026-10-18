@@ -765,6 +765,7 @@ void main() {
               platformGameId: 'pg-7',
               medium: 'Digital',
               quantity: 1,
+              revivedLocalOnly: true,
             ),
           );
 
@@ -780,6 +781,7 @@ void main() {
           expect(op.localId, equals('server-99'));
           expect(op.platformGameId, equals('pg-7'));
           expect(op.medium, equals('Digital'));
+          expect(op.revivedLocalOnly, isTrue);
         },
       );
 

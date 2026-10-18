@@ -238,6 +238,31 @@ void main() {
         GameCollectionHydrationState.refreshed,
       );
     });
+
+    test('after a change (#190), waits out the install-time pass and then '
+        'runs its own', () async {
+      register();
+      final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => blocked.future;
+      await install();
+
+      final refresh = container
+          .get<GameCollectionRefresher>()
+          .refreshAfterChange();
+      await Future<void>.delayed(Duration.zero);
+      expect(remote.requests.length, 1);
+
+      remote.respond = (_) => _empty();
+      blocked.complete(_empty());
+      await refresh;
+
+      // The pass in flight may have merged the changed row's page already.
+      expect(remote.requests.length, 2);
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        GameCollectionHydrationState.refreshed,
+      );
+    });
   });
 
   group('re-hydrate registration', () {

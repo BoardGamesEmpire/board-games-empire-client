@@ -328,15 +328,16 @@ abstract class GameCollectionRepository {
   ///
   /// - **An add for an entry the server has never seen** (the row is
   ///   [GameCollection.isLocalOnly]): the row is deleted, and so is every op
-  ///   queued for it after the add. Those ops are held behind the add and
-  ///   name an entry the server will never know. If the add revived an entry
-  ///   whose removal is still queued, the row goes back to that removal's
-  ///   tombstone instead, local-only still if an add before the removal is
-  ///   queued too. If an earlier add for the row is still queued, it still
-  ///   stands for the row, and only this op is dropped.
+  ///   queued for it after the add. Those ops name an entry the server will
+  ///   never know. If the add revived an entry whose removal is still
+  ///   queued, the row goes back to that removal's tombstone instead,
+  ///   local-only as the tombstone was, unless an add before the removal
+  ///   has been acknowledged since. If an earlier add for the row is still
+  ///   queued, it still stands for the row, and only this op is dropped.
   /// - **Any other add, or an update**: the op is dropped. The row stays
   ///   dirty while any other op for it is outstanding.
-  /// - **A removal**: the op is dropped and the entry comes back.
+  /// - **A removal**: the op is dropped, and the entry comes back unless a
+  ///   later add or removal for it is queued, which already decided that.
   ///
   /// When nothing is left queued for the row, it is left clean and older
   /// than any copy the server holds. Its values are still the discarded
@@ -345,8 +346,10 @@ abstract class GameCollectionRepository {
   ///
   /// A completed or unknown entry changes nothing, and so does a payload
   /// that won't decode, beyond deleting the entry. Returns whether the entry
-  /// was deleted. Throws [ArgumentError] for a household op, before any
-  /// write.
+  /// was deleted. Throws [ArgumentError] for a household op, and
+  /// [StateError] for an add whose undo would delete a later op that is
+  /// being sent, both before any write. That send's acknowledgement would
+  /// bring the entry back, so the discard waits for it to settle.
   Future<bool> discardQueuedOp(String syncQueueId);
 
   /// The title of the game the entry [collectionId] names, or null for an

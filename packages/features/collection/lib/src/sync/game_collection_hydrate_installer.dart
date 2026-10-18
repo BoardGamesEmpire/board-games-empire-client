@@ -157,7 +157,13 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
     }
 
     container.registerSingleton<GameCollectionRefresher>(
-      GameCollectionRefresher(pass),
+      GameCollectionRefresher(
+        pass,
+        afterChange: () async {
+          await hydrator.settled;
+          await pass();
+        },
+      ),
     );
 
     // The hydrator is deliberately not registered: nothing resolves one by

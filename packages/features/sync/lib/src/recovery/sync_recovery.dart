@@ -108,7 +108,9 @@ class SyncRecovery {
   /// Does nothing for an op that isn't stuck: one still being worked on is
   /// not the user's to drop from here. The repositories check that in the
   /// statement that deletes it, so a retry from another tab can't slip in
-  /// between.
+  /// between. Throws, changing nothing, when the undo would delete a later
+  /// op for the same entry that is being sent
+  /// ([GameCollectionRepository.discardQueuedOp]).
   Future<void> discard(String entryId) async {
     final entry = await _queue.getEntry(entryId);
     if (entry == null) return;

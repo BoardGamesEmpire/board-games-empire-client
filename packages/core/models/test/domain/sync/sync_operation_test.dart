@@ -86,6 +86,38 @@ void main() {
     });
   });
 
+  group('AddToCollectionOperation', () {
+    const add = AddToCollectionOperation(
+      localId: 'col_1',
+      platformGameId: 'pg_1',
+      medium: 'Physical',
+      quantity: 1,
+    );
+
+    test('round-trips whether a re-add revived a local-only entry (#190)', () {
+      const readd = AddToCollectionOperation(
+        localId: 'col_1',
+        platformGameId: 'pg_1',
+        medium: 'Physical',
+        quantity: 1,
+        revivedLocalOnly: false,
+      );
+
+      final round = AddToCollectionOperation.fromJson(readd.toJson());
+
+      expect(round.revivedLocalOnly, isFalse);
+    });
+
+    test('leaves the revival flag out of any other add, and reads its '
+        'absence as null', () {
+      expect(add.toJson().containsKey('revived_local_only'), isFalse);
+      expect(
+        AddToCollectionOperation.fromJson(add.toJson()).revivedLocalOnly,
+        isNull,
+      );
+    });
+  });
+
   group('SyncOperation.fromJson dispatch', () {
     test('dispatches create_household to CreateHouseholdOperation', () {
       final op = SyncOperation.fromJson(const {

@@ -154,6 +154,65 @@ void main() {
       expect(await rows(), isEmpty);
       expect(await queue.getAllEntries(), isEmpty);
     });
+
+    test('of a re-add over a removal, after a stuck add that raised the '
+        "quantity of a confirmed entry, keeps the server's id known", () async {
+      await seedConfirmed();
+      await add();
+      final raiseOp = await parkNewest();
+      await repo.removeFromCollection(_kServerId);
+      final removeOp = (await queue.getOutstandingEntries()).last;
+      await add(quantity: 2);
+      final readdOp = await parkNewest();
+
+      await repo.discardQueuedOp(readdOp.id);
+
+      expect((await rows()).single.isLocalOnly, isFalse);
+
+      // So discarding the raise drops only it, and the removal still goes.
+      await repo.discardQueuedOp(raiseOp.id);
+
+      final row = (await rows()).single;
+      expect(row.deletedAt, isNotNull);
+      expect(row.isDirty, isTrue);
+      expect((await queue.getAllEntries()).map((e) => e.id), [removeOp.id]);
+    });
+
+    test('of a re-add over a removal, once the add that created the entry '
+        'is acknowledged, keeps the entry known', () async {
+      await add();
+      final addOp = (await queue.getOutstandingEntries()).single;
+      final added = (await rows()).single;
+      await repo.removeFromCollection(added.id);
+      await add(quantity: 2);
+      final readdOp = await parkNewest();
+      await repo.reconcileFromServer(_server(), completedSyncQueueId: addOp.id);
+
+      await repo.discardQueuedOp(readdOp.id);
+
+      final row = (await rows()).single;
+      expect(row.id, _kServerId);
+      expect(row.deletedAt, isNotNull);
+      expect(row.isLocalOnly, isFalse, reason: 'the server knows it now');
+    });
+
+    test('refuses while a later add for the entry is being sent, changing '
+        'nothing', () async {
+      await add();
+      final addOp = await parkNewest();
+      await add();
+      final laterAdd = (await queue.getOutstandingEntries()).last;
+      expect(await queue.claim(laterAdd.id), isTrue);
+      final before = await rows();
+
+      await expectLater(repo.discardQueuedOp(addOp.id), throwsStateError);
+
+      expect(await rows(), before);
+      expect((await queue.getAllEntries()).map((e) => e.id), [
+        addOp.id,
+        laterAdd.id,
+      ]);
+    });
   });
 
   group('an add for an entry the server knows', () {
@@ -232,6 +291,25 @@ void main() {
 
       expect((await rows()).single.quantity, 5);
     });
+
+    test(
+      'with a later removal still queued, keeps the entry removed',
+      () async {
+        await seedConfirmed();
+        await repo.removeFromCollection(_kServerId);
+        final removeOp = await parkNewest();
+        await add();
+        await repo.removeFromCollection(_kServerId);
+
+        await repo.discardQueuedOp(removeOp.id);
+
+        final row = (await rows()).single;
+        expect(row.deletedAt, isNotNull);
+        expect(row.isDirty, isTrue);
+        expect(await repo.getCollection(), isEmpty);
+        expect(await queue.getAllEntries(), hasLength(2));
+      },
+    );
   });
 
   group('titleOf()', () {
