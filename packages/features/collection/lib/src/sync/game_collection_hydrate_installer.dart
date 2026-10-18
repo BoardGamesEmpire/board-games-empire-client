@@ -110,6 +110,7 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
       collection: container.get<GameCollectionRepository>(),
       games: container.get<GameRepository>(),
       remote: container.get<GameCollectionRemoteDataSource>(),
+      userId: userId,
     );
 
     final status = GameCollectionHydrationStatus(now: now);

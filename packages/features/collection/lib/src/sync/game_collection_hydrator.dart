@@ -50,6 +50,17 @@ enum CollectionHydrateOutcome {
 /// raises for paging it rejects locally, and the [StateError] a repository
 /// throws once the session has ended mid-drain.
 ///
+/// ## A page for another user ends the pass
+///
+/// The remote is per server, and attaches whichever token the server's
+/// store holds when it sends, not this session's. So a page requested as
+/// one user's session ends and the next one signs in can come back as the
+/// next user's. Merging it would throw, but only after its summaries were
+/// recorded for this session's user, giving them another user's games
+/// (#434). So every entry's `userId` is checked against [userId] before
+/// any of the page is written, and a page holding anyone else's ends the
+/// pass as failed.
+///
 /// ## The drain, then one catch-up pass
 ///
 /// The drain asks for [limit] rows with `includeDeleted`, so it learns about
@@ -99,6 +110,7 @@ class GameCollectionHydrator {
     required this._collection,
     required this._games,
     required this._remote,
+    required this.userId,
     this.limit = GameCollectionRemoteDataSource.maxPageSize,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.collection.hydrate');
@@ -107,6 +119,10 @@ class GameCollectionHydrator {
   final GameRepository _games;
   final GameCollectionRemoteDataSource _remote;
   final BgeLogger _logger;
+
+  /// The session's user, whom every entry on a page must belong to. See the
+  /// class doc.
+  final String userId;
 
   /// Rows per request. Defaults to the server's own page-size cap.
   final int limit;
@@ -191,6 +207,24 @@ class GameCollectionHydrator {
           error: error,
           stackTrace: stackTrace,
           context: {'pass': pass, 'page': page, 'limit': limit},
+        );
+        return null;
+      }
+
+      final foreign = result.items
+          .where((item) => item.entry.userId != userId)
+          .length;
+      if (foreign > 0) {
+        // Counted, not named: no user id is written to this log channel.
+        _logger.warn(
+          "Collection hydrate stopped on a page holding another user's "
+          'entries',
+          context: {
+            'pass': pass,
+            'page': page,
+            'limit': limit,
+            'foreignEntries': foreign,
+          },
         );
         return null;
       }
