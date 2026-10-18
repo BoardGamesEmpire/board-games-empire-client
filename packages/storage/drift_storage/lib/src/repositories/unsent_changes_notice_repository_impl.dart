@@ -7,9 +7,8 @@ import '../tables/sync_queue_table.dart' show syncQueueOutstandingStatuses;
 /// [UnsentChangesNoticeRepository] over the per-server [ServerDatabase]
 /// (#142).
 ///
-/// Holds nothing but the database, so it takes the `GameRepository`
-/// registration shape in the server scope: no user id, and no dispose
-/// hook, since the database's own closes everything this vends.
+/// Holds nothing but the database, so it is registered in the server scope
+/// with no user id, and no dispose hook, since it vends no streams.
 ///
 /// Reads `sync_queue` and never writes it; the only table it writes is
 /// `unsent_changes_users`.

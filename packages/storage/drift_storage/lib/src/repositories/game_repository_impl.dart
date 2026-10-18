@@ -5,55 +5,107 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import '../tables/game_access_table.dart';
+import 'watch_disposal.dart';
 
-class GameRepositoryImpl implements GameRepository {
-  /// [now] is the clock [cachePlatformGameSummaries] stamps an inserted row
-  /// from. It defaults to the device clock: the stamp is a local "first
-  /// cached" time with no consensus meaning, so the skew-corrected
-  /// `ClockService` is not what it wants. Injected so a test can pin it.
-  const GameRepositoryImpl(this._db, {this._now = DateTime.now});
+/// [GameRepository] over the per-server [ServerDatabase], for one user
+/// (#434).
+///
+/// ## One copy of each game, read per user
+///
+/// `games` and `platform_games` hold each row once per server, whichever
+/// users it was cached for. Every write also records the row for this
+/// repository's user, in `game_access` or `platform_game_access`, and every
+/// read returns only rows recorded for that user. So a user signed in to the
+/// same server on this device after another can't list or look up what the
+/// server sent only to them.
+///
+/// The user is fixed at construction, as `GameCollectionRepositoryImpl`'s
+/// is. The hydrate writes a page's summaries through this just before it
+/// merges the page's entries through that, so the two must name the same
+/// user. A page that lands after its session has ended, before the scope
+/// finishes popping, still records its rows for the user they came from.
+/// No method takes a user id.
+///
+/// ## Disposal
+///
+/// Registered in the user-session scope, which pops on sign-out, a server
+/// switch, suspend and context dispose. Its Drift streams are tied to the
+/// per-server database, which outlives that scope, so it takes the shared
+/// [WatchDisposal] contract (#138): after `onDispose()` the `Future` methods
+/// throw [StateError], and [watchGame] / [watchGames] close.
+class GameRepositoryImpl with WatchDisposal implements GameRepository {
+  GameRepositoryImpl(this._db, {required this._userId});
 
   final ServerDatabase _db;
-  final DateTime Function() _now;
+  final String _userId;
+
+  /// The clock both of this repository's stamps come from: a summary
+  /// insert's `createdAt` / `updatedAt`, and a full write's
+  /// `fullRecordCachedAt`. Each is a local "when this device cached it"
+  /// time with no consensus meaning, so the skew-corrected `ClockService`
+  /// is not what it wants. No reader sees either stamp (#406), so neither
+  /// is injected.
+  static DateTime _now() => DateTime.now().toUtc();
+
+  @override
+  String get disposedRepositoryName => 'GameRepository';
 
   // ── Game ───────────────────────────────────────────────────────────────────────
 
+  /// Whether every game read may return the `games` row [t]: a full record,
+  /// not a tombstone, cached for this user.
+  ///
+  /// Tombstones are hidden so the rest of the app never has to special-case
+  /// `deletedAt`. Summary-only rows are hidden because their other columns
+  /// hold defaults, not the server's values (#406). Rows cached only for
+  /// other users are hidden because the server never sent them to this one
+  /// (#434).
+  Expression<bool> _readableGame($GamesTableTable t) {
+    final access = _db.gameAccessTable;
+    return t.deletedAt.isNull() &
+        t.fullRecordCachedAt.isNotNull() &
+        t.id.isInQuery(
+          _db.selectOnly(access)
+            ..addColumns([access.gameId])
+            ..where(access.userId.equals(_userId)),
+        );
+  }
+
   @override
   Future<Game?> getGame(String id) async {
-    // Tombstoned games are hidden from all read paths so single-item
-    // lookups stay consistent with the list/watch APIs. The schema
-    // permits `deletedAt` on games for soft-delete; this filter
-    // ensures the rest of the app never has to special-case it.
+    checkNotDisposed();
     final row = await (_db.select(
       _db.gamesTable,
-    )..where((t) => t.id.equals(id) & t.deletedAt.isNull())).getSingleOrNull();
+    )..where((t) => t.id.equals(id) & _readableGame(t))).getSingleOrNull();
     return row == null ? null : _mapGame(row);
   }
 
   @override
   Future<List<Game>> getGames(List<String> ids) async {
+    checkNotDisposed();
     if (ids.isEmpty) return [];
     final rows = await (_db.select(
       _db.gamesTable,
-    )..where((t) => t.id.isIn(ids) & t.deletedAt.isNull())).get();
+    )..where((t) => t.id.isIn(ids) & _readableGame(t))).get();
     return rows.map(_mapGame).toList();
   }
 
   @override
-  Future<void> cacheGame(Game game) async {
-    await _db
-        .into(_db.gamesTable)
-        .insertOnConflictUpdate(_gameToCompanion(game));
-  }
+  Future<void> cacheGame(Game game) => cacheGames([game]);
 
   @override
   Future<void> cacheGames(List<Game> games) async {
+    checkNotDisposed();
+    final now = _now();
     await _db.batch((b) {
       for (final g in games) {
+        final row = _gameToCompanion(g, now);
+        b.insert(_db.gamesTable, row, onConflict: DoUpdate((old) => row));
         b.insert(
-          _db.gamesTable,
-          _gameToCompanion(g),
-          onConflict: DoUpdate((old) => _gameToCompanion(g)),
+          _db.gameAccessTable,
+          _gameAccess(g.id, cacheAccessSourceCatalog),
+          mode: InsertMode.insertOrIgnore,
         );
       }
     });
@@ -64,6 +116,7 @@ class GameRepositoryImpl implements GameRepository {
 
   @override
   Future<List<Game>> searchGames(String query, {int limit = 20}) async {
+    checkNotDisposed();
     // Reject non-positive limits up front. Without this, passing
     // `limit: -1` would silently disable SQLite's LIMIT clause and
     // turn the query into a full cache scan; `limit: 0` would emit
@@ -102,7 +155,7 @@ class GameRepositoryImpl implements GameRepository {
         await (_db.select(_db.gamesTable)
               ..where(
                 (t) =>
-                    t.deletedAt.isNull() &
+                    _readableGame(t) &
                     (t.title.lower().contains(q) |
                         t.subtitle.lower().contains(q)),
               )
@@ -123,51 +176,77 @@ class GameRepositoryImpl implements GameRepository {
   }
 
   @override
-  Stream<Game?> watchGame(String id) =>
-      (_db.select(_db.gamesTable)
-            ..where((t) => t.id.equals(id) & t.deletedAt.isNull()))
-          .watchSingleOrNull()
-          .map((row) => row == null ? null : _mapGame(row));
+  Stream<Game?> watchGame(String id) => untilDisposed(
+    () =>
+        (_db.select(_db.gamesTable)
+              ..where((t) => t.id.equals(id) & _readableGame(t)))
+            .watchSingleOrNull()
+            .map((row) => row == null ? null : _mapGame(row)),
+  );
 
   @override
-  Stream<List<Game>> watchGames() =>
-      (_db.select(_db.gamesTable)..where((t) => t.deletedAt.isNull()))
-          .watch()
-          .map((rows) => rows.map(_mapGame).toList());
+  Stream<List<Game>> watchGames() => untilDisposed(
+    () => (_db.select(
+      _db.gamesTable,
+    )..where(_readableGame)).watch().map((rows) => rows.map(_mapGame).toList()),
+  );
 
   // ── PlatformGame ───────────────────────────────────────────────────────────────────
 
+  /// Whether every platform game read may return the `platform_games` row
+  /// [t]: a full record cached for this user. Platform games carry no
+  /// tombstone.
+  ///
+  /// Access is the platform game's own, not its game's (#434): a user given
+  /// one platform game of a game is not given the others.
+  Expression<bool> _readablePlatformGame($PlatformGamesTableTable t) {
+    final access = _db.platformGameAccessTable;
+    return t.fullRecordCachedAt.isNotNull() &
+        t.id.isInQuery(
+          _db.selectOnly(access)
+            ..addColumns([access.platformGameId])
+            ..where(access.userId.equals(_userId)),
+        );
+  }
+
   @override
   Future<PlatformGame?> getPlatformGame(String id) async {
-    final row = await (_db.select(
-      _db.platformGamesTable,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    checkNotDisposed();
+    final row =
+        await (_db.select(_db.platformGamesTable)
+              ..where((t) => t.id.equals(id) & _readablePlatformGame(t)))
+            .getSingleOrNull();
     return row == null ? null : _mapPlatformGame(row);
   }
 
   @override
   Future<List<PlatformGame>> getPlatformGamesForGame(String gameId) async {
+    checkNotDisposed();
     final rows = await (_db.select(
       _db.platformGamesTable,
-    )..where((t) => t.gameId.equals(gameId))).get();
+    )..where((t) => t.gameId.equals(gameId) & _readablePlatformGame(t))).get();
     return rows.map(_mapPlatformGame).toList();
   }
 
   @override
-  Future<void> cachePlatformGame(PlatformGame pg) async {
-    await _db
-        .into(_db.platformGamesTable)
-        .insertOnConflictUpdate(_platformGameToCompanion(pg));
-  }
+  Future<void> cachePlatformGame(PlatformGame pg) => cachePlatformGames([pg]);
 
   @override
   Future<void> cachePlatformGames(List<PlatformGame> platformGames) async {
+    checkNotDisposed();
+    final now = _now();
     await _db.batch((b) {
       for (final pg in platformGames) {
+        final row = _platformGameToCompanion(pg, now);
         b.insert(
           _db.platformGamesTable,
-          _platformGameToCompanion(pg),
-          onConflict: DoUpdate((old) => _platformGameToCompanion(pg)),
+          row,
+          onConflict: DoUpdate((old) => row),
+        );
+        b.insert(
+          _db.platformGameAccessTable,
+          _platformGameAccess(pg.id, cacheAccessSourceCatalog),
+          mode: InsertMode.insertOrIgnore,
         );
       }
     });
@@ -179,8 +258,9 @@ class GameRepositoryImpl implements GameRepository {
   Future<void> cachePlatformGameSummaries(
     List<PlatformGameSummary> summaries,
   ) async {
+    checkNotDisposed();
     if (summaries.isEmpty) return;
-    final now = _now().toUtc();
+    final now = _now();
 
     await _db.transaction(() async {
       for (final summary in summaries) {
@@ -189,13 +269,14 @@ class GameRepositoryImpl implements GameRepository {
     });
   }
 
-  /// Writes one summary's game, then its platform game. Runs inside the
-  /// caller's transaction.
+  /// Writes one summary's game, then its platform game, and records both for
+  /// this user. Runs inside the caller's transaction.
   ///
   /// Each insert carries the summary's columns plus the two required
   /// timestamps; each conflict update carries the summary's columns only.
   /// Drift writes just the columns a companion marks present, which is what
-  /// keeps a fuller record's other fields intact.
+  /// keeps a fuller record's other fields intact, its `fullRecordCachedAt`
+  /// among them (#406).
   Future<void> _writeSummary(PlatformGameSummary summary, DateTime now) async {
     final game = summary.game;
 
@@ -244,7 +325,41 @@ class GameRepositoryImpl implements GameRepository {
             ),
           ),
         );
+
+    await _db
+        .into(_db.gameAccessTable)
+        .insert(
+          _gameAccess(game.id, cacheAccessSourceCollection),
+          mode: InsertMode.insertOrIgnore,
+        );
+    await _db
+        .into(_db.platformGameAccessTable)
+        .insert(
+          _platformGameAccess(summary.id, cacheAccessSourceCollection),
+          mode: InsertMode.insertOrIgnore,
+        );
   }
+
+  // ── Access ─────────────────────────────────────────────────────────────────────
+
+  /// This user's access row for the game [gameId], from [source].
+  GameAccessTableCompanion _gameAccess(String gameId, String source) =>
+      GameAccessTableCompanion.insert(
+        userId: _userId,
+        gameId: gameId,
+        source: source,
+      );
+
+  /// This user's access row for the platform game [platformGameId], from
+  /// [source].
+  PlatformGameAccessTableCompanion _platformGameAccess(
+    String platformGameId,
+    String source,
+  ) => PlatformGameAccessTableCompanion.insert(
+    userId: _userId,
+    platformGameId: platformGameId,
+    source: source,
+  );
 
   // ── Mappers ──────────────────────────────────────────────────────────────────────────
 
@@ -287,40 +402,43 @@ class GameRepositoryImpl implements GameRepository {
     updatedAt: row.updatedAt,
   );
 
-  GamesTableCompanion _gameToCompanion(Game g) => GamesTableCompanion.insert(
-    id: g.id,
-    title: g.title,
-    subtitle: Value(g.subtitle),
-    description: Value(g.description),
-    image: Value(g.image),
-    thumbnail: Value(g.thumbnail),
-    publishYear: Value(g.publishYear),
-    minPlayers: Value(g.minPlayers),
-    maxPlayers: Value(g.maxPlayers),
-    playingTime: Value(g.playingTime),
-    minPlayTime: Value(g.minPlayTime),
-    minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toWire()),
-    maxPlayTime: Value(g.maxPlayTime),
-    maxPlayTimeMeasure: Value(g.maxPlayTimeMeasure?.toWire()),
-    minAge: Value(g.minAge),
-    complexity: Value(g.complexity),
-    contentType: Value(g.contentType.toWire()),
-    totalPlayCount: Value(g.totalPlayCount),
-    averageRating: Value(g.averageRating),
-    bayesRating: Value(g.bayesRating),
-    ratingsCount: Value(g.ratingsCount),
-    ownedByCount: Value(g.ownedByCount),
-    categoriesJson: Value(jsonEncode(g.categories)),
-    mechanicsJson: Value(jsonEncode(g.mechanics)),
-    designersJson: Value(jsonEncode(g.designers)),
-    publishersJson: Value(jsonEncode(g.publishers)),
-    tagsJson: Value(jsonEncode(g.tags)),
-    visibility: Value(g.visibility.toWire()),
-    createdById: Value(g.createdById),
-    deletedAt: Value(g.deletedAt),
-    createdAt: g.createdAt,
-    updatedAt: g.updatedAt,
-  );
+  /// The full row for [g], marked a full record cached at [cachedAt].
+  GamesTableCompanion _gameToCompanion(Game g, DateTime cachedAt) =>
+      GamesTableCompanion.insert(
+        id: g.id,
+        title: g.title,
+        subtitle: Value(g.subtitle),
+        description: Value(g.description),
+        image: Value(g.image),
+        thumbnail: Value(g.thumbnail),
+        publishYear: Value(g.publishYear),
+        minPlayers: Value(g.minPlayers),
+        maxPlayers: Value(g.maxPlayers),
+        playingTime: Value(g.playingTime),
+        minPlayTime: Value(g.minPlayTime),
+        minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toWire()),
+        maxPlayTime: Value(g.maxPlayTime),
+        maxPlayTimeMeasure: Value(g.maxPlayTimeMeasure?.toWire()),
+        minAge: Value(g.minAge),
+        complexity: Value(g.complexity),
+        contentType: Value(g.contentType.toWire()),
+        totalPlayCount: Value(g.totalPlayCount),
+        averageRating: Value(g.averageRating),
+        bayesRating: Value(g.bayesRating),
+        ratingsCount: Value(g.ratingsCount),
+        ownedByCount: Value(g.ownedByCount),
+        categoriesJson: Value(jsonEncode(g.categories)),
+        mechanicsJson: Value(jsonEncode(g.mechanics)),
+        designersJson: Value(jsonEncode(g.designers)),
+        publishersJson: Value(jsonEncode(g.publishers)),
+        tagsJson: Value(jsonEncode(g.tags)),
+        visibility: Value(g.visibility.toWire()),
+        createdById: Value(g.createdById),
+        deletedAt: Value(g.deletedAt),
+        createdAt: g.createdAt,
+        updatedAt: g.updatedAt,
+        fullRecordCachedAt: Value(cachedAt),
+      );
 
   PlatformGame _mapPlatformGame(PlatformGamesTableData row) => PlatformGame(
     id: row.id,
@@ -349,29 +467,33 @@ class GameRepositoryImpl implements GameRepository {
     updatedAt: row.updatedAt,
   );
 
-  PlatformGamesTableCompanion _platformGameToCompanion(PlatformGame pg) =>
-      PlatformGamesTableCompanion.insert(
-        id: pg.id,
-        gameId: pg.gameId,
-        platformId: pg.platformId,
-        platformName: pg.platformName,
-        minPlayers: Value(pg.minPlayers),
-        maxPlayers: Value(pg.maxPlayers),
-        minPlayTime: Value(pg.minPlayTime),
-        minPlayTimeMeasure: Value(pg.minPlayTimeMeasure?.toWire()),
-        maxPlayTime: Value(pg.maxPlayTime),
-        maxPlayTimeMeasure: Value(pg.maxPlayTimeMeasure?.toWire()),
-        image: Value(pg.image),
-        thumbnail: Value(pg.thumbnail),
-        supportsSolo: Value(pg.supportsSolo),
-        supportsLocal: Value(pg.supportsLocal),
-        supportsOnline: Value(pg.supportsOnline),
-        hasAsyncPlay: Value(pg.hasAsyncPlay),
-        hasRealtime: Value(pg.hasRealtime),
-        hasTutorial: Value(pg.hasTutorial),
-        createdAt: pg.createdAt,
-        updatedAt: pg.updatedAt,
-      );
+  /// The full row for [pg], marked a full record cached at [cachedAt].
+  PlatformGamesTableCompanion _platformGameToCompanion(
+    PlatformGame pg,
+    DateTime cachedAt,
+  ) => PlatformGamesTableCompanion.insert(
+    id: pg.id,
+    gameId: pg.gameId,
+    platformId: pg.platformId,
+    platformName: pg.platformName,
+    minPlayers: Value(pg.minPlayers),
+    maxPlayers: Value(pg.maxPlayers),
+    minPlayTime: Value(pg.minPlayTime),
+    minPlayTimeMeasure: Value(pg.minPlayTimeMeasure?.toWire()),
+    maxPlayTime: Value(pg.maxPlayTime),
+    maxPlayTimeMeasure: Value(pg.maxPlayTimeMeasure?.toWire()),
+    image: Value(pg.image),
+    thumbnail: Value(pg.thumbnail),
+    supportsSolo: Value(pg.supportsSolo),
+    supportsLocal: Value(pg.supportsLocal),
+    supportsOnline: Value(pg.supportsOnline),
+    hasAsyncPlay: Value(pg.hasAsyncPlay),
+    hasRealtime: Value(pg.hasRealtime),
+    hasTutorial: Value(pg.hasTutorial),
+    createdAt: pg.createdAt,
+    updatedAt: pg.updatedAt,
+    fullRecordCachedAt: Value(cachedAt),
+  );
 
   /// Decodes a JSON-encoded list of strings, returning `[]` on any
   /// failure (malformed JSON, wrong shape at the top level, or a

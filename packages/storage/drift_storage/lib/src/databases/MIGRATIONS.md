@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 5`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 6`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -35,10 +35,22 @@ Server schema history:
   `recorded_order`), the users whose unsent `sync_queue` rows the sign-in
   screen may mention. A new, empty table with no FK edges, created by one
   `createTable`, so #54 stays deferred.
+- **v5 → v6 (#434, #406):** adds `game_access` (`user_id`, `game_id`,
+  `source`) and `platform_game_access` (`user_id`, `platform_game_id`,
+  `source`), which users each cached row was sent to, each with an index
+  on its game or platform game id, plus a nullable
+  `full_record_cached_at` on `games` and `platform_games` marking a full
+  record. The columns start empty, so every existing row reads as
+  summary-only. The access rows are backfilled with literal SQL from
+  `game_collections`, live and removed rows alike, with source
+  `collection`. Both are right because the collection hydrate was the only
+  writer of those tables before v6. Additive (new tables whose foreign keys
+  point at existing ones, nullable columns, no rebuild), so #54 stays
+  deferred.
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v5.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v6.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live
@@ -60,7 +72,8 @@ schema.
    definitions (the `to` bound matters: the schema verifier runs
    *intermediate* migrations, and an unbounded block would over-migrate past
    the requested target)
-   (sufficient for additive columns and for FK-free table rebuilds); switching
+   (sufficient for additive columns, new tables and FK-free table
+   rebuilds); switching
    to the generated `stepByStep(...)` dispatcher remains an open option under
    #54 and becomes compelling with the first destructive migration of an
    FK-referenced table:
@@ -126,7 +139,7 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 ## Deferred items
 
 - **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
-  the FK-off + transaction wrapper decision above. Four additive or FK-free
+  the FK-off + transaction wrapper decision above. Five additive or FK-free
   migrations have shipped without them; the trigger is the first destructive
   migration of an FK-referenced table (see "Adding a schema change"). The
   generated `test/drift/**` migration tests already exist and are committed.

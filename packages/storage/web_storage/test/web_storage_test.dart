@@ -51,6 +51,8 @@ String _uniqueServerId() =>
     'srv-${DateTime.now().microsecondsSinceEpoch}-'
     '${_counter++}';
 
+const _kUserId = 'user-1';
+
 Game _game({String id = 'g-1', String title = 'Web Round Trip'}) {
   final now = DateTime.now().toUtc();
   return Game(
@@ -124,7 +126,7 @@ void main() {
       final db = ServerDatabase(opening.executor, enableWriteAheadLog: false);
       addTearDown(db.close);
 
-      final repository = GameRepositoryImpl(db);
+      final repository = GameRepositoryImpl(db, userId: _kUserId);
 
       // Write through the shared repository — the one native uses, no web
       // variant — and read it back out of sqlite, not out of a cache.
@@ -149,7 +151,10 @@ void main() {
         first.executor,
         enableWriteAheadLog: false,
       );
-      await GameRepositoryImpl(firstDb).cacheGame(_game(title: 'Persisted'));
+      await GameRepositoryImpl(
+        firstDb,
+        userId: _kUserId,
+      ).cacheGame(_game(title: 'Persisted'));
       await firstDb.close();
 
       final second = await factory.serverDatabase(serverId);
@@ -159,7 +164,10 @@ void main() {
       );
       addTearDown(secondDb.close);
 
-      final read = await GameRepositoryImpl(secondDb).getGame('g-1');
+      final read = await GameRepositoryImpl(
+        secondDb,
+        userId: _kUserId,
+      ).getGame('g-1');
       expect(read?.title, 'Persisted');
     });
 
@@ -249,8 +257,14 @@ void main() {
       // Open, migrated and queryable *without* a first read forcing it —
       // the eager open the native installer also does.
       expect(db.enableWriteAheadLog, isFalse);
-      await GameRepositoryImpl(db).cacheGame(_game(title: 'Installed'));
-      expect((await GameRepositoryImpl(db).getGame('g-1'))?.title, 'Installed');
+      await GameRepositoryImpl(
+        db,
+        userId: _kUserId,
+      ).cacheGame(_game(title: 'Installed'));
+      expect(
+        (await GameRepositoryImpl(db, userId: _kUserId).getGame('g-1'))?.title,
+        'Installed',
+      );
     });
 
     test('disposing the scope closes the database', () async {
@@ -266,14 +280,10 @@ void main() {
       await expectLater(db.customSelect('SELECT 1').get(), throwsA(anything));
     });
 
-    // ── #251 D1: the same repository, registered on web too ─────────────
-    //
-    // Web runs no `ServerScopeInstaller` (see the installer's class doc), so
-    // native's registration in `StorageScopeInstaller` does not reach here.
-    // Without this, #42/#43 would resolve the repository on native and
-    // fail on web.
-
-    test('registers GameRepository against the same ServerDatabase', () async {
+    // #434: the game cache reads per user, so web registers it in the
+    // user-session scope, through the same `UserSessionScopeInstaller` as
+    // native, never here.
+    test('does not register GameRepository', () async {
       final container = DependencyContainerImpl();
       addTearDown(container.dispose);
 
@@ -282,40 +292,7 @@ void main() {
         _identity(_uniqueServerId()),
       );
 
-      final repository = container.get<GameRepository>();
-      await repository.cacheGame(_game(title: 'Reachable on web'));
-
-      expect((await repository.getGame('g-1'))?.title, 'Reachable on web');
-      // The same instance's database, not a second one.
-      expect(
-        (await GameRepositoryImpl(container.get<ServerDatabase>())
-                .getGame('g-1'))
-            ?.title,
-        'Reachable on web',
-      );
-    });
-
-    test('GameRepository streams close when the scope is disposed', () async {
-      final container = DependencyContainerImpl();
-      await const WebStorageInstaller().install(
-        container,
-        _identity(_uniqueServerId()),
-      );
-      final repository = container.get<GameRepository>();
-
-      var closed = false;
-      final subscription = repository.watchGames().listen(
-        (_) {},
-        onDone: () => closed = true,
-        onError: (Object _) {},
-      );
-      addTearDown(subscription.cancel);
-      await pumpEventQueue();
-
-      await container.dispose();
-      await pumpEventQueue();
-
-      expect(closed, isTrue);
+      expect(container.isRegistered<GameRepository>(), isFalse);
     });
 
     test('reports the storage it got', () async {
@@ -500,14 +477,18 @@ void main() {
     test('a write through one re-runs a stream query on the other', () async {
       final (writer, watcher) = await openTwice();
       final seen = <List<String>>[];
-      final sub = GameRepositoryImpl(watcher)
-          .watchGames()
-          .listen((games) => seen.add([for (final g in games) g.id]));
+      final sub = GameRepositoryImpl(
+        watcher,
+        userId: _kUserId,
+      ).watchGames().listen((games) => seen.add([for (final g in games) g.id]));
       addTearDown(sub.cancel);
       await _eventually(() => seen.isNotEmpty);
       expect(seen.single, isEmpty);
 
-      await GameRepositoryImpl(writer).cacheGame(_game(title: 'Relayed'));
+      await GameRepositoryImpl(
+        writer,
+        userId: _kUserId,
+      ).cacheGame(_game(title: 'Relayed'));
 
       await _eventually(() => seen.length > 1);
       expect(seen.last, ['g-1']);

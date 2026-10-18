@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 
+import '../tables/game_access_table.dart';
 import '../tables/game_table.dart';
+import '../tables/platform_game_access_table.dart';
 import '../tables/platform_game_table.dart';
 import '../tables/game_collection_table.dart';
 import '../tables/household_table.dart';
@@ -33,7 +35,8 @@ part 'server_database.g.dart';
 /// ## Schema
 ///
 /// Tables: games, platform_games, game_collections, households,
-/// household_members, household_moves, sync_queue, unsent_changes_users.
+/// household_members, household_moves, sync_queue, unsent_changes_users,
+/// game_access, platform_game_access.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -43,7 +46,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **5**.
+/// `schemaVersion` is **6**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -70,6 +73,18 @@ part 'server_database.g.dart';
 ///   unsent `sync_queue` rows the sign-in screen may mention. A new table
 ///   with no foreign keys, created by one `createTable`. Starts empty:
 ///   nothing before it recorded whose session was open.
+/// - **v5 → v6 (#434, #406):** adds `game_access` and
+///   `platform_game_access`, which users each cached game and platform game
+///   was sent to, and a nullable `full_record_cached_at` on `games` and
+///   `platform_games`, which marks a row holding a full record rather than
+///   a collection summary. Additive: two `createTable` calls, an index on
+///   each new table's game or platform game id, and two `addColumn` calls.
+///   The columns start empty, so every existing row reads as summary-only,
+///   and the access rows are backfilled from
+///   `game_collections`, live and removed rows alike. Both are right
+///   because the collection hydrate was the only writer of those tables
+///   before this version. The access tables' foreign keys point at existing
+///   tables and no table is rebuilt, so #54 stays deferred.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -85,7 +100,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v5.json`, and
+/// `drift_schemas/server/drift_schema_v6.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -99,6 +114,8 @@ part 'server_database.g.dart';
     HouseholdMovesTable,
     SyncQueueTable,
     UnsentChangesUsersTable,
+    GameAccessTable,
+    PlatformGameAccessTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -122,7 +139,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -168,6 +185,42 @@ class ServerDatabase extends _$ServerDatabase {
         // mention. A new table with no FK edges, created empty, so no
         // FK-off wrapper is needed (#54 stays deferred).
         await m.createTable(unsentChangesUsersTable);
+      }
+      if (from < 6 && to >= 6) {
+        // v5 → v6 (#434, #406): which users each cached row was sent to,
+        // and which rows hold a full record. Additive: two new tables and
+        // two nullable columns, no table rebuilt, so no FK-off wrapper is
+        // needed (#54 stays deferred).
+        //
+        // The columns are added empty, marking every row summary-only,
+        // and the access rows are backfilled from `game_collections`, live
+        // and removed alike: until now the collection hydrate was the only
+        // writer of `games` and `platform_games`, and every collection row
+        // names its user. The backfill is literal SQL, so its columns stay
+        // this version's. The `createTable` calls use the live tables, as
+        // every step here does until #54.
+        await m.addColumn(gamesTable, gamesTable.fullRecordCachedAt);
+        await m.addColumn(
+          platformGamesTable,
+          platformGamesTable.fullRecordCachedAt,
+        );
+        await m.createTable(gameAccessTable);
+        await m.createTable(platformGameAccessTable);
+        // createTable does not create a table's indexes.
+        await m.createIndex(gameAccessGameIdIdx);
+        await m.createIndex(platformGameAccessPlatformGameIdIdx);
+        await customStatement(
+          'INSERT INTO game_access (user_id, game_id, source) '
+          "SELECT DISTINCT c.user_id, p.game_id, 'collection' "
+          'FROM game_collections c '
+          'JOIN platform_games p ON p.id = c.platform_game_id',
+        );
+        await customStatement(
+          'INSERT INTO platform_game_access '
+          '(user_id, platform_game_id, source) '
+          "SELECT DISTINCT user_id, platform_game_id, 'collection' "
+          'FROM game_collections',
+        );
       }
     },
   );

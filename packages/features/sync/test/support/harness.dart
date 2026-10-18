@@ -119,14 +119,16 @@ class Harness {
   static Future<Harness> open() async {
     final db = inMemoryServerDatabase();
     final harness = Harness._(db, _DeviceClock(DateTime.utc(2026, 10, 12, 9)));
-    await GameRepositoryImpl(db).cachePlatformGameSummaries(const [
-      PlatformGameSummary(
-        id: kPlatformGameId,
-        platformId: 'plat-1',
-        platformName: 'Tabletop',
-        game: GameSummary(id: 'g-1', title: 'Brass'),
-      ),
-    ]);
+    await GameRepositoryImpl(db, userId: kUserId).cachePlatformGameSummaries(
+      const [
+        PlatformGameSummary(
+          id: kPlatformGameId,
+          platformId: 'plat-1',
+          platformName: 'Tabletop',
+          game: GameSummary(id: 'g-1', title: 'Brass'),
+        ),
+      ],
+    );
     return harness;
   }
 

@@ -8,7 +8,6 @@ import 'package:storage_interface/storage_interface.dart';
 
 import '../databases/encrypted_executor_factory.dart';
 import '../databases/server_database.dart';
-import '../repositories/game_repository_impl.dart';
 import '../repositories/unsent_changes_notice_repository_impl.dart';
 
 /// [ServerScopeInstaller] for per-server storage: opens the
@@ -43,38 +42,25 @@ import '../repositories/unsent_changes_notice_repository_impl.dart';
 ///
 /// ## Registrations
 ///
-/// The [ServerDatabase], and the per-server repositories that hold nothing
-/// but it — [GameRepository] (#251) and [UnsentChangesNoticeRepository]
-/// (#142).
+/// The [ServerDatabase], and [UnsentChangesNoticeRepository] (#142), which
+/// holds nothing but it.
 ///
-/// [GameRepository] belongs in this tier rather than the user-session tier
-/// because it takes **no user id**: it holds only the [ServerDatabase], so
-/// there is no per-user data to scope and no cross-user read to prevent.
-/// The #138 stream-lifetime trap that forces `WatchDisposal` onto the
-/// user-session repositories does not apply for the same reason — a
-/// `watchGame` / `watchGames` subscription is tied to the very database
-/// this scope owns, so the stream's lifetime already *is* the scope's.
+/// [UnsentChangesNoticeRepository] is here because it counts one user's
+/// sync-queue rows on the sign-in screen, after that user's scope has been
+/// torn down, and at a cold start before any user scope exists. Only this
+/// tier is alive at both moments. It reads the queue and never writes it, so
+/// the user-session tier's rule that queue writes belong to the session that
+/// owns them (#147) still holds.
 ///
-/// [UnsentChangesNoticeRepository] is here for a different reason. It
-/// counts one user's sync-queue rows on the sign-in screen, after that
-/// user's scope has been torn down, and at a cold start before any user
-/// scope exists. Only this tier is alive at both moments. It reads the
-/// queue and never writes it, so the user-session tier's rule that queue
-/// writes belong to the session that owns them (#147) still holds.
+/// It carries no **`dispose:` hook**: it holds nothing but the database,
+/// whose own hook closes it on scope teardown, and it vends no streams.
 ///
-/// Neither registration carries a **`dispose:` hook**: each holds nothing
-/// but the database. The database's own hook closes it on scope teardown,
-/// and closing a drift database closes every stream vended from it. A hook
-/// on [GameRepository] would be a second, redundant closer of streams that
-/// are already gone, and [UnsentChangesNoticeRepository] vends none. The
-/// installer test pins the [GameRepository] half rather than trusting the
-/// reasoning.
+/// `GameRepository` is not registered here. It reads per user, so it lives
+/// in the user-session scope (`UserSessionScopeInstaller`, #434).
 ///
-/// The web counterpart registers the same [GameRepository] over its own
-/// `ServerDatabase` (`WebStorageInstaller`, #288) — web never runs a
-/// `ServerScopeInstaller`, so a registration here reaches native only. It
-/// registers no [UnsentChangesNoticeRepository]: web has nothing to count
-/// until it restores sessions offline (#144) and drains its queue (#447).
+/// Web registers no [UnsentChangesNoticeRepository]: it never runs a
+/// `ServerScopeInstaller`, and has nothing to count until it restores
+/// sessions offline (#144) and drains its queue (#447).
 ///
 /// ## Keying
 ///
@@ -117,10 +103,6 @@ class StorageScopeInstaller implements ServerScopeInstaller {
       dispose: (database) => database.close(),
     );
 
-    // No dispose hook, deliberately (#251) — see the class doc: the
-    // repository holds nothing but the database above, and closing that
-    // closes every stream it vended.
-    container.registerSingleton<GameRepository>(GameRepositoryImpl(db));
     container.registerSingleton<UnsentChangesNoticeRepository>(
       UnsentChangesNoticeRepositoryImpl(db),
     );

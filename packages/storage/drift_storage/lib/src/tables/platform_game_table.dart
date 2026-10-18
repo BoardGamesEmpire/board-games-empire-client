@@ -35,6 +35,11 @@ class PlatformGamesTable extends Table {
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
+  /// When this device last cached the platform game's full record, by the
+  /// local clock (#406). Null on a summary-only row; see
+  /// `GamesTable.fullRecordCachedAt`.
+  DateTimeColumn get fullRecordCachedAt => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 

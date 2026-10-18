@@ -19,10 +19,11 @@ GameCollectionWithSummary _row(
   DateTime? updatedAt,
   DateTime? deletedAt,
   int quantity = 1,
+  String userId = _kUserId,
 }) => (
   entry: GameCollection(
     id: 'gc-$n',
-    userId: _kUserId,
+    userId: userId,
     platformGameId: 'pg-$n',
     medium: GameMedium.physical,
     quantity: quantity,
@@ -74,7 +75,7 @@ void main() {
 
   setUp(() {
     db = inMemoryServerDatabase();
-    games = GameRepositoryImpl(db);
+    games = GameRepositoryImpl(db, userId: _kUserId);
     queue = SyncQueueRepositoryImpl(
       db,
       const LocalClockService(),
@@ -92,6 +93,7 @@ void main() {
     collection: collection,
     games: games,
     remote: remote,
+    userId: _kUserId,
     limit: limit,
   );
 
@@ -165,15 +167,16 @@ void main() {
     test('a tombstone the cache never held caches no game for it', () async {
       // A tombstone never inserts an entry, so the foreign key needs no
       // parent, and caching one would fill a fresh device with a game for
-      // every entry the user ever removed.
+      // every entry the user ever removed. No game read returns a
+      // summary-only row (#406), so the tables are checked directly.
       await build(
         FakeCollectionRemote(
           (_) => _page([_row(1, deletedAt: DateTime.utc(2026, 3))]),
         ),
       ).hydrate();
 
-      expect(await games.getGame('g-1'), isNull);
-      expect(await games.getPlatformGame('pg-1'), isNull);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
     });
 
     // A list open during a first hydrate would otherwise fill one row at a
@@ -325,6 +328,25 @@ void main() {
 
       expect(outcome, CollectionHydrateOutcome.failed);
       expect(remote.requests, hasLength(2));
+    });
+  });
+
+  // The remote attaches whichever token the server's store holds when it
+  // sends, not this session's. A page answered for another user must not
+  // record its games for this one (#434).
+  group('a page holding another user\'s entry', () {
+    test('writes nothing from that page and completes as failed', () async {
+      final remote = FakeCollectionRemote(
+        (_) => _page([_row(1), _row(2, userId: 'user-other')]),
+      );
+
+      final outcome = await build(remote).hydrate();
+
+      expect(outcome, CollectionHydrateOutcome.failed);
+      expect(await db.select(db.gameAccessTable).get(), isEmpty);
+      expect(await db.select(db.platformGameAccessTable).get(), isEmpty);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+      expect(await listedTitles(), isEmpty);
     });
   });
 

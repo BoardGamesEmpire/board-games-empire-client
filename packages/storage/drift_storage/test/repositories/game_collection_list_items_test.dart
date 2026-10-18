@@ -64,7 +64,7 @@ void main() {
 
   setUp(() {
     db = inMemoryServerDatabase();
-    games = GameRepositoryImpl(db);
+    games = GameRepositoryImpl(db, userId: _kUserId);
     final queue = _MockSyncQueue();
     when(() => queue.enqueue(any())).thenAnswer(
       (_) async => SyncQueueEntry(

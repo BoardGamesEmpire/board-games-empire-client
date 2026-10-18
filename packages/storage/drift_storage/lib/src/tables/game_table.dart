@@ -56,6 +56,14 @@ class GamesTable extends Table {
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
+  /// When this device last cached the game's full record, by the local
+  /// clock (#406).
+  ///
+  /// Null on a row only a collection summary has written, whose other
+  /// columns are defaults, not the server's values. The repository's reads
+  /// skip such a row, and a summary write never sets or clears this.
+  DateTimeColumn get fullRecordCachedAt => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 

@@ -56,7 +56,8 @@ A short orientation for anyone (human or LLM) picking this up cold:
   and context dispose.
 - `HouseholdRepositoryImpl` (read-cache + cache-writer + `create`), in the same
   **user-session** scope and with the same disposal triggers.
-- Per-server `GameRepositoryImpl` (read cache + cache writer, server-managed).
+- `GameRepositoryImpl` (read cache + cache writer, server-managed), in the same
+  **user-session** scope since #434, reading only the games cached for its user.
 - `SyncQueueRepositoryImpl` — cuid2 ids, idempotent remap, atomic increments,
   exhausted-retry filtering, pending-count watch.
 - `ServerContextImpl` skeleton with state machine and per-server GetIt container.

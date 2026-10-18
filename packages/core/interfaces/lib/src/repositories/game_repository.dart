@@ -1,10 +1,27 @@
 import 'package:models/domain.dart';
 
-/// Read-only cache of [Game] and [PlatformGame] records for a single server.
+/// Read-only cache of [Game] and [PlatformGame] records for a single server,
+/// read as one user.
 ///
 /// Games are server-managed — clients do not create, update, or delete
 /// game catalog entries. The repository populates the local cache from
 /// server responses and serves reads from it.
+///
+/// ## Per user (#434)
+///
+/// An instance belongs to one user's session and is resolved from that
+/// session's scope. The cache stores each game once per server, whichever
+/// users signed in to it on this device it was cached for, but every read
+/// returns only rows cached for this instance's user. A game the server
+/// sent only to another user reads as not cached, even a public one,
+/// because what decides it is what the server sent each user, not the
+/// game's visibility.
+///
+/// Platform games are recorded separately from their games. A user who was
+/// sent one platform game of a game reads that one, not the game's others.
+///
+/// After the session ends the `Future` methods throw [StateError], and
+/// [watchGame] / [watchGames] streams close.
 ///
 /// ## Tombstones
 ///
@@ -22,19 +39,19 @@ import 'package:models/domain.dart';
 /// If this changes, both this doc and the impl's read paths will need
 /// to be updated together.
 ///
-/// ## Summary-only rows (#259)
+/// ## Summary-only rows (#259, #406)
 ///
 /// [cachePlatformGameSummaries] can insert a game the cache never held
 /// with only its title, subtitle and images. Every other column keeps its
 /// default until a full record is cached: null player counts, play time
 /// and the rest, and a `visibility` of public, which the summary never
-/// stated. The read paths return such a row like any other; nothing marks
-/// it partial.
+/// stated.
 ///
-/// The cache is per server, so it is shared by every user signed in to
-/// that server on this device. A reader that needs a game's full record,
-/// or its real visibility, must fetch it from the server, not take a cache
-/// hit as complete.
+/// So every read treats such a row as not cached, the way it treats a
+/// tombstone, until [cacheGame] / [cacheGames] (or [cachePlatformGame] /
+/// [cachePlatformGames]) caches the full record. A cache hit is therefore
+/// always a full record. A screen that has an entry's summary but no full
+/// record shows the summary and fetches the rest from the server.
 abstract class GameRepository {
   /// Returns the cached [Game] for [id], or null if not cached.
   ///
@@ -53,32 +70,42 @@ abstract class GameRepository {
   /// Returns the cached [PlatformGame] for [id], or null if not cached.
   Future<PlatformGame?> getPlatformGame(String id);
 
-  /// Returns all [PlatformGame] entries for a given [gameId].
+  /// Returns the cached [PlatformGame] entries for a given [gameId]: only
+  /// those this user was sent, so possibly not all of the game's.
   Future<List<PlatformGame>> getPlatformGamesForGame(String gameId);
 
-  /// Upserts [game] into the local cache.
+  /// Upserts [game]'s full record into the local cache, and records it for
+  /// this user.
+  ///
+  /// Records the game only: none of its platform games becomes readable to
+  /// this user through it.
   Future<void> cacheGame(Game game);
 
-  /// Upserts a batch of games. More efficient than repeated [cacheGame] calls.
+  /// Upserts a batch of games, as [cacheGame] does for each, in one batch.
   Future<void> cacheGames(List<Game> games);
 
-  /// Upserts [platformGame] into the local cache.
+  /// Upserts [platformGame]'s full record into the local cache, and records
+  /// it for this user. Its game must already be cached.
   Future<void> cachePlatformGame(PlatformGame platformGame);
 
-  /// Upserts a batch of platform games.
+  /// Upserts a batch of platform games, as [cachePlatformGame] does for
+  /// each, in one batch.
   Future<void> cachePlatformGames(List<PlatformGame> platformGames);
 
   /// Writes the platform game and game [summaries] a collection response
   /// embeds (#259), touching **only the columns a summary carries**.
   ///
   /// A row that is absent is inserted with every other column at its
-  /// default; see "Summary-only rows" in the class doc. A row that exists
-  /// has just these columns updated: the game's `title`, `subtitle`,
-  /// `image` and `thumbnail`, and the platform game's `gameId`,
-  /// `platformId`, `platformName`, `image` and `thumbnail`. So a fuller
-  /// record cached through [cacheGame] / [cachePlatformGame] keeps its
-  /// player counts, play time and the rest; those two are full replaces
-  /// and would null them.
+  /// default, and reads as not cached; see "Summary-only rows" in the class
+  /// doc. A row that exists has just these columns updated: the game's
+  /// `title`, `subtitle`, `image` and `thumbnail`, and the platform game's
+  /// `gameId`, `platformId`, `platformName`, `image` and `thumbnail`. So a
+  /// fuller record cached through [cacheGame] / [cachePlatformGame] keeps
+  /// its player counts, play time and the rest, and stays readable; those
+  /// two are full replaces and would null them.
+  ///
+  /// Both the game and the platform game are recorded for this user, so a
+  /// full record cached later, by any user, is readable to this one.
   ///
   /// Each game is written before its platform game, which references it.
   /// The whole list lands in one transaction, so a watcher re-runs once
@@ -88,12 +115,13 @@ abstract class GameRepository {
   ///
   /// `createdAt` / `updatedAt` are required columns and the summary has
   /// neither, so a row this **inserts** is stamped from the local clock at
-  /// the time of the write. An update leaves both alone. Treat them on a
-  /// summary-only row as "when this device first cached it", never as the
-  /// server's record timestamps.
+  /// the time of the write. An update leaves both alone. No reader sees
+  /// them: the row reads as not cached until a full record replaces both
+  /// with the server's.
   Future<void> cachePlatformGameSummaries(List<PlatformGameSummary> summaries);
 
-  /// Searches cached games by [query] against title and subtitle.
+  /// Searches this user's cached games by [query] against title and
+  /// subtitle.
   /// Returns results ordered by relevance (title prefix match first).
   ///
   /// Tombstoned games are excluded from the search index, so a search
@@ -109,7 +137,7 @@ abstract class GameRepository {
   /// the row is gone whether it was hard-deleted or soft-deleted.
   Stream<Game?> watchGame(String id);
 
-  /// Watches all cached games, emitting on any change.
+  /// Watches all games cached for this user, emitting on any change.
   ///
   /// Tombstoned games are filtered out of every emission, so a
   /// subscriber sees the live-games view evolve without seeing
