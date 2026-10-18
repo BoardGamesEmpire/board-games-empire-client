@@ -19,12 +19,12 @@ import 'game_collection_refresher.dart';
 ///
 /// What it resolves, and from where:
 ///
-/// - [GameCollectionRepository], registered in the user-session scope by
-///   `UserSessionScopeInstaller`;
-/// - [GameRepository], registered per server by the storage installer, and
-///   reached because the user-scope container view falls through to it;
+/// - [GameCollectionRepository] and [GameRepository], both registered in
+///   the user-session scope by `UserSessionScopeInstaller`, so the
+///   summaries a page writes are recorded for this session's user (#434);
 /// - [GameCollectionRemoteDataSource], registered per server by the network
-///   installer, reached the same way.
+///   installer, and reached because the user-scope container view falls
+///   through to it.
 ///
 /// So it must run **after** `UserSessionScopeInstaller` in whichever list
 /// holds it, and after `SessionRehydratorInstaller` too, whose registry it

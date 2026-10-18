@@ -74,7 +74,7 @@ void main() {
 
   setUp(() {
     db = inMemoryServerDatabase();
-    games = GameRepositoryImpl(db);
+    games = GameRepositoryImpl(db, userId: _kUserId);
     queue = SyncQueueRepositoryImpl(
       db,
       const LocalClockService(),
@@ -165,15 +165,16 @@ void main() {
     test('a tombstone the cache never held caches no game for it', () async {
       // A tombstone never inserts an entry, so the foreign key needs no
       // parent, and caching one would fill a fresh device with a game for
-      // every entry the user ever removed.
+      // every entry the user ever removed. No game read returns a
+      // summary-only row (#406), so the tables are checked directly.
       await build(
         FakeCollectionRemote(
           (_) => _page([_row(1, deletedAt: DateTime.utc(2026, 3))]),
         ),
       ).hydrate();
 
-      expect(await games.getGame('g-1'), isNull);
-      expect(await games.getPlatformGame('pg-1'), isNull);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
     });
 
     // A list open during a first hydrate would otherwise fill one row at a

@@ -28,47 +28,62 @@ PlatformGameSummary _summary({
 
 void main() {
   late ServerDatabase db;
-  final stamp = DateTime.utc(2026, 9, 26, 12);
 
   setUp(() => db = inMemoryServerDatabase());
   tearDown(() => db.close());
 
-  GameRepositoryImpl repo({DateTime Function()? now}) =>
-      GameRepositoryImpl(db, now: now ?? () => stamp);
+  GameRepositoryImpl repo() => GameRepositoryImpl(db, userId: 'user-abc');
 
   group('cachePlatformGameSummaries (#259)', () {
-    test(
-      'into an empty cache, creates the game and its platform game',
-      () async {
-        await repo().cachePlatformGameSummaries([_summary()]);
-
-        final game = await repo().getGame('g-1');
-        expect(game?.title, 'Brass: Birmingham');
-        expect(game?.image, 'g.png');
-        expect(game?.thumbnail, 'g_thumb.png');
-
-        final platformGame = await repo().getPlatformGame('pg-1');
-        expect(platformGame?.gameId, 'g-1');
-        expect(platformGame?.platformId, 'plat-1');
-        expect(platformGame?.platformName, 'Tabletop');
-        expect(platformGame?.thumbnail, isNull);
-      },
-    );
-
-    test('stamps the timestamps of a row it inserts from the local clock, '
-        'since the summary carries none', () async {
+    test('a row only a summary wrote reads back as not cached, through '
+        'every read (#406)', () async {
       await repo().cachePlatformGameSummaries([_summary()]);
 
+      expect(await repo().getGame('g-1'), isNull);
+      expect(await repo().getGames(['g-1']), isEmpty);
+      expect(await repo().searchGames('brass'), isEmpty);
+      expect(await repo().watchGame('g-1').first, isNull);
+      expect(await repo().watchGames().first, isEmpty);
+      expect(await repo().getPlatformGame('pg-1'), isNull);
+      expect(await repo().getPlatformGamesForGame('g-1'), isEmpty);
+    });
+
+    test('a full write over a summary-only row makes it readable '
+        '(#406)', () async {
+      final seeded = DateTime.utc(2020);
+      await repo().cachePlatformGameSummaries([_summary()]);
+
+      await repo().cacheGame(
+        Game(
+          id: 'g-1',
+          title: 'Brass: Birmingham',
+          minPlayers: 2,
+          createdAt: seeded,
+          updatedAt: seeded,
+        ),
+      );
+      await repo().cachePlatformGame(
+        PlatformGame(
+          id: 'pg-1',
+          gameId: 'g-1',
+          platformId: 'plat-1',
+          platformName: 'Tabletop',
+          supportsSolo: true,
+          createdAt: seeded,
+          updatedAt: seeded,
+        ),
+      );
+
       final game = await repo().getGame('g-1');
+      expect(game?.minPlayers, 2);
+      expect(game?.createdAt, seeded);
       final platformGame = await repo().getPlatformGame('pg-1');
-      expect(game?.createdAt, stamp);
-      expect(game?.updatedAt, stamp);
-      expect(platformGame?.createdAt, stamp);
-      expect(platformGame?.updatedAt, stamp);
+      expect(platformGame?.supportsSolo, isTrue);
+      expect(platformGame?.createdAt, seeded);
     });
 
     test('over a full record, changes only the columns the summary '
-        'carries', () async {
+        'carries, and the record stays readable (#406)', () async {
       final seeded = DateTime.utc(2020);
       await repo().cacheGame(
         Game(
@@ -118,19 +133,28 @@ void main() {
       expect(platformGame?.updatedAt, seeded);
     });
 
-    test(
-      'a later summary replaces the summary fields, nulls included',
-      () async {
-        await repo().cachePlatformGameSummaries([_summary(subtitle: 'Deluxe')]);
-        await repo().cachePlatformGameSummaries([
-          _summary(title: 'Brass', gameThumbnail: null),
-        ]);
+    test('a later summary replaces the summary fields, nulls '
+        'included', () async {
+      final seeded = DateTime.utc(2020);
+      await repo().cacheGame(
+        Game(
+          id: 'g-1',
+          title: 'Brass: Birmingham',
+          subtitle: 'Deluxe',
+          thumbnail: 'g_thumb.png',
+          createdAt: seeded,
+          updatedAt: seeded,
+        ),
+      );
 
-        final game = await repo().getGame('g-1');
-        expect(game?.title, 'Brass');
-        expect(game?.subtitle, isNull);
-        expect(game?.thumbnail, isNull);
-      },
-    );
+      await repo().cachePlatformGameSummaries([
+        _summary(title: 'Brass', gameThumbnail: null),
+      ]);
+
+      final game = await repo().getGame('g-1');
+      expect(game?.title, 'Brass');
+      expect(game?.subtitle, isNull);
+      expect(game?.thumbnail, isNull);
+    });
   });
 }

@@ -10,6 +10,7 @@ import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
 import 'generated/schema_v4.dart' as v4;
 import 'generated/schema_v5.dart' as v5;
+import 'generated/schema_v6.dart' as v6;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -486,6 +487,205 @@ void main() {
           await newDb.select(newDb.householdMoves).get(),
         );
         expect(await newDb.select(newDb.unsentChangesUsers).get(), isEmpty);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v5 → v6 (#434, #406): the step adds the two
+  // access tables and `full_record_cached_at` on `games` and
+  // `platform_games`. Every row the cache already holds is carried, and
+  // reads as summary-only: the hydrate is the only writer these tables have
+  // had. The access tables are backfilled from `game_collections`, live and
+  // removed rows alike, so each user keeps exactly the games their own
+  // collection brought onto the device.
+  test('migration from v5 to v6 records each collection row\'s user for its '
+      'game and platform game, and leaves every cached row summary-only '
+      '(#434, #406)', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+    const deletedAt = '2024-01-17T12:00:00.000Z';
+
+    v5.GamesData oldGame(String id) => v5.GamesData(
+      id: id,
+      title: 'Game $id',
+      contentType: 'BaseGame',
+      totalPlayCount: 0,
+      ownedByCount: 0,
+      categoriesJson: '[]',
+      mechanicsJson: '[]',
+      designersJson: '[]',
+      publishersJson: '[]',
+      tagsJson: '[]',
+      visibility: 'Public',
+      createdAt: at,
+      updatedAt: at,
+    );
+    v6.GamesData newGame(String id) => v6.GamesData(
+      id: id,
+      title: 'Game $id',
+      contentType: 'BaseGame',
+      totalPlayCount: 0,
+      ownedByCount: 0,
+      categoriesJson: '[]',
+      mechanicsJson: '[]',
+      designersJson: '[]',
+      publishersJson: '[]',
+      tagsJson: '[]',
+      visibility: 'Public',
+      createdAt: at,
+      updatedAt: at,
+    );
+    v5.PlatformGamesData oldPlatformGame(String id, String gameId) =>
+        v5.PlatformGamesData(
+          id: id,
+          gameId: gameId,
+          platformId: 'plat-$id',
+          platformName: 'Tabletop',
+          supportsSolo: 0,
+          supportsLocal: 0,
+          supportsOnline: 0,
+          hasAsyncPlay: 0,
+          hasRealtime: 0,
+          hasTutorial: 0,
+          createdAt: at,
+          updatedAt: at,
+        );
+    v6.PlatformGamesData newPlatformGame(String id, String gameId) =>
+        v6.PlatformGamesData(
+          id: id,
+          gameId: gameId,
+          platformId: 'plat-$id',
+          platformName: 'Tabletop',
+          supportsSolo: 0,
+          supportsLocal: 0,
+          supportsOnline: 0,
+          hasAsyncPlay: 0,
+          hasRealtime: 0,
+          hasTutorial: 0,
+          createdAt: at,
+          updatedAt: at,
+        );
+    v5.GameCollectionsData oldEntry(
+      String id,
+      String userId,
+      String platformGameId, {
+      String medium = 'Physical',
+      String? deleted,
+    }) => v5.GameCollectionsData(
+      id: id,
+      userId: userId,
+      platformGameId: platformGameId,
+      medium: medium,
+      quantity: 1,
+      isDirty: 0,
+      isLocalOnly: 0,
+      deletedAt: deleted,
+      createdAt: at,
+      updatedAt: at,
+    );
+    v6.GameCollectionsData newEntry(
+      String id,
+      String userId,
+      String platformGameId, {
+      String medium = 'Physical',
+      String? deleted,
+    }) => v6.GameCollectionsData(
+      id: id,
+      userId: userId,
+      platformGameId: platformGameId,
+      medium: medium,
+      quantity: 1,
+      isDirty: 0,
+      isLocalOnly: 0,
+      deletedAt: deleted,
+      createdAt: at,
+      updatedAt: at,
+    );
+
+    // A owns g-1 on pg-1 in two media, which must record one row each, and
+    // removed g-2's pg-3. B owns g-1 on pg-2 only, so B gets g-1 but never
+    // pg-1.
+    final oldEntries = [
+      oldEntry('gc-a1', 'user-a', 'pg-1'),
+      oldEntry('gc-a2', 'user-a', 'pg-1', medium: 'Digital'),
+      oldEntry('gc-a3', 'user-a', 'pg-3', deleted: deletedAt),
+      oldEntry('gc-b1', 'user-b', 'pg-2'),
+    ];
+    final expectedEntries = [
+      newEntry('gc-a1', 'user-a', 'pg-1'),
+      newEntry('gc-a2', 'user-a', 'pg-1', medium: 'Digital'),
+      newEntry('gc-a3', 'user-a', 'pg-3', deleted: deletedAt),
+      newEntry('gc-b1', 'user-b', 'pg-2'),
+    ];
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 5,
+      newVersion: 6,
+      createOld: v5.DatabaseAtV5.new,
+      createNew: v6.DatabaseAtV6.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insertAll(oldDb.games, [oldGame('g-1'), oldGame('g-2')]);
+        batch.insertAll(oldDb.platformGames, [
+          oldPlatformGame('pg-1', 'g-1'),
+          oldPlatformGame('pg-2', 'g-1'),
+          oldPlatformGame('pg-3', 'g-2'),
+        ]);
+        batch.insertAll(oldDb.gameCollections, oldEntries);
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.games).get(), [
+          newGame('g-1'),
+          newGame('g-2'),
+        ]);
+        expect(await newDb.select(newDb.platformGames).get(), [
+          newPlatformGame('pg-1', 'g-1'),
+          newPlatformGame('pg-2', 'g-1'),
+          newPlatformGame('pg-3', 'g-2'),
+        ]);
+        expect(
+          await newDb.select(newDb.gameCollections).get(),
+          expectedEntries,
+        );
+        expect(
+          await newDb.select(newDb.gameAccess).get(),
+          unorderedEquals(const [
+            v6.GameAccessData(
+              userId: 'user-a',
+              gameId: 'g-1',
+              source: 'collection',
+            ),
+            v6.GameAccessData(
+              userId: 'user-a',
+              gameId: 'g-2',
+              source: 'collection',
+            ),
+            v6.GameAccessData(
+              userId: 'user-b',
+              gameId: 'g-1',
+              source: 'collection',
+            ),
+          ]),
+        );
+        expect(
+          await newDb.select(newDb.platformGameAccess).get(),
+          unorderedEquals(const [
+            v6.PlatformGameAccessData(
+              userId: 'user-a',
+              platformGameId: 'pg-1',
+              source: 'collection',
+            ),
+            v6.PlatformGameAccessData(
+              userId: 'user-a',
+              platformGameId: 'pg-3',
+              source: 'collection',
+            ),
+            v6.PlatformGameAccessData(
+              userId: 'user-b',
+              platformGameId: 'pg-2',
+              source: 'collection',
+            ),
+          ]),
+        );
       },
     );
   });

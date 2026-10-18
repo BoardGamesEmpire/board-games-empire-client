@@ -96,7 +96,7 @@ void main() {
 
   setUp(() {
     db = inMemoryServerDatabase();
-    repo = GameRepositoryImpl(db);
+    repo = GameRepositoryImpl(db, userId: 'user-abc');
   });
 
   tearDown(() async => db.close());

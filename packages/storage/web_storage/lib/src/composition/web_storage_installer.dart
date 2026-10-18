@@ -1,6 +1,5 @@
 import 'package:drift_storage/drift_storage.dart';
 import 'package:interfaces/orchestration.dart';
-import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import '../databases/wasm_executor_factory.dart';
@@ -40,19 +39,9 @@ typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 ///
 /// ## Registrations
 ///
-/// The [ServerDatabase], and the per-server repositories that hold nothing
-/// but it — today [GameRepository] (#251).
-///
-/// Web needs its own registration of that repository rather than
-/// inheriting native's: `StorageScopeInstaller` is a `ServerScopeInstaller`
-/// run by `ServerContextImpl`, and web runs no such tier (see below). The
-/// repository itself is shared — `GameRepositoryImpl` comes from
-/// `drift_storage`'s platform-neutral half — so this is one more
-/// registration, not a parallel implementation.
-///
-/// No `dispose:` hook here either, and for the same reason as native: the
-/// repository holds only the database, whose own hook closes it, and
-/// closing a drift database closes every stream vended from it.
+/// The [ServerDatabase] alone. `GameRepository` reads per user, so it is
+/// registered in the user-session scope by `UserSessionScopeInstaller`,
+/// which web runs too (#434).
 ///
 /// ## No key, no recovery flow
 ///
@@ -117,10 +106,6 @@ class WebStorageInstaller {
         db,
         dispose: (database) => database.close(),
       );
-      // Inside the same guard as the database: a throw between the two
-      // would strand the open wasm database exactly as described above.
-      // No dispose hook (#251) — see the class doc.
-      container.registerSingleton<GameRepository>(GameRepositoryImpl(db));
     } catch (_) {
       await _safeClose(db);
       rethrow;

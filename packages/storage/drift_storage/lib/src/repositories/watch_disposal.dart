@@ -5,7 +5,8 @@ import 'package:interfaces/orchestration.dart';
 
 /// The close-on-dispose contract (#135, #138) shared by the user-session
 /// scoped repositories (`HouseholdRepositoryImpl`,
-/// `SyncQueueRepositoryImpl`) — a single fix surface for machinery that
+/// `SyncQueueRepositoryImpl`, `GameCollectionRepositoryImpl`,
+/// `GameRepositoryImpl`) — a single fix surface for machinery that
 /// previously lived as two hand-rolled copies.
 ///
 /// Drift streams are tied to the per-server database, which outlives the

@@ -455,4 +455,99 @@ void main() {
       );
     },
   );
+
+  // ── GameRepository (#434) ────────────────────────────────────────────
+
+  test('disposing the container closes a live game cache stream, and a '
+      'stale reference throws (#434, #138)', () async {
+    // The database outlives the scope, as the per-server one does, so only
+    // the repository's own dispose hook can close the stream.
+    final db = inMemoryServerDatabase();
+    addTearDown(db.close);
+    final container = _scopeContainer(
+      _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+      db: db,
+    );
+    await installer.install(container, _server(), _kUserId);
+    final games = container.get<GameRepository>();
+
+    var done = false;
+    Object? streamError;
+    final sub = games.watchGames().listen(
+      (_) {},
+      onError: (Object e) => streamError = e,
+      onDone: () => done = true,
+    );
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+    expect(done, isFalse);
+
+    await container.dispose();
+    await pumpEventQueue();
+
+    expect(done, isTrue, reason: 'the dispose: callback must be wired');
+    expect(streamError, isNull, reason: 'close, not error');
+    await expectLater(games.getGame('g-1'), throwsStateError);
+  });
+
+  test('the registered game cache is data-scoped to the install user id, '
+      'whoever is signed in when it writes (#434)', () async {
+    final auth = _FakeAuthRepository(
+      AuthStateAuthenticated(session: _session()),
+    );
+    final db = inMemoryServerDatabase();
+    final (a: scopeA, b: scopeB) = await _siblingScopes(
+      auth,
+      db,
+      userA: _kUserId,
+      userB: 'user-someone-else',
+    );
+
+    // B is signed in by the time A's scope writes, as when a hydrate page
+    // lands before A's scope finishes popping. It writes what a page writes:
+    // the summary.
+    auth.authState = AuthStateAuthenticated(
+      session: _session(userId: 'user-someone-else'),
+    );
+    await scopeA.get<GameRepository>().cachePlatformGameSummaries(const [
+      PlatformGameSummary(
+        id: 'pg-1',
+        platformId: 'plat-1',
+        platformName: 'Tabletop',
+        game: GameSummary(id: 'g-1', title: 'Brass'),
+      ),
+    ]);
+
+    // A summary alone reads as not cached (#406), so a third user caches
+    // the full records. Whoever the summary was recorded for can now read
+    // them.
+    final third = GameRepositoryImpl(db, userId: 'user-third');
+    final at = DateTime.utc(2026, 10, 1);
+    await third.cacheGame(
+      Game(id: 'g-1', title: 'Brass', createdAt: at, updatedAt: at),
+    );
+    await third.cachePlatformGame(
+      PlatformGame(
+        id: 'pg-1',
+        gameId: 'g-1',
+        platformId: 'plat-1',
+        platformName: 'Tabletop',
+        createdAt: at,
+        updatedAt: at,
+      ),
+    );
+
+    final gamesA = scopeA.get<GameRepository>();
+    expect(await gamesA.getGame('g-1'), isNotNull);
+    expect(await gamesA.getPlatformGame('pg-1'), isNotNull);
+
+    final gamesB = scopeB.get<GameRepository>();
+    expect(await gamesB.getGame('g-1'), isNull);
+    expect(await gamesB.getGames(['g-1']), isEmpty);
+    expect(await gamesB.searchGames('brass'), isEmpty);
+    expect(await gamesB.watchGame('g-1').first, isNull);
+    expect(await gamesB.watchGames().first, isEmpty);
+    expect(await gamesB.getPlatformGame('pg-1'), isNull);
+    expect(await gamesB.getPlatformGamesForGame('g-1'), isEmpty);
+  });
 }
