@@ -94,27 +94,24 @@ void main() {
       quantity: 1,
     );
 
-    test('round-trips whether a re-add revived a local-only entry (#190)', () {
-      const readd = AddToCollectionOperation(
+    test('round-trips whether the add raised a quantity (#190)', () {
+      const raise = AddToCollectionOperation(
         localId: 'col_1',
         platformGameId: 'pg_1',
         medium: 'Physical',
-        quantity: 1,
-        revivedLocalOnly: false,
+        quantity: 2,
+        raised: true,
       );
 
-      final round = AddToCollectionOperation.fromJson(readd.toJson());
+      final round = AddToCollectionOperation.fromJson(raise.toJson());
 
-      expect(round.revivedLocalOnly, isFalse);
+      expect(round.raised, isTrue);
     });
 
-    test('leaves the revival flag out of any other add, and reads its '
-        'absence as null', () {
-      expect(add.toJson().containsKey('revived_local_only'), isFalse);
-      expect(
-        AddToCollectionOperation.fromJson(add.toJson()).revivedLocalOnly,
-        isNull,
-      );
+    test('leaves the raise flag out of any other add, and reads its absence '
+        'as null', () {
+      expect(add.toJson().containsKey('raised'), isFalse);
+      expect(AddToCollectionOperation.fromJson(add.toJson()).raised, isNull);
     });
   });
 

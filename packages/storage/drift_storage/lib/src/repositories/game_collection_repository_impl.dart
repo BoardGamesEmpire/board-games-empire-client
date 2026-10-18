@@ -295,7 +295,7 @@ class GameCollectionRepositoryImpl
 
       final String entryId;
       final int finalQuantity;
-      bool? revivedLocalOnly;
+      bool? raised;
 
       if (existing == null) {
         // Fresh insert. cuid2 id — matches the backend's id format
@@ -362,7 +362,6 @@ class GameCollectionRepositoryImpl
         // (including null) while the live-row branch preserved.
         entryId = existing.id;
         finalQuantity = quantity;
-        revivedLocalOnly = existing.isLocalOnly;
         await (_db.update(
           _db.gameCollectionsTable,
         )..where((t) => t.id.equals(entryId))).write(
@@ -382,6 +381,7 @@ class GameCollectionRepositoryImpl
         // a new value.
         entryId = existing.id;
         finalQuantity = existing.quantity + quantity;
+        raised = true;
         await (_db.update(
           _db.gameCollectionsTable,
         )..where((t) => t.id.equals(entryId))).write(
@@ -403,7 +403,7 @@ class GameCollectionRepositoryImpl
           quantity: finalQuantity,
           rating: rating,
           comment: comment,
-          revivedLocalOnly: revivedLocalOnly,
+          raised: raised,
         ),
       );
 
@@ -740,16 +740,14 @@ class GameCollectionRepositoryImpl
       final earlier = queued.take(at < 0 ? queued.length : at).toList();
       final later = at < 0 ? const <SyncQueueEntry>[] : queued.sublist(at + 1);
 
-      final revivedFrom = earlier.lastOrNull?.operation;
-      final undoesAdd =
-          op is AddToCollectionOperation &&
-          row != null &&
-          row.isLocalOnly &&
-          (earlier.isEmpty || revivedFrom is RemoveFromCollectionOperation);
-      // The ops behind it go with it, and one may be on its way to the
-      // server: a later add is sent while this one is stuck. Its
-      // acknowledgement would bring back what this discards.
-      if (undoesAdd &&
+      // An add or a removal goes with every op queued after it for the
+      // entry, which all assumed it: the entry goes back to how it was before
+      // it. An update goes alone.
+      final rollsBack = op is! UpdateCollectionOperation;
+      // One of those may be on its way to the server: an op behind a stuck
+      // one is sent unless it is held. Its acknowledgement would bring back
+      // what this discards.
+      if (rollsBack &&
           later.any((queuedOp) => queuedOp.status == SyncStatus.inProgress)) {
         throw StateError(
           'A later op for this entry is being sent; discard it once that '
@@ -760,70 +758,77 @@ class GameCollectionRepositoryImpl
       // Checked in the statement that deletes it: an op another tab retried
       // since may be on its way to the server, so nothing is undone for it.
       if (!await _syncQueue.discardStuck(entry.id)) return false;
-
-      if (undoesAdd) {
-        for (final held in later) {
-          await _syncQueue.discard(held.id);
+      if (rollsBack) {
+        for (final queuedOp in later) {
+          await _syncQueue.discard(queuedOp.id);
         }
-        if (earlier.isEmpty) {
+      }
+      if (row == null) return true;
+
+      final kept = rollsBack ? earlier : [...earlier, ...later];
+      final settled = kept.isEmpty;
+      if (!rollsBack) {
+        await (_db.update(
+          _db.gameCollectionsTable,
+        )..where((t) => t.id.equals(row.id))).write(
+          GameCollectionsTableCompanion(
+            isDirty: Value(!settled),
+            updatedAt: settled
+                ? Value(_olderThanAnyServerCopy)
+                : const Value.absent(),
+          ),
+        );
+        return true;
+      }
+
+      // A row that isn't local-only is one the server has now. Otherwise the
+      // server sees it only once an add still queued before this op arrives.
+      final unseen =
+          row.isLocalOnly &&
+          kept.any((queuedOp) => _createsEntry(queuedOp.operation));
+      var removed = false;
+      if (_createsEntry(op)) {
+        final before = earlier
+            .map((queuedOp) => queuedOp.operation)
+            .where(
+              (queued) =>
+                  queued is AddToCollectionOperation ||
+                  queued is RemoveFromCollectionOperation,
+            )
+            .lastOrNull;
+        if (before is RemoveFromCollectionOperation) {
+          // A re-add over a removal still queued: back to its tombstone.
+          removed = true;
+        } else if (row.isLocalOnly) {
+          // It created the entry, or revived it once the server had
+          // confirmed the removal. Nothing else on this device holds it.
           await (_db.delete(
             _db.gameCollectionsTable,
           )..where((t) => t.id.equals(row.id))).go();
-        } else {
-          // A re-add the server never saw, over a removal it hasn't seen
-          // either: back to that removal's tombstone, local-only as the
-          // tombstone was. An earlier add acknowledged since gave the
-          // server the entry, so it stays local-only only while one is
-          // still queued.
-          final now = _clock.nowUtc();
-          final unseen =
-              (op.revivedLocalOnly ?? true) &&
-              earlier.any(
-                (queuedOp) => queuedOp.operation is AddToCollectionOperation,
-              );
-          await (_db.update(
-            _db.gameCollectionsTable,
-          )..where((t) => t.id.equals(row.id))).write(
-            GameCollectionsTableCompanion(
-              deletedAt: Value(now),
-              isDirty: const Value(true),
-              isLocalOnly: Value(unseen),
-              updatedAt: Value(now),
-            ),
-          );
+          return true;
         }
-        return true;
+        // Otherwise a later add reached the server while this one was stuck,
+        // and the server has the entry.
       }
-      // Otherwise an earlier add still stands for the row: drop only this
-      // one.
-
-      if (row == null) return true;
-      final settled = earlier.isEmpty && later.isEmpty;
-      // A later add or removal already set whether the entry shows.
-      final restores =
-          op is RemoveFromCollectionOperation &&
-          !later.any(
-            (queuedOp) => switch (queuedOp.operation) {
-              AddToCollectionOperation() ||
-              RemoveFromCollectionOperation() => true,
-              UpdateCollectionOperation() ||
-              CreateHouseholdOperation() => false,
-            },
-          );
+      final now = _clock.nowUtc();
       await (_db.update(
         _db.gameCollectionsTable,
       )..where((t) => t.id.equals(row.id))).write(
         GameCollectionsTableCompanion(
-          deletedAt: restores ? const Value(null) : const Value.absent(),
+          deletedAt: Value(removed ? now : null),
           isDirty: Value(!settled),
-          updatedAt: settled
-              ? Value(_olderThanAnyServerCopy)
-              : const Value.absent(),
+          isLocalOnly: Value(unseen),
+          updatedAt: Value(settled ? _olderThanAnyServerCopy : now),
         ),
       );
       return true;
     });
   }
+
+  /// Whether [op] puts the entry on the server: an add that created it or
+  /// revived it from a removal, rather than one that raised its quantity.
+  static bool _createsEntry(SyncOperation op) =>
+      op is AddToCollectionOperation && op.raised != true;
 
   @override
   Future<String?> titleOf(String collectionId) async {

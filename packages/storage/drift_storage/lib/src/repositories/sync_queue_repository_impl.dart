@@ -487,7 +487,7 @@ class SyncQueueRepositoryImpl
         quantity: op.quantity,
         rating: op.rating,
         comment: op.comment,
-        revivedLocalOnly: op.revivedLocalOnly,
+        raised: op.raised,
       ),
       UpdateCollectionOperation() => UpdateCollectionOperation(
         collectionId: newId,

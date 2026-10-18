@@ -96,7 +96,10 @@ void main() {
     await show(tester, const []);
 
     expect(find.byKey(StuckSyncOpsScreen.emptyKey), findsOneWidget);
-    expect(find.text('Every change has reached the server.'), findsOneWidget);
+    expect(
+      find.text("There's nothing here to retry or discard."),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a read failure shows the error', (tester) async {
@@ -169,6 +172,31 @@ void main() {
 
       verify(() => recovery.discard('q1')).called(1);
     });
+
+    const goesWithIt =
+        "It won't be sent, and it's undone on this device. Any later "
+        "changes to the same game that haven't synced are discarded with "
+        "it. This can't be reversed.";
+    const alone =
+        "It won't be sent, and it's undone on this device. This can't be "
+        'reversed.';
+    for (final (entryId, body) in [
+      ('q1', goesWithIt),
+      ('q3', goesWithIt),
+      ('q2', alone),
+      ('q4', alone),
+    ]) {
+      testWidgets('for $entryId, says what goes with it', (tester) async {
+        await show(tester, _ops);
+
+        final discard = find.byKey(StuckSyncOpsScreen.discardKey(entryId));
+        await tester.scrollUntilVisible(discard, 100);
+        await tester.tap(discard);
+        await tester.pumpAndSettle();
+
+        expect(find.text(body), findsOneWidget);
+      });
+    }
   });
 
   testWidgets('an action that throws says so', (tester) async {

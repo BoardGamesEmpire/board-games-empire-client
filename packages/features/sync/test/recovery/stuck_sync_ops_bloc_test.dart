@@ -113,6 +113,32 @@ void main() {
       ],
     );
 
+    late Completer<bool> delivery;
+    blocTest<StuckSyncOpsBloc, StuckSyncOpsState>(
+      'keeps the op listed while its send runs, though the retry has taken '
+      'it out of the stuck list already',
+      setUp: () {
+        delivery = Completer<bool>();
+        when(() => recovery.retry('q1')).thenAnswer((_) => delivery.future);
+      },
+      build: build,
+      act: (bloc) async {
+        stuck.add([_add, _create]);
+        await pumpEventQueue();
+        bloc.add(const StuckSyncOpsRetryRequested('q1'));
+        await pumpEventQueue();
+        // The retry puts the op back in the queue before it sends it.
+        stuck.add([_create]);
+        await pumpEventQueue();
+        delivery.complete(true);
+      },
+      expect: () => [
+        const StuckSyncOpsReady([_add, _create]),
+        const StuckSyncOpsReady([_add, _create], busy: {'q1'}),
+        const StuckSyncOpsReady([_create]),
+      ],
+    );
+
     blocTest<StuckSyncOpsBloc, StuckSyncOpsState>(
       'is ignored for an op already busy',
       setUp: () {
@@ -156,6 +182,30 @@ void main() {
         const StuckSyncOpsReady([_add, _create]),
       ],
       verify: (_) => verify(() => recovery.discard('q2')).called(1),
+    );
+
+    late Completer<void> undone;
+    blocTest<StuckSyncOpsBloc, StuckSyncOpsState>(
+      'keeps the op where it was listed until the discard returns',
+      setUp: () {
+        undone = Completer<void>();
+        when(() => recovery.discard('q2')).thenAnswer((_) => undone.future);
+      },
+      build: build,
+      act: (bloc) async {
+        stuck.add([_add, _create]);
+        await pumpEventQueue();
+        bloc.add(const StuckSyncOpsDiscardRequested('q2'));
+        await pumpEventQueue();
+        stuck.add([_add]);
+        await pumpEventQueue();
+        undone.complete();
+      },
+      expect: () => [
+        const StuckSyncOpsReady([_add, _create]),
+        const StuckSyncOpsReady([_add, _create], busy: {'q2'}),
+        const StuckSyncOpsReady([_add]),
+      ],
     );
   });
 }

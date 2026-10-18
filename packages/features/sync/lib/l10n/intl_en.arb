@@ -8,9 +8,9 @@
   "@syncStuckIntro": {
     "description": "Explanation at the top of the stuck-changes screen (#190). Covers both causes, a refusal and running out of attempts, without naming either: the app can't tell them apart. Must not blame the user or say anything was lost."
   },
-  "syncStuckEmpty": "Every change has reached the server.",
+  "syncStuckEmpty": "There's nothing here to retry or discard.",
   "@syncStuckEmpty": {
-    "description": "Shown on the stuck-changes screen when nothing is stuck, for example after the last one was retried or discarded (#190)."
+    "description": "Shown on the stuck-changes screen when nothing is stuck, for example after the last one was retried or discarded (#190). Says only that: it must not claim the changes reached the server, because a retried one may still be waiting to send and a discarded one never will."
   },
   "syncStuckLoading": "Loading changes…",
   "@syncStuckLoading": {
@@ -95,6 +95,10 @@
   "syncStuckDiscardBody": "It won't be sent, and it's undone on this device. This can't be reversed.",
   "@syncStuckDiscardBody": {
     "description": "Body of the confirmation before a stuck change is discarded (#190). Discarding can delete what the change created locally, such as a household that only exists on this device."
+  },
+  "syncStuckDiscardBodyWithLater": "It won't be sent, and it's undone on this device. Any later changes to the same game that haven't synced are discarded with it. This can't be reversed.",
+  "@syncStuckDiscardBodyWithLater": {
+    "description": "Body of the confirmation before a stuck add to, or removal from, the collection is discarded (#190). The game goes back to how it was before that change, so every later change to it still waiting to sync is discarded too. Must say so before the user confirms."
   },
   "syncStuckDiscardConfirm": "Discard",
   "@syncStuckDiscardConfirm": {

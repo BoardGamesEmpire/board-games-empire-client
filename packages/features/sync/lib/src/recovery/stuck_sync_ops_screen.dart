@@ -204,7 +204,7 @@ class _StuckRow extends StatelessWidget {
                 onPressed: busy
                     ? null
                     : () async {
-                        if (await _confirmDiscard(context)) {
+                        if (await _confirmDiscard(context, op.kind)) {
                           bloc.add(StuckSyncOpsDiscardRequested(op.entryId));
                         }
                       },
@@ -240,13 +240,25 @@ class _StuckRow extends StatelessWidget {
     };
   }
 
-  static Future<bool> _confirmDiscard(BuildContext context) async {
+  static Future<bool> _confirmDiscard(
+    BuildContext context,
+    StuckSyncOpKind kind,
+  ) async {
     final l10n = SyncLocalizations.of(context);
+    // An add or a removal goes with the changes to the game queued after it
+    // ([GameCollectionRepository.discardQueuedOp]).
+    final body = switch (kind) {
+      StuckSyncOpKind.addToCollection || StuckSyncOpKind.removeFromCollection =>
+        l10n.syncStuckDiscardBodyWithLater,
+      StuckSyncOpKind.updateCollection ||
+      StuckSyncOpKind.createHousehold ||
+      StuckSyncOpKind.unreadable => l10n.syncStuckDiscardBody,
+    };
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(l10n.syncStuckDiscardTitle),
-        content: Text(l10n.syncStuckDiscardBody),
+        content: Text(body),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

@@ -40,7 +40,7 @@ final class AddToCollectionOperation extends SyncOperation {
     required this.quantity,
     this.rating,
     this.comment,
-    this.revivedLocalOnly,
+    this.raised,
   });
 
   static const String type = 'add_to_collection';
@@ -53,7 +53,7 @@ final class AddToCollectionOperation extends SyncOperation {
         quantity: json['quantity'] as int,
         rating: json['rating'] as int?,
         comment: json['comment'] as String?,
-        revivedLocalOnly: json['revived_local_only'] as bool?,
+        raised: json['raised'] as bool?,
       );
 
   /// The local id of the [GameCollection] row this op writes. Generated
@@ -80,13 +80,15 @@ final class AddToCollectionOperation extends SyncOperation {
   final int? rating;
   final String? comment;
 
-  /// On a re-add that revived a removed entry, whether that entry was
-  /// local-only as it lay removed; null on any other add (#190).
+  /// True when this add raised the quantity of an entry already in the
+  /// collection, rather than creating the entry or reviving a removed one
+  /// (#190).
   ///
-  /// The revival marks the row local-only whatever it was before, so a
-  /// discard of the re-add reads the old flag from here. Client-internal,
-  /// like [localId]: never sent.
-  final bool? revivedLocalOnly;
+  /// A discard of a raise leaves the entry where it was; a discard of any
+  /// other add takes the entry away again. Null on any other add, and on an
+  /// add queued before this was recorded, which a discard then treats as one
+  /// that created the entry. Client-internal, like [localId]: never sent.
+  final bool? raised;
 
   @override
   Map<String, dynamic> toJson() => {
@@ -97,7 +99,7 @@ final class AddToCollectionOperation extends SyncOperation {
     'quantity': quantity,
     if (rating != null) 'rating': rating,
     if (comment != null) 'comment': comment,
-    if (revivedLocalOnly != null) 'revived_local_only': revivedLocalOnly,
+    if (raised != null) 'raised': raised,
   };
 }
 

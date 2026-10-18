@@ -323,21 +323,27 @@ abstract class GameCollectionRepository {
   /// out. The queue entry is deleted through
   /// [SyncQueueRepository.discardStuck] in the same transaction as the undo,
   /// so either both land or neither does, and an op that isn't stuck by
-  /// then, such as one another tab retried, changes nothing. What the undo
-  /// does depends on the op:
+  /// then, such as one another tab retried, changes nothing.
   ///
-  /// - **An add for an entry the server has never seen** (the row is
-  ///   [GameCollection.isLocalOnly]): the row is deleted, and so is every op
-  ///   queued for it after the add. Those ops name an entry the server will
-  ///   never know. If the add revived an entry whose removal is still
-  ///   queued, the row goes back to that removal's tombstone instead,
-  ///   local-only as the tombstone was, unless an add before the removal
-  ///   has been acknowledged since. If an earlier add for the row is still
-  ///   queued, it still stands for the row, and only this op is dropped.
-  /// - **Any other add, or an update**: the op is dropped. The row stays
-  ///   dirty while any other op for it is outstanding.
-  /// - **A removal**: the op is dropped, and the entry comes back unless a
-  ///   later add or removal for it is queued, which already decided that.
+  /// **An update** is dropped alone. The row stays dirty while any other op
+  /// for it is outstanding.
+  ///
+  /// **An add or a removal** goes with every op queued for the entry after
+  /// it, which all assumed it, and the entry goes back to how it was before
+  /// it. Dropping it alone would need to know what the server holds now,
+  /// which this device doesn't record:
+  ///
+  /// - **A removal**: the entry comes back.
+  /// - **An add that raised the quantity**: the entry stays.
+  /// - **An add that created the entry, or revived it from a removal the
+  ///   server has confirmed**: the row is deleted. If an add after it has
+  ///   reached the server meanwhile (the row isn't
+  ///   [GameCollection.isLocalOnly]), the server has the entry, so it stays.
+  /// - **A re-add over a removal still queued**: the row goes back to that
+  ///   removal's tombstone.
+  ///
+  /// The row is local-only afterwards only while an add before the op, one
+  /// that creates or revives the entry, is still queued.
   ///
   /// When nothing is left queued for the row, it is left clean and older
   /// than any copy the server holds. Its values are still the discarded
@@ -347,9 +353,9 @@ abstract class GameCollectionRepository {
   /// A completed or unknown entry changes nothing, and so does a payload
   /// that won't decode, beyond deleting the entry. Returns whether the entry
   /// was deleted. Throws [ArgumentError] for a household op, and
-  /// [StateError] for an add whose undo would delete a later op that is
+  /// [StateError] for an add or a removal while a later op for the entry is
   /// being sent, both before any write. That send's acknowledgement would
-  /// bring the entry back, so the discard waits for it to settle.
+  /// bring back what the discard undoes, so it waits for the send to settle.
   Future<bool> discardQueuedOp(String syncQueueId);
 
   /// The title of the game the entry [collectionId] names, or null for an
