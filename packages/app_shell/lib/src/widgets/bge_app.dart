@@ -6,6 +6,8 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/game_catalog.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
 import 'package:go_router/go_router.dart';
@@ -323,6 +325,9 @@ class _BgeAppState extends State<BgeApp> {
       householdDetailBuilder: _buildHouseholdDetailRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
+      gameBrowseBuilder: _buildGameBrowseRoute,
+      gameSearchBuilder: _buildGameSearchRoute,
+      gameDetailBuilder: _buildGameDetailRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
     );
@@ -496,6 +501,7 @@ class _BgeAppState extends State<BgeApp> {
     if (active == null) return null;
 
     final authL10n = AuthLocalizations.of(context);
+    final catalogL10n = GameCatalogLocalizations.of(context);
     final collectionL10n = GameCollectionLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
@@ -541,6 +547,10 @@ class _BgeAppState extends State<BgeApp> {
     // top-level destination until #414 decides those.
     final canReadCollection = container
         .isRegistered<GameCollectionRepository>();
+    // #42: browse reads the server, so its gate is the games remote, which
+    // the network installer registers per server. A drawer entry, like the
+    // collection's (#44): navigation is #414's.
+    final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
 
     HomeScreen home({required bool admin}) => HomeScreen(
       activeServerName: active.displayName,
@@ -551,6 +561,13 @@ class _BgeAppState extends State<BgeApp> {
             icon: Icons.casino_outlined,
             label: collectionL10n.collectionListTitle,
             onSelected: (ctx) => ctx.push(AppRoutes.collection),
+          ),
+        if (canBrowseGames)
+          HomeMenuEntry(
+            id: 'games',
+            icon: Icons.explore_outlined,
+            label: catalogL10n.catalogBrowseTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.games),
           ),
         if (canReadHouseholds)
           HomeMenuEntry(
@@ -886,6 +903,102 @@ class _BgeAppState extends State<BgeApp> {
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
     );
+  }
+
+  /// The games cache (#42): the user-session [GameRepository], or null where
+  /// no user session is active. The catalog screens read the server without
+  /// it, and have nothing to show offline.
+  static GameRepository? _gamesCache(DependencyContainer container) =>
+      container.isRegistered<GameRepository>()
+      ? container.get<GameRepository>()
+      : null;
+
+  /// Opens one game from a catalog screen (#42). A push, so leaving the
+  /// detail returns to the list or the search the user came from.
+  static void _openGame(BuildContext context, String gameId) =>
+      unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
+
+  /// The active server's container, where it holds the per-server
+  /// [GamesRemoteDataSource]: the gate every #42 catalog route shares. Null
+  /// (→ [NotYetAvailableScreen]) when no active server is resolvable or it
+  /// has no games remote.
+  ///
+  /// Resolved per route build, as the other screens are: anything held
+  /// across a session change would reach a disposed scope's cache.
+  DependencyContainer? _catalogContainer() {
+    final container =
+        widget.bootstrapCubit.activeServerScope?.active?.container;
+    if (container == null || !container.isRegistered<GamesRemoteDataSource>()) {
+      return null;
+    }
+    return container;
+  }
+
+  /// The #42 browse screen: the games remote and the optional games cache,
+  /// behind [_catalogContainer]'s gate.
+  Widget? _buildGameBrowseRoute(BuildContext context) {
+    final container = _catalogContainer();
+    if (container == null) return null;
+
+    return GameBrowseScreen(
+      remote: container.get<GamesRemoteDataSource>(),
+      cache: _gamesCache(container),
+      onOpen: _openGame,
+      onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
+    );
+  }
+
+  /// The #42 search screen. Same gate as [_buildGameBrowseRoute], plus the
+  /// DataGateways' names where the user may read them.
+  ///
+  /// No `onImport`: importing a DataGateway result is #43's, and until it
+  /// supplies one those rows stay inert.
+  Widget? _buildGameSearchRoute(BuildContext context) {
+    final container = _catalogContainer();
+    if (container == null) return null;
+
+    return GameSearchScreen(
+      remote: container.get<GamesRemoteDataSource>(),
+      cache: _gamesCache(container),
+      sourceNames: _dataGatewayNames(container),
+      onOpen: _openGame,
+    );
+  }
+
+  /// The #42 detail screen for [gameId]. Same gate as
+  /// [_buildGameBrowseRoute].
+  ///
+  /// No `onAdd`: adding a game to the collection is #45's, and until it
+  /// supplies one the screen offers no add.
+  Widget? _buildGameDetailRoute(BuildContext context, String gameId) {
+    final container = _catalogContainer();
+    if (container == null) return null;
+
+    return GameDetailScreen(
+      gameId: gameId,
+      remote: container.get<GamesRemoteDataSource>(),
+      cache: _gamesCache(container),
+    );
+  }
+
+  /// Reads every DataGateway's name, by id, for the search screen (#42), or
+  /// null where the session has not learned that the user may read
+  /// DataGateways. Ordinary users may not (`read:data_gateway` is
+  /// staff-only), and their search results then carry no DataGateway name.
+  ///
+  /// Decided when the route is built. A user whose access check answers
+  /// after they opened search sees names the next time they open it.
+  static Future<Map<String, String>> Function()? _dataGatewayNames(
+    DependencyContainer container,
+  ) {
+    final access = _dataGatewayAccess(container);
+    if (access == null ||
+        access.value.read != DataGatewayRead.granted ||
+        !container.isRegistered<DataGatewayRemoteDataSource>()) {
+      return null;
+    }
+    final remote = container.get<DataGatewayRemoteDataSource>();
+    return () => readDataGatewayNames(remote);
   }
 
   /// The session's [DataGatewayAccess], or null where the session runs no
@@ -1449,6 +1562,7 @@ class _BgeAppState extends State<BgeApp> {
         FeedbackLocalizations.delegate,
         HouseholdLocalizations.delegate,
         GameCollectionLocalizations.delegate,
+        GameCatalogLocalizations.delegate,
         DataGatewayLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],

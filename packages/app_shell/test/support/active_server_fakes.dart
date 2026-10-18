@@ -195,6 +195,8 @@ ActiveServer buildActiveServer(
   UnsentChangesNoticeRepository? unsentChangesNotice,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
   DataGatewayAccess? dataGatewayAccess,
+  GamesRemoteDataSource? gamesRemoteDataSource,
+  GameRepository? gameRepository,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -251,6 +253,12 @@ ActiveServer buildActiveServer(
   }
   if (dataGatewayAccess != null) {
     container.registerSingleton<DataGatewayAccess>(dataGatewayAccess);
+  }
+  if (gamesRemoteDataSource != null) {
+    container.registerSingleton<GamesRemoteDataSource>(gamesRemoteDataSource);
+  }
+  if (gameRepository != null) {
+    container.registerSingleton<GameRepository>(gameRepository);
   }
   return ActiveServer(
     serverId: serverId,

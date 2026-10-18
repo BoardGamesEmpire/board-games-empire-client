@@ -60,6 +60,32 @@ abstract final class AppRoutes {
   /// active session's own.
   static const collection = '/collection';
 
+  /// The server's games, to browse (#42). Plural, unlike [household] and
+  /// [collection]: it lists the catalog, not one thing the user has. Not the
+  /// reserved `/server/:serverId/game/:gameId` deep link, which names a
+  /// server; that stays reserved until #10 can tell whose server it names.
+  static const games = '/games';
+
+  /// Search, beneath [games] (#42).
+  ///
+  /// This pattern and [gameDetail] **overlap**: `search` is a legal value
+  /// for `:gameId`, so search is declared first, as household create is.
+  static const gameSearch = '$games/$_gameSearchSegment';
+
+  /// One game, beneath [games] (#42). Build a concrete location with
+  /// [gameDetailOf].
+  static const gameDetail = '$games/$_gameDetailSegment';
+
+  /// The id segment of [gameDetail].
+  static const gameIdParam = 'gameId';
+
+  static const _gameSearchSegment = 'search';
+  static const _gameDetailSegment = ':$gameIdParam';
+
+  /// The location of one game's detail screen.
+  static String gameDetailOf(String gameId) =>
+      '$games/${Uri.encodeComponent(gameId)}';
+
   /// The DataGateway admin list (#41).
   ///
   /// Under `/admin` because DataGateways belong to the admin dashboard
@@ -226,6 +252,30 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
 /// needs the active server's scoped container, not an `AuthBloc`.
 typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the game browse screen (#42) for the [AppRoutes.games] route.
+/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container carries no `GamesRemoteDataSource`,
+/// in which case the route falls back to [NotYetAvailableScreen].
+///
+/// Guarded on the remote alone: the games cache is optional, and without it
+/// the screen still reads the server, with nothing to show offline.
+typedef GameBrowseScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds the game search screen (#42) for the [AppRoutes.gameSearch]
+/// route. Same null contract as [GameBrowseScreenBuilder].
+typedef GameSearchScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds one game's detail screen (#42) for the [AppRoutes.gameDetail]
+/// route, given the `:gameId` the path carried. Same null contract as
+/// [GameBrowseScreenBuilder].
+///
+/// The id reaches the builder unvalidated. The screen answers one that
+/// cannot name a game with its unavailable state.
+typedef GameDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String gameId,
+);
+
 /// Builds the DataGateway admin list (#41) for the
 /// [AppRoutes.adminDataGateways] route. Supplied by [BgeApp]; returns null
 /// when no active server is resolvable or its container carries no
@@ -267,6 +317,9 @@ GoRouter buildAppRouter({
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
+  GameBrowseScreenBuilder? gameBrowseBuilder,
+  GameSearchScreenBuilder? gameSearchBuilder,
+  GameDetailScreenBuilder? gameDetailBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
 }) {
@@ -416,6 +469,35 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             collectionListBuilder?.call(context) ??
             const NotYetAvailableScreen(),
+      ),
+      // #42: browse, search and one game. Outside the auth ShellRoute, like
+      // the collection list, and pushed from the home drawer. Search and the
+      // detail are children of browse, as the household children are of
+      // their list (#308), so a `go` straight to either builds browse
+      // beneath it.
+      //
+      // Search MUST stay declared above the detail: `search` is a legal
+      // `:gameId`, and go_router takes the first declared match.
+      GoRoute(
+        path: AppRoutes.games,
+        builder: (context, _) =>
+            gameBrowseBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        routes: [
+          GoRoute(
+            path: AppRoutes._gameSearchSegment,
+            builder: (context, _) =>
+                gameSearchBuilder?.call(context) ??
+                const NotYetAvailableScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes._gameDetailSegment,
+            builder: (context, state) {
+              final id = state.pathParameters[AppRoutes.gameIdParam] ?? '';
+              return gameDetailBuilder?.call(context, id) ??
+                  const NotYetAvailableScreen();
+            },
+          ),
+        ],
       ),
       // #41: the DataGateway admin screens. The forms are children of the
       // list, as the household children are of theirs (#308), so a deep link
