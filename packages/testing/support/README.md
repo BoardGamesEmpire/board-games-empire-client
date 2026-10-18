@@ -7,12 +7,16 @@ dependency already exists.
 Created by **#354**, absorbing **#213** and **#257** — three issues that each
 resolved to this same package.
 
-## Two entry points, one package
+## Three entry points, one package
 
 ```dart
 import 'package:bge_test_support/network.dart';  // needs only dio
 import 'package:bge_test_support/widgets.dart';  // needs flutter_test + the theme
+import 'package:bge_test_support/images.dart';   // needs flutter_test + dart:io
 ```
+
+`images.dart` came later (#42) and stays out of `widgets.dart` because it
+needs `dart:io`, which a browser suite can't import.
 
 They are separate **libraries**, not separate **packages**. pub resolves
 dependencies per package, not per library, so a second package would not have
@@ -79,3 +83,18 @@ because a widget scrolled out of view is still in the tree with a *negative*
 top edge — invisible to `findsOneWidget`, which is the bug in #209. A
 predicate of the form "is it on screen" restates the widget's own guard and so
 cannot fail for any implementation satisfying it.
+
+## `images.dart`
+
+The test binding answers every HTTP request with a 400, so a network image
+never loads in a widget test unless something serves it.
+
+| Helper | Use |
+|---|---|
+| `servingImages(png, body)` | Answer every image request with `png` while `body` runs |
+| `solidPng(width, height)` | A PNG of that size, inside `tester.runAsync` |
+| `pumpUntilDecoded(tester, finder)` | Pump until an image under `finder` decodes; returns its decoded size |
+
+`servingImages` sets Flutter's `debugNetworkImageHttpClientProvider` and puts it
+back, and clears the image cache, before it returns: the binding fails a test
+that leaves the hook set, and a cached image would answer the next test.

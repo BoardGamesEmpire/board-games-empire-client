@@ -6,3 +6,5 @@
   DataGateways in two sections, narrowed by content and platform type, and
   falls back to the cache when the server fails. `GameDetailBloc` reads one
   game and its platform games.
+* The three screens over them, with the description rendered as Markdown
+  (#472).

@@ -252,7 +252,12 @@ class _CollectionRow extends StatelessWidget {
         // disabled: no tap action, and not a focus stop under ordinary
         // keyboard navigation. That is the inert row #44 wants.
         onTap: open == null ? null : () => open(context, entry.id),
-        leading: _Thumbnail(entryId: entry.id, url: item.thumbnail),
+        leading: BgeThumbnail(
+          key: GameCollectionListScreen.thumbnailKey(entry.id),
+          url: item.thumbnail,
+          placeholderIcon: Icons.casino_outlined,
+          placeholderKey: GameCollectionListScreen.thumbnailPlaceholderKey,
+        ),
         title: Text(title),
         // Joined differently for the eye and the ear: a screen reader
         // would read the visual separator's symbol out.
@@ -271,79 +276,6 @@ class _CollectionRow extends StatelessWidget {
 
   static ({String shown, String spoken}) _same(String text) =>
       (shown: text, spoken: text);
-}
-
-/// The game's thumbnail at one fixed size, or a placeholder while it loads,
-/// when it fails, and when there is none (#44).
-///
-/// The URLs are third-party. Measured in a browser for #44: BoardGameGeek's
-/// image host sends no CORS header, so on web the default byte fetch
-/// ([WebHtmlElementStrategy.never]) fails there.
-/// [WebHtmlElementStrategy.fallback] is the narrowest strategy that renders
-/// it. IGDB's host does send the header, so its images still go through the
-/// byte fetch, and only a failed fetch costs an HTML element; `prefer` would
-/// put every thumbnail in one. Native ignores the parameter.
-///
-/// No disk cache: Flutter's in-memory image cache only, so an offline
-/// restart shows placeholders until #449.
-///
-/// Decoded at the host's size, with no `cacheWidth`. Both hosts already
-/// serve thumbnails (measured for #44: IGDB 264×352, BoardGameGeek within
-/// 200×150), and a one-sided decode size would blur whichever orientation
-/// it does not fit under `BoxFit.cover`.
-class _Thumbnail extends StatelessWidget {
-  const _Thumbnail({required this.entryId, this.url});
-
-  final String entryId;
-  final String? url;
-
-  /// Material 3's list image size. Fixed so rows keep one shape whether or
-  /// not an image arrives.
-  static const double _extent = 56;
-
-  @override
-  Widget build(BuildContext context) {
-    final url = this.url;
-    const placeholder = _ThumbnailPlaceholder();
-
-    return SizedBox.square(
-      key: GameCollectionListScreen.thumbnailKey(entryId),
-      dimension: _extent,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(BgeTokens.of(context).radiusSm),
-        child: url == null
-            ? placeholder
-            : Image.network(
-                url,
-                fit: BoxFit.cover,
-                // Decorative: the title beside it names the game.
-                excludeFromSemantics: true,
-                webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
-                // Keyed on the first frame, not on load progress: a request
-                // that has no response yet reports no progress at all.
-                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
-                    frame == null ? placeholder : child,
-                errorBuilder: (context, error, stackTrace) => placeholder,
-              ),
-      ),
-    );
-  }
-}
-
-class _ThumbnailPlaceholder extends StatelessWidget {
-  const _ThumbnailPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ColoredBox(
-      key: GameCollectionListScreen.thumbnailPlaceholderKey,
-      color: scheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(Icons.casino_outlined, color: scheme.onSurfaceVariant),
-      ),
-    );
-  }
 }
 
 /// The stale-data banner and its retry: the household list's

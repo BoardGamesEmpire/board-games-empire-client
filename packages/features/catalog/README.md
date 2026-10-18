@@ -50,3 +50,19 @@ shell passes in.
 A 404 or a 403 means this user can't read the game, so the bloc also forgets
 it on this device for them (`GameRepository.forgetGame`), and offline browse
 and search stop listing it.
+
+## Screens
+
+`GameBrowseScreen`, `GameSearchScreen` and `GameDetailScreen` each own their
+bloc; the shell passes in the remote, the cache and the callbacks, and the
+screens resolve nothing themselves.
+
+The detail screen renders the description as Markdown with
+`flutter_markdown_plus` (#472): GitHub's extensions, raw HTML never rendered,
+and only `http`, `https` and `mailto` links, opened outside the app through
+`url_launcher`. The package was picked with a probe against the pinned
+Flutter, which showed that it has no HTML rendering path and that every link
+tap reaches one callback.
+
+Run `melos run generate` once after checkout: the localizations under
+`lib/l10n/` are generated and gitignored.

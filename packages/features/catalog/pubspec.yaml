@@ -12,6 +12,8 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   interfaces:
     path: ../../core/interfaces
@@ -27,6 +29,21 @@ dependencies:
   # workspace through `auth`.
   bloc_concurrency: ^0.3.0
   equatable: ^2.1.0
+  intl: ^0.20.2
+  # Game descriptions are Markdown (#472). The maintained fork of the
+  # discontinued `flutter_markdown`, chosen by a probe against the pinned
+  # Flutter: it never renders raw HTML, and every link tap reaches one
+  # callback. `markdown` is its parser, named here for the extension set.
+  flutter_markdown_plus: ^1.0.12
+  markdown: ^7.3.1
+  # Opens a description's links outside the app (#472).
+  url_launcher: ^6.3.2
+  # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
+  # scale; both declared directly because this package imports from both.
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
 
 dev_dependencies:
   flutter_test:
@@ -38,3 +55,12 @@ dev_dependencies:
     path: ../../storage/drift_storage
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
+  l10n_test_support:
+    path: ../../testing/l10n
+  # Shared widget-test helpers: viewport sizing and semantics.
+  bge_test_support:
+    path: ../../testing/support
+
+flutter:
+  generate: true
+  uses-material-design: true

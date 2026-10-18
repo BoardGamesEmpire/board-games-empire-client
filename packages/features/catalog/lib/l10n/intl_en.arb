@@ -1,0 +1,429 @@
+{
+  "@@locale": "en",
+  "catalogBrowseTitle": "Games",
+  "@catalogBrowseTitle": {
+    "description": "Title of the screen listing every game on the server, and the label of the drawer entry that opens it."
+  },
+  "catalogBrowseLoading": "Loading games…",
+  "@catalogBrowseLoading": {
+    "description": "Announced and shown while the first page of the server's games is being fetched."
+  },
+  "catalogBrowseEmpty": "There are no games on this server yet.",
+  "@catalogBrowseEmpty": {
+    "description": "Shown when the server answered and has no games at all."
+  },
+  "catalogBrowseFromCache": "Couldn't load games from the server. These are the games saved on this device.",
+  "@catalogBrowseFromCache": {
+    "description": "Banner over the games list when the server's list could not be loaded, for any reason, so the list shows the games this device saved earlier instead. Offers a retry. Deliberately names no cause."
+  },
+  "catalogBrowseFailedTitle": "Couldn't load games",
+  "@catalogBrowseFailedTitle": {
+    "description": "Heading shown when the server could not be reached and this device has no saved games to show instead."
+  },
+  "catalogBrowseFailedBody": "Check your connection and try again.",
+  "@catalogBrowseFailedBody": {
+    "description": "Body under catalogBrowseFailedTitle."
+  },
+  "catalogBrowseMore": "Show more games",
+  "@catalogBrowseMore": {
+    "description": "Button at the end of the games list that loads the next page of games."
+  },
+  "catalogBrowseMoreLoading": "Loading more games…",
+  "@catalogBrowseMoreLoading": {
+    "description": "Replaces catalogBrowseMore while the next page of games is loading, and is announced."
+  },
+  "catalogBrowseMoreFailed": "Couldn't load more games.",
+  "@catalogBrowseMoreFailed": {
+    "description": "Shown at the end of the games list when the next page could not be loaded. The games already shown stay. Followed by a retry button."
+  },
+  "catalogRetry": "Try again",
+  "@catalogRetry": {
+    "description": "Button that asks the server again after a failure, on every screen of this feature."
+  },
+  "catalogRetrying": "Trying again…",
+  "@catalogRetrying": {
+    "description": "Replaces catalogRetry on the banner over games saved on this device while the server is being asked again, and is announced. The saved games stay shown meanwhile."
+  },
+  "catalogDeniedTitle": "You don't have access to this server's games",
+  "@catalogDeniedTitle": {
+    "description": "Heading shown instead of the games list or search results when the server refuses this user its games."
+  },
+  "catalogDeniedBody": "Ask an admin of this server if you need them, then try again.",
+  "@catalogDeniedBody": {
+    "description": "Body under catalogDeniedTitle. Followed by a retry button."
+  },
+  "catalogTitleWithSubtitle": "{title}: {subtitle}",
+  "@catalogTitleWithSubtitle": {
+    "description": "A game's name when the game also has a subtitle, for example 'Catan: Seafarers'. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan"
+      },
+      "subtitle": {
+        "type": "String",
+        "example": "Seafarers"
+      }
+    }
+  },
+  "catalogDetailSeparator": " · ",
+  "@catalogDetailSeparator": {
+    "description": "Shown between the facts on a game's row, for example '1995 · 3–4 players · Expansion'. Keep or drop the surrounding spaces as your language's punctuation needs."
+  },
+  "catalogDetailSpokenSeparator": ", ",
+  "@catalogDetailSpokenSeparator": {
+    "description": "Joins the same facts when a screen reader reads a game's row aloud, in place of catalogDetailSeparator, whose symbol would be read out. It should sound like a short pause."
+  },
+  "catalogPlayerCount": "{count, plural, =1{1 player} other{{count} players}}",
+  "@catalogPlayerCount": {
+    "description": "A game played by exactly this many players.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogPlayerRange": "{min}–{max} players",
+  "@catalogPlayerRange": {
+    "description": "A game played by between min and max players, as shown on screen.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "3"
+      },
+      "max": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "catalogPlayerRangeSpoken": "{min} to {max} players",
+  "@catalogPlayerRangeSpoken": {
+    "description": "catalogPlayerRange as a screen reader reads it, without the dash.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "3"
+      },
+      "max": {
+        "type": "String",
+        "example": "4"
+      }
+    }
+  },
+  "catalogPlayersAtLeast": "{min}+ players",
+  "@catalogPlayersAtLeast": {
+    "description": "A game played by at least this many players, with no maximum known, as shown on screen.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "catalogPlayersAtLeastSpoken": "{min} or more players",
+  "@catalogPlayersAtLeastSpoken": {
+    "description": "catalogPlayersAtLeast as a screen reader reads it.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "catalogPlayersUpTo": "Up to {max} players",
+  "@catalogPlayersUpTo": {
+    "description": "A game played by at most this many players, with no minimum known.",
+    "placeholders": {
+      "max": {
+        "type": "String",
+        "example": "6"
+      }
+    }
+  },
+  "catalogContentTypeBaseGame": "Base game",
+  "@catalogContentTypeBaseGame": {
+    "description": "A complete game, as opposed to an expansion for one. A filter choice on the search screen and a fact on a game's detail."
+  },
+  "catalogContentTypeExpansion": "Expansion",
+  "@catalogContentTypeExpansion": {
+    "description": "Extra content that needs the base game to play."
+  },
+  "catalogContentTypeStandaloneExpansion": "Standalone expansion",
+  "@catalogContentTypeStandaloneExpansion": {
+    "description": "An expansion that can also be played on its own."
+  },
+  "catalogContentTypeExpandedEdition": "Expanded edition",
+  "@catalogContentTypeExpandedEdition": {
+    "description": "A game released again with its expansions included."
+  },
+  "catalogContentTypeAccessory": "Accessory",
+  "@catalogContentTypeAccessory": {
+    "description": "Something to play a game with that is not a game itself, such as card sleeves or an organizer."
+  },
+  "catalogContentTypeBundle": "Bundle",
+  "@catalogContentTypeBundle": {
+    "description": "Several games or expansions sold together."
+  },
+  "catalogContentTypeDlc": "DLC",
+  "@catalogContentTypeDlc": {
+    "description": "Downloadable content for a video game."
+  },
+  "catalogContentTypeMod": "Mod",
+  "@catalogContentTypeMod": {
+    "description": "A fan-made modification of a video game."
+  },
+  "catalogContentTypePort": "Port",
+  "@catalogContentTypePort": {
+    "description": "A game adapted to run on another platform."
+  },
+  "catalogContentTypeRemake": "Remake",
+  "@catalogContentTypeRemake": {
+    "description": "A game rebuilt from scratch, based on an earlier one."
+  },
+  "catalogContentTypeRemaster": "Remaster",
+  "@catalogContentTypeRemaster": {
+    "description": "An earlier game released again with improved graphics or sound."
+  },
+  "catalogSearchTitle": "Search games",
+  "@catalogSearchTitle": {
+    "description": "Title of the search screen, and the tooltip of the button on the games list that opens it."
+  },
+  "catalogSearchFieldLabel": "Search by title",
+  "@catalogSearchFieldLabel": {
+    "description": "Label of the text field the user types a game's title into."
+  },
+  "catalogSearchClear": "Clear search",
+  "@catalogSearchClear": {
+    "description": "Tooltip of the button that empties the search field."
+  },
+  "catalogSearchFilterLabel": "Show only",
+  "@catalogSearchFilterLabel": {
+    "description": "Heading over the content-type filter choices, such as 'Base game' and 'Expansion'. With none chosen, every type is shown."
+  },
+  "catalogSearchIdle": "Search this server and its data sources for a game.",
+  "@catalogSearchIdle": {
+    "description": "Shown on the search screen before anything is typed. A data source is another catalog of games the server can search, such as BoardGameGeek."
+  },
+  "catalogSearchLoading": "Searching… Data sources can take up to 15 seconds to answer.",
+  "@catalogSearchLoading": {
+    "description": "Announced and shown while a search runs. The server waits for each data source for up to 15 seconds."
+  },
+  "catalogSearchResultCount": "{count, plural, =0{No results} =1{1 result} other{{count} results}}",
+  "@catalogSearchResultCount": {
+    "description": "How many games a search found, shown above the results and announced when they arrive.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "catalogSearchNoResults": "No games match “{query}”.",
+  "@catalogSearchNoResults": {
+    "description": "Shown when a search found nothing.",
+    "placeholders": {
+      "query": {
+        "type": "String",
+        "example": "Catan"
+      }
+    }
+  },
+  "catalogSearchOnServer": "On this server",
+  "@catalogSearchOnServer": {
+    "description": "Heading over the search results the server already holds."
+  },
+  "catalogSearchOnDevice": "Saved on this device",
+  "@catalogSearchOnDevice": {
+    "description": "Heading over the search results when the server could not be reached, so the results are the games this device saved earlier."
+  },
+  "catalogSearchFromSources": "From data sources",
+  "@catalogSearchFromSources": {
+    "description": "Heading over the search results that other catalogs found, such as BoardGameGeek, which the server does not hold yet."
+  },
+  "catalogSearchFromCache": "Couldn't search the server, so this searched the games saved on this device.",
+  "@catalogSearchFromCache": {
+    "description": "Banner over the search results when the server's search failed, for any reason, so the results are the games this device saved earlier. Offers a retry."
+  },
+  "catalogSearchFailedTitle": "Couldn't search",
+  "@catalogSearchFailedTitle": {
+    "description": "Heading shown when the search could not run and this device had nothing saved to search instead."
+  },
+  "catalogSearchFailedBody": "Check your connection and try again.",
+  "@catalogSearchFailedBody": {
+    "description": "Body under catalogSearchFailedTitle."
+  },
+  "catalogSearchMissingNamed": "No answer from {sources}, so some results may be missing.",
+  "@catalogSearchMissingNamed": {
+    "description": "A quiet note under the search results naming the data sources that did not answer in time, so the user does not read their absence as 'nothing found'.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, Steam"
+      }
+    }
+  },
+  "catalogSearchMissingUnnamed": "{count, plural, =1{A data source didn't answer} other{{count} data sources didn't answer}}, so some results may be missing.",
+  "@catalogSearchMissingUnnamed": {
+    "description": "catalogSearchMissingNamed for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchSourceSeparator": ", ",
+  "@catalogSearchSourceSeparator": {
+    "description": "Joins data source names in catalogSearchMissingNamed."
+  },
+  "catalogDetailTitle": "Game",
+  "@catalogDetailTitle": {
+    "description": "Title of a game's screen until the game has loaded, and when it cannot be shown."
+  },
+  "catalogDetailLoading": "Loading game…",
+  "@catalogDetailLoading": {
+    "description": "Announced and shown while a game is being fetched."
+  },
+  "catalogDetailUnavailableTitle": "This game isn't available",
+  "@catalogDetailUnavailableTitle": {
+    "description": "Heading shown when the server has no such game, or the user may not see it. Deliberately the same either way."
+  },
+  "catalogDetailUnavailableBody": "It may have been removed, or it may not be shared with you.",
+  "@catalogDetailUnavailableBody": {
+    "description": "Body under catalogDetailUnavailableTitle."
+  },
+  "catalogDetailFailedTitle": "Couldn't load this game",
+  "@catalogDetailFailedTitle": {
+    "description": "Heading shown when the server could not be reached and this device has not saved the game."
+  },
+  "catalogDetailFailedBody": "Check your connection and try again.",
+  "@catalogDetailFailedBody": {
+    "description": "Body under catalogDetailFailedTitle."
+  },
+  "catalogDetailFromCache": "Couldn't load this game from the server. This is the copy saved on this device.",
+  "@catalogDetailFromCache": {
+    "description": "Banner on a game's screen when the server's copy could not be loaded, for any reason, so it shows the game as this device saved it earlier. Offers a retry."
+  },
+  "catalogDetailPublished": "Published {year}",
+  "@catalogDetailPublished": {
+    "description": "The year a game was first published.",
+    "placeholders": {
+      "year": {
+        "type": "String",
+        "example": "1995"
+      }
+    }
+  },
+  "catalogDetailPlayingTime": "{minutes, plural, =1{1 minute} other{{minutes} minutes}}",
+  "@catalogDetailPlayingTime": {
+    "description": "How long one play of the game usually takes.",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "90"
+      }
+    }
+  },
+  "catalogDetailPlayTimeRange": "{min}–{max} minutes",
+  "@catalogDetailPlayTimeRange": {
+    "description": "How long one play of the game takes, as a range, as shown on screen.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "60"
+      },
+      "max": {
+        "type": "String",
+        "example": "120"
+      }
+    }
+  },
+  "catalogDetailPlayTimeRangeSpoken": "{min} to {max} minutes",
+  "@catalogDetailPlayTimeRangeSpoken": {
+    "description": "catalogDetailPlayTimeRange as a screen reader reads it, without the dash.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "60"
+      },
+      "max": {
+        "type": "String",
+        "example": "120"
+      }
+    }
+  },
+  "catalogDetailPlayTimeAtLeast": "{min}+ minutes",
+  "@catalogDetailPlayTimeAtLeast": {
+    "description": "How long one play of the game takes when only the shortest time is known, as shown on screen.",
+    "placeholders": {
+      "min": {
+        "type": "String",
+        "example": "30"
+      }
+    }
+  },
+  "catalogDetailPlayTimeAtLeastSpoken": "{min, plural, =1{1 minute or more} other{{min} minutes or more}}",
+  "@catalogDetailPlayTimeAtLeastSpoken": {
+    "description": "catalogDetailPlayTimeAtLeast as a screen reader reads it.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "catalogDetailPlayTimeUpTo": "{max, plural, =1{Up to 1 minute} other{Up to {max} minutes}}",
+  "@catalogDetailPlayTimeUpTo": {
+    "description": "How long one play of the game takes when only the longest time is known.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "120"
+      }
+    }
+  },
+  "catalogDetailMinAge": "Ages {age}+",
+  "@catalogDetailMinAge": {
+    "description": "The youngest age a game is recommended for, as shown on screen.",
+    "placeholders": {
+      "age": {
+        "type": "String",
+        "example": "10"
+      }
+    }
+  },
+  "catalogDetailMinAgeSpoken": "Ages {age} and up",
+  "@catalogDetailMinAgeSpoken": {
+    "description": "catalogDetailMinAge as a screen reader reads it.",
+    "placeholders": {
+      "age": {
+        "type": "String",
+        "example": "10"
+      }
+    }
+  },
+  "catalogDetailDescription": "About this game",
+  "@catalogDetailDescription": {
+    "description": "Heading over a game's description."
+  },
+  "catalogDetailAvailableOn": "Available on",
+  "@catalogDetailAvailableOn": {
+    "description": "Heading over the list of platforms a game can be played on, such as Tabletop or Steam."
+  },
+  "catalogDetailAddToCollection": "Add to collection",
+  "@catalogDetailAddToCollection": {
+    "description": "Button beside one platform of a game that adds the game, on that platform, to the user's collection."
+  },
+  "catalogImageAlt": "Image: {alt}",
+  "@catalogImageAlt": {
+    "description": "Stands in for a picture in a game's description that cannot be shown, giving its description.",
+    "placeholders": {
+      "alt": {
+        "type": "String",
+        "example": "The game's box"
+      }
+    }
+  }
+}

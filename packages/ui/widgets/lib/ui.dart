@@ -28,5 +28,6 @@ export 'src/buttons/bge_submit_button.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
+export 'src/images/bge_thumbnail.dart';
 export 'src/layout/bge_page.dart';
 export 'src/states/bge_error_state.dart';
