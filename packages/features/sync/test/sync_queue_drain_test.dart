@@ -577,6 +577,24 @@ void main() {
       expect(await h.queue.getAllEntries(), isEmpty);
       expect(drain.isStale, isFalse);
     });
+
+    test('a clock set back past the last purge purges on the next pass, '
+        'not once the clock catches up with it', () async {
+      // The first pass purges while the clock runs a year ahead.
+      h.advance(const Duration(days: 365));
+      await drain.drain();
+      h.advance(const Duration(days: -365));
+      await h.queuedCreate(name: 'Old');
+      await drain.drain();
+
+      h.advance(
+        SyncQueueDrain.completedRetention + SyncQueueDrain.purgeInterval,
+      );
+      expect(drain.isStale, isTrue);
+      await drain.drain();
+
+      expect(await h.queue.getAllEntries(), isEmpty);
+    });
   });
 
   group("one entry's ops stay in order", () {

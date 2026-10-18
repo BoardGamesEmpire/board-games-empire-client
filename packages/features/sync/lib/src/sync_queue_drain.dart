@@ -196,9 +196,16 @@ class SyncQueueDrain {
   }
 
   /// Whether a pass at [now] would purge completed history.
+  ///
+  /// A clock set back past the last purge makes it due, or that purge would
+  /// hold off the next until the clock caught up with it. What completed
+  /// under the clock that ran ahead stays: its last attempt is still later
+  /// than the cutoff.
   bool _purgeDue(DateTime now) {
     final purgedAt = _purgedAt;
-    return purgedAt == null || !now.isBefore(purgedAt.add(purgeInterval));
+    return purgedAt == null ||
+        now.isBefore(purgedAt) ||
+        !now.isBefore(purgedAt.add(purgeInterval));
   }
 
   /// Runs one pass. Never throws. A call while a pass is running joins it.
