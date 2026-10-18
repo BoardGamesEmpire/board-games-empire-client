@@ -13,6 +13,8 @@ import 'package:models/dto.dart';
 import 'package:observability/observability.dart';
 import 'package:http_status/http_status.dart';
 
+import 'session_channel.dart';
+
 /// Web implementation of [AuthRepository].
 ///
 /// Relies entirely on httpOnly session cookies managed by the browser.
@@ -29,8 +31,17 @@ import 'package:http_status/http_status.dart';
 ///
 /// The [Dio] instance is built and owned by the per-server `WebDioFactory` and
 /// injected here. This repository does not close it: it is a shared per-server
-/// resource owned by the container. [onDispose] tears down only the auth-state
-/// stream.
+/// resource owned by the container. [onDispose] tears down only its own
+/// streams.
+///
+/// ## Other tabs (#432)
+///
+/// Every tab holds its own copy of this class over one cookie, so a sign-in
+/// or sign-out in one tab changes the session under all the others. This
+/// class announces its own on [localChanges], and takes another tab's
+/// through [signedOutInAnotherTab] and [signedInInAnotherTab].
+/// `WebSessionMonitor` carries both between tabs and decides when to re-read
+/// the session.
 class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   WebAuthRepositoryImpl({
     required this._identity,
@@ -41,6 +52,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   final ServerIdentity _identity;
   final Dio _dio;
   final StreamController<AuthState> _stateController;
+
+  /// Behind [localChanges]. Asynchronous, unlike [_stateController]: a
+  /// listener posting to other tabs must not run inside [signOut]'s
+  /// synchronous prologue, which is ordered with care.
+  final StreamController<SessionChange> _localChanges =
+      StreamController<SessionChange>.broadcast();
 
   /// The JSON decode behind [_decodeBody]. Always `decodeJsonBody` in
   /// production; injectable for the same reason as the native twin's — the
@@ -219,6 +236,22 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   @override
   AuthState get currentAuthState => _currentState;
 
+  /// The changes this tab made to the shared cookie, for other tabs to hear
+  /// (#432).
+  ///
+  /// A sign-out is announced when it starts, as its local transition is: the
+  /// user's intent is already true here, and other tabs should stop
+  /// presenting the session as soon as this one does. It is announced again
+  /// if its revocation succeeds after a newer sign-in, here or in another
+  /// tab: the revocation deleted that sign-in's cookie by name (#346). A sign-in is announced
+  /// when the server's grant came back carrying a session, the moment the
+  /// cookie was replaced. A grant that carried none set no cookie and is not
+  /// announced — a receiver would release its latch over the old one (see
+  /// [_unrevokedSignOut]).
+  ///
+  /// What another tab did is never announced back.
+  Stream<SessionChange> get localChanges => _localChanges.stream;
+
   @override
   Future<AuthResponse> signIn({
     required String email,
@@ -295,6 +328,29 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
 
   @override
   Future<AuthResponse?> getSession() async {
+    if (_refusingSessionReads()) return null;
+    return _getSessionUnlatched();
+  }
+
+  /// Re-reads the session for `WebSessionMonitor`, which moves this
+  /// repository to whatever the shared cookie now says (#432).
+  ///
+  /// [getSession]'s refusals apply. What it adds is a grant checkpoint: the
+  /// monitor reads on focus and on broadcasts, including on the sign-in
+  /// form, so its read can leave before this tab's own sign-in and land
+  /// after it. That read describes the cookie before the grant, and
+  /// emitting it would sign the user out of the session they just created.
+  /// [getSession] has no such checkpoint because its callers read its
+  /// answer, and a discarded read answers null, which they would take for
+  /// "no session". Nothing reads this one's answer.
+  Future<void> rereadSession() async {
+    if (_refusingSessionReads()) return;
+    await _getSessionUnlatched(grantsAtEntry: _credentialGrants);
+  }
+
+  /// Whether a session read must not be asked for at all just now, which is
+  /// logged when it is.
+  bool _refusingSessionReads() {
     // Refuse rather than ask (#285). A sign-out is outstanding, so the
     // user's intent is already "no session" — and the cookie backing this
     // request is one the server is in the middle of revoking, so a success
@@ -318,7 +374,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // *asking* on behalf of a caller polling for a session.
     if (_pendingSignOuts > 0) {
       _log.warn('Refusing a session request while a sign-out is in flight');
-      return null;
+      return true;
     }
 
     // #348. The revocation resolved, badly: the cookie this request would
@@ -330,10 +386,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         'Refusing a session request: the last sign-out was not accepted, so '
         'the session cookie was never revoked',
       );
-      return null;
+      return true;
     }
 
-    return _getSessionUnlatched();
+    return false;
   }
 
   /// [getSession] without the #285 sign-out latch.
@@ -605,6 +661,7 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     _sessionEpoch += 1;
     _pendingSignOuts += 1;
     _setState(const AuthStateUnauthenticated());
+    _announce(SessionChange.signedOut);
 
     // Captured before any await, like the epoch above. A grant is "inside
     // this window" when the server accepted its credentials after this
@@ -689,7 +746,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     //
     // Only reachable when a grant moved the state: on the ordinary path the
     // state is still unauthenticated and there is nothing to settle.
+    //
+    // Announced again first (#432). The grant may have been another tab's,
+    // and that tab has no other way to learn the cookie it is using is gone.
     if (revoked && _credentialGrants != grantsAtStart) {
+      _announce(SessionChange.signedOut);
       await _settleAfterLateRevocation(_credentialGrants);
     }
   }
@@ -727,6 +788,50 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Ends the session here because another tab signed out (#432).
+  ///
+  /// No revocation request: the other tab sent the one there is, and a
+  /// second from every tab that heard about it would be one request per tab
+  /// for a cookie the first may already have cleared. Retrying a revocation
+  /// that failed is #390's.
+  ///
+  /// The latch goes up as a failed revocation's would ([_unrevokedSignOut]),
+  /// whatever the other tab's revocation did. This tab cannot see the
+  /// outcome, and if it failed the cookie is still live — a re-check here
+  /// would then sign the user straight back in, against what they asked
+  /// for. A credential grant releases it, this tab's own or another's
+  /// ([signedInInAnotherTab]).
+  ///
+  /// The epoch moves for the same reason [signOut] moves it: a session read
+  /// already in flight was asked before the sign-out and must not land
+  /// after it.
+  void signedOutInAnotherTab() {
+    _sessionEpoch += 1;
+    _unrevokedSignOut = true;
+    // Already unauthenticated is not a new fact, and the stream is broadcast,
+    // so a repeat would publish an observable duplicate.
+    if (_currentState is! AuthStateUnauthenticated) {
+      _setState(const AuthStateUnauthenticated());
+    }
+  }
+
+  /// Counts another tab's sign-in as a credential grant here (#432).
+  ///
+  /// The other tab's grant replaced the shared cookie by name, which is the
+  /// same fact [_reconcileCredentialGrant] acts on for this tab's own: the
+  /// latch comes down, because the cookie it guarded against is no longer in
+  /// the jar, and [_credentialGrants] moves, so a revocation of this tab's
+  /// that fails afterwards does not latch over the new cookie (see
+  /// [signOut]).
+  ///
+  /// Only the bookkeeping. The caller re-reads the session afterwards, and
+  /// that read is what says whose cookie it is: the broadcast that led here
+  /// names nobody.
+  void signedInInAnotherTab() {
+    _unrevokedSignOut = false;
+    _credentialGrants += 1;
   }
 
   /// The in-memory session if there is one, otherwise `null` — never a
@@ -798,6 +903,10 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   void _setState(AuthState next) {
     _currentState = next;
     if (!_stateController.isClosed) _stateController.add(next);
+  }
+
+  void _announce(SessionChange change) {
+    if (!_localChanges.isClosed) _localChanges.add(change);
   }
 
   /// Parses the grant envelope BetterAuth returns from sign-in / sign-up, or
@@ -973,6 +1082,8 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     if (replacedCookie) {
       _unrevokedSignOut = false;
       _credentialGrants += 1;
+      // Every other tab's cookie is this one now (#432).
+      _announce(SessionChange.signedIn);
     }
 
     // #346's checkpoint, and a different question from [_sessionEpoch]
@@ -1478,11 +1589,13 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     );
   }
 
-  /// Tears down auth-state streaming. Does not close the injected [Dio] — that
-  /// is a shared per-server resource owned and disposed by the container.
+  /// Tears down auth-state streaming and [localChanges]. Does not close the
+  /// injected [Dio] — that is a shared per-server resource owned and disposed
+  /// by the container.
   @override
   Future<void> onDispose() async {
     await _stateController.close();
+    await _localChanges.close();
   }
 }
 

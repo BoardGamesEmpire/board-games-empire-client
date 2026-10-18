@@ -72,8 +72,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
 
   /// The platform's [ActiveServerScope] once bootstrap has succeeded (#37)
   /// — the seam the shell provisions the auth bloc from. `null` before
-  /// bootstrap, and `null` on web until #96 supplies the single-origin
-  /// scope.
+  /// bootstrap. Web's is the single-origin scope (#96).
   ActiveServerScope? get activeServerScope => _activeServerScope;
 
   /// Runs the bootstrap sequence. Call exactly once, immediately after

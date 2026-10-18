@@ -271,5 +271,15 @@
   "shellUnverifiedSessionDismiss": "Dismiss",
   "@shellUnverifiedSessionDismiss": {
     "description": "Tooltip and accessibility label for the control that hides the unverified-session banner until the next offline episode (#98)"
+  },
+  "shellSessionSwitchedNotice": "{username} signed in from another tab, so this tab switched to their account.",
+  "@shellSessionSwitchedNotice": {
+    "description": "One-time notice shown when this tab's session moved to another user because that user signed in from another tab of the same browser. The tab now shows the new user's account; nothing was signed out by the person looking at this tab (#432)",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "alex"
+      }
+    }
   }
 }

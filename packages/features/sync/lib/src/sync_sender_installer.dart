@@ -5,6 +5,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+import 'session_confirming_sender.dart';
 import 'sync_operation_sender_impl.dart';
 
 /// Registers the session's [SyncOperationSender] (#121): the one delivery
@@ -27,6 +28,12 @@ import 'sync_operation_sender_impl.dart';
 /// create route then reads as unavailable, which is the truth, rather than
 /// failing the sign-in. No shipping composition reaches that guard; a
 /// container assembled by hand, in a test, does.
+///
+/// ## Whose session it sends as (#432)
+///
+/// Where the server scope has a [SessionIdentityGuard] — web — the sender is
+/// a [SessionConfirmingSender], which asks before each delivery whether the
+/// session is still this user's. Native has none and gets the sender bare.
 class SyncSenderInstaller implements UserScopeInstaller {
   const SyncSenderInstaller();
 
@@ -51,16 +58,24 @@ class SyncSenderInstaller implements UserScopeInstaller {
       return;
     }
 
+    final SyncOperationSender sender = SyncOperationSenderImpl(
+      queue: container.get<SyncQueueRepository>(),
+      households: container.get<HouseholdRepository>(),
+      householdRemote: container.get<HouseholdRemoteDataSource>(),
+      collection: container.get<GameCollectionRepository>(),
+      collectionRemote: container.get<GameCollectionRemoteDataSource>(),
+    );
+
     // Nothing to dispose: it holds no resources of its own, and what it
     // writes through goes with the session.
     container.registerSingleton<SyncOperationSender>(
-      SyncOperationSenderImpl(
-        queue: container.get<SyncQueueRepository>(),
-        households: container.get<HouseholdRepository>(),
-        householdRemote: container.get<HouseholdRemoteDataSource>(),
-        collection: container.get<GameCollectionRepository>(),
-        collectionRemote: container.get<GameCollectionRemoteDataSource>(),
-      ),
+      container.isRegistered<SessionIdentityGuard>()
+          ? SessionConfirmingSender(
+              inner: sender,
+              guard: container.get<SessionIdentityGuard>(),
+              userId: userId,
+            )
+          : sender,
     );
   }
 }

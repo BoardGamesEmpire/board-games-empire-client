@@ -72,6 +72,14 @@ import 'game_collection_refresher.dart';
 /// Where a collaborator is missing, neither is registered. The list reads an
 /// absent status as idle and an absent refresher as no retry to offer, which
 /// is the truth; a registered pair would claim a hydrate that cannot run.
+///
+/// ## Whose session a pass reads as (#432)
+///
+/// Every pass first asks the [SessionIdentityGuard] whether the session is
+/// still this scope's user, as the household's does, for the same reason:
+/// on web another tab can move the shared cookie to another user, and a
+/// pass read then would be that user's collection. A refused pass reads as
+/// `failed`. No guard, as on native, is a confirmed session.
 class GameCollectionHydrateInstaller implements UserScopeInstaller {
   /// [now] overrides the clock [staleAfter] is measured on. Production
   /// leaves it null, which is the device clock; a test drives it so a
@@ -113,6 +121,10 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
       userId: userId,
     );
 
+    final guard = container.isRegistered<SessionIdentityGuard>()
+        ? container.get<SessionIdentityGuard>()
+        : null;
+
     final status = GameCollectionHydrationStatus(now: now);
     container.registerSingleton<GameCollectionHydrationStatus>(
       status,
@@ -125,6 +137,16 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
     /// retry. Never throws.
     Future<void> pass() async {
       status.started();
+      final answer = await guard?.confirm(userId);
+      if (answer != null && answer != SessionConfirmation.confirmed) {
+        _log.info(
+          'Collection hydrate held off: the session could not be confirmed '
+          'as this scope\'s user',
+          context: {'serverId': server.serverId, 'answer': answer.name},
+        );
+        status.finished(CollectionHydrateOutcome.failed);
+        return;
+      }
       final outcome = await hydrator.hydrate().catchError((
         Object error,
         StackTrace stackTrace,

@@ -16,6 +16,21 @@ class _MockGameCollectionRepository extends Mock
 
 class _MockGameRepository extends Mock implements GameRepository {}
 
+/// Answers [confirm] with [answer], recording whom it was asked about
+/// (#432).
+class _FakeIdentityGuard implements SessionIdentityGuard {
+  _FakeIdentityGuard({required this.answer});
+
+  final SessionConfirmation answer;
+  final askedFor = <String>[];
+
+  @override
+  Future<SessionConfirmation> confirm(String userId) async {
+    askedFor.add(userId);
+    return answer;
+  }
+}
+
 Future<PaginatedResult<GameCollectionWithSummary>> _empty() async =>
     const PaginatedResult(
       items: [],
@@ -333,6 +348,40 @@ void main() {
       await rehydrator.rehydrateStale();
 
       expect(remote.requests.length, 0);
+    });
+  });
+
+  // #432: on web another tab can move the shared session cookie to another
+  // user while this scope still belongs to the first. A pass sent then would
+  // read the other user's collection.
+  group('the session identity check', () {
+    test('asks about the scope user before a pass', () async {
+      register();
+      final guard = _FakeIdentityGuard(answer: SessionConfirmation.confirmed);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+
+      await install();
+      await pumpEventQueue();
+
+      expect(guard.askedFor, ['user-1']);
+      expect(remote.requests.length, 1);
+    });
+
+    test('a pass it refuses sends nothing, and reads as failed so a later '
+        'trigger tries again', () async {
+      register();
+      container.registerSingleton<SessionIdentityGuard>(
+        _FakeIdentityGuard(answer: SessionConfirmation.notThisUser),
+      );
+
+      await install();
+      await pumpEventQueue();
+
+      expect(remote.requests.length, 0);
+      expect(
+        container.get<GameCollectionHydrationStatus>().state,
+        GameCollectionHydrationState.failed,
+      );
     });
   });
 }

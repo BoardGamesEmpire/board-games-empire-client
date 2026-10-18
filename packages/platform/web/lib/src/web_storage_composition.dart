@@ -4,12 +4,14 @@ import 'package:web_network/web_network.dart';
 import 'package:web_storage/web_storage.dart';
 
 import 'feedback/indexed_db_feedback_sink.dart';
+import 'session/web_session_bindings.dart';
 import 'web_platform_bootstrap.dart';
 import 'web_root_module.dart';
 import 'web_user_scope_installers.dart';
 
 /// The production web server scope: the cookie-based network stack, the
-/// drift/wasm data layer (#288), and the per-user session tier (#137).
+/// drift/wasm data layer (#288), the per-user session tier (#137), and the
+/// cross-tab session monitor (#432).
 ///
 /// This is the composition `bootstrapWebServerScope` deliberately cannot do
 /// for itself. `web_network` owns the scope's assembly but must not depend on
@@ -30,6 +32,9 @@ Future<ActiveServerScope> buildWebServerScope() {
     // The list itself is VM-compilable and lives in `web.dart`, so what web
     // installs per user is assertable without a browser.
     userInstallers: buildWebUserScopeInstallers(),
+    // #432: keeps this tab's session in step with the other tabs', and gates
+    // the work that sends as the session on whose it is.
+    sessionBindings: webSessionBindings,
   );
 }
 

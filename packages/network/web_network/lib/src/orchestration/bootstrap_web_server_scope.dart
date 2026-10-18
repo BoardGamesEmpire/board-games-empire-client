@@ -5,6 +5,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart' show ScopedServer, ServerIdentity;
 import 'package:network_interface/network_interface.dart' show WellKnownClient;
 
+import '../auth/session_channel.dart';
 import '../network/register_server_network_web.dart';
 import '../network/web_dio_factory.dart';
 import 'web_active_server_scope.dart';
@@ -43,7 +44,8 @@ typedef WebServerScopeInstall = Future<void> Function(
 ///    is attached);
 /// 3. builds an isolated per-server [DependencyContainer] and populates it via
 ///    [registerServerNetworkWeb] (shared `Dio` + `AuthRepository`, no token
-///    storage — the browser owns the session cookie);
+///    storage — the browser owns the session cookie), with the session
+///    monitor over [sessionBindings] when given one (#432);
 /// 4. runs [installStorage], if given, so the web data layer (#288) is
 ///    registered into that same container before anything can resolve from
 ///    it;
@@ -74,16 +76,18 @@ typedef WebServerScopeInstall = Future<void> Function(
 /// `WebPlatformBootstrap.createRootContainer`.
 ///
 /// [wellKnownClient] and [originProvider] are injection seams for tests; both
-/// default to production behavior. [installStorage] and [userInstallers] are
-/// **composition** seams, not test seams — production supplies both from
-/// `web_platform`, which is the one package that depends on the network
-/// stack and the data layer alike. Omitting them yields the storage-less,
-/// session-scope-less scope web ran with before #288 and #137.
+/// default to production behavior. [installStorage], [userInstallers] and
+/// [sessionBindings] are **composition** seams, not test seams — production
+/// supplies all three from `web_platform`, which is the one package that
+/// depends on the network stack, the data layer and the browser alike.
+/// Omitting them yields the storage-less, session-scope-less scope web ran
+/// with before #288 and #137, with no cross-tab monitor (#432).
 Future<ActiveServerScope> bootstrapWebServerScope({
   WellKnownClient? wellKnownClient,
   String Function() originProvider = WebDioFactory.currentOrigin,
   WebServerScopeInstall? installStorage,
   List<UserScopeInstaller> userInstallers = const [],
+  WebSessionBindings? sessionBindings,
 }) async {
   final origin = originProvider();
 
@@ -126,6 +130,7 @@ Future<ActiveServerScope> bootstrapWebServerScope({
       container: container,
       identity: identity,
       originProvider: originProvider,
+      sessionBindings: sessionBindings,
     );
 
     if (installStorage != null) await installStorage(container, identity);
