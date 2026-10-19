@@ -27,11 +27,11 @@ import '../widgets/game_description.dart';
 /// create without a way to send one (#269). The list is empty until the
 /// server sends platform games (backend#791).
 ///
-/// ## Leaving a game found gone
+/// ## A game found gone
 ///
-/// Leaving a game the server no longer has, or this user may no longer read,
-/// pops this route with `true`, so the list it was opened from can take its
-/// row down. Any other way of leaving returns nothing.
+/// A game the server no longer has, or this user may no longer read, is
+/// reported to [onGone] as soon as the server says so, so the lists already
+/// open can take it down: the one it was opened from, and any beneath that.
 ///
 /// ## Links
 ///
@@ -43,6 +43,7 @@ class GameDetailScreen extends StatelessWidget {
     required this.gameId,
     required this.remote,
     this.cache,
+    this.onGone,
     this.onAdd,
     this.openLink = openLinkExternally,
     super.key,
@@ -89,6 +90,9 @@ class GameDetailScreen extends StatelessWidget {
   /// The user-session games cache, or null where there is none.
   final GameRepository? cache;
 
+  /// Told the game's id when it turns out to be gone. Null tells no one.
+  final void Function(String gameId)? onGone;
+
   /// Adds the game on one platform to the collection (#45). Null offers no
   /// add.
   final void Function(BuildContext context, PlatformGameSummary platformGame)?
@@ -103,9 +107,12 @@ class GameDetailScreen extends StatelessWidget {
     // keys a page by its path pattern, so going from one game straight to
     // another rebuilds this screen in place, and a new id needs a new bloc.
     key: ValueKey<String>(gameId),
-    create: (_) =>
-        GameDetailBloc(gameId: gameId, remote: remote, cache: cache)
-          ..add(const GameDetailLoadRequested()),
+    create: (_) => GameDetailBloc(
+      gameId: gameId,
+      remote: remote,
+      cache: cache,
+      onGone: onGone,
+    )..add(const GameDetailLoadRequested()),
     child: _GameDetailPage(onAdd: onAdd, openLink: openLink),
   );
 }
@@ -141,25 +148,23 @@ class _GameDetailPage extends StatelessWidget {
               ),
             ),
           ),
-          GameDetailUnavailable() => _SaysGone(
-            child: BgePage(
-              title: Text(l10n.catalogDetailTitle),
-              centerVertically: true,
-              child: Column(
-                key: GameDetailScreen.unavailableKey,
-                children: [
-                  Text(
-                    l10n.catalogDetailUnavailableTitle,
-                    style: Theme.of(context).textTheme.titleMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const BgeGap.sm(),
-                  Text(
-                    l10n.catalogDetailUnavailableBody,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
+          GameDetailUnavailable() => BgePage(
+            title: Text(l10n.catalogDetailTitle),
+            centerVertically: true,
+            child: Column(
+              key: GameDetailScreen.unavailableKey,
+              children: [
+                Text(
+                  l10n.catalogDetailUnavailableTitle,
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const BgeGap.sm(),
+                Text(
+                  l10n.catalogDetailUnavailableBody,
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
           GameDetailFailed() => BgePage(
@@ -192,31 +197,6 @@ class _GameDetailPage extends StatelessWidget {
             ),
         };
       },
-    );
-  }
-}
-
-/// Pops this route with `true` when the user leaves it, by the back button
-/// or the system's back. Holding the pop to do that turns off the iOS back
-/// swipe on this page; the back button stays.
-///
-/// A route with nothing beneath it pops as it would anyway: there is no list
-/// to tell, and holding the pop would keep the system's back from leaving
-/// the app.
-class _SaysGone extends StatelessWidget {
-  const _SaysGone({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final navigator = Navigator.of(context);
-    return PopScope<Object?>(
-      canPop: !navigator.canPop(),
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) navigator.pop(true);
-      },
-      child: child,
     );
   }
 }

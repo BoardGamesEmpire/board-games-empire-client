@@ -244,20 +244,21 @@ void main() {
     expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
   });
 
-  group('leaving', () {
+  group('a game found gone', () {
     /// Opens the detail over a page beneath it, as the list opens it, and
-    /// collects what leaving it returns.
-    Future<List<Object?>> open(WidgetTester tester) async {
-      final returned = <Object?>[];
+    /// collects the games it says are gone.
+    Future<List<String>> open(WidgetTester tester) async {
+      final gone = <String>[];
       await tester.pumpWidget(
         catalogApp(
           Builder(
             builder: (context) => TextButton(
-              onPressed: () async => returned.add(
-                await Navigator.of(context).push<Object?>(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        GameDetailScreen(gameId: 'g_catan', remote: remote),
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => GameDetailScreen(
+                    gameId: 'g_catan',
+                    remote: remote,
+                    onGone: gone.add,
                   ),
                 ),
               ),
@@ -268,45 +269,43 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      return returned;
+      return gone;
     }
 
-    testWidgets('a game found gone says so to the page beneath', (
+    testWidgets('is said to be gone as soon as the server says so', (
       tester,
     ) async {
       remote.onFetchGame = (_) async =>
           throw const GameNotFoundException('404');
 
-      final returned = await open(tester);
-      await tester.tap(find.byType(BackButton));
-      await tester.pumpAndSettle();
+      final gone = await open(tester);
 
-      expect(returned, [true]);
-      expect(find.byType(GameDetailScreen), findsNothing);
+      expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
+      expect(gone, ['g_catan']);
     });
 
-    testWidgets('a game found gone says so on the system\'s back, too', (
+    testWidgets('is left as any page is, the back swipe included', (
       tester,
     ) async {
       remote.onFetchGame = (_) async =>
           throw const GamesForbiddenException('403');
 
-      final returned = await open(tester);
+      await open(tester);
+      final route = ModalRoute.of(
+        tester.element(find.byKey(GameDetailScreen.unavailableKey)),
+      )!;
+      expect(route.popGestureEnabled, isTrue);
+
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-
-      expect(returned, [true]);
+      expect(find.byType(GameDetailScreen), findsNothing);
     });
 
-    testWidgets('a game that is there says nothing', (tester) async {
+    testWidgets('is not said of a game that is there', (tester) async {
       remote.onFetchGame = (_) async =>
           (game: catan, platformGames: const <PlatformGameSummary>[]);
 
-      final returned = await open(tester);
-      await tester.tap(find.byType(BackButton));
-      await tester.pumpAndSettle();
-
-      expect(returned, [null]);
+      expect(await open(tester), isEmpty);
     });
   });
 

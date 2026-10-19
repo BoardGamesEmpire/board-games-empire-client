@@ -54,9 +54,9 @@ import 'game_search_state.dart';
 ///
 /// ## A game found gone
 ///
-/// A game opened from the results that the server no longer has, or this
-/// user may no longer read, is taken down from both sections
-/// ([GameSearchGameGone]), and stays down while this screen is open.
+/// A game that the server no longer has, or this user may no longer read,
+/// is taken down from both sections when [gone] says so, and stays down
+/// while this screen is open.
 ///
 /// ## When the server refuses
 ///
@@ -82,6 +82,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     required this._remote,
     this._cache,
     Future<Map<String, String>> Function()? sourceNames,
+    Stream<String>? gone,
     Duration debounce = defaultDebounce,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.catalog.search'),
@@ -97,6 +98,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     on<GameSearchRetryRequested>(_onRetryRequested);
     on<GameSearchSourceNamesLoaded>(_onSourceNamesLoaded);
     on<GameSearchGameGone>(_onGameGone);
+    _goneSubscription = gone?.listen((id) => add(GameSearchGameGone(id)));
 
     if (sourceNames != null) unawaited(_loadSourceNames(sourceNames));
   }
@@ -125,6 +127,13 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
 
   /// Games found gone since this screen opened, never shown again.
   final Set<String> _gone = {};
+  StreamSubscription<String>? _goneSubscription;
+
+  @override
+  Future<void> close() async {
+    await _goneSubscription?.cancel();
+    return super.close();
+  }
 
   Future<void> _loadSourceNames(
     Future<Map<String, String>> Function() read,

@@ -48,7 +48,7 @@ final class GameSearchSourceNamesLoaded extends GameSearchEvent {
   List<Object?> get props => [names];
 }
 
-/// A game opened from the results turned out to be gone: the server has no
+/// A game turned out to be gone, wherever it was opened: the server has no
 /// such game, or this user may no longer read it.
 final class GameSearchGameGone extends GameSearchEvent {
   const GameSearchGameGone(this.gameId);

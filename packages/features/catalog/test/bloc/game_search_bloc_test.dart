@@ -30,10 +30,12 @@ void main() {
   GameSearchBloc build({
     GameRepository? cache,
     Future<Map<String, String>> Function()? sourceNames,
+    Stream<String>? gone,
   }) => GameSearchBloc(
     remote: remote,
     cache: cache,
     sourceNames: sourceNames,
+    gone: gone,
     debounce: Duration.zero,
   );
 
@@ -429,6 +431,40 @@ void main() {
         'dg_bgg': [hit('926')],
         'dg_igdb': [hit('c-1', gameId: 'g_elsewhere')],
       },
+    );
+    late StreamController<String> gone;
+
+    setUp(() => gone = StreamController<String>.broadcast());
+    tearDown(() => gone.close());
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'is heard of wherever it was found',
+      setUp: () => remote.onSearch = (_, _) async => results,
+      build: () => build(gone: gone.stream),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        gone.add('g_elsewhere');
+      },
+      skip: 2,
+      expect: () => [
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('g_catan', gameId: 'g_catan')],
+          fromSources: [
+            GameSearchSourceHit(
+              source: const GameSearchSource(id: 'dg_bgg'),
+              hit: hit('926'),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'stops being heard of once the search is closed',
+      build: () => build(gone: gone.stream),
+      verify: (_) => expect(gone.hasListener, isFalse),
     );
 
     blocTest<GameSearchBloc, GameSearchState>(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -52,9 +54,11 @@ import 'game_browse_state.dart';
 ///
 /// ## A game found gone
 ///
-/// A game opened from the list that the server no longer has, or this user
-/// may no longer read, is taken down ([GameBrowseGameGone]). The rest of the
-/// list stays as it was.
+/// A game that the server no longer has, or this user may no longer read,
+/// is taken down when [gone] says so, wherever it was found: from this list,
+/// or from a search opened over it. The rest of the list stays as it was.
+/// Read from the cache, the next page then starts where it should: the game
+/// is gone from the cache, too.
 ///
 /// It stays down while this screen is open. A page already on its way when
 /// it went can repeat it, and neither shows it nor caches it again: the
@@ -69,6 +73,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
   GameBrowseBloc({
     required this._remote,
     this._cache,
+    Stream<String>? gone,
     this.pageSize = defaultPageSize,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.catalog.browse'),
@@ -81,6 +86,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
       transformer: droppable(),
     );
     on<GameBrowseGameGone>(_onGameGone);
+    _goneSubscription = gone?.listen((id) => add(GameBrowseGameGone(id)));
   }
 
   /// Games a page, online and offline alike.
@@ -100,6 +106,13 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
 
   /// Games found gone since this screen opened, never shown again.
   final Set<String> _gone = {};
+  StreamSubscription<String>? _goneSubscription;
+
+  @override
+  Future<void> close() async {
+    await _goneSubscription?.cancel();
+    return super.close();
+  }
 
   Future<void> _load(Emitter<GameBrowseState> emit) async {
     final retrying = state is GameBrowseReady;

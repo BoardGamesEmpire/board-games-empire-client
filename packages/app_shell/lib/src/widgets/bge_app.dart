@@ -292,6 +292,13 @@ class _BgeAppState extends State<BgeApp> {
   /// for its writes.
   final _UnsentChanges _unsentChanges = _UnsentChanges();
 
+  /// Each game a detail finds gone (#42), told to every catalog list open:
+  /// the one it was opened from, and a browse beneath a search. A list hears
+  /// only what is found while it is open, so nothing carries over from one
+  /// visit to the next.
+  final StreamController<String> _gamesFoundGone =
+      StreamController<String>.broadcast();
+
   @override
   void initState() {
     super.initState();
@@ -914,10 +921,16 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// Opens one game from a catalog screen (#42). A push, so leaving the
-  /// detail returns to the list or the search the user came from, and tells
-  /// it whether the game turned out to be gone.
-  static Future<bool> _openGame(BuildContext context, String gameId) async =>
-      await context.push<bool>(AppRoutes.gameDetailOf(gameId)) ?? false;
+  /// detail returns to the list or the search the user came from.
+  static void _openGame(BuildContext context, String gameId) =>
+      unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
+
+  /// Tells the catalog lists open that a game is gone: see
+  /// [_gamesFoundGone]. A detail answering after the app is gone tells no
+  /// one.
+  void _reportGameGone(String gameId) {
+    if (!_gamesFoundGone.isClosed) _gamesFoundGone.add(gameId);
+  }
 
   /// The active server's container, where it holds the per-server
   /// [GamesRemoteDataSource]: the gate every #42 catalog route shares. Null
@@ -944,6 +957,7 @@ class _BgeAppState extends State<BgeApp> {
     return GameBrowseScreen(
       remote: container.get<GamesRemoteDataSource>(),
       cache: _gamesCache(container),
+      gone: _gamesFoundGone.stream,
       onOpen: _openGame,
       onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
     );
@@ -962,6 +976,7 @@ class _BgeAppState extends State<BgeApp> {
       remote: container.get<GamesRemoteDataSource>(),
       cache: _gamesCache(container),
       sourceNames: _dataGatewayNames(container),
+      gone: _gamesFoundGone.stream,
       onOpen: _openGame,
     );
   }
@@ -979,6 +994,7 @@ class _BgeAppState extends State<BgeApp> {
       gameId: gameId,
       remote: container.get<GamesRemoteDataSource>(),
       cache: _gamesCache(container),
+      onGone: _reportGameGone,
     );
   }
 
@@ -1256,6 +1272,7 @@ class _BgeAppState extends State<BgeApp> {
     unawaited(_localeSub?.cancel());
     unawaited(_themeModeCubit?.close());
     unawaited(_localeCubit?.close());
+    unawaited(_gamesFoundGone.close());
     final deepLinkHandler = widget.deepLinkHandler;
     if (widget.disposeDeepLinkHandlerOnDispose && deepLinkHandler != null) {
       unawaited(deepLinkHandler.dispose());

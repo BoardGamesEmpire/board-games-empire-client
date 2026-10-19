@@ -27,11 +27,13 @@ void main() {
   tearDown(() => db.close());
 
   /// Two games a page, so paging shows with few rows.
-  GameBrowseBloc build({bool withCache = true}) => GameBrowseBloc(
-    remote: remote,
-    cache: withCache ? cache : null,
-    pageSize: 2,
-  );
+  GameBrowseBloc build({bool withCache = true, Stream<String>? gone}) =>
+      GameBrowseBloc(
+        remote: remote,
+        cache: withCache ? cache : null,
+        gone: gone,
+        pageSize: 2,
+      );
 
   final azul = game('g_azul', title: 'Azul');
   final brass = game('g_brass', title: 'Brass');
@@ -347,6 +349,47 @@ void main() {
   });
 
   group('a game found gone', () {
+    late StreamController<String> gone;
+
+    setUp(() => gone = StreamController<String>.broadcast());
+    tearDown(() => gone.close());
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'is heard of wherever it was found, and the cache\'s next page starts '
+      'where it should',
+      setUp: () async {
+        await cache.cacheGames([azul, brass, catan]);
+        remote.onFetchPage = (_, _) async => throw unreachable();
+      },
+      build: () => build(gone: gone.stream),
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        // A detail opened from a search over this list.
+        await cache.forgetGame('g_azul');
+        gone.add('g_azul');
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+      },
+      skip: 2,
+      expect: () => [
+        GameBrowseReady(games: [brass], hasMore: true, fromCache: true),
+        GameBrowseReady(
+          games: [brass],
+          hasMore: true,
+          fromCache: true,
+          loadingMore: true,
+        ),
+        GameBrowseReady(games: [brass, catan], fromCache: true),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'stops being heard of once the list is closed',
+      build: () => build(gone: gone.stream),
+      verify: (_) => expect(gone.hasListener, isFalse),
+    );
+
     blocTest<GameBrowseBloc, GameBrowseState>(
       'is taken down, and the rest of the list stays as it was',
       setUp: () =>

@@ -24,7 +24,7 @@ final class GameBrowseMoreRequested extends GameBrowseRead {
   const GameBrowseMoreRequested();
 }
 
-/// A game opened from the list turned out to be gone: the server has no
+/// A game turned out to be gone, wherever it was opened: the server has no
 /// such game, or this user may no longer read it.
 final class GameBrowseGameGone extends GameBrowseEvent {
   const GameBrowseGameGone(this.gameId);

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -35,6 +33,7 @@ class GameSearchScreen extends StatelessWidget {
     required this.remote,
     this.cache,
     this.sourceNames,
+    this.gone,
     this.onOpen,
     this.onImport,
     super.key,
@@ -89,10 +88,12 @@ class GameSearchScreen extends StatelessWidget {
   /// DataGateways; every DataGateway result then goes unnamed.
   final Future<Map<String, String>> Function()? sourceNames;
 
-  /// Opens a game this server holds, and completes when the user comes
-  /// back from it: true when it turned out to be gone, and it is taken down
-  /// from the results. Null leaves those rows inert.
-  final Future<bool> Function(BuildContext context, String gameId)? onOpen;
+  /// Each game found gone, wherever it was opened, as it is found: it is
+  /// taken down from the results. Null hears of none.
+  final Stream<String>? gone;
+
+  /// Opens a game this server holds. Null leaves those rows inert.
+  final void Function(BuildContext context, String gameId)? onOpen;
 
   /// Imports a DataGateway result this server does not hold (#43). Null
   /// leaves those rows inert.
@@ -101,8 +102,12 @@ class GameSearchScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider<GameSearchBloc>(
-    create: (_) =>
-        GameSearchBloc(remote: remote, cache: cache, sourceNames: sourceNames),
+    create: (_) => GameSearchBloc(
+      remote: remote,
+      cache: cache,
+      sourceNames: sourceNames,
+      gone: gone,
+    ),
     child: _GameSearchPage(onOpen: onOpen, onImport: onImport),
   );
 }
@@ -110,7 +115,7 @@ class GameSearchScreen extends StatelessWidget {
 class _GameSearchPage extends StatefulWidget {
   const _GameSearchPage({this.onOpen, this.onImport});
 
-  final Future<bool> Function(BuildContext context, String gameId)? onOpen;
+  final void Function(BuildContext context, String gameId)? onOpen;
   final void Function(BuildContext context, String sourceId, GameSearchHit hit)?
   onImport;
 
@@ -314,7 +319,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
       facts: _facts(l10n, hit),
       onTap: open == null || gameId == null
           ? null
-          : () => unawaited(_open(context, open, gameId)),
+          : () => open(context, gameId),
     );
   }
 
@@ -328,7 +333,7 @@ class _GameSearchPageState extends State<_GameSearchPage> {
     // A game the server already holds opens like one from this server;
     // anything else is an import.
     final VoidCallback? onTap = gameId != null
-        ? (open == null ? null : () => unawaited(_open(context, open, gameId)))
+        ? (open == null ? null : () => open(context, gameId))
         : (import == null
               ? null
               : () => import(context, result.source.id, hit));
@@ -344,16 +349,6 @@ class _GameSearchPageState extends State<_GameSearchPage> {
       ],
       onTap: onTap,
     );
-  }
-
-  Future<void> _open(
-    BuildContext context,
-    Future<bool> Function(BuildContext context, String gameId) open,
-    String gameId,
-  ) async {
-    final bloc = context.read<GameSearchBloc>();
-    final gone = await open(context, gameId);
-    if (gone && !bloc.isClosed) bloc.add(GameSearchGameGone(gameId));
   }
 
   static List<CatalogFact> _facts(

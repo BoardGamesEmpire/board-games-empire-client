@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -29,7 +31,8 @@ void main() {
     WidgetTester tester, {
     FakeGamesCache? cache,
     Future<Map<String, String>> Function()? sourceNames,
-    Future<bool> Function(BuildContext context, String gameId)? onOpen,
+    Stream<String>? gone,
+    void Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context, String sourceId, GameSearchHit hit)?
     onImport,
   }) async {
@@ -39,6 +42,7 @@ void main() {
           remote: remote,
           cache: cache,
           sourceNames: sourceNames,
+          gone: gone,
           onOpen: onOpen,
           onImport: onImport,
         ),
@@ -121,13 +125,7 @@ void main() {
     remote.onSearch = (_, _) async => results;
     final opened = <String>[];
 
-    await show(
-      tester,
-      onOpen: (_, id) async {
-        opened.add(id);
-        return false;
-      },
-    );
+    await show(tester, onOpen: (_, id) => opened.add(id));
     await search(tester, 'catan');
     await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
     await tester.tap(find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '1')));
@@ -135,14 +133,14 @@ void main() {
     expect(opened, ['g_catan', 'g_imported']);
   });
 
-  testWidgets('a game found gone is taken down when the user comes back', (
-    tester,
-  ) async {
+  testWidgets('a game found gone is taken down', (tester) async {
     remote.onSearch = (_, _) async => results;
+    final gone = StreamController<String>.broadcast();
+    addTearDown(gone.close);
 
-    await show(tester, onOpen: (_, _) async => true);
+    await show(tester, gone: gone.stream);
     await search(tester, 'catan');
-    await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
+    gone.add('g_catan');
     await tester.pumpAndSettle();
 
     expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
@@ -177,7 +175,7 @@ void main() {
     final handle = tester.ensureSemantics();
     remote.onSearch = (_, _) async => results;
 
-    await show(tester, onOpen: (_, _) async => false);
+    await show(tester, onOpen: (_, _) {});
     await search(tester, 'catan');
 
     expect(

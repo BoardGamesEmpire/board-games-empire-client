@@ -16,10 +16,18 @@ void main() {
   late ServerDatabase db;
   late GameRepositoryImpl cache;
 
+  /// The games the bloc said were gone.
+  late List<String> told;
+
+  /// Whether the cache still held the last of them when the bloc said so.
+  Future<bool>? cachedWhenTold;
+
   setUp(() {
     remote = FakeGamesRemote();
     db = inMemoryServerDatabase();
     cache = GameRepositoryImpl(db, userId: 'user-a');
+    told = [];
+    cachedWhenTold = null;
   });
   tearDown(() => db.close());
 
@@ -28,6 +36,12 @@ void main() {
         gameId: gameId,
         remote: remote,
         cache: withCache ? cache : null,
+        onGone: (id) {
+          told.add(id);
+          // Ignored unless awaited: a disposed cache cannot answer.
+          cachedWhenTold = cache.getGames([id]).then((g) => g.isNotEmpty)
+            ..ignore();
+        },
       );
 
   final catan = game('g_catan', title: 'Catan');
@@ -52,6 +66,7 @@ void main() {
     verify: (_) async {
       expect(remote.calls, ['fetchGame(g_catan)']);
       expect(await cache.getGame('g_catan'), catan);
+      expect(told, isEmpty);
     },
   );
 
@@ -87,6 +102,17 @@ void main() {
       );
 
       blocTest<GameDetailBloc, GameDetailState>(
+        'is said to be gone once it is forgotten, so the lists open take '
+        'it down',
+        build: build,
+        act: (bloc) => bloc.add(const GameDetailLoadRequested()),
+        verify: (_) async {
+          expect(told, ['g_catan']);
+          expect(await cachedWhenTold, isFalse);
+        },
+      );
+
+      blocTest<GameDetailBloc, GameDetailState>(
         'is still unavailable when it cannot be forgotten',
         build: () {
           unawaited(cache.onDispose());
@@ -108,6 +134,8 @@ void main() {
     build: () => build(gameId: 'not/an/id'),
     act: (bloc) => bloc.add(const GameDetailLoadRequested()),
     expect: () => [const GameDetailLoading(), const GameDetailUnavailable()],
+    // The server said nothing about it, so no list is told it is gone.
+    verify: (_) => expect(told, isEmpty),
   );
 
   group('when the server cannot be reached', () {

@@ -50,10 +50,10 @@ shell passes in.
 
 A 404 or a 403 means this user can't read the game, so the bloc also forgets
 it on this device for them (`GameRepository.forgetGame`), and offline browse
-and search stop listing it. Leaving the screen then pops `true`, and the
-browse or search list it was opened from takes its row down, whether that
-list came from the server or from this device, and keeps it down while that
-screen is open.
+and search stop listing it. Then it tells `onGone`, and the shell tells every
+catalog list open: the one the game was opened from, and a browse beneath a
+search. Each takes the game down, whether that list came from the server or
+from this device, and keeps it down while that screen is open.
 
 ## Screens
 

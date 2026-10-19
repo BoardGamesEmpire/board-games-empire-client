@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
@@ -30,6 +28,7 @@ class GameBrowseScreen extends StatelessWidget {
   const GameBrowseScreen({
     required this.remote,
     this.cache,
+    this.gone,
     this.onOpen,
     this.onSearch,
     super.key,
@@ -53,10 +52,12 @@ class GameBrowseScreen extends StatelessWidget {
   /// nothing is cached and there is nothing to show offline.
   final GameRepository? cache;
 
-  /// Opens one game, and completes when the user comes back from it: true
-  /// when it turned out to be gone, and its row is taken down. Null leaves
-  /// the rows inert.
-  final Future<bool> Function(BuildContext context, String gameId)? onOpen;
+  /// Each game found gone, wherever it was opened, as it is found: its row
+  /// is taken down. Null hears of none.
+  final Stream<String>? gone;
+
+  /// Opens one game. Null leaves the rows inert.
+  final void Function(BuildContext context, String gameId)? onOpen;
 
   /// Opens the search screen. Null offers no search.
   final void Function(BuildContext context)? onSearch;
@@ -64,7 +65,7 @@ class GameBrowseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider<GameBrowseBloc>(
     create: (_) =>
-        GameBrowseBloc(remote: remote, cache: cache)
+        GameBrowseBloc(remote: remote, cache: cache, gone: gone)
           ..add(const GameBrowseLoadRequested()),
     child: _GameBrowsePage(onOpen: onOpen, onSearch: onSearch),
   );
@@ -73,7 +74,7 @@ class GameBrowseScreen extends StatelessWidget {
 class _GameBrowsePage extends StatelessWidget {
   const _GameBrowsePage({this.onOpen, this.onSearch});
 
-  final Future<bool> Function(BuildContext context, String gameId)? onOpen;
+  final void Function(BuildContext context, String gameId)? onOpen;
   final void Function(BuildContext context)? onSearch;
 
   @override
@@ -180,7 +181,7 @@ class _BrowseRow extends StatelessWidget {
   const _BrowseRow({required this.game, this.onOpen});
 
   final Game game;
-  final Future<bool> Function(BuildContext context, String gameId)? onOpen;
+  final void Function(BuildContext context, String gameId)? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -197,17 +198,8 @@ class _BrowseRow extends StatelessWidget {
         maxPlayers: game.maxPlayers,
         contentType: game.contentType,
       ),
-      onTap: open == null ? null : () => unawaited(_open(context, open)),
+      onTap: open == null ? null : () => open(context, game.id),
     );
-  }
-
-  Future<void> _open(
-    BuildContext context,
-    Future<bool> Function(BuildContext context, String gameId) open,
-  ) async {
-    final bloc = context.read<GameBrowseBloc>();
-    final gone = await open(context, game.id);
-    if (gone && !bloc.isClosed) bloc.add(GameBrowseGameGone(game.id));
   }
 }
 

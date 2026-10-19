@@ -32,7 +32,8 @@ void main() {
   Future<void> show(
     WidgetTester tester, {
     FakeGamesCache? cache,
-    Future<bool> Function(BuildContext context, String gameId)? onOpen,
+    Stream<String>? gone,
+    void Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context)? onSearch,
   }) async {
     await tester.pumpWidget(
@@ -40,6 +41,7 @@ void main() {
         GameBrowseScreen(
           remote: remote,
           cache: cache,
+          gone: gone,
           onOpen: onOpen,
           onSearch: onSearch,
         ),
@@ -77,27 +79,19 @@ void main() {
     remote.onFetchPage = (_, _) async => pageOf([azul]);
     final opened = <String>[];
 
-    await show(
-      tester,
-      onOpen: (_, id) async {
-        opened.add(id);
-        return false;
-      },
-    );
+    await show(tester, onOpen: (_, id) => opened.add(id));
     await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_azul')));
-    await tester.pumpAndSettle();
 
     expect(opened, ['g_azul']);
-    expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsOneWidget);
   });
 
-  testWidgets('a game found gone is taken down when the user comes back', (
-    tester,
-  ) async {
+  testWidgets('a game found gone is taken down', (tester) async {
     remote.onFetchPage = (_, _) async => pageOf([azul, seafarers]);
+    final gone = StreamController<String>.broadcast();
+    addTearDown(gone.close);
 
-    await show(tester, onOpen: (_, _) async => true);
-    await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_azul')));
+    await show(tester, gone: gone.stream);
+    gone.add('g_azul');
     await tester.pumpAndSettle();
 
     expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsNothing);
@@ -110,9 +104,11 @@ void main() {
     remote.onFetchPage = (page, _) async => page == 1
         ? pageOf([azul], hasMore: true)
         : pageOf([seafarers], page: 2);
+    final gone = StreamController<String>.broadcast();
+    addTearDown(gone.close);
 
-    await show(tester, onOpen: (_, _) async => true);
-    await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_azul')));
+    await show(tester, gone: gone.stream);
+    gone.add('g_azul');
     await tester.pumpAndSettle();
 
     expect(find.byKey(GameBrowseScreen.emptyKey), findsNothing);

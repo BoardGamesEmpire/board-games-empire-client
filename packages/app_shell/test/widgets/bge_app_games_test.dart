@@ -23,7 +23,8 @@ final _catan = Game(
   updatedAt: DateTime.utc(2026),
 );
 
-/// One game in the catalog, and one DataGateway result in every search.
+/// One game in the catalog, found by every search with one DataGateway
+/// result.
 class _GamesRemote implements GamesRemoteDataSource {
   /// Games whose detail answers 404, as one deleted since the list loaded.
   final Set<String> gone = {};
@@ -57,6 +58,14 @@ class _GamesRemote implements GamesRemoteDataSource {
     Set<ContentType> contentTypes = const {},
     Set<PlatformType> platformTypes = const {},
   }) async => const GameSearchResults(
+    local: [
+      GameSearchHit(
+        externalId: 'g_catan',
+        gameId: 'g_catan',
+        title: 'Catan',
+        contentType: ContentType.baseGame,
+      ),
+    ],
     byDataGateway: {
       'dg_bgg': [
         GameSearchHit(
@@ -185,6 +194,27 @@ void main() {
     await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
 
+    expect(find.byType(GameBrowseScreen), findsOneWidget);
+    expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsNothing);
+  });
+
+  testWidgets('a game found gone from a search is gone from the list beneath '
+      'it, too', (tester) async {
+    games.gone.add('g_catan');
+    await pumpHome(tester);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
     expect(find.byType(GameBrowseScreen), findsOneWidget);
     expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsNothing);
   });
