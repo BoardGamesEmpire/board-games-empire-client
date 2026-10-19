@@ -214,6 +214,15 @@ class WebSessionMonitor implements SessionIdentityGuard, Disposable {
   /// read while it is out, hold off only while it is, and pay an owed read
   /// when it completes, failed or not. Mind the moment before the bloc has
   /// asked for that read at all.
+  ///
+  /// The same guard has a second face: unknown is not the only state the
+  /// check can be running in. A sign-out broadcast while its read is out
+  /// moves the repository to unauthenticated, so a sign-in broadcast after it
+  /// reads at once instead of owing the read. `AuthBloc` ignores that answer
+  /// during the check, and the check's own read, superseded by the sign-out,
+  /// then ends it unauthenticated. The tab shows the sign-in form over another
+  /// tab's live session until its next focus read. The same fix covers it:
+  /// hold off while the check's read is out, whatever the state says.
   Future<void> _rereadAfterEvent() async {
     if (_repository.currentAuthState is AuthStateUnknown) return;
     try {

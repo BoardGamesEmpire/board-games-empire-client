@@ -217,6 +217,34 @@ void main() {
       );
     });
 
+    test('a revocation of this tab that fails after the other tab signed in '
+        'and then out does not read its cookie back', () async {
+      stubSession('user-a');
+      await repo.getSession();
+      final revocation = Completer<Response<String>>();
+      when(() => dio.post<String>(_kSignOut, options: any(named: 'options')))
+          .thenAnswer((_) => revocation.future);
+
+      final signingOut = repo.signOut();
+      repo
+        ..signedInInAnotherTab()
+        ..signedOutInAnotherTab();
+      // The other tab's revocation failed too, so its cookie is still live.
+      stubSession('user-b');
+      clearInteractions(dio);
+
+      revocation.complete(
+        Response<String>(
+          statusCode: 500,
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+      await signingOut;
+
+      expect(repo.currentAuthState, const AuthStateUnauthenticated());
+      verifyNever(() => dio.get<String>(any(), options: any(named: 'options')));
+    });
+
     test('a sign-in here whose reconcile lands after the other tab\'s newer '
         'cookie was read does not put this tab back on its own', () async {
       when(() => dio.get<String>(_kSession, options: any(named: 'options')))
@@ -280,6 +308,47 @@ void main() {
 
       await expectLater(signingIn, throwsA(isA<AuthException>()));
       expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
+    });
+
+    test('a sign-in here whose reconcile cannot be answered after the other '
+        'tab\'s cookie was read returns that tab\'s session rather than '
+        'failing over it', () async {
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) async => _noSession());
+      await repo.getSession();
+
+      final reconcile = Completer<Response<String>>();
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) => reconcile.future);
+      stubSignIn(_grantFor('user-a'));
+
+      final signingIn = repo.signIn(email: 'a@example.com', password: 'pw');
+      await pumpEventQueue();
+      repo.signedInInAnotherTab();
+      stubSession('user-b');
+      await repo.rereadSession();
+
+      // The reconcile's first read is overtaken and asked again, and the
+      // second cannot be answered.
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenThrow(
+            DioException(
+              type: DioExceptionType.connectionError,
+              requestOptions: RequestOptions(path: ''),
+            ),
+          );
+      reconcile.complete(_sessionFor('user-a'));
+
+      final session = await signingIn;
+      expect(session.user.id, 'user-b');
+      expect(
+        repo.currentAuthState,
+        isA<AuthStateAuthenticated>().having(
+          (s) => s.session.user.id,
+          'user id',
+          'user-b',
+        ),
+      );
     });
   });
 

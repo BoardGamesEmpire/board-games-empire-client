@@ -751,12 +751,29 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // Announced again first (#432). The grant may have been another tab's,
     // and that tab has no other way to learn the cookie it is using is gone.
     //
+    // Known gap: only a grant this tab has heard of is announced again. If
+    // another tab's sign-in set its cookie before this revocation landed, but
+    // its broadcast has not reached this tab yet, the grant count has not
+    // moved and nothing is sent. That tab keeps showing a session whose
+    // cookie this response just deleted until its next focus read. Announcing
+    // [SessionChange.signedOut] after every success would not do: delivered
+    // late, it would latch that tab over a sign-in made after it. A possible
+    // fix: a separate message, sent after every successful revocation, that
+    // only asks other tabs to read the cookie and never latches.
+    //
     // A grant inside the window is settled the same way when the revocation
     // failed (#432). Its cookie is then live, but a read for it may have been
     // refused while this sign-out was outstanding: another tab's broadcast
     // asks for one, and nothing asks again once the window closes.
+    //
+    // Not read when a sign-out newer than that grant still holds: one of
+    // this tab's own still out, or another tab's ([signedOutInAnotherTab]).
+    // Either already left this tab unauthenticated, and the cookie the read
+    // would carry is one that sign-out ended, so a failed revocation would
+    // let it sign the user back in (#432).
     if (_credentialGrants != grantsAtStart) {
       if (revoked) _announce(SessionChange.signedOut);
+      if (_pendingSignOuts > 0 || _unrevokedSignOut) return;
       await _settleAfterLateRevocation(_credentialGrants);
     }
   }
@@ -1174,6 +1191,20 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         throw const AuthSupersededException();
       }
 
+      // Another tab's sign-in has replaced the cookie this grant set, so the
+      // granted session no longer describes it (#432). The monitor's read
+      // after that tab's broadcast says whose it is. Once that read has
+      // landed, the sign-in ends on its answer, as it does when this
+      // reconcile's own read is asked again and answered ([_reconcileRead]).
+      // `AuthBloc` already mirrors that session, and a failure here would
+      // put the form back over it.
+      if (_credentialGrants != grantsAtReconcile) {
+        if (_currentState case AuthStateAuthenticated(:final session)) {
+          return session;
+        }
+        rethrow;
+      }
+
       // The catch is deliberately broad and is NOT missing a classification
       // branch. Every definitive negative returns null rather than throwing
       // — #180 D11 fixed that at the source in `_getSessionUnlatched` and
@@ -1200,11 +1231,6 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // no token over a live cookie — so while it cannot answer, its own
       // retryable failure is the honest report (#331).
       if (granted == null) rethrow;
-
-      // Another tab's sign-in has replaced the cookie this grant set, so the
-      // granted session no longer describes it (#432). The monitor's read
-      // after that tab's broadcast says whose it is.
-      if (_credentialGrants != grantsAtReconcile) rethrow;
 
       _log.warn(
         'Session reconcile after $context could not complete; keeping the '
