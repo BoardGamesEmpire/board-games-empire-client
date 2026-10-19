@@ -12,7 +12,8 @@ sit beside `game_collection`.
 by id. Every page is written to the games cache as it arrives.
 
 A 403 says this user may not read the server's games at all, and the screen
-says so rather than showing the cache. When the first page cannot be fetched
+says so rather than showing the cache. On a later page it takes down the
+pages already shown, too. When the first page cannot be fetched
 for any other reason, the bloc reads the cache a page at a time in that same
 order (`GameRepository.getGamesPage`) and says the list came from this device.
 A retry keeps those rows up while it asks the server again, and keeps them if

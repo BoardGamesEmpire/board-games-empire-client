@@ -32,7 +32,8 @@ import 'game_browse_state.dart';
 /// A 403 says this user may not read the server's games at all: the route
 /// checks that before it reads a row. So the screen says so,
 /// [GameBrowseDenied], rather than showing the cache: the server's answer
-/// wins over an old copy, as it does on the detail.
+/// wins over an old copy, as it does on the detail. A later page refused
+/// takes down the pages already shown, for the same reason.
 ///
 /// ## When the server fails, the cache in the catalog's order
 ///
@@ -145,6 +146,10 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
     final PaginatedResult<Game> page;
     try {
       page = await _remote.fetchPage(page: _nextPage, limit: pageSize);
+    } on GamesForbiddenException {
+      _games = const [];
+      _hasMore = false;
+      return emit(const GameBrowseDenied());
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Game catalog page $_nextPage failed',

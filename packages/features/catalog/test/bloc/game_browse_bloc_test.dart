@@ -302,5 +302,41 @@ void main() {
       skip: 3,
       expect: () => [const GameBrowseDenied()],
     );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'takes down the pages already shown when a later page is refused',
+      setUp: () =>
+          remote.onFetchPage = (page, _) async =>
+              page == 1 ? pageOf([azul, brass], hasMore: true) : throw refused,
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+      },
+      skip: 3,
+      expect: () => [const GameBrowseDenied()],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a retry after a refused page starts the catalog from the top',
+      setUp: () =>
+          remote.onFetchPage = (page, _) async =>
+              page == 1 ? pageOf([azul, brass], hasMore: true) : throw refused,
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+        await pumpEventQueue();
+        remote.onFetchPage = (_, _) async => pageOf([catan]);
+        bloc.add(const GameBrowseLoadRequested());
+      },
+      skip: 4,
+      expect: () => [
+        const GameBrowseLoading(),
+        GameBrowseReady(games: [catan]),
+      ],
+    );
   });
 }
