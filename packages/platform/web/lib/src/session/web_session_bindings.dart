@@ -74,25 +74,51 @@ class BroadcastSessionChannel implements SessionChannel {
 ///
 /// Both, because each misses a case the other catches. Switching back to a
 /// tab turns it visible; a window left visible beside another one gains
-/// focus without ever having been hidden. Switching tabs usually fires
-/// both, which costs one extra session read.
+/// focus without ever having been hidden.
+///
+/// Once per return, though: switching tabs usually fires both, and the
+/// monitor reads the cookie for every event. It fires only after the page
+/// has lost focus or been hidden. The monitor used to fold the pair itself,
+/// by skipping an event while the previous one's read was out, and that also
+/// folded two separate returns into one whenever the read was slow.
 ///
 /// The listeners go on when the stream is first listened to and come off
 /// when the last listener cancels.
 Stream<void> pageAttention() {
   late final StreamController<void> controller;
-  final onFocus = ((web.Event _) => controller.add(null)).toJS;
+  // Whether the page has lost focus or been hidden since it last fired.
+  var away = false;
+  void arrive() {
+    if (!away) return;
+    away = false;
+    controller.add(null);
+  }
+
+  final onFocus = ((web.Event _) => arrive()).toJS;
+  final onBlur = ((web.Event _) => away = true).toJS;
   final onVisibility = ((web.Event _) {
-    if (web.document.visibilityState == 'visible') controller.add(null);
+    if (web.document.visibilityState == 'visible') {
+      arrive();
+    } else {
+      away = true;
+    }
   }).toJS;
 
   controller = StreamController<void>.broadcast(
     onListen: () {
-      web.window.addEventListener('focus', onFocus);
+      // A page opened in the background, or without focus, has not had the
+      // user's attention yet, so its first arrival counts.
+      away =
+          web.document.visibilityState != 'visible' || !web.document.hasFocus();
+      web.window
+        ..addEventListener('focus', onFocus)
+        ..addEventListener('blur', onBlur);
       web.document.addEventListener('visibilitychange', onVisibility);
     },
     onCancel: () {
-      web.window.removeEventListener('focus', onFocus);
+      web.window
+        ..removeEventListener('focus', onFocus)
+        ..removeEventListener('blur', onBlur);
       web.document.removeEventListener('visibilitychange', onVisibility);
     },
   );

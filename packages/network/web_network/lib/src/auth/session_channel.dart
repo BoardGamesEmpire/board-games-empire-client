@@ -56,5 +56,9 @@ final class WebSessionBindings {
 
   /// A stream that fires when the page regains the user's attention: the
   /// window gaining focus, or the page turning visible.
+  ///
+  /// Once per return to the page, after it lost focus or was hidden. The
+  /// monitor reads the cookie for every event, so a return that fires both
+  /// must arrive as one.
   final Stream<void> Function() attention;
 }

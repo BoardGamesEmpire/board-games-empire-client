@@ -405,8 +405,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// describing the cookie a revocation deleted would otherwise overwrite the
   /// authenticated state a newer grant has already reached, which is #346's
   /// own failure turned around: the sign-out clobbering the sign-in instead.
-  /// `_reconcileCredentialGrant` passes nothing, deliberately — it bumps
-  /// [_credentialGrants] itself before reading, and would trip its own guard.
+  /// `_reconcileCredentialGrant` bumps [_credentialGrants] itself before
+  /// reading, so it captures the count after its own bump; only another
+  /// tab's sign-in moves it from there (#432).
   Future<AuthResponse?> _getSessionUnlatched({int? grantsAtEntry}) async {
     // Captured in the synchronous prologue, before ANY await — see
     // [_sessionEpoch].
@@ -749,14 +750,20 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     //
     // Announced again first (#432). The grant may have been another tab's,
     // and that tab has no other way to learn the cookie it is using is gone.
-    if (revoked && _credentialGrants != grantsAtStart) {
-      _announce(SessionChange.signedOut);
+    //
+    // A grant inside the window is settled the same way when the revocation
+    // failed (#432). Its cookie is then live, but a read for it may have been
+    // refused while this sign-out was outstanding: another tab's broadcast
+    // asks for one, and nothing asks again once the window closes.
+    if (_credentialGrants != grantsAtStart) {
+      if (revoked) _announce(SessionChange.signedOut);
       await _settleAfterLateRevocation(_credentialGrants);
     }
   }
 
   /// Re-reads the session after a late revocation may have deleted a cookie
-  /// a sign-in issued inside the sign-out window (#346).
+  /// a sign-in issued inside the sign-out window (#346), or after a failed
+  /// one left that sign-in's cookie unread here (#432).
   ///
   /// [_getSessionUnlatched] rather than [getSession] for the same reason
   /// `_reconcileCredentialGrant` uses it: the latch is about not *asking* on
@@ -1139,9 +1146,16 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       throw _noSessionAfter(context, grant);
     }
 
+    // After this grant's own count, so the read below does not trip over it.
+    // Anything newer is another tab's sign-in (#432).
+    final grantsAtReconcile = _credentialGrants;
+
     final AuthResponse? confirmed;
     try {
-      confirmed = await _getSessionUnlatched();
+      confirmed = await _reconcileRead(
+        sessionEpoch: epoch,
+        revocationEpoch: revocationEpoch,
+      );
     } on AuthException catch (error, stackTrace) {
       if (epoch != _sessionEpoch || _revocationEpoch != revocationEpoch) {
         // The reconcile failed AND the sign-out won meanwhile: do not adopt
@@ -1186,6 +1200,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // no token over a live cookie — so while it cannot answer, its own
       // retryable failure is the honest report (#331).
       if (granted == null) rethrow;
+
+      // Another tab's sign-in has replaced the cookie this grant set, so the
+      // granted session no longer describes it (#432). The monitor's read
+      // after that tab's broadcast says whose it is.
+      if (_credentialGrants != grantsAtReconcile) rethrow;
 
       _log.warn(
         'Session reconcile after $context could not complete; keeping the '
@@ -1256,6 +1275,39 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // stream is broadcast, so repeating it would publish an observable
     // duplicate for no gain.
     return confirmed;
+  }
+
+  /// The reconcile's session read, asked again for as long as another tab's
+  /// sign-in overtakes it (#432).
+  ///
+  /// The read carries a grant checkpoint, as [rereadSession]'s does. A read
+  /// sent under this grant's cookie can land after another tab replaced it,
+  /// and after this tab's monitor has already read the newer one; emitting
+  /// it would put this tab back on a session the cookie no longer holds,
+  /// with the monitor counting that state as read. Discarded, it is asked
+  /// again, so the sign-in returns whoever the cookie now names.
+  ///
+  /// Not asked again once a sign-out has moved either epoch: the reconcile's
+  /// own checks below decide that case, as they did before.
+  Future<AuthResponse?> _reconcileRead({
+    required int sessionEpoch,
+    required int revocationEpoch,
+  }) async {
+    while (true) {
+      final grantsAtRead = _credentialGrants;
+      bool overtakenBySignIn() =>
+          _credentialGrants != grantsAtRead &&
+          sessionEpoch == _sessionEpoch &&
+          revocationEpoch == _revocationEpoch;
+      try {
+        final confirmed = await _getSessionUnlatched(
+          grantsAtEntry: grantsAtRead,
+        );
+        if (confirmed != null || !overtakenBySignIn()) return confirmed;
+      } on AuthException {
+        if (!overtakenBySignIn()) rethrow;
+      }
+    }
   }
 
   EmailAndPasswordStrategy _requireEmailPasswordStrategy() {

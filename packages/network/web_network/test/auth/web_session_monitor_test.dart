@@ -285,22 +285,27 @@ void main() {
           .called(1);
     });
 
-    // Switching back to a tab fires both visibilitychange and focus.
-    test('twice before the first read is back costs one read', () async {
+    // Each event is a separate return to the page; the bindings fold the
+    // focus and visibilitychange of one return into one. The cookie can
+    // change between two returns with no broadcast, from a build of the app
+    // that sends none, and the first return's read may have left before it.
+    test('again before the first read is back reads again, and the later '
+        'answer stands', () async {
       await signedInAs('user-a');
       final slow = Completer<Response<String>>();
+      final answers = [slow.future, Future.value(_sessionFor('user-b'))];
       when(() => dio.get<String>(_kSession, options: any(named: 'options')))
-          .thenAnswer((_) => slow.future);
+          .thenAnswer((_) => answers.removeAt(0));
 
-      attention
-        ..add(null)
-        ..add(null);
+      attention.add(null);
+      await pumpEventQueue();
+      attention.add(null);
       await pumpEventQueue();
       slow.complete(_sessionFor('user-a'));
       await pumpEventQueue();
 
-      verify(() => dio.get<String>(_kSession, options: any(named: 'options')))
-          .called(1);
+      expect(repo.currentAuthState, isSessionOf('user-b'));
+      expect(await monitor.confirm('user-a'), SessionConfirmation.notThisUser);
     });
 
     test('after a broadcast, reads again though a read is still out', () async {

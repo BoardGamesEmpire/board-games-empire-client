@@ -76,10 +76,6 @@ class WebSessionMonitor implements SessionIdentityGuard, Disposable {
   Future<void>? _inFlight;
   int _inFlightEpoch = -1;
 
-  /// The epoch the last attention event opened, or -1 once a broadcast has
-  /// opened a newer one.
-  int _attentionEpoch = -1;
-
   /// Whether a sign-in broadcast arrived during the startup check, which
   /// then owes a read once it has decided.
   bool _rereadOwed = false;
@@ -161,7 +157,6 @@ class WebSessionMonitor implements SessionIdentityGuard, Disposable {
 
   void _onBroadcast(SessionChange change) {
     _invalidate();
-    _attentionEpoch = -1;
     switch (change) {
       case SessionChange.signedOut:
         _repository.signedOutInAnotherTab();
@@ -178,17 +173,12 @@ class WebSessionMonitor implements SessionIdentityGuard, Disposable {
     }
   }
 
+  // Every event is a separate return to the page: the bindings already fold
+  // the visibilitychange and focus of one return into one. A read still out
+  // from an earlier return may have left before the cookie changed, so it
+  // cannot answer for this one.
   void _onAttention() {
-    // Switching back to a tab fires visibilitychange and then focus. A read
-    // that left after the first one already answers for the second, unless
-    // a broadcast came between them.
-    final readSinceLastAttention =
-        _attentionEpoch == _epoch &&
-        _inFlight != null &&
-        _inFlightEpoch == _epoch;
-    if (readSinceLastAttention) return;
     _invalidate();
-    _attentionEpoch = _epoch;
     unawaited(_rereadAfterEvent());
   }
 
@@ -213,6 +203,17 @@ class WebSessionMonitor implements SessionIdentityGuard, Disposable {
   /// behind, and nothing would bring them back together. A sign-in
   /// broadcast is read again once the check has decided; for focus, the
   /// check's own read is fresh enough.
+  ///
+  /// Known gap: a startup check that fails (the server unreachable) leaves
+  /// the repository unknown, so this skips every read from then on and a
+  /// read owed in [_onBroadcast] is never paid. The tab stays on the failed
+  /// startup screen over another tab's sign-in until the user presses Retry
+  /// or reloads, both of which read the cookie. `AuthBloc` does mirror the
+  /// repository again after the failure, so the guard is wider than it needs
+  /// to be. A possible fix: have the repository expose the startup check's
+  /// read while it is out, hold off only while it is, and pay an owed read
+  /// when it completes, failed or not. Mind the moment before the bloc has
+  /// asked for that read at all.
   Future<void> _rereadAfterEvent() async {
     if (_repository.currentAuthState is AuthStateUnknown) return;
     try {

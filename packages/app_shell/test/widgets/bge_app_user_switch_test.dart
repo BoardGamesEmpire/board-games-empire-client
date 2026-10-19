@@ -238,6 +238,31 @@ void main() {
     expect(sessionScope.calls, ['activate:u1']);
     expect(noticeText, findsNothing);
   });
+
+  // The switch shows the splash until the second user's scope is live. A
+  // failed activation never gets there, so the recovery sign-out must not
+  // leave that splash behind for the next sign-in.
+  testWidgets('a second user whose session fails to start is signed out, and '
+      'a later sign-in reaches home', (tester) async {
+    await signedInAsFirstUser(
+      tester,
+      holdActivation: (userId) =>
+          userId == 'u2' ? Future.error(StateError('activation')) : null,
+    );
+
+    switchToSecondUser();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AuthScreen), findsOneWidget);
+    expect(cubit.state, isA<AppBootstrapNeedsAuth>());
+    expect(noticeText, findsNothing);
+
+    repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(SplashScreen), findsNothing);
+  });
 }
 
 /// A remote the Admin test never reaches: its access is settled by hand.

@@ -183,6 +183,104 @@ void main() {
       stubSession('user-b');
       expect((await repo.getSession())?.user.id, 'user-b');
     });
+
+    test('a revocation of this tab that fails after the other tab signed in '
+        'reads that sign-in\'s cookie, which was refused while it was '
+        'out', () async {
+      stubSession('user-a');
+      await repo.getSession();
+      final revocation = Completer<Response<String>>();
+      when(() => dio.post<String>(_kSignOut, options: any(named: 'options')))
+          .thenAnswer((_) => revocation.future);
+
+      final signingOut = repo.signOut();
+      repo.signedInInAnotherTab();
+      stubSession('user-b');
+      await repo.rereadSession();
+      expect(repo.currentAuthState, const AuthStateUnauthenticated());
+
+      revocation.complete(
+        Response<String>(
+          statusCode: 500,
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+      await signingOut;
+
+      expect(
+        repo.currentAuthState,
+        isA<AuthStateAuthenticated>().having(
+          (s) => s.session.user.id,
+          'user id',
+          'user-b',
+        ),
+      );
+    });
+
+    test('a sign-in here whose reconcile lands after the other tab\'s newer '
+        'cookie was read does not put this tab back on its own', () async {
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) async => _noSession());
+      await repo.getSession();
+
+      // This tab's reconcile left under its own cookie and is slow. The
+      // other tab's sign-in replaces the cookie, and the read after its
+      // broadcast comes back first.
+      final reconcile = Completer<Response<String>>();
+      final answers = [
+        reconcile.future,
+        Future.value(_sessionFor('user-b')),
+        Future.value(_sessionFor('user-b')),
+      ];
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) => answers.removeAt(0));
+      stubSignIn(_grantFor('user-a'));
+
+      final signingIn = repo.signIn(email: 'a@example.com', password: 'pw');
+      await pumpEventQueue();
+      repo.signedInInAnotherTab();
+      await repo.rereadSession();
+
+      reconcile.complete(_sessionFor('user-a'));
+      final session = await signingIn;
+
+      expect(session.user.id, 'user-b');
+      expect(
+        repo.currentAuthState,
+        isA<AuthStateAuthenticated>().having(
+          (s) => s.session.user.id,
+          'user id',
+          'user-b',
+        ),
+      );
+    });
+
+    test('a sign-in here whose reconcile cannot be answered after the other '
+        'tab signed in does not keep its own grant', () async {
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) async => _noSession());
+      await repo.getSession();
+
+      final reconcile = Completer<Response<String>>();
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) => reconcile.future);
+      stubSignIn(_grantFor('user-a'));
+
+      final signingIn = repo.signIn(email: 'a@example.com', password: 'pw');
+      await pumpEventQueue();
+      repo.signedInInAnotherTab();
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenThrow(
+            DioException(
+              type: DioExceptionType.connectionError,
+              requestOptions: RequestOptions(path: ''),
+            ),
+          );
+      reconcile.complete(_sessionFor('user-a'));
+
+      await expectLater(signingIn, throwsA(isA<AuthException>()));
+      expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
+    });
   });
 
   group('rereadSession', () {
