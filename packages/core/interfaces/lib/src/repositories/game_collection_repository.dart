@@ -350,8 +350,9 @@ abstract class GameCollectionRepository {
   ///
   /// When nothing is left queued for the row, it is left clean and older
   /// than any copy the server holds. Its values are still the discarded
-  /// op's, so the next [mergeFromServer] writes over them with the server's.
-  /// Until that hydrate runs, the row shows what the discarded op set.
+  /// op's, so the next [mergeFromServer] of a read made after the discard
+  /// writes over them with the server's. Until that hydrate runs, the row
+  /// shows what the discarded op set.
   ///
   /// When an op is left queued for a row the server has, the row stays
   /// dirty, and the next [mergeFromServer] of a read made after the discard
@@ -449,17 +450,19 @@ abstract class GameCollectionRepository {
   ///
   /// ### A row a discard left is rebuilt
   ///
-  /// A row [discardQueuedOp] left dirty, with another op still queued, holds
-  /// values no queued op set. The first live entry for it from a read made
-  /// after the discard, by [removalsSince], is written as
-  /// [reconcileFromServer] writes one. The ops still queued for it are
+  /// A row [discardQueuedOp] left holds values no queued op set. The first
+  /// live entry for it from a read made after the discard, by
+  /// [removalsSince], is written as [reconcileFromServer] writes one, and
+  /// an entry from a read made before it is passed over. That read may
+  /// predate an acknowledgement that came before the discard. The ops still queued for it are
   /// replayed over that as the acknowledgement of the one delivered last
   /// replayed them, so a stuck op queued before that one stays out. Once
   /// the queue has purged the delivered op, every op still queued is
   /// replayed, stuck ones included. The row stays dirty while any remain.
   /// An acknowledgement for the entry before then does that rebuild itself,
   /// from a newer copy, so the merge then keeps the row as above. A restart
-  /// before then forgets the row, and its values stay until its ops settle.
+  /// before then forgets the row: one still dirty keeps its values until its
+  /// ops settle, and a clean one takes the next read's copy.
   ///
   /// The rules above still apply first: the merge rebuilds nothing over a
   /// server tombstone, a removal confirmed since [removalsSince], or a row

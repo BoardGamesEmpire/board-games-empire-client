@@ -371,6 +371,37 @@ void main() {
       expect((await rows()).single.rating, 5);
     });
 
+    test('with nothing else queued, waits for a hydrate that asked after '
+        'the discard', () async {
+      await seedConfirmed();
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 2);
+      final quantityOp = (await queue.getPendingEntries()).single;
+      // A hydrate asks for its page before that update is acknowledged.
+      final askedBefore = await repo.removalMark();
+      await repo.reconcileFromServer(
+        _server(quantity: 2),
+        completedSyncQueueId: quantityOp.id,
+      );
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final ratingOp = await parkNewest();
+
+      await repo.discardQueuedOp(ratingOp.id);
+      await repo.mergeFromServer([_server()], removalsSince: askedBefore);
+
+      expect(
+        (await rows()).single.quantity,
+        2,
+        reason: 'the acknowledged copy, not the page',
+      );
+
+      await hydrate(_server(quantity: 2));
+
+      final row = (await rows()).single;
+      expect(row.quantity, 2);
+      expect(row.rating, isNull, reason: 'the discarded update is undone');
+      expect(row.isDirty, isFalse);
+    });
+
     test('with a later op still queued, keeps the row dirty', () async {
       await seedConfirmed();
       await repo.updateCollectionEntry(id: _kServerId, rating: 9);

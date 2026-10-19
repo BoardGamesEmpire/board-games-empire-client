@@ -217,11 +217,12 @@ class GameCollectionRepositoryImpl
   /// keyed by `(platformGameId, wire medium)`.
   final Map<(String, String), int> _removedAt = {};
 
-  /// Entries a discard left holding values no queued op set, while another
-  /// op keeps them dirty, each with where [_mark] stood after the discard:
-  /// the first [mergeFromServer] of a read made since rebuilds the entry
-  /// from the server's copy (#190). In memory, so a restart before that
-  /// merge leaves the values until the other ops settle.
+  /// Entries a discard left holding values no queued op set, each with where
+  /// [_mark] stood after the discard: the first [mergeFromServer] of a read
+  /// made since rebuilds the entry from the server's copy, and an earlier
+  /// read leaves it alone (#190). In memory, so a restart before that merge
+  /// leaves the values on an entry another op keeps dirty until that op
+  /// settles. An entry nothing keeps dirty takes the next read's copy then.
   final Map<String, int> _rebuildFromServer = {};
 
   @override
@@ -790,7 +791,7 @@ class GameCollectionRepositoryImpl
                 : const Value.absent(),
           ),
         );
-        if (!settled && !row.isLocalOnly) _rebuildFromServer[row.id] = ++_mark;
+        if (!row.isLocalOnly) _rebuildFromServer[row.id] = ++_mark;
         return true;
       }
 
@@ -838,7 +839,7 @@ class GameCollectionRepositoryImpl
           updatedAt: Value(settled ? _olderThanAnyServerCopy : now),
         ),
       );
-      if (!settled && !unseen) _rebuildFromServer[row.id] = ++_mark;
+      if (!unseen) _rebuildFromServer[row.id] = ++_mark;
       return true;
     });
   }
@@ -1001,9 +1002,11 @@ class GameCollectionRepositoryImpl
     return _db.transaction(() async {
       for (final serverEntry in serverEntries) {
         // A read made before the discard can predate an acknowledgement
-        // that came before it, so it leaves the rebuild to a later read.
+        // that came before it, so it leaves the entry to a later read. The
+        // entry may be clean by then, with nothing left to keep it.
         final discardedAt = _rebuildFromServer[serverEntry.id];
-        if (discardedAt != null && removalsSince >= discardedAt) {
+        if (discardedAt != null) {
+          if (removalsSince < discardedAt) continue;
           _rebuildFromServer.remove(serverEntry.id);
           if (await _rebuild(serverEntry, removalsSince: removalsSince)) {
             continue;
@@ -1016,7 +1019,7 @@ class GameCollectionRepositoryImpl
     });
   }
 
-  /// Writes [serverEntry] over the dirty row a discard left under its id,
+  /// Writes [serverEntry] over the row a discard left under its id,
   /// then replays the ops still queued for it (#190). Returns false,
   /// writing nothing, when anything else would keep the row: a server
   /// tombstone, a removal confirmed since the read, the row being
