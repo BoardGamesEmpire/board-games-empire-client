@@ -104,6 +104,24 @@ void main() {
     expect(find.byKey(GameBrowseScreen.rowKey('g_seafarers')), findsOneWidget);
   });
 
+  testWidgets('a list emptied by games found gone still offers the next page', (
+    tester,
+  ) async {
+    remote.onFetchPage = (page, _) async => page == 1
+        ? pageOf([azul], hasMore: true)
+        : pageOf([seafarers], page: 2);
+
+    await show(tester, onOpen: (_, _) async => true);
+    await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_azul')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(GameBrowseScreen.emptyKey), findsNothing);
+    await tester.tap(find.byKey(GameBrowseScreen.moreKey));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Catan: Seafarers'), findsOneWidget);
+  });
+
   testWidgets('loads the next page from the button at the end', (tester) async {
     remote.onFetchPage = (page, _) async => page == 1
         ? pageOf([azul], hasMore: true)

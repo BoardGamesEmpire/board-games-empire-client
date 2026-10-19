@@ -56,6 +56,10 @@ import 'game_browse_state.dart';
 /// may no longer read, is taken down ([GameBrowseGameGone]). The rest of the
 /// list stays as it was.
 ///
+/// It stays down while this screen is open. A page already on its way when
+/// it went can repeat it, and neither shows it nor caches it again: the
+/// detail forgot it, and caching it would undo that.
+///
 /// ## One read at a time
 ///
 /// A read is dropped while another is running (`droppable()`), so a scroll
@@ -93,6 +97,9 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
 
   /// The server's next page, while online.
   int _nextPage = 1;
+
+  /// Games found gone since this screen opened, never shown again.
+  final Set<String> _gone = {};
 
   Future<void> _load(Emitter<GameBrowseState> emit) async {
     final retrying = state is GameBrowseReady;
@@ -175,6 +182,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
   }
 
   void _onGameGone(GameBrowseGameGone event, Emitter<GameBrowseState> emit) {
+    _gone.add(event.gameId);
     final shown = state;
     if (shown is! GameBrowseReady) return;
     final games = [
@@ -219,7 +227,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
   }
 
   void _append(Iterable<Game> games) {
-    final shown = {for (final game in _games) game.id};
+    final shown = {..._gone, for (final game in _games) game.id};
     _games = [
       ..._games,
       for (final game in games)
@@ -227,8 +235,12 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
     ];
   }
 
-  Future<void> _write(List<Game> games) async {
+  Future<void> _write(List<Game> page) async {
     final cache = _cache;
+    final games = [
+      for (final game in page)
+        if (!_gone.contains(game.id)) game,
+    ];
     if (cache == null || games.isEmpty) return;
     try {
       await cache.cacheGames(games);

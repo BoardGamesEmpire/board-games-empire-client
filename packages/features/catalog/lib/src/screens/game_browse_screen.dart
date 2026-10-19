@@ -132,7 +132,12 @@ class _GameBrowsePage extends StatelessWidget {
                 ),
               ),
             ],
-            GameBrowseReady(:final games, :final fromCache, :final retrying) =>
+            GameBrowseReady(
+              :final games,
+              :final hasMore,
+              :final fromCache,
+              :final retrying,
+            ) =>
               [
                 if (fromCache)
                   SliverToBoxAdapter(
@@ -146,7 +151,8 @@ class _GameBrowsePage extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (games.isEmpty)
+                // Games found gone can empty a list that has more to load.
+                if (games.isEmpty && !hasMore)
                   CatalogMessageSliver(
                     child: Text(
                       l10n.catalogBrowseEmpty,

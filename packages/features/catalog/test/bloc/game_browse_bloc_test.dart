@@ -393,6 +393,40 @@ void main() {
     );
 
     blocTest<GameBrowseBloc, GameBrowseState>(
+      'stays down when a page on its way repeats it, and is not cached again',
+      setUp: () {
+        final next = Completer<PaginatedResult<Game>>();
+        remote.onFetchPage = (page, _) async =>
+            page == 1 ? pageOf([azul, brass], hasMore: true) : next.future;
+        addTearDown(() {
+          if (!next.isCompleted) next.complete(pageOf([]));
+        });
+        nextPage = next;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+        await pumpEventQueue();
+        // The detail forgets the game, then the list hears it is gone.
+        await cache.forgetGame('g_azul');
+        bloc.add(const GameBrowseGameGone('g_azul'));
+        await pumpEventQueue();
+        // A game added mid-browse pushed Azul onto the next page.
+        nextPage.complete(pageOf([azul, catan], page: 2));
+      },
+      skip: 3,
+      expect: () => [
+        GameBrowseReady(games: [brass], hasMore: true, loadingMore: true),
+        GameBrowseReady(games: [brass, catan]),
+      ],
+      verify: (_) async {
+        expect(await cache.getGames(['g_azul']), isEmpty);
+      },
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
       'that the list does not hold changes nothing',
       setUp: () => remote.onFetchPage = (_, _) async => pageOf([azul]),
       build: build,
