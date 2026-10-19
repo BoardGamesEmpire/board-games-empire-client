@@ -244,6 +244,72 @@ void main() {
     expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
   });
 
+  group('leaving', () {
+    /// Opens the detail over a page beneath it, as the list opens it, and
+    /// collects what leaving it returns.
+    Future<List<Object?>> open(WidgetTester tester) async {
+      final returned = <Object?>[];
+      await tester.pumpWidget(
+        catalogApp(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => returned.add(
+                await Navigator.of(context).push<Object?>(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        GameDetailScreen(gameId: 'g_catan', remote: remote),
+                  ),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      return returned;
+    }
+
+    testWidgets('a game found gone says so to the page beneath', (
+      tester,
+    ) async {
+      remote.onFetchGame = (_) async =>
+          throw const GameNotFoundException('404');
+
+      final returned = await open(tester);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expect(returned, [true]);
+      expect(find.byType(GameDetailScreen), findsNothing);
+    });
+
+    testWidgets('a game found gone says so on the system\'s back, too', (
+      tester,
+    ) async {
+      remote.onFetchGame = (_) async =>
+          throw const GamesForbiddenException('403');
+
+      final returned = await open(tester);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(returned, [true]);
+    });
+
+    testWidgets('a game that is there says nothing', (tester) async {
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: const <PlatformGameSummary>[]);
+
+      final returned = await open(tester);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expect(returned, [null]);
+    });
+  });
+
   testWidgets('with nothing saved, a failure is an error with a retry', (
     tester,
   ) async {

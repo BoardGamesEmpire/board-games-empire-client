@@ -32,7 +32,7 @@ void main() {
   Future<void> show(
     WidgetTester tester, {
     FakeGamesCache? cache,
-    void Function(BuildContext context, String gameId)? onOpen,
+    Future<bool> Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context)? onSearch,
   }) async {
     await tester.pumpWidget(
@@ -77,10 +77,31 @@ void main() {
     remote.onFetchPage = (_, _) async => pageOf([azul]);
     final opened = <String>[];
 
-    await show(tester, onOpen: (_, id) => opened.add(id));
+    await show(
+      tester,
+      onOpen: (_, id) async {
+        opened.add(id);
+        return false;
+      },
+    );
     await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_azul')));
+    await tester.pumpAndSettle();
 
     expect(opened, ['g_azul']);
+    expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsOneWidget);
+  });
+
+  testWidgets('a game found gone is taken down when the user comes back', (
+    tester,
+  ) async {
+    remote.onFetchPage = (_, _) async => pageOf([azul, seafarers]);
+
+    await show(tester, onOpen: (_, _) async => true);
+    await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_azul')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(GameBrowseScreen.rowKey('g_azul')), findsNothing);
+    expect(find.byKey(GameBrowseScreen.rowKey('g_seafarers')), findsOneWidget);
   });
 
   testWidgets('loads the next page from the button at the end', (tester) async {

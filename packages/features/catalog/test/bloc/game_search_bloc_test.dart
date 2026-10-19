@@ -19,6 +19,12 @@ void main() {
 
   setUp(() => remote = FakeGamesRemote());
 
+  /// The DataGateways' names, for a test to answer by hand.
+  late Completer<Map<String, String>> lateNames;
+
+  /// A real games cache, for a test that seeds it once the bloc is built.
+  late GameRepositoryImpl lateCache;
+
   /// A bloc that searches as soon as typing stops, so a test need not wait
   /// out the real debounce.
   GameSearchBloc build({
@@ -415,6 +421,114 @@ void main() {
     expect: () => [const GameSearchDenied(query: 'catan', filter: _expansions)],
     verify: (_) => expect(remote.calls, ['search(catan [expansion])']),
   );
+
+  group('a game found gone', () {
+    final results = GameSearchResults(
+      local: [hit('g_catan', gameId: 'g_catan')],
+      byDataGateway: {
+        'dg_bgg': [hit('926')],
+        'dg_igdb': [hit('c-1', gameId: 'g_elsewhere')],
+      },
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'is taken down from either section, and the rest stays',
+      setUp: () => remote.onSearch = (_, _) async => results,
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        bloc
+          ..add(const GameSearchGameGone('g_catan'))
+          ..add(const GameSearchGameGone('g_elsewhere'));
+      },
+      skip: 2,
+      expect: () => [
+        GameSearchReady(
+          query: 'catan',
+          fromSources: [
+            GameSearchSourceHit(
+              source: const GameSearchSource(id: 'dg_bgg'),
+              hit: hit('926'),
+            ),
+            GameSearchSourceHit(
+              source: const GameSearchSource(id: 'dg_igdb'),
+              hit: hit('c-1', gameId: 'g_elsewhere'),
+            ),
+          ],
+        ),
+        GameSearchReady(
+          query: 'catan',
+          fromSources: [
+            GameSearchSourceHit(
+              source: const GameSearchSource(id: 'dg_bgg'),
+              hit: hit('926'),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'stays down when the DataGateways\' names arrive after it',
+      setUp: () => remote.onSearch = (_, _) async => results,
+      build: () {
+        final names = Completer<Map<String, String>>();
+        addTearDown(() {
+          if (!names.isCompleted) names.complete({});
+        });
+        lateNames = names;
+        return build(sourceNames: () => names.future);
+      },
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        bloc.add(const GameSearchGameGone('g_catan'));
+        await settle();
+        lateNames.complete({'dg_bgg': 'BoardGameGeek'});
+        await settle();
+      },
+      skip: 3,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.onServer, 'onServer', isEmpty)
+            .having(
+              (s) => s.fromSources.map((r) => r.source.name),
+              'names',
+              contains('BoardGameGeek'),
+            ),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'is taken down from what this device found, too',
+      setUp: () => remote.onSearch = (_, _) async => throw unreachable(),
+      build: () {
+        final db = inMemoryServerDatabase();
+        addTearDown(db.close);
+        final cache = GameRepositoryImpl(db, userId: 'user-a');
+        lateCache = cache;
+        return build(cache: cache);
+      },
+      act: (bloc) async {
+        await lateCache.cacheGames([
+          game('g_catan', title: 'Catan'),
+          game('g_seafarers', title: 'Catan: Seafarers'),
+        ]);
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        bloc.add(const GameSearchGameGone('g_catan'));
+      },
+      skip: 2,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.fromCache, 'fromCache', isTrue)
+            .having((s) => s.onServer.map((h) => h.gameId), 'gameIds', [
+              'g_seafarers',
+            ]),
+      ],
+    );
+  });
 
   group('when the server cannot be reached', () {
     late ServerDatabase db;

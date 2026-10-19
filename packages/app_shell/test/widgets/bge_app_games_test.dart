@@ -25,6 +25,9 @@ final _catan = Game(
 
 /// One game in the catalog, and one DataGateway result in every search.
 class _GamesRemote implements GamesRemoteDataSource {
+  /// Games whose detail answers 404, as one deleted since the list loaded.
+  final Set<String> gone = {};
+
   @override
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
@@ -41,8 +44,10 @@ class _GamesRemote implements GamesRemoteDataSource {
   );
 
   @override
-  Future<GameWithPlatformGames> fetchGame(String id) async =>
-      (game: _catan, platformGames: const <PlatformGameSummary>[]);
+  Future<GameWithPlatformGames> fetchGame(String id) async {
+    if (gone.contains(id)) throw const GameNotFoundException('404');
+    return (game: _catan, platformGames: const <PlatformGameSummary>[]);
+  }
 
   @override
   Future<GameSearchResults> search(
@@ -100,6 +105,7 @@ void main() {
   late _MockAppBootstrapCubit cubit;
   late _DataGatewayRemote dataGateways;
   late DataGatewayAccess access;
+  late _GamesRemote games;
 
   setUp(() {
     cubit = _MockAppBootstrapCubit();
@@ -110,6 +116,7 @@ void main() {
     HydratedBloc.storage = storage;
 
     dataGateways = _DataGatewayRemote();
+    games = _GamesRemote();
     access = DataGatewayAccess(remote: dataGateways);
   });
 
@@ -120,7 +127,7 @@ void main() {
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
-          gamesRemoteDataSource: withGames ? _GamesRemote() : null,
+          gamesRemoteDataSource: withGames ? games : null,
           dataGatewayRemoteDataSource: dataGateways,
           dataGatewayAccess: access,
         ),
@@ -162,6 +169,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(GameDetailScreen), findsOneWidget);
+  });
+
+  testWidgets('a game found gone is gone from the list the user returns to', (
+    tester,
+  ) async {
+    games.gone.add('g_catan');
+    await pumpHome(tester);
+    await openGames(tester);
+
+    await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameDetailScreen.unavailableKey), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameBrowseScreen), findsOneWidget);
+    expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsNothing);
   });
 
   testWidgets('no games remote is no entry', (tester) async {

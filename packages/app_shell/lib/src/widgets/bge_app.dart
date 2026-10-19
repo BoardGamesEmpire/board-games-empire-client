@@ -914,9 +914,10 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// Opens one game from a catalog screen (#42). A push, so leaving the
-  /// detail returns to the list or the search the user came from.
-  static void _openGame(BuildContext context, String gameId) =>
-      unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
+  /// detail returns to the list or the search the user came from, and tells
+  /// it whether the game turned out to be gone.
+  static Future<bool> _openGame(BuildContext context, String gameId) async =>
+      await context.push<bool>(AppRoutes.gameDetailOf(gameId)) ?? false;
 
   /// The active server's container, where it holds the per-server
   /// [GamesRemoteDataSource]: the gate every #42 catalog route shares. Null

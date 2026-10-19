@@ -52,6 +52,12 @@ import 'game_search_state.dart';
 /// under an empty field, and an answer still on its way for that text is
 /// dropped.
 ///
+/// ## A game found gone
+///
+/// A game opened from the results that the server no longer has, or this
+/// user may no longer read, is taken down from both sections
+/// ([GameSearchGameGone]), and stays down while this screen is open.
+///
 /// ## When the server refuses
 ///
 /// A 403 says this user may not read the server's games at all: the route
@@ -90,6 +96,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     on<GameSearchFilterChanged>(_onFilterChanged);
     on<GameSearchRetryRequested>(_onRetryRequested);
     on<GameSearchSourceNamesLoaded>(_onSourceNamesLoaded);
+    on<GameSearchGameGone>(_onGameGone);
 
     if (sourceNames != null) unawaited(_loadSourceNames(sourceNames));
   }
@@ -112,9 +119,12 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   /// where they cannot be read.
   Map<String, String> _names = const {};
 
-  /// The last server answer shown, kept so names that arrive later can be
-  /// applied to it.
+  /// The last answer shown, the server's or this device's, kept so names
+  /// that arrive later, and games found gone, can be applied to it.
   GameSearchResults? _shown;
+
+  /// Games found gone since this screen opened, never shown again.
+  final Set<String> _gone = {};
 
   Future<void> _loadSourceNames(
     Future<Map<String, String>> Function() read,
@@ -161,9 +171,19 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     Emitter<GameSearchState> emit,
   ) {
     _names = Map.unmodifiable(event.names);
+    _showAgain(emit);
+  }
+
+  void _onGameGone(GameSearchGameGone event, Emitter<GameSearchState> emit) {
+    if (_gone.add(event.gameId)) _showAgain(emit);
+  }
+
+  /// Shows the last answer again, with what has changed since applied.
+  void _showAgain(Emitter<GameSearchState> emit) {
     final shown = _shown;
-    if (state is GameSearchReady && shown != null) {
-      emit(_ready(shown, fromCache: false));
+    final current = state;
+    if (current is GameSearchReady && shown != null) {
+      emit(_ready(shown, fromCache: current.fromCache));
     }
   }
 
@@ -227,7 +247,9 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         for (final game in games)
           if (types.isEmpty || types.contains(game.contentType)) _hitOf(game),
       ];
-      emit(_ready(GameSearchResults(local: local), fromCache: true));
+      final results = GameSearchResults(local: local);
+      _shown = results;
+      emit(_ready(results, fromCache: true));
     } on Object catch (error, stackTrace) {
       if (search != _sequence) return;
       _logger.warn(
@@ -264,12 +286,16 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       query: _query,
       filter: _filter,
       fromCache: fromCache,
-      onServer: results.local,
+      onServer: [
+        for (final hit in results.local)
+          if (!_gone.contains(hit.gameId)) hit,
+      ],
       fromSources: [
         for (final MapEntry(key: sourceId, value: hits)
             in results.byDataGateway.entries)
           for (final hit in hits)
-            if (!onServerIds.contains(hit.gameId))
+            if (!onServerIds.contains(hit.gameId) &&
+                !_gone.contains(hit.gameId))
               GameSearchSourceHit(source: _source(sourceId), hit: hit),
       ],
       // One note covers every way a DataGateway can fail to answer: the

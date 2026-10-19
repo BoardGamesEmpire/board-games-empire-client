@@ -50,10 +50,17 @@ import 'game_browse_state.dart';
 /// It never falls back on a page the server did answer: an empty catalog is
 /// an empty catalog, whatever the cache holds.
 ///
-/// ## One thing at a time
+/// ## A game found gone
 ///
-/// Every event is dropped while another is running (`droppable()`), so a
-/// scroll that asks for more twice reads one page, not two.
+/// A game opened from the list that the server no longer has, or this user
+/// may no longer read, is taken down ([GameBrowseGameGone]). The rest of the
+/// list stays as it was.
+///
+/// ## One read at a time
+///
+/// A read is dropped while another is running (`droppable()`), so a scroll
+/// that asks for more twice reads one page, not two. A game found gone is
+/// not a read: it is taken down at once, even while a page loads.
 class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
   GameBrowseBloc({
     required this._remote,
@@ -62,13 +69,14 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.catalog.browse'),
        super(const GameBrowseLoading()) {
-    on<GameBrowseEvent>(
+    on<GameBrowseRead>(
       (event, emit) => switch (event) {
         GameBrowseLoadRequested() => _load(emit),
         GameBrowseMoreRequested() => _loadMore(emit),
       },
       transformer: droppable(),
     );
+    on<GameBrowseGameGone>(_onGameGone);
   }
 
   /// Games a page, online and offline alike.
@@ -164,6 +172,24 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
     _nextPage++;
     _hasMore = page.meta.hasMore && _served(_nextPage);
     _emitReady(emit);
+  }
+
+  void _onGameGone(GameBrowseGameGone event, Emitter<GameBrowseState> emit) {
+    final shown = state;
+    if (shown is! GameBrowseReady) return;
+    final games = [
+      for (final game in _games)
+        if (game.id != event.gameId) game,
+    ];
+    if (games.length == _games.length) return;
+    _games = games;
+    // A page on its way, or a retry, is still on its way.
+    _emitReady(
+      emit,
+      retrying: shown.retrying,
+      loadingMore: shown.loadingMore,
+      loadMoreFailed: shown.loadMoreFailed,
+    );
   }
 
   /// Whether the server serves [page]: see "The deepest page".

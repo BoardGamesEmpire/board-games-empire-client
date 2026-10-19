@@ -47,3 +47,14 @@ final class GameSearchSourceNamesLoaded extends GameSearchEvent {
   @override
   List<Object?> get props => [names];
 }
+
+/// A game opened from the results turned out to be gone: the server has no
+/// such game, or this user may no longer read it.
+final class GameSearchGameGone extends GameSearchEvent {
+  const GameSearchGameGone(this.gameId);
+
+  final String gameId;
+
+  @override
+  List<Object?> get props => [gameId];
+}

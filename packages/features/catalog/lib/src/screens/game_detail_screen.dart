@@ -27,6 +27,12 @@ import '../widgets/game_description.dart';
 /// create without a way to send one (#269). The list is empty until the
 /// server sends platform games (backend#791).
 ///
+/// ## Leaving a game found gone
+///
+/// Leaving a game the server no longer has, or this user may no longer read,
+/// pops this route with `true`, so the list it was opened from can take its
+/// row down. Any other way of leaving returns nothing.
+///
 /// ## Links
 ///
 /// A link in the description opens through [openLink], outside the app. The
@@ -135,23 +141,25 @@ class _GameDetailPage extends StatelessWidget {
               ),
             ),
           ),
-          GameDetailUnavailable() => BgePage(
-            title: Text(l10n.catalogDetailTitle),
-            centerVertically: true,
-            child: Column(
-              key: GameDetailScreen.unavailableKey,
-              children: [
-                Text(
-                  l10n.catalogDetailUnavailableTitle,
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const BgeGap.sm(),
-                Text(
-                  l10n.catalogDetailUnavailableBody,
-                  textAlign: TextAlign.center,
-                ),
-              ],
+          GameDetailUnavailable() => _SaysGone(
+            child: BgePage(
+              title: Text(l10n.catalogDetailTitle),
+              centerVertically: true,
+              child: Column(
+                key: GameDetailScreen.unavailableKey,
+                children: [
+                  Text(
+                    l10n.catalogDetailUnavailableTitle,
+                    style: Theme.of(context).textTheme.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const BgeGap.sm(),
+                  Text(
+                    l10n.catalogDetailUnavailableBody,
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
           GameDetailFailed() => BgePage(
@@ -184,6 +192,31 @@ class _GameDetailPage extends StatelessWidget {
             ),
         };
       },
+    );
+  }
+}
+
+/// Pops this route with `true` when the user leaves it, by the back button
+/// or the system's back. Holding the pop to do that turns off the iOS back
+/// swipe on this page; the back button stays.
+///
+/// A route with nothing beneath it pops as it would anyway: there is no list
+/// to tell, and holding the pop would keep the system's back from leaving
+/// the app.
+class _SaysGone extends StatelessWidget {
+  const _SaysGone({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final navigator = Navigator.of(context);
+    return PopScope<Object?>(
+      canPop: !navigator.canPop(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) navigator.pop(true);
+      },
+      child: child,
     );
   }
 }

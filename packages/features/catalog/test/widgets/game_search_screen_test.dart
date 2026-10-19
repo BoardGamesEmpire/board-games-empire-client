@@ -29,7 +29,7 @@ void main() {
     WidgetTester tester, {
     FakeGamesCache? cache,
     Future<Map<String, String>> Function()? sourceNames,
-    void Function(BuildContext context, String gameId)? onOpen,
+    Future<bool> Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context, String sourceId, GameSearchHit hit)?
     onImport,
   }) async {
@@ -121,12 +121,35 @@ void main() {
     remote.onSearch = (_, _) async => results;
     final opened = <String>[];
 
-    await show(tester, onOpen: (_, id) => opened.add(id));
+    await show(
+      tester,
+      onOpen: (_, id) async {
+        opened.add(id);
+        return false;
+      },
+    );
     await search(tester, 'catan');
     await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
     await tester.tap(find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '1')));
 
     expect(opened, ['g_catan', 'g_imported']);
+  });
+
+  testWidgets('a game found gone is taken down when the user comes back', (
+    tester,
+  ) async {
+    remote.onSearch = (_, _) async => results;
+
+    await show(tester, onOpen: (_, _) async => true);
+    await search(tester, 'catan');
+    await tester.tap(find.byKey(GameSearchScreen.serverRowKey('g_catan')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
+    expect(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '1')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a game the server does not hold goes to the import', (
@@ -154,7 +177,7 @@ void main() {
     final handle = tester.ensureSemantics();
     remote.onSearch = (_, _) async => results;
 
-    await show(tester, onOpen: (_, _) {});
+    await show(tester, onOpen: (_, _) async => false);
     await search(tester, 'catan');
 
     expect(

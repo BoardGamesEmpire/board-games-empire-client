@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/fake_games_remote.dart';
@@ -12,6 +15,9 @@ void main() {
   late FakeGamesRemote remote;
   late ServerDatabase db;
   late GameRepositoryImpl cache;
+
+  /// A page a test answers by hand.
+  late Completer<PaginatedResult<Game>> nextPage;
 
   setUp(() {
     remote = FakeGamesRemote();
@@ -337,6 +343,66 @@ void main() {
         const GameBrowseLoading(),
         GameBrowseReady(games: [catan]),
       ],
+    );
+  });
+
+  group('a game found gone', () {
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'is taken down, and the rest of the list stays as it was',
+      setUp: () =>
+          remote.onFetchPage = (_, _) async =>
+              pageOf([azul, brass], hasMore: true),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseGameGone('g_azul'));
+      },
+      skip: 2,
+      expect: () => [
+        GameBrowseReady(games: [brass], hasMore: true),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'is taken down while the next page loads, not dropped behind it',
+      setUp: () {
+        final next = Completer<PaginatedResult<Game>>();
+        remote.onFetchPage = (page, _) async =>
+            page == 1 ? pageOf([azul, brass], hasMore: true) : next.future;
+        addTearDown(() {
+          if (!next.isCompleted) next.complete(pageOf([]));
+        });
+        nextPage = next;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseGameGone('g_azul'));
+        await pumpEventQueue();
+        nextPage.complete(pageOf([catan], page: 2));
+      },
+      skip: 3,
+      expect: () => [
+        GameBrowseReady(games: [brass], hasMore: true, loadingMore: true),
+        GameBrowseReady(games: [brass, catan]),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'that the list does not hold changes nothing',
+      setUp: () => remote.onFetchPage = (_, _) async => pageOf([azul]),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseGameGone('g_elsewhere'));
+      },
+      skip: 2,
+      expect: () => <GameBrowseState>[],
     );
   });
 }
