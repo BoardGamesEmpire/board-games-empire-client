@@ -11,6 +11,7 @@ import '../bloc/household_detail_bloc.dart';
 import '../bloc/household_detail_event.dart';
 import '../bloc/household_detail_state.dart';
 import '../widgets/household_refresh_banner.dart';
+import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
 
 /// One household, read-only (#270): its name, its description, how many
@@ -255,25 +256,14 @@ class _RoleBlock extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          Text(_label(l10n, role), style: theme.textTheme.bodyLarge),
+          Text(
+            householdRoleLabel(l10n, role),
+            style: theme.textTheme.bodyLarge,
+          ),
         ],
       ),
     );
   }
-
-  /// [HouseholdRole.unknown] gets its own words rather than a shrug.
-  /// After the #266 D2 wire adapter it can only mean a role name this
-  /// deployment defined and this client does not know — the adapter throws
-  /// on a malformed role rather than degrading into it — so saying so is
-  /// reporting real data, not admitting a parse failure.
-  static String _label(HouseholdLocalizations l10n, HouseholdRole role) =>
-      switch (role) {
-        HouseholdRole.householdOwner => l10n.householdDetailRoleOwner,
-        HouseholdRole.householdAdmin => l10n.householdDetailRoleAdmin,
-        HouseholdRole.householdMember => l10n.householdDetailRoleMember,
-        HouseholdRole.householdGuest => l10n.householdDetailRoleGuest,
-        HouseholdRole.unknown => l10n.householdDetailRoleUnknown,
-      };
 }
 
 /// No readable household at this id — see [HouseholdDetailScreen].

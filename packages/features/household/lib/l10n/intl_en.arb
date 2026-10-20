@@ -188,5 +188,137 @@
   "inviteErrorRoleChanged": "You can't do this any more. Your role in the household may have changed.",
   "@inviteErrorRoleChanged": {
     "description": "Shown when withdrawing, revoking or approving an invite was refused, most likely because the user's role in the household changed since the list loaded."
+  },
+  "householdInvitesTitle": "Invites",
+  "@householdInvitesTitle": {
+    "description": "Title of the screen listing a household's invites, and of the entry on the household screen that opens it."
+  },
+  "householdInvitesLoading": "Loading invites…",
+  "@householdInvitesLoading": {
+    "description": "Announced and shown while the household's invites are first being read."
+  },
+  "householdInvitesFilterOpen": "Open",
+  "@householdInvitesFilterOpen": {
+    "description": "Filter showing every open invite: pending or awaiting approval."
+  },
+  "householdInvitesFilterAwaiting": "Awaiting approval",
+  "@householdInvitesFilterAwaiting": {
+    "description": "Filter showing only the invites waiting for an owner or admin to approve them."
+  },
+  "householdInvitesEmpty": "No open invites.",
+  "@householdInvitesEmpty": {
+    "description": "Shown when the household has no open invites."
+  },
+  "householdInvitesEmptyAwaiting": "No invites are awaiting approval.",
+  "@householdInvitesEmptyAwaiting": {
+    "description": "Shown when the household has no invites waiting for approval."
+  },
+  "householdInvitesDenied": "Only this household's owners and admins can see its invites.",
+  "@householdInvitesDenied": {
+    "description": "Shown when the server refused to list the household's invites to the current user."
+  },
+  "householdInvitesFailed": "Couldn't load the invites.",
+  "@householdInvitesFailed": {
+    "description": "Title shown when the household's invites could not be read."
+  },
+  "householdInvitesFailedBody": "Check your connection and try again.",
+  "@householdInvitesFailedBody": {
+    "description": "Body under the title shown when the household's invites could not be read."
+  },
+  "householdInvitesRetry": "Try again",
+  "@householdInvitesRetry": {
+    "description": "Button that reads the household's invites again after a failure."
+  },
+  "householdInvitesMore": "Load more",
+  "@householdInvitesMore": {
+    "description": "Button under the list that reads the next page of invites."
+  },
+  "householdInvitesInvite": "Invite someone",
+  "@householdInvitesInvite": {
+    "description": "Button that opens the form for sending a new invite to the household."
+  },
+  "householdInvitesDismiss": "Dismiss",
+  "@householdInvitesDismiss": {
+    "description": "Button that closes the banner reporting how an invite action went."
+  },
+  "householdInviteToAccount": "Invite to an account",
+  "@householdInviteToAccount": {
+    "description": "Shown in place of the invitee's name for an invite sent to a user account, when the sender gave no name."
+  },
+  "householdInviteFrom": "Invited by {name}",
+  "@householdInviteFrom": {
+    "description": "Who sent an invite.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ana"
+      }
+    }
+  },
+  "householdInviteExpires": "Expires {date}",
+  "@householdInviteExpires": {
+    "description": "When an invite expires.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "householdInviteStatusAwaiting": "Awaiting approval",
+  "@householdInviteStatusAwaiting": {
+    "description": "Badge on an invite that an owner or admin has not approved yet."
+  },
+  "householdInviteBusy": "Updating this invite",
+  "@householdInviteBusy": {
+    "description": "Announced on a row while an action on its invite is running."
+  },
+  "householdInviteWithdraw": "Withdraw",
+  "@householdInviteWithdraw": {
+    "description": "Button that takes back an invite the current user sent."
+  },
+  "householdInviteRevoke": "Revoke",
+  "@householdInviteRevoke": {
+    "description": "Button that cancels someone else's pending invite."
+  },
+  "householdInviteApprove": "Approve",
+  "@householdInviteApprove": {
+    "description": "Button that approves an invite awaiting approval, so its invitee can accept it."
+  },
+  "householdInviteTurnDown": "Turn down",
+  "@householdInviteTurnDown": {
+    "description": "Button that refuses an invite awaiting approval. The same action as revoking it."
+  },
+  "householdInviteRevokeConfirmTitle": "Revoke this invite?",
+  "@householdInviteRevokeConfirmTitle": {
+    "description": "Title of the dialog asking to confirm revoking an invite."
+  },
+  "householdInviteRevokeConfirmBody": "They won't be able to accept it.",
+  "@householdInviteRevokeConfirmBody": {
+    "description": "Body of the dialog asking to confirm revoking an invite."
+  },
+  "householdInviteTurnDownConfirmTitle": "Turn down this invite?",
+  "@householdInviteTurnDownConfirmTitle": {
+    "description": "Title of the dialog asking to confirm turning down an invite awaiting approval."
+  },
+  "householdInviteTurnDownConfirmBody": "It won't reach them.",
+  "@householdInviteTurnDownConfirmBody": {
+    "description": "Body of the dialog asking to confirm turning down an invite awaiting approval."
+  },
+  "householdInviteCancel": "Cancel",
+  "@householdInviteCancel": {
+    "description": "Button that closes a confirmation dialog without doing anything."
+  },
+  "householdInviteDoneWithdraw": "Invite withdrawn.",
+  "@householdInviteDoneWithdraw": {
+    "description": "Shown when an invite was withdrawn."
+  },
+  "householdInviteDoneRevoke": "Invite revoked.",
+  "@householdInviteDoneRevoke": {
+    "description": "Shown when an invite was revoked or turned down."
+  },
+  "householdInviteDoneApprove": "Invite approved. They can now accept it.",
+  "@householdInviteDoneApprove": {
+    "description": "Shown when an invite awaiting approval was approved."
   }
 }

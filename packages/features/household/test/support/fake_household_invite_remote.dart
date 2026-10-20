@@ -172,6 +172,7 @@ HouseholdInvite invite(
   inviteeEmail: inviteeEmail,
   householdId: householdId,
   householdName: householdName,
-  expiresAt: DateTime.utc(2026, 10, 26),
+  // Midday, so the date reads the same in every test machine's zone.
+  expiresAt: DateTime.utc(2026, 10, 26, 12),
   createdAt: DateTime.utc(2026, 10, 19),
 );
