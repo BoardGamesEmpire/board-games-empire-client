@@ -100,6 +100,29 @@ void main() {
       }
     });
 
+    test('the template defines one message per invite refusal (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteErrorOffline',
+          'inviteErrorUnexpected',
+          'inviteErrorExpired',
+          'inviteErrorGone',
+          'inviteErrorHouseholdFull',
+          'inviteErrorDailyLimitYou',
+          'inviteErrorDailyLimitHousehold',
+          'inviteSendErrorInvalid',
+          'inviteSendErrorRefused',
+          'inviteSendErrorConflict',
+          'inviteSendErrorGone',
+          'inviteAnswerErrorNotYours',
+          'inviteAcceptErrorConflict',
+          'inviteErrorAlreadySettled',
+          'inviteErrorRoleChanged',
+        ]),
+      );
+    });
+
     test('partial coverage is surfaced, not failed (repo policy)', () {
       if (report.hasUntranslated) {
         // ignore: avoid_print

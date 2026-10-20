@@ -128,5 +128,65 @@
   "createHouseholdError": "Something went wrong creating your household. Please try again.",
   "@createHouseholdError": {
     "description": "Error shown when the household could not be created locally."
+  },
+  "inviteErrorOffline": "Couldn't reach the server. Try again.",
+  "@inviteErrorOffline": {
+    "description": "Shown when an invite action got no usable answer from the server: the device is offline, the session expired, or the server is down or busy."
+  },
+  "inviteErrorUnexpected": "Something went wrong on the server. Try again later.",
+  "@inviteErrorUnexpected": {
+    "description": "Shown when the server answered an invite action in a way the app does not understand."
+  },
+  "inviteErrorExpired": "This invite has expired.",
+  "@inviteErrorExpired": {
+    "description": "Shown when an invite action failed because the invite expired."
+  },
+  "inviteErrorGone": "This invite or its household no longer exists.",
+  "@inviteErrorGone": {
+    "description": "Shown when an invite action failed because the server has no such invite or household. The server does not say which."
+  },
+  "inviteErrorHouseholdFull": "This household has no room for another member.",
+  "@inviteErrorHouseholdFull": {
+    "description": "Shown when an invite could not be sent, accepted or approved because the household is at its member limit."
+  },
+  "inviteErrorDailyLimitYou": "You've reached your daily invite limit. Try again tomorrow.",
+  "@inviteErrorDailyLimitYou": {
+    "description": "Shown when an invite could not be sent or approved because the current user has sent as many invites today as they may."
+  },
+  "inviteErrorDailyLimitHousehold": "This household has reached its daily invite limit. Try again tomorrow.",
+  "@inviteErrorDailyLimitHousehold": {
+    "description": "Shown when an invite could not be sent or approved because of a daily invite limit that is not the current user's own: the household's, or the server's."
+  },
+  "inviteSendErrorInvalid": "Check the invite: give one email address or pick one person, and not yourself.",
+  "@inviteSendErrorInvalid": {
+    "description": "Shown when the server rejected an invite as malformed. The server does not say which rule failed, so the message names the likely ones."
+  },
+  "inviteSendErrorRefused": "This invite can't be sent. You may no longer be allowed to invite here, or this person doesn't accept invites from you.",
+  "@inviteSendErrorRefused": {
+    "description": "Shown when the server refused to let the current user send an invite. It does not say whether the user lost their role or the invitee blocks them, so the message names both."
+  },
+  "inviteSendErrorConflict": "They're already a member, or already have an open invite.",
+  "@inviteSendErrorConflict": {
+    "description": "Shown when an invite could not be sent because the person is already in the household or already has an outstanding invite to it."
+  },
+  "inviteSendErrorGone": "This household, or the person you picked, no longer exists.",
+  "@inviteSendErrorGone": {
+    "description": "Shown when an invite could not be sent because the server has no such household, or the person picked from search no longer has an account. The server does not say which."
+  },
+  "inviteAnswerErrorNotYours": "This invite isn't yours to answer.",
+  "@inviteAnswerErrorNotYours": {
+    "description": "Shown when accepting or declining an invite was refused as not the user's to answer, as when they sent it themselves."
+  },
+  "inviteAcceptErrorConflict": "This invite can't be accepted now. It may already be answered or still awaiting approval, or you're already a member.",
+  "@inviteAcceptErrorConflict": {
+    "description": "Shown when accepting an invite was refused because of its state or the user's membership. The server does not say which."
+  },
+  "inviteErrorAlreadySettled": "This invite was already settled. The list is up to date.",
+  "@inviteErrorAlreadySettled": {
+    "description": "Shown when declining, withdrawing, revoking or approving an invite failed because someone else already answered or cancelled it. The list reloads alongside."
+  },
+  "inviteErrorRoleChanged": "You can't do this any more. Your role in the household may have changed.",
+  "@inviteErrorRoleChanged": {
+    "description": "Shown when withdrawing, revoking or approving an invite was refused, most likely because the user's role in the household changed since the list loaded."
   }
 }
