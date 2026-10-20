@@ -1,3 +1,4 @@
+import 'package:bge_test_support/images.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -383,6 +384,83 @@ void main() {
       await describe(tester, '![The box](ftp://example.com/box.png)');
 
       expect(find.text('Image: The box'), findsOneWidget);
+    });
+
+    group('an image', () {
+      /// Waits for the image to decode, and returns the size it decoded at.
+      Future<Size> decoded(WidgetTester tester) async {
+        final raw = find.byType(RawImage);
+        for (var i = 0; i < 40; i++) {
+          final image = raw.evaluate().isEmpty
+              ? null
+              : tester.widget<RawImage>(raw).image;
+          if (image != null) {
+            return Size(image.width.toDouble(), image.height.toDouble());
+          }
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+        fail('no image decoded');
+      }
+
+      /// Serves a [width] x [height] PNG to a description of it, and
+      /// returns the size it decoded at.
+      Future<Size> decodedSize(
+        WidgetTester tester, {
+        required int width,
+        required int height,
+      }) async {
+        final png = (await tester.runAsync(() => solidPng(width, height)))!;
+        return servingImages(png, () async {
+          await describe(tester, '![](https://example.com/box.png)');
+          return decoded(tester);
+        });
+      }
+
+      testWidgets('is held to the display\'s width, keeping its shape', (
+        tester,
+      ) async {
+        final display = tester.view.display.size.width;
+
+        expect(
+          await decodedSize(tester, width: (display * 2).toInt(), height: 100),
+          Size(display, 50),
+        );
+      });
+
+      testWidgets('smaller than that, is decoded as sent', (tester) async {
+        expect(
+          await decodedSize(tester, width: 40, height: 20),
+          const Size(40, 20),
+        );
+      });
+
+      testWidgets('is fetched once, however the window is resized', (
+        tester,
+      ) async {
+        addTearDown(tester.view.reset);
+        final png = (await tester.runAsync(() => solidPng(3000, 1500)))!;
+        await servingImages(png, () async {
+          final host = debugNetworkImageHttpClientProvider!;
+          var fetches = 0;
+          debugNetworkImageHttpClientProvider = () {
+            fetches++;
+            return host();
+          };
+          await describe(tester, '![](https://example.com/box.png)');
+          await decoded(tester);
+
+          for (final width in [810.0, 820.0, 830.0]) {
+            tester.view.physicalSize = Size(width, 600);
+            await tester.pump();
+            await decoded(tester);
+          }
+
+          expect(fetches, 1);
+        });
+      });
     });
   });
 }

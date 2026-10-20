@@ -30,6 +30,13 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 /// An `http` or `https` image is fetched, falling back to an HTML element on
 /// web where the host sends no CORS header, as the thumbnails do. Any other
 /// address, and an image that fails, shows its description instead.
+///
+/// Decoded no wider than the display, in device pixels, keeping its shape
+/// ([ResizeImagePolicy.fit], which never enlarges), so a full-size original
+/// is not held at tens of megabytes. The display, not the laid-out width:
+/// measured against the pinned Flutter, a bound that follows the layout
+/// fetches and decodes the image again at every new width, as a desktop
+/// window is resized. Drawn the same either way.
 class GameDescription extends StatelessWidget {
   const GameDescription({
     required this.markdown,
@@ -95,11 +102,17 @@ class _DescriptionImage extends StatelessWidget {
       return fallback;
     }
 
-    return Image.network(
-      uri.toString(),
+    return Image(
+      image: ResizeImage(
+        NetworkImage(
+          uri.toString(),
+          webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+        ),
+        width: View.of(context).display.size.width.ceil(),
+        policy: ResizeImagePolicy.fit,
+      ),
       semanticLabel: alt,
       excludeFromSemantics: alt == null || alt.isEmpty,
-      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
       errorBuilder: (context, error, stackTrace) => fallback,
     );
   }
