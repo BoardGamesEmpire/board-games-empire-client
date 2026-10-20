@@ -7,6 +7,7 @@ import 'package:dio_network/dio_network.dart'
         DioFactory,
         FeedbackDioTransport,
         GameCollectionRemoteDataSourceImpl,
+        HouseholdInviteRemoteDataSourceImpl,
         HouseholdRemoteDataSourceImpl,
         NetworkLogInterceptor;
 import 'package:interfaces/orchestration.dart';
@@ -17,6 +18,7 @@ import 'package:network_interface/network_interface.dart'
     show
         DataGatewayRemoteDataSource,
         GameCollectionRemoteDataSource,
+        HouseholdInviteRemoteDataSource,
         HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -126,6 +128,14 @@ void registerServerNetworkWeb({
   // rule rather than two that drift.
   container.registerSingleton<HouseholdRemoteDataSource>(
     HouseholdRemoteDataSourceImpl(dio),
+  );
+
+  // #455: the per-origin household invite remote. Same convention, placement
+  // and reuse argument as the household remote above: native's
+  // implementation over this origin's Dio, whose permissive validateStatus
+  // is what lets it read a refusal's envelope.
+  container.registerSingleton<HouseholdInviteRemoteDataSource>(
+    HouseholdInviteRemoteDataSourceImpl(dio),
   );
 
   // #368: the per-origin collection remote. Same convention, same placement
