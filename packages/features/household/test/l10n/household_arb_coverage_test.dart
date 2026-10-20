@@ -161,6 +161,35 @@ void main() {
       );
     });
 
+    test('the template defines the send-invite form surface (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteSendTitle',
+          'inviteSendByEmail',
+          'inviteSendByPerson',
+          'inviteSendEmailLabel',
+          'inviteSendEmailRequired',
+          'inviteSendEmailInvalid',
+          'inviteSendSearchLabel',
+          'inviteSendSearchHint',
+          'inviteSendSearchEmpty',
+          'inviteSendSearchFailed',
+          'inviteSendPickRequired',
+          'inviteSendNameLabel',
+          'inviteSendNameTooLong',
+          'inviteSendRoleLabel',
+          'inviteSendMessageLabel',
+          'inviteSendMessageTooLong',
+          'inviteSendSubmit',
+          'inviteSendSending',
+          'inviteSendFailedTitle',
+          'inviteSendDone',
+          'inviteSendNotAllowed',
+        ]),
+      );
+    });
+
     test('partial coverage is surfaced, not failed (repo policy)', () {
       if (report.hasUntranslated) {
         // ignore: avoid_print

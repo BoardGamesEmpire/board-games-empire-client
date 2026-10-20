@@ -320,5 +320,89 @@
   "householdInviteDoneApprove": "Invite approved. They can now accept it.",
   "@householdInviteDoneApprove": {
     "description": "Shown when an invite awaiting approval was approved."
+  },
+  "inviteSendTitle": "Invite someone",
+  "@inviteSendTitle": {
+    "description": "Title of the form for inviting someone to a household."
+  },
+  "inviteSendByEmail": "Email",
+  "@inviteSendByEmail": {
+    "description": "Choice on the invite form: invite by email address."
+  },
+  "inviteSendByPerson": "Person",
+  "@inviteSendByPerson": {
+    "description": "Choice on the invite form: invite someone who already has an account, found by search."
+  },
+  "inviteSendEmailLabel": "Email address",
+  "@inviteSendEmailLabel": {
+    "description": "Label of the invite form's email address field."
+  },
+  "inviteSendEmailRequired": "Enter an email address.",
+  "@inviteSendEmailRequired": {
+    "description": "Shown under the email field when it is empty on submit."
+  },
+  "inviteSendEmailInvalid": "Enter a valid email address.",
+  "@inviteSendEmailInvalid": {
+    "description": "Shown under the email field when its value is not an email address."
+  },
+  "inviteSendSearchLabel": "Search by name or username",
+  "@inviteSendSearchLabel": {
+    "description": "Label of the field that searches for someone to invite."
+  },
+  "inviteSendSearchHint": "Type at least 2 characters",
+  "@inviteSendSearchHint": {
+    "description": "Hint under the search field: the server searches only on 2 or more characters."
+  },
+  "inviteSendSearchEmpty": "No one found.",
+  "@inviteSendSearchEmpty": {
+    "description": "Shown when a search for someone to invite matched no one."
+  },
+  "inviteSendSearchFailed": "Couldn't search. Check your connection and keep typing to try again.",
+  "@inviteSendSearchFailed": {
+    "description": "Shown when a search for someone to invite failed."
+  },
+  "inviteSendPickRequired": "Pick someone to invite.",
+  "@inviteSendPickRequired": {
+    "description": "Shown when the invite form is submitted in person mode with no one picked."
+  },
+  "inviteSendNameLabel": "Their name (optional)",
+  "@inviteSendNameLabel": {
+    "description": "Label of the optional field for what to call the person being invited."
+  },
+  "inviteSendNameTooLong": "Keep the name to 100 characters.",
+  "@inviteSendNameTooLong": {
+    "description": "Shown under the name field when it is longer than the server accepts."
+  },
+  "inviteSendRoleLabel": "Role",
+  "@inviteSendRoleLabel": {
+    "description": "Label of the field choosing the role the invite offers."
+  },
+  "inviteSendMessageLabel": "Message (optional)",
+  "@inviteSendMessageLabel": {
+    "description": "Label of the optional message sent with the invite."
+  },
+  "inviteSendMessageTooLong": "Keep the message to 1000 characters.",
+  "@inviteSendMessageTooLong": {
+    "description": "Shown under the message field when it is longer than the server accepts."
+  },
+  "inviteSendSubmit": "Send invite",
+  "@inviteSendSubmit": {
+    "description": "Button that sends the invite."
+  },
+  "inviteSendSending": "Sending…",
+  "@inviteSendSending": {
+    "description": "Progress label announced and shown while the invite is being sent."
+  },
+  "inviteSendFailedTitle": "Couldn't send the invite",
+  "@inviteSendFailedTitle": {
+    "description": "Heading of the banner explaining why an invite was not sent."
+  },
+  "inviteSendDone": "Invite sent.",
+  "@inviteSendDone": {
+    "description": "Confirmation shown when the invite was sent."
+  },
+  "inviteSendNotAllowed": "Only this household's owners and admins can invite people.",
+  "@inviteSendNotAllowed": {
+    "description": "Shown on the invite form instead of the fields when the current user may not invite anyone to this household."
   }
 }

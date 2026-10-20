@@ -24,6 +24,7 @@ export 'src/screens/create_household_screen.dart';
 export 'src/screens/household_detail_screen.dart';
 export 'src/screens/household_invite_list_screen.dart';
 export 'src/screens/household_list_screen.dart';
+export 'src/screens/send_household_invite_screen.dart';
 export 'src/sync/household_hydrate_installer.dart';
 export 'src/sync/household_hydration_status.dart';
 export 'src/sync/household_hydrator.dart';
