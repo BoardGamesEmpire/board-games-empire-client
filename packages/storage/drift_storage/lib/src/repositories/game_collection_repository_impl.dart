@@ -219,10 +219,11 @@ class GameCollectionRepositoryImpl
 
   /// Entries a discard left holding values no queued op set, each with where
   /// [_mark] stood after the discard: the first [mergeFromServer] of a read
-  /// made since rebuilds the entry from the server's copy, and an earlier
-  /// read leaves it alone (#190). In memory, so a restart before that merge
-  /// leaves the values on an entry another op keeps dirty until that op
-  /// settles. An entry nothing keeps dirty takes the next read's copy then.
+  /// made since that writes the server's copy rebuilds the entry from it,
+  /// and an earlier read leaves it alone (#190). In memory, so a restart
+  /// before that merge leaves the values on an entry another op keeps dirty
+  /// until that op settles. An entry nothing keeps dirty takes the next
+  /// read's copy then.
   final Map<String, int> _rebuildFromServer = {};
 
   @override
@@ -1003,17 +1004,19 @@ class GameCollectionRepositoryImpl
       for (final serverEntry in serverEntries) {
         // A read made before the discard can predate an acknowledgement
         // that came before it, so it leaves the entry to a later read. The
-        // entry may be clean by then, with nothing left to keep it.
+        // entry may be clean by then, with nothing left to keep it. A copy
+        // the row keeps out, such as a removal, leaves it to a later one too.
         final discardedAt = _rebuildFromServer[serverEntry.id];
         if (discardedAt != null) {
           if (removalsSince < discardedAt) continue;
-          _rebuildFromServer.remove(serverEntry.id);
           if (await _rebuild(serverEntry, removalsSince: removalsSince)) {
+            _rebuildFromServer.remove(serverEntry.id);
             continue;
           }
         }
         if (await _localRowWins(serverEntry)) continue;
         if (_removedSince(serverEntry, removalsSince)) continue;
+        _rebuildFromServer.remove(serverEntry.id);
         await _writeServerEntry(serverEntry);
       }
     });

@@ -491,6 +491,26 @@ void main() {
       expect(row.isDirty, isTrue);
     });
 
+    test('with another op still queued, waits past a removal the server '
+        'reports for a live copy', () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 3);
+      final quantityOp = await parkNewest();
+
+      await repo.discardQueuedOp(quantityOp.id);
+      // Removed on another device, and then added back under the same id.
+      await hydrate(_server(rating: 5, deletedAt: DateTime.utc(2026, 3)));
+      await hydrate(_server(rating: 5));
+
+      final row = (await rows()).single;
+      expect(row.quantity, 1, reason: 'the discarded update is undone');
+      expect(row.rating, 7, reason: 'the op still queued');
+      expect(row.deletedAt, isNull);
+      expect(row.isDirty, isTrue);
+    });
+
     test('with another op still queued, leaves out a stuck edit that one '
         'acknowledged since replaced', () async {
       await seedConfirmed(rating: 5);

@@ -466,7 +466,9 @@ abstract class GameCollectionRepository {
   ///
   /// The rules above still apply first: the merge rebuilds nothing over a
   /// server tombstone, a removal confirmed since [removalsSince], or a row
-  /// for the triplet that is local-only or, under another id, dirty.
+  /// for the triplet that is local-only or, under another id, dirty. A row
+  /// those rules keep waits for the next live entry, as the server brings
+  /// back a removed entry under the same id.
   ///
   /// ### Otherwise it is the reconcile without the queue step
   ///
