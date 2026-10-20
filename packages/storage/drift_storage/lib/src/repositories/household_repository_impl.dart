@@ -570,6 +570,48 @@ class HouseholdRepositoryImpl
   String? reconciledHouseholdId(String localId) => _moves[localId];
 
   @override
+  Future<bool> discardQueuedOp(String syncQueueId) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      final entry = await _syncQueue.getEntry(syncQueueId);
+      if (entry == null) return false;
+
+      final SyncOperation op;
+      try {
+        op = entry.operation;
+      } on Object {
+        // Nothing it did can be read back, so there is nothing to undo.
+        return _syncQueue.discardStuck(entry.id);
+      }
+      if (op is! CreateHouseholdOperation) {
+        throw ArgumentError.value(
+          syncQueueId,
+          'syncQueueId',
+          'names a collection op; GameCollectionRepository discards those',
+        );
+      }
+      // Checked in the statement that deletes it: a create another tab
+      // retried since may be on its way to the server.
+      if (!await _syncQueue.discardStuck(entry.id)) return false;
+
+      final localId = op.localId;
+      final localOnly = _db.selectOnly(_db.householdsTable)
+        ..addColumns([_db.householdsTable.id])
+        ..where(
+          _db.householdsTable.id.equals(localId) &
+              _db.householdsTable.isLocalOnly.equals(true),
+        );
+      await (_db.delete(
+        _db.householdMembersTable,
+      )..where((t) => t.householdId.isInQuery(localOnly))).go();
+      await (_db.delete(
+        _db.householdsTable,
+      )..where((t) => t.id.equals(localId) & t.isLocalOnly.equals(true))).go();
+      return true;
+    });
+  }
+
+  @override
   Stream<List<Household>> watchHouseholds() =>
       untilDisposed(_watchHouseholdsSource);
 

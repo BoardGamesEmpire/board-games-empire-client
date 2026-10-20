@@ -40,6 +40,7 @@ final class AddToCollectionOperation extends SyncOperation {
     required this.quantity,
     this.rating,
     this.comment,
+    this.raised,
   });
 
   static const String type = 'add_to_collection';
@@ -52,6 +53,7 @@ final class AddToCollectionOperation extends SyncOperation {
         quantity: json['quantity'] as int,
         rating: json['rating'] as int?,
         comment: json['comment'] as String?,
+        raised: json['raised'] as bool?,
       );
 
   /// The local id of the [GameCollection] row this op writes. Generated
@@ -78,6 +80,18 @@ final class AddToCollectionOperation extends SyncOperation {
   final int? rating;
   final String? comment;
 
+  /// True when this add raised the quantity of an entry already in the
+  /// collection, rather than creating the entry or reviving a removed one
+  /// (#190).
+  ///
+  /// A discard of a raise leaves the entry where it was; a discard of any
+  /// other add takes the entry away again. Null on any other add, and on an
+  /// add queued before this was recorded. A discard treats that one as a
+  /// raise when it follows a queued add that created the entry, and
+  /// otherwise as one that created it. Client-internal, like [localId]:
+  /// never sent.
+  final bool? raised;
+
   @override
   Map<String, dynamic> toJson() => {
     'type': type,
@@ -87,6 +101,7 @@ final class AddToCollectionOperation extends SyncOperation {
     'quantity': quantity,
     if (rating != null) 'rating': rating,
     if (comment != null) 'comment': comment,
+    if (raised != null) 'raised': raised,
   };
 }
 

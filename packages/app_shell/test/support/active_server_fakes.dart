@@ -193,6 +193,7 @@ ActiveServer buildActiveServer(
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
   UnsentChangesNoticeRepository? unsentChangesNotice,
+  SyncQueueRepository? syncQueueRepository,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
   DataGatewayAccess? dataGatewayAccess,
   String serverId = 'server-uuid-1',
@@ -238,6 +239,9 @@ ActiveServer buildActiveServer(
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
+  }
+  if (syncQueueRepository != null) {
+    container.registerSingleton<SyncQueueRepository>(syncQueueRepository);
   }
   if (unsentChangesNotice != null) {
     container.registerSingleton<UnsentChangesNoticeRepository>(

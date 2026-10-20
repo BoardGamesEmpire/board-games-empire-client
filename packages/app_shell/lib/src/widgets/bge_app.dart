@@ -19,6 +19,8 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
+import 'package:sync_queue/l10n/sync_localizations.dart';
+import 'package:sync_queue/sync_queue.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:ui/ui.dart' show UnverifiedSessionBanner;
@@ -323,6 +325,7 @@ class _BgeAppState extends State<BgeApp> {
       householdDetailBuilder: _buildHouseholdDetailRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
+      stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
     );
@@ -544,6 +547,15 @@ class _BgeAppState extends State<BgeApp> {
 
     HomeScreen home({required bool admin}) => HomeScreen(
       activeServerName: active.displayName,
+      // #190: shown while anything is stuck, under the same gate as the
+      // screen it opens, so it never leads to one that can't appear.
+      notice: _canRecoverStuckChanges(container)
+          ? StuckSyncOpsNotice(
+              queue: container.get<SyncQueueRepository>(),
+              padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceLg),
+              onReview: (ctx) => ctx.push(AppRoutes.stuckChanges),
+            )
+          : null,
       entries: [
         if (canReadCollection)
           HomeMenuEntry(
@@ -840,6 +852,15 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<GameCollectionRefresher>().refresh
       : null;
 
+  /// A collection pass that starts after the call, for a discard (#190):
+  /// the list's retry joins a pass in flight, which may have merged the
+  /// discarded row's page already.
+  Future<void> Function()? _collectionRefreshAfterChange(
+    DependencyContainer container,
+  ) => container.isRegistered<GameCollectionRefresher>()
+      ? container.get<GameCollectionRefresher>().refreshAfterChange
+      : null;
+
   /// The collection list's entry trigger (#44): the session's
   /// [SessionRehydrator], through the shell's shared guard, as
   /// [_householdEntryRefresh] does. The staleness window in the registry
@@ -885,6 +906,51 @@ class _BgeAppState extends State<BgeApp> {
       hydration: hydration,
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
+    );
+  }
+
+  /// Whether [container] holds what the #190 retry-or-discard screen needs:
+  /// the session's queue, and both repositories a discard undoes through.
+  /// The user tier registers all three, so this holds exactly while a
+  /// session is active, on both platforms.
+  static bool _canRecoverStuckChanges(DependencyContainer container) =>
+      container.isRegistered<SyncQueueRepository>() &&
+      container.isRegistered<GameCollectionRepository>() &&
+      container.isRegistered<HouseholdRepository>();
+
+  /// The #190 retry-or-discard wiring. Null (→ [NotYetAvailableScreen])
+  /// when no active server is resolvable or [_canRecoverStuckChanges] says
+  /// no.
+  ///
+  /// A retry goes through the session's [SyncQueueDrain] where one runs,
+  /// which is native, and inline through the [SyncOperationSender] where
+  /// none does, which is web until #447. A discard refreshes the cache it
+  /// undid through that cache's refresher, the pass a retry button runs, so
+  /// the undone row comes back as the server has it.
+  ///
+  /// Resolved per route build, like every route here, so nothing is held
+  /// across a session change.
+  Widget? _buildStuckChangesRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!_canRecoverStuckChanges(container)) return null;
+
+    return StuckSyncOpsScreen(
+      recovery: SyncRecovery(
+        queue: container.get<SyncQueueRepository>(),
+        collection: container.get<GameCollectionRepository>(),
+        households: container.get<HouseholdRepository>(),
+        sender: container.isRegistered<SyncOperationSender>()
+            ? container.get<SyncOperationSender>()
+            : null,
+        drain: container.isRegistered<SyncQueueDrain>()
+            ? container.get<SyncQueueDrain>().drainAfterChange
+            : null,
+        refreshCollection: _collectionRefreshAfterChange(container),
+        refreshHouseholds: _householdRetry(container),
+      ),
     );
   }
 
@@ -1449,6 +1515,7 @@ class _BgeAppState extends State<BgeApp> {
         FeedbackLocalizations.delegate,
         HouseholdLocalizations.delegate,
         GameCollectionLocalizations.delegate,
+        SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],

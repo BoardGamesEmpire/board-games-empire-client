@@ -125,6 +125,10 @@
   "@createHouseholdQueued": {
     "description": "Confirmation shown when the household was created locally but not yet confirmed by the server."
   },
+  "createHouseholdRefused": "The server didn't accept this household. It's saved on this device: review it from the home screen to try again or discard it.",
+  "@createHouseholdRefused": {
+    "description": "Confirmation shown when the household was created locally but the server refused it, so it will not sync on its own (#190). Points the user at the notice on the home screen, which opens the screen where changes that couldn't sync can be retried or discarded. Must not promise that it will sync later."
+  },
   "createHouseholdError": "Something went wrong creating your household. Please try again.",
   "@createHouseholdError": {
     "description": "Error shown when the household could not be created locally."

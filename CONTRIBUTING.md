@@ -105,7 +105,7 @@ tests fail with unresolved symbols until it exists. That covers `*.g.dart`,
 Generation is staged, and the order matters:
 
 1. **`generate:i18n`** — `flutter gen-l10n` in each package owning an `l10n.yaml`
-   (`app_shell` and the six `features/*` packages). These must exist first.
+   (`app_shell` and the seven `features/*` packages). These must exist first.
 2. **`generate:build`** — one workspace-wide `build_runner` pass
    (`--workspace`), so the builders compile once rather than per package.
 

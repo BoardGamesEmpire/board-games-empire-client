@@ -225,6 +225,22 @@ abstract class HouseholdRepository {
   /// Never throws, including after disposal.
   String? reconciledHouseholdId(String localId);
 
+  /// Discards the queued household create [syncQueueId] names, and the
+  /// optimistic household [create] wrote for it (#190).
+  ///
+  /// Only for a create that is stuck: the server refused it, or its retries
+  /// ran out. The household is deleted with its member rows, and the queue
+  /// entry with them through [SyncQueueRepository.discardStuck], in one
+  /// transaction; a create that isn't stuck by then, such as one another tab
+  /// retried, changes nothing. Only a household still
+  /// [Household.isLocalOnly] is deleted. If the server did make it, a lost
+  /// answer being how the retries ran out, the next hydrate brings it back.
+  ///
+  /// A completed or unknown entry changes nothing. Returns whether the entry
+  /// was deleted. Throws [ArgumentError] for a collection op, before any
+  /// write.
+  Future<bool> discardQueuedOp(String syncQueueId);
+
   /// Upserts a [Household] from a server response. User-agnostic by
   /// design — the read-side boundary enforces visibility.
   ///

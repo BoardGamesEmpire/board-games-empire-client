@@ -261,8 +261,10 @@ abstract class GameCollectionRepository {
   /// acknowledged op: replaying an older op still outstanding would put
   /// back a value the newer change replaced. The cost is that the older
   /// op's edit stops showing even in fields the newer change didn't carry,
-  /// though the row stays dirty. What the row should show for such an op
-  /// is #190's to decide. When [completedSyncQueueId] is omitted, the
+  /// though the row stays dirty. That is what the row shows for a stuck op
+  /// (#190): the server's value, never the stuck edit re-applied. A retry
+  /// that lands restores the edit through its own acknowledgement, and a
+  /// discard drops it. When [completedSyncQueueId] is omitted, the
   /// acknowledged op's place is unknown and every outstanding op is
   /// replayed.
   ///
@@ -314,8 +316,70 @@ abstract class GameCollectionRepository {
     required String completedSyncQueueId,
   });
 
-  /// How many removals this repository has confirmed, as a mark to pass to
-  /// [mergeFromServer] (#121).
+  /// Discards the queued collection op [syncQueueId] names, and undoes what
+  /// it did to the local row (#190).
+  ///
+  /// Only for an op that is stuck: the server refused it, or its retries ran
+  /// out. The queue entry is deleted through
+  /// [SyncQueueRepository.discardStuck] in the same transaction as the undo,
+  /// so either both land or neither does, and an op that isn't stuck by
+  /// then, such as one another tab retried, changes nothing.
+  ///
+  /// **An update** is dropped alone. The row stays dirty while any other op
+  /// for it is outstanding.
+  ///
+  /// **An add or a removal** goes with every op queued for the entry after
+  /// it, which all assumed it, and the entry goes back to how it was before
+  /// it. Dropping it alone would need to know what the server holds now,
+  /// which this device doesn't record:
+  ///
+  /// - **A removal**: the entry comes back.
+  /// - **An add that raised the quantity**: the entry stays. So does any add
+  ///   queued after an add still queued that created the entry, since the
+  ///   entry was there for it; an add from before raises were recorded
+  ///   doesn't say which it was.
+  /// - **An add that created the entry, or revived it from a removal the
+  ///   server has confirmed**: the row is deleted. If an add after it has
+  ///   reached the server meanwhile (the row isn't
+  ///   [GameCollection.isLocalOnly]), the server has the entry, so it stays.
+  /// - **A re-add over a removal still queued**: the row goes back to that
+  ///   removal's tombstone.
+  ///
+  /// The row is local-only afterwards only while an add before the op, one
+  /// that creates or revives the entry, is still queued.
+  ///
+  /// When nothing is left queued for the row, it is left clean and older
+  /// than any copy the server holds. Its values are still the discarded
+  /// op's, so the next [mergeFromServer] of a read made after the discard
+  /// writes over them with the server's. Until that hydrate runs, the row
+  /// shows what the discarded op set.
+  ///
+  /// When an op is left queued for a row the server has, the row stays
+  /// dirty, and the next [mergeFromServer] of a read made after the discard
+  /// rebuilds it rather than keeping it: see that method. A row the server
+  /// has yet to see keeps the discarded op's values until the add that
+  /// creates it is acknowledged, which rebuilds it the same way.
+  ///
+  /// A completed or unknown entry changes nothing, and so does a payload
+  /// that won't decode, beyond deleting the entry. Returns whether the entry
+  /// was deleted. Throws [ArgumentError] for a household op, and
+  /// [StateError] for an add or a removal while a later op for the entry is
+  /// being sent, both before any write. That send's acknowledgement would
+  /// bring back what the discard undoes, so it waits for the send to settle.
+  Future<bool> discardQueuedOp(String syncQueueId);
+
+  /// The title of the game the entry [collectionId] names, or null for an
+  /// id this user has no entry under (#190).
+  ///
+  /// For describing a queued op in words. Unlike the other reads it finds a
+  /// removed entry too, since a queued removal names one. It returns only
+  /// the title, so a removed entry still never reads as part of the
+  /// collection.
+  Future<String?> titleOf(String collectionId);
+
+  /// A mark to pass to [mergeFromServer] (#121): it moves each time this
+  /// repository confirms a removal, and each time [discardQueuedOp] leaves
+  /// a row for a merge to rebuild (#190).
   ///
   /// A confirmation is the server's answer, to an op this device sent,
   /// that the entry is removed: [reconcileFromServer] with a tombstone,
@@ -325,11 +389,13 @@ abstract class GameCollectionRepository {
   /// Read it **before** requesting the entries a merge will write, and pass
   /// it with every [mergeFromServer] call they go into. A removal confirmed
   /// after this read may have been confirmed after the server answered, so
-  /// those entries can still show it live.
+  /// those entries can still show it live. A read made before a discard may
+  /// predate an acknowledgement that came before it, so it doesn't rebuild
+  /// the row.
   ///
-  /// The count lives in this instance, not the database, so a confirmation
+  /// The mark lives in this instance, not the database, so a confirmation
   /// made through another instance over the same database, such as another
-  /// browser tab's, is not counted.
+  /// browser tab's, doesn't move it.
   Future<int> removalMark();
 
   /// Merges server state that no local mutation asked for, such as a
@@ -381,6 +447,30 @@ abstract class GameCollectionRepository {
   /// then. A server tombstone is applied as usual.
   ///
   /// The mark is required because any read can race a confirmation.
+  ///
+  /// ### A row a discard left is rebuilt
+  ///
+  /// A row [discardQueuedOp] left holds values no queued op set. The first
+  /// live entry for it from a read made after the discard, by
+  /// [removalsSince], is written as [reconcileFromServer] writes one, and
+  /// an entry from a read made before it is passed over. That read may
+  /// predate an acknowledgement that came before the discard. The ops still
+  /// queued for it are replayed over that as the acknowledgement of the one
+  /// delivered last replayed them, so a stuck op queued before that one
+  /// stays out. Once
+  /// the queue has purged the delivered op, every op still queued is
+  /// replayed, stuck ones included. The row stays dirty while any remain.
+  /// An acknowledgement for the entry before then does that rebuild itself,
+  /// from a newer copy, so the merge then keeps the row as above. A restart
+  /// before then forgets the row: one still dirty keeps its values until its
+  /// ops settle, and a clean one takes the next read's copy.
+  ///
+  /// The rules above still apply first: the merge rebuilds nothing over a
+  /// server tombstone, a removal confirmed since [removalsSince], a row for
+  /// the triplet that is local-only or, under another id, dirty, or a clean
+  /// row stamped later than the entry, such as one another tab cached since
+  /// the read. A row those rules keep waits for the next live entry, as the
+  /// server brings back a removed entry under the same id.
   ///
   /// ### Otherwise it is the reconcile without the queue step
   ///

@@ -208,13 +208,25 @@ class GameCollectionRepositoryImpl
   /// server-supplied and are not produced here.
   final ClockService _clock;
 
-  /// Removals [reconcileFromServer] and [confirmRemoved] have confirmed
-  /// through this instance: what [removalMark] reads.
-  int _removals = 0;
+  /// What [removalMark] reads. It moves on each removal
+  /// [reconcileFromServer] and [confirmRemoved] confirm through this
+  /// instance, and on each discard that leaves a row to rebuild (#190).
+  int _mark = 0;
 
-  /// Where [_removals] stood after each triplet's latest confirmed removal,
+  /// Where [_mark] stood after each triplet's latest confirmed removal,
   /// keyed by `(platformGameId, wire medium)`.
   final Map<(String, String), int> _removedAt = {};
+
+  /// Entries a discard left holding values no queued op set, each with where
+  /// [_mark] stood after the discard: the first [mergeFromServer] of a read
+  /// made since that writes the server's copy rebuilds the entry from it,
+  /// and an earlier read leaves it alone (#190). In memory, so a restart
+  /// before that merge leaves the values on an entry another op keeps dirty
+  /// until that op settles. An entry nothing keeps dirty takes the next
+  /// read's copy then. Nor does another tab's acknowledgement clear it: on
+  /// an entry another op keeps dirty, a read asked for before that
+  /// acknowledgement rebuilds over it, until that op settles.
+  final Map<String, int> _rebuildFromServer = {};
 
   @override
   String get disposedRepositoryName => 'GameCollectionRepository';
@@ -295,6 +307,7 @@ class GameCollectionRepositoryImpl
 
       final String entryId;
       final int finalQuantity;
+      bool? raised;
 
       if (existing == null) {
         // Fresh insert. cuid2 id — matches the backend's id format
@@ -380,6 +393,7 @@ class GameCollectionRepositoryImpl
         // a new value.
         entryId = existing.id;
         finalQuantity = existing.quantity + quantity;
+        raised = true;
         await (_db.update(
           _db.gameCollectionsTable,
         )..where((t) => t.id.equals(entryId))).write(
@@ -401,6 +415,7 @@ class GameCollectionRepositoryImpl
           quantity: finalQuantity,
           rating: rating,
           comment: comment,
+          raised: raised,
         ),
       );
 
@@ -654,6 +669,10 @@ class GameCollectionRepositoryImpl
           wireMedium: serverEntry.medium.toWire(),
         );
       }
+      // The acknowledgement rebuilds the row itself, from a newer copy than a
+      // hydrate page read before it. Cleared in the transaction, so a discard
+      // that runs while this waits for it records its rebuild first.
+      _rebuildFromServer.remove(serverEntry.id);
     });
   }
 
@@ -692,7 +711,175 @@ class GameCollectionRepositoryImpl
           wireMedium: local.medium,
         );
       }
+      _rebuildFromServer.remove(collectionId);
     });
+  }
+
+  /// The stamp a discard leaves on a row it settles (#190): older than any
+  /// copy the server holds.
+  ///
+  /// A clean row's `updatedAt` is otherwise the server's, and a merge keeps
+  /// a clean row stamped later than the copy it brings. The settled row
+  /// holds values the server never had, so it must lose that comparison.
+  static final DateTime _olderThanAnyServerCopy = DateTime.utc(1970);
+
+  @override
+  Future<bool> discardQueuedOp(String syncQueueId) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      final entry = await _syncQueue.getEntry(syncQueueId);
+      if (entry == null) return false;
+
+      final SyncOperation op;
+      try {
+        op = entry.operation;
+      } on Object {
+        // Nothing it did can be read back, so there is nothing to undo.
+        return _syncQueue.discardStuck(entry.id);
+      }
+      final target = switch (op) {
+        AddToCollectionOperation(:final localId) => localId,
+        UpdateCollectionOperation(:final collectionId) => collectionId,
+        RemoveFromCollectionOperation(:final collectionId) => collectionId,
+        CreateHouseholdOperation() => throw ArgumentError.value(
+          syncQueueId,
+          'syncQueueId',
+          'names a household op; HouseholdRepository discards those',
+        ),
+      };
+
+      final row =
+          await (_db.select(_db.gameCollectionsTable)
+                ..where((t) => t.id.equals(target) & t.userId.equals(_userId)))
+              .getSingleOrNull();
+      final queued = await _syncQueue.getOutstandingOpsFor(target);
+      final at = queued.indexWhere((q) => q.id == entry.id);
+      final earlier = queued.take(at < 0 ? queued.length : at).toList();
+      final later = at < 0 ? const <SyncQueueEntry>[] : queued.sublist(at + 1);
+
+      // An add or a removal goes with every op queued after it for the
+      // entry, which all assumed it: the entry goes back to how it was before
+      // it. An update goes alone.
+      final rollsBack = op is! UpdateCollectionOperation;
+      // One of those may be on its way to the server: an op behind a stuck
+      // one is sent unless it is held. Its acknowledgement would bring back
+      // what this discards.
+      if (rollsBack &&
+          later.any((queuedOp) => queuedOp.status == SyncStatus.inProgress)) {
+        throw StateError(
+          'A later op for this entry is being sent; discard it once that '
+          'settles',
+        );
+      }
+
+      // Checked in the statement that deletes it: an op another tab retried
+      // since may be on its way to the server, so nothing is undone for it.
+      if (!await _syncQueue.discardStuck(entry.id)) return false;
+      if (rollsBack) {
+        for (final queuedOp in later) {
+          await _syncQueue.discard(queuedOp.id);
+        }
+      }
+      if (row == null) return true;
+
+      final kept = rollsBack ? earlier : [...earlier, ...later];
+      final settled = kept.isEmpty;
+      if (!rollsBack) {
+        await (_db.update(
+          _db.gameCollectionsTable,
+        )..where((t) => t.id.equals(row.id))).write(
+          GameCollectionsTableCompanion(
+            isDirty: Value(!settled),
+            updatedAt: settled
+                ? Value(_olderThanAnyServerCopy)
+                : const Value.absent(),
+          ),
+        );
+        if (!row.isLocalOnly) _rebuildFromServer[row.id] = ++_mark;
+        return true;
+      }
+
+      // A row that isn't local-only is one the server has now. Otherwise the
+      // server sees it only once an add still queued before this op arrives.
+      final unseen =
+          row.isLocalOnly &&
+          kept.any((queuedOp) => _createsEntry(queuedOp.operation));
+      var removed = false;
+      if (_createsEntry(op)) {
+        final before = earlier
+            .map((queuedOp) => queuedOp.operation)
+            .where(
+              (queued) =>
+                  queued is AddToCollectionOperation ||
+                  queued is RemoveFromCollectionOperation,
+            )
+            .lastOrNull;
+        if (before is RemoveFromCollectionOperation) {
+          // A re-add over a removal still queued: back to its tombstone.
+          removed = true;
+        } else if (before != null && _createsEntry(before)) {
+          // Queued over an entry an earlier add still queued created, so it
+          // raised the quantity, though an add queued before raises were
+          // recorded doesn't say so. The entry stays that add's.
+        } else if (row.isLocalOnly) {
+          // It created the entry, or revived it once the server had
+          // confirmed the removal. Nothing else on this device holds it.
+          await (_db.delete(
+            _db.gameCollectionsTable,
+          )..where((t) => t.id.equals(row.id))).go();
+          return true;
+        }
+        // Otherwise a later add reached the server while this one was stuck,
+        // and the server has the entry.
+      }
+      final now = _clock.nowUtc();
+      await (_db.update(
+        _db.gameCollectionsTable,
+      )..where((t) => t.id.equals(row.id))).write(
+        GameCollectionsTableCompanion(
+          deletedAt: Value(removed ? now : null),
+          isDirty: Value(!settled),
+          isLocalOnly: Value(unseen),
+          updatedAt: Value(settled ? _olderThanAnyServerCopy : now),
+        ),
+      );
+      if (!unseen) _rebuildFromServer[row.id] = ++_mark;
+      return true;
+    });
+  }
+
+  /// Whether [op] puts the entry on the server: an add that created it or
+  /// revived it from a removal, rather than one that raised its quantity.
+  static bool _createsEntry(SyncOperation op) =>
+      op is AddToCollectionOperation && op.raised != true;
+
+  @override
+  Future<String?> titleOf(String collectionId) async {
+    checkNotDisposed();
+    final entries = _db.gameCollectionsTable;
+    final platformGames = _db.platformGamesTable;
+    final games = _db.gamesTable;
+    // Inner joins, as the list query's: both parents are enforced keys.
+    final row =
+        await (_db.selectOnly(entries).join([
+                innerJoin(
+                  platformGames,
+                  platformGames.id.equalsExp(entries.platformGameId),
+                  useColumns: false,
+                ),
+                innerJoin(
+                  games,
+                  games.id.equalsExp(platformGames.gameId),
+                  useColumns: false,
+                ),
+              ])
+              ..addColumns([games.title])
+              ..where(
+                entries.id.equals(collectionId) &
+                    entries.userId.equals(_userId),
+              ))
+            .getSingleOrNull();
+    return row?.read(games.title);
   }
 
   /// Re-applies the ops still queued for [serverEntry] over the clean row
@@ -711,12 +898,13 @@ class GameCollectionRepositoryImpl
   /// change it carries never reached the server. Its edit stops showing,
   /// though, even in fields the newer change didn't carry: an exhausted
   /// rating edit is gone from the row once a later quantity edit is
-  /// acknowledged. Replaying just those fields is left to #190, which
-  /// decides what the row shows for an exhausted op. The lookup returns the
-  /// acknowledged op even once completed, so a second delivery's
-  /// acknowledgement, after the first completed it, still places it. When
-  /// it can't be placed (the caller didn't name it, or it was purged), its
-  /// position is unknown, and every outstanding op is replayed.
+  /// acknowledged. Those fields are not replayed (#190): the row shows the
+  /// server's value until the stuck op is retried or discarded. The lookup
+  /// returns the acknowledged op even once completed, so a second
+  /// delivery's acknowledgement, after the first completed it, still places
+  /// it. When it can't be placed (the caller didn't name it, or it was
+  /// purged), its position is unknown, and every outstanding op is
+  /// replayed.
   ///
   /// The ops carry what the local writes recorded, so replaying them is
   /// those writes again: an add sets its absolute quantity and any rating
@@ -795,7 +983,7 @@ class GameCollectionRepositoryImpl
   @override
   Future<int> removalMark() async {
     checkNotDisposed();
-    return _removals;
+    return _mark;
   }
 
   /// Merges server entries no local mutation asked for (#259).
@@ -817,11 +1005,72 @@ class GameCollectionRepositoryImpl
 
     return _db.transaction(() async {
       for (final serverEntry in serverEntries) {
+        // A read made before the discard can predate an acknowledgement
+        // that came before it, so it leaves the entry to a later read. The
+        // entry may be clean by then, with nothing left to keep it. A copy
+        // the row keeps out, such as a removal, leaves it to a later one too.
+        final discardedAt = _rebuildFromServer[serverEntry.id];
+        if (discardedAt != null) {
+          if (removalsSince < discardedAt) continue;
+          if (await _rebuild(serverEntry, removalsSince: removalsSince)) {
+            _rebuildFromServer.remove(serverEntry.id);
+            continue;
+          }
+        }
         if (await _localRowWins(serverEntry)) continue;
         if (_removedSince(serverEntry, removalsSince)) continue;
+        _rebuildFromServer.remove(serverEntry.id);
         await _writeServerEntry(serverEntry);
       }
     });
+  }
+
+  /// Writes [serverEntry] over the row a discard left under its id,
+  /// then replays the ops still queued for it (#190). Returns false,
+  /// writing nothing, when anything else would keep the row: a server
+  /// tombstone, a removal confirmed since the read, the row being
+  /// local-only, another row for the triplet that is dirty or local-only, or
+  /// a clean row the server stamped later than [serverEntry].
+  ///
+  /// The ops are placed against the one delivered last, as its
+  /// acknowledgement placed them, so a stuck op queued before it stays out
+  /// of the row. Once the queue has purged that op, every op still queued
+  /// is replayed, and an older stuck edit shows again over a newer one the
+  /// server has.
+  Future<bool> _rebuild(
+    GameCollection serverEntry, {
+    required int removalsSince,
+  }) async {
+    if (serverEntry.deletedAt != null) return false;
+    if (_removedSince(serverEntry, removalsSince)) return false;
+    final rows =
+        await (_db.select(_db.gameCollectionsTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  (t.id.equals(serverEntry.id) |
+                      (t.platformGameId.equals(serverEntry.platformGameId) &
+                          t.medium.equals(serverEntry.medium.toWire()))),
+            ))
+            .get();
+    // A clean row stamped later than the copy holds one written since the
+    // read, such as by another tab, which has no record of the discard.
+    final ownsIt = rows.every(
+      (row) =>
+          !row.isLocalOnly &&
+          (row.isDirty
+              ? row.id == serverEntry.id
+              : !row.updatedAt.isAfter(serverEntry.updatedAt)),
+    );
+    if (!ownsIt || rows.every((row) => row.id != serverEntry.id)) {
+      return false;
+    }
+    await _writeServerEntry(serverEntry);
+    final lastDelivered = await _syncQueue.lastDeliveredOpFor(serverEntry.id);
+    await _replayOutstanding(
+      serverEntry,
+      acknowledgedSyncQueueId: lastDelivered?.id,
+    );
+    return true;
   }
 
   /// Counts a confirmed removal of the triplet, for [mergeFromServer]'s
@@ -834,7 +1083,7 @@ class GameCollectionRepositoryImpl
     required String platformGameId,
     required String wireMedium,
   }) {
-    _removedAt[(platformGameId, wireMedium)] = ++_removals;
+    _removedAt[(platformGameId, wireMedium)] = ++_mark;
   }
 
   /// Whether [serverEntry] is a live copy of a triplet this instance
