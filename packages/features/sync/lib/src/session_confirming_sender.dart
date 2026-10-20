@@ -23,6 +23,14 @@ import 'package:models/domain.dart';
 /// today, and the web drain (#447) once it lands — so the check holds for
 /// all of them without each asking. Native composes no guard, and so no
 /// wrapper.
+///
+/// Known gap: the guard answers before [_inner] claims the entry and sends
+/// it, and each step awaits. A sign-in in another tab that lands in that
+/// window still sends the op as the other user. Asking again after the claim
+/// would narrow the window, but not close it, since the cookie can still
+/// change before the request leaves. Only the server can close it, by
+/// refusing a request whose session is not the user the client meant
+/// (backend#793).
 class SessionConfirmingSender implements SyncOperationSender {
   const SessionConfirmingSender({
     required this._inner,
