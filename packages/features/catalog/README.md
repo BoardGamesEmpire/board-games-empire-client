@@ -53,7 +53,9 @@ it on this device for them (`GameRepository.forgetGame`), and offline browse
 and search stop listing it. Then it tells `onGone`, and the shell tells every
 catalog list open: the one the game was opened from, and a browse beneath a
 search. Each takes the game down, whether that list came from the server or
-from this device, and keeps it down while that screen is open.
+from this device, and keeps it down while that screen is open. A detail
+closed before the server answers tells no one: the answer may come after a
+sign-out, and the lists open then may be the next user's.
 
 ## Screens
 

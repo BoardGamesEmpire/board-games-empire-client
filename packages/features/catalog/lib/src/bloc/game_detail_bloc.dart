@@ -32,7 +32,8 @@ import 'game_detail_state.dart';
 /// Either way the game is also forgotten on this device for this user
 /// ([GameRepository.forgetGame]), so offline browse and search stop listing
 /// it. A failed forget is logged and otherwise ignored. Then [onGone] hears
-/// of it, so the lists already open can take it down.
+/// of it, so the lists already open can take it down, unless the detail
+/// closed before the server answered.
 ///
 /// An id that cannot name a game at all is unavailable too, and forgets
 /// nothing: the remote refuses it before sending (it arrives from a path,
@@ -117,9 +118,13 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
 
   /// Forgets the game, then says it is gone: a list told first could read
   /// it back from the cache.
+  ///
+  /// Says nothing once the detail has closed: its answer may arrive after
+  /// a sign-out, and the lists open then may be another user's, who can
+  /// read the game. The game is still forgotten, for this user only.
   Future<void> _gone() async {
     await _forget();
-    onGone?.call(gameId);
+    if (!isClosed) onGone?.call(gameId);
   }
 
   Future<void> _forget() async {

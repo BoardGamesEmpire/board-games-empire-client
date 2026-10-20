@@ -112,6 +112,22 @@ void main() {
         },
       );
 
+      test('found gone after the detail closed is forgotten, but not said '
+          'to be gone: the session it was asked for may have ended', () async {
+        final answer = Completer<GameWithPlatformGames>();
+        remote.onFetchGame = (_) => answer.future;
+        final bloc = build()..add(const GameDetailLoadRequested());
+        await pumpEventQueue();
+        expect(remote.calls, ['fetchGame(g_catan)']);
+
+        await bloc.close();
+        answer.completeError(failure);
+        await pumpEventQueue();
+
+        expect(await cache.getGame('g_catan'), isNull);
+        expect(told, isEmpty);
+      });
+
       blocTest<GameDetailBloc, GameDetailState>(
         'is still unavailable when it cannot be forgotten',
         build: () {

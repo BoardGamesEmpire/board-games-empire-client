@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
@@ -5,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/fake_platform_bootstrap.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -29,6 +33,9 @@ class _GamesRemote implements GamesRemoteDataSource {
   /// Games whose detail answers 404, as one deleted since the list loaded.
   final Set<String> gone = {};
 
+  /// When set, every detail waits for it, as on a slow server.
+  Completer<GameWithPlatformGames>? held;
+
   @override
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
@@ -46,6 +53,8 @@ class _GamesRemote implements GamesRemoteDataSource {
 
   @override
   Future<GameWithPlatformGames> fetchGame(String id) async {
+    final held = this.held;
+    if (held != null) return held.future;
     if (gone.contains(id)) throw const GameNotFoundException('404');
     return (game: _catan, platformGames: const <PlatformGameSummary>[]);
   }
@@ -217,6 +226,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(GameBrowseScreen), findsOneWidget);
     expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsNothing);
+  });
+
+  testWidgets('a game found gone after a sign-out is not taken off the next '
+      'user\'s list', (tester) async {
+    final repo = FakeAuthRepository(initialSession: sampleSession());
+    final app = AppBootstrapCubit(
+      platformBootstrap: FakePlatformBootstrap(
+        activeServerScope: FakeActiveServerScope(
+          buildActiveServer(
+            repo,
+            gamesRemoteDataSource: games,
+            dataGatewayRemoteDataSource: dataGateways,
+            dataGatewayAccess: access,
+          ),
+        ),
+      ),
+      hydratedStorageInitializer: (_) async {},
+    );
+    addTearDown(app.close);
+    await tester.pumpWidget(BgeApp(bootstrapCubit: app));
+    await app.initialize();
+    await tester.pumpAndSettle();
+    await openGames(tester);
+
+    // Catan is opened on a slow server, and the session ends before it
+    // answers.
+    final held = games.held = Completer();
+    await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+    await tester.pump();
+    expect(find.byKey(GameDetailScreen.loadingKey), findsOneWidget);
+    repo.emitAuthState(const AuthStateUnauthenticated());
+    await tester.pumpAndSettle();
+    expect(find.byType(GameDetailScreen), findsNothing);
+
+    // The next user opens the catalog, and then the old read answers.
+    await repo.signIn(email: 'b@example.com', password: 'pw');
+    await tester.pumpAndSettle();
+    games.held = null;
+    await openGames(tester);
+    held.completeError(const GamesForbiddenException('403'));
+    await tester.pumpAndSettle();
+
+    // Refused to the user who asked, not to this one.
+    expect(find.byKey(GameBrowseScreen.rowKey('g_catan')), findsOneWidget);
   });
 
   testWidgets('no games remote is no entry', (tester) async {
