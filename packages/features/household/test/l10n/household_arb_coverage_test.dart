@@ -190,6 +190,26 @@ void main() {
       );
     });
 
+    test('the template defines the invite inbox surface (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteInboxTitle',
+          'inviteInboxLoading',
+          'inviteInboxEmpty',
+          'inviteInboxFailed',
+          'inviteInboxUnknownHousehold',
+          'inviteInboxAccept',
+          'inviteInboxDecline',
+          'inviteInboxDeclineConfirmTitle',
+          'inviteInboxDeclineConfirmBody',
+          'inviteInboxJoined',
+          'inviteInboxOpenHousehold',
+          'inviteInboxDeclined',
+        ]),
+      );
+    });
+
     test('partial coverage is surfaced, not failed (repo policy)', () {
       if (report.hasUntranslated) {
         // ignore: avoid_print

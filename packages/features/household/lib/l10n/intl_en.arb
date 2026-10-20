@@ -404,5 +404,59 @@
   "inviteSendNotAllowed": "Only this household's owners and admins can invite people.",
   "@inviteSendNotAllowed": {
     "description": "Shown on the invite form instead of the fields when the current user may not invite anyone to this household."
+  },
+  "inviteInboxTitle": "Invites",
+  "@inviteInboxTitle": {
+    "description": "Title of the screen listing the invites sent to the current user, and the label of the drawer entry that opens it."
+  },
+  "inviteInboxLoading": "Loading your invites…",
+  "@inviteInboxLoading": {
+    "description": "Announced and shown while the user's invites are first being read."
+  },
+  "inviteInboxEmpty": "You have no invites.",
+  "@inviteInboxEmpty": {
+    "description": "Shown when no open invites have been sent to the user."
+  },
+  "inviteInboxFailed": "Couldn't load your invites.",
+  "@inviteInboxFailed": {
+    "description": "Title shown when the user's invites could not be read."
+  },
+  "inviteInboxUnknownHousehold": "A household",
+  "@inviteInboxUnknownHousehold": {
+    "description": "Shown in place of a household's name on an invite whose row did not name it."
+  },
+  "inviteInboxAccept": "Accept",
+  "@inviteInboxAccept": {
+    "description": "Button that accepts an invite and joins its household."
+  },
+  "inviteInboxDecline": "Decline",
+  "@inviteInboxDecline": {
+    "description": "Button that declines an invite."
+  },
+  "inviteInboxDeclineConfirmTitle": "Decline this invite?",
+  "@inviteInboxDeclineConfirmTitle": {
+    "description": "Title of the dialog asking to confirm declining an invite."
+  },
+  "inviteInboxDeclineConfirmBody": "To join later, you'd need a new invite.",
+  "@inviteInboxDeclineConfirmBody": {
+    "description": "Body of the dialog asking to confirm declining an invite."
+  },
+  "inviteInboxJoined": "You joined {household}.",
+  "@inviteInboxJoined": {
+    "description": "Shown when the user accepted an invite and joined its household.",
+    "placeholders": {
+      "household": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "inviteInboxOpenHousehold": "Open household",
+  "@inviteInboxOpenHousehold": {
+    "description": "Button on the joined banner that opens the household just joined."
+  },
+  "inviteInboxDeclined": "Invite declined.",
+  "@inviteInboxDeclined": {
+    "description": "Shown when the user declined an invite."
   }
 }
