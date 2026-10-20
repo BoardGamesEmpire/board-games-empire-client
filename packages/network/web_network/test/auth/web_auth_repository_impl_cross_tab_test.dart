@@ -350,6 +350,106 @@ void main() {
         ),
       );
     });
+
+    test('a sign-in here whose reconcile lands after the other tab signed '
+        'out, signed in again and its cookie was read returns that '
+        'session rather than superseding it', () async {
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) async => _noSession());
+      await repo.getSession();
+
+      final reconcile = Completer<Response<String>>();
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) => reconcile.future);
+      stubSignIn(_grantFor('user-a'));
+
+      final signingIn = repo.signIn(email: 'a@example.com', password: 'pw');
+      await pumpEventQueue();
+      repo
+        ..signedOutInAnotherTab()
+        ..signedInInAnotherTab();
+      stubSession('user-b');
+      await repo.rereadSession();
+
+      // Discarded: a sign-in overtook it.
+      reconcile.complete(_sessionFor('user-a'));
+
+      final session = await signingIn;
+      expect(session.user.id, 'user-b');
+      expect(
+        repo.currentAuthState,
+        isA<AuthStateAuthenticated>().having(
+          (s) => s.session.user.id,
+          'user id',
+          'user-b',
+        ),
+      );
+    });
+
+    test('a sign-in here whose reconcile fails after the other tab signed '
+        'out, signed in again and its cookie was read returns that '
+        'session rather than superseding it', () async {
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) async => _noSession());
+      await repo.getSession();
+
+      final reconcile = Completer<Response<String>>();
+      when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+          .thenAnswer((_) => reconcile.future);
+      stubSignIn(_grantFor('user-a'));
+
+      final signingIn = repo.signIn(email: 'a@example.com', password: 'pw');
+      await pumpEventQueue();
+      repo
+        ..signedOutInAnotherTab()
+        ..signedInInAnotherTab();
+      stubSession('user-b');
+      await repo.rereadSession();
+
+      reconcile.completeError(
+        DioException(
+          type: DioExceptionType.connectionError,
+          requestOptions: RequestOptions(path: ''),
+        ),
+      );
+
+      final session = await signingIn;
+      expect(session.user.id, 'user-b');
+      expect(
+        repo.currentAuthState,
+        isA<AuthStateAuthenticated>().having(
+          (s) => s.session.user.id,
+          'user id',
+          'user-b',
+        ),
+      );
+    });
+
+    test(
+      'a sign-in here whose reconcile lands after the other tab signed '
+      'out and in again, before its cookie was read, is still superseded',
+      () async {
+        when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+            .thenAnswer((_) async => _noSession());
+        await repo.getSession();
+
+        final reconcile = Completer<Response<String>>();
+        when(() => dio.get<String>(_kSession, options: any(named: 'options')))
+            .thenAnswer((_) => reconcile.future);
+        stubSignIn(_grantFor('user-a'));
+
+        final signingIn = repo.signIn(email: 'a@example.com', password: 'pw');
+        await pumpEventQueue();
+        repo
+          ..signedOutInAnotherTab()
+          ..signedInInAnotherTab();
+
+        reconcile.complete(_sessionFor('user-a'));
+
+        await expectLater(signingIn, throwsA(isA<AuthSupersededException>()));
+        expect(repo.currentAuthState, isNot(isA<AuthStateAuthenticated>()));
+      },
+    );
   });
 
   group('rereadSession', () {

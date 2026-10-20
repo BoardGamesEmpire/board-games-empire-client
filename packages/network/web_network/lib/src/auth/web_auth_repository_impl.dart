@@ -1188,20 +1188,18 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
         // assert an authenticated session over a cookie the revocation's
         // `Set-Cookie` has already deleted by name — #346 reached through
         // the indeterminate exit instead of the confirmed one.
+        //
+        // Unless another tab signed in after that sign-out and this tab has
+        // already read it ([_readSince]).
+        if (_readSince(grantsAtReconcile) case final session?) return session;
         throw const AuthSupersededException();
       }
 
       // Another tab's sign-in has replaced the cookie this grant set, so the
       // granted session no longer describes it (#432). The monitor's read
-      // after that tab's broadcast says whose it is. Once that read has
-      // landed, the sign-in ends on its answer, as it does when this
-      // reconcile's own read is asked again and answered ([_reconcileRead]).
-      // `AuthBloc` already mirrors that session, and a failure here would
-      // put the form back over it.
+      // after that tab's broadcast says whose it is ([_readSince]).
       if (_credentialGrants != grantsAtReconcile) {
-        if (_currentState case AuthStateAuthenticated(:final session)) {
-          return session;
-        }
+        if (_readSince(grantsAtReconcile) case final session?) return session;
         rethrow;
       }
 
@@ -1253,7 +1251,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
       // [_sessionEpoch] reads as equal here (see the catch above). The read
       // raced that revocation and lost, so an empty body is the user's own
       // sign-out too, not a server disowning the session it just issued.
+      // Here too, a sign-in read since the sign-out is kept ([_readSince]).
       if (epoch != _sessionEpoch || _revocationEpoch != revocationEpoch) {
+        if (_readSince(grantsAtReconcile) case final session?) return session;
         throw const AuthSupersededException();
       }
       throw _noSessionAfter(context, grant);
@@ -1301,6 +1301,27 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     // stream is broadcast, so repeating it would publish an observable
     // duplicate for no gain.
     return confirmed;
+  }
+
+  /// The session another tab's sign-in left this tab holding, if that
+  /// sign-in landed after [grantsAtReconcile] and a read since has adopted
+  /// its cookie (#432).
+  ///
+  /// A sign-in here whose reconcile cannot settle ends on it. `AuthBloc`
+  /// mirrors the repository during a sign-in, so it already shows that
+  /// session, and a failure or supersession would put the form back over
+  /// it while the repository went on holding it.
+  ///
+  /// Another tab's sign-out leaves the state unauthenticated, and the epoch
+  /// guard discards every read that left before it, so an authenticated
+  /// state after one came from a read that left after it. Until that read
+  /// lands, the caller's sign-out or failure stands.
+  AuthResponse? _readSince(int grantsAtReconcile) {
+    if (_credentialGrants == grantsAtReconcile) return null;
+    return switch (_currentState) {
+      AuthStateAuthenticated(:final session) => session,
+      _ => null,
+    };
   }
 
   /// The reconcile's session read, asked again for as long as another tab's
