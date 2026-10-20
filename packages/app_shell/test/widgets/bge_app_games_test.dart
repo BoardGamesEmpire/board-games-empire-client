@@ -261,7 +261,15 @@ void main() {
     expect(find.byType(GameDetailScreen), findsNothing);
 
     // The next user opens the catalog, and then the old read answers.
-    await repo.signIn(email: 'b@example.com', password: 'pw');
+    final first = sampleSession();
+    repo.emitAuthState(
+      AuthStateAuthenticated(
+        session: first.copyWith(
+          token: 'tok-u2',
+          user: first.user.copyWith(id: 'u2', email: 'u2@example.com'),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     games.held = null;
     await openGames(tester);
