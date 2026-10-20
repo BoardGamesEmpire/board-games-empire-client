@@ -1,5 +1,6 @@
 library;
 
+export 'src/bloc/awaiting_approval_count_cubit.dart';
 export 'src/bloc/create_household_bloc.dart';
 export 'src/bloc/create_household_event.dart';
 export 'src/bloc/create_household_state.dart';

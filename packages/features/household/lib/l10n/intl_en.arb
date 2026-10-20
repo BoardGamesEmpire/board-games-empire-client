@@ -458,5 +458,18 @@
   "inviteInboxDeclined": "Invite declined.",
   "@inviteInboxDeclined": {
     "description": "Shown when the user declined an invite."
+  },
+  "householdDetailInvites": "Invites",
+  "@householdDetailInvites": {
+    "description": "Entry on the household screen that opens the household's invites. Shown to its owners and admins."
+  },
+  "householdDetailInvitesAwaiting": "{count, plural, =1{1 awaiting approval} other{{count} awaiting approval}}",
+  "@householdDetailInvitesAwaiting": {
+    "description": "Under the invites entry: how many invites wait for an owner or admin to approve them. Hidden when none do.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

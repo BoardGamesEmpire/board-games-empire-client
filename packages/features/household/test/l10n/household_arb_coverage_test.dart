@@ -210,6 +210,17 @@ void main() {
       );
     });
 
+    test("the template defines the household screen's invites entry "
+        '(#455, #489)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'householdDetailInvites',
+          'householdDetailInvitesAwaiting',
+        ]),
+      );
+    });
+
     test('partial coverage is surfaced, not failed (repo policy)', () {
       if (report.hasUntranslated) {
         // ignore: avoid_print
