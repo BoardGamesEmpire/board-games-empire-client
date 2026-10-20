@@ -72,10 +72,11 @@ void main() {
     WidgetTester tester, {
     bool withRepository = true,
     Stream<List<Household>>? laterCache,
+    List<Household>? households,
   }) async {
     final repository = _MockHouseholdRepository();
     when(repository.watchHouseholds).thenAnswer((_) async* {
-      yield [_household(_id)];
+      yield households ?? [_household(_id)];
       if (laterCache != null) yield* laterCache;
     });
     when(
@@ -185,6 +186,33 @@ void main() {
       await openDetailFromTheList(tester);
 
       expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+    });
+
+    testWidgets('going from one household straight to another shows the '
+        'second (#466)', (tester) async {
+      // go_router keeps the page when only the id parameter changes, so the
+      // screen is rebuilt in place. A bloc created for the first id would
+      // go on showing it under the second id's path.
+      await pumpHome(
+        tester,
+        households: [
+          _household('hh_a', name: 'Alpha Crew'),
+          _household('hh_b', name: 'Beta Crew'),
+        ],
+      );
+      final router =
+          tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+              as GoRouter;
+
+      router.go(AppRoutes.householdDetailOf('hh_a'));
+      await tester.pumpAndSettle();
+      expect(find.text('Alpha Crew'), findsOneWidget);
+
+      router.go(AppRoutes.householdDetailOf('hh_b'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Beta Crew'), findsOneWidget);
+      expect(find.text('Alpha Crew'), findsNothing);
     });
 
     testWidgets('falls back to NotYetAvailable when the per-user repository '

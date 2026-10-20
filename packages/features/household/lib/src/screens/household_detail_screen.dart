@@ -118,6 +118,9 @@ class HouseholdDetailScreen extends StatelessWidget {
     }
 
     return BlocProvider<HouseholdDetailBloc>(
+      // go_router keeps this page when only the id changes; the key makes a
+      // new id a new bloc rather than the old household under it (#466).
+      key: ValueKey<String>(householdId),
       create: (_) => HouseholdDetailBloc(
         householdId: householdId,
         repository: repository,
