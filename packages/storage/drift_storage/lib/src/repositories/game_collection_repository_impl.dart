@@ -223,7 +223,9 @@ class GameCollectionRepositoryImpl
   /// and an earlier read leaves it alone (#190). In memory, so a restart
   /// before that merge leaves the values on an entry another op keeps dirty
   /// until that op settles. An entry nothing keeps dirty takes the next
-  /// read's copy then.
+  /// read's copy then. Nor does another tab's acknowledgement clear it: on
+  /// an entry another op keeps dirty, a read asked for before that
+  /// acknowledgement rebuilds over it, until that op settles.
   final Map<String, int> _rebuildFromServer = {};
 
   @override
@@ -639,9 +641,6 @@ class GameCollectionRepositoryImpl
     // misrouted server response.
     _checkServerEntryUser(serverEntry, caller: 'reconcileFromServer');
 
-    // The acknowledgement rebuilds the row itself, from a newer copy than a
-    // hydrate page read before it.
-    _rebuildFromServer.remove(serverEntry.id);
     return _db.transaction(() async {
       await _writeServerEntry(serverEntry);
 
@@ -670,6 +669,10 @@ class GameCollectionRepositoryImpl
           wireMedium: serverEntry.medium.toWire(),
         );
       }
+      // The acknowledgement rebuilds the row itself, from a newer copy than a
+      // hydrate page read before it. Cleared in the transaction, so a discard
+      // that runs while this waits for it records its rebuild first.
+      _rebuildFromServer.remove(serverEntry.id);
     });
   }
 
@@ -689,7 +692,6 @@ class GameCollectionRepositoryImpl
     required String completedSyncQueueId,
   }) async {
     checkNotDisposed();
-    _rebuildFromServer.remove(collectionId);
     return _db.transaction(() async {
       final local =
           await (_db.select(_db.gameCollectionsTable)..where(
@@ -709,6 +711,7 @@ class GameCollectionRepositoryImpl
           wireMedium: local.medium,
         );
       }
+      _rebuildFromServer.remove(collectionId);
     });
   }
 
@@ -1026,7 +1029,8 @@ class GameCollectionRepositoryImpl
   /// then replays the ops still queued for it (#190). Returns false,
   /// writing nothing, when anything else would keep the row: a server
   /// tombstone, a removal confirmed since the read, the row being
-  /// local-only, or another row for the triplet that is dirty or local-only.
+  /// local-only, another row for the triplet that is dirty or local-only, or
+  /// a clean row the server stamped later than [serverEntry].
   ///
   /// The ops are placed against the one delivered last, as its
   /// acknowledgement placed them, so a stuck op queued before it stays out
@@ -1048,10 +1052,14 @@ class GameCollectionRepositoryImpl
                           t.medium.equals(serverEntry.medium.toWire()))),
             ))
             .get();
+    // A clean row stamped later than the copy holds one written since the
+    // read, such as by another tab, which has no record of the discard.
     final ownsIt = rows.every(
-      (row) => row.id == serverEntry.id
-          ? !row.isLocalOnly
-          : !row.isDirty && !row.isLocalOnly,
+      (row) =>
+          !row.isLocalOnly &&
+          (row.isDirty
+              ? row.id == serverEntry.id
+              : !row.updatedAt.isAfter(serverEntry.updatedAt)),
     );
     if (!ownsIt || rows.every((row) => row.id != serverEntry.id)) {
       return false;

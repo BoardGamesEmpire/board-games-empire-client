@@ -511,6 +511,67 @@ void main() {
       expect(row.isDirty, isTrue);
     });
 
+    test('with another op still queued, keeps a copy acknowledged while the '
+        'discard ran against a page read before it', () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final ratingOp = await parkNewest();
+      await repo.updateCollectionEntry(id: _kServerId, quantity: 2);
+      final quantityOp = (await queue.getPendingEntries()).single;
+      await repo.updateCollectionEntry(id: _kServerId, favorite: true);
+      await parkNewest();
+
+      // The quantity is acknowledged while the discard is still running.
+      await Future.wait([
+        repo.discardQueuedOp(ratingOp.id),
+        repo.reconcileFromServer(
+          _server(
+            quantity: 2,
+            rating: 5,
+          ).copyWith(updatedAt: DateTime.utc(2026, 3)),
+          completedSyncQueueId: quantityOp.id,
+        ),
+      ]);
+      // Asked after the discard, and read before the quantity arrived.
+      await hydrate(_server(rating: 5));
+
+      final row = (await rows()).single;
+      expect(row.quantity, 2, reason: 'the acknowledged copy, not the page');
+      expect(row.rating, 5, reason: 'the discarded update is undone');
+      expect(row.favorite, isTrue, reason: 'the op still queued');
+      expect(row.isDirty, isTrue);
+    });
+
+    test('with nothing else queued, keeps a newer copy another tab cached '
+        'from a page read before it', () async {
+      await seedConfirmed(rating: 5);
+      await repo.updateCollectionEntry(id: _kServerId, rating: 7);
+      final ratingOp = await parkNewest();
+      final otherTab = GameCollectionRepositoryImpl(
+        db: db,
+        syncQueue: queue,
+        currentUserId: _kUserId,
+        clock: FixedClockService(DateTime.utc(2026, 10, 17, 12)),
+      );
+
+      await repo.discardQueuedOp(ratingOp.id);
+      final askedAfter = await repo.removalMark();
+      await otherTab.mergeFromServer([
+        _server(
+          quantity: 2,
+          rating: 5,
+        ).copyWith(updatedAt: DateTime.utc(2026, 3)),
+      ], removalsSince: await otherTab.removalMark());
+      await repo.mergeFromServer([
+        _server(rating: 5),
+      ], removalsSince: askedAfter);
+
+      final row = (await rows()).single;
+      expect(row.quantity, 2, reason: "the other tab's newer copy");
+      expect(row.rating, 5);
+      expect(row.isDirty, isFalse);
+    });
+
     test('with another op still queued, leaves out a stuck edit that one '
         'acknowledged since replaced', () async {
       await seedConfirmed(rating: 5);

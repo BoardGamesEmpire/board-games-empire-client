@@ -454,9 +454,10 @@ abstract class GameCollectionRepository {
   /// live entry for it from a read made after the discard, by
   /// [removalsSince], is written as [reconcileFromServer] writes one, and
   /// an entry from a read made before it is passed over. That read may
-  /// predate an acknowledgement that came before the discard. The ops still queued for it are
-  /// replayed over that as the acknowledgement of the one delivered last
-  /// replayed them, so a stuck op queued before that one stays out. Once
+  /// predate an acknowledgement that came before the discard. The ops still
+  /// queued for it are replayed over that as the acknowledgement of the one
+  /// delivered last replayed them, so a stuck op queued before that one
+  /// stays out. Once
   /// the queue has purged the delivered op, every op still queued is
   /// replayed, stuck ones included. The row stays dirty while any remain.
   /// An acknowledgement for the entry before then does that rebuild itself,
@@ -465,10 +466,11 @@ abstract class GameCollectionRepository {
   /// ops settle, and a clean one takes the next read's copy.
   ///
   /// The rules above still apply first: the merge rebuilds nothing over a
-  /// server tombstone, a removal confirmed since [removalsSince], or a row
-  /// for the triplet that is local-only or, under another id, dirty. A row
-  /// those rules keep waits for the next live entry, as the server brings
-  /// back a removed entry under the same id.
+  /// server tombstone, a removal confirmed since [removalsSince], a row for
+  /// the triplet that is local-only or, under another id, dirty, or a clean
+  /// row stamped later than the entry, such as one another tab cached since
+  /// the read. A row those rules keep waits for the next live entry, as the
+  /// server brings back a removed entry under the same id.
   ///
   /// ### Otherwise it is the reconcile without the queue step
   ///
