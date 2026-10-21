@@ -360,7 +360,7 @@ void main() {
             bgeServerId: any(named: 'bgeServerId'),
             identity: any(named: 'identity'),
           ),
-        ).thenThrow(const DuplicateServerException(_kUrl)),
+        ).thenThrow(const DuplicateServerException.url(_kUrl)),
         act: (bloc) => bloc.add(const ServerOnboardingSubmitted(url: _kUrl)),
         expect: () => const [
           ServerOnboardingInProgress(),

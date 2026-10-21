@@ -70,12 +70,44 @@ abstract class ServerRepository {
   Stream<int> watchConnectedCount();
 }
 
+/// Which uniqueness a new server broke; see [DuplicateServerException].
+enum DuplicateServerKind {
+  /// Its URL is already registered (compared case-insensitively).
+  url,
+
+  /// Its server identity, the `bgeServerId`, is already registered, under
+  /// another URL.
+  identity,
+}
+
+/// Thrown when a server being added is already registered on this device,
+/// by its URL or by its identity (#184).
+///
+/// One type for both, because callers treat them alike; [kind] tells them
+/// apart for logs, and [value] is the conflicting URL or `bgeServerId`.
 class DuplicateServerException implements Exception {
-  final String serverUrl;
-  const DuplicateServerException(this.serverUrl);
+  /// The server's URL is already registered.
+  const DuplicateServerException.url(this.value)
+    : kind = DuplicateServerKind.url;
+
+  /// The server's `bgeServerId` is already registered.
+  const DuplicateServerException.identity(this.value)
+    : kind = DuplicateServerKind.identity;
+
+  final DuplicateServerKind kind;
+
+  /// The URL or `bgeServerId` already registered, per [kind].
+  final String value;
+
   @override
-  String toString() =>
-      'DuplicateServerException: Server with URL $serverUrl already exists';
+  String toString() => switch (kind) {
+    DuplicateServerKind.url =>
+      'DuplicateServerException: a server with URL $value is already '
+          'registered',
+    DuplicateServerKind.identity =>
+      'DuplicateServerException: a server with identity (bgeServerId) $value '
+          'is already registered',
+  };
 }
 
 class ServerNotFoundException implements Exception {

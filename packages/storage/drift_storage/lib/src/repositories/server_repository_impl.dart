@@ -12,6 +12,11 @@ class ServerRepositoryImpl implements ServerRepository {
 
   final MetaDatabase _database;
 
+  /// The table's UNIQUE constraints on `server_url` and `bge_server_id` are
+  /// what keeps a server from being added twice (#184). The two lookups
+  /// before the insert only answer the common case without one: two adds
+  /// can both pass them, and the second insert then breaks a constraint,
+  /// which leaves as the same [DuplicateServerException].
   @override
   Future<ServerConfig> addServer({
     required String displayName,
@@ -24,40 +29,75 @@ class ServerRepositoryImpl implements ServerRepository {
     final existingUrl = await (_database.select(
       _database.serverConfigs,
     )..where((t) => t.serverUrl.equals(serverUrl))).getSingleOrNull();
-    if (existingUrl != null) throw DuplicateServerException(serverUrl);
+    if (existingUrl != null) throw DuplicateServerException.url(serverUrl);
 
     final existingId = await (_database.select(
       _database.serverConfigs,
     )..where((t) => t.bgeServerId.equals(bgeServerId))).getSingleOrNull();
-    if (existingId != null) throw DuplicateServerException(serverUrl);
+    if (existingId != null) {
+      throw DuplicateServerException.identity(bgeServerId);
+    }
 
     final now = DateTime.now().toUtc();
     final id = cuid();
 
-    await _database
-        .into(_database.serverConfigs)
-        .insert(
-          ServerConfigsCompanion.insert(
-            id: id,
-            bgeServerId: bgeServerId,
-            displayName: displayName,
-            serverUrl: serverUrl,
-            connectionState: ConnectionState.disconnected.toJsonValue(),
-            cachedIdentityJson: jsonEncode(identity.toJson()),
-            lastIdentityFetchedAt: now,
-            lastActiveAt: const Value(null),
-            backgroundingTimeoutSeconds: Value(backgroundingTimeoutSeconds),
-            metadata: Value(metadata ?? {}),
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
+    try {
+      await _database
+          .into(_database.serverConfigs)
+          .insert(
+            ServerConfigsCompanion.insert(
+              id: id,
+              bgeServerId: bgeServerId,
+              displayName: displayName,
+              serverUrl: serverUrl,
+              connectionState: ConnectionState.disconnected.toJsonValue(),
+              cachedIdentityJson: jsonEncode(identity.toJson()),
+              lastIdentityFetchedAt: now,
+              lastActiveAt: const Value(null),
+              backgroundingTimeoutSeconds: Value(backgroundingTimeoutSeconds),
+              metadata: Value(metadata ?? {}),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+    } catch (error, stackTrace) {
+      final duplicate = switch (_duplicateKindOf(error)) {
+        DuplicateServerKind.url => DuplicateServerException.url(serverUrl),
+        DuplicateServerKind.identity => DuplicateServerException.identity(
+          bgeServerId,
+        ),
+        null => null,
+      };
+      if (duplicate == null) rethrow;
+      Error.throwWithStackTrace(duplicate, stackTrace);
+    }
 
     return (await getServer(id))!;
   }
 
+  static final _uniqueViolationPattern = RegExp(
+    r'UNIQUE constraint failed: server_configs\.(\w+)',
+  );
+
+  /// The uniqueness [error] reports breaking, or null when it reports
+  /// something else.
+  ///
+  /// Read from SQLite's own message rather than the `SqliteException` type:
+  /// this library is importable from web, which must never import `sqlite3`
+  /// (`test/platform_boundary_test.dart`), and a database running in a
+  /// background isolate wraps the exception in drift's
+  /// `DriftRemoteException`, whose `toString` is the wrapped one's.
+  static DuplicateServerKind? _duplicateKindOf(Object error) =>
+      switch (_uniqueViolationPattern.firstMatch(error.toString())?.group(1)) {
+        'server_url' => DuplicateServerKind.url,
+        'bge_server_id' => DuplicateServerKind.identity,
+        _ => null,
+      };
+
+  /// The check and the delete run in one transaction, so the row the check
+  /// approved is the row deleted (#184).
   @override
-  Future<void> removeServer(String serverId) async {
+  Future<void> removeServer(String serverId) => _database.transaction(() async {
     final server = await getServer(serverId);
     if (server == null) throw ServerNotFoundException(serverId);
     if (server.isActive) throw ActiveServerException(serverId);
@@ -65,7 +105,7 @@ class ServerRepositoryImpl implements ServerRepository {
     await (_database.delete(
       _database.serverConfigs,
     )..where((t) => t.id.equals(serverId))).go();
-  }
+  });
 
   @override
   Future<ServerConfig> updateServer(ServerConfig config) async {

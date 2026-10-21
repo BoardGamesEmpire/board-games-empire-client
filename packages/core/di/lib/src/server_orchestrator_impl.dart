@@ -238,8 +238,9 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   }) async {
     _assertReady();
 
-    // Persist first. The repository enforces uniqueness
-    // (DuplicateServerException) atomically on its own; orchestrator
+    // Persist first. The repository's table constraints keep a server from
+    // being added twice, even by two adds at once, and the repository
+    // reports either case as DuplicateServerException (#184). Orchestrator
     // state is untouched until connectServer below, which serializes
     // through the standard lock. connectServer cannot be invoked inside
     // _withLock (the re-entrancy guard would trip), so this composes the
