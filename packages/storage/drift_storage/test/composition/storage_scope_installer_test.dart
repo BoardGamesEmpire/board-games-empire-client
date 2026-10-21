@@ -23,23 +23,50 @@ import '../support/fixed_clock.dart';
 class _FakeKeyService implements EncryptionKeyService {
   final Map<String, String> _keys = {};
   var _counter = 0;
+  var deletedServerKeys = 0;
+
+  /// When set, every server-key call fails as a key store that can't be
+  /// reached.
+  bool unavailable = false;
 
   void loseServerKey(String serverId) => _keys.remove('server:$serverId');
+
+  /// Overwrites the stored key with a different valid one.
+  void replaceServerKey(String serverId) =>
+      _keys['server:$serverId'] = _generate();
 
   String _generate() =>
       (_counter++).toRadixString(16).padLeft(64, '0').substring(0, 64);
 
+  void _throwIfUnavailable() {
+    if (unavailable) throw const EncryptionKeyUnavailableError();
+  }
+
   @override
-  Future<String> getOrCreateServerKey(String serverId) async =>
-      _keys.putIfAbsent('server:$serverId', _generate);
+  Future<String> getOrCreateServerKey(String serverId) async {
+    _throwIfUnavailable();
+    return _keys.putIfAbsent('server:$serverId', _generate);
+  }
 
   @override
   Future<String> getOrCreateMetaKey() async =>
       _keys.putIfAbsent('meta', _generate);
 
   @override
-  Future<void> deleteServerKey(String serverId) async =>
-      _keys.remove('server:$serverId');
+  Future<String?> findServerKey(String serverId) async {
+    _throwIfUnavailable();
+    return _keys['server:$serverId'];
+  }
+
+  @override
+  Future<String?> findMetaKey() async => _keys['meta'];
+
+  @override
+  Future<void> deleteServerKey(String serverId) async {
+    _throwIfUnavailable();
+    deletedServerKeys++;
+    _keys.remove('server:$serverId');
+  }
 
   @override
   Future<void> deleteMetaKey() async => _keys.remove('meta');
@@ -99,7 +126,10 @@ class _AlwaysFailingFactory extends EncryptedExecutorFactory {
   QueryExecutor serverExecutor(
     String serverId, {
     String? relativeDatabasePath,
-  }) => throw DatabaseKeyError(databasePath: 'always-failing');
+  }) => throw const DatabaseKeyError(
+    databasePath: 'always-failing',
+    failure: DatabaseKeyFailure.keyMismatch,
+  );
 }
 
 ServerConfig _makeConfig({String id = 'server-local-1'}) => ServerConfig(
@@ -264,6 +294,7 @@ void main() {
         expect(events, hasLength(1));
         expect(events.single.bgeServerId, config.bgeServerId);
         expect(events.single.databasePath, dbFile().path);
+        expect(events.single.failure, DatabaseKeyFailure.keyMissing);
 
         // Fresh, usable, and empty — the stale table is gone.
         final recovered = container.get<ServerDatabase>();
@@ -273,6 +304,34 @@ void main() {
         expect(tables, isEmpty);
       },
     );
+
+    test('reports a key that does not open the file as a mismatch', () async {
+      await makeInstaller().install(container, config);
+      await container.dispose();
+      keys.replaceServerKey(config.bgeServerId);
+
+      final events = <DatabaseRecoveryEvent>[];
+      await makeInstaller(onRecovery: events.add).install(container, config);
+
+      expect(events.single.failure, DatabaseKeyFailure.keyMismatch);
+    });
+
+    // #428: a key that can't be read may still be there. Recovery would
+    // delete it and the file it opens.
+    test('a key store that cannot be reached is never recovered', () async {
+      await makeInstaller().install(container, config);
+      await container.dispose();
+      keys.unavailable = true;
+
+      final events = <DatabaseRecoveryEvent>[];
+      await expectLater(
+        makeInstaller(onRecovery: events.add).install(container, config),
+        throwsA(isA<EncryptionKeyUnavailableError>()),
+      );
+      expect(events, isEmpty);
+      expect(keys.deletedServerKeys, 0);
+      expect(dbFile().existsSync(), isTrue);
+    });
 
     test('does not fire onRecovery on a clean open', () async {
       final events = <DatabaseRecoveryEvent>[];

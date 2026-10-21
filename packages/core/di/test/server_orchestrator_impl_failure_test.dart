@@ -5,6 +5,7 @@
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -17,9 +18,12 @@ class _MockDevicePreferences extends Mock implements DevicePreferences {}
 /// promotion installs again — so `failOnCalls: {2}` means "connects fine,
 /// fails when promoted to active".
 class _CountedInstaller implements ServerScopeInstaller {
-  _CountedInstaller({this.failOnCalls = const <int>{}});
+  _CountedInstaller({this.failOnCalls = const <int>{}, this.error});
 
   final Set<int> failOnCalls;
+
+  /// Thrown on a failing call; a `StateError` when null.
+  final Object? error;
   var calls = 0;
 
   @override
@@ -29,8 +33,24 @@ class _CountedInstaller implements ServerScopeInstaller {
   ) async {
     calls++;
     if (failOnCalls.contains(calls)) {
-      throw StateError('installer boom #$calls');
+      throw error ?? StateError('installer boom #$calls');
     }
+  }
+}
+
+/// Disposes nothing until asked; records whether it was.
+class _DisposalRecordingInstaller implements ServerScopeInstaller {
+  var disposed = false;
+
+  @override
+  Future<void> install(
+    DependencyContainer container,
+    ServerConfig config,
+  ) async {
+    container.registerSingleton<_DisposalRecordingInstaller>(
+      this,
+      dispose: (_) => disposed = true,
+    );
   }
 }
 
@@ -136,6 +156,82 @@ void main() {
         expect(orchestrator.getContext('a'), isNull);
       },
     );
+
+    // #428: a key that can't be read may still be intact. The boot fails
+    // as a retryable error, and the server stays registered as connected
+    // so the next attempt restores it.
+    group('when the key store cannot be reached', () {
+      test('a failing restore fails initialize and keeps the server\'s '
+          'persisted state', () async {
+        final server = testServerConfig(id: 'a', state: ConnectionState.active);
+        installersById['a'] = _CountedInstaller(
+          failOnCalls: {1},
+          error: const EncryptionKeyUnavailableError(),
+        );
+        when(() => serverRepository.getConnectedServers())
+            .thenAnswer((_) async => [server]);
+
+        await expectLater(
+          orchestrator.initialize(),
+          throwsA(isA<EncryptionKeyUnavailableError>()),
+        );
+        expect(orchestrator.isInitialized, isFalse);
+        verifyNever(
+          () => serverRepository.updateConnectionState(
+            serverId: 'a',
+            newState: any(named: 'newState'),
+          ),
+        );
+      });
+
+      test('a failing promotion fails initialize and keeps the server\'s '
+          'persisted state', () async {
+        final server = testServerConfig(id: 'a', state: ConnectionState.active);
+        installersById['a'] = _CountedInstaller(
+          failOnCalls: {2},
+          error: const EncryptionKeyUnavailableError(),
+        );
+        when(() => serverRepository.getConnectedServers())
+            .thenAnswer((_) async => [server]);
+
+        await expectLater(
+          orchestrator.initialize(),
+          throwsA(isA<EncryptionKeyUnavailableError>()),
+        );
+        verifyNever(
+          () => serverRepository.updateConnectionState(
+            serverId: 'a',
+            newState: ConnectionState.disconnected,
+          ),
+        );
+      });
+
+      test(
+        'servers restored before the failure are released on dispose',
+        () async {
+          final restored = _DisposalRecordingInstaller();
+          installersById['a'] = restored;
+          installersById['b'] = _CountedInstaller(
+            failOnCalls: {1},
+            error: const EncryptionKeyUnavailableError(),
+          );
+          when(() => serverRepository.getConnectedServers()).thenAnswer(
+            (_) async => [
+              testServerConfig(id: 'a', state: ConnectionState.active),
+              testServerConfig(id: 'b', state: ConnectionState.monitoring),
+            ],
+          );
+
+          await expectLater(
+            orchestrator.initialize(),
+            throwsA(isA<EncryptionKeyUnavailableError>()),
+          );
+          await orchestrator.dispose();
+
+          expect(restored.disposed, isTrue);
+        },
+      );
+    });
   });
 
   group('connectServer()', () {

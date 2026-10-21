@@ -43,6 +43,7 @@ import '../settings/locale_cubit.dart';
 import '../settings/settings_sections_builder.dart';
 import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
+import 'database_recovery_notice.dart';
 import 'feedback_review_screen.dart';
 import 'router_back_interceptor.dart';
 import 'detached_rehydrate.dart';
@@ -1484,6 +1485,14 @@ class _BgeAppState extends State<BgeApp> {
                   );
                 },
               );
+        // #428: the notice of a server database rebuilt during boot. Above
+        // the router, so the redirects of the first screens cannot remove
+        // it, and unconditional, so the tree shape never changes.
+        body = DatabaseRecoveryNotice(
+          bootstrapCubit: widget.bootstrapCubit,
+          backButtonDispatcher: _router.backButtonDispatcher,
+          child: body,
+        );
         final activeLocaleController = widget.activeLocaleController;
         if (activeLocaleController != null) {
           body = ActiveLocaleCapture(

@@ -21,19 +21,26 @@ import '../repositories/unsent_changes_notice_repository_impl.dart';
 /// keeps failure and recovery inside `ServerContext.activate()`, which is
 /// where the lifecycle owns them.
 ///
-/// ## Key-loss recovery (issue #38, Part B of #16)
+/// ## Key-loss recovery (#38, #428)
 ///
-/// A [DatabaseKeyError] on open means the on-disk ciphertext doesn't match
-/// the stored key (keychain loss, restored file, corruption). Recovery is
-/// automatic and runs **once** per install:
+/// A [DatabaseKeyError] on open means no key this device holds can open the
+/// file: none is stored for it, or the stored one does not decrypt it
+/// (keychain loss, an overwritten key, a restored file, corruption).
+/// Recovery is the last resort for that case, and runs **once** per
+/// install:
 ///
 /// 1. delete the server's key ([EncryptionKeyService.deleteServerKey]) so a
 ///    fresh one is generated,
 /// 2. delete the database file (and its `-wal`/`-shm`/`-journal` companions),
-/// 3. reopen — a new empty database, rebuilt by sync (server is the source
-///    of truth; pending unsynced changes are lost),
-/// 4. report via [onRecovery] so the app layer (#55) can surface a
-///    localized notice.
+/// 3. reopen — a new empty database, rebuilt by sync. What the file held
+///    that the server never received, every user's unsent changes
+///    included, is lost: nothing can decrypt it,
+/// 4. report via [onRecovery]. The native bootstrap logs the event, and the
+///    shell tells the user (#428).
+///
+/// A key that could not be *read* ([EncryptionKeyUnavailableError]) never
+/// reaches recovery. It propagates, so the key and the file are still there
+/// for the next attempt.
 ///
 /// If the reopen *also* fails, the error propagates: activation fails, the
 /// context rolls back, that server stays unavailable, the app keeps
@@ -74,7 +81,7 @@ class StorageScopeInstaller implements ServerScopeInstaller {
   /// [executorFactory] builds the encrypted executor and resolves file
   /// paths; [keyService] is consulted only for key deletion during
   /// recovery (the factory obtains keys itself). [_onRecovery] is the app
-  /// layer's notification hook and may be null until #55 wires it.
+  /// layer's notification hook (#428); when null, recovery reports nothing.
   StorageScopeInstaller({
     required EncryptedExecutorFactory executorFactory,
     required EncryptionKeyService keyService,
@@ -94,8 +101,8 @@ class StorageScopeInstaller implements ServerScopeInstaller {
     ServerDatabase db;
     try {
       db = await _open(config);
-    } on DatabaseKeyError {
-      db = await _recover(config);
+    } on DatabaseKeyError catch (error) {
+      db = await _recover(config, error.failure);
     }
 
     container.registerSingleton<ServerDatabase>(
@@ -134,7 +141,10 @@ class StorageScopeInstaller implements ServerScopeInstaller {
   /// attempt. The reverse order would let a retry silently "succeed"
   /// against a fresh file under the stale key, skipping rotation and the
   /// [onRecovery] notification.
-  Future<ServerDatabase> _recover(ServerConfig config) async {
+  Future<ServerDatabase> _recover(
+    ServerConfig config,
+    DatabaseKeyFailure failure,
+  ) async {
     await _keys.deleteServerKey(config.bgeServerId);
     // Resolve the canonical file the executor uses, and delete + report on
     // that path — not error.databasePath, which is whatever the failing
@@ -148,6 +158,7 @@ class StorageScopeInstaller implements ServerScopeInstaller {
       DatabaseRecoveryEvent(
         bgeServerId: config.bgeServerId,
         databasePath: file.path,
+        failure: failure,
       ),
     );
     return db;
