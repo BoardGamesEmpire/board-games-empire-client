@@ -49,3 +49,9 @@ final class HouseholdInviteListOutcomeDismissed
     extends HouseholdInviteListEvent {
   const HouseholdInviteListOutcomeDismissed();
 }
+
+/// The household's roster changed on the device, so the cache may now say
+/// who is looking. The bloc sends it itself, and only while it cannot say.
+final class HouseholdInviteListRosterChanged extends HouseholdInviteListEvent {
+  const HouseholdInviteListRosterChanged();
+}

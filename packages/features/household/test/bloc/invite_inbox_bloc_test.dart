@@ -265,4 +265,42 @@ void main() {
     expect(remote.calls.last, 'fetchInbox(2, 2)');
     expect(ready(bloc).invites.map((i) => i.id), ['i_1', 'i_2', 'i_3']);
   });
+
+  test('a page that answers after an answer settled one of its rows does not '
+      'bring the row back', () async {
+    final more = Completer<PaginatedResult<HouseholdInvite>>();
+    var reads = 0;
+    remote
+      ..onFetchInbox = ((page, limit) => ++reads == 1
+          ? Future.value(
+              pageOf(
+                [_received('i_a'), _received('i_b')],
+                limit: limit,
+                hasMore: true,
+              ),
+            )
+          : more.future)
+      ..onDecline = (id) async =>
+          _received(id, status: HouseholdInviteStatus.declined);
+    final bloc = build(pageSize: 2)..add(const InviteInboxLoadRequested());
+    addTearDown(bloc.close);
+    await _settle();
+    bloc.add(
+      const InviteInboxAnswerRequested(HouseholdInviteAction.decline, 'i_a'),
+    );
+    await _settle();
+    bloc.add(const InviteInboxMoreRequested());
+    await _settle();
+    expect(remote.calls.last, 'fetchInbox(1, 2)');
+
+    bloc.add(
+      const InviteInboxAnswerRequested(HouseholdInviteAction.decline, 'i_b'),
+    );
+    await _settle();
+    // Read before i_b was declined, so it still lists i_b as pending.
+    more.complete(pageOf([_received('i_b'), _received('i_c')], limit: 2));
+    await _settle();
+
+    expect(ready(bloc).invites.map((i) => i.id), ['i_c']);
+  });
 }

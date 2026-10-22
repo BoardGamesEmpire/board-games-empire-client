@@ -34,12 +34,16 @@ Future<void> _settle() async {
 void main() {
   late FakeHouseholdInviteRemote remote;
   late _MockHouseholdRepository repository;
+  late StreamController<List<HouseholdMember>> roster;
 
   setUp(() {
     remote = FakeHouseholdInviteRemote();
     repository = _MockHouseholdRepository();
+    roster = StreamController.broadcast();
+    addTearDown(roster.close);
     when(() => repository.getCurrentUserMember(_hh))
         .thenAnswer((_) async => _member(HouseholdRole.householdOwner));
+    when(() => repository.watchMembers(_hh)).thenAnswer((_) => roster.stream);
   });
 
   HouseholdInviteListBloc build({int pageSize = 25}) => HouseholdInviteListBloc(
@@ -101,9 +105,15 @@ void main() {
 
     blocTest<HouseholdInviteListBloc, HouseholdInviteListState>(
       'a filter changed before the first read answers is shown at once',
-      setUp: () => remote.listing([
-        invite('i_2', status: HouseholdInviteStatus.awaitingApproval),
-      ]),
+      // The open read never answers, so the filter changes before it does.
+      setUp: () => remote.onFetchHouseholdInvites = (_, status, _, _) =>
+          status == null
+          ? Completer<PaginatedResult<HouseholdInvite>>().future
+          : Future.value(
+              pageOf([
+                invite('i_2', status: HouseholdInviteStatus.awaitingApproval),
+              ]),
+            ),
       build: build,
       act: (bloc) => bloc
         ..add(const HouseholdInviteListLoadRequested())
@@ -193,6 +203,98 @@ void main() {
       await _settle();
 
       expect(ready(bloc).invites, [invite('new')]);
+    });
+
+    test("the old filter's read, answering after the filter changed, is "
+        'never shown', () async {
+      final open = Completer<PaginatedResult<HouseholdInvite>>();
+      final awaiting = Completer<PaginatedResult<HouseholdInvite>>();
+      remote.onFetchHouseholdInvites = (_, status, _, _) =>
+          status == null ? open.future : awaiting.future;
+      // The second load's viewer is slow, which holds that load's own read
+      // back if the read waits for it.
+      final laterViewer = Completer<HouseholdMember?>();
+      var viewerReads = 0;
+      when(() => repository.getCurrentUserMember(_hh)).thenAnswer(
+        (_) => ++viewerReads == 1
+            ? Future.value(_member(HouseholdRole.householdOwner))
+            : laterViewer.future,
+      );
+      final bloc = build();
+      addTearDown(bloc.close);
+      final shown = <List<HouseholdInvite>>[];
+      final states = bloc.stream.listen((state) {
+        if (state is HouseholdInviteListReady) shown.add(state.invites);
+      });
+      addTearDown(states.cancel);
+      bloc.add(const HouseholdInviteListLoadRequested());
+      await _settle();
+      bloc.add(
+        const HouseholdInviteListFilterChanged(
+          HouseholdInviteFilter.awaitingApproval,
+        ),
+      );
+      await _settle();
+
+      open.complete(pageOf([invite('i_open')]));
+      await _settle();
+      laterViewer.complete(_member(HouseholdRole.householdOwner));
+      awaiting.complete(
+        pageOf([
+          invite('i_waiting', status: HouseholdInviteStatus.awaitingApproval),
+        ]),
+      );
+      await _settle();
+
+      expect(shown, [
+        [invite('i_waiting', status: HouseholdInviteStatus.awaitingApproval)],
+      ]);
+    });
+
+    test("of two overlapping loads, the later one's viewer stands even when "
+        "the older one's answers last", () async {
+      final olderViewer = Completer<HouseholdMember?>();
+      var viewerReads = 0;
+      when(() => repository.getCurrentUserMember(_hh)).thenAnswer(
+        (_) => ++viewerReads == 1
+            ? olderViewer.future
+            : Future.value(_member(HouseholdRole.householdOwner)),
+      );
+      remote.listing([invite('i_1')]);
+      final bloc = build()
+        ..add(const HouseholdInviteListLoadRequested())
+        ..add(const HouseholdInviteListLoadRequested());
+      addTearDown(bloc.close);
+      await _settle();
+
+      olderViewer.complete(_member(HouseholdRole.householdAdmin));
+      await _settle();
+
+      expect(ready(bloc).viewerRole, HouseholdRole.householdOwner);
+    });
+
+    test('a viewer the cache could not place gets their controls when the '
+        'hydrate brings their row', () async {
+      HouseholdMember? cached;
+      when(() => repository.getCurrentUserMember(_hh))
+          .thenAnswer((_) async => cached);
+      remote.listing([invite('i_1')]);
+      final bloc = build()..add(const HouseholdInviteListLoadRequested());
+      addTearDown(bloc.close);
+      await _settle();
+      expect(ready(bloc).viewerRole, isNull);
+
+      final me = _member(HouseholdRole.householdOwner);
+      cached = me;
+      roster.add([me]);
+      await _settle();
+
+      expect(ready(bloc).viewerUserId, _me);
+      expect(ready(bloc).viewerRole, HouseholdRole.householdOwner);
+      // Placed, so the roster is no longer watched, and the list was not
+      // read again for it.
+      expect(roster.hasListener, isFalse);
+      expect(remote.calls, hasLength(1));
     });
   });
 
@@ -553,6 +655,56 @@ void main() {
       expect(remote.calls.last, 'fetchHouseholdInvites(hh_1, null, 1, 2)');
       expect(ready(bloc).invites, [invite('i_2'), invite('i_3')]);
       expect(ready(bloc).hasMore, isTrue);
+    });
+
+    test('a page that answers after an action settled one of its rows does '
+        'not bring the row back', () async {
+      final more = Completer<PaginatedResult<HouseholdInvite>>();
+      var reads = 0;
+      remote
+        ..onFetchHouseholdInvites = ((_, _, page, limit) => ++reads == 1
+            ? Future.value(
+                pageOf(
+                  [
+                    invite('i_a', inviterId: _me),
+                    invite('i_b', inviterId: _me),
+                  ],
+                  limit: limit,
+                  hasMore: true,
+                ),
+              )
+            : more.future)
+        ..onWithdraw = (id) async =>
+            invite(id, inviterId: _me, status: HouseholdInviteStatus.withdrawn);
+      final bloc = build(pageSize: 2)
+        ..add(const HouseholdInviteListLoadRequested());
+      addTearDown(bloc.close);
+      await _settle();
+      bloc.add(
+        const HouseholdInviteListActionRequested(
+          HouseholdInviteRowAction.withdraw,
+          'i_a',
+        ),
+      );
+      await _settle();
+      bloc.add(const HouseholdInviteListMoreRequested());
+      await _settle();
+      expect(remote.calls.last, 'fetchHouseholdInvites(hh_1, null, 1, 2)');
+
+      bloc.add(
+        const HouseholdInviteListActionRequested(
+          HouseholdInviteRowAction.withdraw,
+          'i_b',
+        ),
+      );
+      await _settle();
+      // Read before i_b was withdrawn, so it still lists i_b as open.
+      more.complete(
+        pageOf([invite('i_b', inviterId: _me), invite('i_c')], limit: 2),
+      );
+      await _settle();
+
+      expect(ready(bloc).invites, [invite('i_c')]);
     });
   });
 }

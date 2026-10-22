@@ -12,10 +12,10 @@ import 'package:observability/observability.dart';
 ///
 /// More asks for the page holding the first row not shown yet. That is the
 /// next page until an action drops a row: the server's rows then move up,
-/// and asking for the next page would skip one. Rows already shown are
-/// dropped from the answer. A More asked for while the list is being read
-/// again waits for that read, showing as loading meanwhile, rather than
-/// being lost.
+/// and asking for the next page would skip one. Rows already shown, or
+/// shown when More was asked for, are dropped from the answer. A More asked
+/// for while the list is being read again waits for that read, showing as
+/// loading meanwhile, rather than being lost.
 class InvitePages {
   InvitePages({
     required this._fetch,
@@ -118,7 +118,12 @@ class InvitePages {
       final result = await _fetch(page, _pageSize);
       if (read != _readSequence) return;
       final current = rows ?? const <HouseholdInvite>[];
-      final known = {for (final invite in current) invite.id};
+      // A row shown when More was asked for and gone now was settled
+      // meanwhile; this answer was read before that, so it must not bring
+      // the row back.
+      final known = {
+        for (final invite in [...shown, ...current]) invite.id,
+      };
       final fresh = [
         for (final invite in result.items)
           if (!known.contains(invite.id)) invite,

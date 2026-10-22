@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -33,9 +35,16 @@ import 'invite_pages.dart';
 ///
 /// ## Who is looking
 ///
-/// Read from the local cache with each load, since the cache may be cold
-/// when the screen opens from a deep link. When it cannot say, no row
-/// offers an action; the server would decide anyway.
+/// Read from the local cache with each load, alongside the list. Of two
+/// overlapping reads, the one asked for last stands, as for the rows. When
+/// the cache cannot say, no row offers an action; the server would decide
+/// anyway.
+///
+/// The cache may be cold when the screen opens from a deep link, and the
+/// hydrate then brings the viewer's own row after the list has answered.
+/// So while the cache cannot say, the roster is watched, and each change
+/// asks it again (as `HouseholdDetailBloc` does for "Your role"). The watch
+/// ends once the viewer is placed.
 class HouseholdInviteListBloc
     extends Bloc<HouseholdInviteListEvent, HouseholdInviteListState> {
   HouseholdInviteListBloc({
@@ -61,6 +70,7 @@ class HouseholdInviteListBloc
     on<HouseholdInviteListMoreRequested>(_onMoreRequested);
     on<HouseholdInviteListActionRequested>(_onActionRequested);
     on<HouseholdInviteListOutcomeDismissed>(_onOutcomeDismissed);
+    on<HouseholdInviteListRosterChanged>(_onRosterChanged);
   }
 
   final String _householdId;
@@ -78,6 +88,17 @@ class HouseholdInviteListBloc
 
   String? _viewerUserId;
   HouseholdRole? _viewerRole;
+
+  /// Which read of the viewer is the latest. An older one that answers late
+  /// is dropped.
+  int _viewerReads = 0;
+
+  /// The roster, watched while the cache cannot say who is looking.
+  StreamSubscription<List<HouseholdMember>>? _roster;
+
+  /// Set as [close] starts, before the bloc reads as closed, so a viewer
+  /// read that answers during teardown starts no watch.
+  bool _closing = false;
 
   /// Ids of the rows with an action in flight.
   final Set<String> _busy = {};
@@ -108,10 +129,12 @@ class HouseholdInviteListBloc
     // Carries the filter, so a filter changed before the first read answers
     // is a new state, and the control redraws.
     if (_pages.rows == null) emit(HouseholdInviteListLoading(filter: _filter));
-    // Read before the list, so the read that wins brings its own viewer.
-    final member = await _readViewer();
+    // Both start before anything is awaited, so a load asked for later, or
+    // a filter changed meanwhile, drops this one's answers before they land.
+    final read = _pages.load();
+    final viewer = _resolveViewer();
     try {
-      if (!await _pages.load()) return;
+      if (!await read) return;
     } on HouseholdInviteRefusedException catch (error) {
       if (error.statusCode == 403) {
         emit(const HouseholdInviteListDenied());
@@ -129,11 +152,44 @@ class HouseholdInviteListBloc
       emit(const HouseholdInviteListFailed());
       return;
     }
-    _viewerUserId = member?.userId;
-    _viewerRole = member?.role;
+    await viewer;
     _emitReady(emit);
     if (_pages.moreWaiting && !isClosed) {
       add(const HouseholdInviteListMoreRequested());
+    }
+  }
+
+  Future<void> _onRosterChanged(
+    HouseholdInviteListRosterChanged event,
+    Emitter<HouseholdInviteListState> emit,
+  ) async {
+    if (_viewerUserId != null) return;
+    await _resolveViewer();
+    _emitReady(emit);
+  }
+
+  /// Reads who is looking into [_viewerUserId] and [_viewerRole], and
+  /// watches the roster while the cache cannot say. Never throws.
+  Future<void> _resolveViewer() async {
+    final ask = ++_viewerReads;
+    final member = await _readViewer();
+    if (ask != _viewerReads || _closing) return;
+    _viewerUserId = member?.userId;
+    _viewerRole = member?.role;
+    if (member == null) {
+      _roster ??= _repository
+          .watchMembers(_householdId)
+          .listen(
+            (_) => add(const HouseholdInviteListRosterChanged()),
+            onError: (Object error, StackTrace stackTrace) => _logger.warn(
+              'Could not watch the roster for who is viewing the invite list',
+              error: error,
+              stackTrace: stackTrace,
+            ),
+          );
+    } else {
+      unawaited(_roster?.cancel());
+      _roster = null;
     }
   }
 
@@ -264,5 +320,12 @@ class HouseholdInviteListBloc
         outcome: _outcome,
       ),
     );
+  }
+
+  @override
+  Future<void> close() async {
+    _closing = true;
+    await _roster?.cancel();
+    return super.close();
   }
 }
