@@ -14,6 +14,21 @@ import 'support/harness.dart';
 
 class _MockAuthRepository extends Mock implements AuthRepository {}
 
+/// Answers [confirm] with [answer], recording whom it was asked about
+/// (#432).
+class _FakeIdentityGuard implements SessionIdentityGuard {
+  _FakeIdentityGuard({required this.answer});
+
+  SessionConfirmation answer;
+  final askedFor = <String>[];
+
+  @override
+  Future<SessionConfirmation> confirm(String userId) async {
+    askedFor.add(userId);
+    return answer;
+  }
+}
+
 const _server = ScopedServer(serverId: 'server-1', displayName: 'My Server');
 
 /// What the two installers wire into a user session (#121): the sender on
@@ -73,6 +88,100 @@ void main() {
 
       final sender = container.get<SyncOperationSender>();
       expect(await sender.deliver(queued.id, queued.op), isA<SyncDelivered>());
+    });
+
+    // #432: on web another tab can move the shared session cookie to another
+    // user while this session still belongs to the first. A create sent then
+    // is owned by one user on the server and another here.
+    group('with a session identity guard', () {
+      test('asks about the session user, and sends what it confirms', () async {
+        register();
+        final guard = _FakeIdentityGuard(answer: SessionConfirmation.confirmed);
+        container.registerSingleton<SessionIdentityGuard>(guard);
+        final queued = await h.queuedCreate();
+
+        await installSender();
+        final delivery = await container.get<SyncOperationSender>().deliver(
+          queued.id,
+          queued.op,
+        );
+
+        expect(guard.askedFor, [kUserId]);
+        expect(delivery, isA<SyncDelivered>());
+      });
+
+      test('sends nothing as another user, and hands it back as a refused '
+          'session for a later attempt to claim', () async {
+        register();
+        final guard = _FakeIdentityGuard(
+          answer: SessionConfirmation.notThisUser,
+        );
+        container.registerSingleton<SessionIdentityGuard>(guard);
+        final queued = await h.queuedCreate();
+        await installSender();
+        final sender = container.get<SyncOperationSender>();
+
+        final refused = await sender.deliver(queued.id, queued.op);
+
+        expect(
+          refused,
+          isA<SyncFailed>().having(
+            (f) => f.failure,
+            'failure',
+            SyncFailure.sessionRejected,
+          ),
+        );
+        expect(h.householdRemote.creates, isEmpty);
+
+        guard.answer = SessionConfirmation.confirmed;
+        expect(
+          await sender.deliver(queued.id, queued.op),
+          isA<SyncDelivered>(),
+        );
+      });
+
+      // Not a 401: a drain reads that as worth asking the auth layer about,
+      // and offline there is nothing to ask.
+      test('sends nothing it could not confirm, and hands it back as '
+          'unreachable', () async {
+        register();
+        container.registerSingleton<SessionIdentityGuard>(
+          _FakeIdentityGuard(answer: SessionConfirmation.unanswered),
+        );
+        final queued = await h.queuedCreate();
+        await installSender();
+
+        final refused = await container.get<SyncOperationSender>().deliver(
+          queued.id,
+          queued.op,
+        );
+
+        expect(
+          refused,
+          isA<SyncFailed>().having(
+            (f) => f.failure,
+            'failure',
+            SyncFailure.unreachable,
+          ),
+        );
+        expect(h.householdRemote.creates, isEmpty);
+      });
+
+      test('refuses an entry read from the queue the same way', () async {
+        register();
+        container.registerSingleton<SessionIdentityGuard>(
+          _FakeIdentityGuard(answer: SessionConfirmation.notThisUser),
+        );
+        final queued = await h.queuedCreate();
+        await installSender();
+
+        final refused = await container.get<SyncOperationSender>().deliverEntry(
+          await h.entry(queued.id),
+        );
+
+        expect(refused, isA<SyncFailed>());
+        expect(h.householdRemote.creates, isEmpty);
+      });
     });
 
     for (final (label, registerAllBut) in <(String, void Function())>[

@@ -16,6 +16,7 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
+import 'package:models/dto.dart' show AuthUser;
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 import 'package:server_onboarding/server_onboarding.dart';
@@ -292,6 +293,23 @@ class _BgeAppState extends State<BgeApp> {
   /// for its writes.
   final _UnsentChanges _unsentChanges = _UnsentChanges();
 
+  /// Whose session home is built for, set by [_AuthScope] (#432).
+  ///
+  /// Home rebuilds on it. A user switched in place — another tab's sign-in
+  /// moving the shared cookie — never leaves home, so nothing else would
+  /// rebuild it, and it would go on holding the departed user's services.
+  ///
+  /// While a switch is under way home is the splash instead. The departing
+  /// user's scope is being torn down and the arriving user's is not live
+  /// yet, and home's entries open screens over those services.
+  ///
+  /// Never cleared on sign-out: home unmounts then anyway, and a rebuild
+  /// in that frame would only resolve services on their way out.
+  final ValueNotifier<_HomeSession> _homeSession = ValueNotifier((
+    userId: null,
+    switching: false,
+  ));
+
   @override
   void initState() {
     super.initState();
@@ -443,6 +461,7 @@ class _BgeAppState extends State<BgeApp> {
     onSignedOut: widget.bootstrapCubit.onSignedOut,
     connectivity: _rootConnectivity(),
     unsentChanges: _unsentChanges,
+    homeSession: _homeSession,
     child: child,
   );
 
@@ -494,10 +513,23 @@ class _BgeAppState extends State<BgeApp> {
   /// runs against the context [HomeScreen] hands back (its State context,
   /// under the auth scope + router), so `context.push` / `context.read`
   /// resolve.
+  ///
+  /// Rebuilt whenever the session's user changes (#432), so a user switched
+  /// in place gets a home built from their own services, and the splash
+  /// until then. See [_homeSession].
   Widget? _buildHomeRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
 
+    return ValueListenableBuilder<_HomeSession>(
+      valueListenable: _homeSession,
+      builder: (context, session, _) => session.switching
+          ? const SplashScreen()
+          : _buildHome(context, active),
+    );
+  }
+
+  Widget _buildHome(BuildContext context, ActiveServer active) {
     final authL10n = AuthLocalizations.of(context);
     final collectionL10n = GameCollectionLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
@@ -1203,6 +1235,7 @@ class _BgeAppState extends State<BgeApp> {
     _promptDismissDisarmTimer?.cancel();
     _promptDismissArmed.dispose();
     _reviewPreview.dispose();
+    _homeSession.dispose();
     unawaited(_settingsControllerSub?.cancel());
     unawaited(_themeModeSub?.cancel());
     unawaited(_localeSub?.cancel());
@@ -1529,8 +1562,8 @@ class _BgeAppState extends State<BgeApp> {
 ///
 /// Rebuilds on each [ActiveServer] emission; the [BlocProvider] is keyed
 /// on `serverId` so a server switch tears down the old bloc and builds a
-/// new one bound to the new server's repository. When [scope] is null (no
-/// orchestration — web until #96) or has no active server, the child
+/// new one bound to the new server's repository. When [scope] is null
+/// (bootstrap has not succeeded) or has no active server, the child
 /// renders without an auth bloc; the router's placeholder builders then
 /// apply, and `onAuthenticated`/`onSignedOut` are simply never invoked.
 ///
@@ -1576,6 +1609,14 @@ class _BgeAppState extends State<BgeApp> {
 ///
 /// The same two transitions are reported to [unsentChanges] (#142), which
 /// keeps the record behind the sign-in screen's unsent-changes notice.
+///
+/// ## A user switched in place (#432)
+///
+/// A third transition runs both legs: another user's session arriving over
+/// a live one, which on web is another tab's sign-in moving the shared
+/// cookie. The first user's session ends — not deliberately, and without
+/// routing to the sign-in screen — and the second's starts, with a
+/// one-time notice once it is live.
 class _AuthScope extends StatefulWidget {
   const _AuthScope({
     required this.scope,
@@ -1583,6 +1624,7 @@ class _AuthScope extends StatefulWidget {
     required this.onSignedOut,
     this.connectivity,
     required this.unsentChanges,
+    required this.homeSession,
     required this.child,
   });
 
@@ -1598,13 +1640,18 @@ class _AuthScope extends StatefulWidget {
   /// Told when a session starts and ends (#142).
   final _UnsentChanges unsentChanges;
 
+  /// Told when a user switch begins and when a session goes live (#432);
+  /// see `_BgeAppState._homeSession`.
+  final ValueNotifier<_HomeSession> homeSession;
+
   final Widget child;
 
   @override
   State<_AuthScope> createState() => _AuthScopeState();
 }
 
-/// Stateful only to hold [_authEpoch] (#383); nothing here affects build.
+/// Stateful only to hold [_authEpoch] (#383) and the listener's record of
+/// sessions (#432); nothing here affects build.
 class _AuthScopeState extends State<_AuthScope> {
   static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
 
@@ -1626,6 +1673,30 @@ class _AuthScopeState extends State<_AuthScope> {
   /// state, and a rebuild here would re-subscribe the [StreamBuilder]
   /// below for nothing.
   int _authEpoch = 0;
+
+  /// The session the listener last started and has not seen end (#432).
+  ///
+  /// The listener is handed only the new state, so this is how it knows a
+  /// session is open when another user's arrives. Keyed by server as well:
+  /// on native a server switch builds a new bloc whose first session is a
+  /// different user on a different server, which is not a switch on this
+  /// one.
+  ({String serverId, String userId})? _openSession;
+
+  /// The session the listener last started, kept past its end (#432).
+  ///
+  /// A tab another tab signed out shows the sign-in form, and a sign-in
+  /// there later reaches this tab over no open session. This is how the
+  /// listener tells whether that sign-in is a different user from the one
+  /// the tab last showed.
+  ({String serverId, String userId})? _lastSession;
+
+  /// The state the transition the listener is acting on came from.
+  ///
+  /// The listener is handed only the new state, so `listenWhen` records the
+  /// old one for it; `BlocListener` calls the listener straight after
+  /// `listenWhen` answers true, for the same transition.
+  AuthBlocState? _arrivedFrom;
 
   @override
   Widget build(BuildContext context) {
@@ -1668,18 +1739,66 @@ class _AuthScopeState extends State<_AuthScope> {
             // The same reasoning on the way out (#142): unauthenticated
             // carries a cause, so a cause-only change would be a real
             // state change too, and must not re-run the sign-out work.
-            listenWhen: (previous, current) =>
-                (current is AuthAuthenticated &&
-                    previous is! AuthAuthenticated) ||
-                (current is AuthUnauthenticated &&
-                    previous is! AuthUnauthenticated),
+            //
+            // And one transition between two authenticated states (#432):
+            // another user's session over a live one. On web every tab
+            // shares one cookie, so a sign-in in another tab moves this
+            // tab's session to another user with no sign-out in between.
+            // Keyed on the user id, so a new session for the same user is
+            // not a change.
+            //
+            // The unauthenticated arm stays `previous is!
+            // AuthUnauthenticated` rather than narrowing to `previous is
+            // AuthAuthenticated` (#208): a sign-out passes through
+            // `AuthLoading` first, so the narrower test would miss every
+            // ordinary one.
+            listenWhen: (previous, current) {
+              final acts =
+                  (current is AuthAuthenticated &&
+                      previous is! AuthAuthenticated) ||
+                  (current is AuthUnauthenticated &&
+                      previous is! AuthUnauthenticated) ||
+                  (current is AuthAuthenticated &&
+                      previous is AuthAuthenticated &&
+                      current.session.user.id != previous.session.user.id);
+              if (acts) _arrivedFrom = previous;
+              return acts;
+            },
             listener: (context, state) {
               // Bumped for every transition this listener acts on, before
               // anything is dispatched, so a handler's captured value is
               // stale the moment the next one starts (#383).
-              final epoch = ++_authEpoch;
+              var epoch = ++_authEpoch;
               if (state is AuthAuthenticated) {
                 final userId = state.session.user.id;
+                final departing = _openSession;
+                final switching =
+                    departing != null &&
+                    departing.serverId == active.serverId &&
+                    departing.userId != userId;
+                if (switching) {
+                  _endSessionInPlace(context, active);
+                  // A second bump: the end and the start are two
+                  // transitions, and a handler from either must see the
+                  // other as newer.
+                  epoch = ++_authEpoch;
+                }
+                // Another user's session reaching a tab resting signed out:
+                // this tab's own sign-in passes through `AuthLoading`, so
+                // one arriving straight from the sign-in form came from
+                // another tab (#432). The same user signing back in is no
+                // change of account, and needs no notice.
+                final arrivedFrom = _arrivedFrom;
+                final lastSession = _lastSession;
+                final replacing =
+                    departing == null &&
+                    (arrivedFrom is AuthUnauthenticated ||
+                        arrivedFrom is AuthOperationFailure) &&
+                    lastSession != null &&
+                    lastSession.serverId == active.serverId &&
+                    lastSession.userId != userId;
+                _openSession = (serverId: active.serverId, userId: userId);
+                _lastSession = _openSession;
                 // Before activation, so a recovery sign-out's count waits
                 // for this record (#142).
                 widget.unsentChanges.sessionStarted(active, userId);
@@ -1693,9 +1812,18 @@ class _AuthScopeState extends State<_AuthScope> {
                 // serializes scope operations, so overlapping handlers
                 // cannot interleave scope mutations (#135).
                 unawaited(
-                  _handleAuthenticated(active, authBloc, userId, epoch),
+                  _handleAuthenticated(
+                    active,
+                    authBloc,
+                    userId,
+                    epoch,
+                    onLive: switching || replacing
+                        ? _switchNotice(context, state.session.user)
+                        : null,
+                  ),
                 );
               } else if (state is AuthUnauthenticated) {
+                _openSession = null;
                 widget.unsentChanges.sessionEnded(
                   active,
                   deliberately: state.cause == SignOutCause.user,
@@ -1755,12 +1883,16 @@ class _AuthScopeState extends State<_AuthScope> {
   /// converges to unauthenticated instead of stranding an authenticated
   /// session whose per-user services can never resolve (#135) — signing
   /// back in retries activation from a clean scope.
+  ///
+  /// [onLive] runs once the session is live and the gate has been told, and
+  /// not at all if it never goes live.
   Future<void> _handleAuthenticated(
     ActiveServer active,
     AuthBloc authBloc,
     String userId,
-    int epoch,
-  ) async {
+    int epoch, {
+    VoidCallback? onLive,
+  }) async {
     final sessionScope = _userSessionScopeOf(active);
     if (sessionScope != null) {
       try {
@@ -1870,6 +2002,12 @@ class _AuthScopeState extends State<_AuthScope> {
       );
       return;
     }
+    // Ahead of the gate callback, so a home it routes to is built for this
+    // user. A user switched in place is already on home, and this is what
+    // rebuilds it (#432). Not once this scope has unmounted: the app may be
+    // gone, and the notifier with it, while a route builds home afresh
+    // anyway.
+    if (mounted) widget.homeSession.value = (userId: userId, switching: false);
     try {
       widget.onAuthenticated();
     } on Object catch (error, stackTrace) {
@@ -1883,6 +2021,41 @@ class _AuthScopeState extends State<_AuthScope> {
         context: {'serverId': active.serverId},
       );
     }
+    if (mounted) onLive?.call();
+  }
+
+  /// Ends the open session without leaving the signed-in shell, because
+  /// another user's session has replaced it (#432).
+  ///
+  /// The unauthenticated arm's work minus its routing: no `onSignedOut()`,
+  /// which would flash the sign-in screen for a session the user never left.
+  /// Not a deliberate sign-out, so the departing user's unsent-changes
+  /// record stays (#142).
+  ///
+  /// Screens opened under the departing user are closed first, for the
+  /// reason the sign-out arm routes first: they hold repositories the scope
+  /// pop is about to dispose. Going home does that, since every such screen
+  /// is pushed above it. Home itself shows the splash until the new user's
+  /// scope is live, and is rebuilt for them then (see
+  /// `_BgeAppState._homeSession`).
+  void _endSessionInPlace(BuildContext context, ActiveServer active) {
+    widget.unsentChanges.sessionEnded(active, deliberately: false);
+    widget.homeSession.value = (userId: null, switching: true);
+    GoRouter.maybeOf(context)?.go(AppRoutes.home);
+    unawaited(_deactivateSessionScope(active));
+  }
+
+  /// The one-time notice that this tab now shows [user]'s account (#432),
+  /// or null where there is nowhere to show it.
+  ///
+  /// The messenger and the copy are taken now, while [context] is current;
+  /// the notice itself waits until the new session is live.
+  VoidCallback? _switchNotice(BuildContext context, AuthUser user) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return null;
+    final message = ShellLocalizations.of(context)
+        .shellSessionSwitchedNotice(user.username);
+    return () => messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Pops the user-session scope after the gate has routed away (#135):
@@ -1905,6 +2078,10 @@ class _AuthScopeState extends State<_AuthScope> {
     }
   }
 }
+
+/// Whose session home is built for, and whether a switch to another user is
+/// under way (#432).
+typedef _HomeSession = ({String? userId, bool switching});
 
 /// Resolves [T] from [active]'s per-server container, or null where the
 /// composition registers none. The per-server counterpart of

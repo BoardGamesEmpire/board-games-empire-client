@@ -87,8 +87,8 @@ class SessionRehydrateTrigger extends StatefulWidget {
   /// A function rather than a scope: `AppBootstrapCubit` publishes the
   /// scope only once bootstrap succeeds, which is after this widget is
   /// first built, so a captured value would be null for the life of the
-  /// app. Returning null — no orchestration (web until #96), or no active
-  /// server yet — simply means there is nothing to re-hydrate.
+  /// app. Returning null — no bootstrap yet, or no active server — simply
+  /// means there is nothing to re-hydrate.
   ///
   /// Resolution through the active server's container falls through to the
   /// user-session scope, which is where the rehydrator is registered.
