@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
@@ -477,6 +479,122 @@ void main() {
     ]);
     expect((await entry(create.id)).status, SyncStatus.completed);
     expect(counted.reads, 2);
+  });
+
+  group('drainAfterChange (#190)', () {
+    test('sends what was queued after a pass already in flight read the '
+        'queue', () async {
+      final gate = Completer<Household>();
+      h.householdRemote.respond = (_) => gate.future;
+      await h.queuedCreate();
+      final inFlight = drain.drain();
+      await pumpEventQueue();
+      final later = await h.queuedAdd();
+
+      final after = drain.drainAfterChange();
+      gate.complete(serverHousehold());
+      await inFlight;
+      await after;
+
+      expect((await entry(later.id)).status, SyncStatus.completed);
+    });
+
+    test('runs a pass of its own when none is in flight', () async {
+      final add = await h.queuedAdd();
+
+      await drain.drainAfterChange();
+
+      expect((await entry(add.id)).status, SyncStatus.completed);
+    });
+  });
+
+  group('completed history (#190)', () {
+    test('the first pass deletes what completed more than a day ago, and '
+        'keeps newer history and anything not done', () async {
+      final old = await h.queuedCreate(name: 'Old');
+      await drain.drain();
+      h.advance(SyncQueueDrain.completedRetention + const Duration(hours: 1));
+      final recent = await h.queuedCreate(name: 'Recent');
+      await drain.drain();
+      final stuck = await h.queuedAdd();
+      await h.queue.park(stuck.id, error: 'rejected: 400');
+      h.advance(const Duration(hours: 1));
+      await drain.close();
+      await h.newSession();
+      drain = openDrain();
+
+      await drain.drain();
+
+      final left = (await h.queue.getAllEntries()).map((e) => e.id);
+      expect(left, unorderedEquals([recent.id, stuck.id]));
+      expect(left, isNot(contains(old.id)));
+    });
+
+    test('a session that stays signed in purges again on a later pass, at '
+        'most once per interval', () async {
+      Future<List<String>> left() async => [
+        for (final e in await h.queue.getAllEntries()) e.id,
+      ];
+      const interval = SyncQueueDrain.purgeInterval;
+
+      await h.queuedCreate(name: 'Old');
+      await drain.drain();
+      h.advance(interval * 1.5);
+      final younger = await h.queuedCreate(name: 'Younger');
+      await drain.drain();
+
+      // Old has aged past the retention; Younger, delivered later, hasn't.
+      h.advance(SyncQueueDrain.completedRetention - interval * 0.5);
+      await drain.drain();
+      expect(await left(), [younger.id]);
+
+      // Younger has aged past it too, but the last purge was too recent.
+      h.advance(interval * 0.75);
+      await drain.drain();
+      expect(await left(), [younger.id]);
+
+      h.advance(interval * 0.25);
+      await drain.drain();
+      expect(await left(), isEmpty);
+    });
+
+    test('with nothing to send, a due purge makes the drain stale, so the '
+        "rehydrator's next trigger runs it", () async {
+      const interval = SyncQueueDrain.purgeInterval;
+      await h.queuedCreate(name: 'Old');
+      await drain.drain();
+      h.advance(SyncQueueDrain.completedRetention - interval * 0.5);
+      // Purges, but Old is not old enough yet; settles with nothing to send.
+      await drain.drain();
+      expect(await h.queue.getAllEntries(), hasLength(1));
+
+      h.advance(interval * 0.75);
+      expect(drain.isStale, isFalse, reason: 'the last purge is too recent');
+
+      h.advance(interval * 0.25);
+      expect(drain.isStale, isTrue);
+      await drain.drain();
+      expect(await h.queue.getAllEntries(), isEmpty);
+      expect(drain.isStale, isFalse);
+    });
+
+    test('a clock set back past the last purge purges on the next pass, '
+        'not once the clock catches up with it', () async {
+      // The first pass purges while the clock runs a year ahead.
+      h.advance(const Duration(days: 365));
+      await drain.drain();
+      h.advance(const Duration(days: -365));
+      await h.queuedCreate(name: 'Old');
+      await drain.drain();
+
+      h.advance(
+        SyncQueueDrain.completedRetention + SyncQueueDrain.purgeInterval,
+      );
+      expect(drain.isStale, isTrue);
+      await drain.drain();
+
+      expect(await h.queue.getAllEntries(), isEmpty);
+    });
   });
 
   group("one entry's ops stay in order", () {

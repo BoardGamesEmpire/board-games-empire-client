@@ -38,6 +38,8 @@ dependencies:
     path: ../core/observability
   server_onboarding:
     path: ../features/server_onboarding
+  sync_queue:
+    path: ../features/sync
   ui:
     path: ../ui/widgets
   ui_tokens:

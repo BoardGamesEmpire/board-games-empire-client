@@ -280,10 +280,16 @@ class SyncQueueRepositoryImpl
   }
 
   @override
-  Future<int> purgeCompleted() async {
+  Future<int> purgeCompleted({Duration olderThan = Duration.zero}) async {
     checkNotDisposed();
+    // Through JULIANDAY, as the claim lease compares, for the same reason.
+    final cutoff = Variable<DateTime>(_localNowUtc().subtract(olderThan));
     return (_db.delete(_db.syncQueueTable)..where(
-          (t) => t.userId.equals(_userId) & t.status.equals('completed'),
+          (t) =>
+              t.userId.equals(_userId) &
+              t.status.equals('completed') &
+              (t.lastAttemptAt.isNull() |
+                  t.lastAttemptAt.julianday.isSmallerOrEqual(cutoff.julianday)),
         ))
         .go();
   }
@@ -349,25 +355,51 @@ class SyncQueueRepositoryImpl
               ..orderBy(_queueOrder))
             .get();
 
-    final outstanding = <SyncQueueEntry>[];
+    return [
+      for (final row in rows)
+        if (_targets(row.payload, collectionId)) _mapRow(row),
+    ];
+  }
+
+  @override
+  Future<SyncQueueEntry?> lastDeliveredOpFor(String collectionId) async {
+    checkNotDisposed();
+    // Newest delivery first, then the target matched in Dart, as the lookup
+    // above matches it. Completed entries stay only until the next purge.
+    final rows =
+        await (_db.select(_db.syncQueueTable)
+              ..where(
+                (t) => t.userId.equals(_userId) & t.status.equals('completed'),
+              )
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.lastAttemptAt.julianday),
+                (t) => OrderingTerm.desc(t.createdAt.julianday),
+                (t) => OrderingTerm.desc(t.rowId),
+              ]))
+            .get();
     for (final row in rows) {
-      final SyncOperation op;
-      try {
-        op = SyncOperation.deserialize(row.payload);
-      } catch (_) {
-        // Skip un-parseable rows; the worker will surface the failure on
-        // its next pickup attempt.
-        continue;
-      }
-      final target = switch (op) {
-        AddToCollectionOperation() => op.localId,
-        UpdateCollectionOperation() => op.collectionId,
-        RemoveFromCollectionOperation() => op.collectionId,
-        CreateHouseholdOperation() => null,
-      };
-      if (target == collectionId) outstanding.add(_mapRow(row));
+      if (_targets(row.payload, collectionId)) return _mapRow(row);
     }
-    return outstanding;
+    return null;
+  }
+
+  /// Whether [payload] is an op that targets the collection entry
+  /// [collectionId]. False for one that won't decode: the worker surfaces
+  /// that failure on its next pickup attempt.
+  static bool _targets(String payload, String collectionId) {
+    final SyncOperation op;
+    try {
+      op = SyncOperation.deserialize(payload);
+    } catch (_) {
+      return false;
+    }
+    final target = switch (op) {
+      AddToCollectionOperation() => op.localId,
+      UpdateCollectionOperation() => op.collectionId,
+      RemoveFromCollectionOperation() => op.collectionId,
+      CreateHouseholdOperation() => null,
+    };
+    return target == collectionId;
   }
 
   @override
@@ -400,13 +432,78 @@ class SyncQueueRepositoryImpl
     });
   }
 
+  @override
+  Stream<List<SyncQueueEntry>> watchStuckEntries() {
+    // Closed on disposal, like [watchPendingCount], for the same reason.
+    return untilDisposed(
+      () =>
+          (_db.select(_db.syncQueueTable)
+                ..where((_) => _stuckPredicate())
+                ..orderBy(_queueOrder))
+              .watch()
+              .map((rows) => rows.map(_mapRow).toList()),
+    );
+  }
+
+  @override
+  Future<SyncQueueEntry?> getEntry(String id) async {
+    checkNotDisposed();
+    final row =
+        await (_db.select(_db.syncQueueTable)
+              ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+            .getSingleOrNull();
+    return row == null ? null : _mapRow(row);
+  }
+
+  @override
+  Future<bool> retry(String id) async {
+    checkNotDisposed();
+    // Conditional on the stuck predicate, in one statement, so of two web
+    // tabs retrying one entry only one reopens it.
+    final changed =
+        await (_db.update(
+          _db.syncQueueTable,
+        )..where((t) => t.id.equals(id) & _stuckPredicate())).write(
+          const SyncQueueTableCompanion(
+            status: Value('pending'),
+            retryCount: Value(0),
+            lastAttemptAt: Value(null),
+          ),
+        );
+    return changed == 1;
+  }
+
+  @override
+  Future<bool> discard(String id) async {
+    checkNotDisposed();
+    final deleted =
+        await (_db.delete(_db.syncQueueTable)..where(
+              (t) =>
+                  t.id.equals(id) &
+                  t.userId.equals(_userId) &
+                  t.status.equals('completed').not(),
+            ))
+            .go();
+    return deleted == 1;
+  }
+
+  @override
+  Future<bool> discardStuck(String id) async {
+    checkNotDisposed();
+    // Conditional on the stuck predicate, in one statement, as [retry] is.
+    final deleted = await (_db.delete(
+      _db.syncQueueTable,
+    )..where((t) => t.id.equals(id) & _stuckPredicate())).go();
+    return deleted == 1;
+  }
+
   /// Returns [op] pointed at [newId]; null for an op that targets no
   /// collection entry.
   ///
   /// The caller passes only ops [getOutstandingOpsFor] matched, so which
   /// ops target the entry is decided there, once. No wildcard: like the
-  /// lookup's switch, this one must name every op type, so a new one can't
-  /// be matched there and silently skipped here.
+  /// switch in [_targets], this one must name every op type, so a new one
+  /// can't be matched there and silently skipped here.
   SyncOperation? _remapOp(SyncOperation op, String newId) {
     return switch (op) {
       AddToCollectionOperation() => AddToCollectionOperation(
@@ -416,6 +513,7 @@ class SyncQueueRepositoryImpl
         quantity: op.quantity,
         rating: op.rating,
         comment: op.comment,
+        raised: op.raised,
       ),
       UpdateCollectionOperation() => UpdateCollectionOperation(
         collectionId: newId,
@@ -496,6 +594,16 @@ class SyncQueueRepositoryImpl
     return t.userId.equals(_userId) &
         t.status.isIn(syncQueueOutstandingStatuses) &
         t.retryCount.isSmallerThanValue(SyncQueueEntry.maxRetries);
+  }
+
+  /// Predicate for a stuck entry (#190): [_pendingPredicate]'s statuses at
+  /// or past the retry cap, so the two split the outstanding set between
+  /// them.
+  Expression<bool> _stuckPredicate() {
+    final t = _db.syncQueueTable;
+    return t.userId.equals(_userId) &
+        t.status.isIn(syncQueueOutstandingStatuses) &
+        t.retryCount.isBiggerOrEqualValue(SyncQueueEntry.maxRetries);
   }
 
   SyncQueueEntry _mapRow(SyncQueueTableData row) => SyncQueueEntry(

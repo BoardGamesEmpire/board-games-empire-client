@@ -86,6 +86,35 @@ void main() {
     });
   });
 
+  group('AddToCollectionOperation', () {
+    const add = AddToCollectionOperation(
+      localId: 'col_1',
+      platformGameId: 'pg_1',
+      medium: 'Physical',
+      quantity: 1,
+    );
+
+    test('round-trips whether the add raised a quantity (#190)', () {
+      const raise = AddToCollectionOperation(
+        localId: 'col_1',
+        platformGameId: 'pg_1',
+        medium: 'Physical',
+        quantity: 2,
+        raised: true,
+      );
+
+      final round = AddToCollectionOperation.fromJson(raise.toJson());
+
+      expect(round.raised, isTrue);
+    });
+
+    test('leaves the raise flag out of any other add, and reads its absence '
+        'as null', () {
+      expect(add.toJson().containsKey('raised'), isFalse);
+      expect(AddToCollectionOperation.fromJson(add.toJson()).raised, isNull);
+    });
+  });
+
   group('SyncOperation.fromJson dispatch', () {
     test('dispatches create_household to CreateHouseholdOperation', () {
       final op = SyncOperation.fromJson(const {

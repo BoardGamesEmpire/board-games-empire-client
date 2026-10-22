@@ -39,6 +39,10 @@ class CountingQueue implements SyncQueueRepository {
   );
 
   @override
+  Future<SyncQueueEntry?> lastDeliveredOpFor(String collectionId) =>
+      _read(() => _inner.lastDeliveredOpFor(collectionId));
+
+  @override
   Future<SyncQueueEntry> enqueue(SyncOperation operation) =>
       _inner.enqueue(operation);
 
@@ -61,7 +65,8 @@ class CountingQueue implements SyncQueueRepository {
       _inner.park(id, error: error);
 
   @override
-  Future<int> purgeCompleted() => _inner.purgeCompleted();
+  Future<int> purgeCompleted({Duration olderThan = Duration.zero}) =>
+      _inner.purgeCompleted(olderThan: olderThan);
 
   @override
   Future<int> remapCollectionId({
@@ -77,4 +82,21 @@ class CountingQueue implements SyncQueueRepository {
 
   @override
   Stream<int> watchPendingCount() => _inner.watchPendingCount();
+
+  @override
+  Stream<List<SyncQueueEntry>> watchStuckEntries() =>
+      _inner.watchStuckEntries();
+
+  @override
+  Future<SyncQueueEntry?> getEntry(String id) =>
+      _read(() => _inner.getEntry(id));
+
+  @override
+  Future<bool> retry(String id) => _inner.retry(id);
+
+  @override
+  Future<bool> discard(String id) => _inner.discard(id);
+
+  @override
+  Future<bool> discardStuck(String id) => _inner.discardStuck(id);
 }

@@ -44,9 +44,10 @@ abstract class SyncQueueRepository {
   ///
   /// That is what [getPendingCount] counts, plus the exhausted entries a
   /// drain needs to see to hold an op back behind an add no pass will send.
-  /// Unlike [getAllEntries] it leaves out completed history, which nothing
-  /// purges yet (#190), so a drain that reads it on every pass reads only
-  /// the work still open. A row whose status this build doesn't know is
+  /// Unlike [getAllEntries] it leaves out completed history, which a drain
+  /// keeps for about a day before it calls [purgeCompleted], so a drain that
+  /// reads this on every pass reads only the work still open. Where no drain
+  /// runs, which is web until #447, nothing purges it. A row whose status this build doesn't know is
   /// passed over, as [getPendingEntries] passes over it.
   Future<List<SyncQueueEntry>> getOutstandingEntries();
 
@@ -127,8 +128,22 @@ abstract class SyncQueueRepository {
   /// id that doesn't exist or belongs to another user.
   Future<void> park(String id, {required String error});
 
-  /// Removes all completed entries. Called periodically to keep the queue lean.
-  Future<int> purgeCompleted();
+  /// Deletes the completed entries last attempted more than [olderThan]
+  /// ago, and returns how many (#190).
+  ///
+  /// A completed entry's last attempt is the claim that delivered it:
+  /// [markCompleted] leaves the stamp alone. It is judged on the device
+  /// clock that stamped it, as the claim lease is, so a stamp ahead of a
+  /// clock that was set back is kept until the clock passes it. An entry
+  /// completed without ever being claimed has no stamp and counts as old.
+  ///
+  /// Only completed entries go. A stuck one stays until someone retries or
+  /// discards it, however old it is.
+  ///
+  /// The default, [Duration.zero], purges every completed entry up to now.
+  /// Recent ones are worth keeping: a late acknowledgement of an op
+  /// delivered twice still finds its place by the completed entry.
+  Future<int> purgeCompleted({Duration olderThan = Duration.zero});
 
   /// Rewrites the payload of every entry not yet completed whose target
   /// collection id matches [oldCollectionId], replacing it with
@@ -195,6 +210,19 @@ abstract class SyncQueueRepository {
     String? including,
   });
 
+  /// Returns the completed entry targeting the collection entry
+  /// [collectionId] that was delivered last, or null when the queue holds
+  /// none (#190).
+  ///
+  /// A completed entry's last attempt is the claim that delivered it, so
+  /// the latest is the last delivery, with the later in queue order
+  /// winning a tie. [GameCollectionRepository.mergeFromServer] places the
+  /// ops it replays against it, as the acknowledgement of that delivery
+  /// placed them. [purgeCompleted] deletes completed entries, so one
+  /// delivered before the last purge isn't found. The target is matched as
+  /// [getOutstandingOpsFor] matches it.
+  Future<SyncQueueEntry?> lastDeliveredOpFor(String collectionId);
+
   /// Total count of outstanding sync work. Matches the same set
   /// [getPendingEntries] returns plus entries whose claim is live, i.e.
   /// entries under `SyncQueueEntry.maxRetries` in:
@@ -215,4 +243,56 @@ abstract class SyncQueueRepository {
   /// Stream emitting the pending count on any queue change. Same
   /// status-set semantics as [getPendingCount].
   Stream<int> watchPendingCount();
+
+  // ── Recovering stuck ops (#190) ──────────────────────────────────────
+
+  /// Emits every stuck entry, in queue order, on subscribe and on any queue
+  /// change: every entry not yet completed that has reached
+  /// [SyncQueueEntry.maxRetries], whether its retries ran out or it was
+  /// [park]ed.
+  ///
+  /// The complement of [watchPendingCount] within the outstanding set:
+  /// between them they cover what [getOutstandingEntries] returns, so an op
+  /// is either still being worked on or waiting for someone to [retry] or
+  /// [discard] it. Nothing else takes a stuck entry out of the queue.
+  ///
+  /// Closes, rather than errors, when the repository is disposed, as
+  /// [watchPendingCount] does.
+  Stream<List<SyncQueueEntry>> watchStuckEntries();
+
+  /// Returns the entry [id] names, whatever its status, or null for an id
+  /// that doesn't exist or belongs to another user.
+  Future<SyncQueueEntry?> getEntry(String id);
+
+  /// Puts a stuck entry back in the queue as if it were new: pending, with
+  /// its retry count at 0 and no attempt time, so no cooldown applies.
+  ///
+  /// Its [SyncQueueEntry.lastError] is kept until the op is delivered. Only
+  /// an entry [watchStuckEntries] would emit moves; returns whether [id] did.
+  /// An entry someone already retried, a completed one, and an unknown id
+  /// return false and change nothing.
+  ///
+  /// This only reopens the entry. Whoever calls it starts the send.
+  Future<bool> retry(String id);
+
+  /// Deletes the entry [id] names, unless it is completed. Returns whether
+  /// it did.
+  ///
+  /// This undoes nothing the op did to local data. Discarding an op the user
+  /// made goes through the repository that owns its rows, which calls this
+  /// in the same transaction as the undo.
+  ///
+  /// A completed entry is left for [purgeCompleted]: a late acknowledgement
+  /// of an op delivered twice still needs it to find its place.
+  Future<bool> discard(String id);
+
+  /// Deletes the entry [id] names only while it is stuck, as
+  /// [watchStuckEntries] would emit it, and returns whether it did.
+  ///
+  /// The check and the delete are one statement, so an entry another tab
+  /// [retry]d meanwhile, and that may be on its way to the server, is left
+  /// alone. Like [discard] it undoes nothing; a repository discarding an op
+  /// the user made calls this first, in the transaction that undoes the op,
+  /// and undoes nothing when it returns false.
+  Future<bool> discardStuck(String id);
 }

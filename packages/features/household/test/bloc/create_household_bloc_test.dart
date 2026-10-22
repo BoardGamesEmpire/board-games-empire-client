@@ -97,7 +97,7 @@ void main() {
     });
 
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
-      'a delivered create -> Submitting then Success(pendingSync:false) under '
+      'a delivered create -> Submitting then Success(synced) under '
       'the canonical id',
       build: build,
       act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
@@ -105,14 +105,15 @@ void main() {
         isA<CreateHouseholdSubmitting>(),
         isA<CreateHouseholdSuccess>()
             .having((s) => s.householdId, 'householdId', 'hh_server')
-            .having((s) => s.pendingSync, 'pendingSync', isFalse),
+            .having((s) => s.sync, 'sync', CreateHouseholdSync.synced),
       ],
       verify: (_) => expect(_sentOp(sender).localId, 'hh_local'),
     );
 
     // Every outcome short of a delivery leaves the household written and
-    // queued, so the create succeeded locally and only `pendingSync` says
-    // otherwise. What the sender did with the entry is its own concern.
+    // queued, so the create succeeded locally and only `sync` says
+    // otherwise. A refusal says so apart: no later sync will send it, so the
+    // user is told where to retry or discard it (#190).
     for (final (name, delivery) in <(String, SyncDelivery)>[
       ('held by another sender', const SyncNotClaimed()),
       ('parked', SyncParked(Exception('rejected'))),
@@ -127,7 +128,7 @@ void main() {
       ),
     ]) {
       blocTest<CreateHouseholdBloc, CreateHouseholdState>(
-        '$name -> Success(pendingSync:true) under the local id',
+        '$name -> Success, queued or refused, under the local id',
         setUp: () => stubDelivery(delivery),
         build: build,
         act: (bloc) => bloc.add(const CreateHouseholdSubmitted(name: 'HQ')),
@@ -135,7 +136,13 @@ void main() {
           isA<CreateHouseholdSubmitting>(),
           isA<CreateHouseholdSuccess>()
               .having((s) => s.householdId, 'householdId', 'hh_local')
-              .having((s) => s.pendingSync, 'pendingSync', isTrue),
+              .having(
+                (s) => s.sync,
+                'sync',
+                delivery is SyncParked
+                    ? CreateHouseholdSync.refused
+                    : CreateHouseholdSync.queued,
+              ),
         ],
       );
     }
@@ -145,7 +152,7 @@ void main() {
     // must not strand the bloc in Submitting, where the guard drops every
     // resubmit.
     blocTest<CreateHouseholdBloc, CreateHouseholdState>(
-      'a delivery that throws -> Success(pendingSync:true), not stuck in '
+      'a delivery that throws -> Success(queued), not stuck in '
       'Submitting',
       setUp: () {
         when(() => sender.deliver(any(), any()))
@@ -157,7 +164,7 @@ void main() {
         isA<CreateHouseholdSubmitting>(),
         isA<CreateHouseholdSuccess>()
             .having((s) => s.householdId, 'householdId', 'hh_local')
-            .having((s) => s.pendingSync, 'pendingSync', isTrue),
+            .having((s) => s.sync, 'sync', CreateHouseholdSync.queued),
       ],
     );
 
@@ -243,7 +250,7 @@ void main() {
         isA<CreateHouseholdSubmitting>(),
         isA<CreateHouseholdSuccess>()
             .having((s) => s.householdId, 'householdId', 'hh_server')
-            .having((s) => s.pendingSync, 'pendingSync', isFalse),
+            .having((s) => s.sync, 'sync', CreateHouseholdSync.synced),
       ],
       verify: (_) {
         verify(() => repo.create(name: 'HQ', description: null)).called(1);
@@ -283,7 +290,7 @@ void main() {
         isA<CreateHouseholdSubmitting>(),
         isA<CreateHouseholdSuccess>()
             .having((s) => s.householdId, 'householdId', 'hh_server')
-            .having((s) => s.pendingSync, 'pendingSync', isFalse),
+            .having((s) => s.sync, 'sync', CreateHouseholdSync.synced),
       ],
       verify: (_) {
         verify(() => repo.create(name: 'HQ', description: null)).called(2);

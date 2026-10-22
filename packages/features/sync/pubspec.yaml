@@ -1,7 +1,7 @@
 name: sync_queue
 # Not `sync`: that is a Dart contextual keyword (`sync*`). The directory keeps
 # the feature's name, as `features/collection` does for `game_collection`.
-description: "The sync queue's delivery: one sender for every queued op, and the drain that runs it (#121)"
+description: "The sync queue's delivery: one sender for every queued op, the drain that runs it (#121), and the screen that retries or discards a stuck one (#190)"
 publish_to: none
 
 environment:
@@ -10,10 +10,9 @@ environment:
 resolution: workspace
 
 dependencies:
-  # Nothing here draws, but the suite runs the real repositories, and
-  # `drift_storage` is a Flutter package, so this is one too. Its feature
-  # siblings are the same.
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
   interfaces:
@@ -24,6 +23,15 @@ dependencies:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
+
+  # The retry-or-discard screen and its notice (#190).
+  flutter_bloc: ^9.1.1
+  equatable: ^2.1.0
+  intl: ^0.20.2
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
 
 dev_dependencies:
   flutter_test:
@@ -40,6 +48,16 @@ dev_dependencies:
   # so a fake could not prove what lands together.
   drift_storage:
     path: ../../storage/drift_storage
+  bloc_test: ^10.0.0
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
+  l10n_test_support:
+    path: ../../testing/l10n
+  # Shared widget-test helpers: viewport, semantics and scroll geometry.
+  bge_test_support:
+    path: ../../testing/support
+
+flutter:
+  generate: true
+  uses-material-design: true

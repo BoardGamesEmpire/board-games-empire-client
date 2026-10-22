@@ -20,11 +20,13 @@ import 'create_household_state.dart';
 ///    optimistic row's id, the op's `localId`, so a send whose response is
 ///    lost cannot become a second household on the retry (#131).
 ///    - delivered → the row now carries the server's id and the op is
-///      closed → `pendingSync: false`.
+///      closed → [CreateHouseholdSync.synced].
+///    - parked → the server refused it, and no drain will send it again →
+///      [CreateHouseholdSync.refused] (#190).
 ///    - anything else → the household stays queued, and the create still
-///      succeeded locally → `pendingSync: true`. What became of the queue
-///      entry (held by another sender, parked, counted or handed back) is
-///      the sender's to record, and the drain's to retry.
+///      succeeded locally → [CreateHouseholdSync.queued]. What became of the
+///      queue entry (held by another sender, counted or handed back) is the
+///      sender's to record, and the drain's to retry.
 ///
 /// A delivery that throws means the claim itself failed and nothing was
 /// sent, which also leaves the household queued.
@@ -84,10 +86,10 @@ class CreateHouseholdBloc
     }
 
     // From here the household is written and queued, so every outcome below
-    // is a success; only `pendingSync` varies.
+    // is a success; only `sync` varies.
     final queued = CreateHouseholdSuccess(
       householdId: draft.household.id,
-      pendingSync: true,
+      sync: CreateHouseholdSync.queued,
     );
 
     final SyncDelivery delivery;
@@ -111,10 +113,17 @@ class CreateHouseholdBloc
         emit(
           CreateHouseholdSuccess(
             householdId: householdId ?? draft.household.id,
-            pendingSync: false,
+            sync: CreateHouseholdSync.synced,
           ),
         );
-      case SyncNotClaimed() || SyncParked() || SyncFailed():
+      case SyncParked():
+        emit(
+          CreateHouseholdSuccess(
+            householdId: draft.household.id,
+            sync: CreateHouseholdSync.refused,
+          ),
+        );
+      case SyncNotClaimed() || SyncFailed():
         emit(queued);
     }
   }

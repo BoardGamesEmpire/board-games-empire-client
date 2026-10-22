@@ -85,6 +85,9 @@ abstract final class AppRoutes {
   /// The location of one game's detail screen.
   static String gameDetailOf(String gameId) =>
       '$games/${Uri.encodeComponent(gameId)}';
+  /// The changes that couldn't sync, each with a retry and a discard
+  /// (#190). Always the active session's own, like [collection].
+  static const stuckChanges = '/stuck-changes';
 
   /// The DataGateway admin list (#41).
   ///
@@ -275,6 +278,17 @@ typedef GameDetailScreenBuilder = Widget? Function(
   BuildContext context,
   String gameId,
 );
+/// Builds the retry-or-discard screen (#190) for the
+/// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
+/// navigation time when no active server is resolvable or its container
+/// lacks the queue or either repository a discard undoes through (tests
+/// without a container; no active user session), in which case the route
+/// falls back to [NotYetAvailableScreen].
+///
+/// Outside the auth [ShellRoute] for the collection list's reason: it needs
+/// the active server's scoped container, not an `AuthBloc`. Pushed from the
+/// home screen's notice.
+typedef StuckChangesScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the DataGateway admin list (#41) for the
 /// [AppRoutes.adminDataGateways] route. Supplied by [BgeApp]; returns null
@@ -320,6 +334,7 @@ GoRouter buildAppRouter({
   GameBrowseScreenBuilder? gameBrowseBuilder,
   GameSearchScreenBuilder? gameSearchBuilder,
   GameDetailScreenBuilder? gameDetailBuilder,
+  StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
 }) {
@@ -498,6 +513,15 @@ GoRouter buildAppRouter({
             },
           ),
         ],
+      ),
+      // #190: the changes that couldn't sync. Outside the auth ShellRoute
+      // (see [StuckChangesScreenBuilder]), pushed from the home notice, and
+      // reachable only once [AppBootstrapReady] admits non-bootstrap
+      // locations.
+      GoRoute(
+        path: AppRoutes.stuckChanges,
+        builder: (context, _) =>
+            stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
       // #41: the DataGateway admin screens. The forms are children of the
       // list, as the household children are of theirs (#308), so a deep link

@@ -79,7 +79,7 @@ class _CreateHouseholdView extends StatelessWidget {
       listenWhen: (_, state) => state is CreateHouseholdSuccess,
       listener: (context, state) {
         switch (state) {
-          case CreateHouseholdSuccess(:final householdId, :final pendingSync):
+          case CreateHouseholdSuccess(:final householdId, :final sync):
             // Deliberately a SnackBar: the next line takes this screen off
             // the stack, so an inline banner would be destroyed before it
             // could be read. The ScaffoldMessenger outlives the route. No
@@ -88,11 +88,13 @@ class _CreateHouseholdView extends StatelessWidget {
             // stutter (#191).
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                  pendingSync
-                      ? l10n.createHouseholdQueued
-                      : l10n.createHouseholdSynced,
-                ),
+                content: Text(switch (sync) {
+                  CreateHouseholdSync.synced => l10n.createHouseholdSynced,
+                  CreateHouseholdSync.queued => l10n.createHouseholdQueued,
+                  // No later sync sends it, so say where the user can retry
+                  // or discard it instead (#190).
+                  CreateHouseholdSync.refused => l10n.createHouseholdRefused,
+                }),
               ),
             );
             // Shown first, navigated second, and in that order: the
