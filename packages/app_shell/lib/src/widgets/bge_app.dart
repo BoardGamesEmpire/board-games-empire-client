@@ -1583,8 +1583,8 @@ class _AuthScope extends StatefulWidget {
   State<_AuthScope> createState() => _AuthScopeState();
 }
 
-/// Stateful only to hold [_authEpoch] (#383) and [_openSession] (#432); nothing
-/// here affects build.
+/// Stateful only to hold [_authEpoch] (#383) and the listener's record of
+/// sessions (#432); nothing here affects build.
 class _AuthScopeState extends State<_AuthScope> {
   static final BgeLogger _log = BgeLogger('bge.shell.auth_scope');
 
@@ -1615,6 +1615,21 @@ class _AuthScopeState extends State<_AuthScope> {
   /// different user on a different server, which is not a switch on this
   /// one.
   ({String serverId, String userId})? _openSession;
+
+  /// The session the listener last started, kept past its end (#432).
+  ///
+  /// A tab another tab signed out shows the sign-in form, and a sign-in
+  /// there later reaches this tab over no open session. This is how the
+  /// listener tells whether that sign-in is a different user from the one
+  /// the tab last showed.
+  ({String serverId, String userId})? _lastSession;
+
+  /// The state the transition the listener is acting on came from.
+  ///
+  /// The listener is handed only the new state, so `listenWhen` records the
+  /// old one for it; `BlocListener` calls the listener straight after
+  /// `listenWhen` answers true, for the same transition.
+  AuthBlocState? _arrivedFrom;
 
   @override
   Widget build(BuildContext context) {
@@ -1670,14 +1685,18 @@ class _AuthScopeState extends State<_AuthScope> {
             // AuthAuthenticated` (#208): a sign-out passes through
             // `AuthLoading` first, so the narrower test would miss every
             // ordinary one.
-            listenWhen: (previous, current) =>
-                (current is AuthAuthenticated &&
-                    previous is! AuthAuthenticated) ||
-                (current is AuthUnauthenticated &&
-                    previous is! AuthUnauthenticated) ||
-                (current is AuthAuthenticated &&
-                    previous is AuthAuthenticated &&
-                    current.session.user.id != previous.session.user.id),
+            listenWhen: (previous, current) {
+              final acts =
+                  (current is AuthAuthenticated &&
+                      previous is! AuthAuthenticated) ||
+                  (current is AuthUnauthenticated &&
+                      previous is! AuthUnauthenticated) ||
+                  (current is AuthAuthenticated &&
+                      previous is AuthAuthenticated &&
+                      current.session.user.id != previous.session.user.id);
+              if (acts) _arrivedFrom = previous;
+              return acts;
+            },
             listener: (context, state) {
               // Bumped for every transition this listener acts on, before
               // anything is dispatched, so a handler's captured value is
@@ -1697,7 +1716,22 @@ class _AuthScopeState extends State<_AuthScope> {
                   // other as newer.
                   epoch = ++_authEpoch;
                 }
+                // Another user's session reaching a tab resting signed out:
+                // this tab's own sign-in passes through `AuthLoading`, so
+                // one arriving straight from the sign-in form came from
+                // another tab (#432). The same user signing back in is no
+                // change of account, and needs no notice.
+                final arrivedFrom = _arrivedFrom;
+                final lastSession = _lastSession;
+                final replacing =
+                    departing == null &&
+                    (arrivedFrom is AuthUnauthenticated ||
+                        arrivedFrom is AuthOperationFailure) &&
+                    lastSession != null &&
+                    lastSession.serverId == active.serverId &&
+                    lastSession.userId != userId;
                 _openSession = (serverId: active.serverId, userId: userId);
+                _lastSession = _openSession;
                 // Before activation, so a recovery sign-out's count waits
                 // for this record (#142).
                 widget.unsentChanges.sessionStarted(active, userId);
@@ -1716,7 +1750,7 @@ class _AuthScopeState extends State<_AuthScope> {
                     authBloc,
                     userId,
                     epoch,
-                    onLive: switching
+                    onLive: switching || replacing
                         ? _switchNotice(context, state.session.user)
                         : null,
                   ),

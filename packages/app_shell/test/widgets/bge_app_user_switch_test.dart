@@ -5,6 +5,7 @@ import 'package:auth/auth.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart' show DependencyContainerImpl;
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
@@ -90,12 +91,18 @@ void main() {
     AuthStateAuthenticated(session: _sessionOf('u2', 'other')),
   );
 
+  // Any user's notice, not only the second user's.
+  final anyNotice = find.textContaining('signed in from another tab');
+
   Future<void> signedInAsFirstUser(
     WidgetTester tester, {
     void Function(DependencyContainerImpl container, String userId)? onActivate,
     Future<void>? Function(String userId)? holdActivation,
+    FakeAuthRepository Function()? repository,
   }) async {
-    repo = FakeAuthRepository(initialSession: sampleSession());
+    repo =
+        repository?.call() ??
+        FakeAuthRepository(initialSession: sampleSession());
     late final ActiveServer active;
     sessionScope = _RecordingUserSessionScope(
       holdActivation: holdActivation,
@@ -239,6 +246,61 @@ void main() {
     expect(noticeText, findsNothing);
   });
 
+  // #432's own scenario: another tab signs out, and later signs in as
+  // someone else. This tab hears the sign-out first and shows the sign-in
+  // form, so the second user arrives over no session at all.
+  group('another user signing in after this tab was signed out', () {
+    Future<void> signedOutElsewhere(WidgetTester tester) async {
+      await signedInAsFirstUser(
+        tester,
+        repository: () => _SignsInAsSecondUser(initialSession: sampleSession()),
+      );
+      repo.emitAuthState(const AuthStateUnauthenticated());
+      await tester.pumpAndSettle();
+      expect(find.byType(AuthScreen), findsOneWidget);
+    }
+
+    testWidgets('tells the user which account the tab now shows', (
+      tester,
+    ) async {
+      await signedOutElsewhere(tester);
+
+      switchToSecondUser();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(noticeText, findsOneWidget);
+    });
+
+    testWidgets('says nothing when the same user signs back in', (
+      tester,
+    ) async {
+      await signedOutElsewhere(tester);
+
+      repo.emitAuthState(AuthStateAuthenticated(session: sampleSession()));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(anyNotice, findsNothing);
+    });
+
+    testWidgets('says nothing about a sign-in made in this tab', (
+      tester,
+    ) async {
+      await signedOutElsewhere(tester);
+
+      tester
+          .element(find.byType(AuthScreen))
+          .read<AuthBloc>()
+          .add(const AuthSignInRequested(email: 'u2@x.io', password: 'pw'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(sessionScope.activeUserId, 'u2');
+      expect(anyNotice, findsNothing);
+    });
+  });
+
   // The switch shows the splash until the second user's scope is live. A
   // failed activation never gets there, so the recovery sign-out must not
   // leave that splash behind for the next sign-in.
@@ -263,6 +325,22 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(find.byType(SplashScreen), findsNothing);
   });
+}
+
+/// Signs in as the second user, so a sign-in made in this tab changes the
+/// user just as one heard from another tab does.
+class _SignsInAsSecondUser extends FakeAuthRepository {
+  _SignsInAsSecondUser({super.initialSession});
+
+  @override
+  Future<AuthResponse> signIn({
+    required String email,
+    required String password,
+  }) async {
+    final session = _sessionOf('u2', 'other');
+    emitAuthState(AuthStateAuthenticated(session: session));
+    return session;
+  }
 }
 
 /// A remote the Admin test never reaches: its access is settled by hand.
