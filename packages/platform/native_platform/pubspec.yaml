@@ -47,7 +47,6 @@ dependencies:
 
   app_links: ^7.2.1
   drift: ^2.34.3
-  flutter_secure_storage: ^11.0.0
   hydrated_bloc: ^11.0.0
   package_info_plus: ^10.2.1
   path_provider: ^2.1.3

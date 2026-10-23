@@ -7,7 +7,6 @@ import 'package:dio_network/dio_network.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -133,6 +132,22 @@ ServerContextFactory buildNativeServerContextFactory({
 ///
 /// Every collaborator is injectable with a production default, keeping the
 /// composition unit-testable without real keychains or filesystems.
+///
+/// ## Rebuilt server databases (#428)
+///
+/// When the storage installer rebuilds a server's database because no key
+/// could open it, this bootstrap logs a warning naming the server and the
+/// failure, never the file path. A rebuild before a boot succeeds also
+/// notes the server. The next [initialize] that succeeds returns the noted
+/// servers on [BootstrapResult.recoveredServers] once, so a rebuild in an
+/// attempt that failed later is still reported. Nothing is persisted: the
+/// shell shows the notice in the first frames after boot.
+///
+/// A rebuild after a boot succeeds is only logged. None can happen on
+/// native today: after boot only onboarding opens a server database, and a
+/// new server's database is a new file. Reactivating a known server after
+/// boot (#134) could rebuild one, and telling the user then needs its own
+/// route to the shell.
 class NativePlatformBootstrap implements PlatformBootstrap {
   NativePlatformBootstrap({
     EncryptionKeyService? keyService,
@@ -143,7 +158,6 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     devicePreferencesRepositoryFactory,
     NativeOrchestratorFactory? orchestratorFactory,
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
-    this._onServerDatabaseRecovery,
     Future<void> Function(DependencyContainer container)? rootModule,
     DeepLinkSource Function()? deepLinkSourceFactory,
     BgeLogger? logger,
@@ -155,11 +169,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
          'per-server storage installers must share one EncryptionKeyService, '
          'otherwise they key off different services and silently diverge.',
        ),
-       _keyService =
-           keyService ??
-           SecureStorageEncryptionKeyService(
-             storage: const FlutterSecureStorage(),
-           ),
+       _keyService = keyService ?? SecureStorageEncryptionKeyService.platform(),
        _metaDatabaseFactory = metaDatabaseFactory ?? MetaDatabase.new,
        _serverRepositoryFactory =
            serverRepositoryFactory ?? ServerRepositoryImpl.new,
@@ -186,12 +196,15 @@ class NativePlatformBootstrap implements PlatformBootstrap {
   _devicePreferencesRepositoryFactory;
   final NativeOrchestratorFactory _orchestratorFactory;
   final Future<HydratedStorageDirectory> Function() _hydratedDirectoryProvider;
-  final void Function(DatabaseRecoveryEvent event)? _onServerDatabaseRecovery;
   final Future<void> Function(DependencyContainer container) _rootModule;
   final DeepLinkSource Function() _deepLinkSourceFactory;
 
   MetaDatabase? _metaDatabase;
   ServerOrchestrator? _orchestrator;
+
+  /// `bgeServerId`s whose database was rebuilt during boot and not yet
+  /// reported; see the class docs.
+  final Set<String> _unreportedRecoveries = {};
 
   /// Set by the first [dispose] call and returned to every later one.
   Future<void>? _disposal;
@@ -307,7 +320,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         contextFactory: buildNativeServerContextFactory(
           executorFactory: _executorFactory,
           keyService: _keyService,
-          onRecovery: _onServerDatabaseRecovery,
+          onRecovery: _onServerDatabaseRecovered,
         ),
       );
       await orchestrator.initialize();
@@ -322,6 +335,11 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       // Commit state only on success (established orchestrator invariant).
       _metaDatabase = meta;
       _orchestrator = orchestrator;
+      final recoveredServers = [
+        for (final server in servers)
+          if (_unreportedRecoveries.contains(server.bgeServerId)) server,
+      ];
+      _unreportedRecoveries.clear();
       return BootstrapResult(
         hasServer: servers.isNotEmpty,
         orchestrator: orchestrator,
@@ -331,6 +349,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         activeServerScope: OrchestratorActiveServerScope(
           orchestrator: orchestrator,
         ),
+        recoveredServers: recoveredServers,
       );
     } catch (_) {
       // Roll back without masking the original error: secondary disposal
@@ -363,6 +382,21 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       }
       rethrow;
     }
+  }
+
+  /// The storage installer's recovery hook; see the class docs.
+  void _onServerDatabaseRecovered(DatabaseRecoveryEvent event) {
+    _logger.warn(
+      'Rebuilt a server database that no key could open; changes on this '
+      'device that the server never received are lost',
+      context: {
+        'bgeServerId': event.bgeServerId,
+        'failure': event.failure.name,
+      },
+    );
+    // Only a successful boot sets _orchestrator: this rebuild came after it.
+    if (_orchestrator != null) return;
+    _unreportedRecoveries.add(event.bgeServerId);
   }
 
   /// A [dispose] that lands mid-reset waits for it to finish, so an exit

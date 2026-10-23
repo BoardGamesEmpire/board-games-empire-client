@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'package:models/domain.dart';
+
 /// States emitted by `AppBootstrapCubit`.
 ///
 /// The router maps each state to a location:
@@ -69,7 +72,26 @@ final class AppBootstrapNeedsServer extends AppBootstrapState {
 
 /// A server is registered (or implied by the web origin) — route to auth.
 final class AppBootstrapNeedsAuth extends AppBootstrapState {
-  const AppBootstrapNeedsAuth();
+  const AppBootstrapNeedsAuth({this.recoveredServers = const []});
+
+  /// Servers whose database was rebuilt while the platform started
+  /// (`BootstrapResult.recoveredServers`, #428), which the shell tells the
+  /// user about. Only the state a successful bootstrap emits carries any;
+  /// a rebuilt server is a registered one, so it is always this state.
+  final List<ServerConfig> recoveredServers;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AppBootstrapNeedsAuth &&
+          listEquals(other.recoveredServers, recoveredServers);
+
+  @override
+  int get hashCode => Object.hashAll(recoveredServers);
+
+  @override
+  String toString() =>
+      'AppBootstrapNeedsAuth(recoveredServers: ${recoveredServers.length})';
 }
 
 /// Fully ready — route to home. Reached via #37's auth wiring, not from

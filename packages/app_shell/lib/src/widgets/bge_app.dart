@@ -44,6 +44,7 @@ import '../settings/locale_cubit.dart';
 import '../settings/settings_sections_builder.dart';
 import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
+import 'database_recovery_notice.dart';
 import 'feedback_review_screen.dart';
 import 'router_back_interceptor.dart';
 import 'detached_rehydrate.dart';
@@ -123,6 +124,24 @@ import 'session_rehydrate_trigger.dart';
 /// phases also bounces to the prompt even though the visible `BackButton`
 /// is disabled/hidden then — a re-send from the prompt is deduplicated
 /// server-side by the report's `clientRequestId`.
+///
+/// Keyboard focus: a route would own it, and above the Navigator nothing
+/// does, so the crash flow does it itself. While a draft is pending the
+/// app behind the barrier can't take focus, so a field there can't take
+/// what is typed and Tab stays in the flow. The prompt and the review
+/// surface share one focus scope, which takes focus when the flow opens,
+/// again when it swaps between them, and back from a screen that opens
+/// behind the barrier. It takes it as a scope, not on
+/// the comment field, so no soft keyboard opens unasked. Closing the flow
+/// gives focus back to wherever it was before, or to the router's
+/// Navigator when that is gone.
+///
+/// The [DatabaseRecoveryNotice] sits above the crash flow and shuts it out
+/// of focus while it is up, so the crash flow takes focus again once the
+/// notice is acknowledged. Until then the crash flow's back handler passes
+/// system back on to the notice's: a crash that arrived under the notice
+/// took priority on the dispatcher after it, and would otherwise arm, then
+/// discard, a prompt the user can't see.
 ///
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
@@ -258,6 +277,19 @@ class _BgeAppState extends State<BgeApp> {
   final ValueNotifier<bool> _promptDismissArmed = ValueNotifier<bool>(false);
   Timer? _promptDismissDisarmTimer;
 
+  /// The crash flow's focus scope, shared by the prompt and the review
+  /// surface; see the class docs.
+  final FocusScopeNode _crashFocus = FocusScopeNode(debugLabel: 'crash flow');
+
+  /// Where focus was when the crash flow took it, given back when it
+  /// closes. Non-null only while the flow is up.
+  FocusNode? _focusBeforeCrash;
+  bool _crashFlowUp = false;
+
+  /// Whether the [DatabaseRecoveryNotice] above the crash flow is up, so
+  /// the crash flow's back handler defers to it.
+  bool _recoveryNoticeUp = false;
+
   /// App-level, persisted theme-mode + locale controllers (#120).
   ///
   /// Created lazily on the first storage-ready bootstrap state — never
@@ -355,6 +387,7 @@ class _BgeAppState extends State<BgeApp> {
     final reporter = widget.feedbackReporter;
     if (reporter != null) {
       reporter.pendingCrashReport.addListener(_handlePendingCrashChanged);
+      if (reporter.pendingCrashReport.value != null) _takeCrashFocus();
     }
     // #120: create the persisted theme-mode + locale controllers as soon
     // as hydrated storage is ready (the first storage-ready bootstrap
@@ -384,11 +417,61 @@ class _BgeAppState extends State<BgeApp> {
     final draft = widget.feedbackReporter?.pendingCrashReport.value;
     if (draft == null) {
       _closeReview();
+      _giveCrashFocusBack();
       return;
     }
+    if (!_crashFlowUp) _takeCrashFocus();
     if (_reviewPreview.value != null && !identical(draft, _reviewOpenedFor)) {
       _closeReview();
     }
+  }
+
+  void _takeCrashFocus() {
+    _crashFlowUp = true;
+    _focusBeforeCrash = FocusManager.instance.primaryFocus;
+    _focusCrashFlow();
+  }
+
+  /// After the frame that builds the surface now showing, which replaces
+  /// whatever in the flow had focus.
+  void _focusCrashFlow() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _crashFlowUp) _crashFocus.requestFocus();
+    });
+  }
+
+  /// Takes focus back from a route that opens behind the barrier: a route
+  /// focuses itself before it is put in its place, where the flow shuts it
+  /// out. The recovery notice above the flow holds focus while it is up,
+  /// and focus on the root is the app gone to the background, which gives
+  /// focus back to the flow itself on return.
+  void _keepCrashFocus(bool hasFocus) {
+    if (hasFocus || !mounted || !_crashFlowUp || _recoveryNoticeUp) return;
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null || focus == FocusManager.instance.rootScope) return;
+    _crashFocus.requestFocus();
+  }
+
+  void _giveCrashFocusBack() {
+    if (!_crashFlowUp) return;
+    _crashFlowUp = false;
+    final before = _focusBeforeCrash;
+    _focusBeforeCrash = null;
+    // After the frame that lets the app take focus again.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Gone (a node keeps its context after its widget is), or shut out
+      // (the notice's button, say): focus given there leaves Tab nothing
+      // to move through.
+      final canReturn =
+          before != null &&
+          (before.context?.mounted ?? false) &&
+          before.canRequestFocus;
+      final target = canReturn
+          ? before
+          : _router.routerDelegate.navigatorKey.currentState?.focusNode;
+      target?.requestFocus();
+    });
   }
 
   /// Seeds the #76 review surface from [draft] plus the comment typed on
@@ -398,13 +481,16 @@ class _BgeAppState extends State<BgeApp> {
     _reviewPreview.value = FeedbackReportPreview.fromReport(
       draft.withUserComment(comment),
     );
+    _focusCrashFlow();
   }
 
   /// Closes the review surface (back to the compact prompt while a draft
   /// is still pending) and forgets the remembered draft identity.
   void _closeReview() {
+    final wasOpen = _reviewPreview.value != null;
     _reviewOpenedFor = null;
     _reviewPreview.value = null;
+    if (wasOpen) _focusCrashFlow();
   }
 
   /// The single terminal exit of the crash flow: clears every
@@ -435,10 +521,12 @@ class _BgeAppState extends State<BgeApp> {
     }
   }
 
-  /// Routes an intercepted system back press (#106). Always consumes —
-  /// while the crash flow is up, back must never reach the router hidden
-  /// under the barrier.
+  /// Routes an intercepted system back press (#106). Consumes it, so while
+  /// the crash flow is up back never reaches the router hidden under the
+  /// barrier, unless the recovery notice is up: then it passes the press
+  /// on to the notice's handler, which consumes it in turn.
   Future<bool> _handleCrashBack(FeedbackUncaughtErrorReporter reporter) async {
+    if (_recoveryNoticeUp) return false;
     if (_reviewPreview.value != null) {
       // Review surface → compact prompt, matching its visible BackButton.
       _closeReview();
@@ -1365,6 +1453,7 @@ class _BgeAppState extends State<BgeApp> {
     _promptDismissDisarmTimer?.cancel();
     _promptDismissArmed.dispose();
     _reviewPreview.dispose();
+    _crashFocus.dispose();
     _homeSession.dispose();
     unawaited(_settingsControllerSub?.cancel());
     unawaited(_themeModeSub?.cancel());
@@ -1548,7 +1637,10 @@ class _BgeAppState extends State<BgeApp> {
                           BlockSemantics(
                             key: BgeApp.contentSemanticsBlockerKey,
                             blocking: draft != null,
-                            child: content,
+                            child: ExcludeFocus(
+                              excluding: draft != null,
+                              child: content,
+                            ),
                           ),
                           if (draft != null) ...[
                             // #106: while the crash flow is up, take
@@ -1591,55 +1683,77 @@ class _BgeAppState extends State<BgeApp> {
                             // must unmount with the crash flow, and the
                             // content below must stay selectable whether or
                             // not a draft is pending.
-                            if (reviewPreview == null)
-                              // #69 compact "ask each time" prompt.
-                              Overlay.wrap(
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: Padding(
-                                    padding: EdgeInsets.all(
-                                      BgeTokens.of(context).spaceMd,
-                                    ),
-                                    child: ValueListenableBuilder<bool>(
-                                      valueListenable: _promptDismissArmed,
-                                      builder: (context, dismissArmed, _) {
-                                        return CrashReportPrompt(
-                                          report: draft,
-                                          // #106: after a first intercepted
-                                          // back, surface the localized
-                                          // live-region dismiss hint.
-                                          showDismissHint: dismissArmed,
+                            //
+                            // One focus scope holds whichever surface is
+                            // showing (see the class docs), filling the
+                            // Stack as each surface did on its own. The
+                            // keys keep a swap remounting the overlay, as
+                            // it did when each was the Stack's own child.
+                            Positioned.fill(
+                              child: FocusScope(
+                                node: _crashFocus,
+                                onFocusChange: _keepCrashFocus,
+                                child: reviewPreview == null
+                                    // #69 compact "ask each time" prompt.
+                                    ? Overlay.wrap(
+                                        key: const ValueKey(
+                                          'bge_app.crash_flow.prompt',
+                                        ),
+                                        child: Align(
+                                          alignment: Alignment.bottomCenter,
+                                          child: Padding(
+                                            padding: EdgeInsets.all(
+                                              BgeTokens.of(context).spaceMd,
+                                            ),
+                                            child: ValueListenableBuilder<bool>(
+                                              valueListenable:
+                                                  _promptDismissArmed,
+                                              builder: (context, dismissArmed, _) {
+                                                return CrashReportPrompt(
+                                                  report: draft,
+                                                  // #106: after a first intercepted
+                                                  // back, surface the localized
+                                                  // live-region dismiss hint.
+                                                  showDismissHint: dismissArmed,
+                                                  onSubmit:
+                                                      reporter.service.submit,
+                                                  // #76: seed the review slot from
+                                                  // the draft plus the typed
+                                                  // comment; the overlay then swaps
+                                                  // to the full surface below.
+                                                  onReviewDetails: (comment) =>
+                                                      _openReview(
+                                                        draft,
+                                                        comment,
+                                                      ),
+                                                  onDiscard: () =>
+                                                      _discardCrashDraft(
+                                                        reporter,
+                                                      ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    // #76 full review & redaction surface.
+                                    : Overlay.wrap(
+                                        key: const ValueKey(
+                                          'bge_app.crash_flow.review',
+                                        ),
+                                        child: FeedbackReviewScreen(
+                                          preview: reviewPreview,
                                           onSubmit: reporter.service.submit,
-                                          // #76: seed the review slot from
-                                          // the draft plus the typed
-                                          // comment; the overlay then swaps
-                                          // to the full surface below.
-                                          onReviewDetails: (comment) =>
-                                              _openReview(draft, comment),
-                                          onDiscard: () =>
+                                          // Back out of review → compact prompt.
+                                          onCancel: _closeReview,
+                                          // Dismiss after a terminal outcome →
+                                          // clear every slot.
+                                          onClose: () =>
                                               _discardCrashDraft(reporter),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              // #76 full review & redaction surface,
-                              // filling the overlay above the barrier.
-                              Positioned.fill(
-                                child: Overlay.wrap(
-                                  child: FeedbackReviewScreen(
-                                    preview: reviewPreview,
-                                    onSubmit: reporter.service.submit,
-                                    // Back out of review → compact prompt.
-                                    onCancel: _closeReview,
-                                    // Dismiss after a terminal outcome →
-                                    // clear every slot.
-                                    onClose: () => _discardCrashDraft(reporter),
-                                  ),
-                                ),
+                                        ),
+                                      ),
                               ),
+                            ),
                           ],
                         ],
                       );
@@ -1647,6 +1761,23 @@ class _BgeAppState extends State<BgeApp> {
                   );
                 },
               );
+        // #428: the notice of a server database rebuilt during boot. Above
+        // the router, so the redirects of the first screens cannot remove
+        // it, and unconditional, so the tree shape never changes.
+        body = DatabaseRecoveryNotice(
+          bootstrapCubit: widget.bootstrapCubit,
+          backButtonDispatcher: _router.backButtonDispatcher,
+          onShown: () => _recoveryNoticeUp = true,
+          // A crash flow under the notice couldn't take focus while it was
+          // up; see the class docs.
+          onAcknowledged: () {
+            _recoveryNoticeUp = false;
+            if (_crashFlowUp) _focusCrashFlow();
+          },
+          fallbackFocus: () =>
+              _router.routerDelegate.navigatorKey.currentState?.focusNode,
+          child: body,
+        );
         final activeLocaleController = widget.activeLocaleController;
         if (activeLocaleController != null) {
           body = ActiveLocaleCapture(

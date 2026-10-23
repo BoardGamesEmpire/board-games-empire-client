@@ -12,15 +12,37 @@ import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
+import 'package:observability/observability.dart';
+import 'package:storage_interface/storage_interface.dart';
 
 class _MockServerRepository extends Mock implements ServerRepository {}
+
+ServerConfig _serverConfig() => ServerConfig(
+  id: 'server-local-1',
+  displayName: 'Game Night Server',
+  serverUrl: 'https://api.example.com',
+  connectionState: ConnectionState.active,
+  bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
+  cachedIdentity: ServerIdentity(
+    serverId: '550e8400-e29b-41d4-a716-446655440000',
+    issuer: 'https://api.example.com',
+    wellKnownSchemaVersion: 1,
+    name: 'Test BGE Server',
+    deviceAuthorizationEndpoint: '/api/auth/device',
+    authBasePath: '/api/auth',
+    sessionEndpoint: '/api/auth/get-session',
+    signOutEndpoint: '/api/auth/sign-out',
+    passkeySupported: true,
+    twoFactorSupported: true,
+    anonymousAuthSupported: true,
+  ),
+  lastIdentityFetchedAt: DateTime.utc(2026, 10, 20),
+);
 
 class _MockDevicePreferencesRepository extends Mock
     implements DevicePreferencesRepository {}
 
 class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
-
-class _MockServerConfig extends Mock implements ServerConfig {}
 
 /// In-memory key service that records whether the meta database file still
 /// existed at the moment the meta key was deleted — proving the
@@ -41,6 +63,12 @@ class _FakeEncryptionKeyService implements EncryptionKeyService {
 
   @override
   Future<String> getOrCreateMetaKey() async => 'b' * 64;
+
+  @override
+  Future<String?> findServerKey(String serverId) async => 'a' * 64;
+
+  @override
+  Future<String?> findMetaKey() async => 'b' * 64;
 
   @override
   Future<void> deleteServerKey(String serverId) async {}
@@ -68,11 +96,30 @@ class _TestExecutorFactory extends EncryptedExecutorFactory {
   /// When set, the next meta database open waits on it.
   Future<void>? metaOpening;
 
+  /// How many upcoming server database opens fail as a missing key, which
+  /// sends the storage installer through recovery.
+  int serverOpensFailingAsKeyMissing = 0;
+
   @override
   QueryExecutor metaExecutor() {
     final executor = _SpyExecutor(opening: metaOpening);
     metaExecutors.add(executor);
     return executor;
+  }
+
+  @override
+  QueryExecutor serverExecutor(
+    String serverId, {
+    String? relativeDatabasePath,
+  }) {
+    if (serverOpensFailingAsKeyMissing > 0) {
+      serverOpensFailingAsKeyMissing--;
+      throw DatabaseKeyError(
+        databasePath: '/device/path/$serverId/game_empire.db',
+        failure: DatabaseKeyFailure.keyMissing,
+      );
+    }
+    return _SpyExecutor();
   }
 
   @override
@@ -172,6 +219,7 @@ void main() {
 
         expect(result.hasServer, isFalse);
         expect(result.orchestrator, same(orchestrator));
+        expect(result.recoveredServers, isEmpty);
         verify(() => orchestrator.initialize()).called(1);
 
         await bootstrap.dispose();
@@ -179,7 +227,7 @@ void main() {
 
       test('reports a server when the registry is non-empty', () async {
         when(() => serverRepository.getAllServers())
-            .thenAnswer((_) async => [_MockServerConfig()]);
+            .thenAnswer((_) async => [_serverConfig()]);
         final bootstrap = buildBootstrap();
 
         final result = await bootstrap.initialize();
@@ -214,6 +262,159 @@ void main() {
 
         await bootstrap.dispose();
       });
+    });
+
+    // #428: the shell tells the user about a database rebuilt during boot,
+    // and the log keeps a breadcrumb without the on-device path. A rebuild
+    // after boot is only logged.
+    group('a rebuilt server database', () {
+      final server = _serverConfig();
+
+      /// An orchestrator whose initialize() activates [server] through the
+      /// context factory the bootstrap composed, as the real one does, and
+      /// then throws [failWith] if set.
+      NativePlatformBootstrap buildActivating({Object? Function()? failWith}) {
+        final contexts = <ServerContext>[];
+        return buildBootstrap(
+          orchestratorFactory:
+              ({
+                required ServerRepository serverRepository,
+                required DevicePreferencesRepository preferencesRepository,
+                required contextFactory,
+              }) {
+                final activating = _MockServerOrchestrator();
+                when(activating.initialize).thenAnswer((_) async {
+                  final context = contextFactory(server);
+                  contexts.add(context);
+                  await context.activate();
+                  final failure = failWith?.call();
+                  if (failure != null) throw failure;
+                });
+                when(activating.dispose).thenAnswer((_) async {
+                  for (final context in contexts) {
+                    await context.dispose();
+                  }
+                  contexts.clear();
+                });
+                return activating;
+              },
+        );
+      }
+
+      setUp(() {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => [server]);
+      });
+
+      test('is returned to the shell', () async {
+        executorFactory.serverOpensFailingAsKeyMissing = 1;
+        final bootstrap = buildActivating();
+        addTearDown(bootstrap.dispose);
+
+        final result = await bootstrap.initialize();
+
+        expect(result.recoveredServers, [server]);
+      });
+
+      test('is logged as a warning naming the server and the failure, '
+          'never the path', () async {
+        final records = <LogRecord>[];
+        final previousLevel = Logger.root.level;
+        Logger.root.level = Level.ALL;
+        final subscription = Logger.root.onRecord.listen(records.add);
+        addTearDown(() async {
+          await subscription.cancel();
+          Logger.root.level = previousLevel;
+        });
+        executorFactory.serverOpensFailingAsKeyMissing = 1;
+        final bootstrap = buildActivating();
+        addTearDown(bootstrap.dispose);
+
+        await bootstrap.initialize();
+
+        final warning = records.singleWhere(
+          (r) =>
+              r.loggerName == 'bge.platform.native_bootstrap' &&
+              r.level == Level.WARNING,
+        );
+        expect((warning.object! as ContextLogMessage).context, {
+          'bgeServerId': server.bgeServerId,
+          'failure': 'keyMissing',
+        });
+        expect(warning.message, isNot(contains('/device/path')));
+      });
+
+      test('in an attempt that then failed is returned by the next attempt '
+          'that succeeds', () async {
+        executorFactory.serverOpensFailingAsKeyMissing = 1;
+        var attempts = 0;
+        final bootstrap = buildActivating(
+          failWith: () => ++attempts == 1 ? StateError('later step') : null,
+        );
+        addTearDown(bootstrap.dispose);
+
+        await expectLater(bootstrap.initialize(), throwsStateError);
+        final result = await bootstrap.initialize();
+
+        expect(result.recoveredServers, [server]);
+      });
+
+      test('is returned once, not again by a later attempt', () async {
+        executorFactory.serverOpensFailingAsKeyMissing = 1;
+        final bootstrap = buildActivating();
+        addTearDown(bootstrap.dispose);
+
+        await bootstrap.initialize();
+        final again = await bootstrap.initialize();
+
+        expect(again.recoveredServers, isEmpty);
+      });
+
+      test(
+        'once a boot has succeeded is logged, and no later attempt returns it',
+        () async {
+          final records = <LogRecord>[];
+          final previousLevel = Logger.root.level;
+          Logger.root.level = Level.ALL;
+          final subscription = Logger.root.onRecord.listen(records.add);
+          addTearDown(() async {
+            await subscription.cancel();
+            Logger.root.level = previousLevel;
+          });
+          late ServerContext Function(ServerConfig config) bootContextFactory;
+          final bootstrap = buildBootstrap(
+            orchestratorFactory:
+                ({
+                  required ServerRepository serverRepository,
+                  required DevicePreferencesRepository preferencesRepository,
+                  required contextFactory,
+                }) {
+                  bootContextFactory = contextFactory;
+                  return orchestrator;
+                },
+          );
+          addTearDown(bootstrap.dispose);
+          await bootstrap.initialize();
+
+          // A server database opened after boot, through the factory the
+          // boot composed, as reactivating a known server would (#134).
+          executorFactory.serverOpensFailingAsKeyMissing = 1;
+          final onboarded = bootContextFactory(server);
+          await onboarded.activate();
+          await onboarded.dispose();
+          final again = await bootstrap.initialize();
+
+          expect(
+            records.where(
+              (r) =>
+                  r.loggerName == 'bge.platform.native_bootstrap' &&
+                  r.level == Level.WARNING,
+            ),
+            hasLength(1),
+          );
+          expect(again.recoveredServers, isEmpty);
+        },
+      );
     });
 
     group('reset()', () {

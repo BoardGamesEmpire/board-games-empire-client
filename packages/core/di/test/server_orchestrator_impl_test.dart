@@ -240,7 +240,7 @@ void main() {
       test('rethrows DuplicateServerException without rollback (nothing '
           'was persisted by this call)', () async {
         stubAddServer(
-          error: const DuplicateServerException('https://bge.example.com'),
+          error: const DuplicateServerException.url('https://bge.example.com'),
         );
 
         await expectLater(

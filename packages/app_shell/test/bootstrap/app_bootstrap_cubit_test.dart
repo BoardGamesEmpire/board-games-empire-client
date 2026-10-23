@@ -4,10 +4,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 
+import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
 
 class _MockServerOrchestrator extends Mock implements ServerOrchestrator {}
+
+final _rebuiltServer = ServerConfig(
+  id: 'server-local-1',
+  displayName: 'Game Night Server',
+  serverUrl: 'https://api.example.com',
+  connectionState: ConnectionState.active,
+  bgeServerId: '550e8400-e29b-41d4-a716-446655440000',
+  cachedIdentity: serverIdentity(),
+  lastIdentityFetchedAt: DateTime.utc(2026, 10, 20),
+);
 
 /// Counting [HydratedStorageInitializer] that never touches real storage.
 class _HydratedSpy {
@@ -96,6 +108,25 @@ void main() {
 
           expect(cubit.orchestrator, same(orchestrator));
         },
+      );
+
+      // #428: the shell tells the user about a database rebuilt during boot.
+      blocTest<AppBootstrapCubit, AppBootstrapState>(
+        'emits NeedsAuth carrying the servers rebuilt during the boot',
+        build: () => buildCubit(
+          bootstrap: FakePlatformBootstrap(
+            outcomes: [
+              BootstrapResult(
+                hasServer: true,
+                recoveredServers: [_rebuiltServer],
+              ),
+            ],
+          ),
+        ),
+        act: (cubit) => cubit.initialize(),
+        expect: () => [
+          AppBootstrapNeedsAuth(recoveredServers: [_rebuiltServer]),
+        ],
       );
 
       test('orchestrator stays null for a web-shaped bootstrap', () async {
