@@ -31,18 +31,19 @@ import '../repositories/unsent_changes_notice_repository_impl.dart';
 ///
 /// 1. delete the server's key ([EncryptionKeyService.deleteServerKey]) so a
 ///    fresh one is generated,
-/// 2. delete the database file (and its `-wal`/`-shm`/`-journal` companions),
-/// 3. reopen — a new empty database, rebuilt by sync. What the file held
-///    that the server never received, every user's unsent changes
-///    included, is lost: nothing can decrypt it,
-/// 4. report via [onRecovery]. The native bootstrap logs the event, and the
-///    shell tells the user (#428).
+/// 2. delete the database file (and its `-wal`/`-shm`/`-journal` companions).
+///    What the file held that the server never received, every user's
+///    unsent changes included, is lost: nothing can decrypt it,
+/// 3. report via [onRecovery]. The native bootstrap logs the event, and the
+///    shell tells the user (#428),
+/// 4. reopen — a new empty database, rebuilt by sync.
 ///
 /// A key that could not be *read* ([EncryptionKeyUnavailableError]) never
 /// reaches recovery. It propagates, so the key and the file are still there
 /// for the next attempt.
 ///
-/// If the reopen *also* fails, the error propagates: activation fails, the
+/// If the reopen *also* fails, the loss has already been reported, and the
+/// error propagates: activation fails, the
 /// context rolls back, that server stays unavailable, the app keeps
 /// running. [EncryptionUnavailableError] is never caught — a build without
 /// cipher support must fail loudly.
@@ -133,7 +134,7 @@ class StorageScopeInstaller implements ServerScopeInstaller {
     }
   }
 
-  /// One-shot recovery: rotate key, delete file, reopen fresh, notify. A
+  /// One-shot recovery: rotate key, delete file, notify, reopen fresh. A
   /// second failure propagates to the caller.
   ///
   /// The key is deleted **before** the file: if key deletion throws, the
@@ -141,6 +142,11 @@ class StorageScopeInstaller implements ServerScopeInstaller {
   /// attempt. The reverse order would let a retry silently "succeed"
   /// against a fresh file under the stale key, skipping rotation and the
   /// [onRecovery] notification.
+  ///
+  /// The report comes **before** the reopen for the same reason. Once the
+  /// file is gone, the next attempt finds nothing to recover, so a reopen
+  /// that fails (a key store that can't write the new key, say) would
+  /// otherwise leave the loss unreported.
   Future<ServerDatabase> _recover(
     ServerConfig config,
     DatabaseKeyFailure failure,
@@ -152,8 +158,6 @@ class StorageScopeInstaller implements ServerScopeInstaller {
     final file = await _factory.resolveDatabaseFile(config.databasePath);
     await _deleteDatabaseFiles(file);
 
-    final db = await _open(config);
-
     _onRecovery?.call(
       DatabaseRecoveryEvent(
         bgeServerId: config.bgeServerId,
@@ -161,7 +165,7 @@ class StorageScopeInstaller implements ServerScopeInstaller {
         failure: failure,
       ),
     );
-    return db;
+    return _open(config);
   }
 
   /// Deletes the database file and its SQLite companions. Best-effort and

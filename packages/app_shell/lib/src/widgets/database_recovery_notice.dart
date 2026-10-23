@@ -23,6 +23,12 @@ import 'router_back_interceptor.dart';
 /// screen readers announce it. System back acknowledges it, as it would
 /// close a dialog.
 ///
+/// A dialog route would also own keyboard focus, and above the Navigator
+/// nothing does, so the notice does it itself. The app behind it can't take
+/// focus while it is up, so a field there that asked for focus can't take
+/// what is typed. The notice's button takes focus instead, and Tab stays
+/// on it. Acknowledging gives focus back to wherever it was before.
+///
 /// [child] is always the first child of the same [Stack], so showing or
 /// closing the notice never remounts the app beneath it.
 class DatabaseRecoveryNotice extends StatefulWidget {
@@ -54,14 +60,24 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
   List<ServerConfig> _servers = const [];
   StreamSubscription<AppBootstrapState>? _subscription;
 
+  final _acknowledgeFocus = FocusNode(
+    debugLabel: 'DatabaseRecoveryNotice acknowledge',
+  );
+
+  /// Where focus was when the notice took it, given back on acknowledge.
+  FocusNode? _focusBefore;
+
   @override
   void initState() {
     super.initState();
     _servers = _recoveredServersOf(widget.bootstrapCubit.state);
+    if (_servers.isNotEmpty) _takeFocus();
     _subscription = widget.bootstrapCubit.stream.listen((state) {
       final servers = _recoveredServersOf(state);
       if (servers.isEmpty || !mounted) return;
+      final wasHidden = _servers.isEmpty;
       setState(() => _servers = [..._servers, ...servers]);
+      if (wasHidden) _takeFocus();
     });
   }
 
@@ -71,17 +87,34 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
+    _acknowledgeFocus.dispose();
     super.dispose();
   }
 
-  void _acknowledge() => setState(() => _servers = const []);
+  void _takeFocus() {
+    _focusBefore = FocusManager.instance.primaryFocus;
+    // After the frame that builds the button and shuts the app out.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _servers.isNotEmpty) _acknowledgeFocus.requestFocus();
+    });
+  }
+
+  void _acknowledge() {
+    setState(() => _servers = const []);
+    final before = _focusBefore;
+    _focusBefore = null;
+    // After the frame that lets the app take focus again.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (before != null && before.context != null) before.requestFocus();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final servers = _servers;
     return Stack(
       children: [
-        widget.child,
+        ExcludeFocus(excluding: servers.isNotEmpty, child: widget.child),
         if (servers.isNotEmpty) ...[
           RouterBackInterceptor(
             dispatcher: widget.backButtonDispatcher,
@@ -103,10 +136,14 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
           Overlay.wrap(
             child: Semantics(
               container: true,
-              child: Center(
-                child: _NoticeDialog(
-                  servers: servers,
-                  onAcknowledge: _acknowledge,
+              // Keeps Tab inside the notice.
+              child: FocusScope(
+                child: Center(
+                  child: _NoticeDialog(
+                    servers: servers,
+                    acknowledgeFocus: _acknowledgeFocus,
+                    onAcknowledge: _acknowledge,
+                  ),
                 ),
               ),
             ),
@@ -118,9 +155,14 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
 }
 
 class _NoticeDialog extends StatelessWidget {
-  const _NoticeDialog({required this.servers, required this.onAcknowledge});
+  const _NoticeDialog({
+    required this.servers,
+    required this.acknowledgeFocus,
+    required this.onAcknowledge,
+  });
 
   final List<ServerConfig> servers;
+  final FocusNode acknowledgeFocus;
   final VoidCallback onAcknowledge;
 
   @override
@@ -143,6 +185,7 @@ class _NoticeDialog extends StatelessWidget {
       actions: [
         FilledButton(
           key: DatabaseRecoveryNotice.acknowledgeButtonKey,
+          focusNode: acknowledgeFocus,
           onPressed: onAcknowledge,
           child: Text(i18n.shellDatabaseRecoveredAcknowledge),
         ),

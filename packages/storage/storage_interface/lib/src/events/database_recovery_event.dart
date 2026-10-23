@@ -1,10 +1,14 @@
 import '../errors/database_key_error.dart';
 
-/// Emitted when a per-server database was rebuilt because no key this device
-/// holds could open it (a `DatabaseKeyError`): the key and the file were
-/// deleted, and a fresh, empty database was opened. Sync rebuilds what the
-/// server holds. What the file held that the server never received, every
-/// user's unsent changes on that server included, is gone with it (#428).
+/// Emitted when a per-server database is rebuilt because no key this device
+/// holds could open it (a `DatabaseKeyError`): the key and the file have
+/// been deleted, and a fresh, empty database opens next. Sync rebuilds what
+/// the server holds. What the file held that the server never received,
+/// every user's unsent changes on that server included, is gone with it
+/// (#428).
+///
+/// It is emitted before the fresh database opens, so a loss is reported even
+/// when that open fails.
 ///
 /// The native bootstrap logs each event and hands the ones from start-up to
 /// the shell, which tells the user (#428). The event carries identifiers

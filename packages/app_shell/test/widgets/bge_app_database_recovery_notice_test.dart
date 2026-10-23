@@ -1,5 +1,6 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 
@@ -130,5 +131,92 @@ void main() {
 
     expect(find.bySemanticsLabel(i18n.shellPlaceholderBody), findsOneWidget);
     semantics.dispose();
+  });
+
+  group('keyboard', () {
+    // The sign-in form asks for focus as it appears. BgeApp's test harness
+    // shows a placeholder there, so the notice wraps a field of its own.
+    late AppBootstrapCubit cubit;
+    late TextEditingController field;
+    late FocusNode fieldFocus;
+
+    Future<void> pumpNoticeOverField(WidgetTester tester) async {
+      cubit = AppBootstrapCubit(
+        platformBootstrap: FakePlatformBootstrap(
+          outcomes: [
+            BootstrapResult(
+              hasServer: true,
+              recoveredServers: [_server('Game Night')],
+            ),
+          ],
+        ),
+        hydratedStorageInitializer: (_) async {},
+      );
+      field = TextEditingController();
+      fieldFocus = FocusNode();
+      addTearDown(cubit.close);
+      addTearDown(field.dispose);
+      addTearDown(fieldFocus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: ShellLocalizations.localizationsDelegates,
+          builder: (context, child) => DatabaseRecoveryNotice(
+            bootstrapCubit: cubit,
+            backButtonDispatcher: null,
+            child: child!,
+          ),
+          home: Scaffold(
+            body: TextField(
+              controller: field,
+              focusNode: fieldFocus,
+              autofocus: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(fieldFocus.hasFocus, isTrue);
+
+      await cubit.initialize();
+      await tester.pumpAndSettle();
+    }
+
+    FocusNode? acknowledgeFocus(WidgetTester tester) => Focus.of(
+      tester.element(
+        find.descendant(
+          of: find.byKey(DatabaseRecoveryNotice.acknowledgeButtonKey),
+          matching: find.byType(Text),
+        ),
+      ),
+    );
+
+    testWidgets('keeps typing and Tab away from the app behind it', (
+      tester,
+    ) async {
+      await pumpNoticeOverField(tester);
+
+      expect(fieldFocus.hasFocus, isFalse);
+      expect(acknowledgeFocus(tester)!.hasPrimaryFocus, isTrue);
+
+      tester.testTextInput.enterText('typed behind the notice');
+      await tester.pump();
+      expect(field.text, isEmpty);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(acknowledgeFocus(tester)!.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('is acknowledged from the keyboard, and gives focus back', (
+      tester,
+    ) async {
+      await pumpNoticeOverField(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(fieldFocus.hasFocus, isTrue);
+    });
   });
 }

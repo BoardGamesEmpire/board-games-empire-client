@@ -29,6 +29,10 @@ class _FakeKeyService implements EncryptionKeyService {
   /// reached.
   bool unavailable = false;
 
+  /// When set, making a new server key fails as a key store that can't be
+  /// written.
+  bool cannotCreate = false;
+
   void loseServerKey(String serverId) => _keys.remove('server:$serverId');
 
   /// Overwrites the stored key with a different valid one.
@@ -45,7 +49,10 @@ class _FakeKeyService implements EncryptionKeyService {
   @override
   Future<String> getOrCreateServerKey(String serverId) async {
     _throwIfUnavailable();
-    return _keys.putIfAbsent('server:$serverId', _generate);
+    return _keys.putIfAbsent('server:$serverId', () {
+      if (cannotCreate) throw const EncryptionKeyUnavailableError();
+      return _generate();
+    });
   }
 
   @override
@@ -331,6 +338,30 @@ void main() {
       expect(events, isEmpty);
       expect(keys.deletedServerKeys, 0);
       expect(dbFile().existsSync(), isTrue);
+    });
+
+    // #428: once the file is gone, a retry finds nothing to recover, so a
+    // reopen that fails must not take the report down with it.
+    test('reports the loss even when the reopen fails, and only once '
+        'across a retry', () async {
+      await makeInstaller().install(container, config);
+      await container.dispose();
+      keys.loseServerKey(config.bgeServerId);
+      keys.cannotCreate = true;
+
+      final events = <DatabaseRecoveryEvent>[];
+      await expectLater(
+        makeInstaller(onRecovery: events.add).install(container, config),
+        throwsA(isA<EncryptionKeyUnavailableError>()),
+      );
+      expect(events.single.failure, DatabaseKeyFailure.keyMissing);
+      expect(dbFile().existsSync(), isFalse);
+
+      keys.cannotCreate = false;
+      await makeInstaller(onRecovery: events.add).install(container, config);
+
+      expect(events, hasLength(1));
+      expect(container.isRegistered<ServerDatabase>(), isTrue);
     });
 
     test('does not fire onRecovery on a clean open', () async {
