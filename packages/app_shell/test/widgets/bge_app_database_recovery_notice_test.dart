@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:flutter/material.dart' hide ConnectionState;
 import 'package:flutter/services.dart';
@@ -225,6 +227,30 @@ void main() {
         tester.state<NavigatorState>(find.byType(Navigator).first).focusNode,
       ),
     );
+  });
+
+  // A route that opens focuses itself, and the notice's shutting the app
+  // out of focus can't stop it: the route takes focus before it is put in
+  // its place behind the notice.
+  testWidgets('keeps keyboard focus when a screen opens behind it', (
+    tester,
+  ) async {
+    await pumpApp(tester, recoveredServers: [_server('Game Night')]);
+
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: TextField(autofocus: true)),
+            ),
+          ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
   });
 
   group('keyboard', () {

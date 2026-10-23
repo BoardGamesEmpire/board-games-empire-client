@@ -28,8 +28,8 @@ import 'router_back_interceptor.dart';
 /// A dialog route would also own keyboard focus, and above the Navigator
 /// nothing does, so the notice does it itself. The app behind it can't take
 /// focus while it is up, so a field there that asked for focus can't take
-/// what is typed. The notice's button takes focus instead, and Tab stays
-/// on it. Acknowledging gives focus back to wherever it was before, or to
+/// what is typed. The notice's button takes focus instead, takes it back
+/// from a screen that opens behind it, and Tab stays on it. Acknowledging gives focus back to wherever it was before, or to
 /// [fallbackFocus] when a redirect has taken that away.
 ///
 /// [child] is always the first child of the same [Stack], so showing or
@@ -121,6 +121,17 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
     });
   }
 
+  /// Takes focus back from a route that opens behind the notice: a route
+  /// focuses itself before it is put in its place, where the notice shuts
+  /// it out. Focus on the root is the app gone to the background, which
+  /// gives focus back to the notice itself on return.
+  void _keepFocus(bool hasFocus) {
+    if (hasFocus || !mounted || _servers.isEmpty) return;
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null || focus == FocusManager.instance.rootScope) return;
+    _acknowledgeFocus.requestFocus();
+  }
+
   void _acknowledge() {
     setState(() => _servers = const []);
     final before = _focusBefore;
@@ -168,6 +179,7 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
               container: true,
               // Keeps Tab inside the notice.
               child: FocusScope(
+                onFocusChange: _keepFocus,
                 child: Center(
                   child: _NoticeDialog(
                     servers: servers,
