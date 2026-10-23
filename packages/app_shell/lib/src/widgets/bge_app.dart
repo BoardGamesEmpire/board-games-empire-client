@@ -129,8 +129,9 @@ import 'session_rehydrate_trigger.dart';
 /// does, so the crash flow does it itself. While a draft is pending the
 /// app behind the barrier can't take focus, so a field there can't take
 /// what is typed and Tab stays in the flow. The prompt and the review
-/// surface share one focus scope, which takes focus when the flow opens
-/// and again when it swaps between them. It takes it as a scope, not on
+/// surface share one focus scope, which takes focus when the flow opens,
+/// again when it swaps between them, and back from a screen that opens
+/// behind the barrier. It takes it as a scope, not on
 /// the comment field, so no soft keyboard opens unasked. Closing the flow
 /// gives focus back to wherever it was before, or to the router's
 /// Navigator when that is gone.
@@ -434,6 +435,18 @@ class _BgeAppState extends State<BgeApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _crashFlowUp) _crashFocus.requestFocus();
     });
+  }
+
+  /// Takes focus back from a route that opens behind the barrier: a route
+  /// focuses itself before it is put in its place, where the flow shuts it
+  /// out. The recovery notice above the flow holds focus while it is up,
+  /// and focus on the root is the app gone to the background, which gives
+  /// focus back to the flow itself on return.
+  void _keepCrashFocus(bool hasFocus) {
+    if (hasFocus || !mounted || !_crashFlowUp || _recoveryNoticeUp) return;
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null || focus == FocusManager.instance.rootScope) return;
+    _crashFocus.requestFocus();
   }
 
   void _giveCrashFocusBack() {
@@ -1549,6 +1562,7 @@ class _BgeAppState extends State<BgeApp> {
                             Positioned.fill(
                               child: FocusScope(
                                 node: _crashFocus,
+                                onFocusChange: _keepCrashFocus,
                                 child: reviewPreview == null
                                     // #69 compact "ask each time" prompt.
                                     ? Overlay.wrap(

@@ -113,6 +113,43 @@ void main() {
     }
   });
 
+  // A route that opens focuses itself, and the flow's shutting the app out
+  // of focus can't stop it: the route takes focus before it is put in its
+  // place behind the barrier.
+  testWidgets('keeps focus when a screen opens behind the prompt', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    reporter.report(record());
+    await tester.pumpAndSettle();
+
+    field = TextEditingController();
+    fieldFocus = FocusNode();
+    addTearDown(field.dispose);
+    addTearDown(fieldFocus.dispose);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(
+            MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: TextField(
+                  controller: field,
+                  focusNode: fieldFocus,
+                  autofocus: true,
+                ),
+              ),
+            ),
+          ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(crashFlowFocus(tester, CrashReportPrompt).hasFocus, isTrue);
+    tester.testTextInput.enterText('typed behind the barrier');
+    await tester.pump();
+    expect(field.text, isEmpty);
+  });
+
   testWidgets('keeps focus in the flow as it swaps to the review surface '
       'and back', (tester) async {
     await pumpAppWithField(tester);
