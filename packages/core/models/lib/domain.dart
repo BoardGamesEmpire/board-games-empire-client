@@ -26,6 +26,8 @@ export 'src/domain/game/platform_type.dart';
 export 'src/domain/game/time_measure.dart';
 
 export 'src/domain/household/household.dart';
+export 'src/domain/household/household_invite.dart';
+export 'src/domain/household/household_invite_status.dart';
 export 'src/domain/household/household_member.dart';
 export 'src/domain/household/household_role.dart';
 
@@ -56,5 +58,6 @@ export 'src/domain/user/user_external_identity.dart';
 export 'src/domain/user/user_login_history.dart';
 export 'src/domain/user/user_preferences.dart';
 export 'src/domain/user/user_session.dart';
+export 'src/domain/user/user_summary.dart';
 export 'src/domain/user/user_base.dart';
 export 'src/domain/user/user.dart';

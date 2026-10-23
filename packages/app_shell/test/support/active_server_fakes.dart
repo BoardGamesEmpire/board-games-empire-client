@@ -184,6 +184,7 @@ ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
+  HouseholdInviteRemoteDataSource? householdInviteRemoteDataSource,
   SyncOperationSender? syncOperationSender,
   HouseholdHydrationStatus? householdHydrationStatus,
   HouseholdRefresher? householdRefresher,
@@ -216,6 +217,11 @@ ActiveServer buildActiveServer(
   if (householdRemoteDataSource != null) {
     container.registerSingleton<HouseholdRemoteDataSource>(
       householdRemoteDataSource,
+    );
+  }
+  if (householdInviteRemoteDataSource != null) {
+    container.registerSingleton<HouseholdInviteRemoteDataSource>(
+      householdInviteRemoteDataSource,
     );
   }
   if (syncOperationSender != null) {

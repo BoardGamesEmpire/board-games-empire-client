@@ -26,7 +26,7 @@ import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-import 'package:ui/ui.dart' show UnverifiedSessionBanner;
+import 'package:ui/ui.dart' show BgePage, UnverifiedSessionBanner;
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
@@ -350,6 +350,9 @@ class _BgeAppState extends State<BgeApp> {
       settingsBuilder: _buildSettingsRoute,
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
+      householdInvitesBuilder: _buildHouseholdInvitesRoute,
+      sendHouseholdInviteBuilder: _buildSendHouseholdInviteRoute,
+      inviteInboxBuilder: _buildInviteInboxRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
       gameBrowseBuilder: _buildGameBrowseRoute,
@@ -593,6 +596,12 @@ class _BgeAppState extends State<BgeApp> {
     // the network installer registers per server. A drawer entry, like the
     // collection's (#44): navigation is #414's.
     final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
+    // #455: the inbox needs the invite client as well, since it reads the
+    // server rather than the cache; the household gate keeps it to a live
+    // user session, as the households entry is.
+    final canReadInvites =
+        canReadHouseholds &&
+        container.isRegistered<HouseholdInviteRemoteDataSource>();
 
     HomeScreen home({required bool admin}) => HomeScreen(
       activeServerName: active.displayName,
@@ -626,6 +635,13 @@ class _BgeAppState extends State<BgeApp> {
             icon: Icons.groups_outlined,
             label: householdL10n.householdListTitle,
             onSelected: (ctx) => ctx.push(AppRoutes.household),
+          ),
+        if (canReadInvites)
+          HomeMenuEntry(
+            id: 'invites',
+            icon: Icons.mail_outline,
+            label: householdL10n.inviteInboxTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.invites),
           ),
         HomeMenuEntry(
           id: 'send_feedback',
@@ -825,6 +841,120 @@ class _BgeAppState extends State<BgeApp> {
       // path, where a `go` would also have dropped home, and the one
       // go_router builds for a `go` straight here.
       onBack: (ctx) => ctx.pop(),
+      // #455: the invites entry. The screen itself hides it from a viewer
+      // who may not manage invites and for a household the server does not
+      // know yet; here it is only whether this composition can reach them.
+      invites: _inviteClient(container),
+      onOpenInvites: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.householdInvitesOf(id))),
+    );
+  }
+
+  /// The per-server invite client (#455), or null where this composition
+  /// has none.
+  HouseholdInviteRemoteDataSource? _inviteClient(
+    DependencyContainer container,
+  ) => container.isRegistered<HouseholdInviteRemoteDataSource>()
+      ? container.get<HouseholdInviteRemoteDataSource>()
+      : null;
+
+  /// The #455 household-invites wiring. Null (→ [NotYetAvailableScreen])
+  /// without an active server, the invite client, or the user-session
+  /// [HouseholdRepository] that says who is looking.
+  ///
+  /// Not gated on the viewer's role: a deep link by someone the server
+  /// refuses reaches the screen, which says only owners and admins can see
+  /// the invites.
+  Widget? _buildHouseholdInvitesRoute(
+    BuildContext context,
+    String householdId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return HouseholdInviteListScreen(
+      householdId: householdId,
+      remote: invites,
+      repository: container.get<HouseholdRepository>(),
+      onInvite: (ctx) => unawaited(
+        ctx.push<void>(AppRoutes.householdInviteSendOf(householdId)),
+      ),
+    );
+  }
+
+  /// The #455 send-invite wiring. Same null contract as
+  /// [_buildHouseholdInvitesRoute].
+  ///
+  /// The form offers roles by who is looking, which is a cache read; the
+  /// screen takes the answer rather than reading it, so it stays
+  /// synchronous. Leaving after a send is a pop: the route is the invite
+  /// list's child, and the list reads itself again as it comes back into
+  /// view.
+  Widget? _buildSendHouseholdInviteRoute(
+    BuildContext context,
+    String householdId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return _SendHouseholdInviteRoute(
+      // A new household is a new read of who is looking. Without the key, a
+      // `go` between two households' forms would offer the first one's
+      // roles until the second read lands.
+      key: ValueKey<String>(householdId),
+      householdId: householdId,
+      repository: container.get<HouseholdRepository>(),
+      remote: invites,
+    );
+  }
+
+  /// The #455 invite-inbox wiring. Same null contract as
+  /// [_buildHouseholdInvitesRoute].
+  ///
+  /// After an accept, the household arrives through the hydrate: one pass,
+  /// or two when one was already running (see `refreshAfterJoin`). No
+  /// refresher registered means no drain to run, and the household comes
+  /// with the next pass that does.
+  ///
+  /// Both are resolved here, as [_householdRetry] does, not when the accept
+  /// answers. By then the session may have ended, and a lookup would throw
+  /// or reach the next user's scope.
+  Widget? _buildInviteInboxRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    final refresher = container.isRegistered<HouseholdRefresher>()
+        ? container.get<HouseholdRefresher>()
+        : null;
+    final status = container.isRegistered<HouseholdHydrationStatus>()
+        ? container.get<HouseholdHydrationStatus>()
+        : null;
+
+    return InviteInboxScreen(
+      remote: invites,
+      onJoined: refresher == null
+          ? null
+          : (_) => refreshAfterJoin(refresher, status),
+      onOpenHousehold: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.householdDetailOf(id))),
     );
   }
 
@@ -2416,4 +2546,83 @@ class _UnverifiedSessionBannerHostState
       },
     );
   }
+}
+
+/// Resolves who is looking, then shows the send-invite form (#455).
+///
+/// A cache read that takes a frame or two. While it runs the page shows a
+/// spinner under the form's own title, so the route does not flash a
+/// different screen first. A failed read is a viewer the cache cannot
+/// place, which the form answers with its not-allowed note.
+///
+/// Asked again whenever the household's roster changes, the household detail
+/// screen's way: on a deep link the cache may be cold when the route opens,
+/// and the hydrate's member rows are what let the form open. A role changed
+/// under the open form reaches it the same way.
+class _SendHouseholdInviteRoute extends StatefulWidget {
+  const _SendHouseholdInviteRoute({
+    required this.householdId,
+    required this.repository,
+    required this.remote,
+    super.key,
+  });
+
+  final String householdId;
+  final HouseholdRepository repository;
+  final HouseholdInviteRemoteDataSource remote;
+
+  @override
+  State<_SendHouseholdInviteRoute> createState() =>
+      _SendHouseholdInviteRouteState();
+}
+
+class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
+  /// Records, so a null role still reads as an answer.
+  late final Stream<({HouseholdRole? role})> _viewer = _watch();
+
+  Stream<({HouseholdRole? role})> _watch() async* {
+    yield await _read();
+    try {
+      await for (final _ in widget.repository.watchMembers(
+        widget.householdId,
+      )) {
+        yield await _read();
+      }
+    } on Object {
+      // The last answer stands.
+    }
+  }
+
+  Future<({HouseholdRole? role})> _read() async {
+    try {
+      final member = await widget.repository.getCurrentUserMember(
+        widget.householdId,
+      );
+      return (role: member?.role);
+    } on Object {
+      return (role: null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<({HouseholdRole? role})>(
+    stream: _viewer,
+    builder: (context, snapshot) {
+      final viewer = snapshot.data;
+      if (viewer == null) {
+        return BgePage(
+          title: Text(HouseholdLocalizations.of(context).inviteSendTitle),
+          width: BgePageWidth.pane,
+          centerVertically: true,
+          child: const Center(child: CircularProgressIndicator()),
+        );
+      }
+      return SendHouseholdInviteScreen(
+        householdId: widget.householdId,
+        viewerRole: viewer.role,
+        remote: widget.remote,
+        onSent: (ctx) => ctx.pop(),
+      );
+    },
+  );
 }

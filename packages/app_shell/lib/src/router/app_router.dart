@@ -47,6 +47,30 @@ abstract final class AppRoutes {
   static const _householdCreateSegment = 'create';
   static const _householdDetailSegment = ':$householdIdParam';
 
+  /// One household's open invites (#455), beneath its detail screen. Build
+  /// a concrete location with [householdInvitesOf].
+  static const householdInvites = '$householdDetail/$_householdInvitesSegment';
+
+  /// The form for inviting someone to one household (#455), beneath its
+  /// invites. Build a concrete location with [householdInviteSendOf].
+  static const householdInviteSend =
+      '$householdInvites/$_householdInviteSendSegment';
+
+  static const _householdInvitesSegment = 'invites';
+  static const _householdInviteSendSegment = 'new';
+
+  /// The location of one household's invites.
+  static String householdInvitesOf(String householdId) =>
+      '${householdDetailOf(householdId)}/$_householdInvitesSegment';
+
+  /// The location of one household's send-invite form.
+  static String householdInviteSendOf(String householdId) =>
+      '${householdInvitesOf(householdId)}/$_householdInviteSendSegment';
+
+  /// The invites sent to the current user (#455). Top-level: the inbox
+  /// spans every household, so it belongs under none of them.
+  static const invites = '/invites';
+
   /// The location of one household's detail screen.
   ///
   /// Ids are server- or client-assigned cuid2s, which are already
@@ -243,6 +267,33 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
   String householdId,
 );
 
+/// Builds the invite inbox (#455) for the [AppRoutes.invites] route.
+/// Supplied by [BgeApp]; returns null when no active server is resolvable
+/// or its container lacks the `HouseholdInviteRemoteDataSource`, in which
+/// case the route falls back to [NotYetAvailableScreen].
+typedef InviteInboxScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds one household's invites (#455) for the
+/// [AppRoutes.householdInvites] route, given the `:householdId` the path
+/// carried. Same null contract as [InviteInboxScreenBuilder], and also null
+/// without a `HouseholdRepository`, which says who is looking.
+///
+/// Not gated on the viewer's role. A deep link by someone the server
+/// refuses reaches the screen, which says only owners and admins can see
+/// the invites.
+typedef HouseholdInvitesScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
+
+/// Builds the send-invite form for one household (#455) for the
+/// [AppRoutes.householdInviteSend] route. Same null contract as
+/// [HouseholdInvitesScreenBuilder].
+typedef SendHouseholdInviteScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
+
 /// Builds the collection list (#44) for the [AppRoutes.collection] route.
 /// Supplied by [BgeApp]; returns null at navigation time when no active
 /// server is resolvable or its container carries no
@@ -332,6 +383,9 @@ GoRouter buildAppRouter({
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
+  HouseholdInvitesScreenBuilder? householdInvitesBuilder,
+  SendHouseholdInviteScreenBuilder? sendHouseholdInviteBuilder,
+  InviteInboxScreenBuilder? inviteInboxBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
   GameBrowseScreenBuilder? gameBrowseBuilder,
   GameSearchScreenBuilder? gameSearchBuilder,
@@ -474,8 +528,40 @@ GoRouter buildAppRouter({
               return householdDetailBuilder?.call(context, id) ??
                   const NotYetAvailableScreen();
             },
+            // #455: a household's invites and its send form, nested for the
+            // reason the household children are (#308): a `go` to either
+            // builds what is above it, so leaving is a plain pop.
+            routes: [
+              GoRoute(
+                path: AppRoutes._householdInvitesSegment,
+                builder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
+                  return householdInvitesBuilder?.call(context, id) ??
+                      const NotYetAvailableScreen();
+                },
+                routes: [
+                  GoRoute(
+                    path: AppRoutes._householdInviteSendSegment,
+                    builder: (context, state) {
+                      final id =
+                          state.pathParameters[AppRoutes.householdIdParam] ??
+                          '';
+                      return sendHouseholdInviteBuilder?.call(context, id) ??
+                          const NotYetAvailableScreen();
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
+      ),
+      // #455: the invites sent to the current user, from the home drawer.
+      GoRoute(
+        path: AppRoutes.invites,
+        builder: (context, _) =>
+            inviteInboxBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
       // #44: the collection list. Outside the auth ShellRoute (no AuthBloc
       // needed; see [CollectionListScreenBuilder]), pushed from the home
