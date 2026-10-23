@@ -19,6 +19,9 @@ import 'game_browse_state.dart';
 /// user has paged through is there offline. A failed write is logged and
 /// otherwise ignored: the page is still the server's answer.
 ///
+/// Nothing is written once the list has closed: it no longer hears of a game
+/// found gone, so a page answered after that could make one readable again.
+///
 /// A page that repeats a game already shown is not shown twice. The catalog
 /// is a live list ordered by title, so a game added mid-browse pushes every
 /// row after it back one.
@@ -139,6 +142,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
       return _loadFromCache(emit);
     }
 
+    if (isClosed) return;
     await _write(page.items);
     _games = [];
     _append(page.items);
@@ -187,6 +191,7 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
       return _emitReady(emit, loadMoreFailed: true);
     }
 
+    if (isClosed) return;
     await _write(page.items);
     _append(page.items);
     _nextPage++;

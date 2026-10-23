@@ -469,6 +469,44 @@ void main() {
       },
     );
 
+    test('stays forgotten when a list closed earlier is answered after '
+        'it', () async {
+      final older = Completer<PaginatedResult<Game>>();
+      remote.onFetchPage = (_, _) => older.future;
+      final closed = build()..add(const GameBrowseLoadRequested());
+      await pumpEventQueue();
+      await closed.close();
+
+      // A detail opened since forgets the game.
+      await cache.cacheGames([azul]);
+      await cache.forgetGame('g_azul');
+
+      older.complete(pageOf([azul, brass]));
+      await pumpEventQueue();
+
+      expect(await cache.getGames(['g_azul', 'g_brass']), isEmpty);
+    });
+
+    test('stays forgotten when a closed list\'s next page is answered after '
+        'it', () async {
+      final next = Completer<PaginatedResult<Game>>();
+      remote.onFetchPage = (page, _) async =>
+          page == 1 ? pageOf([brass], hasMore: true) : next.future;
+      final closed = build()..add(const GameBrowseLoadRequested());
+      await pumpEventQueue();
+      closed.add(const GameBrowseMoreRequested());
+      await pumpEventQueue();
+      await closed.close();
+
+      await cache.cacheGames([azul]);
+      await cache.forgetGame('g_azul');
+
+      next.complete(pageOf([azul, catan], page: 2));
+      await pumpEventQueue();
+
+      expect(await cache.getGames(['g_azul', 'g_catan']), isEmpty);
+    });
+
     blocTest<GameBrowseBloc, GameBrowseState>(
       'that the list does not hold changes nothing',
       setUp: () => remote.onFetchPage = (_, _) async => pageOf([azul]),
