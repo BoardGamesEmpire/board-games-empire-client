@@ -118,8 +118,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
     on<AuthRepositoryStateChanged>(_onRepositoryStateChanged);
     on<AuthFailureCleared>(_onFailureCleared);
 
-    // Mirror repository-level state changes (e.g. token expiry detected by
-    // the interceptor) into the bloc stream.
+    // Mirror repository-level state changes into the bloc stream: a session
+    // read that found the session over, the sync drain's revalidation after
+    // a 401, and on web another tab's sign-in or sign-out (#432). No
+    // interceptor reports a data request's 401 here; that gap is #484.
     _authStateSubscription = _authRepository.watchAuthState().listen(
       (repoState) => add(AuthRepositoryStateChanged(repoState)),
     );
@@ -417,11 +419,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   /// leaves no session — and routes back to the same screen.
   ///
   /// Worth knowing: the shell's session-scope listener wakes on any
-  /// transition into [AuthUnauthenticated], so it now also sees this one.
+  /// transition into [AuthUnauthenticated], so it also sees this one.
   /// Deactivating a scope that was never activated is a no-op, and this
-  /// event cannot fire from an authenticated state, so the effect is inert —
-  /// but the listener is doing session-lifecycle work on a banner dismissal,
-  /// which is a wider predicate than it needs (#208).
+  /// event cannot fire from an authenticated state, so the effect is inert.
+  /// The predicate stays that wide on purpose (#208): narrowing it to
+  /// transitions out of [AuthAuthenticated] would miss every ordinary
+  /// sign-out, which reaches [AuthUnauthenticated] through [AuthLoading].
   void _onFailureCleared(
     AuthFailureCleared event,
     Emitter<AuthBlocState> emit,
@@ -437,7 +440,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   ) {
     // Never override an in-flight startup check: its own handler owns the
     // terminal emit, and a stray repo Unauthenticated (e.g. the 401-clear
-    // from that very getSession, or an interceptor 401 on another request)
+    // from that very getSession, or on web another tab's sign-out, #432)
     // must not flip the gate into the sign-in form mid-check — defeating
     // the indeterminate-never-shows-the-form invariant (#37 review).
     if (state is AuthSessionCheckInProgress) return;
@@ -469,9 +472,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
   /// differing only in cause is not a new fact, and emitting it would
   /// relabel the one the shell has acted on (#142). Otherwise the cause is
   /// that of the bloc's own sign-out in flight. Failing that, the user
-  /// didn't ask here: the server ended the session (an interceptor 401, or
-  /// the sync drain's 401 check), or the repository signed out without this
-  /// bloc.
+  /// didn't ask here: the server ended the session (a session read that
+  /// found it over, or the sync drain's 401 check), another tab signed out
+  /// on web (#432), or the repository signed out without this bloc.
   void _mirrorUnauthenticated(Emitter<AuthBlocState> emit) {
     if (state is AuthUnauthenticated) return;
     emit(

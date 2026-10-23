@@ -66,7 +66,10 @@ import '../bloc/auth_event.dart';
 /// Uniform across platforms: [AppLifecycleListener] is Flutter SDK
 /// everywhere, so there is nothing to gate and no platform package to leak.
 /// On web the dispatch is inert regardless — web never enters an unverified
-/// session (#98 D10; web parity is #144).
+/// session (#98; web parity is #144). Web re-checks a *verified*
+/// session when the page regains attention instead, for another tab's
+/// sign-in or sign-out; that is `WebSessionMonitor` (#432), which sits below
+/// the widget tree and so outside this subtree's gap.
 class AuthLifecycleRevalidationTrigger extends StatefulWidget {
   const AuthLifecycleRevalidationTrigger({required this.child, super.key});
 

@@ -22,7 +22,9 @@ import 'package:network_interface/network_interface.dart'
         HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
+import '../auth/session_channel.dart';
 import '../auth/web_auth_repository_impl.dart';
+import '../auth/web_session_monitor.dart';
 import 'web_clock_skew_diagnostic_interceptor.dart';
 import 'web_dio_factory.dart';
 
@@ -43,12 +45,20 @@ import 'web_dio_factory.dart';
 /// estimator is fed by *this* Dio's responses, so it belongs beside the
 /// transport that feeds it.
 ///
+/// [sessionBindings] is the browser half of the session monitor (#432),
+/// which `web_platform` supplies and this package cannot name. With it, a
+/// [WebSessionMonitor] is registered as the [SessionIdentityGuard], beside
+/// the repository it drives — the same reason the clock sits beside the Dio
+/// that feeds it. Without it, as in every VM suite and the storage-less
+/// bootstrap, none is, and callers read every session as confirmed.
+///
 /// Lifecycle: the container owns the shared [Dio] and closes it on dispose;
 /// the repository only closes its own resources.
 void registerServerNetworkWeb({
   required DependencyContainer container,
   required ServerIdentity identity,
   String Function() originProvider = WebDioFactory.currentOrigin,
+  WebSessionBindings? sessionBindings,
 }) {
   const factory = WebDioFactory();
   container.registerSingleton<DioFactory>(factory);
@@ -106,6 +116,24 @@ void registerServerNetworkWeb({
     authRepository,
     dispose: (_) => authRepository.onDispose(),
   );
+
+  // #432: keeps this tab's session in step with the cookie the other tabs
+  // share. Built now rather than on first use: a tab on the sign-in screen
+  // has no user scope to resolve it, and it still has to hear another tab
+  // sign in — and its own sign-in has to reach the others, which nothing
+  // would carry if the monitor were not yet listening. The name carries the
+  // server, so a tab hears only the tabs of its own.
+  if (sessionBindings != null) {
+    final monitor = WebSessionMonitor(
+      repository: authRepository,
+      channel: sessionBindings.openChannel('bge.session.${identity.serverId}'),
+      attention: sessionBindings.attention(),
+    );
+    container.registerSingleton<SessionIdentityGuard>(
+      monitor,
+      dispose: (_) => monitor.onDispose(),
+    );
+  }
 
   // #97: the per-server feedback transport, sharing this origin's Dio —
   // the browser attaches the httpOnly session cookie the feedback
