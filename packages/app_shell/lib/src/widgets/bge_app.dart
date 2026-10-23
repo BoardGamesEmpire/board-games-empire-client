@@ -444,10 +444,13 @@ class _BgeAppState extends State<BgeApp> {
     // After the frame that lets the app take focus again.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Gone, or shut out (the notice's button, say): focus left there
-      // would fall to the root, where Tab does nothing.
+      // Gone (a node keeps its context after its widget is), or shut out
+      // (the notice's button, say): focus given there leaves Tab nothing
+      // to move through.
       final canReturn =
-          before != null && before.context != null && before.canRequestFocus;
+          before != null &&
+          (before.context?.mounted ?? false) &&
+          before.canRequestFocus;
       final target = canReturn
           ? before
           : _router.routerDelegate.navigatorKey.currentState?.focusNode;

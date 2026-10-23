@@ -27,10 +27,8 @@ void main() {
   late TextEditingController field;
   late FocusNode fieldFocus;
 
-  /// Boots [BgeApp] and opens a screen whose field asks for focus, as the
-  /// sign-in form does. The test harness's own screens are placeholders
-  /// with nothing to focus.
-  Future<void> pumpAppWithField(
+  /// Boots [BgeApp] to its sign-in screen.
+  Future<AppBootstrapCubit> pumpApp(
     WidgetTester tester, {
     List<ServerConfig> recoveredServers = const [],
   }) async {
@@ -43,16 +41,27 @@ void main() {
       hydratedStorageInitializer: (_) async {},
     );
     reporter = FeedbackUncaughtErrorReporter(service: StubFeedbackService());
-    field = TextEditingController();
-    fieldFocus = FocusNode();
     addTearDown(cubit.close);
-    addTearDown(field.dispose);
-    addTearDown(fieldFocus.dispose);
     await tester.pumpWidget(
       BgeApp(bootstrapCubit: cubit, feedbackReporter: reporter),
     );
     await cubit.initialize();
     await tester.pumpAndSettle();
+    return cubit;
+  }
+
+  /// Boots [BgeApp] and opens a screen whose field asks for focus, as the
+  /// sign-in form does. The test harness's own screens are placeholders
+  /// with nothing to focus.
+  Future<void> pumpAppWithField(
+    WidgetTester tester, {
+    List<ServerConfig> recoveredServers = const [],
+  }) async {
+    await pumpApp(tester, recoveredServers: recoveredServers);
+    field = TextEditingController();
+    fieldFocus = FocusNode();
+    addTearDown(field.dispose);
+    addTearDown(fieldFocus.dispose);
 
     unawaited(
       tester
@@ -136,6 +145,32 @@ void main() {
 
     expect(find.byType(CrashReportPrompt), findsNothing);
     expect(fieldFocus.hasFocus, isTrue);
+  });
+
+  // Where focus was when the crash arrived, the sign-in screen, is gone
+  // once the restored session redirects home.
+  testWidgets('gives focus to the app when a redirect replaced the screen '
+      'behind it', (tester) async {
+    final cubit = await pumpApp(tester);
+    reporter.report(record());
+    await tester.pumpAndSettle();
+    cubit.onAuthenticated();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(CrashReportPrompt.discardButtonKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(CrashReportPrompt), findsNothing);
+
+    // The home placeholder has nothing for Tab to reach, so this checks
+    // that focus is on the screen showing, not one that is gone.
+    final focus = FocusManager.instance.primaryFocus!;
+    expect(focus.context!.mounted, isTrue);
+    expect(
+      [focus, ...focus.ancestors],
+      contains(
+        tester.state<NavigatorState>(find.byType(Navigator).first).focusNode,
+      ),
+    );
   });
 
   // The recovery notice sits above the crash flow and shuts it out of focus
