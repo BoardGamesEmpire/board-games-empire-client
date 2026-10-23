@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 6`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 7`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -47,10 +47,19 @@ Server schema history:
   writer of those tables before v6. Additive (new tables whose foreign keys
   point at existing ones, nullable columns, no rebuild), so #54 stays
   deferred.
+- **v6 → v7 (#496):** adds the event cache: `events`, `event_occurrences`,
+  `event_attendees`, `event_policies` and `event_access` (`user_id`,
+  `event_id`, `source`), which users each cached event was sent to. Five
+  `createTable` calls, `events` first because the other four reference it,
+  and four `createIndex` calls, because `createTable` creates none of a
+  table's indexes: `event_occurrences` and `event_access` on `event_id`, and
+  `event_attendees` on `event_id` and on `user_id`. All five start empty,
+  because no earlier version cached an event. Additive (new tables whose
+  foreign keys point at the new `events`, no rebuild), so #54 stays deferred.
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v6.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v7.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live
@@ -139,7 +148,7 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 ## Deferred items
 
 - **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
-  the FK-off + transaction wrapper decision above. Five additive or FK-free
+  the FK-off + transaction wrapper decision above. Six additive or FK-free
   migrations have shipped without them; the trigger is the first destructive
   migration of an FK-referenced table (see "Adding a schema change"). The
   generated `test/drift/**` migration tests already exist and are committed.

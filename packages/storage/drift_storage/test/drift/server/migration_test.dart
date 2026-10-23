@@ -11,6 +11,7 @@ import 'generated/schema_v3.dart' as v3;
 import 'generated/schema_v4.dart' as v4;
 import 'generated/schema_v5.dart' as v5;
 import 'generated/schema_v6.dart' as v6;
+import 'generated/schema_v7.dart' as v7;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -686,6 +687,90 @@ void main() {
             ),
           ]),
         );
+      },
+    );
+  });
+
+  // Data-integrity coverage for v6 → v7 (#496): the step only creates the five
+  // event tables and their four indexes. A household and a game stand for the
+  // rows the cache already holds, which must come through unchanged, and every
+  // new table starts empty, because no earlier version cached an event.
+  test('migration from v6 to v7 adds empty event tables and preserves '
+      'households and games', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 6,
+      newVersion: 7,
+      createOld: v6.DatabaseAtV6.new,
+      createNew: v7.DatabaseAtV7.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.households,
+          const v6.HouseholdsData(
+            id: 'hh_v6_1',
+            name: 'Game Night HQ',
+            description: 'Where we play',
+            isDirty: 0,
+            isLocalOnly: 0,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+        batch.insert(
+          oldDb.games,
+          const v6.GamesData(
+            id: 'g-1',
+            title: 'Game g-1',
+            contentType: 'BaseGame',
+            totalPlayCount: 0,
+            ownedByCount: 0,
+            categoriesJson: '[]',
+            mechanicsJson: '[]',
+            designersJson: '[]',
+            publishersJson: '[]',
+            tagsJson: '[]',
+            visibility: 'Public',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.households).get(), const [
+          v7.HouseholdsData(
+            id: 'hh_v6_1',
+            name: 'Game Night HQ',
+            description: 'Where we play',
+            isDirty: 0,
+            isLocalOnly: 0,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.games).get(), const [
+          v7.GamesData(
+            id: 'g-1',
+            title: 'Game g-1',
+            contentType: 'BaseGame',
+            totalPlayCount: 0,
+            ownedByCount: 0,
+            categoriesJson: '[]',
+            mechanicsJson: '[]',
+            designersJson: '[]',
+            publishersJson: '[]',
+            tagsJson: '[]',
+            visibility: 'Public',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.events).get(), isEmpty);
+        expect(await newDb.select(newDb.eventOccurrences).get(), isEmpty);
+        expect(await newDb.select(newDb.eventAttendees).get(), isEmpty);
+        expect(await newDb.select(newDb.eventPolicies).get(), isEmpty);
+        expect(await newDb.select(newDb.eventAccess).get(), isEmpty);
       },
     );
   });

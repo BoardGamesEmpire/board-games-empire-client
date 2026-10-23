@@ -1,5 +1,10 @@
 import 'package:drift/drift.dart';
 
+import '../tables/event_access_table.dart';
+import '../tables/event_attendees_table.dart';
+import '../tables/event_occurrences_table.dart';
+import '../tables/event_policies_table.dart';
+import '../tables/event_table.dart';
 import '../tables/game_access_table.dart';
 import '../tables/game_table.dart';
 import '../tables/platform_game_access_table.dart';
@@ -36,7 +41,8 @@ part 'server_database.g.dart';
 ///
 /// Tables: games, platform_games, game_collections, households,
 /// household_members, household_moves, sync_queue, unsent_changes_users,
-/// game_access, platform_game_access.
+/// game_access, platform_game_access, events, event_occurrences,
+/// event_attendees, event_policies, event_access.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -46,7 +52,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **6**.
+/// `schemaVersion` is **7**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -85,6 +91,14 @@ part 'server_database.g.dart';
 ///   because the collection hydrate was the only writer of those tables
 ///   before this version. The access tables' foreign keys point at existing
 ///   tables and no table is rebuilt, so #54 stays deferred.
+/// - **v6 → v7 (#496):** adds the event cache: `events`, `event_occurrences`,
+///   `event_attendees`, `event_policies` and `event_access`, which records
+///   which users each cached event was sent to. Additive: five `createTable`
+///   calls, `events` first because the other four reference it, and four
+///   `createIndex` calls for the indexes `createTable` leaves out. Nothing is
+///   backfilled, because no earlier version cached an event, so all five start
+///   empty. The foreign keys point at `events`, which is new, and no existing
+///   table is rebuilt, so #54 stays deferred.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -100,7 +114,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v6.json`, and
+/// `drift_schemas/server/drift_schema_v7.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -116,6 +130,11 @@ part 'server_database.g.dart';
     UnsentChangesUsersTable,
     GameAccessTable,
     PlatformGameAccessTable,
+    EventsTable,
+    EventOccurrencesTable,
+    EventAttendeesTable,
+    EventPoliciesTable,
+    EventAccessTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -139,7 +158,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -221,6 +240,25 @@ class ServerDatabase extends _$ServerDatabase {
           "SELECT DISTINCT user_id, platform_game_id, 'collection' "
           'FROM game_collections',
         );
+      }
+      if (from < 7 && to >= 7) {
+        // v6 → v7 (#496): the event cache. Five new tables, created empty:
+        // nothing before this version cached an event, so there is nothing
+        // to backfill. Additive, with no table rebuilt: the foreign keys
+        // point at `events`, which is new, so no FK-off wrapper is needed
+        // (#54 stays deferred).
+        //
+        // `events` goes first because the other four reference it.
+        await m.createTable(eventsTable);
+        await m.createTable(eventOccurrencesTable);
+        await m.createTable(eventAttendeesTable);
+        await m.createTable(eventPoliciesTable);
+        await m.createTable(eventAccessTable);
+        // createTable does not create a table's indexes.
+        await m.createIndex(eventOccurrencesEventIdIdx);
+        await m.createIndex(eventAttendeesEventIdIdx);
+        await m.createIndex(eventAttendeesUserIdIdx);
+        await m.createIndex(eventAccessEventIdIdx);
       }
     },
   );
