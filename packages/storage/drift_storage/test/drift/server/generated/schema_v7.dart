@@ -8777,6 +8777,188 @@ class EventAccessCompanion extends UpdateCompanion<EventAccessData> {
   }
 }
 
+class EventGeneration extends Table
+    with TableInfo<EventGeneration, EventGenerationData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  EventGeneration(this.attachedDatabase, [this._alias]);
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL',
+  );
+  late final GeneratedColumn<int> lastGeneration = GeneratedColumn<int>(
+    'last_generation',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, lastGeneration];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'event_generation';
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  EventGenerationData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return EventGenerationData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      lastGeneration: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_generation'],
+      )!,
+    );
+  }
+
+  @override
+  EventGeneration createAlias(String alias) {
+    return EventGeneration(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const ['PRIMARY KEY(id)'];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class EventGenerationData extends DataClass
+    implements Insertable<EventGenerationData> {
+  final int id;
+  final int lastGeneration;
+  const EventGenerationData({required this.id, required this.lastGeneration});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['last_generation'] = Variable<int>(lastGeneration);
+    return map;
+  }
+
+  EventGenerationCompanion toCompanion(bool nullToAbsent) {
+    return EventGenerationCompanion(
+      id: Value(id),
+      lastGeneration: Value(lastGeneration),
+    );
+  }
+
+  factory EventGenerationData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return EventGenerationData(
+      id: serializer.fromJson<int>(json['id']),
+      lastGeneration: serializer.fromJson<int>(json['lastGeneration']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'lastGeneration': serializer.toJson<int>(lastGeneration),
+    };
+  }
+
+  EventGenerationData copyWith({int? id, int? lastGeneration}) =>
+      EventGenerationData(
+        id: id ?? this.id,
+        lastGeneration: lastGeneration ?? this.lastGeneration,
+      );
+  EventGenerationData copyWithCompanion(EventGenerationCompanion data) {
+    return EventGenerationData(
+      id: data.id.present ? data.id.value : this.id,
+      lastGeneration: data.lastGeneration.present
+          ? data.lastGeneration.value
+          : this.lastGeneration,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EventGenerationData(')
+          ..write('id: $id, ')
+          ..write('lastGeneration: $lastGeneration')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, lastGeneration);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is EventGenerationData &&
+          other.id == this.id &&
+          other.lastGeneration == this.lastGeneration);
+}
+
+class EventGenerationCompanion extends UpdateCompanion<EventGenerationData> {
+  final Value<int> id;
+  final Value<int> lastGeneration;
+  const EventGenerationCompanion({
+    this.id = const Value.absent(),
+    this.lastGeneration = const Value.absent(),
+  });
+  EventGenerationCompanion.insert({
+    this.id = const Value.absent(),
+    required int lastGeneration,
+  }) : lastGeneration = Value(lastGeneration);
+  static Insertable<EventGenerationData> custom({
+    Expression<int>? id,
+    Expression<int>? lastGeneration,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (lastGeneration != null) 'last_generation': lastGeneration,
+    });
+  }
+
+  EventGenerationCompanion copyWith({
+    Value<int>? id,
+    Value<int>? lastGeneration,
+  }) {
+    return EventGenerationCompanion(
+      id: id ?? this.id,
+      lastGeneration: lastGeneration ?? this.lastGeneration,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (lastGeneration.present) {
+      map['last_generation'] = Variable<int>(lastGeneration.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EventGenerationCompanion(')
+          ..write('id: $id, ')
+          ..write('lastGeneration: $lastGeneration')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class DatabaseAtV7 extends GeneratedDatabase {
   DatabaseAtV7(QueryExecutor e) : super(e);
   late final Games games = Games(this);
@@ -8794,6 +8976,7 @@ class DatabaseAtV7 extends GeneratedDatabase {
   late final EventAttendees eventAttendees = EventAttendees(this);
   late final EventPolicies eventPolicies = EventPolicies(this);
   late final EventAccess eventAccess = EventAccess(this);
+  late final EventGeneration eventGeneration = EventGeneration(this);
   late final Index platformGamesGameIdIdx = Index(
     'platform_games_game_id_idx',
     'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
@@ -8862,6 +9045,7 @@ class DatabaseAtV7 extends GeneratedDatabase {
     eventAttendees,
     eventPolicies,
     eventAccess,
+    eventGeneration,
     platformGamesGameIdIdx,
     gameCollectionsUserIdx,
     gameCollectionsUserPgameMediumUniqueIdx,

@@ -269,6 +269,32 @@ void main() {
     },
   );
 
+  test(
+    'an attending event deleted and cached again after the purgeable read is '
+    'kept',
+    () async {
+      // As above, but another tab's pass purged it first, and no one else
+      // could read it, so the event went. The row cached after the user was
+      // invited back is a new one, written once, as the one this pass read
+      // had been.
+      await attend('e-1');
+      final purgeable = await a.purgeableAttendance();
+      await a.purgeAttendanceAbsentFrom(
+        const {},
+        purgeable: await a.purgeableAttendance(),
+      );
+      await attend('e-1');
+
+      final purged = await a.purgeAttendanceAbsentFrom(
+        const {},
+        purgeable: purgeable,
+      );
+
+      expect(purged, isEmpty);
+      expect(await a.watchAttendingEvents().first, hasLength(1));
+    },
+  );
+
   test('an event a detail read wrote after the purgeable read keeps the '
       "user's attendance and roster row", () async {
     final mine = testAttendee('att-a', userId: _kUserA);

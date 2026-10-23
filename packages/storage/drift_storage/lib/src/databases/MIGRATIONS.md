@@ -49,13 +49,15 @@ Server schema history:
   deferred.
 - **v6 → v7 (#496):** adds the event cache: `events`, `event_occurrences`,
   `event_attendees`, `event_policies` and `event_access` (`user_id`,
-  `event_id`, `source`), which users each cached event was sent to. Five
-  `createTable` calls, `events` first because the other four reference it,
-  and four `createIndex` calls, because `createTable` creates none of a
-  table's indexes: `event_occurrences` and `event_access` on `event_id`, and
-  `event_attendees` on `event_id` and on `user_id`. All five start empty,
-  because no earlier version cached an event. Additive (new tables whose
-  foreign keys point at the new `events`, no rebuild), so #54 stays deferred.
+  `event_id`, `source`), which users each cached event was sent to, and
+  `event_generation`, the one-row counter each event write stamps
+  `events.generation` from. Six `createTable` calls, `events` first because
+  four of the others reference it, and four `createIndex` calls, because
+  `createTable` creates none of a table's indexes: `event_occurrences` and
+  `event_access` on `event_id`, and `event_attendees` on `event_id` and on
+  `user_id`. All six start empty, because no earlier version cached an
+  event. Additive (new tables whose foreign keys point at the new `events`,
+  no rebuild), so #54 stays deferred.
 
 Committed, generated artefacts (never hand-edited):
 

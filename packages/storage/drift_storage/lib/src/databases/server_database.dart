@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../tables/event_access_table.dart';
 import '../tables/event_attendees_table.dart';
+import '../tables/event_generation_table.dart';
 import '../tables/event_occurrences_table.dart';
 import '../tables/event_policies_table.dart';
 import '../tables/event_table.dart';
@@ -42,7 +43,7 @@ part 'server_database.g.dart';
 /// Tables: games, platform_games, game_collections, households,
 /// household_members, household_moves, sync_queue, unsent_changes_users,
 /// game_access, platform_game_access, events, event_occurrences,
-/// event_attendees, event_policies, event_access.
+/// event_attendees, event_policies, event_access, event_generation.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -93,12 +94,13 @@ part 'server_database.g.dart';
 ///   tables and no table is rebuilt, so #54 stays deferred.
 /// - **v6 → v7 (#496):** adds the event cache: `events`, `event_occurrences`,
 ///   `event_attendees`, `event_policies` and `event_access`, which records
-///   which users each cached event was sent to. Additive: five `createTable`
-///   calls, `events` first because the other four reference it, and four
-///   `createIndex` calls for the indexes `createTable` leaves out. Nothing is
-///   backfilled, because no earlier version cached an event, so all five start
-///   empty. The foreign keys point at `events`, which is new, and no existing
-///   table is rebuilt, so #54 stays deferred.
+///   which users each cached event was sent to, and `event_generation`, the
+///   counter each event write stamps its events from. Additive: six
+///   `createTable` calls, `events` first because four of the others
+///   reference it, and four `createIndex` calls for the indexes `createTable`
+///   leaves out. Nothing is backfilled, because no earlier version cached an
+///   event, so all six start empty. The foreign keys point at `events`, which
+///   is new, and no existing table is rebuilt, so #54 stays deferred.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -135,6 +137,7 @@ part 'server_database.g.dart';
     EventAttendeesTable,
     EventPoliciesTable,
     EventAccessTable,
+    EventGenerationTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -242,18 +245,19 @@ class ServerDatabase extends _$ServerDatabase {
         );
       }
       if (from < 7 && to >= 7) {
-        // v6 → v7 (#496): the event cache. Five new tables, created empty:
+        // v6 → v7 (#496): the event cache. Six new tables, created empty:
         // nothing before this version cached an event, so there is nothing
         // to backfill. Additive, with no table rebuilt: the foreign keys
         // point at `events`, which is new, so no FK-off wrapper is needed
         // (#54 stays deferred).
         //
-        // `events` goes first because the other four reference it.
+        // `events` goes first because four of the others reference it.
         await m.createTable(eventsTable);
         await m.createTable(eventOccurrencesTable);
         await m.createTable(eventAttendeesTable);
         await m.createTable(eventPoliciesTable);
         await m.createTable(eventAccessTable);
+        await m.createTable(eventGenerationTable);
         // createTable does not create a table's indexes.
         await m.createIndex(eventOccurrencesEventIdIdx);
         await m.createIndex(eventAttendeesEventIdIdx);

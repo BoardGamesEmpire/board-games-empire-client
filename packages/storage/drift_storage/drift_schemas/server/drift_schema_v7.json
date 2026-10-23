@@ -2260,6 +2260,43 @@
     },
     {
       "id": 15,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "event_generation",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "last_generation",
+            "getter_name": "lastGeneration",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "id"
+        ]
+      }
+    },
+    {
+      "id": 16,
       "references": [
         1
       ],
@@ -2278,7 +2315,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 17,
       "references": [
         2
       ],
@@ -2297,7 +2334,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 18,
       "references": [
         2
       ],
@@ -2311,7 +2348,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 19,
       "references": [
         4
       ],
@@ -2330,7 +2367,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 20,
       "references": [
         4
       ],
@@ -2353,7 +2390,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 21,
       "references": [
         6
       ],
@@ -2380,7 +2417,7 @@
       }
     },
     {
-      "id": 21,
+      "id": 22,
       "references": [
         8
       ],
@@ -2399,7 +2436,7 @@
       }
     },
     {
-      "id": 22,
+      "id": 23,
       "references": [
         9
       ],
@@ -2418,7 +2455,7 @@
       }
     },
     {
-      "id": 23,
+      "id": 24,
       "references": [
         11
       ],
@@ -2437,7 +2474,7 @@
       }
     },
     {
-      "id": 24,
+      "id": 25,
       "references": [
         12
       ],
@@ -2456,7 +2493,7 @@
       }
     },
     {
-      "id": 25,
+      "id": 26,
       "references": [
         12
       ],
@@ -2475,7 +2512,7 @@
       }
     },
     {
-      "id": 26,
+      "id": 27,
       "references": [
         14
       ],
@@ -2627,6 +2664,15 @@
         {
           "dialect": "sqlite",
           "sql": "CREATE TABLE IF NOT EXISTS \"event_access\" (\"user_id\" TEXT NOT NULL, \"event_id\" TEXT NOT NULL REFERENCES events (id), \"source\" TEXT NOT NULL, PRIMARY KEY (\"user_id\", \"event_id\", \"source\"));"
+        }
+      ]
+    },
+    {
+      "name": "event_generation",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"event_generation\" (\"id\" INTEGER NOT NULL, \"last_generation\" INTEGER NOT NULL, PRIMARY KEY (\"id\"));"
         }
       ]
     },

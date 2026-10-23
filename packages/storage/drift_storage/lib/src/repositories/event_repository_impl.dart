@@ -105,12 +105,30 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       b.insertAllOnConflictUpdate(_db.eventsTable, [
         for (final s in written) _eventToCompanion(s.event),
       ]);
-      // Every write counts, so a purge that read the events before this one
-      // can tell it happened.
+      // Every write takes the next generation, so a purge that read the
+      // events before this one can tell it happened. From the shared
+      // counter, not the event's own row, which a purge may have deleted
+      // since: a row counted afresh would repeat the deleted one's.
+      final counter = _db.eventGenerationTable;
+      b.insert(
+        counter,
+        const EventGenerationTableCompanion(
+          id: Value(0),
+          lastGeneration: Value(1),
+        ),
+        onConflict: DoUpdate(
+          ($EventGenerationTableTable old) =>
+              EventGenerationTableCompanion.custom(
+                lastGeneration: old.lastGeneration + const Constant(1),
+              ),
+        ),
+      );
       b.update(
         _db.eventsTable,
         EventsTableCompanion.custom(
-          generation: _db.eventsTable.generation + const Constant(1),
+          generation: subqueryExpression<int>(
+            _db.selectOnly(counter)..addColumns([counter.lastGeneration]),
+          ),
         ),
         where: (t) => t.id.isIn(byId.keys),
       );

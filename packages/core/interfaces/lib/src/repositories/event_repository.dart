@@ -129,18 +129,20 @@ abstract class EventRepository {
   });
 
   /// The events [purgeAttendanceAbsentFrom] could remove the current user's
-  /// attendance of right now, as event id to a count of the writes the
-  /// cached event has had: every event they have `attending` access to, less
-  /// any that are `isDirty` or `isLocalOnly`.
+  /// attendance of right now, as event id to a value naming the last write
+  /// of the cached event, which no later write repeats: every event they
+  /// have `attending` access to, less any that are `isDirty` or
+  /// `isLocalOnly`.
   ///
   /// Read it **before** requesting the first page, and pass it to the purge.
   /// An event written after this read, by any read, is one a newer read of
   /// the server may have sent than the snapshot the purge judges, and the
   /// purge leaves it alone. That covers an event first cached since, and one
   /// already cached that the user left and was invited back to, which
-  /// another tab's pass may cache while this one's page is in flight. This
-  /// reads the database, so a write from any repository over it counts,
-  /// another browser tab's included.
+  /// another tab's pass may cache while this one's page is in flight,
+  /// whether or not a purge deleted it in between. This reads the database,
+  /// so a write from any repository over it counts, another browser tab's
+  /// included.
   Future<Map<String, int>> purgeableAttendance();
 
   /// Removes the current user's `attending` access to each event in

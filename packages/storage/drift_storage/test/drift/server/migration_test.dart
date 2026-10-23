@@ -691,7 +691,7 @@ void main() {
     );
   });
 
-  // Data-integrity coverage for v6 → v7 (#496): the step only creates the five
+  // Data-integrity coverage for v6 → v7 (#496): the step only creates the six
   // event tables and their four indexes. A household and a game stand for the
   // rows the cache already holds, which must come through unchanged, and every
   // new table starts empty, because no earlier version cached an event.
@@ -771,6 +771,7 @@ void main() {
         expect(await newDb.select(newDb.eventAttendees).get(), isEmpty);
         expect(await newDb.select(newDb.eventPolicies).get(), isEmpty);
         expect(await newDb.select(newDb.eventAccess).get(), isEmpty);
+        expect(await newDb.select(newDb.eventGeneration).get(), isEmpty);
       },
     );
   });

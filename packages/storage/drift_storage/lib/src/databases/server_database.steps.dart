@@ -2130,6 +2130,7 @@ final class Schema7 extends i0.VersionedSchema {
     eventAttendees,
     eventPolicies,
     eventAccess,
+    eventGeneration,
     platformGamesGameIdIdx,
     gameCollectionsUserIdx,
     gameCollectionsUserPgameMediumUniqueIdx,
@@ -2475,6 +2476,17 @@ final class Schema7 extends i0.VersionedSchema {
       isStrict: false,
       tableConstraints: ['PRIMARY KEY(user_id, event_id, source)'],
       columns: [_column_41, _column_78, _column_68],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape18 eventGeneration = Shape18(
+    source: i0.VersionedTable(
+      entityName: 'event_generation',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [_column_111, _column_112],
       attachedDatabase: database,
     ),
     alias: null,
@@ -3030,6 +3042,30 @@ class Shape17 extends i0.VersionedTable {
       columnsByName['source']! as i1.GeneratedColumn<String>;
 }
 
+class Shape18 extends i0.VersionedTable {
+  Shape18({required super.source, required super.alias}) : super.aliased();
+  i1.GeneratedColumn<int> get id =>
+      columnsByName['id']! as i1.GeneratedColumn<int>;
+  i1.GeneratedColumn<int> get lastGeneration =>
+      columnsByName['last_generation']! as i1.GeneratedColumn<int>;
+}
+
+i1.GeneratedColumn<int> _column_111(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'id',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NOT NULL',
+    );
+i1.GeneratedColumn<int> _column_112(String aliasedName) =>
+    i1.GeneratedColumn<int>(
+      'last_generation',
+      aliasedName,
+      false,
+      type: i1.DriftSqlType.int,
+      $customConstraints: 'NOT NULL',
+    );
 i0.MigrationStepWithVersion migrationSteps({
   required Future<void> Function(i1.Migrator m, Schema2 schema) from1To2,
   required Future<void> Function(i1.Migrator m, Schema3 schema) from2To3,
