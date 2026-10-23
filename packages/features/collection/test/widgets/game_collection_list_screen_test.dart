@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bge_test_support/images.dart';
 import 'package:bge_test_support/widgets.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -378,7 +378,10 @@ void main() {
         listItem('e-1', thumbnail: 'https://images.example.com/catan.jpg'),
       ]);
 
-      final provider = thumbnailImage(tester, 'e-1').image as NetworkImage;
+      // Inside the decode-size bound BgeThumbnail puts around it.
+      final provider =
+          (thumbnailImage(tester, 'e-1').image as ResizeImage).imageProvider
+              as NetworkImage;
       expect(provider.url, 'https://images.example.com/catan.jpg');
       expect(provider.webHtmlElementStrategy, WebHtmlElementStrategy.fallback);
     });
@@ -428,24 +431,18 @@ void main() {
     testWidgets('shows the image in place of the placeholder once it has one', (
       tester,
     ) async {
-      const url = 'https://images.example.com/cached.jpg';
-      final image = (await tester.runAsync(
-        () => createTestImage(width: 1, height: 1),
-      ))!;
-      // Primes the cache as a finished load would, so no request goes out.
-      imageCache.putIfAbsent(
-        const NetworkImage(url),
-        () => OneFrameImageStreamCompleter(
-          SynchronousFuture(ImageInfo(image: image)),
-        ),
-      );
-      addTearDown(imageCache.clear);
-
-      await show(tester, [listItem('e-1', thumbnail: url)]);
-
+      final png = (await tester.runAsync(() => solidPng(1, 1)))!;
       final thumbnail = find.byKey(
         GameCollectionListScreen.thumbnailKey('e-1'),
       );
+
+      await servingImages(png, () async {
+        await show(tester, [
+          listItem('e-1', thumbnail: 'https://images.example.com/loaded.jpg'),
+        ]);
+        await pumpUntilDecoded(tester, thumbnail);
+      });
+
       expect(
         find.descendant(
           of: thumbnail,

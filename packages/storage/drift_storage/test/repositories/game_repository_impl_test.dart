@@ -336,6 +336,40 @@ void main() {
         expect(result, hasLength(3));
       });
 
+      test('narrows by content type before the limit', () async {
+        for (var i = 0; i < 5; i++) {
+          await repo.cacheGame(_makeGame(id: 'g-$i', title: 'Cat $i'));
+        }
+        await repo.cacheGame(
+          _makeGame(
+            id: 'g-exp',
+            title: 'Cat Zzz',
+            contentType: ContentType.expansion,
+          ),
+        );
+
+        final result = await repo.searchGames(
+          'cat',
+          limit: 3,
+          contentTypes: {ContentType.expansion},
+        );
+        expect(result.map((g) => g.id), equals(['g-exp']));
+      });
+
+      test('reads every content type when given none', () async {
+        await repo.cacheGame(_makeGame(id: 'g-base', title: 'Catan'));
+        await repo.cacheGame(
+          _makeGame(
+            id: 'g-exp',
+            title: 'Catan: Seafarers',
+            contentType: ContentType.expansion,
+          ),
+        );
+
+        final result = await repo.searchGames('catan');
+        expect(result.map((g) => g.id), equals(['g-base', 'g-exp']));
+      });
+
       test('excludes tombstoned games from search results', () async {
         await repo.cacheGame(_makeGame(id: 'g-live', title: 'Catan'));
         await repo.cacheGame(

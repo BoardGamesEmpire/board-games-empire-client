@@ -4,6 +4,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 import '../access/data_gateway_access.dart';
+import '../access/data_gateway_names.dart';
 import 'data_gateway_list_event.dart';
 import 'data_gateway_list_state.dart';
 
@@ -88,11 +89,10 @@ class DataGatewayListBloc
 
   bool get _reading => _readAnswered != _readSequence;
 
-  /// A bound on how many pages one load follows. DataGateways are
-  /// installation configuration, so a real list is one page; this only stops
-  /// a server that always says `hasMore` from looping forever. Reaching it is
-  /// a failed read, not part of the list shown as the whole of it.
-  static const int _maxPages = 50;
+  /// A bound on how many pages one load follows: see
+  /// [dataGatewayListMaxPages]. Reaching it is a failed read, not part of the
+  /// list shown as the whole of it.
+  static const int _maxPages = dataGatewayListMaxPages;
 
   void _accessListener() => add(const DataGatewayListAccessChanged());
 

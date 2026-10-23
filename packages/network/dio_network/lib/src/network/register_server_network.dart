@@ -9,6 +9,7 @@ import 'package:network_interface/network_interface.dart'
     show
         DataGatewayRemoteDataSource,
         GameCollectionRemoteDataSource,
+        GamesRemoteDataSource,
         HouseholdInviteRemoteDataSource,
         HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
@@ -18,6 +19,7 @@ import '../auth/token_storage_service.dart';
 import '../data_gateway/data_gateway_remote_data_source_impl.dart';
 import '../feedback/feedback_dio_transport.dart';
 import '../game_collection/game_collection_remote_data_source_impl.dart';
+import '../games/games_remote_data_source_impl.dart';
 import '../household/household_invite_remote_data_source_impl.dart';
 import '../household/household_remote_data_source_impl.dart';
 import 'clock_skew_interceptor.dart';
@@ -148,5 +150,14 @@ void registerServerNetwork({
   // owns the Dio.
   container.registerSingleton<DataGatewayRemoteDataSource>(
     DataGatewayRemoteDataSourceImpl(dio),
+  );
+
+  // #42: the per-server games remote, for browse, search and the game
+  // detail. Same convention and placement as the remotes above: the
+  // per-server Dio carries the base URL and the session `/api/games`
+  // requires. Const and stateless; the container owns the Dio. Its search
+  // asks for a longer receive timeout per request than this Dio's default.
+  container.registerSingleton<GamesRemoteDataSource>(
+    GamesRemoteDataSourceImpl(dio),
   );
 }
