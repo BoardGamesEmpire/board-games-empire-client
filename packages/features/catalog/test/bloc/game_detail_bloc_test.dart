@@ -128,6 +128,26 @@ void main() {
         expect(told, isEmpty);
       });
 
+      test('stays forgotten when a detail closed earlier is answered after '
+          'it', () async {
+        final older = Completer<GameWithPlatformGames>();
+        remote.onFetchGame = (_) => older.future;
+        final closed = build()..add(const GameDetailLoadRequested());
+        await pumpEventQueue();
+        await closed.close();
+
+        remote.onFetchGame = (_) async => throw failure;
+        final reopened = build()..add(const GameDetailLoadRequested());
+        await pumpEventQueue();
+        expect(await cache.getGame('g_catan'), isNull);
+
+        older.complete((game: catan, platformGames: [tabletop]));
+        await pumpEventQueue();
+
+        expect(await cache.getGame('g_catan'), isNull);
+        await reopened.close();
+      });
+
       blocTest<GameDetailBloc, GameDetailState>(
         'is still unavailable when it cannot be forgotten',
         build: () {

@@ -16,6 +16,10 @@ import 'game_detail_state.dart';
 /// ([GameRepository.cacheGame]) before it is shown. A failed write is logged
 /// and otherwise ignored.
 ///
+/// Nothing is written once the detail has closed: by then a later visit may
+/// have found the game gone and forgotten it, and this older answer would
+/// make it readable again.
+///
 /// The platform games are shown but not cached. The server sends none yet
 /// (backend#791), and what that issue asks it to send is a summary: no
 /// timestamps, so no full `PlatformGame` for
@@ -92,6 +96,7 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
       return _loadFromCache(emit);
     }
 
+    if (isClosed) return;
     await _write(read);
     emit(GameDetailReady(game: read.game, platformGames: read.platformGames));
   }
