@@ -10,6 +10,12 @@ import 'event_table.dart';
 /// roster from a detail read can mean the caller may not read it rather than
 /// that nobody is on it, so neither is evidence the cached roster is stale.
 ///
+/// The rows hold other people's names, guests' names and their notes, and
+/// like `events` they are shared by every user signed in to this server on
+/// this device. The server shows a roster only to the event's attendees and
+/// its household's members (backend#560), so `EventRepositoryImpl` serves the
+/// rows only to a user with a row of their own on the same roster.
+///
 /// - **Indexed on [eventId].** A roster is read and replaced by event, and
 ///   SQLite looks up an `events` key's child rows on every change to that
 ///   key. Without the index, each lookup scans the whole table.

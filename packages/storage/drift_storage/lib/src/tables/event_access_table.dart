@@ -13,9 +13,10 @@ import 'event_table.dart';
 /// - **[source] is part of the key.** An event a user both attends and has
 ///   read keeps both reasons, so removing one can't take away the other.
 /// - **`attending` rows come from the list, `read` rows from a detail read.**
-///   The `GET /events` hydrate writes `attending` rows, and they are the only
-///   rows its purge removes. A `GET /events/:id` the user made writes a `read`
-///   row, which that purge leaves alone.
+///   The `GET /events` hydrate writes `attending` rows, and its purge removes
+///   only the signed-in user's: their list speaks for their own attendance,
+///   not anyone else's. A `GET /events/:id` the user made writes a `read` row,
+///   which that purge leaves alone.
 /// - **An event goes with its last row.** Once no row is left for an event, it
 ///   is deleted, with its occurrences, roster and policy.
 /// - **Indexed on [eventId].** The primary key leads with [userId], so it
@@ -38,7 +39,8 @@ class EventAccessTable extends Table {
 }
 
 /// The source of an access row the `GET /events` hydrate wrote: an event the
-/// user attends. It is the only source that hydrate's purge removes.
+/// user attends. It is the only source that hydrate's purge removes, and only
+/// from the signed-in user's rows.
 const String eventAccessSourceAttending = 'attending';
 
 /// The source of an access row a `GET /events/:id` the user made wrote: an
