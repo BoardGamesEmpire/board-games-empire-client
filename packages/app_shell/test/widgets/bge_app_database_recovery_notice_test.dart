@@ -200,6 +200,33 @@ void main() {
     semantics.dispose();
   });
 
+  // Where focus was when the notice came up, the sign-in screen, is gone
+  // once the restored session redirects home.
+  testWidgets('gives focus to the app when a redirect replaced the screen '
+      'behind it', (tester) async {
+    final cubit = await pumpApp(
+      tester,
+      recoveredServers: [_server('Game Night')],
+    );
+    cubit.onAuthenticated();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+
+    // The home placeholder has nothing for Tab to reach, so this checks
+    // that focus is on the screen showing, not one that is gone.
+    final focus = FocusManager.instance.primaryFocus!;
+    expect(focus.context!.mounted, isTrue);
+    expect(
+      [focus, ...focus.ancestors],
+      contains(
+        tester.state<NavigatorState>(find.byType(Navigator).first).focusNode,
+      ),
+    );
+  });
+
   group('keyboard', () {
     // The sign-in form asks for focus as it appears. BgeApp's test harness
     // shows a placeholder there, so the notice wraps a field of its own.

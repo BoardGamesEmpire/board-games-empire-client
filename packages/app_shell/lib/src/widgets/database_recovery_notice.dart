@@ -29,7 +29,8 @@ import 'router_back_interceptor.dart';
 /// nothing does, so the notice does it itself. The app behind it can't take
 /// focus while it is up, so a field there that asked for focus can't take
 /// what is typed. The notice's button takes focus instead, and Tab stays
-/// on it. Acknowledging gives focus back to wherever it was before.
+/// on it. Acknowledging gives focus back to wherever it was before, or to
+/// [fallbackFocus] when a redirect has taken that away.
 ///
 /// [child] is always the first child of the same [Stack], so showing or
 /// closing the notice never remounts the app beneath it.
@@ -40,6 +41,7 @@ class DatabaseRecoveryNotice extends StatefulWidget {
     required this.child,
     this.onShown,
     this.onAcknowledged,
+    this.fallbackFocus,
     super.key,
   });
 
@@ -60,6 +62,10 @@ class DatabaseRecoveryNotice extends StatefulWidget {
   /// Called once the user acknowledges the notice, after it has scheduled
   /// giving focus back, so a caller can move focus on from there.
   final VoidCallback? onAcknowledged;
+
+  /// Where acknowledging gives focus when where it was before is gone, as
+  /// it is once a redirect has replaced the screen behind the notice.
+  final FocusNode? Function()? fallbackFocus;
 
   final Widget child;
 
@@ -121,7 +127,14 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
     _focusBefore = null;
     // After the frame that lets the app take focus again.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (before != null && before.context != null) before.requestFocus();
+      if (!mounted) return;
+      // A node keeps its context after its widget is gone, and focus given
+      // back to it leaves Tab nothing to move through.
+      final canReturn =
+          before != null &&
+          (before.context?.mounted ?? false) &&
+          before.canRequestFocus;
+      (canReturn ? before : widget.fallbackFocus?.call())?.requestFocus();
     });
     widget.onAcknowledged?.call();
   }

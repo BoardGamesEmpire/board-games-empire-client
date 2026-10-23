@@ -1627,6 +1627,8 @@ class _BgeAppState extends State<BgeApp> {
             _recoveryNoticeUp = false;
             if (_crashFlowUp) _focusCrashFlow();
           },
+          fallbackFocus: () =>
+              _router.routerDelegate.navigatorKey.currentState?.focusNode,
           child: body,
         );
         final activeLocaleController = widget.activeLocaleController;
