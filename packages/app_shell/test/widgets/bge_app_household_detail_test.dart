@@ -29,11 +29,15 @@ Household _household(String id, {String name = 'Sunday Crew'}) => Household(
   updatedAt: DateTime.utc(2026),
 );
 
-HouseholdMember _member(String userId) => HouseholdMember(
-  id: 'm-$userId',
+HouseholdMember _member(
+  String userId, {
+  String householdId = _id,
+  HouseholdRole role = HouseholdRole.householdOwner,
+}) => HouseholdMember(
+  id: 'm-$householdId-$userId',
   userId: userId,
-  householdId: _id,
-  role: HouseholdRole.householdOwner,
+  householdId: householdId,
+  role: role,
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
@@ -73,17 +77,26 @@ void main() {
     bool withRepository = true,
     Stream<List<Household>>? laterCache,
     List<Household>? households,
+    Map<String, List<HouseholdMember>> rosters = const {},
   }) async {
     final repository = _MockHouseholdRepository();
     when(repository.watchHouseholds).thenAnswer((_) async* {
       yield households ?? [_household(_id)];
       if (laterCache != null) yield* laterCache;
     });
-    when(
-      () => repository.watchMembers(any()),
-    ).thenAnswer((_) => Stream<List<HouseholdMember>>.value([_member('u-me')]));
-    when(() => repository.getCurrentUserMember(any()))
-        .thenAnswer((_) async => _member('u-me'));
+    // A household without a roster of its own has the viewer as its owner.
+    List<HouseholdMember> rosterOf(String id) =>
+        rosters[id] ?? [_member('u-me', householdId: id)];
+    when(() => repository.watchMembers(any())).thenAnswer(
+      (invocation) => Stream<List<HouseholdMember>>.value(
+        rosterOf(invocation.positionalArguments.first as String),
+      ),
+    );
+    when(() => repository.getCurrentUserMember(any())).thenAnswer(
+      (invocation) async =>
+          rosterOf(invocation.positionalArguments.first as String)
+              .firstWhere((member) => member.userId == 'u-me'),
+    );
 
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
@@ -199,6 +212,16 @@ void main() {
           _household('hh_a', name: 'Alpha Crew'),
           _household('hh_b', name: 'Beta Crew'),
         ],
+        rosters: {
+          'hh_b': [
+            _member('u-owner', householdId: 'hh_b'),
+            _member(
+              'u-me',
+              householdId: 'hh_b',
+              role: HouseholdRole.householdMember,
+            ),
+          ],
+        },
       );
       final router =
           tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
@@ -207,12 +230,17 @@ void main() {
       router.go(AppRoutes.householdDetailOf('hh_a'));
       await tester.pumpAndSettle();
       expect(find.text('Alpha Crew'), findsOneWidget);
+      expect(find.text('1 member'), findsOneWidget);
+      expect(find.text('Owner'), findsOneWidget);
 
       router.go(AppRoutes.householdDetailOf('hh_b'));
       await tester.pumpAndSettle();
 
       expect(find.text('Beta Crew'), findsOneWidget);
       expect(find.text('Alpha Crew'), findsNothing);
+      expect(find.text('2 members'), findsOneWidget);
+      expect(find.text('Member'), findsOneWidget);
+      expect(find.text('Owner'), findsNothing);
     });
 
     testWidgets('falls back to NotYetAvailable when the per-user repository '

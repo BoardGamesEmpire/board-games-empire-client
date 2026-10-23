@@ -22,9 +22,15 @@ enum HouseholdInviteRowAction {
 /// A stand-in for the role table #483 will build, which should replace it.
 /// Two of its rules come from the matrix decided on
 /// BoardGamesEmpire/board-games-empire-backend#168, which the server does
-/// not enforce yet: an admin may not offer Admin, and may not revoke or
-/// approve an invite offering Admin. Following them here keeps an admin
-/// from doing something the server is about to forbid.
+/// not enforce yet: an admin may not offer Admin, and may not revoke an
+/// invite offering Admin. Following them here keeps an admin from doing
+/// something the server is about to forbid.
+///
+/// A third is this helper's own reading. The matrix lets an admin approve
+/// any invite awaiting approval, but approving one offering Admin would
+/// make someone an admin, which the matrix leaves to the owner. So an admin
+/// is not offered that approve either. A member cannot send such an invite,
+/// so it should not arise.
 abstract final class HouseholdInvitePermissions {
   /// Whether [role] may see the household's invites and send new ones.
   static bool mayManage(HouseholdRole? role) =>
