@@ -39,11 +39,13 @@ class UserSearchBloc extends Bloc<UserSearchEvent, UserSearchState> {
       return;
     }
 
+    // Before the pause, not after: the last query's results would otherwise
+    // stay pickable through it, and a pick among them would outlast them.
+    emit(const UserSearchLoading());
     await Future<void>.delayed(debounce);
     // A newer query arrived during the pause.
     if (emit.isDone) return;
 
-    emit(const UserSearchLoading());
     try {
       final page = await _remote.searchUsers(query);
       emit(UserSearchResults(page.items));

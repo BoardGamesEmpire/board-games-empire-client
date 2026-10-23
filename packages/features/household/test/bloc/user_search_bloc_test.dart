@@ -56,13 +56,32 @@ void main() {
   );
 
   blocTest<UserSearchBloc, UserSearchState>(
+    'a new query hides the last results while its pause runs',
+    build: build,
+    act: (bloc) async {
+      bloc.add(const UserSearchQueryChanged('ana'));
+      await Future<void>.delayed(_debounce * 3);
+      bloc.add(const UserSearchQueryChanged('anb'));
+      await Future<void>.delayed(Duration.zero);
+      expect(bloc.state, const UserSearchLoading());
+    },
+    wait: _debounce * 3,
+    expect: () => [
+      const UserSearchLoading(),
+      const UserSearchResults([_ana]),
+      const UserSearchLoading(),
+      const UserSearchResults([_ana]),
+    ],
+  );
+
+  blocTest<UserSearchBloc, UserSearchState>(
     'clearing the query while a search waits cancels it',
     build: build,
     act: (bloc) => bloc
       ..add(const UserSearchQueryChanged('ana'))
       ..add(const UserSearchQueryChanged('')),
     wait: _debounce * 3,
-    expect: () => [const UserSearchIdle()],
+    expect: () => [const UserSearchLoading(), const UserSearchIdle()],
     verify: (_) => expect(remote.calls, isEmpty),
   );
 

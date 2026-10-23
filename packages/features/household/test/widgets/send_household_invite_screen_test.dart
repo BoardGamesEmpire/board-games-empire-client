@@ -192,6 +192,42 @@ void main() {
     expect((remote.sentDrafts.single.invitee as InviteeUser).userId, 'u_2');
   });
 
+  testWidgets("the last query's results cannot be picked while a new one "
+      'waits out its pause', (tester) async {
+    remote.onSearchUsers = (query, _, _) async => pageOf([
+      if (query == 'ana')
+        const UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B')
+      else
+        const UserSummary(id: 'u_3', username: 'bo'),
+    ]);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Person'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(SendHouseholdInviteScreen.searchKey),
+      'ana',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(find.byKey(SendHouseholdInviteScreen.resultKey('u_2')), findsOne);
+
+    await tester.enterText(
+      find.byKey(SendHouseholdInviteScreen.searchKey),
+      'bo',
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(SendHouseholdInviteScreen.resultKey('u_2')),
+      findsNothing,
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(find.byKey(SendHouseholdInviteScreen.resultKey('u_3')), findsOne);
+  });
+
   testWidgets('person mode with no one picked is not sent', (tester) async {
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
