@@ -72,8 +72,11 @@ enum EventAccessSource {
 ///   hard-deletes one, so a merge would keep dates that no longer exist.
 /// - **The roster** is replaced only by a snapshot carrying at least one
 ///   attendee. The list carries none, and an empty roster is one the caller
-///   may not read, since an attendee always sees themselves, so neither says
-///   anyone left.
+///   may not read, so neither says anyone else left. An empty one does say
+///   the caller isn't on it, though, since an attendee always sees
+///   themselves, so it removes the caller's own row. Kept, it would still
+///   show them the roster and their old role. Where theirs was the only row
+///   cached, no roster is left, and [getEvent] answers null.
 /// - **The policy** is replaced only by a snapshot carrying one. A read serves
 ///   none to a caller its own check refuses, and the server has no policy
 ///   delete, so a missing one is never news.
@@ -91,7 +94,8 @@ abstract class EventRepository {
   ///
   /// - upserts the event, and its policy when the snapshot carries one;
   /// - replaces its occurrences wholesale;
-  /// - replaces its roster only when `snapshot.attendees` is non-empty;
+  /// - replaces its roster only when `snapshot.attendees` is non-empty, and
+  ///   removes the current user's own row from it when it is empty;
   /// - records [source] access for the current user, beside any access they
   ///   already have.
   ///

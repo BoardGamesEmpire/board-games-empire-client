@@ -86,6 +86,36 @@ void main() {
     },
   );
 
+  test('an empty roster for a user who left removes only their row', () async {
+    final a = repoFor(_kUserA);
+    final b = repoFor(_kUserB);
+    final attA = testAttendee('att-a', userId: _kUserA);
+    await a.cacheEvent(
+      testSnapshot(
+        'e-1',
+        attendees: [
+          attA,
+          testAttendee('att-b', userId: _kUserB),
+        ],
+      ),
+      source: EventAccessSource.attending,
+    );
+    await b.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+
+    // B leaves, and reads the event again as a friend. The server serves
+    // a friend no roster (backend#560), so B's old row must stop showing
+    // B A's.
+    await b.cacheEvent(
+      testSnapshot('e-1', attendees: const []),
+      source: EventAccessSource.read,
+    );
+
+    expect((await b.getEvent('e-1'))!.attendees, isEmpty);
+    expect(await b.getCurrentUserAttendance('e-1'), isNull);
+    expect((await a.getEvent('e-1'))!.attendees, [attA]);
+    expect(await a.getCurrentUserAttendance('e-1'), attA);
+  });
+
   test('an attendee reads the roster another user cached', () async {
     final a = repoFor(_kUserA);
     final b = repoFor(_kUserB);

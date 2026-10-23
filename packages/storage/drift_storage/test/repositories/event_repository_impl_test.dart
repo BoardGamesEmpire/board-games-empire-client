@@ -149,22 +149,44 @@ void main() {
     expect(roster, [_me, _other]);
   });
 
-  test('an empty roster leaves the roster alone', () async {
+  test(
+    "an empty roster removes the caller's row and leaves the rest",
+    () async {
+      await repo.cacheEvent(
+        testSnapshot('e-1', attendees: [_me, _other]),
+        source: EventAccessSource.read,
+      );
+
+      // An attendee always sees themselves, so an empty roster is one the
+      // caller may not read, never an event nobody is coming to. It does say
+      // the caller has left it, as a friend who may still read the event.
+      await repo.cacheEvent(
+        testSnapshot('e-1', attendees: const []),
+        source: EventAccessSource.read,
+      );
+
+      final roster = (await repo.getEvent('e-1'))!.attendees;
+      expect(roster, isEmpty, reason: 'a roster is cached that omits them');
+      expect(await repo.getCurrentUserAttendance('e-1'), isNull);
+
+      final rows = await db.select(db.eventAttendeesTable).get();
+      expect(rows.map((r) => r.id), [_other.id]);
+    },
+  );
+
+  test('an empty roster over one naming only the caller leaves none', () async {
     await repo.cacheEvent(
-      testSnapshot('e-1', attendees: [_me, _other]),
+      testSnapshot('e-1', attendees: [_me]),
       source: EventAccessSource.read,
     );
 
-    // An attendee always sees themselves, so an empty roster is one the
-    // caller may not read, never an event nobody is coming to.
     await repo.cacheEvent(
       testSnapshot('e-1', attendees: const []),
       source: EventAccessSource.read,
     );
 
-    final roster = (await repo.getEvent('e-1'))!.attendees;
-    expect(roster, hasLength(2));
-    expect(roster, [_me, _other]);
+    expect((await repo.getEvent('e-1'))!.attendees, isNull);
+    expect(await repo.getCurrentUserAttendance('e-1'), isNull);
   });
 
   test('a non-empty roster replaces the cached one', () async {
@@ -415,8 +437,9 @@ void main() {
 
     test('writes each snapshot as cacheEvent writes it', () async {
       // The same rules as one read: occurrences replaced wholesale, the
-      // roster only by one with someone on it, the policy only by a snapshot
-      // carrying one, and access added beside what the user already has.
+      // roster only by one with someone on it, the caller's own row removed
+      // by an empty one, the policy only by a snapshot carrying one, and
+      // access added beside what the user already has.
       final mineOnTwo = testAttendee(
         'att-me-2',
         userId: _kUserId,
@@ -458,7 +481,7 @@ void main() {
       expect(one.policy, testPolicy());
       final two = (await repo.getEvent('e-2'))!;
       expect(two.occurrences, isEmpty);
-      expect(two.attendees, [mineOnTwo]);
+      expect(two.attendees, isNull, reason: 'their row was the only one');
       expect(await repo.getEvent('e-3'), three);
       final access = {
         for (final row in await db.select(db.eventAccessTable).get())

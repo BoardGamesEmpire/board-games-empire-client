@@ -89,6 +89,14 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         if (s.attendees case final attendees? when attendees.isNotEmpty)
           s.event.id: attendees,
     };
+    // But an empty one does say the caller isn't on it, since an attendee
+    // always sees themselves. Kept, their own row would go on passing the
+    // roster rule, and showing them everyone else on it.
+    final refused = {
+      for (final s in written)
+        if (s.attendees case final attendees? when attendees.isEmpty)
+          s.event.id,
+    };
 
     await _db.batch((b) {
       // The events first, since the other four tables reference them and
@@ -125,6 +133,12 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           for (final roster in rosters.values)
             ...roster.map(_attendeeToCompanion),
         ]);
+      }
+      if (refused.isNotEmpty) {
+        b.deleteWhere(
+          _db.eventAttendeesTable,
+          (t) => t.eventId.isIn(refused) & t.userId.equals(_userId),
+        );
       }
 
       b.insertAll(_db.eventAccessTable, [
