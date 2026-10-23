@@ -27,7 +27,9 @@ import 'invite_pages.dart';
 /// An action's answer is the invite as the server left it, so it replaces
 /// the row, or drops it when the invite no longer belongs under the filter.
 /// An action that ends while a read is in flight asks for the list again:
-/// the server may have answered that read before the action's write.
+/// the server may have answered that read before the action's write. So
+/// does one that dropped its row while a More was out, which may have
+/// skipped a row (see [InvitePages]).
 ///
 /// A refusal that says the list is out of date asks for it again too: the
 /// invite was already settled (409), expired (410) or is gone (404), or the
@@ -230,6 +232,7 @@ class HouseholdInviteListBloc
     _busy.add(id);
     _outcome = null;
     _emitReady(emit);
+    final more = _pages.moreMark;
 
     final (after, result, error) = await _attempt(event.action, row);
 
@@ -239,10 +242,11 @@ class HouseholdInviteListBloc
     // there now stays.
     _busy.remove(id);
     final rows = _pages.rows;
+    final dropped = after != null && !_belongs(after);
     if (rows != null && after != null) {
       _pages.rows = [
         for (final invite in rows)
-          if (invite.id != id) invite else if (_belongs(after)) after,
+          if (invite.id != id) invite else if (!dropped) after,
       ];
     }
     _outcome = HouseholdInviteListOutcome(
@@ -255,7 +259,8 @@ class HouseholdInviteListBloc
     final outOfDate =
         error is HouseholdInviteRefusedException &&
         const {403, 404, 409, 410}.contains(error.statusCode);
-    if ((_pages.reading || outOfDate) && !isClosed) {
+    final skipped = dropped && _pages.moreSince(more);
+    if ((_pages.reading || outOfDate || skipped) && !isClosed) {
       add(const HouseholdInviteListLoadRequested());
     }
   }

@@ -271,15 +271,18 @@ void main() {
     final more = Completer<PaginatedResult<HouseholdInvite>>();
     var reads = 0;
     remote
-      ..onFetchInbox = ((page, limit) => ++reads == 1
-          ? Future.value(
-              pageOf(
-                [_received('i_a'), _received('i_b')],
-                limit: limit,
-                hasMore: true,
-              ),
-            )
-          : more.future)
+      ..onFetchInbox = ((page, limit) => switch (++reads) {
+        1 => Future.value(
+          pageOf(
+            [_received('i_a'), _received('i_b')],
+            limit: limit,
+            hasMore: true,
+          ),
+        ),
+        2 => more.future,
+        // The reload the second decline asks for, once both are gone.
+        _ => Future.value(pageOf([_received('i_c')], limit: limit)),
+      })
       ..onDecline = (id) async =>
           _received(id, status: HouseholdInviteStatus.declined);
     final bloc = build(pageSize: 2)..add(const InviteInboxLoadRequested());
@@ -303,4 +306,61 @@ void main() {
 
     expect(ready(bloc).invites.map((i) => i.id), ['i_c']);
   });
+
+  for (final declineFirst in [true, false]) {
+    test('a row answered while More is out reads the inbox again, so the page '
+        'cannot skip a row (the decline answers '
+        '${declineFirst ? 'first' : 'last'})', () async {
+      // The server holds a, b, c, d. Declining a before the server reads
+      // page 2 moves c onto page 1, so page 2 is d alone.
+      final more = Completer<PaginatedResult<HouseholdInvite>>();
+      final decline = Completer<HouseholdInvite>();
+      var reads = 0;
+      remote
+        ..onFetchInbox = ((page, limit) => switch (++reads) {
+          1 => Future.value(
+            pageOf(
+              [_received('i_a'), _received('i_b')],
+              limit: limit,
+              hasMore: true,
+            ),
+          ),
+          2 => more.future,
+          _ => Future.value(
+            pageOf(
+              [_received('i_b'), _received('i_c')],
+              limit: limit,
+              hasMore: true,
+            ),
+          ),
+        })
+        ..onDecline = (_) => decline.future;
+      final bloc = build(pageSize: 2)..add(const InviteInboxLoadRequested());
+      addTearDown(bloc.close);
+      await _settle();
+      bloc.add(const InviteInboxMoreRequested());
+      await _settle();
+      bloc.add(
+        const InviteInboxAnswerRequested(HouseholdInviteAction.decline, 'i_a'),
+      );
+      await _settle();
+
+      final declined = _received('i_a', status: HouseholdInviteStatus.declined);
+      final page2 = pageOf([_received('i_d')], page: 2, limit: 2);
+      if (declineFirst) {
+        decline.complete(declined);
+        await _settle();
+        more.complete(page2);
+      } else {
+        more.complete(page2);
+        await _settle();
+        decline.complete(declined);
+      }
+      await _settle();
+
+      expect(remote.calls.last, 'fetchInbox(1, 2)');
+      expect(ready(bloc).invites.map((i) => i.id), ['i_b', 'i_c']);
+      expect(ready(bloc).hasMore, isTrue);
+    });
+  }
 }

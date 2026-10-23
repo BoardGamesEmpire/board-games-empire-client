@@ -662,18 +662,18 @@ void main() {
       final more = Completer<PaginatedResult<HouseholdInvite>>();
       var reads = 0;
       remote
-        ..onFetchHouseholdInvites = ((_, _, page, limit) => ++reads == 1
-            ? Future.value(
-                pageOf(
-                  [
-                    invite('i_a', inviterId: _me),
-                    invite('i_b', inviterId: _me),
-                  ],
-                  limit: limit,
-                  hasMore: true,
-                ),
-              )
-            : more.future)
+        ..onFetchHouseholdInvites = ((_, _, page, limit) => switch (++reads) {
+          1 => Future.value(
+            pageOf(
+              [invite('i_a', inviterId: _me), invite('i_b', inviterId: _me)],
+              limit: limit,
+              hasMore: true,
+            ),
+          ),
+          2 => more.future,
+          // The reload the second withdraw asks for, once both are gone.
+          _ => Future.value(pageOf([invite('i_c')], limit: limit)),
+        })
         ..onWithdraw = (id) async =>
             invite(id, inviterId: _me, status: HouseholdInviteStatus.withdrawn);
       final bloc = build(pageSize: 2)
@@ -705,6 +705,116 @@ void main() {
       await _settle();
 
       expect(ready(bloc).invites, [invite('i_c')]);
+    });
+
+    for (final withdrawFirst in [true, false]) {
+      test('a row dropped while More is out reads the list again, so the '
+          'page cannot skip a row (the withdraw answers '
+          '${withdrawFirst ? 'first' : 'last'})', () async {
+        // The server holds a, b, c, d. Withdrawing a before the server reads
+        // page 2 moves c onto page 1, so page 2 is d alone.
+        final more = Completer<PaginatedResult<HouseholdInvite>>();
+        final withdraw = Completer<HouseholdInvite>();
+        var reads = 0;
+        remote
+          ..onFetchHouseholdInvites = ((_, _, page, limit) => switch (++reads) {
+            1 => Future.value(
+              pageOf(
+                [invite('i_a', inviterId: _me), invite('i_b')],
+                limit: limit,
+                hasMore: true,
+              ),
+            ),
+            2 => more.future,
+            _ => Future.value(
+              pageOf(
+                [invite('i_b'), invite('i_c')],
+                limit: limit,
+                hasMore: true,
+              ),
+            ),
+          })
+          ..onWithdraw = (_) => withdraw.future;
+        final bloc = build(pageSize: 2)
+          ..add(const HouseholdInviteListLoadRequested());
+        addTearDown(bloc.close);
+        await _settle();
+        bloc.add(const HouseholdInviteListMoreRequested());
+        await _settle();
+        bloc.add(
+          const HouseholdInviteListActionRequested(
+            HouseholdInviteRowAction.withdraw,
+            'i_a',
+          ),
+        );
+        await _settle();
+
+        final withdrawn = invite(
+          'i_a',
+          inviterId: _me,
+          status: HouseholdInviteStatus.withdrawn,
+        );
+        final page2 = pageOf([invite('i_d')], page: 2, limit: 2);
+        if (withdrawFirst) {
+          withdraw.complete(withdrawn);
+          await _settle();
+          more.complete(page2);
+        } else {
+          more.complete(page2);
+          await _settle();
+          withdraw.complete(withdrawn);
+        }
+        await _settle();
+
+        expect(remote.calls.last, 'fetchHouseholdInvites(hh_1, null, 1, 2)');
+        expect(ready(bloc).invites, [invite('i_b'), invite('i_c')]);
+        expect(ready(bloc).hasMore, isTrue);
+      });
+    }
+
+    test('an action that keeps its row while More is out does not read the '
+        'list again', () async {
+      final more = Completer<PaginatedResult<HouseholdInvite>>();
+      var reads = 0;
+      remote
+        ..onFetchHouseholdInvites = ((_, _, page, limit) => ++reads == 1
+            ? Future.value(
+                pageOf(
+                  [
+                    invite(
+                      'i_a',
+                      status: HouseholdInviteStatus.awaitingApproval,
+                    ),
+                    invite('i_b'),
+                  ],
+                  limit: limit,
+                  hasMore: true,
+                ),
+              )
+            : more.future)
+        ..onApprove = (_, id) async => invite(id);
+      final bloc = build(pageSize: 2)
+        ..add(const HouseholdInviteListLoadRequested());
+      addTearDown(bloc.close);
+      await _settle();
+      bloc.add(const HouseholdInviteListMoreRequested());
+      await _settle();
+      bloc.add(
+        const HouseholdInviteListActionRequested(
+          HouseholdInviteRowAction.approve,
+          'i_a',
+        ),
+      );
+      await _settle();
+      more.complete(pageOf([invite('i_c')], page: 2, limit: 2));
+      await _settle();
+
+      expect(remote.calls.where((c) => c.startsWith('fetch')), hasLength(2));
+      expect(ready(bloc).invites, [
+        invite('i_a'),
+        invite('i_b'),
+        invite('i_c'),
+      ]);
     });
   });
 }

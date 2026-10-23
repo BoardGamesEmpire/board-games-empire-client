@@ -88,6 +88,7 @@ class InviteInboxBloc extends Bloc<InviteInboxEvent, InviteInboxState> {
     _busy.add(id);
     _outcome = null;
     _emitReady(emit);
+    final more = _pages.moreMark;
 
     String? joined;
     HouseholdInviteActionResult result;
@@ -137,7 +138,11 @@ class InviteInboxBloc extends Bloc<InviteInboxEvent, InviteInboxState> {
     final outOfDate =
         failure is HouseholdInviteRefusedException &&
         const {404, 409, 410}.contains(failure.statusCode);
-    if ((_pages.reading || outOfDate) && !isClosed) {
+    // An answered invite leaves the server's inbox too, so a More out
+    // meanwhile may have skipped a row.
+    final skipped =
+        result == HouseholdInviteActionResult.done && _pages.moreSince(more);
+    if ((_pages.reading || outOfDate || skipped) && !isClosed) {
       add(const InviteInboxLoadRequested());
     }
   }

@@ -16,6 +16,12 @@ import 'package:observability/observability.dart';
 /// shown when More was asked for, are dropped from the answer. A More asked
 /// for while the list is being read again waits for that read, showing as
 /// loading meanwhile, rather than being lost.
+///
+/// An action that drops a row while a More is out can move the server's
+/// rows under it: the More's page may be read after the action's write and
+/// skip a row, whichever answers first. Rows past that page say nothing
+/// about the gap, so the bloc reads the list again instead (see
+/// [moreMark]).
 class InvitePages {
   InvitePages({
     required this._fetch,
@@ -60,6 +66,18 @@ class InvitePages {
 
   /// Whether a read of the first page is in flight.
   bool get reading => _readAnswered != _readSequence;
+
+  /// How many Mores have asked the server.
+  int _moresAsked = 0;
+
+  /// A mark taken as an action starts, for [moreSince].
+  ///
+  /// A More already in flight counts as asked after the mark: the server
+  /// may read its page after the action's write.
+  int get moreMark => _loadingMore ? _moresAsked - 1 : _moresAsked;
+
+  /// Whether a More has asked the server since [mark] was taken.
+  bool moreSince(int mark) => _moresAsked != mark;
 
   /// Forgets the rows, for a list that starts over under another filter.
   void clear() {
@@ -113,6 +131,7 @@ class InvitePages {
     final read = _readSequence;
     final page = _stalled ? _page + 1 : shown.length ~/ _pageSize + 1;
     _loadingMore = true;
+    _moresAsked++;
     changed();
     try {
       final result = await _fetch(page, _pageSize);
