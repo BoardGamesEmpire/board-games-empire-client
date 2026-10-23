@@ -50,6 +50,17 @@ class EventsTable extends Table {
   /// [isDirty].
   BoolColumn get isLocalOnly => boolean().withDefault(const Constant(false))();
 
+  /// How many times a read has written this row, by any user. Not the
+  /// server's: `updatedAt` is not bumped by attendee or vote writes, so it
+  /// can't tell one read from the next.
+  ///
+  /// The hydrate's purge compares it with what it read before requesting
+  /// page 1, and leaves an event that has been written since. That write,
+  /// another tab's pass or a detail read, may come from a newer read than
+  /// the page the purge judges, so it can't stand as proof the event left
+  /// the user's list.
+  IntColumn get generation => integer().withDefault(const Constant(0))();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

@@ -26,7 +26,7 @@ class _PurgeFails implements EventRepository {
   var purgeAsked = false;
 
   @override
-  Future<Set<String>> purgeableAttendance() => cache.purgeableAttendance();
+  Future<Map<String, int>> purgeableAttendance() => cache.purgeableAttendance();
 
   @override
   Future<void> cacheEvents(
@@ -37,7 +37,7 @@ class _PurgeFails implements EventRepository {
   @override
   Future<Set<String>> purgeAttendanceAbsentFrom(
     Set<String> snapshotIds, {
-    required Set<String> purgeable,
+    required Map<String, int> purgeable,
     DateTime? newerThan,
   }) async {
     purgeAsked = true;
@@ -418,6 +418,20 @@ void main() {
 
       expect(await build(remote).hydrate(), EventHydrateOutcome.complete);
       expect(await attending(), ['e-new', 'e-1']);
+    });
+
+    test('leaves an event cached again while page 1 is in flight', () async {
+      // Page 1 was read before the user was invited back to e-old, and
+      // another tab's pass, reading the list after, cached it again before
+      // this page came back.
+      await attend(_row('e-old', 30));
+      final remote = FakeEventRemote((_) async {
+        await attend(_row('e-old', 30));
+        return _page([_row('e-1', 10)]);
+      });
+
+      expect(await build(remote).hydrate(), EventHydrateOutcome.complete);
+      expect(await attending(), ['e-old', 'e-1']);
     });
 
     test('a read-only event is never purged', () async {

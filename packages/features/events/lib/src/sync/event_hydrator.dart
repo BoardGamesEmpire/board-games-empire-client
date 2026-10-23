@@ -108,9 +108,11 @@ enum EventHydrateOutcome {
 /// with the screens, #497 and #498.
 ///
 /// The purge is limited to the events [EventRepository.purgeableAttendance]
-/// named **before page 1 was requested**: an event cached while the request
-/// was in flight, by another tab's pass say, can be missing from the response
-/// and still be the user's.
+/// named **before page 1 was requested**, and to those not written since: an
+/// event cached while the request was in flight, by another tab's pass say,
+/// can be missing from the response and still be the user's. That holds for
+/// one already cached too, when the user left it and was invited back while
+/// the request was in flight.
 class EventHydrator {
   EventHydrator({
     required EventRepository repository,
@@ -168,7 +170,7 @@ class EventHydrator {
   Future<EventHydrateOutcome>? _inFlight;
 
   Future<EventHydrateOutcome> _drain() async {
-    final Set<String> purgeable;
+    final Map<String, int> purgeable;
     try {
       purgeable = await _repo.purgeableAttendance();
     } on Object catch (error, stackTrace) {
@@ -301,7 +303,7 @@ class EventHydrator {
   /// when its envelope agrees with itself and it sent every event it counts.
   Future<EventHydrateOutcome> _finishWholeList(
     PaginatedResult<EventSnapshot> pageOne,
-    Set<String> purgeable,
+    Map<String, int> purgeable,
   ) async {
     final meta = pageOne.meta;
     final rows = pageOne.items.length;
@@ -399,7 +401,7 @@ class EventHydrator {
   /// Returns false when the purge failed, which it logs.
   Future<bool> _purge(
     List<EventSnapshot> pageOne,
-    Set<String> purgeable, {
+    Map<String, int> purgeable, {
     DateTime? newerThan,
   }) async {
     try {

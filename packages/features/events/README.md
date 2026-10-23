@@ -53,7 +53,8 @@ have left out events it counts. Then nothing is removed, and:
   leaves the pass `drained` at best, since a later page can still fail it.
 
 A pass considers only the events that were purgeable before it requested
-page 1, and never one with local changes. With the user's attendance goes
+page 1 and haven't been written since, by another tab's pass say, and never
+one with local changes. With the user's attendance goes
 their own row on the event's cached roster. The user's `read` access stays,
 and so does every other user's, roster rows included. An event that no one
 can read any more is deleted from the cache.

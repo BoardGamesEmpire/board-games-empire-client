@@ -1540,6 +1540,16 @@
             "dsl_features": []
           },
           {
+            "name": "generation",
+            "getter_name": "generation",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
             "name": "created_at",
             "getter_name": "createdAt",
             "moor_type": "dateTime",
@@ -2580,7 +2590,7 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"events\" (\"id\" TEXT NOT NULL, \"title\" TEXT NOT NULL, \"created_by_id\" TEXT NOT NULL, \"household_id\" TEXT NULL, \"description\" TEXT NULL, \"image\" TEXT NULL, \"location\" TEXT NULL, \"url\" TEXT NULL, \"type\" TEXT NOT NULL, \"reach\" TEXT NOT NULL, \"status\" TEXT NOT NULL, \"scheduling_mode\" TEXT NOT NULL, \"is_dirty\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_dirty\" IN (0, 1)), \"is_local_only\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_local_only\" IN (0, 1)), \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
+          "sql": "CREATE TABLE IF NOT EXISTS \"events\" (\"id\" TEXT NOT NULL, \"title\" TEXT NOT NULL, \"created_by_id\" TEXT NOT NULL, \"household_id\" TEXT NULL, \"description\" TEXT NULL, \"image\" TEXT NULL, \"location\" TEXT NULL, \"url\" TEXT NULL, \"type\" TEXT NOT NULL, \"reach\" TEXT NOT NULL, \"status\" TEXT NOT NULL, \"scheduling_mode\" TEXT NOT NULL, \"is_dirty\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_dirty\" IN (0, 1)), \"is_local_only\" INTEGER NOT NULL DEFAULT 0 CHECK (\"is_local_only\" IN (0, 1)), \"generation\" INTEGER NOT NULL DEFAULT 0, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, PRIMARY KEY (\"id\"));"
         }
       ]
     },

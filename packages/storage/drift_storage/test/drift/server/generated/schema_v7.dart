@@ -5567,6 +5567,15 @@ class Events extends Table with TableInfo<Events, EventsData> {
     $customConstraints: 'NOT NULL DEFAULT 0 CHECK (is_local_only IN (0, 1))',
     defaultValue: const CustomExpression('0'),
   );
+  late final GeneratedColumn<int> generation = GeneratedColumn<int>(
+    'generation',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NOT NULL DEFAULT 0',
+    defaultValue: const CustomExpression('0'),
+  );
   late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
     'created_at',
     aliasedName,
@@ -5599,6 +5608,7 @@ class Events extends Table with TableInfo<Events, EventsData> {
     schedulingMode,
     isDirty,
     isLocalOnly,
+    generation,
     createdAt,
     updatedAt,
   ];
@@ -5669,6 +5679,10 @@ class Events extends Table with TableInfo<Events, EventsData> {
         DriftSqlType.int,
         data['${effectivePrefix}is_local_only'],
       )!,
+      generation: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}generation'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}created_at'],
@@ -5706,6 +5720,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
   final String schedulingMode;
   final int isDirty;
   final int isLocalOnly;
+  final int generation;
   final String createdAt;
   final String updatedAt;
   const EventsData({
@@ -5723,6 +5738,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
     required this.schedulingMode,
     required this.isDirty,
     required this.isLocalOnly,
+    required this.generation,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -5753,6 +5769,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
     map['scheduling_mode'] = Variable<String>(schedulingMode);
     map['is_dirty'] = Variable<int>(isDirty);
     map['is_local_only'] = Variable<int>(isLocalOnly);
+    map['generation'] = Variable<int>(generation);
     map['created_at'] = Variable<String>(createdAt);
     map['updated_at'] = Variable<String>(updatedAt);
     return map;
@@ -5782,6 +5799,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
       schedulingMode: Value(schedulingMode),
       isDirty: Value(isDirty),
       isLocalOnly: Value(isLocalOnly),
+      generation: Value(generation),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -5807,6 +5825,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
       schedulingMode: serializer.fromJson<String>(json['schedulingMode']),
       isDirty: serializer.fromJson<int>(json['isDirty']),
       isLocalOnly: serializer.fromJson<int>(json['isLocalOnly']),
+      generation: serializer.fromJson<int>(json['generation']),
       createdAt: serializer.fromJson<String>(json['createdAt']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
     );
@@ -5829,6 +5848,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
       'schedulingMode': serializer.toJson<String>(schedulingMode),
       'isDirty': serializer.toJson<int>(isDirty),
       'isLocalOnly': serializer.toJson<int>(isLocalOnly),
+      'generation': serializer.toJson<int>(generation),
       'createdAt': serializer.toJson<String>(createdAt),
       'updatedAt': serializer.toJson<String>(updatedAt),
     };
@@ -5849,6 +5869,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
     String? schedulingMode,
     int? isDirty,
     int? isLocalOnly,
+    int? generation,
     String? createdAt,
     String? updatedAt,
   }) => EventsData(
@@ -5866,6 +5887,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
     schedulingMode: schedulingMode ?? this.schedulingMode,
     isDirty: isDirty ?? this.isDirty,
     isLocalOnly: isLocalOnly ?? this.isLocalOnly,
+    generation: generation ?? this.generation,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -5895,6 +5917,9 @@ class EventsData extends DataClass implements Insertable<EventsData> {
       isLocalOnly: data.isLocalOnly.present
           ? data.isLocalOnly.value
           : this.isLocalOnly,
+      generation: data.generation.present
+          ? data.generation.value
+          : this.generation,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -5917,6 +5942,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
           ..write('schedulingMode: $schedulingMode, ')
           ..write('isDirty: $isDirty, ')
           ..write('isLocalOnly: $isLocalOnly, ')
+          ..write('generation: $generation, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -5939,6 +5965,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
     schedulingMode,
     isDirty,
     isLocalOnly,
+    generation,
     createdAt,
     updatedAt,
   );
@@ -5960,6 +5987,7 @@ class EventsData extends DataClass implements Insertable<EventsData> {
           other.schedulingMode == this.schedulingMode &&
           other.isDirty == this.isDirty &&
           other.isLocalOnly == this.isLocalOnly &&
+          other.generation == this.generation &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -5979,6 +6007,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
   final Value<String> schedulingMode;
   final Value<int> isDirty;
   final Value<int> isLocalOnly;
+  final Value<int> generation;
   final Value<String> createdAt;
   final Value<String> updatedAt;
   final Value<int> rowid;
@@ -5997,6 +6026,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
     this.schedulingMode = const Value.absent(),
     this.isDirty = const Value.absent(),
     this.isLocalOnly = const Value.absent(),
+    this.generation = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -6016,6 +6046,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
     required String schedulingMode,
     this.isDirty = const Value.absent(),
     this.isLocalOnly = const Value.absent(),
+    this.generation = const Value.absent(),
     required String createdAt,
     required String updatedAt,
     this.rowid = const Value.absent(),
@@ -6043,6 +6074,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
     Expression<String>? schedulingMode,
     Expression<int>? isDirty,
     Expression<int>? isLocalOnly,
+    Expression<int>? generation,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<int>? rowid,
@@ -6062,6 +6094,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
       if (schedulingMode != null) 'scheduling_mode': schedulingMode,
       if (isDirty != null) 'is_dirty': isDirty,
       if (isLocalOnly != null) 'is_local_only': isLocalOnly,
+      if (generation != null) 'generation': generation,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -6083,6 +6116,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
     Value<String>? schedulingMode,
     Value<int>? isDirty,
     Value<int>? isLocalOnly,
+    Value<int>? generation,
     Value<String>? createdAt,
     Value<String>? updatedAt,
     Value<int>? rowid,
@@ -6102,6 +6136,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
       schedulingMode: schedulingMode ?? this.schedulingMode,
       isDirty: isDirty ?? this.isDirty,
       isLocalOnly: isLocalOnly ?? this.isLocalOnly,
+      generation: generation ?? this.generation,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -6153,6 +6188,9 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
     if (isLocalOnly.present) {
       map['is_local_only'] = Variable<int>(isLocalOnly.value);
     }
+    if (generation.present) {
+      map['generation'] = Variable<int>(generation.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(createdAt.value);
     }
@@ -6182,6 +6220,7 @@ class EventsCompanion extends UpdateCompanion<EventsData> {
           ..write('schedulingMode: $schedulingMode, ')
           ..write('isDirty: $isDirty, ')
           ..write('isLocalOnly: $isLocalOnly, ')
+          ..write('generation: $generation, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')

@@ -105,6 +105,15 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       b.insertAllOnConflictUpdate(_db.eventsTable, [
         for (final s in written) _eventToCompanion(s.event),
       ]);
+      // Every write counts, so a purge that read the events before this one
+      // can tell it happened.
+      b.update(
+        _db.eventsTable,
+        EventsTableCompanion.custom(
+          generation: _db.eventsTable.generation + const Constant(1),
+        ),
+        where: (t) => t.id.isIn(byId.keys),
+      );
 
       // A snapshot without a policy says nothing about the cached one: a
       // read serves none to a caller its own check refuses, and the server
@@ -155,7 +164,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   // ── Purge ──────────────────────────────────────────────────────────────
 
   @override
-  Future<Set<String>> purgeableAttendance() async {
+  Future<Map<String, int>> purgeableAttendance() async {
     checkNotDisposed();
     return _purgeableAttendance();
   }
@@ -163,15 +172,19 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   @override
   Future<Set<String>> purgeAttendanceAbsentFrom(
     Set<String> snapshotIds, {
-    required Set<String> purgeable,
+    required Map<String, int> purgeable,
     DateTime? newerThan,
   }) async {
     checkNotDisposed();
     return _db.transaction(() async {
       // Read again here: [purgeable] predates the snapshot, and an event in
-      // it may have been edited since, which hands it to the queue.
+      // it may have been edited since, which hands it to the queue, or
+      // written again from a newer read than the snapshot.
       final current = await _purgeableAttendance(newerThan: newerThan);
-      final purged = current.intersection(purgeable).difference(snapshotIds);
+      final purged = {
+        for (final MapEntry(key: id, value: generation) in current.entries)
+          if (purgeable[id] == generation && !snapshotIds.contains(id)) id,
+      };
       if (purged.isEmpty) return const <String>{};
 
       // This user's attendance only. The list speaks for nobody else's, nor
@@ -214,7 +227,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
 
   /// The events this user has `attending` access to, less any carrying local
   /// changes, and only those created strictly after [newerThan] when it is
-  /// given.
+  /// given, each with its `generation`.
   ///
   /// An event that is `isDirty` or `isLocalOnly` belongs to the sync queue
   /// until the server acknowledges it, so no purge takes it, as #298 has it
@@ -225,7 +238,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// the same millisecond is left out on purpose: the server breaks that tie
   /// by id, in a collation SQLite's text order doesn't match, so this device
   /// can't tell which side of a page boundary it fell on.
-  Future<Set<String>> _purgeableAttendance({DateTime? newerThan}) async {
+  Future<Map<String, int>> _purgeableAttendance({DateTime? newerThan}) async {
     final t = _db.eventsTable;
     var purgeable =
         t.id.isInQuery(_accessedEventIds(eventAccessSourceAttending)) &
@@ -239,9 +252,12 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           );
     }
     final query = _db.selectOnly(t)
-      ..addColumns([t.id])
+      ..addColumns([t.id, t.generation])
       ..where(purgeable);
-    return {for (final row in await query.get()) row.read(t.id)!};
+    return {
+      for (final row in await query.get())
+        row.read(t.id)!: row.read(t.generation)!,
+    };
   }
 
   /// Whether [eventId] is one of [eventIds] that no user, by any source, has

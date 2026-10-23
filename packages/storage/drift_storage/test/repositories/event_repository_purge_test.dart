@@ -58,7 +58,7 @@ void main() {
       await markDirty('e-dirty');
       await markLocalOnly('e-local');
 
-      expect(await a.purgeableAttendance(), {'e-clean'});
+      expect((await a.purgeableAttendance()).keys, {'e-clean'});
     },
   );
 
@@ -247,6 +247,46 @@ void main() {
 
     expect(purged, isEmpty);
     expect(await a.getEvent('e-new'), isNotNull);
+  });
+
+  test(
+    'an attending event cached again after the purgeable read is kept',
+    () async {
+      // This pass's page 1 left it out, but the user was invited back, and
+      // another tab's pass cached it again from a newer read of the list
+      // before this one's response came back.
+      await attend('e-1');
+      final purgeable = await a.purgeableAttendance();
+      await attend('e-1');
+
+      final purged = await a.purgeAttendanceAbsentFrom(
+        const {},
+        purgeable: purgeable,
+      );
+
+      expect(purged, isEmpty);
+      expect(await a.watchAttendingEvents().first, hasLength(1));
+    },
+  );
+
+  test('an event a detail read wrote after the purgeable read keeps the '
+      "user's attendance and roster row", () async {
+    final mine = testAttendee('att-a', userId: _kUserA);
+    await attend('e-1');
+    final purgeable = await a.purgeableAttendance();
+    await a.cacheEvent(
+      testSnapshot('e-1', attendees: [mine]),
+      source: EventAccessSource.read,
+    );
+
+    final purged = await a.purgeAttendanceAbsentFrom(
+      const {},
+      purgeable: purgeable,
+    );
+
+    expect(purged, isEmpty);
+    expect(await a.getCurrentUserAttendance('e-1'), mine);
+    expect(await a.watchAttendingEvents().first, hasLength(1));
   });
 
   test(

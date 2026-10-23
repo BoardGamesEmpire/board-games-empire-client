@@ -129,15 +129,19 @@ abstract class EventRepository {
   });
 
   /// The events [purgeAttendanceAbsentFrom] could remove the current user's
-  /// attendance of right now: every event they have `attending` access to,
-  /// less any that are `isDirty` or `isLocalOnly`.
+  /// attendance of right now, as event id to a count of the writes the
+  /// cached event has had: every event they have `attending` access to, less
+  /// any that are `isDirty` or `isLocalOnly`.
   ///
   /// Read it **before** requesting the first page, and pass it to the purge.
-  /// An event recorded as attending after this read is one the snapshot may
-  /// not have seen, and the purge leaves it alone. This reads the database,
-  /// so a write from any repository over it counts, another browser tab's
-  /// included.
-  Future<Set<String>> purgeableAttendance();
+  /// An event written after this read, by any read, is one a newer read of
+  /// the server may have sent than the snapshot the purge judges, and the
+  /// purge leaves it alone. That covers an event first cached since, and one
+  /// already cached that the user left and was invited back to, which
+  /// another tab's pass may cache while this one's page is in flight. This
+  /// reads the database, so a write from any repository over it counts,
+  /// another browser tab's included.
+  Future<Map<String, int>> purgeableAttendance();
 
   /// Removes the current user's `attending` access to each event in
   /// [purgeable] that [snapshotIds] doesn't name, in one transaction, and
@@ -156,7 +160,7 @@ abstract class EventRepository {
   ///
   /// [purgeable] is a [purgeableAttendance] read taken before that page was
   /// requested. Nothing outside it is removed, and neither is an event that
-  /// has become `isDirty` or `isLocalOnly` since.
+  /// has become `isDirty` or `isLocalOnly` since, nor one written since.
   ///
   /// Only this user's `attending` access is removed, because the list speaks
   /// for their attendance and nothing else: their `read` access stays, and so
@@ -173,7 +177,7 @@ abstract class EventRepository {
   /// its occurrences, roster and policy, since no read can reach it.
   Future<Set<String>> purgeAttendanceAbsentFrom(
     Set<String> snapshotIds, {
-    required Set<String> purgeable,
+    required Map<String, int> purgeable,
     DateTime? newerThan,
   });
 
