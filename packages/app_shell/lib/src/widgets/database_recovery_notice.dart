@@ -36,6 +36,7 @@ class DatabaseRecoveryNotice extends StatefulWidget {
     required this.bootstrapCubit,
     required this.backButtonDispatcher,
     required this.child,
+    this.onAcknowledged,
     super.key,
   });
 
@@ -49,6 +50,10 @@ class DatabaseRecoveryNotice extends StatefulWidget {
 
   /// The router's dispatcher, so system back reaches the notice first.
   final BackButtonDispatcher? backButtonDispatcher;
+
+  /// Called once the user acknowledges the notice, after it has scheduled
+  /// giving focus back, so a caller can move focus on from there.
+  final VoidCallback? onAcknowledged;
 
   final Widget child;
 
@@ -107,6 +112,7 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (before != null && before.context != null) before.requestFocus();
     });
+    widget.onAcknowledged?.call();
   }
 
   @override
