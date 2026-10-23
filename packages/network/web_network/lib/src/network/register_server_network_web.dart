@@ -5,6 +5,7 @@ import 'package:dio_network/dio_network.dart'
         ClockSkewInterceptor,
         DataGatewayRemoteDataSourceImpl,
         DioFactory,
+        EventRemoteDataSourceImpl,
         FeedbackDioTransport,
         GameCollectionRemoteDataSourceImpl,
         HouseholdRemoteDataSourceImpl,
@@ -16,6 +17,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
     show
         DataGatewayRemoteDataSource,
+        EventRemoteDataSource,
         GameCollectionRemoteDataSource,
         HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
@@ -175,5 +177,14 @@ void registerServerNetworkWeb({
   // the 403 envelope the admin gating turns on.
   container.registerSingleton<DataGatewayRemoteDataSource>(
     DataGatewayRemoteDataSourceImpl(dio),
+  );
+
+  // #496: the per-origin event remote. Same convention, placement and reuse
+  // argument as the remotes above: native's implementation over this origin's
+  // Dio, whose permissive validateStatus is what lets it read the 404 envelope
+  // that says an event is gone. Without it the event hydrate would find no
+  // remote on web and skip.
+  container.registerSingleton<EventRemoteDataSource>(
+    EventRemoteDataSourceImpl(dio),
   );
 }

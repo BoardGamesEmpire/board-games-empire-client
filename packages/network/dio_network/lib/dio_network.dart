@@ -5,6 +5,8 @@ export 'src/auth/token_storage_service.dart';
 
 export 'src/data_gateway/data_gateway_remote_data_source_impl.dart';
 
+export 'src/event/event_remote_data_source_impl.dart';
+
 export 'src/feedback/feedback_dio_transport.dart';
 
 export 'src/game_collection/game_collection_remote_data_source_impl.dart';
