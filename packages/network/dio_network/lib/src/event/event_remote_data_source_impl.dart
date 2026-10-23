@@ -66,6 +66,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   @override
   Future<EventSnapshot> fetchEvent(String id) async {
+    _checkId(id);
+
     const action = 'Event fetch';
     final response = await _send(
       request: () => _dio.get<String>(_pathOf(id), options: _plainBody),
@@ -437,6 +439,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     }
     if (page < 1) {
       throw ArgumentError.value(page, 'page', 'is 1-based');
+    }
+  }
+
+  /// An empty id would send `GET /api/events/`, which the server routes to
+  /// the list, so its 200 would fail to parse and read as the server breaking
+  /// the contract rather than the caller's mistake.
+  void _checkId(String id) {
+    if (id.isEmpty) {
+      throw ArgumentError.value(id, 'id', 'must not be empty');
     }
   }
 

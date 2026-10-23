@@ -97,7 +97,7 @@ import 'paginated_result.dart';
 /// caller's role or about a row.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: an out-of-range page or limit.
+/// unwrapped: an out-of-range page or limit, or an empty id.
 abstract class EventRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is
   /// a 400, not clamped.

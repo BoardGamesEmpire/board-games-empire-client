@@ -53,7 +53,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     required EventAccessSource source,
   }) async {
     checkNotDisposed();
-    await _db.transaction(() => _writeSnapshot(snapshot, source));
+    await _writeSnapshots([snapshot], source);
   }
 
   @override
@@ -62,77 +62,80 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     required EventAccessSource source,
   }) async {
     checkNotDisposed();
-    // One transaction for the whole page, because Drift tells a live query
-    // about a transaction's writes once, when it commits.
-    await _db.transaction(() async {
-      for (final snapshot in snapshots) {
-        await _writeSnapshot(snapshot, source);
-      }
-    });
+    await _writeSnapshots(snapshots, source);
   }
 
-  /// Writes [snapshot] for this user under [source], in the caller's
-  /// transaction: the steps [EventRepository.cacheEvent] lists.
-  Future<void> _writeSnapshot(
-    EventSnapshot snapshot,
+  /// Writes [snapshots] for this user under [source]: the steps
+  /// [EventRepository.cacheEvent] lists, for every snapshot at once.
+  ///
+  /// One batch, which is one transaction, so Drift tells a live query about
+  /// the page once, and one round trip, which on web is one message to the
+  /// database worker rather than several per event.
+  Future<void> _writeSnapshots(
+    List<EventSnapshot> snapshots,
     EventAccessSource source,
   ) async {
-    final eventId = snapshot.event.id;
-    final policy = snapshot.policy;
-    final attendees = snapshot.attendees;
-
-    // The event first, since the other four tables reference it and foreign
-    // keys are enforced. An upsert, not a REPLACE, which would delete the row
-    // their keys name before writing it again.
-    await _db
-        .into(_db.eventsTable)
-        .insertOnConflictUpdate(_eventToCompanion(snapshot.event));
-
-    // A snapshot without a policy says nothing about the cached one: a read
-    // serves none to a caller its own check refuses, and the server has no
-    // policy delete.
-    if (policy != null) {
-      await _db
-          .into(_db.eventPoliciesTable)
-          .insertOnConflictUpdate(_policyToCompanion(policy));
-    }
-
-    // Both reads carry every occurrence, and the server hard-deletes one, so
-    // an empty list clears them.
-    await (_db.delete(
-      _db.eventOccurrencesTable,
-    )..where((t) => t.eventId.equals(eventId))).go();
-    await _db.batch(
-      (b) => b.insertAll(
-        _db.eventOccurrencesTable,
-        snapshot.occurrences.map(_occurrenceToCompanion),
-      ),
-    );
+    // An event named twice is written from its later snapshot alone, so its
+    // occurrences and roster aren't inserted twice.
+    final byId = {for (final s in snapshots) s.event.id: s};
+    if (byId.isEmpty) return;
+    final written = byId.values;
 
     // The list carries no roster, and an empty one is a roster the caller
-    // may not read, so only a roster with someone on it replaces this.
-    if (attendees != null && attendees.isNotEmpty) {
-      await (_db.delete(
-        _db.eventAttendeesTable,
-      )..where((t) => t.eventId.equals(eventId))).go();
-      await _db.batch(
-        (b) => b.insertAll(
-          _db.eventAttendeesTable,
-          attendees.map(_attendeeToCompanion),
-        ),
-      );
-    }
+    // may not read, so only a roster with someone on it replaces the cached
+    // one.
+    final rosters = {
+      for (final s in written)
+        if (s.attendees case final attendees? when attendees.isNotEmpty)
+          s.event.id: attendees,
+    };
 
-    await _db
-        .into(_db.eventAccessTable)
-        .insert(
+    await _db.batch((b) {
+      // The events first, since the other four tables reference them and
+      // foreign keys are enforced. An upsert, not a REPLACE, which would
+      // delete the rows their keys name before writing them again.
+      b.insertAllOnConflictUpdate(_db.eventsTable, [
+        for (final s in written) _eventToCompanion(s.event),
+      ]);
+
+      // A snapshot without a policy says nothing about the cached one: a
+      // read serves none to a caller its own check refuses, and the server
+      // has no policy delete.
+      b.insertAllOnConflictUpdate(_db.eventPoliciesTable, [
+        for (final s in written)
+          if (s.policy case final policy?) _policyToCompanion(policy),
+      ]);
+
+      // Both reads carry every occurrence, and the server hard-deletes one,
+      // so an empty list clears them.
+      b.deleteWhere(
+        _db.eventOccurrencesTable,
+        (t) => t.eventId.isIn(byId.keys),
+      );
+      b.insertAll(_db.eventOccurrencesTable, [
+        for (final s in written) ...s.occurrences.map(_occurrenceToCompanion),
+      ]);
+
+      if (rosters.isNotEmpty) {
+        b.deleteWhere(
+          _db.eventAttendeesTable,
+          (t) => t.eventId.isIn(rosters.keys),
+        );
+        b.insertAll(_db.eventAttendeesTable, [
+          for (final roster in rosters.values)
+            ...roster.map(_attendeeToCompanion),
+        ]);
+      }
+
+      b.insertAll(_db.eventAccessTable, [
+        for (final eventId in byId.keys)
           EventAccessTableCompanion.insert(
             userId: _userId,
             eventId: eventId,
             source: _encodeSource(source),
           ),
-          mode: InsertMode.insertOrIgnore,
-        );
+      ], mode: InsertMode.insertOrIgnore);
+    });
   }
 
   // ── Purge ──────────────────────────────────────────────────────────────

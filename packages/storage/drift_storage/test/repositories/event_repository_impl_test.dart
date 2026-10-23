@@ -472,5 +472,32 @@ void main() {
         (_kUserId, 'e-3', eventAccessSourceAttending),
       });
     });
+
+    test('an event named twice is written from its later snapshot', () async {
+      // The page is one batch, so the earlier snapshot's occurrences would
+      // otherwise be inserted beside the later one's, and collide.
+      await repo.cacheEvents([
+        testSnapshot(
+          'e-1',
+          title: 'Earlier',
+          occurrences: [testOccurrence('o-1')],
+          attendees: [_me],
+        ),
+        testSnapshot(
+          'e-1',
+          title: 'Later',
+          occurrences: [
+            testOccurrence('o-1'),
+            testOccurrence('o-2', sortOrder: 1),
+          ],
+          attendees: [_me, _other],
+        ),
+      ], source: EventAccessSource.attending);
+
+      final cached = (await repo.getEvent('e-1'))!;
+      expect(cached.event.title, 'Later');
+      expect(cached.occurrences.map((o) => o.id), ['o-1', 'o-2']);
+      expect(cached.attendees, [_me, _other]);
+    });
   });
 }

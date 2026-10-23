@@ -870,6 +870,15 @@ void main() {
       expect(adapter.sent.single.path, '/api/events/a%2Fb');
     });
 
+    test('refuses an empty id before sending', () async {
+      // `GET /api/events/` reaches the list route, whose 200 would fail to
+      // parse as a detail and read as a server fault.
+      final remote = answering(_detailBody(_eventRow(attendees: [])));
+
+      await expectLater(remote.fetchEvent(''), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
     test('a 404 from the API means the event is gone or unreadable', () async {
       // The server answers an event that does not exist, one deleted, and one
       // the caller may not read in the same way.
