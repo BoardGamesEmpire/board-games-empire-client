@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 
 import '../support/active_server_fakes.dart';
 import '../support/fake_platform_bootstrap.dart';
+import '../support/stub_feedback_service.dart';
 
 ServerConfig _server(String displayName) => ServerConfig(
   id: 'local-$displayName',
@@ -87,6 +88,72 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  // The crash flow's back handler takes priority when it mounts, which is
+  // after the notice's when the crash arrives under it.
+  testWidgets('system back acknowledges it ahead of a crash prompt that '
+      'arrived under it, and leaves the crash report pending', (tester) async {
+    ShellObservability.initialize();
+    addTearDown(ShellObservability.reset);
+    final reporter = FeedbackUncaughtErrorReporter(
+      service: StubFeedbackService(),
+    );
+    final cubit = AppBootstrapCubit(
+      platformBootstrap: FakePlatformBootstrap(
+        outcomes: [
+          BootstrapResult(
+            hasServer: true,
+            recoveredServers: [_server('Game Night')],
+          ),
+        ],
+      ),
+      hydratedStorageInitializer: (_) async {},
+    );
+    addTearDown(cubit.close);
+    await tester.pumpWidget(
+      BgeApp(bootstrapCubit: cubit, feedbackReporter: reporter),
+    );
+    await cubit.initialize();
+    await tester.pumpAndSettle();
+    reporter.report(
+      UncaughtErrorRecord.capture(
+        StateError('bad state'),
+        StackTrace.fromString('#0 main (file.dart:1)'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+
+    // A second press is the crash prompt's first: it arms, never discards.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(reporter.pendingCrashReport.value, isNotNull);
+    expect(find.byType(CrashReportPrompt), findsOneWidget);
+  });
+
+  testWidgets('can be read to the end and acknowledged in a short viewport '
+      'with large text', (tester) async {
+    tester.view.physicalSize = const Size(360, 280);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await pumpApp(
+      tester,
+      recoveredServers: [_server('Game Night'), _server('Club')],
+    );
+
+    await tester.ensureVisible(find.textContaining('Game Night, Club'));
+    await tester.ensureVisible(
+      find.byKey(DatabaseRecoveryNotice.acknowledgeButtonKey),
+    );
+    await tester.tap(find.byKey(DatabaseRecoveryNotice.acknowledgeButtonKey));
+    await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
   });
 

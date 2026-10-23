@@ -21,7 +21,9 @@ import 'router_back_interceptor.dart';
 /// While it is up, its barrier hides the app behind it from assistive
 /// technology, and its [AlertDialog] carries the route semantics that make
 /// screen readers announce it. System back acknowledges it, as it would
-/// close a dialog.
+/// close a dialog. A back handler that took priority after the notice's,
+/// as the crash flow's does when a crash arrives under it, must defer to
+/// it while it is up; [onShown] and [onAcknowledged] say when that is.
 ///
 /// A dialog route would also own keyboard focus, and above the Navigator
 /// nothing does, so the notice does it itself. The app behind it can't take
@@ -36,6 +38,7 @@ class DatabaseRecoveryNotice extends StatefulWidget {
     required this.bootstrapCubit,
     required this.backButtonDispatcher,
     required this.child,
+    this.onShown,
     this.onAcknowledged,
     super.key,
   });
@@ -50,6 +53,9 @@ class DatabaseRecoveryNotice extends StatefulWidget {
 
   /// The router's dispatcher, so system back reaches the notice first.
   final BackButtonDispatcher? backButtonDispatcher;
+
+  /// Called when the notice comes up, including from its first build.
+  final VoidCallback? onShown;
 
   /// Called once the user acknowledges the notice, after it has scheduled
   /// giving focus back, so a caller can move focus on from there.
@@ -76,14 +82,19 @@ class _DatabaseRecoveryNoticeState extends State<DatabaseRecoveryNotice> {
   void initState() {
     super.initState();
     _servers = _recoveredServersOf(widget.bootstrapCubit.state);
-    if (_servers.isNotEmpty) _takeFocus();
+    if (_servers.isNotEmpty) _show();
     _subscription = widget.bootstrapCubit.stream.listen((state) {
       final servers = _recoveredServersOf(state);
       if (servers.isEmpty || !mounted) return;
       final wasHidden = _servers.isEmpty;
       setState(() => _servers = [..._servers, ...servers]);
-      if (wasHidden) _takeFocus();
+      if (wasHidden) _show();
     });
+  }
+
+  void _show() {
+    _takeFocus();
+    widget.onShown?.call();
   }
 
   static List<ServerConfig> _recoveredServersOf(AppBootstrapState state) =>
@@ -179,6 +190,8 @@ class _NoticeDialog extends StatelessWidget {
       // Named explicitly: AlertDialog names its route only on some
       // platforms by default, and the title is what should be announced.
       semanticLabel: title,
+      // Large text or several server names can outgrow a short screen.
+      scrollable: true,
       title: Text(title),
       content: Text(
         i18n.shellDatabaseRecoveredBody(

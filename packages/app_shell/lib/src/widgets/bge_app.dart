@@ -137,7 +137,10 @@ import 'session_rehydrate_trigger.dart';
 ///
 /// The [DatabaseRecoveryNotice] sits above the crash flow and shuts it out
 /// of focus while it is up, so the crash flow takes focus again once the
-/// notice is acknowledged.
+/// notice is acknowledged. Until then the crash flow's back handler passes
+/// system back on to the notice's: a crash that arrived under the notice
+/// took priority on the dispatcher after it, and would otherwise arm, then
+/// discard, a prompt the user can't see.
 ///
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
@@ -281,6 +284,10 @@ class _BgeAppState extends State<BgeApp> {
   /// closes. Non-null only while the flow is up.
   FocusNode? _focusBeforeCrash;
   bool _crashFlowUp = false;
+
+  /// Whether the [DatabaseRecoveryNotice] above the crash flow is up, so
+  /// the crash flow's back handler defers to it.
+  bool _recoveryNoticeUp = false;
 
   /// App-level, persisted theme-mode + locale controllers (#120).
   ///
@@ -495,10 +502,12 @@ class _BgeAppState extends State<BgeApp> {
     }
   }
 
-  /// Routes an intercepted system back press (#106). Always consumes —
-  /// while the crash flow is up, back must never reach the router hidden
-  /// under the barrier.
+  /// Routes an intercepted system back press (#106). Consumes it, so while
+  /// the crash flow is up back never reaches the router hidden under the
+  /// barrier, unless the recovery notice is up: then it passes the press
+  /// on to the notice's handler, which consumes it in turn.
   Future<bool> _handleCrashBack(FeedbackUncaughtErrorReporter reporter) async {
+    if (_recoveryNoticeUp) return false;
     if (_reviewPreview.value != null) {
       // Review surface → compact prompt, matching its visible BackButton.
       _closeReview();
@@ -1611,9 +1620,11 @@ class _BgeAppState extends State<BgeApp> {
         body = DatabaseRecoveryNotice(
           bootstrapCubit: widget.bootstrapCubit,
           backButtonDispatcher: _router.backButtonDispatcher,
+          onShown: () => _recoveryNoticeUp = true,
           // A crash flow under the notice couldn't take focus while it was
           // up; see the class docs.
           onAcknowledged: () {
+            _recoveryNoticeUp = false;
             if (_crashFlowUp) _focusCrashFlow();
           },
           child: body,
