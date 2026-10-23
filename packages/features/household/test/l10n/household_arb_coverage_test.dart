@@ -100,6 +100,127 @@ void main() {
       }
     });
 
+    test('the template defines one message per invite refusal (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteErrorOffline',
+          'inviteErrorUnexpected',
+          'inviteErrorExpired',
+          'inviteErrorGone',
+          'inviteErrorHouseholdFull',
+          'inviteErrorDailyLimitYou',
+          'inviteErrorDailyLimitHousehold',
+          'inviteSendErrorInvalid',
+          'inviteSendErrorRefused',
+          'inviteSendErrorConflict',
+          'inviteSendErrorGone',
+          'inviteAnswerErrorNotYours',
+          'inviteAcceptErrorConflict',
+          'inviteErrorAlreadySettled',
+          'inviteErrorRoleChanged',
+        ]),
+      );
+    });
+
+    test('the template defines the household invite list surface (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'householdInvitesTitle',
+          'householdInvitesLoading',
+          'householdInvitesFilterOpen',
+          'householdInvitesFilterAwaiting',
+          'householdInvitesEmpty',
+          'householdInvitesEmptyAwaiting',
+          'householdInvitesDenied',
+          'householdInvitesFailed',
+          'householdInvitesFailedBody',
+          'householdInvitesRetry',
+          'householdInvitesMore',
+          'householdInvitesInvite',
+          'householdInvitesDismiss',
+          'householdInviteToAccount',
+          'householdInviteFrom',
+          'householdInviteExpires',
+          'householdInviteStatusAwaiting',
+          'householdInviteBusy',
+          'householdInviteWithdraw',
+          'householdInviteRevoke',
+          'householdInviteApprove',
+          'householdInviteTurnDown',
+          'householdInviteRevokeConfirmTitle',
+          'householdInviteRevokeConfirmBody',
+          'householdInviteTurnDownConfirmTitle',
+          'householdInviteTurnDownConfirmBody',
+          'householdInviteCancel',
+          'householdInviteDoneWithdraw',
+          'householdInviteDoneRevoke',
+          'householdInviteDoneApprove',
+        ]),
+      );
+    });
+
+    test('the template defines the send-invite form surface (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteSendTitle',
+          'inviteSendByEmail',
+          'inviteSendByPerson',
+          'inviteSendEmailLabel',
+          'inviteSendEmailRequired',
+          'inviteSendEmailInvalid',
+          'inviteSendSearchLabel',
+          'inviteSendSearchHint',
+          'inviteSendSearchEmpty',
+          'inviteSendSearchFailed',
+          'inviteSendPickRequired',
+          'inviteSendNameLabel',
+          'inviteSendNameTooLong',
+          'inviteSendRoleLabel',
+          'inviteSendMessageLabel',
+          'inviteSendMessageTooLong',
+          'inviteSendSubmit',
+          'inviteSendSending',
+          'inviteSendFailedTitle',
+          'inviteSendDone',
+          'inviteSendNotAllowed',
+        ]),
+      );
+    });
+
+    test('the template defines the invite inbox surface (#455)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteInboxTitle',
+          'inviteInboxLoading',
+          'inviteInboxEmpty',
+          'inviteInboxFailed',
+          'inviteInboxUnknownHousehold',
+          'inviteInboxAccept',
+          'inviteInboxDecline',
+          'inviteInboxDeclineConfirmTitle',
+          'inviteInboxDeclineConfirmBody',
+          'inviteInboxJoined',
+          'inviteInboxOpenHousehold',
+          'inviteInboxDeclined',
+        ]),
+      );
+    });
+
+    test("the template defines the household screen's invites entry "
+        '(#455, #489)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'householdDetailInvites',
+          'householdDetailInvitesAwaiting',
+        ]),
+      );
+    });
+
     test('partial coverage is surfaced, not failed (repo policy)', () {
       if (report.hasUntranslated) {
         // ignore: avoid_print
