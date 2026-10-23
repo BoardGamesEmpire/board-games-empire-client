@@ -78,6 +78,9 @@ void main() {
   late _MockInviteRemote remote;
   late int refreshes;
 
+  /// Tears down the session scope [pumpApp] built, as a sign-out does.
+  late Future<void> Function() endSession;
+
   setUpAll(() => registerFallbackValue(HouseholdInviteStatus.pending));
 
   setUp(() {
@@ -137,16 +140,15 @@ void main() {
     );
     stub?.call(repository);
 
-    when(() => cubit.activeServerScope).thenReturn(
-      FakeActiveServerScope(
-        buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
-          householdRepository: repository,
-          householdInviteRemoteDataSource: withInvites ? remote : null,
-          householdRefresher: HouseholdRefresher(() async => refreshes++),
-        ),
-      ),
+    final server = buildActiveServer(
+      FakeAuthRepository(initialSession: sampleSession()),
+      householdRepository: repository,
+      householdInviteRemoteDataSource: withInvites ? remote : null,
+      householdRefresher: HouseholdRefresher(() async => refreshes++),
     );
+    endSession = server.container.dispose;
+    when(() => cubit.activeServerScope)
+        .thenReturn(FakeActiveServerScope(server));
     whenListen(
       cubit,
       const Stream<AppBootstrapState>.empty(),
@@ -204,6 +206,26 @@ void main() {
 
     expect(refreshes, 1);
     expect(find.text('You joined Sunday Crew.'), findsOneWidget);
+  });
+
+  testWidgets('an accept that answers after the session ended refreshes the '
+      'session that sent it', (tester) async {
+    final accepted = Completer<AcceptedHouseholdInvite>();
+    when(() => remote.accept('i_9')).thenAnswer((_) => accepted.future);
+    final router = await pumpApp(tester);
+    router.go(AppRoutes.invites);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(InviteInboxScreen.acceptKey('i_9')));
+    await tester.pump();
+    await endSession();
+    accepted.complete((
+      invite: _invite('i_9', status: HouseholdInviteStatus.accepted),
+      householdId: 'hh_9',
+    ));
+    await tester.pumpAndSettle();
+
+    expect(refreshes, 1);
   });
 
   testWidgets("going from one household's invites straight to another's "

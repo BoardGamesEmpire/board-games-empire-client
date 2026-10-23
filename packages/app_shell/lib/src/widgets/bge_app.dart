@@ -859,6 +859,10 @@ class _BgeAppState extends State<BgeApp> {
   /// or two when one was already running (see `refreshAfterJoin`). No
   /// refresher registered means no drain to run, and the household comes
   /// with the next pass that does.
+  ///
+  /// Both are resolved here, as [_householdRetry] does, not when the accept
+  /// answers. By then the session may have ended, and a lookup would throw
+  /// or reach the next user's scope.
   Widget? _buildInviteInboxRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -869,16 +873,18 @@ class _BgeAppState extends State<BgeApp> {
       return null;
     }
 
+    final refresher = container.isRegistered<HouseholdRefresher>()
+        ? container.get<HouseholdRefresher>()
+        : null;
+    final status = container.isRegistered<HouseholdHydrationStatus>()
+        ? container.get<HouseholdHydrationStatus>()
+        : null;
+
     return InviteInboxScreen(
       remote: invites,
-      onJoined: container.isRegistered<HouseholdRefresher>()
-          ? (_) => refreshAfterJoin(
-              container.get<HouseholdRefresher>(),
-              container.isRegistered<HouseholdHydrationStatus>()
-                  ? container.get<HouseholdHydrationStatus>()
-                  : null,
-            )
-          : null,
+      onJoined: refresher == null
+          ? null
+          : (_) => refreshAfterJoin(refresher, status),
       onOpenHousehold: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.householdDetailOf(id))),
     );

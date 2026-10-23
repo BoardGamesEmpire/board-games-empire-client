@@ -172,7 +172,8 @@ HouseholdInvite invite(
   inviteeEmail: inviteeEmail,
   householdId: householdId,
   householdName: householdName,
-  // Midday, so the date reads the same in every test machine's zone.
-  expiresAt: DateTime.utc(2026, 10, 26, 12),
+  // The test machine's own midday, so the tile's local date reads the same
+  // in every zone. A UTC midday is the next day from UTC+12 eastward.
+  expiresAt: DateTime(2026, 10, 26, 12),
   createdAt: DateTime.utc(2026, 10, 19),
 );
