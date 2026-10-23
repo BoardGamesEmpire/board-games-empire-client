@@ -132,5 +132,348 @@
   "createHouseholdError": "Something went wrong creating your household. Please try again.",
   "@createHouseholdError": {
     "description": "Error shown when the household could not be created locally."
+  },
+  "inviteErrorOffline": "Couldn't reach the server. Try again.",
+  "@inviteErrorOffline": {
+    "description": "Shown when an invite action got no usable answer from the server: the device is offline, the session expired, or the server is down or busy."
+  },
+  "inviteErrorUnexpected": "Something went wrong on the server. Try again later.",
+  "@inviteErrorUnexpected": {
+    "description": "Shown when the server answered an invite action in a way the app does not understand."
+  },
+  "inviteErrorExpired": "This invite has expired.",
+  "@inviteErrorExpired": {
+    "description": "Shown when an invite action failed because the invite expired."
+  },
+  "inviteErrorGone": "This invite or its household no longer exists.",
+  "@inviteErrorGone": {
+    "description": "Shown when an invite action failed because the server has no such invite or household. The server does not say which."
+  },
+  "inviteErrorHouseholdFull": "This household has no room for another member.",
+  "@inviteErrorHouseholdFull": {
+    "description": "Shown when an invite could not be sent, accepted or approved because the household is at its member limit."
+  },
+  "inviteErrorDailyLimitYou": "You've reached your daily invite limit. Try again tomorrow.",
+  "@inviteErrorDailyLimitYou": {
+    "description": "Shown when an invite could not be sent or approved because the current user has sent as many invites today as they may."
+  },
+  "inviteErrorDailyLimitHousehold": "This household has reached its daily invite limit. Try again tomorrow.",
+  "@inviteErrorDailyLimitHousehold": {
+    "description": "Shown when an invite could not be sent or approved because of a daily invite limit that is not the current user's own: the household's, or the server's."
+  },
+  "inviteSendErrorInvalid": "Check the invite: give one email address or pick one person, and not yourself.",
+  "@inviteSendErrorInvalid": {
+    "description": "Shown when the server rejected an invite as malformed. The server does not say which rule failed, so the message names the likely ones."
+  },
+  "inviteSendErrorRefused": "This invite can't be sent. You may no longer be allowed to invite here, or this person doesn't accept invites from you.",
+  "@inviteSendErrorRefused": {
+    "description": "Shown when the server refused to let the current user send an invite. It does not say whether the user lost their role or the invitee blocks them, so the message names both."
+  },
+  "inviteSendErrorConflict": "They're already a member, or already have an open invite.",
+  "@inviteSendErrorConflict": {
+    "description": "Shown when an invite could not be sent because the person is already in the household or already has an outstanding invite to it."
+  },
+  "inviteSendErrorGone": "This household, or the person you picked, no longer exists.",
+  "@inviteSendErrorGone": {
+    "description": "Shown when an invite could not be sent because the server has no such household, or the person picked from search no longer has an account. The server does not say which."
+  },
+  "inviteAnswerErrorNotYours": "This invite isn't yours to answer.",
+  "@inviteAnswerErrorNotYours": {
+    "description": "Shown when accepting or declining an invite was refused as not the user's to answer, as when they sent it themselves."
+  },
+  "inviteAcceptErrorConflict": "This invite can't be accepted now. It may already be answered or still awaiting approval, or you're already a member.",
+  "@inviteAcceptErrorConflict": {
+    "description": "Shown when accepting an invite was refused because of its state or the user's membership. The server does not say which."
+  },
+  "inviteErrorAlreadySettled": "This invite was already settled. The list is up to date.",
+  "@inviteErrorAlreadySettled": {
+    "description": "Shown when declining, withdrawing, revoking or approving an invite failed because someone else already answered or cancelled it. The list reloads alongside."
+  },
+  "inviteErrorRoleChanged": "You can't do this any more. Your role in the household may have changed.",
+  "@inviteErrorRoleChanged": {
+    "description": "Shown when withdrawing, revoking or approving an invite was refused, most likely because the user's role in the household changed since the list loaded."
+  },
+  "householdInvitesTitle": "Invites",
+  "@householdInvitesTitle": {
+    "description": "Title of the screen listing a household's invites, and of the entry on the household screen that opens it."
+  },
+  "householdInvitesLoading": "Loading invites…",
+  "@householdInvitesLoading": {
+    "description": "Announced and shown while the household's invites are first being read."
+  },
+  "householdInvitesFilterOpen": "Open",
+  "@householdInvitesFilterOpen": {
+    "description": "Filter showing every open invite: pending or awaiting approval."
+  },
+  "householdInvitesFilterAwaiting": "Awaiting approval",
+  "@householdInvitesFilterAwaiting": {
+    "description": "Filter showing only the invites waiting for an owner or admin to approve them."
+  },
+  "householdInvitesEmpty": "No open invites.",
+  "@householdInvitesEmpty": {
+    "description": "Shown when the household has no open invites."
+  },
+  "householdInvitesEmptyAwaiting": "No invites are awaiting approval.",
+  "@householdInvitesEmptyAwaiting": {
+    "description": "Shown when the household has no invites waiting for approval."
+  },
+  "householdInvitesDenied": "Only this household's owners and admins can see its invites.",
+  "@householdInvitesDenied": {
+    "description": "Shown when the server refused to list the household's invites to the current user."
+  },
+  "householdInvitesFailed": "Couldn't load the invites.",
+  "@householdInvitesFailed": {
+    "description": "Title shown when the household's invites could not be read."
+  },
+  "householdInvitesFailedBody": "Check your connection and try again.",
+  "@householdInvitesFailedBody": {
+    "description": "Body under the title shown when the household's invites could not be read."
+  },
+  "householdInvitesRetry": "Try again",
+  "@householdInvitesRetry": {
+    "description": "Button that reads the household's invites again after a failure."
+  },
+  "householdInvitesMore": "Load more",
+  "@householdInvitesMore": {
+    "description": "Button under the list that reads the next page of invites."
+  },
+  "householdInvitesInvite": "Invite someone",
+  "@householdInvitesInvite": {
+    "description": "Button that opens the form for sending a new invite to the household."
+  },
+  "householdInvitesDismiss": "Dismiss",
+  "@householdInvitesDismiss": {
+    "description": "Button that closes the banner reporting how an invite action went."
+  },
+  "householdInviteToAccount": "Invite to an account",
+  "@householdInviteToAccount": {
+    "description": "Shown in place of the invitee's name for an invite sent to a user account, when the sender gave no name."
+  },
+  "householdInviteFrom": "Invited by {name}",
+  "@householdInviteFrom": {
+    "description": "Who sent an invite.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ana"
+      }
+    }
+  },
+  "householdInviteExpires": "Expires {date}",
+  "@householdInviteExpires": {
+    "description": "When an invite expires.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "householdInviteStatusAwaiting": "Awaiting approval",
+  "@householdInviteStatusAwaiting": {
+    "description": "Badge on an invite that an owner or admin has not approved yet."
+  },
+  "householdInviteBusy": "Updating this invite",
+  "@householdInviteBusy": {
+    "description": "Announced on a row while an action on its invite is running."
+  },
+  "householdInviteWithdraw": "Withdraw",
+  "@householdInviteWithdraw": {
+    "description": "Button that takes back an invite the current user sent."
+  },
+  "householdInviteRevoke": "Revoke",
+  "@householdInviteRevoke": {
+    "description": "Button that cancels someone else's pending invite."
+  },
+  "householdInviteApprove": "Approve",
+  "@householdInviteApprove": {
+    "description": "Button that approves an invite awaiting approval, so its invitee can accept it."
+  },
+  "householdInviteTurnDown": "Turn down",
+  "@householdInviteTurnDown": {
+    "description": "Button that refuses an invite awaiting approval. The same action as revoking it."
+  },
+  "householdInviteRevokeConfirmTitle": "Revoke this invite?",
+  "@householdInviteRevokeConfirmTitle": {
+    "description": "Title of the dialog asking to confirm revoking an invite."
+  },
+  "householdInviteRevokeConfirmBody": "They won't be able to accept it.",
+  "@householdInviteRevokeConfirmBody": {
+    "description": "Body of the dialog asking to confirm revoking an invite."
+  },
+  "householdInviteTurnDownConfirmTitle": "Turn down this invite?",
+  "@householdInviteTurnDownConfirmTitle": {
+    "description": "Title of the dialog asking to confirm turning down an invite awaiting approval."
+  },
+  "householdInviteTurnDownConfirmBody": "It won't reach them.",
+  "@householdInviteTurnDownConfirmBody": {
+    "description": "Body of the dialog asking to confirm turning down an invite awaiting approval."
+  },
+  "householdInviteCancel": "Cancel",
+  "@householdInviteCancel": {
+    "description": "Button that closes a confirmation dialog without doing anything."
+  },
+  "householdInviteDoneWithdraw": "Invite withdrawn.",
+  "@householdInviteDoneWithdraw": {
+    "description": "Shown when an invite was withdrawn."
+  },
+  "householdInviteDoneRevoke": "Invite revoked.",
+  "@householdInviteDoneRevoke": {
+    "description": "Shown when an invite was revoked or turned down."
+  },
+  "householdInviteDoneApprove": "Invite approved. They can now accept it.",
+  "@householdInviteDoneApprove": {
+    "description": "Shown when an invite awaiting approval was approved."
+  },
+  "inviteSendTitle": "Invite someone",
+  "@inviteSendTitle": {
+    "description": "Title of the form for inviting someone to a household."
+  },
+  "inviteSendByEmail": "Email",
+  "@inviteSendByEmail": {
+    "description": "Choice on the invite form: invite by email address."
+  },
+  "inviteSendByPerson": "Person",
+  "@inviteSendByPerson": {
+    "description": "Choice on the invite form: invite someone who already has an account, found by search."
+  },
+  "inviteSendEmailLabel": "Email address",
+  "@inviteSendEmailLabel": {
+    "description": "Label of the invite form's email address field."
+  },
+  "inviteSendEmailRequired": "Enter an email address.",
+  "@inviteSendEmailRequired": {
+    "description": "Shown under the email field when it is empty on submit."
+  },
+  "inviteSendEmailInvalid": "Enter a valid email address.",
+  "@inviteSendEmailInvalid": {
+    "description": "Shown under the email field when its value is not an email address."
+  },
+  "inviteSendSearchLabel": "Search by name or username",
+  "@inviteSendSearchLabel": {
+    "description": "Label of the field that searches for someone to invite."
+  },
+  "inviteSendSearchHint": "Type at least 2 characters",
+  "@inviteSendSearchHint": {
+    "description": "Hint under the search field: the server searches only on 2 or more characters."
+  },
+  "inviteSendSearchEmpty": "No one found.",
+  "@inviteSendSearchEmpty": {
+    "description": "Shown when a search for someone to invite matched no one."
+  },
+  "inviteSendSearchFailed": "Couldn't search. Check your connection and keep typing to try again.",
+  "@inviteSendSearchFailed": {
+    "description": "Shown when a search for someone to invite failed."
+  },
+  "inviteSendPickRequired": "Pick someone to invite.",
+  "@inviteSendPickRequired": {
+    "description": "Shown when the invite form is submitted in person mode with no one picked."
+  },
+  "inviteSendNameLabel": "Their name (optional)",
+  "@inviteSendNameLabel": {
+    "description": "Label of the optional field for what to call the person being invited."
+  },
+  "inviteSendNameTooLong": "Keep the name to 100 characters.",
+  "@inviteSendNameTooLong": {
+    "description": "Shown under the name field when it is longer than the server accepts."
+  },
+  "inviteSendRoleLabel": "Role",
+  "@inviteSendRoleLabel": {
+    "description": "Label of the field choosing the role the invite offers."
+  },
+  "inviteSendMessageLabel": "Message (optional)",
+  "@inviteSendMessageLabel": {
+    "description": "Label of the optional message sent with the invite."
+  },
+  "inviteSendMessageTooLong": "Keep the message to 1000 characters.",
+  "@inviteSendMessageTooLong": {
+    "description": "Shown under the message field when it is longer than the server accepts."
+  },
+  "inviteSendSubmit": "Send invite",
+  "@inviteSendSubmit": {
+    "description": "Button that sends the invite."
+  },
+  "inviteSendSending": "Sending…",
+  "@inviteSendSending": {
+    "description": "Progress label announced and shown while the invite is being sent."
+  },
+  "inviteSendFailedTitle": "Couldn't send the invite",
+  "@inviteSendFailedTitle": {
+    "description": "Heading of the banner explaining why an invite was not sent."
+  },
+  "inviteSendDone": "Invite sent.",
+  "@inviteSendDone": {
+    "description": "Confirmation shown when the invite was sent."
+  },
+  "inviteSendNotAllowed": "Only this household's owners and admins can invite people.",
+  "@inviteSendNotAllowed": {
+    "description": "Shown on the invite form instead of the fields when the current user may not invite anyone to this household."
+  },
+  "inviteInboxTitle": "Invites",
+  "@inviteInboxTitle": {
+    "description": "Title of the screen listing the invites sent to the current user, and the label of the drawer entry that opens it."
+  },
+  "inviteInboxLoading": "Loading your invites…",
+  "@inviteInboxLoading": {
+    "description": "Announced and shown while the user's invites are first being read."
+  },
+  "inviteInboxEmpty": "You have no invites.",
+  "@inviteInboxEmpty": {
+    "description": "Shown when no open invites have been sent to the user."
+  },
+  "inviteInboxFailed": "Couldn't load your invites.",
+  "@inviteInboxFailed": {
+    "description": "Title shown when the user's invites could not be read."
+  },
+  "inviteInboxUnknownHousehold": "A household",
+  "@inviteInboxUnknownHousehold": {
+    "description": "Shown in place of a household's name on an invite whose row did not name it."
+  },
+  "inviteInboxAccept": "Accept",
+  "@inviteInboxAccept": {
+    "description": "Button that accepts an invite and joins its household."
+  },
+  "inviteInboxDecline": "Decline",
+  "@inviteInboxDecline": {
+    "description": "Button that declines an invite."
+  },
+  "inviteInboxDeclineConfirmTitle": "Decline this invite?",
+  "@inviteInboxDeclineConfirmTitle": {
+    "description": "Title of the dialog asking to confirm declining an invite."
+  },
+  "inviteInboxDeclineConfirmBody": "To join later, you'd need a new invite.",
+  "@inviteInboxDeclineConfirmBody": {
+    "description": "Body of the dialog asking to confirm declining an invite."
+  },
+  "inviteInboxJoined": "You joined {household}.",
+  "@inviteInboxJoined": {
+    "description": "Shown when the user accepted an invite and joined its household.",
+    "placeholders": {
+      "household": {
+        "type": "String",
+        "example": "Sunday Crew"
+      }
+    }
+  },
+  "inviteInboxOpenHousehold": "Open household",
+  "@inviteInboxOpenHousehold": {
+    "description": "Button on the joined banner that opens the household just joined."
+  },
+  "inviteInboxDeclined": "Invite declined.",
+  "@inviteInboxDeclined": {
+    "description": "Shown when the user declined an invite."
+  },
+  "householdDetailInvites": "Invites",
+  "@householdDetailInvites": {
+    "description": "Entry on the household screen that opens the household's invites. Shown to its owners and admins."
+  },
+  "householdDetailInvitesAwaiting": "{count, plural, =1{1 awaiting approval} other{{count} awaiting approval}}",
+  "@householdDetailInvitesAwaiting": {
+    "description": "Under the invites entry: how many invites wait for an owner or admin to approve them. Hidden when none do.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

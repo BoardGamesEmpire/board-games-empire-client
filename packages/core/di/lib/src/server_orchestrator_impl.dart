@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import 'server_context_impl.dart';
@@ -170,6 +171,12 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       // each context into monitoring independently, drop the ones that
       // fail. A dropped context has its persisted connection state cleared
       // so it isn't retried on every startup.
+      //
+      // Except when the key store could not be reached: that says nothing
+      // about the server, whose key may be intact. Initialization fails
+      // instead, which the shell shows as a retryable error, and the
+      // persisted state stays for the next attempt (#428). Contexts already
+      // restored are released by [dispose].
       for (final config in connected) {
         final context = _contextFactory(config);
         try {
@@ -181,6 +188,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         } catch (e, st) {
           _logError('restore of server ${config.id} failed', e, st);
           await _disposeQuietly(context);
+          if (e is EncryptionKeyUnavailableError) rethrow;
           await _updateStateQuietly(config.id, ConnectionState.disconnected);
         }
       }
@@ -199,11 +207,14 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
         } catch (e, st) {
           // Promotion of the chosen active failed: drop it and leave the
           // orchestrator with no active server rather than a non-active
-          // pointer. Remaining monitoring contexts stay connected.
+          // pointer. Remaining monitoring contexts stay connected. A key
+          // store that could not be reached fails initialization instead,
+          // as in the restore loop above.
           _logError('activating restored server $chosenActive failed', e, st);
           await _disposeQuietly(_contexts.remove(chosenActive)!);
           _configs.remove(chosenActive);
           _lastActiveTick.remove(chosenActive);
+          if (e is EncryptionKeyUnavailableError) rethrow;
           await _updateStateQuietly(chosenActive, ConnectionState.disconnected);
           _activeServerId = null;
         }
@@ -227,8 +238,9 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   }) async {
     _assertReady();
 
-    // Persist first. The repository enforces uniqueness
-    // (DuplicateServerException) atomically on its own; orchestrator
+    // Persist first. The repository's table constraints keep a server from
+    // being added twice, even by two adds at once, and the repository
+    // reports either case as DuplicateServerException (#184). Orchestrator
     // state is untouched until connectServer below, which serializes
     // through the standard lock. connectServer cannot be invoked inside
     // _withLock (the re-entrancy guard would trip), so this composes the

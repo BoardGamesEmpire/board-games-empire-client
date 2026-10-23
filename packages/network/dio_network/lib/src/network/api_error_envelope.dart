@@ -49,6 +49,17 @@ bool isRetryableRefusal(Object? body) {
   return decoded is Map && decoded['retryable'] == true;
 }
 
+/// The string [field] of an error body, or null when the body has none.
+///
+/// For the fields a refusal carries beside the envelope, such as a 402's
+/// `resource` and `scope` (#455). Same bounded probe as [isApiErrorEnvelope].
+String? apiErrorField(Object? body, String field) {
+  final decoded = body is String ? _probeJson(body) : body;
+  if (decoded is! Map) return null;
+  final value = decoded[field];
+  return value is String ? value : null;
+}
+
 /// Ceiling on the synchronous probe below.
 ///
 /// An error envelope is a few hundred bytes — Nest's is about a hundred — so

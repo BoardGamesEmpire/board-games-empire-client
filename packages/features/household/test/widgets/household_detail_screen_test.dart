@@ -8,7 +8,10 @@ import 'package:household/l10n/household_localizations.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+
+import '../support/fake_household_invite_remote.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
@@ -77,6 +80,8 @@ void main() {
     void Function(BuildContext context)? onBack,
     Future<void> Function()? onRetry,
     TextScaler textScaler = TextScaler.noScaling,
+    HouseholdInviteRemoteDataSource? invites,
+    void Function(BuildContext context, String householdId)? onOpenInvites,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -91,6 +96,8 @@ void main() {
       hydration: hydration.stream,
       onBack: onBack,
       onRetry: onRetry,
+      invites: invites,
+      onOpenInvites: onOpenInvites,
     ),
   );
 
@@ -622,6 +629,110 @@ void main() {
 
       expect(find.text(_refreshingCopy), findsNothing);
       expect(find.text(_refreshFailedCopy), findsNothing);
+    });
+  });
+
+  group('the invites entry (#455, #489)', () {
+    late FakeHouseholdInviteRemote invites;
+    late List<String> opened;
+
+    setUp(() {
+      invites = FakeHouseholdInviteRemote()
+        ..onFetchHouseholdInvites = (_, _, _, limit) async =>
+            pageOf(const [], limit: limit, total: 2, hasMore: true);
+      opened = [];
+    });
+
+    Widget withInvites() => harness(
+      invites: invites,
+      // Pushes a real page, so leaving it uncovers this screen.
+      onOpenInvites: (context, householdId) {
+        opened.add(householdId);
+        unawaited(
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('the invites')),
+            ),
+          ),
+        );
+      },
+    );
+
+    testWidgets('an owner sees it, with what awaits approval', (tester) async {
+      await tester.pumpWidget(withInvites());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsOneWidget);
+      expect(find.text('2 awaiting approval'), findsOneWidget);
+    });
+
+    testWidgets('no count is shown when nothing awaits approval', (
+      tester,
+    ) async {
+      invites.onFetchHouseholdInvites = (_, _, _, limit) async =>
+          pageOf(const [], limit: limit, total: 0);
+      await tester.pumpWidget(withInvites());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdAdmin)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsOneWidget);
+      expect(find.textContaining('awaiting approval'), findsNothing);
+    });
+
+    testWidgets('a member does not see it', (tester) async {
+      await tester.pumpWidget(withInvites());
+      await settleWith(tester);
+
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsNothing);
+      expect(invites.calls, isEmpty);
+    });
+
+    testWidgets('a household the server does not know yet has none, and '
+        'nothing is asked', (tester) async {
+      await tester.pumpWidget(withInvites());
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(isLocalOnly: true),
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsNothing);
+      expect(invites.calls, isEmpty);
+    });
+
+    testWidgets('a composition without invites has none', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsNothing);
+    });
+
+    testWidgets("opens the household's invites, and counts again on the "
+        'way back', (tester) async {
+      await tester.pumpWidget(withInvites());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.invitesKey));
+      await tester.pumpAndSettle();
+      expect(opened, [_id]);
+      expect(find.text('the invites'), findsOneWidget);
+      expect(invites.calls, hasLength(1));
+
+      Navigator.of(tester.element(find.text('the invites'))).pop();
+      await tester.pumpAndSettle();
+
+      expect(invites.calls, hasLength(2));
     });
   });
 }

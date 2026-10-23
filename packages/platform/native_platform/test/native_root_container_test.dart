@@ -29,6 +29,12 @@ class _FakeKeyService implements EncryptionKeyService {
   Future<String> getOrCreateMetaKey() async => 'b' * 64;
 
   @override
+  Future<String?> findServerKey(String serverId) async => 'a' * 64;
+
+  @override
+  Future<String?> findMetaKey() async => 'b' * 64;
+
+  @override
   Future<void> deleteServerKey(String serverId) async {}
 
   @override

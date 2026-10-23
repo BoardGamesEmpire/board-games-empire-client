@@ -28,6 +28,17 @@ class _FakeKeyService implements EncryptionKeyService {
   /// the database file survives.
   void loseServerKey(String serverId) => _keys.remove('server:$serverId');
 
+  void loseMetaKey() => _keys.remove('meta');
+
+  /// Replaces the stored key with a different valid one, simulating a key
+  /// overwritten while the database file survives.
+  void replaceServerKey(String serverId) =>
+      _keys['server:$serverId'] = _generate();
+
+  bool hasServerKey(String serverId) => _keys.containsKey('server:$serverId');
+
+  bool get hasMetaKey => _keys.containsKey('meta');
+
   String _generate() =>
       (_counter++).toRadixString(16).padLeft(64, '0').substring(0, 64);
 
@@ -38,6 +49,13 @@ class _FakeKeyService implements EncryptionKeyService {
   @override
   Future<String> getOrCreateMetaKey() async =>
       _keys.putIfAbsent('meta', _generate);
+
+  @override
+  Future<String?> findServerKey(String serverId) async =>
+      _keys['server:$serverId'];
+
+  @override
+  Future<String?> findMetaKey() async => _keys['meta'];
 
   @override
   Future<void> deleteServerKey(String serverId) async =>
@@ -140,6 +158,59 @@ void main() {
       );
     });
 
+    test('a file whose key is gone fails as key missing, and no key is '
+        'made for it (#428)', () async {
+      final first = ServerDatabase(factory.serverExecutor('srv_1'));
+      await first.customSelect('SELECT 1').get();
+      await first.close();
+      keys.loseServerKey('srv_1');
+
+      final second = ServerDatabase(factory.serverExecutor('srv_1'));
+      addTearDown(() async {
+        try {
+          await second.close();
+        } catch (_) {}
+      });
+
+      await expectLater(
+        second.customSelect('SELECT 1').get(),
+        throwsA(
+          isA<DatabaseKeyError>().having(
+            (e) => e.failure,
+            'failure',
+            DatabaseKeyFailure.keyMissing,
+          ),
+        ),
+      );
+      expect(keys.hasServerKey('srv_1'), isFalse);
+    });
+
+    test('a file the stored key does not open fails as key mismatch '
+        '(#428)', () async {
+      final first = ServerDatabase(factory.serverExecutor('srv_1'));
+      await first.customSelect('SELECT 1').get();
+      await first.close();
+      keys.replaceServerKey('srv_1');
+
+      final second = ServerDatabase(factory.serverExecutor('srv_1'));
+      addTearDown(() async {
+        try {
+          await second.close();
+        } catch (_) {}
+      });
+
+      await expectLater(
+        second.customSelect('SELECT 1').get(),
+        throwsA(
+          isA<DatabaseKeyError>().having(
+            (e) => e.failure,
+            'failure',
+            DatabaseKeyFailure.keyMismatch,
+          ),
+        ),
+      );
+    });
+
     test(
       'transient lock errors pass through untranslated (no DatabaseKeyError)',
       () async {
@@ -227,6 +298,33 @@ void main() {
         String.fromCharCodes(header),
         isNot(startsWith('SQLite format 3')),
       );
+    });
+
+    test('a meta file whose key is gone fails as key missing, and no key '
+        'is made for it (#428)', () async {
+      final first = MetaDatabase(factory.metaExecutor());
+      await first.customSelect('SELECT 1').get();
+      await first.close();
+      keys.loseMetaKey();
+
+      final second = MetaDatabase(factory.metaExecutor());
+      addTearDown(() async {
+        try {
+          await second.close();
+        } catch (_) {}
+      });
+
+      await expectLater(
+        second.customSelect('SELECT 1').get(),
+        throwsA(
+          isA<DatabaseKeyError>().having(
+            (e) => e.failure,
+            'failure',
+            DatabaseKeyFailure.keyMissing,
+          ),
+        ),
+      );
+      expect(keys.hasMetaKey, isFalse);
     });
   });
 

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -85,71 +84,17 @@ class DataGatewayListScreen extends StatelessWidget {
     create: (_) =>
         DataGatewayListBloc(remote: remote, access: access)
           ..add(const DataGatewayListLoadRequested()),
-    child: _ReadAgainWhenUncovered(
-      child: _DataGatewayListView(onAdd: onAdd, onEdit: onEdit),
+    // Reads the list again when the screen comes back into view, so it
+    // covers a form this screen opened and one a deep link built it beneath.
+    child: Builder(
+      builder: (context) => ReadAgainWhenUncovered(
+        onUncovered: () => context.read<DataGatewayListBloc>().add(
+          const DataGatewayListLoadRequested(),
+        ),
+        child: _DataGatewayListView(onAdd: onAdd, onEdit: onEdit),
+      ),
     ),
   );
-}
-
-/// Reads the list again when the screen comes back into view.
-///
-/// Watches [TickerMode], which turns off while an opaque route covers the
-/// screen and back on as that route starts to leave. So it covers a form this
-/// screen opened and one it did not, such as a form a deep link built the
-/// list beneath. Dialogs and menus are not opaque, so they never turn it off.
-class _ReadAgainWhenUncovered extends StatefulWidget {
-  const _ReadAgainWhenUncovered({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_ReadAgainWhenUncovered> createState() =>
-      _ReadAgainWhenUncoveredState();
-}
-
-class _ReadAgainWhenUncoveredState extends State<_ReadAgainWhenUncovered> {
-  ValueListenable<TickerModeData>? _tickerMode;
-  bool _covered = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _watch();
-  }
-
-  @override
-  void activate() {
-    super.activate();
-    // Moved in the tree, maybe under another TickerMode.
-    _watch();
-  }
-
-  void _watch() {
-    final tickerMode = TickerMode.getValuesNotifier(context);
-    if (identical(tickerMode, _tickerMode)) return;
-    _tickerMode?.removeListener(_changed);
-    _tickerMode = tickerMode..addListener(_changed);
-    _covered = !tickerMode.value.enabled;
-  }
-
-  void _changed() {
-    final visible = _tickerMode!.value.enabled;
-    if (_covered && visible) {
-      context.read<DataGatewayListBloc>().add(
-        const DataGatewayListLoadRequested(),
-      );
-    }
-    _covered = !visible;
-  }
-
-  @override
-  void dispose() {
-    _tickerMode?.removeListener(_changed);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
 }
 
 class _DataGatewayListView extends StatelessWidget {

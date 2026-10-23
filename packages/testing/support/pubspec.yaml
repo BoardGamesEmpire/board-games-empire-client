@@ -7,8 +7,9 @@ environment:
   flutter: ">=3.47.1"
 resolution: workspace
 
-# Two entry points, one package (#354 D1). `network.dart` needs only `dio`;
-# `widgets.dart` needs `flutter_test` and the theme. They are separate LIBRARIES
+# Separate entry points, one package (#354 D1). `network.dart` needs only
+# `dio`; `widgets.dart` needs `flutter_test` and the theme; `images.dart` (#42)
+# needs `flutter_test` and `dart:io`. They are separate LIBRARIES
 # rather than separate PACKAGES because pub resolves dependencies per package,
 # not per library — a second package would not have isolated anything, since
 # both `dio_network` and `web_network` already declare `flutter` as a regular

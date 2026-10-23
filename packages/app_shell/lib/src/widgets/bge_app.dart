@@ -6,6 +6,8 @@ import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:game_catalog/game_catalog.dart';
+import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:game_collection/l10n/game_collection_localizations.dart';
 import 'package:go_router/go_router.dart';
@@ -24,7 +26,7 @@ import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-import 'package:ui/ui.dart' show UnverifiedSessionBanner;
+import 'package:ui/ui.dart' show BgePage, UnverifiedSessionBanner;
 
 import '../../l10n/shell_localizations.dart';
 import '../bootstrap/app_bootstrap_cubit.dart';
@@ -44,6 +46,7 @@ import '../settings/locale_cubit.dart';
 import '../settings/settings_sections_builder.dart';
 import '../settings/theme_mode_cubit.dart';
 import 'crash_report_prompt.dart';
+import 'database_recovery_notice.dart';
 import 'feedback_review_screen.dart';
 import 'router_back_interceptor.dart';
 import 'detached_rehydrate.dart';
@@ -123,6 +126,24 @@ import 'session_rehydrate_trigger.dart';
 /// phases also bounces to the prompt even though the visible `BackButton`
 /// is disabled/hidden then — a re-send from the prompt is deduplicated
 /// server-side by the report's `clientRequestId`.
+///
+/// Keyboard focus: a route would own it, and above the Navigator nothing
+/// does, so the crash flow does it itself. While a draft is pending the
+/// app behind the barrier can't take focus, so a field there can't take
+/// what is typed and Tab stays in the flow. The prompt and the review
+/// surface share one focus scope, which takes focus when the flow opens,
+/// again when it swaps between them, and back from a screen that opens
+/// behind the barrier. It takes it as a scope, not on
+/// the comment field, so no soft keyboard opens unasked. Closing the flow
+/// gives focus back to wherever it was before, or to the router's
+/// Navigator when that is gone.
+///
+/// The [DatabaseRecoveryNotice] sits above the crash flow and shuts it out
+/// of focus while it is up, so the crash flow takes focus again once the
+/// notice is acknowledged. Until then the crash flow's back handler passes
+/// system back on to the notice's: a crash that arrived under the notice
+/// took priority on the dispatcher after it, and would otherwise arm, then
+/// discard, a prompt the user can't see.
 ///
 /// Seams left deliberately open for sibling issues:
 /// - [pendingDeepLinkHolder] (#10) — held here so #82 (consumption) and
@@ -258,6 +279,19 @@ class _BgeAppState extends State<BgeApp> {
   final ValueNotifier<bool> _promptDismissArmed = ValueNotifier<bool>(false);
   Timer? _promptDismissDisarmTimer;
 
+  /// The crash flow's focus scope, shared by the prompt and the review
+  /// surface; see the class docs.
+  final FocusScopeNode _crashFocus = FocusScopeNode(debugLabel: 'crash flow');
+
+  /// Where focus was when the crash flow took it, given back when it
+  /// closes. Non-null only while the flow is up.
+  FocusNode? _focusBeforeCrash;
+  bool _crashFlowUp = false;
+
+  /// Whether the [DatabaseRecoveryNotice] above the crash flow is up, so
+  /// the crash flow's back handler defers to it.
+  bool _recoveryNoticeUp = false;
+
   /// App-level, persisted theme-mode + locale controllers (#120).
   ///
   /// Created lazily on the first storage-ready bootstrap state — never
@@ -292,6 +326,13 @@ class _BgeAppState extends State<BgeApp> {
   /// the auth route. Held here because both reach it, and its count waits
   /// for its writes.
   final _UnsentChanges _unsentChanges = _UnsentChanges();
+
+  /// Each game a detail finds gone (#42), told to every catalog list open:
+  /// the one it was opened from, and a browse beneath a search. A list hears
+  /// only what is found while it is open, so nothing carries over from one
+  /// visit to the next.
+  final StreamController<String> _gamesFoundGone =
+      StreamController<String>.broadcast();
 
   /// Whose session home is built for, set by [_AuthScope] (#432).
   ///
@@ -341,8 +382,14 @@ class _BgeAppState extends State<BgeApp> {
       settingsBuilder: _buildSettingsRoute,
       householdListBuilder: _buildHouseholdListRoute,
       householdDetailBuilder: _buildHouseholdDetailRoute,
+      householdInvitesBuilder: _buildHouseholdInvitesRoute,
+      sendHouseholdInviteBuilder: _buildSendHouseholdInviteRoute,
+      inviteInboxBuilder: _buildInviteInboxRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
+      gameBrowseBuilder: _buildGameBrowseRoute,
+      gameSearchBuilder: _buildGameSearchRoute,
+      gameDetailBuilder: _buildGameDetailRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
@@ -352,6 +399,7 @@ class _BgeAppState extends State<BgeApp> {
     final reporter = widget.feedbackReporter;
     if (reporter != null) {
       reporter.pendingCrashReport.addListener(_handlePendingCrashChanged);
+      if (reporter.pendingCrashReport.value != null) _takeCrashFocus();
     }
     // #120: create the persisted theme-mode + locale controllers as soon
     // as hydrated storage is ready (the first storage-ready bootstrap
@@ -381,11 +429,61 @@ class _BgeAppState extends State<BgeApp> {
     final draft = widget.feedbackReporter?.pendingCrashReport.value;
     if (draft == null) {
       _closeReview();
+      _giveCrashFocusBack();
       return;
     }
+    if (!_crashFlowUp) _takeCrashFocus();
     if (_reviewPreview.value != null && !identical(draft, _reviewOpenedFor)) {
       _closeReview();
     }
+  }
+
+  void _takeCrashFocus() {
+    _crashFlowUp = true;
+    _focusBeforeCrash = FocusManager.instance.primaryFocus;
+    _focusCrashFlow();
+  }
+
+  /// After the frame that builds the surface now showing, which replaces
+  /// whatever in the flow had focus.
+  void _focusCrashFlow() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _crashFlowUp) _crashFocus.requestFocus();
+    });
+  }
+
+  /// Takes focus back from a route that opens behind the barrier: a route
+  /// focuses itself before it is put in its place, where the flow shuts it
+  /// out. The recovery notice above the flow holds focus while it is up,
+  /// and focus on the root is the app gone to the background, which gives
+  /// focus back to the flow itself on return.
+  void _keepCrashFocus(bool hasFocus) {
+    if (hasFocus || !mounted || !_crashFlowUp || _recoveryNoticeUp) return;
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus == null || focus == FocusManager.instance.rootScope) return;
+    _crashFocus.requestFocus();
+  }
+
+  void _giveCrashFocusBack() {
+    if (!_crashFlowUp) return;
+    _crashFlowUp = false;
+    final before = _focusBeforeCrash;
+    _focusBeforeCrash = null;
+    // After the frame that lets the app take focus again.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Gone (a node keeps its context after its widget is), or shut out
+      // (the notice's button, say): focus given there leaves Tab nothing
+      // to move through.
+      final canReturn =
+          before != null &&
+          (before.context?.mounted ?? false) &&
+          before.canRequestFocus;
+      final target = canReturn
+          ? before
+          : _router.routerDelegate.navigatorKey.currentState?.focusNode;
+      target?.requestFocus();
+    });
   }
 
   /// Seeds the #76 review surface from [draft] plus the comment typed on
@@ -395,13 +493,16 @@ class _BgeAppState extends State<BgeApp> {
     _reviewPreview.value = FeedbackReportPreview.fromReport(
       draft.withUserComment(comment),
     );
+    _focusCrashFlow();
   }
 
   /// Closes the review surface (back to the compact prompt while a draft
   /// is still pending) and forgets the remembered draft identity.
   void _closeReview() {
+    final wasOpen = _reviewPreview.value != null;
     _reviewOpenedFor = null;
     _reviewPreview.value = null;
+    if (wasOpen) _focusCrashFlow();
   }
 
   /// The single terminal exit of the crash flow: clears every
@@ -432,10 +533,12 @@ class _BgeAppState extends State<BgeApp> {
     }
   }
 
-  /// Routes an intercepted system back press (#106). Always consumes —
-  /// while the crash flow is up, back must never reach the router hidden
-  /// under the barrier.
+  /// Routes an intercepted system back press (#106). Consumes it, so while
+  /// the crash flow is up back never reaches the router hidden under the
+  /// barrier, unless the recovery notice is up: then it passes the press
+  /// on to the notice's handler, which consumes it in turn.
   Future<bool> _handleCrashBack(FeedbackUncaughtErrorReporter reporter) async {
+    if (_recoveryNoticeUp) return false;
     if (_reviewPreview.value != null) {
       // Review surface → compact prompt, matching its visible BackButton.
       _closeReview();
@@ -531,6 +634,7 @@ class _BgeAppState extends State<BgeApp> {
 
   Widget _buildHome(BuildContext context, ActiveServer active) {
     final authL10n = AuthLocalizations.of(context);
+    final catalogL10n = GameCatalogLocalizations.of(context);
     final collectionL10n = GameCollectionLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
@@ -576,6 +680,16 @@ class _BgeAppState extends State<BgeApp> {
     // top-level destination until #414 decides those.
     final canReadCollection = container
         .isRegistered<GameCollectionRepository>();
+    // #42: browse reads the server, so its gate is the games remote, which
+    // the network installer registers per server. A drawer entry, like the
+    // collection's (#44): navigation is #414's.
+    final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
+    // #455: the inbox needs the invite client as well, since it reads the
+    // server rather than the cache; the household gate keeps it to a live
+    // user session, as the households entry is.
+    final canReadInvites =
+        canReadHouseholds &&
+        container.isRegistered<HouseholdInviteRemoteDataSource>();
 
     HomeScreen home({required bool admin}) => HomeScreen(
       activeServerName: active.displayName,
@@ -596,12 +710,26 @@ class _BgeAppState extends State<BgeApp> {
             label: collectionL10n.collectionListTitle,
             onSelected: (ctx) => ctx.push(AppRoutes.collection),
           ),
+        if (canBrowseGames)
+          HomeMenuEntry(
+            id: 'games',
+            icon: Icons.explore_outlined,
+            label: catalogL10n.catalogBrowseTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.games),
+          ),
         if (canReadHouseholds)
           HomeMenuEntry(
             id: 'households',
             icon: Icons.groups_outlined,
             label: householdL10n.householdListTitle,
             onSelected: (ctx) => ctx.push(AppRoutes.household),
+          ),
+        if (canReadInvites)
+          HomeMenuEntry(
+            id: 'invites',
+            icon: Icons.mail_outline,
+            label: householdL10n.inviteInboxTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.invites),
           ),
         HomeMenuEntry(
           id: 'send_feedback',
@@ -801,6 +929,120 @@ class _BgeAppState extends State<BgeApp> {
       // path, where a `go` would also have dropped home, and the one
       // go_router builds for a `go` straight here.
       onBack: (ctx) => ctx.pop(),
+      // #455: the invites entry. The screen itself hides it from a viewer
+      // who may not manage invites and for a household the server does not
+      // know yet; here it is only whether this composition can reach them.
+      invites: _inviteClient(container),
+      onOpenInvites: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.householdInvitesOf(id))),
+    );
+  }
+
+  /// The per-server invite client (#455), or null where this composition
+  /// has none.
+  HouseholdInviteRemoteDataSource? _inviteClient(
+    DependencyContainer container,
+  ) => container.isRegistered<HouseholdInviteRemoteDataSource>()
+      ? container.get<HouseholdInviteRemoteDataSource>()
+      : null;
+
+  /// The #455 household-invites wiring. Null (→ [NotYetAvailableScreen])
+  /// without an active server, the invite client, or the user-session
+  /// [HouseholdRepository] that says who is looking.
+  ///
+  /// Not gated on the viewer's role: a deep link by someone the server
+  /// refuses reaches the screen, which says only owners and admins can see
+  /// the invites.
+  Widget? _buildHouseholdInvitesRoute(
+    BuildContext context,
+    String householdId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return HouseholdInviteListScreen(
+      householdId: householdId,
+      remote: invites,
+      repository: container.get<HouseholdRepository>(),
+      onInvite: (ctx) => unawaited(
+        ctx.push<void>(AppRoutes.householdInviteSendOf(householdId)),
+      ),
+    );
+  }
+
+  /// The #455 send-invite wiring. Same null contract as
+  /// [_buildHouseholdInvitesRoute].
+  ///
+  /// The form offers roles by who is looking, which is a cache read; the
+  /// screen takes the answer rather than reading it, so it stays
+  /// synchronous. Leaving after a send is a pop: the route is the invite
+  /// list's child, and the list reads itself again as it comes back into
+  /// view.
+  Widget? _buildSendHouseholdInviteRoute(
+    BuildContext context,
+    String householdId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return _SendHouseholdInviteRoute(
+      // A new household is a new read of who is looking. Without the key, a
+      // `go` between two households' forms would offer the first one's
+      // roles until the second read lands.
+      key: ValueKey<String>(householdId),
+      householdId: householdId,
+      repository: container.get<HouseholdRepository>(),
+      remote: invites,
+    );
+  }
+
+  /// The #455 invite-inbox wiring. Same null contract as
+  /// [_buildHouseholdInvitesRoute].
+  ///
+  /// After an accept, the household arrives through the hydrate: one pass,
+  /// or two when one was already running (see `refreshAfterJoin`). No
+  /// refresher registered means no drain to run, and the household comes
+  /// with the next pass that does.
+  ///
+  /// Both are resolved here, as [_householdRetry] does, not when the accept
+  /// answers. By then the session may have ended, and a lookup would throw
+  /// or reach the next user's scope.
+  Widget? _buildInviteInboxRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    final refresher = container.isRegistered<HouseholdRefresher>()
+        ? container.get<HouseholdRefresher>()
+        : null;
+    final status = container.isRegistered<HouseholdHydrationStatus>()
+        ? container.get<HouseholdHydrationStatus>()
+        : null;
+
+    return InviteInboxScreen(
+      remote: invites,
+      onJoined: refresher == null
+          ? null
+          : (_) => refreshAfterJoin(refresher, status),
+      onOpenHousehold: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.householdDetailOf(id))),
     );
   }
 
@@ -939,6 +1181,112 @@ class _BgeAppState extends State<BgeApp> {
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
     );
+  }
+
+  /// The games cache (#42): the user-session [GameRepository], or null where
+  /// no user session is active. The catalog screens read the server without
+  /// it, and have nothing to show offline.
+  static GameRepository? _gamesCache(DependencyContainer container) =>
+      container.isRegistered<GameRepository>()
+      ? container.get<GameRepository>()
+      : null;
+
+  /// Opens one game from a catalog screen (#42). A push, so leaving the
+  /// detail returns to the list or the search the user came from.
+  static void _openGame(BuildContext context, String gameId) =>
+      unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
+
+  /// Tells the catalog lists open that a game is gone: see
+  /// [_gamesFoundGone]. A detail answering after the app is gone tells no
+  /// one.
+  void _reportGameGone(String gameId) {
+    if (!_gamesFoundGone.isClosed) _gamesFoundGone.add(gameId);
+  }
+
+  /// The active server's container, where it holds the per-server
+  /// [GamesRemoteDataSource]: the gate every #42 catalog route shares. Null
+  /// (→ [NotYetAvailableScreen]) when no active server is resolvable or it
+  /// has no games remote.
+  ///
+  /// Resolved per route build, as the other screens are: anything held
+  /// across a session change would reach a disposed scope's cache.
+  DependencyContainer? _catalogContainer() {
+    final container =
+        widget.bootstrapCubit.activeServerScope?.active?.container;
+    if (container == null || !container.isRegistered<GamesRemoteDataSource>()) {
+      return null;
+    }
+    return container;
+  }
+
+  /// The #42 browse screen: the games remote and the optional games cache,
+  /// behind [_catalogContainer]'s gate.
+  Widget? _buildGameBrowseRoute(BuildContext context) {
+    final container = _catalogContainer();
+    if (container == null) return null;
+
+    return GameBrowseScreen(
+      remote: container.get<GamesRemoteDataSource>(),
+      cache: _gamesCache(container),
+      gone: _gamesFoundGone.stream,
+      onOpen: _openGame,
+      onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
+    );
+  }
+
+  /// The #42 search screen. Same gate as [_buildGameBrowseRoute], plus the
+  /// DataGateways' names where the user may read them.
+  ///
+  /// No `onImport`: importing a DataGateway result is #43's, and until it
+  /// supplies one those rows stay inert.
+  Widget? _buildGameSearchRoute(BuildContext context) {
+    final container = _catalogContainer();
+    if (container == null) return null;
+
+    return GameSearchScreen(
+      remote: container.get<GamesRemoteDataSource>(),
+      cache: _gamesCache(container),
+      sourceNames: _dataGatewayNames(container),
+      gone: _gamesFoundGone.stream,
+      onOpen: _openGame,
+    );
+  }
+
+  /// The #42 detail screen for [gameId]. Same gate as
+  /// [_buildGameBrowseRoute].
+  ///
+  /// No `onAdd`: adding a game to the collection is #45's, and until it
+  /// supplies one the screen offers no add.
+  Widget? _buildGameDetailRoute(BuildContext context, String gameId) {
+    final container = _catalogContainer();
+    if (container == null) return null;
+
+    return GameDetailScreen(
+      gameId: gameId,
+      remote: container.get<GamesRemoteDataSource>(),
+      cache: _gamesCache(container),
+      onGone: _reportGameGone,
+    );
+  }
+
+  /// Reads every DataGateway's name, by id, for the search screen (#42), or
+  /// null where the session has not learned that the user may read
+  /// DataGateways. Ordinary users may not (`read:data_gateway` is
+  /// staff-only), and their search results then carry no DataGateway name.
+  ///
+  /// Decided when the route is built. A user whose access check answers
+  /// after they opened search sees names the next time they open it.
+  static Future<Map<String, String>> Function()? _dataGatewayNames(
+    DependencyContainer container,
+  ) {
+    final access = _dataGatewayAccess(container);
+    if (access == null ||
+        access.value.read != DataGatewayRead.granted ||
+        !container.isRegistered<DataGatewayRemoteDataSource>()) {
+      return null;
+    }
+    final remote = container.get<DataGatewayRemoteDataSource>();
+    return () => readDataGatewayNames(remote);
   }
 
   /// Whether [container] holds what the #190 retry-or-discard screen needs:
@@ -1235,12 +1583,14 @@ class _BgeAppState extends State<BgeApp> {
     _promptDismissDisarmTimer?.cancel();
     _promptDismissArmed.dispose();
     _reviewPreview.dispose();
+    _crashFocus.dispose();
     _homeSession.dispose();
     unawaited(_settingsControllerSub?.cancel());
     unawaited(_themeModeSub?.cancel());
     unawaited(_localeSub?.cancel());
     unawaited(_themeModeCubit?.close());
     unawaited(_localeCubit?.close());
+    unawaited(_gamesFoundGone.close());
     final deepLinkHandler = widget.deepLinkHandler;
     if (widget.disposeDeepLinkHandlerOnDispose && deepLinkHandler != null) {
       unawaited(deepLinkHandler.dispose());
@@ -1418,7 +1768,10 @@ class _BgeAppState extends State<BgeApp> {
                           BlockSemantics(
                             key: BgeApp.contentSemanticsBlockerKey,
                             blocking: draft != null,
-                            child: content,
+                            child: ExcludeFocus(
+                              excluding: draft != null,
+                              child: content,
+                            ),
                           ),
                           if (draft != null) ...[
                             // #106: while the crash flow is up, take
@@ -1461,55 +1814,77 @@ class _BgeAppState extends State<BgeApp> {
                             // must unmount with the crash flow, and the
                             // content below must stay selectable whether or
                             // not a draft is pending.
-                            if (reviewPreview == null)
-                              // #69 compact "ask each time" prompt.
-                              Overlay.wrap(
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: Padding(
-                                    padding: EdgeInsets.all(
-                                      BgeTokens.of(context).spaceMd,
-                                    ),
-                                    child: ValueListenableBuilder<bool>(
-                                      valueListenable: _promptDismissArmed,
-                                      builder: (context, dismissArmed, _) {
-                                        return CrashReportPrompt(
-                                          report: draft,
-                                          // #106: after a first intercepted
-                                          // back, surface the localized
-                                          // live-region dismiss hint.
-                                          showDismissHint: dismissArmed,
+                            //
+                            // One focus scope holds whichever surface is
+                            // showing (see the class docs), filling the
+                            // Stack as each surface did on its own. The
+                            // keys keep a swap remounting the overlay, as
+                            // it did when each was the Stack's own child.
+                            Positioned.fill(
+                              child: FocusScope(
+                                node: _crashFocus,
+                                onFocusChange: _keepCrashFocus,
+                                child: reviewPreview == null
+                                    // #69 compact "ask each time" prompt.
+                                    ? Overlay.wrap(
+                                        key: const ValueKey(
+                                          'bge_app.crash_flow.prompt',
+                                        ),
+                                        child: Align(
+                                          alignment: Alignment.bottomCenter,
+                                          child: Padding(
+                                            padding: EdgeInsets.all(
+                                              BgeTokens.of(context).spaceMd,
+                                            ),
+                                            child: ValueListenableBuilder<bool>(
+                                              valueListenable:
+                                                  _promptDismissArmed,
+                                              builder: (context, dismissArmed, _) {
+                                                return CrashReportPrompt(
+                                                  report: draft,
+                                                  // #106: after a first intercepted
+                                                  // back, surface the localized
+                                                  // live-region dismiss hint.
+                                                  showDismissHint: dismissArmed,
+                                                  onSubmit:
+                                                      reporter.service.submit,
+                                                  // #76: seed the review slot from
+                                                  // the draft plus the typed
+                                                  // comment; the overlay then swaps
+                                                  // to the full surface below.
+                                                  onReviewDetails: (comment) =>
+                                                      _openReview(
+                                                        draft,
+                                                        comment,
+                                                      ),
+                                                  onDiscard: () =>
+                                                      _discardCrashDraft(
+                                                        reporter,
+                                                      ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    // #76 full review & redaction surface.
+                                    : Overlay.wrap(
+                                        key: const ValueKey(
+                                          'bge_app.crash_flow.review',
+                                        ),
+                                        child: FeedbackReviewScreen(
+                                          preview: reviewPreview,
                                           onSubmit: reporter.service.submit,
-                                          // #76: seed the review slot from
-                                          // the draft plus the typed
-                                          // comment; the overlay then swaps
-                                          // to the full surface below.
-                                          onReviewDetails: (comment) =>
-                                              _openReview(draft, comment),
-                                          onDiscard: () =>
+                                          // Back out of review → compact prompt.
+                                          onCancel: _closeReview,
+                                          // Dismiss after a terminal outcome →
+                                          // clear every slot.
+                                          onClose: () =>
                                               _discardCrashDraft(reporter),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              // #76 full review & redaction surface,
-                              // filling the overlay above the barrier.
-                              Positioned.fill(
-                                child: Overlay.wrap(
-                                  child: FeedbackReviewScreen(
-                                    preview: reviewPreview,
-                                    onSubmit: reporter.service.submit,
-                                    // Back out of review → compact prompt.
-                                    onCancel: _closeReview,
-                                    // Dismiss after a terminal outcome →
-                                    // clear every slot.
-                                    onClose: () => _discardCrashDraft(reporter),
-                                  ),
-                                ),
+                                        ),
+                                      ),
                               ),
+                            ),
                           ],
                         ],
                       );
@@ -1517,6 +1892,23 @@ class _BgeAppState extends State<BgeApp> {
                   );
                 },
               );
+        // #428: the notice of a server database rebuilt during boot. Above
+        // the router, so the redirects of the first screens cannot remove
+        // it, and unconditional, so the tree shape never changes.
+        body = DatabaseRecoveryNotice(
+          bootstrapCubit: widget.bootstrapCubit,
+          backButtonDispatcher: _router.backButtonDispatcher,
+          onShown: () => _recoveryNoticeUp = true,
+          // A crash flow under the notice couldn't take focus while it was
+          // up; see the class docs.
+          onAcknowledged: () {
+            _recoveryNoticeUp = false;
+            if (_crashFlowUp) _focusCrashFlow();
+          },
+          fallbackFocus: () =>
+              _router.routerDelegate.navigatorKey.currentState?.focusNode,
+          child: body,
+        );
         final activeLocaleController = widget.activeLocaleController;
         if (activeLocaleController != null) {
           body = ActiveLocaleCapture(
@@ -1548,6 +1940,7 @@ class _BgeAppState extends State<BgeApp> {
         FeedbackLocalizations.delegate,
         HouseholdLocalizations.delegate,
         GameCollectionLocalizations.delegate,
+        GameCatalogLocalizations.delegate,
         SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
@@ -2284,4 +2677,83 @@ class _UnverifiedSessionBannerHostState
       },
     );
   }
+}
+
+/// Resolves who is looking, then shows the send-invite form (#455).
+///
+/// A cache read that takes a frame or two. While it runs the page shows a
+/// spinner under the form's own title, so the route does not flash a
+/// different screen first. A failed read is a viewer the cache cannot
+/// place, which the form answers with its not-allowed note.
+///
+/// Asked again whenever the household's roster changes, the household detail
+/// screen's way: on a deep link the cache may be cold when the route opens,
+/// and the hydrate's member rows are what let the form open. A role changed
+/// under the open form reaches it the same way.
+class _SendHouseholdInviteRoute extends StatefulWidget {
+  const _SendHouseholdInviteRoute({
+    required this.householdId,
+    required this.repository,
+    required this.remote,
+    super.key,
+  });
+
+  final String householdId;
+  final HouseholdRepository repository;
+  final HouseholdInviteRemoteDataSource remote;
+
+  @override
+  State<_SendHouseholdInviteRoute> createState() =>
+      _SendHouseholdInviteRouteState();
+}
+
+class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
+  /// Records, so a null role still reads as an answer.
+  late final Stream<({HouseholdRole? role})> _viewer = _watch();
+
+  Stream<({HouseholdRole? role})> _watch() async* {
+    yield await _read();
+    try {
+      await for (final _ in widget.repository.watchMembers(
+        widget.householdId,
+      )) {
+        yield await _read();
+      }
+    } on Object {
+      // The last answer stands.
+    }
+  }
+
+  Future<({HouseholdRole? role})> _read() async {
+    try {
+      final member = await widget.repository.getCurrentUserMember(
+        widget.householdId,
+      );
+      return (role: member?.role);
+    } on Object {
+      return (role: null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<({HouseholdRole? role})>(
+    stream: _viewer,
+    builder: (context, snapshot) {
+      final viewer = snapshot.data;
+      if (viewer == null) {
+        return BgePage(
+          title: Text(HouseholdLocalizations.of(context).inviteSendTitle),
+          width: BgePageWidth.pane,
+          centerVertically: true,
+          child: const Center(child: CircularProgressIndicator()),
+        );
+      }
+      return SendHouseholdInviteScreen(
+        householdId: widget.householdId,
+        viewerRole: viewer.role,
+        remote: widget.remote,
+        onSent: (ctx) => ctx.pop(),
+      );
+    },
+  );
 }

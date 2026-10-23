@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -118,25 +119,142 @@ void main() {
         expect(server.isIdentityStale, isFalse);
       });
 
-      test('prevents duplicate server URL', () async {
+      test(
+        'a duplicate URL is reported as one, naming the URL (#184)',
+        () async {
+          await _addServer(repository);
+
+          await expectLater(
+            _addServer(
+              repository,
+              bgeServerId: 'different-uuid-1111-1111-111111111111',
+            ),
+            throwsA(
+              isA<DuplicateServerException>()
+                  .having((e) => e.kind, 'kind', DuplicateServerKind.url)
+                  .having((e) => e.value, 'value', _kServerUrl)
+                  .having(
+                    (e) => e.toString(),
+                    'message',
+                    'DuplicateServerException: a server with URL '
+                        '$_kServerUrl is already registered',
+                  ),
+            ),
+          );
+        },
+      );
+
+      test('a duplicate URL is found whatever its case', () async {
         await _addServer(repository);
 
-        expect(
-          () => _addServer(
+        await expectLater(
+          _addServer(
             repository,
+            serverUrl: _kServerUrl.toUpperCase(),
             bgeServerId: 'different-uuid-1111-1111-111111111111',
           ),
-          throwsA(isA<DuplicateServerException>()),
+          throwsA(
+            isA<DuplicateServerException>().having(
+              (e) => e.kind,
+              'kind',
+              DuplicateServerKind.url,
+            ),
+          ),
         );
       });
 
-      test('prevents duplicate bgeServerId', () async {
+      test('a duplicate server identity is reported as one, naming the '
+          'bgeServerId (#184)', () async {
         await _addServer(repository);
 
-        expect(
-          () => _addServer(repository, serverUrl: 'https://other.example.com'),
-          throwsA(isA<DuplicateServerException>()),
+        await expectLater(
+          _addServer(repository, serverUrl: 'https://other.example.com'),
+          throwsA(
+            isA<DuplicateServerException>()
+                .having((e) => e.kind, 'kind', DuplicateServerKind.identity)
+                .having((e) => e.value, 'value', _kBgeServerId)
+                .having(
+                  (e) => e.toString(),
+                  'message',
+                  'DuplicateServerException: a server with identity '
+                      '(bgeServerId) $_kBgeServerId is already registered',
+                ),
+          ),
         );
+      });
+
+      // #184: both calls pass the checks before either inserts, so only the
+      // table's UNIQUE constraints stand between them.
+      group('two adds racing past the checks', () {
+        Future<List<Object>> settle(List<Future<ServerConfig>> adds) =>
+            Future.wait([
+              for (final add in adds)
+                add.then<Object>((server) => server, onError: (Object e) => e),
+            ]);
+
+        test(
+          'one adds the server, and the other fails as a duplicate URL',
+          () async {
+            final outcomes = await settle([
+              _addServer(
+                repository,
+                bgeServerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+              ),
+              _addServer(
+                repository,
+                bgeServerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+              ),
+            ]);
+
+            expect(outcomes.whereType<ServerConfig>(), hasLength(1));
+            final duplicate = outcomes.whereType<DuplicateServerException>();
+            expect(duplicate.single.kind, DuplicateServerKind.url);
+            expect(duplicate.single.value, _kServerUrl);
+          },
+        );
+
+        test('one adds the server, and the other fails as a duplicate '
+            'identity', () async {
+          final outcomes = await settle([
+            _addServer(repository, serverUrl: 'https://a.example.com'),
+            _addServer(repository, serverUrl: 'https://b.example.com'),
+          ]);
+
+          expect(outcomes.whereType<ServerConfig>(), hasLength(1));
+          final duplicate = outcomes.whereType<DuplicateServerException>();
+          expect(duplicate.single.kind, DuplicateServerKind.identity);
+          expect(duplicate.single.value, _kBgeServerId);
+        });
+
+        test('the loser is typed when the database runs in a background '
+            'isolate, as the app\'s does', () async {
+          final directory = await Directory.systemTemp.createTemp('bge_meta_');
+          addTearDown(() => directory.delete(recursive: true));
+          final background = MetaDatabase.test(
+            NativeDatabase.createInBackground(
+              File('${directory.path}/servers.db'),
+            ),
+          );
+          addTearDown(background.close);
+          final backgroundRepository = ServerRepositoryImpl(background);
+
+          final outcomes = await settle([
+            _addServer(
+              backgroundRepository,
+              serverUrl: 'https://a.example.com',
+            ),
+            _addServer(
+              backgroundRepository,
+              serverUrl: 'https://b.example.com',
+            ),
+          ]);
+
+          expect(outcomes.whereType<ServerConfig>(), hasLength(1));
+          expect(
+            outcomes.whereType<DuplicateServerException>().single.kind,
+            DuplicateServerKind.identity,
+          );
+        });
       });
 
       test('allows multiple servers with distinct URLs and UUIDs', () async {
@@ -191,6 +309,37 @@ void main() {
           () => repository.removeServer(server.id),
           throwsA(isA<ActiveServerException>()),
         );
+      });
+
+      // #184: the check and the delete must see the same row.
+      test('never deletes a server made active while its removal is in '
+          'flight', () async {
+        final server = await _addServer(repository);
+
+        final removal = repository
+            .removeServer(server.id)
+            .then<Object?>((_) => null, onError: (Object e) => e);
+        // Written directly so it can land between the removal's check and
+        // its delete; 'Active' is the stored form of ConnectionState.active.
+        final activation =
+            (database.update(
+              database.serverConfigs,
+            )..where((t) => t.id.equals(server.id))).write(
+              const ServerConfigsCompanion(connectionState: Value('Active')),
+            );
+        final removalError = await removal;
+        final rowsActivated = await activation;
+
+        if (removalError == null) {
+          expect(
+            rowsActivated,
+            0,
+            reason: 'the activation landed on a row the removal then deleted',
+          );
+        } else {
+          expect(removalError, isA<ActiveServerException>());
+          expect((await repository.getServer(server.id))?.isActive, isTrue);
+        }
       });
 
       test('throws ServerNotFoundException for unknown id', () async {

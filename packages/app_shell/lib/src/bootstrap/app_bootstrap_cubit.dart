@@ -281,7 +281,7 @@ class AppBootstrapCubit extends Cubit<AppBootstrapState> {
       // transition is owned by the auth wiring (#37, [onAuthenticated]).
       emit(
         result.hasServer
-            ? const AppBootstrapNeedsAuth()
+            ? AppBootstrapNeedsAuth(recoveredServers: result.recoveredServers)
             : const AppBootstrapNeedsServer(),
       );
     } on Object catch (error, stackTrace) {

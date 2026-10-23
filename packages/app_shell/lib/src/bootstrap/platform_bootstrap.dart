@@ -1,5 +1,6 @@
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
 import '../deep_links/deep_link_source.dart';
@@ -17,6 +18,7 @@ class BootstrapResult {
     required this.hasServer,
     this.orchestrator,
     this.activeServerScope,
+    this.recoveredServers = const [],
   });
 
   /// Whether at least one BGE server is known to this device.
@@ -42,6 +44,14 @@ class BootstrapResult {
   /// returns `null` and the shell renders no auth subtree (the auth leg is
   /// not yet reachable on web).
   final ActiveServerScope? activeServerScope;
+
+  /// Servers whose local database no key on this device could open, and
+  /// which were rebuilt empty while the platform started (#428). Changes
+  /// made on this device that the server never received are gone. The
+  /// shell tells the user once, naming each server.
+  ///
+  /// Always empty on web, which keeps no encrypted database.
+  final List<ServerConfig> recoveredServers;
 }
 
 /// Per-platform composition root consumed by the shared shell.
@@ -140,9 +150,10 @@ abstract interface class PlatformBootstrap {
   /// (#96), which holds the drift/wasm database and the user session (#288,
   /// #137). There is no orchestrator.
   ///
-  /// May throw (e.g. `DatabaseKeyError` when the meta key is lost). The
-  /// shell surfaces failures as a retryable error state; it never reacts
-  /// destructively on its own.
+  /// May throw (e.g. `DatabaseKeyError` when the meta key is lost, or
+  /// `EncryptionKeyUnavailableError` when the key store can't be reached,
+  /// #428). The shell surfaces failures as a retryable error state; it
+  /// never reacts destructively on its own.
   ///
   /// Callers must not overlap calls to [initialize] and [reset]: start one
   /// only after the previous one has settled, as `AppBootstrapCubit` does.

@@ -8,6 +8,8 @@ import 'package:dio_network/dio_network.dart'
         EventRemoteDataSourceImpl,
         FeedbackDioTransport,
         GameCollectionRemoteDataSourceImpl,
+        GamesRemoteDataSourceImpl,
+        HouseholdInviteRemoteDataSourceImpl,
         HouseholdRemoteDataSourceImpl,
         NetworkLogInterceptor;
 import 'package:interfaces/orchestration.dart';
@@ -19,6 +21,8 @@ import 'package:network_interface/network_interface.dart'
         DataGatewayRemoteDataSource,
         EventRemoteDataSource,
         GameCollectionRemoteDataSource,
+        GamesRemoteDataSource,
+        HouseholdInviteRemoteDataSource,
         HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -158,6 +162,14 @@ void registerServerNetworkWeb({
     HouseholdRemoteDataSourceImpl(dio),
   );
 
+  // #455: the per-origin household invite remote. Same convention, placement
+  // and reuse argument as the household remote above: native's
+  // implementation over this origin's Dio, whose permissive validateStatus
+  // is what lets it read a refusal's envelope.
+  container.registerSingleton<HouseholdInviteRemoteDataSource>(
+    HouseholdInviteRemoteDataSourceImpl(dio),
+  );
+
   // #368: the per-origin collection remote. Same convention, same placement
   // and the same reuse argument as the household remote above: it shares this
   // origin's Dio (base URL + the browser-owned session cookie
@@ -177,6 +189,14 @@ void registerServerNetworkWeb({
   // the 403 envelope the admin gating turns on.
   container.registerSingleton<DataGatewayRemoteDataSource>(
     DataGatewayRemoteDataSourceImpl(dio),
+  );
+
+  // #42: the per-origin games remote. Same convention, placement and reuse
+  // argument as the remotes above: native's implementation over this
+  // origin's Dio. The browser adapter honours the longer receive timeout its
+  // search asks for per request, as the native one does.
+  container.registerSingleton<GamesRemoteDataSource>(
+    GamesRemoteDataSourceImpl(dio),
   );
 
   // #496: the per-origin event remote. Same convention, placement and reuse

@@ -47,6 +47,30 @@ abstract final class AppRoutes {
   static const _householdCreateSegment = 'create';
   static const _householdDetailSegment = ':$householdIdParam';
 
+  /// One household's open invites (#455), beneath its detail screen. Build
+  /// a concrete location with [householdInvitesOf].
+  static const householdInvites = '$householdDetail/$_householdInvitesSegment';
+
+  /// The form for inviting someone to one household (#455), beneath its
+  /// invites. Build a concrete location with [householdInviteSendOf].
+  static const householdInviteSend =
+      '$householdInvites/$_householdInviteSendSegment';
+
+  static const _householdInvitesSegment = 'invites';
+  static const _householdInviteSendSegment = 'new';
+
+  /// The location of one household's invites.
+  static String householdInvitesOf(String householdId) =>
+      '${householdDetailOf(householdId)}/$_householdInvitesSegment';
+
+  /// The location of one household's send-invite form.
+  static String householdInviteSendOf(String householdId) =>
+      '${householdInvitesOf(householdId)}/$_householdInviteSendSegment';
+
+  /// The invites sent to the current user (#455). Top-level: the inbox
+  /// spans every household, so it belongs under none of them.
+  static const invites = '/invites';
+
   /// The location of one household's detail screen.
   ///
   /// Ids are server- or client-assigned cuid2s, which are already
@@ -59,6 +83,32 @@ abstract final class AppRoutes {
   /// deep link, which names a server and a user; this is always the
   /// active session's own.
   static const collection = '/collection';
+
+  /// The server's games, to browse (#42). Plural, unlike [household] and
+  /// [collection]: it lists the catalog, not one thing the user has. Not the
+  /// reserved `/server/:serverId/game/:gameId` deep link, which names a
+  /// server; that stays reserved until #10 can tell whose server it names.
+  static const games = '/games';
+
+  /// Search, beneath [games] (#42).
+  ///
+  /// This pattern and [gameDetail] **overlap**: `search` is a legal value
+  /// for `:gameId`, so search is declared first, as household create is.
+  static const gameSearch = '$games/$_gameSearchSegment';
+
+  /// One game, beneath [games] (#42). Build a concrete location with
+  /// [gameDetailOf].
+  static const gameDetail = '$games/$_gameDetailSegment';
+
+  /// The id segment of [gameDetail].
+  static const gameIdParam = 'gameId';
+
+  static const _gameSearchSegment = 'search';
+  static const _gameDetailSegment = ':$gameIdParam';
+
+  /// The location of one game's detail screen.
+  static String gameDetailOf(String gameId) =>
+      '$games/${Uri.encodeComponent(gameId)}';
 
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
@@ -217,6 +267,33 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
   String householdId,
 );
 
+/// Builds the invite inbox (#455) for the [AppRoutes.invites] route.
+/// Supplied by [BgeApp]; returns null when no active server is resolvable
+/// or its container lacks the `HouseholdInviteRemoteDataSource`, in which
+/// case the route falls back to [NotYetAvailableScreen].
+typedef InviteInboxScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds one household's invites (#455) for the
+/// [AppRoutes.householdInvites] route, given the `:householdId` the path
+/// carried. Same null contract as [InviteInboxScreenBuilder], and also null
+/// without a `HouseholdRepository`, which says who is looking.
+///
+/// Not gated on the viewer's role. A deep link by someone the server
+/// refuses reaches the screen, which says only owners and admins can see
+/// the invites.
+typedef HouseholdInvitesScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
+
+/// Builds the send-invite form for one household (#455) for the
+/// [AppRoutes.householdInviteSend] route. Same null contract as
+/// [HouseholdInvitesScreenBuilder].
+typedef SendHouseholdInviteScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
+
 /// Builds the collection list (#44) for the [AppRoutes.collection] route.
 /// Supplied by [BgeApp]; returns null at navigation time when no active
 /// server is resolvable or its container carries no
@@ -229,6 +306,30 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
 /// Sits outside the auth [ShellRoute] for the household list's reason: it
 /// needs the active server's scoped container, not an `AuthBloc`.
 typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds the game browse screen (#42) for the [AppRoutes.games] route.
+/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container carries no `GamesRemoteDataSource`,
+/// in which case the route falls back to [NotYetAvailableScreen].
+///
+/// Guarded on the remote alone: the games cache is optional, and without it
+/// the screen still reads the server, with nothing to show offline.
+typedef GameBrowseScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds the game search screen (#42) for the [AppRoutes.gameSearch]
+/// route. Same null contract as [GameBrowseScreenBuilder].
+typedef GameSearchScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds one game's detail screen (#42) for the [AppRoutes.gameDetail]
+/// route, given the `:gameId` the path carried. Same null contract as
+/// [GameBrowseScreenBuilder].
+///
+/// The id reaches the builder unvalidated. The screen answers one that
+/// cannot name a game with its unavailable state.
+typedef GameDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String gameId,
+);
 
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
@@ -282,7 +383,13 @@ GoRouter buildAppRouter({
   CreateHouseholdScreenBuilder? createHouseholdBuilder,
   HouseholdListScreenBuilder? householdListBuilder,
   HouseholdDetailScreenBuilder? householdDetailBuilder,
+  HouseholdInvitesScreenBuilder? householdInvitesBuilder,
+  SendHouseholdInviteScreenBuilder? sendHouseholdInviteBuilder,
+  InviteInboxScreenBuilder? inviteInboxBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
+  GameBrowseScreenBuilder? gameBrowseBuilder,
+  GameSearchScreenBuilder? gameSearchBuilder,
+  GameDetailScreenBuilder? gameDetailBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
@@ -421,8 +528,40 @@ GoRouter buildAppRouter({
               return householdDetailBuilder?.call(context, id) ??
                   const NotYetAvailableScreen();
             },
+            // #455: a household's invites and its send form, nested for the
+            // reason the household children are (#308): a `go` to either
+            // builds what is above it, so leaving is a plain pop.
+            routes: [
+              GoRoute(
+                path: AppRoutes._householdInvitesSegment,
+                builder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
+                  return householdInvitesBuilder?.call(context, id) ??
+                      const NotYetAvailableScreen();
+                },
+                routes: [
+                  GoRoute(
+                    path: AppRoutes._householdInviteSendSegment,
+                    builder: (context, state) {
+                      final id =
+                          state.pathParameters[AppRoutes.householdIdParam] ??
+                          '';
+                      return sendHouseholdInviteBuilder?.call(context, id) ??
+                          const NotYetAvailableScreen();
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
+      ),
+      // #455: the invites sent to the current user, from the home drawer.
+      GoRoute(
+        path: AppRoutes.invites,
+        builder: (context, _) =>
+            inviteInboxBuilder?.call(context) ?? const NotYetAvailableScreen(),
       ),
       // #44: the collection list. Outside the auth ShellRoute (no AuthBloc
       // needed; see [CollectionListScreenBuilder]), pushed from the home
@@ -433,6 +572,35 @@ GoRouter buildAppRouter({
         builder: (context, _) =>
             collectionListBuilder?.call(context) ??
             const NotYetAvailableScreen(),
+      ),
+      // #42: browse, search and one game. Outside the auth ShellRoute, like
+      // the collection list, and pushed from the home drawer. Search and the
+      // detail are children of browse, as the household children are of
+      // their list (#308), so a `go` straight to either builds browse
+      // beneath it.
+      //
+      // Search MUST stay declared above the detail: `search` is a legal
+      // `:gameId`, and go_router takes the first declared match.
+      GoRoute(
+        path: AppRoutes.games,
+        builder: (context, _) =>
+            gameBrowseBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        routes: [
+          GoRoute(
+            path: AppRoutes._gameSearchSegment,
+            builder: (context, _) =>
+                gameSearchBuilder?.call(context) ??
+                const NotYetAvailableScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes._gameDetailSegment,
+            builder: (context, state) {
+              final id = state.pathParameters[AppRoutes.gameIdParam] ?? '';
+              return gameDetailBuilder?.call(context, id) ??
+                  const NotYetAvailableScreen();
+            },
+          ),
+        ],
       ),
       // #190: the changes that couldn't sync. Outside the auth ShellRoute
       // (see [StuckChangesScreenBuilder]), pushed from the home notice, and

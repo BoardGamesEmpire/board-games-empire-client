@@ -53,6 +53,12 @@ import 'package:storage_interface/storage_interface.dart';
 /// catch to run the delete + re-key + resync recovery flow. Only after the
 /// probe succeeds is the real background connection created.
 ///
+/// A file that already exists is opened with the key the store holds for
+/// it, looked up without creating one ([EncryptionKeyService.findServerKey]).
+/// When none is stored, the open fails with [DatabaseKeyFailure.keyMissing]
+/// before any key is made (#428). Only a file that does not exist yet gets a
+/// new key.
+///
 /// ## Dev escape hatch
 ///
 /// `--dart-define=BGE_DISABLE_ENCRYPTION=true` opens all databases
@@ -130,6 +136,7 @@ class EncryptedExecutorFactory {
           relativeDatabasePath ??
           p.join(_serverDatabaseDirectory, serverId, _serverDatabaseFileName),
       obtainKey: () => _keyService.getOrCreateServerKey(serverId),
+      findKey: () => _keyService.findServerKey(serverId),
     );
   }
 
@@ -139,6 +146,7 @@ class EncryptedExecutorFactory {
     return _executor(
       relativePath: metaDatabaseRelativePath,
       obtainKey: _keyService.getOrCreateMetaKey,
+      findKey: _keyService.findMetaKey,
     );
   }
 
@@ -194,6 +202,7 @@ class EncryptedExecutorFactory {
   QueryExecutor _executor({
     required String relativePath,
     required Future<String> Function() obtainKey,
+    required Future<String?> Function() findKey,
   }) {
     return LazyDatabase(() async {
       final file = await resolveDatabaseFile(relativePath);
@@ -210,7 +219,20 @@ class EncryptedExecutorFactory {
         return NativeDatabase.createInBackground(file);
       }
 
-      final key = await obtainKey();
+      final String key;
+      if (await file.exists()) {
+        // An existing file needs the key it was written with. A key made
+        // now could only fail to open it, and recovery would then delete
+        // it (#428).
+        key =
+            await findKey() ??
+            (throw DatabaseKeyError(
+              databasePath: file.path,
+              failure: DatabaseKeyFailure.keyMissing,
+            ));
+      } else {
+        key = await obtainKey();
+      }
       if (!_hexKeyPattern.hasMatch(key)) {
         throw StateError(
           'EncryptionKeyService returned a key that violates the '
@@ -246,7 +268,11 @@ class EncryptedExecutorFactory {
         db.select('SELECT COUNT(*) FROM sqlite_master;');
       } on sqlite.SqliteException catch (e) {
         if (e.resultCode == _sqliteNotADb) {
-          throw DatabaseKeyError(databasePath: path, cause: e);
+          throw DatabaseKeyError(
+            databasePath: path,
+            failure: DatabaseKeyFailure.keyMismatch,
+            cause: e,
+          );
         }
         rethrow;
       }

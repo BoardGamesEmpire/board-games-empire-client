@@ -1,0 +1,571 @@
+import 'package:dio/dio.dart';
+import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
+
+import '../network/api_error_envelope.dart';
+import '../network/decode_json_body.dart';
+
+/// [GamesRemoteDataSource] over a **per-server** Dio instance (#42).
+///
+/// Built on the DataGateway source's request plumbing, which is the
+/// collection source's (#351): the body is asked for as a `String` with the
+/// response type pinned on every request, decoded here after the status is
+/// read, and probed for the API's error envelope with a bounded synchronous
+/// parse. It does not build or own its Dio; the network installer constructs
+/// it from the per-server container.
+///
+/// Failure taxonomy and mapping per the [GamesRemoteDataSource] contract.
+class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
+  const GamesRemoteDataSourceImpl(this._dio);
+
+  final Dio _dio;
+
+  static const String _basePath = '/api/games';
+
+  /// How long a search may wait for its answer.
+  ///
+  /// The server waits for every DataGateway, for up to 15 seconds
+  /// (`game-search.service.ts`), and then still has to answer. The factories'
+  /// ten-second receive timeout would fail every search a slow DataGateway
+  /// holds up, so this one request gets the cutoff plus room for the
+  /// server's own work and the transfer.
+  static const Duration searchReceiveTimeout = Duration(seconds: 25);
+
+  /// See `GameCollectionRemoteDataSourceImpl._plainBody`. A fresh instance per
+  /// call, because `Options` is mutable.
+  static Options get _plainBody => Options(responseType: ResponseType.plain);
+
+  /// 4xx statuses worth retrying: an expired session (401), proxy
+  /// authentication (407), a request timeout (408), and the throttle (429).
+  static const Set<int> _retryable4xx = {401, 407, 408, 429};
+
+  @override
+  Future<PaginatedResult<Game>> fetchPage({
+    int page = 1,
+    int limit = GamesRemoteDataSource.maxPageSize,
+  }) async {
+    _checkLimit(limit);
+    if (page < 1) {
+      throw ArgumentError.value(page, 'page', 'is 1-based');
+    }
+    if ((page - 1) * limit > GamesRemoteDataSource.maxDepth) {
+      throw ArgumentError.value(
+        page,
+        'page',
+        'starts past row ${GamesRemoteDataSource.maxDepth}, which the server '
+            'refuses with a 400',
+      );
+    }
+
+    const action = 'Game catalog';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        _basePath,
+        options: _plainBody,
+        queryParameters: {'page': page, 'limit': limit},
+      ),
+      action: action,
+      rowRoute: false,
+    );
+
+    return _parse(
+      () => PaginatedResult.fromEnvelope(
+        response.body,
+        key: 'games',
+        item: _mapGame,
+      ),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<GameWithPlatformGames> fetchGame(String id) async {
+    _checkGameId(id);
+
+    const action = 'Game fetch';
+    final response = await _send(
+      request: () => _dio.get<String>('$_basePath/$id', options: _plainBody),
+      action: action,
+      rowRoute: true,
+    );
+
+    return _parse(
+      () {
+        final row = response.body['game'];
+        if (row is! Map<String, dynamic>) {
+          throw const FormatException('response is missing a "game" object');
+        }
+        final game = _mapGame(row);
+        return (game: game, platformGames: _mapPlatformGames(row, game));
+      },
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<GameSearchResults> search(
+    String query, {
+    int limit = GamesRemoteDataSource.searchPageSize,
+    int offset = 0,
+    Set<ContentType> contentTypes = const {},
+    Set<PlatformType> platformTypes = const {},
+  }) async {
+    _checkLimit(limit);
+    if (offset < 0 || offset > GamesRemoteDataSource.maxDepth) {
+      throw ArgumentError.value(
+        offset,
+        'offset',
+        'must be between 0 and ${GamesRemoteDataSource.maxDepth}',
+      );
+    }
+    if (contentTypes.contains(ContentType.unknown)) {
+      // The server refuses `Unknown` as a filter: it names no kind of game.
+      throw ArgumentError.value(
+        contentTypes,
+        'contentTypes',
+        'cannot name ContentType.unknown',
+      );
+    }
+    if (platformTypes.contains(PlatformType.unknown)) {
+      throw ArgumentError.value(
+        platformTypes,
+        'platformTypes',
+        'cannot name PlatformType.unknown',
+      );
+    }
+
+    const action = 'Game search';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        '$_basePath/search',
+        options: _plainBody.copyWith(receiveTimeout: searchReceiveTimeout),
+        queryParameters: {
+          'query': query,
+          'limit': limit,
+          'offset': offset,
+          // Comma-separated: the server's list transform reads that and the
+          // repeated form alike, and this one does not depend on how the
+          // injected Dio formats a list.
+          if (contentTypes.isNotEmpty)
+            'contentTypes': contentTypes.map((t) => t.toWire()).join(','),
+          if (platformTypes.isNotEmpty)
+            'platformTypes': platformTypes.map((t) => t.toWire()).join(','),
+        },
+      ),
+      action: action,
+      rowRoute: false,
+    );
+
+    return _parse(
+      () => _mapSearchResults(response.body),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  // ── Request plumbing ────────────────────────────────────────────────
+
+  /// Sends [request] and returns its decoded body, having converted every
+  /// failure into a [GamesRemoteException].
+  ///
+  /// [rowRoute] says whether the path names one game, which is what lets an
+  /// application 404 mean that game is gone.
+  Future<({Map<String, dynamic> body, int status})> _send({
+    required Future<Response<String>> Function() request,
+    required String action,
+    required bool rowRoute,
+  }) async {
+    late final Response<String> response;
+    try {
+      response = await request();
+    } on DioException catch (error) {
+      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
+    } on Object catch (error) {
+      // Nothing else should escape Dio. `Object`, not `Exception`, so an
+      // `Error` cannot break the "no raw transport error" promise either.
+      throw GamesRemoteTransientException(
+        '$action failed unexpectedly',
+        cause: error,
+      );
+    }
+
+    final status = response.statusCode;
+    if (status == null) {
+      throw GamesRemoteTransientException('$action returned no status');
+    }
+    if (status < 200 || status >= 300) {
+      throw _classifyStatus(
+        status,
+        '$action returned $status',
+        cause: null,
+        rowRoute: rowRoute,
+        body: response.data,
+      );
+    }
+
+    final raw = response.data;
+    if (raw == null || raw.isEmpty) {
+      throw GamesRemotePermanentException(
+        '$action returned an empty body',
+        statusCode: status,
+      );
+    }
+
+    final Object? decoded;
+    try {
+      decoded = await decodeJsonBody(raw);
+    } on FormatException catch (error) {
+      throw GamesRemotePermanentException(
+        '$action returned a body that is not JSON',
+        statusCode: status,
+        cause: error,
+      );
+    } on Object catch (error) {
+      // The decode could not run (an isolate that would not spawn), which
+      // says nothing about the response. See the collection source (#297).
+      throw GamesRemoteTransientException(
+        '$action could not be decoded',
+        statusCode: status,
+        cause: error,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw GamesRemotePermanentException(
+        '$action returned a body that is not a JSON object',
+        statusCode: status,
+      );
+    }
+    return (body: decoded, status: status);
+  }
+
+  /// A 2xx whose body cannot be mapped is permanent: the same request returns
+  /// the same body.
+  T _parse<T>(T Function() map, {required String action, required int status}) {
+    try {
+      return map();
+    } on Object catch (error) {
+      throw GamesRemotePermanentException(
+        'Failed to parse the $action response: $error',
+        statusCode: status,
+        cause: error,
+      );
+    }
+  }
+
+  // ── Games ───────────────────────────────────────────────────────────
+
+  /// Maps a game row, a catalog row or the detail's, field by field.
+  ///
+  /// The relation lists stay empty: see "What the mapping keeps and drops" on
+  /// [GamesRemoteDataSource].
+  static Game _mapGame(Map<String, dynamic> json) => Game(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    subtitle: json['subtitle'] as String?,
+    description: json['description'] as String?,
+    // The column can hold an empty string: the server's own search reads
+    // one as no thumbnail.
+    image: _nonEmpty(json['image']),
+    thumbnail: _nonEmpty(json['thumbnail']),
+    publishYear: json['publishYear'] as int?,
+    minPlayers: json['minPlayers'] as int?,
+    maxPlayers: json['maxPlayers'] as int?,
+    playingTime: json['playingTime'] as int?,
+    minPlayTime: json['minPlayTime'] as int?,
+    minPlayTimeMeasure: _timeMeasure(json['minPlayTimeMeasure']),
+    maxPlayTime: json['maxPlayTime'] as int?,
+    maxPlayTimeMeasure: _timeMeasure(json['maxPlayTimeMeasure']),
+    minAge: json['minAge'] as int?,
+    // Prisma `Float` columns: JSON writes 3.0 as 3, which decodes as an int.
+    complexity: (json['complexity'] as num?)?.toDouble(),
+    totalPlayCount: json['totalPlayCount'] as int? ?? 0,
+    averageRating: (json['averageRating'] as num?)?.toDouble(),
+    bayesRating: (json['bayesRating'] as num?)?.toDouble(),
+    ratingsCount: json['ratingsCount'] as int?,
+    ownedByCount: json['ownedByCount'] as int? ?? 0,
+    contentType: ContentType.fromWire(json['contentType'] as String),
+    visibility: _visibility(json['visibility'] as String),
+    createdById: json['createdById'] as String?,
+    deletedAt: _date(json['deletedAt']),
+    createdAt: DateTime.parse(json['createdAt'] as String),
+    updatedAt: DateTime.parse(json['updatedAt'] as String),
+  );
+
+  /// A unit this client does not know reads as no unit, rather than failing
+  /// the page the game is on.
+  static TimeMeasure? _timeMeasure(Object? wire) {
+    if (wire is! String) return null;
+    try {
+      return TimeMeasure.fromWire(wire);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// A visibility this client does not know reads as private, rather than
+  /// failing the page the game is on. Private claims the least, and nothing
+  /// decides a read by it: the cache answers by what the server sent each
+  /// user (#434). Its tiers are due to be replaced (backend#495).
+  static Visibility _visibility(String wire) {
+    try {
+      return Visibility.fromWire(wire);
+    } on StateError {
+      return Visibility.private;
+    }
+  }
+
+  static DateTime? _date(Object? wire) =>
+      wire is String ? DateTime.parse(wire) : null;
+
+  /// The detail's `platformGames`, read when the server sends them
+  /// (backend#791) and empty until then.
+  ///
+  /// Read leniently, because backend#791 has not settled the shape: a row
+  /// without its id and its platform's id and name, which is what that issue
+  /// asks for, is skipped rather than failing the game it came with. The game
+  /// is what the detail screen is for, and a strict read here would turn
+  /// every detail into the cached copy if the shape lands differently.
+  static List<PlatformGameSummary> _mapPlatformGames(
+    Map<String, dynamic> row,
+    Game game,
+  ) {
+    final rows = row['platformGames'];
+    if (rows is! List) return const [];
+
+    final parent = GameSummary(
+      id: game.id,
+      title: game.title,
+      subtitle: game.subtitle,
+      image: game.image,
+      thumbnail: game.thumbnail,
+    );
+    return [
+      for (final entry in rows)
+        if (entry case {
+          'id': final String id,
+          'platform': {
+            'id': final String platformId,
+            'name': final String name,
+          },
+        })
+          PlatformGameSummary(
+            id: id,
+            platformId: platformId,
+            platformName: name,
+            image: _nonEmpty(entry['image']),
+            thumbnail: _nonEmpty(entry['thumbnail']),
+            game: parent,
+          ),
+    ];
+  }
+
+  // ── Search ──────────────────────────────────────────────────────────
+
+  /// The server's name for this half of its results.
+  static const String _localSource = 'local';
+
+  static GameSearchResults _mapSearchResults(Map<String, dynamic> body) {
+    final bySource = body['resultsBySource'];
+    if (bySource is! Map<String, dynamic>) {
+      throw const FormatException(
+        'response is missing the "resultsBySource" object',
+      );
+    }
+
+    List<GameSearchHit> hits(Object? rows) => [
+      for (final row in (rows! as List).cast<Map<String, dynamic>>())
+        _mapHit(row),
+    ];
+
+    final errors = body['errors'] as Map<String, dynamic>? ?? const {};
+    return GameSearchResults(
+      local: bySource.containsKey(_localSource)
+          ? hits(bySource[_localSource])
+          : const [],
+      byDataGateway: {
+        for (final entry in bySource.entries)
+          if (entry.key != _localSource) entry.key: hits(entry.value),
+      },
+      failedDataGateways: errors.keys.toSet(),
+      rateLimitedDataGateways: _sources(body['rateLimitedSources']),
+      unavailableDataGateways: _sources(body['unavailableSources']),
+    );
+  }
+
+  static Set<String> _sources(Object? wire) =>
+      wire == null ? const {} : (wire as List).cast<String>().toSet();
+
+  static GameSearchHit _mapHit(Map<String, dynamic> json) => GameSearchHit(
+    externalId: json['externalId'] as String,
+    title: json['title'] as String,
+    contentType: _searchContentType(json['contentType'] as String),
+    // The server's id only means "on this server" alongside `inSystem`.
+    gameId: json['inSystem'] == true ? json['gameId'] as String? : null,
+    yearPublished: json['yearPublished'] as int?,
+    minPlayers: json['minPlayers'] as int?,
+    maxPlayers: json['maxPlayers'] as int?,
+    // A DataGateway's unset proto string arrives as "", not absent.
+    thumbnailUrl: _nonEmpty(json['thumbnailUrl']),
+    platforms: [
+      for (final p
+          in (json['platforms'] as List? ?? const [])
+              .cast<Map<String, dynamic>>())
+        GameSearchPlatform(
+          name: p['name'] as String,
+          abbreviation: _nonEmpty(p['abbreviation']),
+          platformType: _searchPlatformType(p['platformType'] as String),
+        ),
+    ],
+  );
+
+  static String? _nonEmpty(Object? wire) =>
+      wire is String && wire.isNotEmpty ? wire : null;
+
+  /// The proto name of each content type a DataGateway result may carry
+  /// (`bge.gateway.v1.ContentType`), with its stored name.
+  static const Map<String, String> _protoContentTypes = {
+    'CONTENT_TYPE_BASE_GAME': 'BaseGame',
+    'CONTENT_TYPE_EXPANSION': 'Expansion',
+    'CONTENT_TYPE_DLC': 'DLC',
+    'CONTENT_TYPE_STANDALONE_EXPANSION': 'StandaloneExpansion',
+    'CONTENT_TYPE_ACCESSORY': 'Accessory',
+    'CONTENT_TYPE_BUNDLE': 'Bundle',
+    'CONTENT_TYPE_REMAKE': 'Remake',
+    'CONTENT_TYPE_REMASTER': 'Remaster',
+    'CONTENT_TYPE_EXPANDED_EDITION': 'ExpandedEdition',
+    'CONTENT_TYPE_PORT': 'Port',
+    'CONTENT_TYPE_MOD': 'Mod',
+  };
+
+  /// As [_protoContentTypes], for `bge.gateway.v1.PlatformType`.
+  static const Map<String, String> _protoPlatformTypes = {
+    'PLATFORM_TYPE_TABLETOP': 'Tabletop',
+    'PLATFORM_TYPE_CONSOLE': 'Console',
+    'PLATFORM_TYPE_PORTABLE': 'Portable',
+    'PLATFORM_TYPE_PC': 'PC',
+    'PLATFORM_TYPE_MOBILE': 'Mobile',
+    'PLATFORM_TYPE_ARCADE': 'Arcade',
+    'PLATFORM_TYPE_OTHER': 'Other',
+  };
+
+  /// Reads either naming scheme (backend#662). An unspecified or
+  /// unrecognised proto name falls through to `unknown`, as an unknown stored
+  /// name does.
+  static ContentType _searchContentType(String wire) =>
+      ContentType.fromWire(_protoContentTypes[wire] ?? wire);
+
+  static PlatformType _searchPlatformType(String wire) =>
+      PlatformType.fromWire(_protoPlatformTypes[wire] ?? wire);
+
+  // ── Guards: requests the server is guaranteed to reject ─────────────
+
+  /// One path segment of URL-safe characters: a game id that can only reach
+  /// the route it names. Every id the server mints is a cuid2, which this
+  /// accepts. The collection remote's rule (#121).
+  static final RegExp _wellFormedId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+
+  /// The id goes into the path as it stands, so one that could leave the
+  /// game route is refused before the request: its 404 would read as a
+  /// missing game.
+  void _checkGameId(String id) {
+    if (!_wellFormedId.hasMatch(id)) {
+      throw ArgumentError.value(
+        id,
+        'id',
+        'is not a well-formed game id, so the request could reach another '
+            'route',
+      );
+    }
+  }
+
+  void _checkLimit(int limit) {
+    const maxPageSize = GamesRemoteDataSource.maxPageSize;
+    if (limit < 1 || limit > maxPageSize) {
+      throw ArgumentError.value(
+        limit,
+        'limit',
+        'must be between 1 and $maxPageSize (the server rejects a larger '
+            'page rather than clamping it)',
+      );
+    }
+  }
+
+  // ── Failure classification ──────────────────────────────────────────
+
+  GamesRemoteException _classifyDioException(
+    DioException error, {
+    required String action,
+    required bool rowRoute,
+  }) {
+    final status = error.response?.statusCode;
+    if (status != null) {
+      return _classifyStatus(
+        status,
+        '$action failed with status $status',
+        cause: error,
+        rowRoute: rowRoute,
+        body: error.response?.data,
+      );
+    }
+    return GamesRemoteTransientException('$action failed', cause: error);
+  }
+
+  GamesRemoteException _classifyStatus(
+    int status,
+    String message, {
+    required Object? cause,
+    required bool rowRoute,
+    required Object? body,
+  }) {
+    if (status >= 500 || _retryable4xx.contains(status)) {
+      return GamesRemoteTransientException(
+        message,
+        cause: cause,
+        statusCode: status,
+      );
+    }
+
+    // Every answer below is a conclusion about the caller or about a game,
+    // and only the application's own envelope licenses one. A proxy or WAF
+    // answers 403 and 404 too (#350, #365, #253).
+    final fromApi = isApiErrorEnvelope(body, status);
+
+    if (status == 403) {
+      return fromApi
+          ? GamesForbiddenException(message, cause: cause, statusCode: status)
+          : GamesRemoteTransientException(
+              '$message; the request did not reach the API',
+              cause: cause,
+              statusCode: status,
+            );
+    }
+    if (status == 404) {
+      // Nest answers an unregistered route with this same envelope, so on a
+      // list route even an application 404 means "not deployed".
+      return fromApi && rowRoute
+          ? GameNotFoundException(message, cause: cause, statusCode: status)
+          : GamesRemoteTransientException(
+              '$message; the route was not reachable',
+              cause: cause,
+              statusCode: status,
+            );
+    }
+    if (status >= 400) {
+      return GamesRemotePermanentException(
+        message,
+        cause: cause,
+        statusCode: status,
+      );
+    }
+    // A 1xx or 3xx surfaced by a permissive validateStatus carries no
+    // rejection.
+    return GamesRemoteTransientException(
+      message,
+      cause: cause,
+      statusCode: status,
+    );
+  }
+}

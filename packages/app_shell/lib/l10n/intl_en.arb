@@ -272,6 +272,33 @@
   "@shellUnverifiedSessionDismiss": {
     "description": "Tooltip and accessibility label for the control that hides the unverified-session banner until the next offline episode (#98)"
   },
+  "shellDatabaseRecoveredTitle": "Reloading server data",
+  "@shellDatabaseRecoveredTitle": {
+    "description": "Title of the notice shown once after startup when the data saved on this device for one or more servers could not be opened and was rebuilt empty (#428). Also the name assistive technology announces for the notice. Must not read as the user's fault."
+  },
+  "shellDatabaseRecoveredBody": "{count, plural, =1{The data from {serverNames} saved on this device couldn't be opened, so it's being reloaded from the server. Changes made on this device that hadn't been sent yet couldn't be kept.} other{The data from {serverNames} saved on this device couldn't be opened, so it's being reloaded from those servers. Changes made on this device that hadn't been sent yet couldn't be kept.}}",
+  "@shellDatabaseRecoveredBody": {
+    "description": "Body of the notice shown once after startup when the data saved on this device for one or more servers could not be opened and was rebuilt empty (#428). Names the servers and states, without a number, that unsent changes made on this device are gone: nothing can count them, because the data that held them couldn't be opened. Must not read as the user's fault.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "description": "How many servers are named"
+      },
+      "serverNames": {
+        "type": "String",
+        "description": "The display names of the servers, joined with shellDatabaseRecoveredServerSeparator",
+        "example": "Game Night"
+      }
+    }
+  },
+  "shellDatabaseRecoveredServerSeparator": ", ",
+  "@shellDatabaseRecoveredServerSeparator": {
+    "description": "Placed between server names in the rebuilt-data notice's {serverNames} (#428). Keep any surrounding spaces the language needs; the code adds none."
+  },
+  "shellDatabaseRecoveredAcknowledge": "OK",
+  "@shellDatabaseRecoveredAcknowledge": {
+    "description": "The only action of the rebuilt-data notice (#428); closes it"
+  },
   "shellSessionSwitchedNotice": "{username} signed in from another tab, so this tab switched to their account.",
   "@shellSessionSwitchedNotice": {
     "description": "One-time notice shown when this tab's session moved to another user because that user signed in from another tab of the same browser. The tab now shows the new user's account; nothing was signed out by the person looking at this tab (#432)",

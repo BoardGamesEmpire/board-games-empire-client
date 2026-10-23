@@ -2,6 +2,7 @@ library;
 
 export 'src/access/data_gateway_access.dart';
 export 'src/access/data_gateway_access_installer.dart';
+export 'src/access/data_gateway_names.dart';
 export 'src/bloc/data_gateway_list_bloc.dart';
 export 'src/bloc/data_gateway_list_event.dart';
 export 'src/bloc/data_gateway_list_state.dart';

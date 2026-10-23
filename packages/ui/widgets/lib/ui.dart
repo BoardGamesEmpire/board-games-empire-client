@@ -10,8 +10,9 @@
 /// 12 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
 /// `BgeTextField` by every form field in 5 files (#165), `BgeErrorState` by
 /// both whole-surface retry views (#102), `BgeFormActions` by all 4 forms
-/// that show a submit's failure (#211), and `rejectSubmit` by all 5 forms
-/// (#230).
+/// that show a submit's failure (#211), `rejectSubmit` by all 5 forms
+/// (#230), and `ReadAgainWhenUncovered` by all 3 screens that read the
+/// server again when uncovered (#41, #455).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
@@ -28,5 +29,7 @@ export 'src/buttons/bge_submit_button.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
+export 'src/images/bge_thumbnail.dart';
 export 'src/layout/bge_page.dart';
+export 'src/routes/read_again_when_uncovered.dart';
 export 'src/states/bge_error_state.dart';

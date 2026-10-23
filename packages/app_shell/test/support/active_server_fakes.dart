@@ -184,6 +184,7 @@ ActiveServer buildActiveServer(
   AuthRepository repo, {
   HouseholdRepository? householdRepository,
   HouseholdRemoteDataSource? householdRemoteDataSource,
+  HouseholdInviteRemoteDataSource? householdInviteRemoteDataSource,
   SyncOperationSender? syncOperationSender,
   HouseholdHydrationStatus? householdHydrationStatus,
   HouseholdRefresher? householdRefresher,
@@ -196,6 +197,8 @@ ActiveServer buildActiveServer(
   SyncQueueRepository? syncQueueRepository,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
   DataGatewayAccess? dataGatewayAccess,
+  GamesRemoteDataSource? gamesRemoteDataSource,
+  GameRepository? gameRepository,
   String serverId = 'server-uuid-1',
 }) {
   final container = DependencyContainerImpl()
@@ -214,6 +217,11 @@ ActiveServer buildActiveServer(
   if (householdRemoteDataSource != null) {
     container.registerSingleton<HouseholdRemoteDataSource>(
       householdRemoteDataSource,
+    );
+  }
+  if (householdInviteRemoteDataSource != null) {
+    container.registerSingleton<HouseholdInviteRemoteDataSource>(
+      householdInviteRemoteDataSource,
     );
   }
   if (syncOperationSender != null) {
@@ -255,6 +263,12 @@ ActiveServer buildActiveServer(
   }
   if (dataGatewayAccess != null) {
     container.registerSingleton<DataGatewayAccess>(dataGatewayAccess);
+  }
+  if (gamesRemoteDataSource != null) {
+    container.registerSingleton<GamesRemoteDataSource>(gamesRemoteDataSource);
+  }
+  if (gameRepository != null) {
+    container.registerSingleton<GameRepository>(gameRepository);
   }
   return ActiveServer(
     serverId: serverId,
