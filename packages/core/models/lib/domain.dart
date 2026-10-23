@@ -4,6 +4,7 @@ export 'src/domain/achievement/achievement_type.dart';
 export 'src/domain/achievement/achievement.dart';
 export 'src/domain/achievement/user_achievement.dart';
 
+export 'src/domain/common/reach.dart';
 export 'src/domain/common/visibility.dart';
 
 export 'src/domain/data_gateway/data_gateway.dart';
@@ -13,6 +14,23 @@ export 'src/domain/data_gateway/data_gateway_input.dart';
 
 export 'src/domain/device/build_info.dart';
 export 'src/domain/device/device_preferences.dart';
+
+export 'src/domain/event/event.dart';
+export 'src/domain/event/event_attendee.dart';
+export 'src/domain/event/event_occurrence.dart';
+export 'src/domain/event/event_participation_status.dart';
+export 'src/domain/event/event_policy.dart';
+export 'src/domain/event/event_role.dart';
+export 'src/domain/event/event_scheduling_mode.dart';
+export 'src/domain/event/event_snapshot.dart';
+export 'src/domain/event/event_status.dart';
+export 'src/domain/event/event_type.dart';
+export 'src/domain/event/game_addition_mode.dart';
+export 'src/domain/event/interested_weight.dart';
+export 'src/domain/event/occurrence_status.dart';
+export 'src/domain/event/vote_eligibility.dart';
+export 'src/domain/event/vote_quorum_type.dart';
+export 'src/domain/event/vote_threshold_type.dart';
 
 export 'src/domain/game/content_type.dart';
 export 'src/domain/game/game_collection.dart';
