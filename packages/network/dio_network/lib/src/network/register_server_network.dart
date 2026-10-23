@@ -8,6 +8,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart'
     show
         DataGatewayRemoteDataSource,
+        EventRemoteDataSource,
         GameCollectionRemoteDataSource,
         GamesRemoteDataSource,
         HouseholdInviteRemoteDataSource,
@@ -17,6 +18,7 @@ import 'package:observability/observability.dart' show FeedbackTransport;
 import '../auth/auth_repository_impl.dart';
 import '../auth/token_storage_service.dart';
 import '../data_gateway/data_gateway_remote_data_source_impl.dart';
+import '../event/event_remote_data_source_impl.dart';
 import '../feedback/feedback_dio_transport.dart';
 import '../game_collection/game_collection_remote_data_source_impl.dart';
 import '../games/games_remote_data_source_impl.dart';
@@ -159,5 +161,13 @@ void registerServerNetwork({
   // asks for a longer receive timeout per request than this Dio's default.
   container.registerSingleton<GamesRemoteDataSource>(
     GamesRemoteDataSourceImpl(dio),
+  );
+
+  // #496: the per-server event remote, for the event hydrate. Same convention
+  // and placement as the remotes above: the per-server Dio carries the base
+  // URL and the session `/api/events` requires. Const and stateless; the
+  // container owns the Dio.
+  container.registerSingleton<EventRemoteDataSource>(
+    EventRemoteDataSourceImpl(dio),
   );
 }

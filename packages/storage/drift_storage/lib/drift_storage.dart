@@ -19,6 +19,7 @@ export 'src/databases/meta_database.dart';
 export 'src/databases/server_database.dart';
 
 export 'src/repositories/device_preferences_repository_impl.dart';
+export 'src/repositories/event_repository_impl.dart';
 export 'src/repositories/game_collection_repository_impl.dart';
 export 'src/repositories/game_repository_impl.dart';
 export 'src/repositories/household_repository_impl.dart';

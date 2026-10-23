@@ -1,5 +1,6 @@
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
+import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
@@ -36,7 +37,8 @@ void main() {
   });
 
   test('the drain runs after the sender it resolves, the rehydrator it '
-      'registers with, and both hydrates', () {
+      'registers with, and the household, collection and event '
+      'hydrates', () {
     final installers = buildNativeUserScopeInstallers();
     int indexOf(bool Function(Object) test) => installers.indexWhere(test);
 
@@ -45,11 +47,12 @@ void main() {
     expect(drain, greaterThan(indexOf((i) => i is SyncSenderInstaller)));
     expect(drain, greaterThan(indexOf((i) => i is SessionRehydratorInstaller)));
     // The rehydrator runs its entries in registration order, so each pass
-    // runs the drain after both hydrates.
+    // runs the drain after the three hydrates.
     expect(drain, greaterThan(indexOf((i) => i is HouseholdHydrateInstaller)));
     expect(
       drain,
       greaterThan(indexOf((i) => i is GameCollectionHydrateInstaller)),
     );
+    expect(drain, greaterThan(indexOf((i) => i is EventHydrateInstaller)));
   });
 }

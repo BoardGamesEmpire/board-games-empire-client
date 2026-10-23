@@ -55,6 +55,11 @@ dependencies:
   game_collection:
     path: ../../features/collection
 
+  # The events feature, for the shared `EventHydrateInstaller` (#496), on the
+  # same rule.
+  events:
+    path: ../../features/events
+
   # The sync queue feature, for the shared `SyncSenderInstaller` the create
   # screen sends through (#121), on the same rule. Its drain is native-only
   # until #447.

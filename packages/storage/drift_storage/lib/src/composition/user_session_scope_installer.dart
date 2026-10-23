@@ -4,6 +4,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import '../repositories/event_repository_impl.dart';
 import '../repositories/game_collection_repository_impl.dart';
 import '../repositories/game_repository_impl.dart';
 import '../repositories/household_repository_impl.dart';
@@ -12,20 +13,22 @@ import '../repositories/sync_queue_repository_impl.dart';
 /// [UserScopeInstaller] for the user-session scope (#39, #135, #150).
 ///
 /// Registers the per-user [SyncQueueRepository], [HouseholdRepository],
-/// [GameCollectionRepository] and [GameRepository] into the **user-session
-/// scope** — the per-user child of the per-server scope, pushed on sign-in
-/// and popped on any transition out of the authenticated state (#135). All
-/// four are keyed to the current user, so scoping them to the session
-/// guarantees a live query can never outlive a user change: popping the
-/// scope disposes them, and each closes every vended `watch*` stream from
-/// its dispose path. For the sync queue and the collection repository the
-/// user keying is **data-scoped**, not merely object-scoped (#147, #150):
-/// rows carry the owning user's id and every read/write filters on it, so a
-/// scope built for one user cannot observe, mutate or drain another user's
-/// data. The game cache is data-scoped for reads (#434): it records which
-/// users each row was cached for, and reads only this user's. Its rows are
-/// the server's catalog, one copy per server, so any user's write of a game
-/// refreshes the row every user with access to it reads.
+/// [GameCollectionRepository], [GameRepository] and [EventRepository] into
+/// the **user-session scope** — the per-user child of the per-server scope,
+/// pushed on sign-in and popped on any transition out of the authenticated
+/// state (#135). All five are keyed to the current user, so scoping them to
+/// the session guarantees a live query can never outlive a user change:
+/// popping the scope disposes them, and each closes every vended `watch*`
+/// stream from its dispose path. For the sync queue and the collection
+/// repository the user keying is **data-scoped**, not merely object-scoped
+/// (#147, #150): rows carry the owning user's id and every read/write
+/// filters on it, so a scope built for one user cannot observe, mutate or
+/// drain another user's data. The game cache is data-scoped for reads
+/// (#434): it records which users each row was cached for, and reads only
+/// this user's. Its rows are the server's catalog, one copy per server, so
+/// any user's write of a game refreshes the row every user with access to it
+/// reads. The event cache is data-scoped for reads the same way (#496), and
+/// serves an event's roster only to a user on it.
 ///
 /// ### Naming (#150)
 ///
@@ -39,7 +42,7 @@ import '../repositories/sync_queue_repository_impl.dart';
 /// [SyncQueueRepository] instance registered here, which a split would turn
 /// into a cross-installer ordering constraint.
 ///
-/// All four depend on resources the per-server installers register — the
+/// All five depend on resources the per-server installers register — the
 /// [ServerDatabase] (`StorageScopeInstaller`) and the [ClockService] +
 /// [AuthRepository] (`registerServerNetwork`) — which the user-scope
 /// container view resolves by falling through to the per-server scope, so
@@ -170,6 +173,20 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
       // Close-on-teardown (#138): its watch streams are tied to the
       // per-server database, which outlives this scope.
       dispose: (_) => games.onDispose(),
+    );
+
+    // Data-scoped like the game cache (#496): `events` and the tables beside
+    // it hold each row once per server, and this instance reads only the
+    // events recorded for this user, and a roster only when it names them.
+    // Fixed-id rather than a lazy provider, as the game cache is: the
+    // hydrate writes every page through it, and a page that lands before
+    // the scope finishes popping belongs to the user it was fetched for.
+    final events = EventRepositoryImpl(db, userId: userId);
+    container.registerSingleton<EventRepository>(
+      events,
+      // Close-on-teardown (#138): its watch stream is tied to the per-server
+      // database, which outlives this scope.
+      dispose: (_) => events.onDispose(),
     );
   }
 

@@ -1,0 +1,45 @@
+name: events
+description: "Events feature — the hydrate that caches the events the signed-in user attends (#496)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+
+  equatable: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # A real container for the hydrate installer's tests. Dev-only: nothing
+  # under `lib/` names `di` — the installer takes the `DependencyContainer`
+  # abstraction from `interfaces`. Same shape as `game_collection`'s.
+  di:
+    path: ../../core/di
+  # The real repository over an in-memory database, for the hydrator's tests.
+  # Dev-only, and the reason this package exists: `drift_storage` cannot see
+  # `network_interface`, so the hydrate could not live there. The purge's
+  # window is applied in that database's SQL, so a fake could not prove what
+  # a pass removes.
+  drift_storage:
+    path: ../../storage/drift_storage
+  mocktail: ^1.0.5
+  very_good_analysis: ^10.2.0
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

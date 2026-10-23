@@ -20,6 +20,8 @@ dependencies:
     path: ../../features/data_gateway
   game_collection:
     path: ../../features/collection
+  events:
+    path: ../../features/events
   # The sync queue's sender and drain (#121). Native composes both; web
   # composes the sender alone until #447.
   sync_queue:

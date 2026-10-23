@@ -9,6 +9,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 
+import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
 import '../support/platform_game_fixture.dart';
 
@@ -549,5 +550,73 @@ void main() {
     expect(await gamesB.watchGames().first, isEmpty);
     expect(await gamesB.getPlatformGame('pg-1'), isNull);
     expect(await gamesB.getPlatformGamesForGame('g-1'), isEmpty);
+  });
+
+  // ── EventRepository (#496) ───────────────────────────────────────────
+
+  test('disposing the container closes a live attending-events stream, and a '
+      'stale reference throws (#496, #138)', () async {
+    // The database outlives the scope, as the per-server one does, so only
+    // the repository's own dispose hook can close the stream.
+    final db = inMemoryServerDatabase();
+    addTearDown(db.close);
+    final container = _scopeContainer(
+      _FakeAuthRepository(AuthStateAuthenticated(session: _session())),
+      db: db,
+    );
+    await installer.install(container, _server(), _kUserId);
+    final events = container.get<EventRepository>();
+
+    var done = false;
+    Object? streamError;
+    final sub = events.watchAttendingEvents().listen(
+      (_) {},
+      onError: (Object e) => streamError = e,
+      onDone: () => done = true,
+    );
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+    expect(done, isFalse);
+
+    await container.dispose();
+    await pumpEventQueue();
+
+    expect(done, isTrue, reason: 'the dispose: callback must be wired');
+    expect(streamError, isNull, reason: 'close, not error');
+    await expectLater(events.getEvent('e-1'), throwsStateError);
+  });
+
+  test('the registered event cache is data-scoped to the install user id, '
+      'whoever is signed in when it writes (#496)', () async {
+    final auth = _FakeAuthRepository(
+      AuthStateAuthenticated(session: _session()),
+    );
+    final db = inMemoryServerDatabase();
+    final (a: scopeA, b: scopeB) = await _siblingScopes(
+      auth,
+      db,
+      userA: _kUserId,
+      userB: 'user-someone-else',
+    );
+
+    // B is signed in by the time A's scope writes, as when a hydrate page
+    // lands before A's scope finishes popping. The write is still A's.
+    auth.authState = AuthStateAuthenticated(
+      session: _session(userId: 'user-someone-else'),
+    );
+    await scopeA.get<EventRepository>().cacheEvent(
+      testSnapshot('e-1', attendees: [testAttendee('att-1', userId: _kUserId)]),
+      source: EventAccessSource.attending,
+    );
+
+    final eventsA = scopeA.get<EventRepository>();
+    expect(await eventsA.getEvent('e-1'), isNotNull);
+    expect(await eventsA.getCurrentUserAttendance('e-1'), isNotNull);
+    expect(await eventsA.watchAttendingEvents().first, hasLength(1));
+
+    final eventsB = scopeB.get<EventRepository>();
+    expect(await eventsB.getEvent('e-1'), isNull);
+    expect(await eventsB.getCurrentUserAttendance('e-1'), isNull);
+    expect(await eventsB.watchAttendingEvents().first, isEmpty);
   });
 }
