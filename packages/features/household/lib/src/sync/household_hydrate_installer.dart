@@ -146,6 +146,17 @@ import 'household_refresher.dart';
 /// An absent [SessionRehydrator] is a no-op, on the same reasoning as an
 /// absent household client: a composition without the seam must still sign
 /// in normally.
+///
+/// ## Whose session a pass reads as (#432)
+///
+/// Every pass first asks the [SessionIdentityGuard] whether the session is
+/// still this scope's user, and the hydrator asks again before writing each
+/// page it reads. On web another tab can move the shared cookie to another
+/// user under a tab still presenting the first, and a pass read then would
+/// cache the other user's households as this user's. A refused
+/// pass reads as `failed`, so the next trigger tries again; by then the
+/// shell has usually switched users and this scope is gone. No guard, as on
+/// native, is a confirmed session.
 class HouseholdHydrateInstaller implements UserScopeInstaller {
   /// [now] overrides the clock the published [HouseholdHydrationStatus]
   /// stamps [staleAfter] against. Production leaves it null, which is the
@@ -184,9 +195,17 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
       return;
     }
 
+    final guard = container.isRegistered<SessionIdentityGuard>()
+        ? container.get<SessionIdentityGuard>()
+        : null;
+
     final hydrator = HouseholdHydrator(
       repository: container.get<HouseholdRepository>(),
       remote: container.get<HouseholdRemoteDataSource>(),
+      confirmSession: guard == null
+          ? null
+          : () async =>
+                await guard.confirm(userId) == SessionConfirmation.confirmed,
     );
 
     final status = HouseholdHydrationStatus(now: now);
@@ -205,6 +224,16 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
     /// triggered pass cannot report differently from the first one.
     Future<void> pass() async {
       status.started();
+      final answer = await guard?.confirm(userId);
+      if (answer != null && answer != SessionConfirmation.confirmed) {
+        _log.info(
+          'Household hydrate held off: the session could not be confirmed as '
+          'this scope\'s user',
+          context: {'serverId': server.serverId, 'answer': answer.name},
+        );
+        status.finished(HydrateOutcome.failed);
+        return;
+      }
       final outcome = await hydrator.hydrate().catchError((
         Object error,
         StackTrace stackTrace,

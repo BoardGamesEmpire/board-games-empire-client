@@ -53,10 +53,14 @@ import 'package:sync_queue/sync_queue.dart' show SyncSenderInstaller;
 ///
 /// [SyncSenderInstaller] runs last, as on native: it registers the sender
 /// the create screen's inline send goes through (#121), over the repositories
-/// above it. Native also starts a drain over that sender; web does not yet,
-/// because two tabs share one database and the drain needs a Web Lock and a
-/// check of whose session is sending first. That is #447. Until then a web
-/// create whose inline send fails stays queued.
+/// above it. On web it asks before each delivery whether the session is
+/// still this user's, since another tab can move the shared cookie (#432).
+/// Native also starts a drain over that sender; web does not yet, because
+/// two tabs share one database and the drain needs a Web Lock. That is #447.
+/// Until then a web create whose inline send fails stays queued.
+///
+/// The household and collection hydrates ask the same question before each
+/// pass (#432).
 ///
 /// This lives on the VM-compilable side of the package split so its
 /// membership can be asserted without a browser, the way native's is.

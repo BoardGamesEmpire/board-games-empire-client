@@ -133,8 +133,8 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
 /// Always supplied by [BgeApp]; returns null at navigation time when no
-/// active server is resolvable (web until #96, or a transient pre-active
-/// state), in which case the route falls back to the placeholder.
+/// active server is resolvable (a transient pre-active state), in which
+/// case the route falls back to the placeholder.
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the user-initiated feedback flow (#107) for the
@@ -330,8 +330,8 @@ GoRouter buildAppRouter({
       // creates the keyed provider + drives the bootstrap gate from the
       // bloc's terminal auth states; a single instance survives the
       // auth → home transition. When no scope builder is supplied (tests
-      // without a scope, web until #96) the child renders bare and the
-      // route builders fall back to their placeholders.
+      // without a scope) the child renders bare and the route builders fall
+      // back to their placeholders.
       ShellRoute(
         builder: (context, state, child) =>
             authScopeBuilder?.call(context, child) ?? child,
@@ -503,8 +503,8 @@ typedef HomeScreenBuilder = Widget? Function(BuildContext context);
 
 /// Wraps the auth+home [ShellRoute] child with the active server's
 /// `AuthBloc` provider and the bootstrap-gate listener (#37). Supplied by
-/// [BgeApp]; when null the child renders bare (tests without a scope, web
-/// until #96) and the route builders fall back to placeholders.
+/// [BgeApp]; when null the child renders bare (tests without a scope) and
+/// the route builders fall back to placeholders.
 ///
 /// Lives at the router layer because go_router builds route widgets under
 /// its own Navigator, which does not inherit providers placed above the

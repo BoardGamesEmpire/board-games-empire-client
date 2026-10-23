@@ -14,6 +14,21 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockHouseholdRemoteDataSource extends Mock
     implements HouseholdRemoteDataSource {}
 
+/// Answers [confirm] with [answer], recording whom it was asked about
+/// (#432).
+class _FakeIdentityGuard implements SessionIdentityGuard {
+  _FakeIdentityGuard({required this.answer});
+
+  final SessionConfirmation answer;
+  final askedFor = <String>[];
+
+  @override
+  Future<SessionConfirmation> confirm(String userId) async {
+    askedFor.add(userId);
+    return answer;
+  }
+}
+
 const _kAuthBase = 'https://api.example.test/api/auth';
 
 ServerConfig _config() => ServerConfig(
@@ -776,6 +791,61 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       verifyDrained(expected: true);
+    });
+  });
+
+  // #432: on web another tab can move the shared session cookie to another
+  // user while this scope still belongs to the first. A pass sent then would
+  // write the other user's households into this user's cache.
+  group('the session identity check', () {
+    void answerWithEmptyPage() => when(
+      () => remote.fetchHouseholds(
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+      ),
+    ).thenAnswer((_) async => _emptyPage());
+
+    test('asks about the scope user before a pass, and before writing '
+        'the page it reads', () async {
+      final guard = _FakeIdentityGuard(answer: SessionConfirmation.confirmed);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+      answerWithEmptyPage();
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _server(),
+        'user-1',
+      );
+      await pumpEventQueue();
+
+      expect(guard.askedFor, ['user-1', 'user-1']);
+      verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
+    });
+
+    test('a pass it refuses sends nothing, and reads as failed so a later '
+        'trigger tries again', () async {
+      container.registerSingleton<SessionIdentityGuard>(
+        _FakeIdentityGuard(answer: SessionConfirmation.notThisUser),
+      );
+      answerWithEmptyPage();
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _server(),
+        'user-1',
+      );
+      await pumpEventQueue();
+
+      verifyNever(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      );
+      expect(
+        container.get<HouseholdHydrationStatus>().state,
+        equals(HouseholdHydrationState.failed),
+      );
     });
   });
 }

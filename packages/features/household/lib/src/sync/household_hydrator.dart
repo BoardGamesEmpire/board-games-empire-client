@@ -97,6 +97,7 @@ class HouseholdHydrator {
     required HouseholdRepository repository,
     required this._remote,
     this.limit = HouseholdRemoteDataSource.maxPageSize,
+    this.confirmSession,
     BgeLogger? logger,
   }) : _repo = repository,
        _logger = logger ?? BgeLogger('bge.household.hydrate');
@@ -107,6 +108,16 @@ class HouseholdHydrator {
 
   /// Rows per request. Defaults to the server's own page-size cap.
   final int limit;
+
+  /// Whether the session is still the user this cache belongs to, asked
+  /// after each page comes back and before it is written (#432). Null, as
+  /// on native, is always yes.
+  ///
+  /// On web another tab can move the shared session cookie to another user
+  /// while a drain is paging, and every page read after that holds the other
+  /// user's households. The rows carry nothing that says whose list they
+  /// are, so only the session can be asked.
+  final Future<bool> Function()? confirmSession;
 
   /// Drains the household list into the cache, and reports whether the
   /// result is a complete set.
@@ -182,6 +193,16 @@ class HouseholdHydrator {
           error: error,
           stackTrace: stackTrace,
           context: {'page': page, 'limit': limit},
+        );
+        return HydrateOutcome.failed;
+      }
+
+      final confirm = confirmSession;
+      if (confirm != null && !await confirm()) {
+        _logger.info(
+          'Household hydrate stopped: a page came back once the session could '
+          'no longer be confirmed as this user\'s',
+          context: {'page': page},
         );
         return HydrateOutcome.failed;
       }

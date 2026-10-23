@@ -298,5 +298,15 @@
   "shellDatabaseRecoveredAcknowledge": "OK",
   "@shellDatabaseRecoveredAcknowledge": {
     "description": "The only action of the rebuilt-data notice (#428); closes it"
+  },
+  "shellSessionSwitchedNotice": "{username} signed in from another tab, so this tab switched to their account.",
+  "@shellSessionSwitchedNotice": {
+    "description": "One-time notice shown when this tab's session moved to another user because that user signed in from another tab of the same browser. The tab now shows the new user's account; nothing was signed out by the person looking at this tab (#432)",
+    "placeholders": {
+      "username": {
+        "type": "String",
+        "example": "alex"
+      }
+    }
   }
 }

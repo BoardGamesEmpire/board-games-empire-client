@@ -16,7 +16,13 @@
 /// for its own reason — `dart:js_interop` directly, rather than through drift.
 /// It belongs behind the same barrel because it is the same thing: web storage,
 /// composed into the app by the one caller that can compile it.
+///
+/// Since #432 it also carries the session monitor's browser bindings — a
+/// `BroadcastChannel` and the page's focus and visibility events — for the
+/// same reason: `dart:js_interop`, composed by the one caller that compiles
+/// it.
 library;
 
 export 'src/feedback/indexed_db_feedback_sink.dart';
+export 'src/session/web_session_bindings.dart';
 export 'src/web_storage_composition.dart';

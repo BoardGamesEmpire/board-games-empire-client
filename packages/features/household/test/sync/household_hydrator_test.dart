@@ -727,6 +727,59 @@ void main() {
     });
   });
 
+  // #432: on web another tab can move the shared session cookie to another
+  // user while a drain is paging, and a page read then holds that user's
+  // households.
+  group('HouseholdHydrator — whose session a page was read as (#432)', () {
+    HouseholdHydrator confirming(List<bool> answers, {int limit = 100}) =>
+        HouseholdHydrator(
+          repository: repo,
+          remote: remote,
+          limit: limit,
+          confirmSession: () async => answers.removeAt(0),
+        );
+
+    test('writes nothing from a page that came back once the session was '
+        'no longer this user\'s, and stops', () async {
+      when(() => remote.fetchHouseholds(page: 1, limit: 1)).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 1, total: 2, hasMore: true),
+      );
+      when(() => remote.fetchHouseholds(page: 2, limit: 1)).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-2'], page: 2, limit: 1, total: 2, hasMore: false),
+      );
+
+      final outcome = await confirming([true, false], limit: 1).hydrate();
+
+      expect(outcome, HydrateOutcome.failed);
+      expect(writtenIds(), ['h-1']);
+    });
+
+    test('purges nothing against a single page it could not confirm', () async {
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            _page(ids: ['h-1'], page: 1, limit: 100, total: 1, hasMore: false),
+      );
+
+      final outcome = await confirming([false]).hydrate();
+
+      expect(outcome, HydrateOutcome.failed);
+      verifyNever(() => repo.cacheHouseholdWithRoster(any(), any()));
+      verifyNever(
+        () => repo.purgeHouseholdsAbsentFrom(
+          any(),
+          purgeable: any(named: 'purgeable'),
+        ),
+      );
+    });
+  });
+
   group('HouseholdHydrator — failures never escape', () {
     test('a transient failure completes instead of throwing', () async {
       when(
