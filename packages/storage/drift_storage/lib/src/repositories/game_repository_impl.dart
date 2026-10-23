@@ -137,7 +137,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   static final RegExp _likeWildcardChars = RegExp(r'[%_]');
 
   @override
-  Future<List<Game>> searchGames(String query, {int limit = 20}) async {
+  Future<List<Game>> searchGames(
+    String query, {
+    int limit = 20,
+    Set<ContentType> contentTypes = const {},
+  }) async {
     checkNotDisposed();
     // Reject non-positive limits up front. Without this, passing
     // `limit: -1` would silently disable SQLite's LIMIT clause and
@@ -173,13 +177,20 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     // LIMIT trims it down.
     final prefixPattern = '$q%';
 
+    // The content types narrow in SQL, before LIMIT, so a type outnumbered
+    // by other matches is still found.
+    final types = [for (final type in contentTypes) type.toWire()];
+
     final rows =
         await (_db.select(_db.gamesTable)
               ..where(
                 (t) =>
                     _readableGame(t) &
                     (t.title.lower().contains(q) |
-                        t.subtitle.lower().contains(q)),
+                        t.subtitle.lower().contains(q)) &
+                    (types.isEmpty
+                        ? const Constant(true)
+                        : t.contentType.isIn(types)),
               )
               ..orderBy([
                 // Title-prefix matches first. The LIKE expression

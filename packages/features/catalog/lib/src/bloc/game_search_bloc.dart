@@ -68,15 +68,12 @@ import 'game_search_state.dart';
 /// ## When the search fails
 ///
 /// The bloc searches the games cached on this device instead
-/// ([GameRepository.searchGames]), applies the filter's content types here,
+/// ([GameRepository.searchGames]), narrowed by the filter's content types,
 /// and reports them as [GameSearchReady.fromCache]. Without a cache, or when
 /// that read fails too, it reports [GameSearchFailed].
 ///
 /// The cache holds no platform types, so a search narrowed by platform type
-/// finds nothing there rather than showing games it cannot vouch for. And the
-/// cache read takes [GamesRemoteDataSource.searchPageSize] matches before the
-/// content-type filter, so a narrowed cached search can show fewer than it
-/// would find.
+/// finds nothing there rather than showing games it cannot vouch for.
 class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   GameSearchBloc({
     required this._remote,
@@ -249,14 +246,12 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
           : await cache.searchGames(
               query,
               limit: GamesRemoteDataSource.searchPageSize,
+              contentTypes: filter.contentTypes,
             );
       if (search != _sequence) return;
-      final types = filter.contentTypes;
-      final local = [
-        for (final game in games)
-          if (types.isEmpty || types.contains(game.contentType)) _hitOf(game),
-      ];
-      final results = GameSearchResults(local: local);
+      final results = GameSearchResults(
+        local: [for (final game in games) _hitOf(game)],
+      );
       _shown = results;
       emit(_ready(results, fromCache: true));
     } on Object catch (error, stackTrace) {

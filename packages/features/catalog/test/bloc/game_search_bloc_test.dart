@@ -614,6 +614,41 @@ void main() {
     );
 
     blocTest<GameSearchBloc, GameSearchState>(
+      'finds a cached match of the filter past a page of other matches',
+      setUp: () => cache.cacheGames([
+        for (var i = 0; i < GamesRemoteDataSource.searchPageSize; i++)
+          game('g_catan_$i', title: 'Catan ${i.toString().padLeft(2, '0')}'),
+        game(
+          'g_seafarers',
+          title: 'Catan: Seafarers',
+          contentType: ContentType.expansion,
+        ),
+      ]),
+      build: () => build(cache: cache),
+      act: (bloc) async {
+        bloc.add(const GameSearchFilterChanged(_expansions));
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      },
+      skip: 2,
+      expect: () => [
+        GameSearchReady(
+          query: 'catan',
+          fromCache: true,
+          filter: _expansions,
+          onServer: const [
+            GameSearchHit(
+              externalId: 'g_seafarers',
+              title: 'Catan: Seafarers',
+              contentType: ContentType.expansion,
+              gameId: 'g_seafarers',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
       'finds nothing cached when narrowed by platform type, which the cache '
       'does not hold',
       setUp: () => cache.cacheGames([game('g_catan', title: 'Catan')]),

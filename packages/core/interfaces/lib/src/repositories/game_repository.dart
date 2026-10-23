@@ -138,7 +138,14 @@ abstract class GameRepository {
   /// hit always corresponds to a live cached entry. [limit] must be
   /// positive; non-positive values short-circuit to an empty list
   /// without touching the database.
-  Future<List<Game>> searchGames(String query, {int limit = 20});
+  ///
+  /// Given [contentTypes], only games of those types match, and [limit]
+  /// counts those. Empty, the default, matches every type.
+  Future<List<Game>> searchGames(
+    String query, {
+    int limit = 20,
+    Set<ContentType> contentTypes = const {},
+  });
 
   /// One page of this user's cached games, in the order `GET /games` pages
   /// the catalog: by title, then by id where titles tie (#42).

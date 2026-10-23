@@ -38,8 +38,15 @@ class FakeGamesCache extends Fake implements GameRepository {
       _games.skip(offset).take(limit).toList();
 
   @override
-  Future<List<Game>> searchGames(String query, {int limit = 20}) async => _games
+  Future<List<Game>> searchGames(
+    String query, {
+    int limit = 20,
+    Set<ContentType> contentTypes = const {},
+  }) async => _games
       .where((g) => g.title.toLowerCase().contains(query.toLowerCase()))
+      .where(
+        (g) => contentTypes.isEmpty || contentTypes.contains(g.contentType),
+      )
       .take(limit)
       .toList();
 }
