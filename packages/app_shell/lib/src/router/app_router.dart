@@ -85,6 +85,7 @@ abstract final class AppRoutes {
   /// The location of one game's detail screen.
   static String gameDetailOf(String gameId) =>
       '$games/${Uri.encodeComponent(gameId)}';
+
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
   static const stuckChanges = '/stuck-changes';
@@ -278,6 +279,7 @@ typedef GameDetailScreenBuilder = Widget? Function(
   BuildContext context,
   String gameId,
 );
+
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
