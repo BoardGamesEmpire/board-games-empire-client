@@ -11,19 +11,21 @@ import 'sync_queue_drain.dart';
 /// Starts the sync queue drain when a user session activates (#121).
 ///
 /// Native only, for now: `buildNativeUserScopeInstallers` holds it, after
-/// both hydrate installers and after [SyncSenderInstaller], whose sender it
-/// runs. Composing it on web needs a Web Lock and a check of whose session
-/// is sending, and that is #447.
+/// the household, collection and event hydrate installers and after
+/// [SyncSenderInstaller], whose sender it runs. Composing it on web needs a
+/// Web Lock and a check of whose session is sending, and that is #447.
 ///
 /// ## When it runs
 ///
-/// - **Once at install**, unawaited, as both hydrates start: work a
-///   previous session left queued goes out without waiting for a trigger.
+/// - **Once at install**, unawaited, as the household, collection and event
+///   hydrates start: work a previous session left queued goes out without
+///   waiting for a trigger.
 /// - **Whenever the session's [SessionRehydrator] runs a pass** and the
 ///   drain reports itself stale: a connectivity edge, an app resume, the
 ///   household list's entry, and #311's backoff once it exists. Registered
-///   after both hydrates, so each pass runs it after them, though each
-///   entry's failure is isolated, so "after" is not "after a successful".
+///   after the household, collection and event hydrates, so each pass runs
+///   it after them, though each entry's failure is isolated, so "after" is
+///   not "after a successful".
 ///
 /// Either way, a send can be acknowledged while a hydrate's request is in
 /// flight, and the answer that request brings back, read before the send

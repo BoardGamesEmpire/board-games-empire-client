@@ -7,6 +7,7 @@ import 'package:dio_network/dio_network.dart';
 import 'package:drift/drift.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
+import 'package:events/events.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
@@ -59,9 +60,9 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 /// The per-user session-scope installers (#135), run on every sign-in by
 /// `UserSessionScope.activate()` and disposed on any transition out of the
 /// authenticated state. The user-session scope lives here (#129 wiring of
-/// the #135 tier): its repositories — the sync queue, households and game
-/// collections (#150) — are rebuilt per (server, user) and their live
-/// `watch*` queries close when the session ends.
+/// the #135 tier): its repositories — the sync queue, households, game
+/// collections (#150) and events (#496) — are rebuilt per (server, user) and
+/// their live `watch*` queries close when the session ends.
 ///
 /// Ordering against [buildNativeServerScopeInstallers] is structural, not
 /// positional: the user-scope container view resolves the per-server
@@ -77,10 +78,11 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
 ///
 /// The hydrate installers run **after** it: [HouseholdHydrateInstaller]
 /// resolves the [HouseholdRepository] the storage installer registers and
-/// starts the #267 household hydrate, and [GameCollectionHydrateInstaller]
+/// starts the #267 household hydrate, [GameCollectionHydrateInstaller]
 /// does the same for the [GameCollectionRepository] and the collection
-/// hydrate (#259). Each starts its drain unawaited — activation is the
-/// bootstrap gate, and a throw here signs the user out, so an unreachable
+/// hydrate (#259), and [EventHydrateInstaller] for the [EventRepository] and
+/// the event hydrate (#496). Each starts its drain unawaited — activation is
+/// the bootstrap gate, and a throw here signs the user out, so an unreachable
 /// server must not reach this list's caller.
 ///
 /// [DataGatewayAccessInstaller] runs after the rehydrator too, which it
@@ -100,6 +102,7 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
+  EventHydrateInstaller(),
   DataGatewayAccessInstaller(),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),

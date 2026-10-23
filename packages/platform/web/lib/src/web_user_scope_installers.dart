@@ -2,6 +2,7 @@ import 'package:data_gateway/data_gateway.dart' show DataGatewayAccessInstaller;
 import 'package:di/di.dart' show SessionRehydratorInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
+import 'package:events/events.dart' show EventHydrateInstaller;
 import 'package:game_collection/game_collection.dart'
     show GameCollectionHydrateInstaller;
 import 'package:household/household.dart' show HouseholdHydrateInstaller;
@@ -15,18 +16,20 @@ import 'package:sync_queue/sync_queue.dart' show SyncSenderInstaller;
 /// The native counterpart is `buildNativeUserScopeInstallers`, and the
 /// overlap is the point: every entry here is platform-neutral code, so web
 /// runs the *same* installers native does rather than parallel
-/// implementations of the same three repositories and the same hydrate
-/// wiring. That is what #244 is for, and what #287's barrel split made
-/// possible — a web target imports `drift_storage.dart` and gets the
-/// repositories without the `dart:io` executor half.
+/// implementations of the same repositories, the event repository (#496)
+/// among them, and the same hydrate wiring. That is what #244 is for, and
+/// what #287's barrel split made possible — a web target imports
+/// `drift_storage.dart` and gets the repositories without the `dart:io`
+/// executor half.
 ///
 /// Order is structural, exactly as on native. [SessionRehydratorInstaller]
 /// runs **first**: it registers the #302 re-hydrate seam that later
 /// hydrating installers register themselves with, and an installer can only
 /// resolve what a predecessor registered. The hydrate installers run after
 /// the tier above them for the same reason: [HouseholdHydrateInstaller]
-/// resolves the `HouseholdRepository` it registers, and
-/// [GameCollectionHydrateInstaller] the `GameCollectionRepository` (#259).
+/// resolves the `HouseholdRepository` it registers,
+/// [GameCollectionHydrateInstaller] the `GameCollectionRepository` (#259), and
+/// [EventHydrateInstaller] the `EventRepository` (#496).
 ///
 /// The resources these installers need — the `ServerDatabase` (#288), the
 /// skew-corrected `ClockService` (#118) and the `AuthRepository` — live in
@@ -59,8 +62,8 @@ import 'package:sync_queue/sync_queue.dart' show SyncSenderInstaller;
 /// two tabs share one database and the drain needs a Web Lock. That is #447.
 /// Until then a web create whose inline send fails stays queued.
 ///
-/// The household and collection hydrates ask the same question before each
-/// pass (#432).
+/// The household, collection and event hydrates ask the same question before
+/// each pass (#432).
 ///
 /// This lives on the VM-compilable side of the package split so its
 /// membership can be asserted without a browser, the way native's is.
@@ -71,6 +74,7 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   UserSessionScopeInstaller(),
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
+  EventHydrateInstaller(),
   DataGatewayAccessInstaller(),
   SyncSenderInstaller(),
 ];

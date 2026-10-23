@@ -7,6 +7,7 @@ library;
 import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
+import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:household/household.dart';
@@ -21,13 +22,14 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(6));
+      expect(installers, hasLength(7));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
       expect(installers[3], isA<GameCollectionHydrateInstaller>());
-      expect(installers[4], isA<DataGatewayAccessInstaller>());
-      expect(installers[5], isA<SyncSenderInstaller>());
+      expect(installers[4], isA<EventHydrateInstaller>());
+      expect(installers[5], isA<DataGatewayAccessInstaller>());
+      expect(installers[6], isA<SyncSenderInstaller>());
     });
 
     test('runs the same DataGateway access installer native does, after the '
@@ -114,6 +116,25 @@ void main() {
         installers.whereType<GameCollectionHydrateInstaller>(),
         hasLength(1),
       );
+      expect(hydrate, greaterThan(storage));
+      expect(hydrate, greaterThan(rehydrator));
+    });
+
+    test('runs the same event hydrate installer native does, after the tiers '
+        'it depends on (#496)', () {
+      final installers = buildWebUserScopeInstallers();
+
+      final rehydrator = installers.indexWhere(
+        (i) => i is SessionRehydratorInstaller,
+      );
+      final storage = installers.indexWhere(
+        (i) => i is UserSessionScopeInstaller,
+      );
+      final hydrate = installers.indexWhere((i) => i is EventHydrateInstaller);
+
+      // Native's equivalent is
+      // `native_platform/test/event_hydrate_installer_ordering_test.dart`.
+      expect(installers.whereType<EventHydrateInstaller>(), hasLength(1));
       expect(hydrate, greaterThan(storage));
       expect(hydrate, greaterThan(rehydrator));
     });
