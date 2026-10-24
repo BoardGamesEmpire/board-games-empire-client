@@ -4,8 +4,11 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 ///
 /// Mirrors the backend's `MemberInvitePolicy` enum, held on the household's
 /// settings (board-games-empire-backend#166). Owners and admins always invite
-/// directly and guests never do, whatever the policy. A change applies only
-/// to invites sent after it.
+/// directly and guests never do, whatever the policy. A change reaches a
+/// member's invite still waiting too: the server asks again, when it is
+/// approved or accepted, whether its sender could still send it, and an
+/// invite an approver already approved is left alone
+/// (board-games-empire-backend#747).
 enum MemberInvitePolicy {
   /// A member's invite goes straight to the invitee.
   @JsonValue('Direct')

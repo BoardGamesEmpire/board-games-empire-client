@@ -233,7 +233,9 @@ void main() {
       expect(
         find.text(
           'Owners and admins can always invite, and guests never can. A '
-          'change applies to invites sent after it.',
+          "stricter policy also reaches members' invites still waiting: one "
+          'it would not allow can no longer be approved or accepted, unless '
+          'an owner or admin already approved it.',
         ),
         findsOneWidget,
       );
