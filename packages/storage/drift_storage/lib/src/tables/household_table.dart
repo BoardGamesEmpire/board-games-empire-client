@@ -6,6 +6,10 @@ class HouseholdsTable extends Table {
   TextColumn get description => text().nullable()();
   TextColumn get image => text().nullable()();
 
+  /// The household's member invite policy, by its wire name (#476). Null
+  /// until a server read carrying the household's settings writes it.
+  TextColumn get memberInvitePolicy => text().nullable()();
+
   /// True when this row has local changes not yet synced to the server.
   BoolColumn get isDirty => boolean().withDefault(const Constant(false))();
 

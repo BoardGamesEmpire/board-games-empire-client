@@ -157,6 +157,105 @@ void main() {
     });
   });
 
+  group('fetchHouseholds — the household settings (#476)', () {
+    test('a list row carries its member invite policy', () async {
+      stubGet(
+        _resp(
+          _envelope([
+            {
+              ..._householdRow(),
+              'settings': {'memberInvitePolicy': 'Off'},
+            },
+          ]),
+        ),
+      );
+
+      final page = await remote.fetchHouseholds();
+
+      expect(
+        page.items.single.household.settings,
+        const HouseholdSettings(memberInvitePolicy: MemberInvitePolicy.off),
+      );
+    });
+
+    test('a list row without settings has none', () async {
+      stubGet(_resp(_envelope([_householdRow()])));
+
+      final page = await remote.fetchHouseholds();
+
+      expect(page.items.single.household.settings, isNull);
+    });
+
+    test('a null settings has none', () async {
+      stubGet(
+        _resp(
+          _envelope([
+            {..._householdRow(), 'settings': null},
+          ]),
+        ),
+      );
+
+      final page = await remote.fetchHouseholds();
+
+      expect(page.items.single.household.settings, isNull);
+    });
+
+    test('a policy this client does not know reads as unknown', () async {
+      stubGet(
+        _resp(
+          _envelope([
+            {
+              ..._householdRow(),
+              'settings': {'memberInvitePolicy': 'FriendsOnly'},
+            },
+          ]),
+        ),
+      );
+
+      final page = await remote.fetchHouseholds();
+
+      expect(
+        page.items.single.household.settings?.memberInvitePolicy,
+        MemberInvitePolicy.unknown,
+      );
+    });
+
+    test('a settings field of the wrong type is permanent', () {
+      stubGet(
+        _resp(
+          _envelope([
+            {..._householdRow(), 'settings': 'Off'},
+          ]),
+        ),
+      );
+
+      expect(
+        () => remote.fetchHouseholds(),
+        throwsA(isA<HouseholdRemotePermanentException>()),
+      );
+    });
+
+    test('a policy that is not a string is permanent, not unknown', () {
+      // Unknown is for a policy name this client does not know. A payload
+      // it failed to read is a different failure and must not pass as one.
+      stubGet(
+        _resp(
+          _envelope([
+            {
+              ..._householdRow(),
+              'settings': {'memberInvitePolicy': null},
+            },
+          ]),
+        ),
+      );
+
+      expect(
+        () => remote.fetchHouseholds(),
+        throwsA(isA<HouseholdRemotePermanentException>()),
+      );
+    });
+  });
+
   group('fetchHouseholds — the embedded members', () {
     test('resolves the nested role projection to a real role', () async {
       // The regression this whole mapper exists for: handed to
@@ -462,6 +561,36 @@ void main() {
         dioError(
           DioExceptionType.badResponse,
           response: _resp(null, statusCode: 404),
+        ),
+      );
+      expect(
+        () => remote.fetchHouseholds(),
+        throwsA(
+          isA<HouseholdRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
+    });
+
+    test('a 404 from the list is still transient, envelope or not (#476)', () {
+      // Only updateHousehold reads an enveloped 404 as "gone". On the list
+      // route Nest's route-not-found carries the same envelope, and there
+      // is no row for it to be about.
+      stubGetThrows(
+        dioError(
+          DioExceptionType.badResponse,
+          response: Response<String>(
+            data: jsonEncode({
+              'statusCode': 404,
+              'message': 'Cannot GET /api/households',
+              'error': 'Not Found',
+            }),
+            statusCode: 404,
+            requestOptions: RequestOptions(path: '/api/households'),
+          ),
         ),
       );
       expect(

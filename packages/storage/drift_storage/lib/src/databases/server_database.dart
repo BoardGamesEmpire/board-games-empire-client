@@ -53,7 +53,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **7**.
+/// `schemaVersion` is **8**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -101,6 +101,11 @@ part 'server_database.g.dart';
 ///   leaves out. Nothing is backfilled, because no earlier version cached an
 ///   event, so all six start empty. The foreign keys point at `events`, which
 ///   is new, and no existing table is rebuilt, so #54 stays deferred.
+/// - **v7 → v8 (#476):** adds a nullable `households.member_invite_policy`,
+///   the household's member invite policy by its wire name. Additive: one
+///   `addColumn`, no table rebuilt. A row cached before it holds null, read
+///   as settings not read yet, until the next hydrate writes the policy the
+///   list carries.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -116,7 +121,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v7.json`, and
+/// `drift_schemas/server/drift_schema_v8.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -161,7 +166,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -263,6 +268,12 @@ class ServerDatabase extends _$ServerDatabase {
         await m.createIndex(eventAttendeesEventIdIdx);
         await m.createIndex(eventAttendeesUserIdIdx);
         await m.createIndex(eventAccessEventIdIdx);
+      }
+      if (from < 8 && to >= 8) {
+        // v7 → v8 (#476): the household's member invite policy. Additive
+        // and nullable: every existing row holds null until the next
+        // hydrate writes it, so there is nothing to backfill.
+        await m.addColumn(householdsTable, householdsTable.memberInvitePolicy);
       }
     },
   );

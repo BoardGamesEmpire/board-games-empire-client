@@ -7,6 +7,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:household/l10n/household_localizations.dart';
 
+import 'household_name_validator.dart';
+
 /// The create-household form: a required name and an optional description.
 ///
 /// Owns its [FormGroup] (reactive_forms, per the project's form convention —
@@ -73,26 +75,10 @@ class CreateHouseholdForm extends StatefulWidget {
 class _CreateHouseholdFormState extends State<CreateHouseholdForm> {
   final FormGroup _form = FormGroup({
     'name': FormControl<String>(
-      validators: [Validators.delegate(_requiredTrimmed)],
+      validators: [Validators.delegate(requiredTrimmed)],
     ),
     'description': FormControl<String>(),
   });
-
-  /// Required-after-trim (PR #130 review), matching the
-  /// `FeedbackComposeFormModel` precedent: `Validators.required` admits
-  /// whitespace-only input, which the repository then rejects after trimming
-  /// — surfacing as a generic failure snackbar instead of an inline field
-  /// error. Validity must match the trimmed hand-off value. Emits the
-  /// standard required error key so the existing localized message applies.
-  static Map<String, dynamic>? _requiredTrimmed(
-    AbstractControl<dynamic> control,
-  ) {
-    final value = control.value;
-    final trimmed = value is String ? value.trim() : '';
-    return trimmed.isEmpty
-        ? <String, dynamic>{ValidationMessage.required: true}
-        : null;
-  }
 
   StreamSubscription<Object?>? _editSubscription;
 
