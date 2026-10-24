@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:auth/auth.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
+import 'package:events/events.dart';
+import 'package:events/l10n/events_localizations.dart';
 import 'package:feedback/feedback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -390,6 +392,8 @@ class _BgeAppState extends State<BgeApp> {
       gameBrowseBuilder: _buildGameBrowseRoute,
       gameSearchBuilder: _buildGameSearchRoute,
       gameDetailBuilder: _buildGameDetailRoute,
+      eventOverviewBuilder: _buildEventOverviewRoute,
+      eventGroupBuilder: _buildEventGroupRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
@@ -636,6 +640,7 @@ class _BgeAppState extends State<BgeApp> {
     final authL10n = AuthLocalizations.of(context);
     final catalogL10n = GameCatalogLocalizations.of(context);
     final collectionL10n = GameCollectionLocalizations.of(context);
+    final eventsL10n = EventsLocalizations.of(context);
     final feedbackL10n = FeedbackLocalizations.of(context);
     final householdL10n = HouseholdLocalizations.of(context);
     final shellL10n = ShellLocalizations.of(context);
@@ -684,6 +689,11 @@ class _BgeAppState extends State<BgeApp> {
     // the network installer registers per server. A drawer entry, like the
     // collection's (#44): navigation is #414's.
     final canBrowseGames = container.isRegistered<GamesRemoteDataSource>();
+    // #497: the events overview's gate is the collection's — the repository
+    // alone, which the user tier registers, so the entry shows exactly
+    // while a session is active. A drawer entry until #414 makes every one
+    // a destination.
+    final canReadEvents = container.isRegistered<EventRepository>();
     // #455: the inbox needs the invite client as well, since it reads the
     // server rather than the cache; the household gate keeps it to a live
     // user session, as the households entry is.
@@ -716,6 +726,13 @@ class _BgeAppState extends State<BgeApp> {
             icon: Icons.explore_outlined,
             label: catalogL10n.catalogBrowseTitle,
             onSelected: (ctx) => ctx.push(AppRoutes.games),
+          ),
+        if (canReadEvents)
+          HomeMenuEntry(
+            id: 'events',
+            icon: Icons.event_outlined,
+            label: eventsL10n.eventsTitle,
+            onSelected: (ctx) => ctx.push(AppRoutes.events),
           ),
         if (canReadHouseholds)
           HomeMenuEntry(
@@ -1266,6 +1283,103 @@ class _BgeAppState extends State<BgeApp> {
       remote: container.get<GamesRemoteDataSource>(),
       cache: _gamesCache(container),
       onGone: _reportGameGone,
+    );
+  }
+
+  /// The events screens' retry (#497): the session-scoped [EventRefresher]
+  /// the hydrate installer registers, or null where this composition runs
+  /// no event hydrate, in which case the banner offers nothing to press.
+  ///
+  /// The events' own pass, not the [SessionRehydrator], for
+  /// [_householdRetry]'s reason: the rehydrator drops a pass while one is
+  /// running, and a button someone pressed must not do nothing.
+  Future<void> Function()? _eventsRetry(DependencyContainer container) =>
+      container.isRegistered<EventRefresher>()
+      ? container.get<EventRefresher>().refresh
+      : null;
+
+  /// The overview's entry trigger (#497): the session's [SessionRehydrator],
+  /// through the shell's shared guard, as [_collectionEntryRefresh] does.
+  /// The staleness window in the registry decides whether any work happens.
+  VoidCallback? _eventsEntryRefresh(DependencyContainer container) {
+    if (!container.isRegistered<SessionRehydrator>()) return null;
+    final rehydrator = container.get<SessionRehydrator>();
+    return () => startDetachedRehydrate(
+      trigger: 'events_entry',
+      resolve: () => rehydrator,
+    );
+  }
+
+  /// The active server's container, where it holds the user-session
+  /// [EventRepository]: the gate both #497 routes share. Null (→
+  /// [NotYetAvailableScreen]) when no active server is resolvable or it has
+  /// no repository.
+  ///
+  /// Resolved per route build, as [_buildCollectionListRoute] does: a
+  /// callback held across a session change would reach a disposed scope's
+  /// hydrator. A mounted route needs nothing more, because its bloc keeps
+  /// what its first build gave it, and a session ending under it closes the
+  /// event stream while the auth redirect pops the route.
+  DependencyContainer? _eventsContainer() {
+    final container =
+        widget.bootstrapCubit.activeServerScope?.active?.container;
+    if (container == null || !container.isRegistered<EventRepository>()) {
+      return null;
+    }
+    return container;
+  }
+
+  /// The cached households, for each event row's household name (#497), or
+  /// null where the session has no household cache.
+  static Stream<List<Household>>? _eventHouseholds(
+    DependencyContainer container,
+  ) => container.isRegistered<HouseholdRepository>()
+      ? container.get<HouseholdRepository>().watchHouseholds()
+      : null;
+
+  /// What the event hydrate is doing, or null where none runs.
+  static Stream<EventHydration>? _eventHydration(
+    DependencyContainer container,
+  ) => container.isRegistered<EventHydrationStatus>()
+      ? container.get<EventHydrationStatus>().watch()
+      : null;
+
+  /// The #497 events overview, behind [_eventsContainer]'s gate, with the
+  /// optional households, status, retry and entry trigger.
+  ///
+  /// No `onOpen` and no `onCreate`: rows stay inert until #498 gives them a
+  /// detail route, and there is no create button until #499.
+  Widget? _buildEventOverviewRoute(BuildContext context) {
+    final container = _eventsContainer();
+    if (container == null) return null;
+
+    return EventOverviewScreen(
+      repository: container.get<EventRepository>(),
+      households: _eventHouseholds(container),
+      hydration: _eventHydration(container),
+      onOpenGroup: (ctx, group) =>
+          unawaited(ctx.push<void>(AppRoutes.eventGroupOf(group.name))),
+      onRetry: _eventsRetry(container),
+      onEnter: _eventsEntryRefresh(container),
+    );
+  }
+
+  /// The #497 page for the group named [segment]. Same gate as
+  /// [_buildEventOverviewRoute], and null for a segment that names no group.
+  ///
+  /// No entry trigger: the page is pushed above the overview, which fired
+  /// one on its own entry.
+  Widget? _buildEventGroupRoute(BuildContext context, String segment) {
+    final group = EventGroup.values.where((g) => g.name == segment).firstOrNull;
+    final container = _eventsContainer();
+    if (group == null || container == null) return null;
+
+    return EventGroupScreen(
+      group: group,
+      repository: container.get<EventRepository>(),
+      households: _eventHouseholds(container),
+      hydration: _eventHydration(container),
+      onRetry: _eventsRetry(container),
     );
   }
 
@@ -1941,6 +2055,7 @@ class _BgeAppState extends State<BgeApp> {
         HouseholdLocalizations.delegate,
         GameCollectionLocalizations.delegate,
         GameCatalogLocalizations.delegate,
+        EventsLocalizations.delegate,
         SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,

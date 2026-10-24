@@ -1,0 +1,143 @@
+{
+  "@@locale": "en",
+  "eventsTitle": "Events",
+  "@eventsTitle": {
+    "description": "Title of the screen giving an overview of the user's events, and the label of the drawer entry that opens it."
+  },
+  "eventsGroupUpcoming": "Upcoming",
+  "@eventsGroupUpcoming": {
+    "description": "Heading of the group of events whose date is still ahead, or under way, soonest first. Also the title of the page listing the whole group."
+  },
+  "eventsGroupPlanning": "Planning",
+  "@eventsGroupPlanning": {
+    "description": "Heading of the group of events that have no confirmed date yet, because one is being chosen or none has been set. Also the title of the page listing the whole group."
+  },
+  "eventsGroupPast": "Past",
+  "@eventsGroupPast": {
+    "description": "Heading of the group of events whose every date is over, most recent first. Also the title of the page listing the whole group."
+  },
+  "eventsGroupSeeAll": "See all ({count})",
+  "@eventsGroupSeeAll": {
+    "description": "Button beside a group's heading on the events overview, which shows only the first few events of each group. It opens a page listing every event in the group; the number is how many events the group holds. Screen readers hear eventsGroupSeeAllSpoken instead.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "eventsGroupSeeAllSpoken": "{group}: see all {count, plural, =1{1 event} other{{count} events}}",
+  "@eventsGroupSeeAllSpoken": {
+    "description": "What a screen reader says for the eventsGroupSeeAll button, which on its own would not say which group it opens or what the number counts. The group is one of the group headings, such as 'Upcoming'.",
+    "placeholders": {
+      "group": {
+        "type": "String",
+        "example": "Upcoming"
+      },
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "eventsGroupEmpty": "Nothing here right now.",
+  "@eventsGroupEmpty": {
+    "description": "Shown on the page listing one group of events when the group has no events left, for example once the last upcoming event has moved to Past."
+  },
+  "eventsLoading": "Loading your events",
+  "@eventsLoading": {
+    "description": "Announced and shown while the user's events are still being fetched for the first time."
+  },
+  "eventsEmptyTitle": "No events yet",
+  "@eventsEmptyTitle": {
+    "description": "Heading of the empty state shown when the user has no events at all."
+  },
+  "eventsEmptyBody": "Events you're hosting or invited to show up here.",
+  "@eventsEmptyBody": {
+    "description": "Body of the empty state shown when the user has no events at all. Says where events come from; offers no action."
+  },
+  "eventsError": "Your events couldn't be read.",
+  "@eventsError": {
+    "description": "Shown when the events kept on this device could not be read at all, so none can be displayed. Not a network failure."
+  },
+  "eventsErrorBody": "Something went wrong opening them on this device.",
+  "@eventsErrorBody": {
+    "description": "Body under eventsError, above a button that tries again. Says the failure is on this device, so that the user doesn't go looking for a connection problem."
+  },
+  "eventsRefreshFailed": "Couldn't refresh your events. What's shown may be out of date.",
+  "@eventsRefreshFailed": {
+    "description": "Banner shown when the user's events could not be refreshed from the server, for ANY reason: the server was unreachable, or it answered with an error. The events already on this device are still shown. Deliberately does not name a cause, because the screen does not know which one it was."
+  },
+  "eventsRefreshRetry": "Try again",
+  "@eventsRefreshRetry": {
+    "description": "Button that asks the server for the user's events again, on the couldn't-refresh banner and when the events could not be read. Kept as a plain retry: nothing here can promise the next attempt will work."
+  },
+  "eventsRefreshInProgress": "Refreshing…",
+  "@eventsRefreshInProgress": {
+    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled. Shown ONLY for a refresh the user asked for: one started by reconnecting, by resuming the app or by opening the screen is not narrated."
+  },
+  "eventsWhen": "{date} · {time}",
+  "@eventsWhen": {
+    "description": "When an event happens, on its row: the day, then the time it starts, for a date in the current year, for example 'Fri, Nov 6 · 7:30 PM'. The time arrives already formatted, in the 12- or 24-hour form the user's device is set to. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "MMMEd"
+      },
+      "time": {
+        "type": "String",
+        "example": "7:30 PM"
+      }
+    }
+  },
+  "eventsWhenWithYear": "{date} · {time}",
+  "@eventsWhenWithYear": {
+    "description": "eventsWhen for a date in another year, which carries the year, for example 'Wed, Jan 6, 2027 · 7:30 PM'. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMEd"
+      },
+      "time": {
+        "type": "String",
+        "example": "7:30 PM"
+      }
+    }
+  },
+  "eventsDateBeingChosen": "Date being chosen",
+  "@eventsDateBeingChosen": {
+    "description": "In place of a date on an event's row, while the people invited are voting on when it should happen."
+  },
+  "eventsNoDateYet": "No date yet",
+  "@eventsNoDateYet": {
+    "description": "In place of a date on an event's row, when the event has no date set and no vote is choosing one."
+  },
+  "eventsRsvpAttending": "Going",
+  "@eventsRsvpAttending": {
+    "description": "On an event's row: the user said they will attend."
+  },
+  "eventsRsvpMaybe": "Maybe",
+  "@eventsRsvpMaybe": {
+    "description": "On an event's row: the user said they might attend."
+  },
+  "eventsRsvpNotAttending": "Not going",
+  "@eventsRsvpNotAttending": {
+    "description": "On an event's row: the user said they will not attend."
+  },
+  "eventsRsvpInvited": "Invited",
+  "@eventsRsvpInvited": {
+    "description": "On an event's row: the user was invited and has not answered yet."
+  },
+  "eventsDetailSeparator": " · ",
+  "@eventsDetailSeparator": {
+    "description": "Shown between the parts of an event row's second line, for example 'Back room · The Smiths · Going'. Keep or drop the surrounding spaces as your language's punctuation needs."
+  },
+  "eventsDetailSpokenSeparator": ", ",
+  "@eventsDetailSpokenSeparator": {
+    "description": "Joins the same parts when a screen reader reads an event row aloud, in place of eventsDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
+  },
+  "eventsCreate": "New event",
+  "@eventsCreate": {
+    "description": "Button on the events overview that starts creating an event."
+  }
+}
