@@ -220,4 +220,20 @@ abstract class EventRepository {
   /// nothing writes nothing and emits nothing. A write that leaves the list
   /// as it was, such as another user's, may still emit it unchanged.
   Stream<List<Event>> watchAttendingEvents();
+
+  /// Watches the same events as [watchAttendingEvents], in the same order,
+  /// each with its occurrences and the current user's own attendee row
+  /// (#497).
+  ///
+  /// The occurrences come in the server's order, `sortOrder` then id, and an
+  /// event with none has an empty list. The attendee row is the one
+  /// [getCurrentUserAttendance] answers: null where no cached roster names
+  /// this user, which for an event cached only from the list is every one
+  /// until backend#867. Another user's row on the same roster is never this
+  /// user's.
+  ///
+  /// Re-emits when an event, its occurrences or this user's attendee row
+  /// changes, and on each write [watchAttendingEvents] emits for. As there,
+  /// a write that changes nothing here may still emit the list unchanged.
+  Stream<List<EventListItem>> watchAttendingEventListItems();
 }

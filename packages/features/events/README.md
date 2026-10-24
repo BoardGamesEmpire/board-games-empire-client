@@ -1,8 +1,9 @@
 # events
 
-The events feature (#496). For now it holds the hydrate: the pass that keeps
-a per-user cache of the events the signed-in user attends, which every event
-screen will read, and what the screens can learn from it and ask of it.
+The events feature: the hydrate (#496) and the overview (#497). The hydrate
+is the pass that keeps a per-user cache of the events the signed-in user
+attends, which every event screen reads, and what the screens can learn from
+it and ask of it. The overview is the first screen to read it.
 
 ## The hydrate
 
@@ -61,8 +62,8 @@ can read any more is deleted from the cache.
 
 The accepted cost: an event created before page 1's range that the user
 leaves stays on their list until the list fits on one page, or until a detail
-read answers 404 for it. Acting on that 404 comes with the screens, #497 and
-#498.
+read answers 404 for it. Acting on that 404 comes with the detail screen,
+#498, since the overview makes no detail reads.
 
 ## When it runs
 
@@ -130,8 +131,30 @@ registered in the user-session scope. The installer runs after the
 user-session storage installer and the rehydrator's, in both composition
 roots, `native_platform` and `web_platform`.
 
+## The overview
+
+`EventOverviewScreen` shows the user's events as Upcoming, Planning and Past,
+five to a group, from `EventRepository.watchAttendingEventListItems`: each
+event with its dates and the user's own attendee row. `groupEvents` places
+each event by its confirmed dates, not its status, against the clock at every
+emission, so an event that ends while the overview is open moves to Past at
+the next one. A group holding more than five has a *See all* button that opens
+`EventGroupScreen`, which lists the whole group lazily over the cache. Each
+row shows its title, its date in device-local time with the platform's
+24-hour setting, its venue, its household's name from the cached households,
+and the user's RSVP where their row is cached, which until backend#867 is
+only after a detail read. The screens take optional hooks for what isn't
+built yet: without `onOpen` a row is inert, and without `onCreate` there is
+no create button. #498 wires the first and #499 the second. The shell opens
+the overview from the home drawer at `/events`, and each group at
+`/events/upcoming`, `/events/planning` and `/events/past`.
+
+Run `melos run generate` once after checkout: the localizations under
+`lib/l10n/` are generated and gitignored.
+
 ## Not here yet
 
-- **Screens.** The event list is #497 and the event detail #498.
+- **The detail.** Opening an event is #498.
 - **Writes.** Creating an event is #499, and answering an invitation or voting
   is #527. Nothing here queues or sends anything.
+- **Invitations.** Whether invited events get a group of their own is #568.

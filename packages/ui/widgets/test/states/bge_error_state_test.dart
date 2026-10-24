@@ -102,6 +102,45 @@ void main() {
       expect(retry, lessThan(state));
     });
 
+    testWidgets('while retrying, keeps the button, disabled and renamed', (
+      tester,
+    ) async {
+      const key = Key('retry');
+      var retried = 0;
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          BgeErrorState(
+            icon: Icons.error_outline,
+            title: "Can't reach Home BGE",
+            body: 'Check your connection and try again.',
+            retryLabel: 'Try again',
+            retryProgressLabel: 'Trying again…',
+            retrying: true,
+            onRetry: () => retried++,
+            retryKey: key,
+          ),
+        ),
+      );
+
+      expect(find.byKey(key), findsOneWidget);
+      expect(find.text('Try again'), findsNothing);
+      expect(
+        tester.getSemantics(find.text('Trying again…')),
+        isSemantics(
+          label: 'Trying again…',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: false,
+          isLiveRegion: true,
+        ),
+      );
+
+      await tester.tap(find.byKey(key), warnIfMissed: false);
+      expect(retried, 0);
+      handle.dispose();
+    });
+
     testWidgets('retryKey identifies the retry button', (tester) async {
       const key = Key('retry');
       var retried = 0;

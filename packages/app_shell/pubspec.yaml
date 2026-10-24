@@ -20,6 +20,8 @@ dependencies:
     path: ../features/data_gateway
   di:
     path: ../core/di
+  events:
+    path: ../features/events
   feedback:
     path: ../features/feedback
   game_catalog:

@@ -429,6 +429,74 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
             .map((rows) => rows.map(_mapEvent).toList()),
   );
 
+  /// One query joining each attending event to its occurrences and this
+  /// user's own attendee row, so Drift re-runs it when any of them changes
+  /// (#497), as `watchCollectionListItems` does for the collection.
+  ///
+  /// Left outer joins: an event can have no occurrences, and most have no
+  /// cached roster. The attendee join matches on this user, so another
+  /// user's row on a shared roster never joins. The server holds one row per
+  /// user per event, and a roster is replaced wholesale, so it joins at most
+  /// one row and the occurrences are not repeated.
+  @override
+  Stream<List<EventListItem>> watchAttendingEventListItems() => untilDisposed(
+    () {
+      final events = _db.eventsTable;
+      final occurrences = _db.eventOccurrencesTable;
+      final mine = _db.alias(_db.eventAttendeesTable, 'own_attendance');
+
+      final query =
+          _db.select(events).join([
+              leftOuterJoin(
+                occurrences,
+                occurrences.eventId.equalsExp(events.id),
+              ),
+              leftOuterJoin(
+                mine,
+                mine.eventId.equalsExp(events.id) & mine.userId.equals(_userId),
+              ),
+            ])
+            ..where(
+              events.id.isInQuery(
+                _accessedEventIds(eventAccessSourceAttending),
+              ),
+            )
+            // [watchAttendingEvents]'s order, then the detail read's order
+            // within each event.
+            ..orderBy([
+              OrderingTerm.desc(events.createdAt.julianday),
+              OrderingTerm.desc(events.id),
+              OrderingTerm.asc(occurrences.sortOrder),
+              OrderingTerm.asc(occurrences.id),
+            ]);
+
+      return query.watch().map((rows) {
+        // One row per occurrence, so each event's rows fold into one item.
+        // A map keeps the events in the order they came.
+        final rowsByEvent = <String, List<TypedResult>>{};
+        for (final row in rows) {
+          rowsByEvent.putIfAbsent(row.readTable(events).id, () => []).add(row);
+        }
+        return [
+          for (final eventRows in rowsByEvent.values)
+            EventListItem(
+              event: _mapEvent(eventRows.first.readTable(events)),
+              occurrences: [
+                for (final row in eventRows)
+                  if (row.readTableOrNull(occurrences) case final o?)
+                    _mapOccurrence(o),
+              ],
+              // The same on every row of the event.
+              attendance: switch (eventRows.first.readTableOrNull(mine)) {
+                final row? => _mapAttendee(row),
+                null => null,
+              },
+            ),
+        ];
+      });
+    },
+  );
+
   // ── Mappers ────────────────────────────────────────────────────────────
 
   static String _encodeSource(EventAccessSource source) => switch (source) {

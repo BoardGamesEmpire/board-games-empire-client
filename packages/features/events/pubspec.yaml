@@ -1,5 +1,5 @@
 name: events
-description: "Events feature — the hydrate that caches the events the signed-in user attends (#496)"
+description: "Events feature — the hydrate and the events overview (#496, #497)"
 publish_to: none
 
 environment:
@@ -9,6 +9,8 @@ resolution: workspace
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
 
   interfaces:
@@ -20,7 +22,15 @@ dependencies:
   observability:
     path: ../../core/observability
 
+  flutter_bloc: ^9.1.1
   equatable: ^2.1.0
+  intl: ^0.20.2
+  # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
+  # scale; both declared directly because this package imports from both.
+  ui:
+    path: ../../ui/widgets
+  ui_tokens:
+    path: ../../ui/tokens
 
 dev_dependencies:
   flutter_test:
@@ -40,6 +50,13 @@ dev_dependencies:
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
   flutter_lints: ^6.0.0
+  l10n_test_support:
+    path: ../../testing/l10n
+  # Shared widget-test helpers: viewport sizing for the overview's
+  # narrow-window and large-text checks.
+  bge_test_support:
+    path: ../../testing/support
 
 flutter:
+  generate: true
   uses-material-design: true
