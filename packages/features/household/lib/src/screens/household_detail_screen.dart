@@ -14,13 +14,14 @@ import '../bloc/awaiting_approval_count_cubit.dart';
 import '../bloc/household_detail_bloc.dart';
 import '../bloc/household_detail_event.dart';
 import '../bloc/household_detail_state.dart';
+import '../edit/household_edit_permissions.dart';
 import '../invites/household_invite_permissions.dart';
 import '../widgets/household_refresh_banner.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
 
-/// One household, read-only (#270): its name, its description, how many
-/// people are in it, and what the current user is in it.
+/// One household (#270): its name, its description, how many people are in
+/// it, and what the current user is in it.
 ///
 /// Decoupled from DI like the list and create screens: the caller resolves
 /// the user-session [HouseholdRepository] and the optional
@@ -37,18 +38,19 @@ import '../sync/household_hydration_status.dart';
 /// which is worse than the count. See the deviation recorded on #270.
 ///
 /// **No avatars** (#124, the media pipeline) and **no membership actions**
-/// — no rename, no delete, no leave, no kick. Those need sync-queue op
-/// types of their own for the drain (#121) to send, and they stay with
-/// #246.
+/// — no delete, no leave, no kick, no transfer. Those stay with #246's
+/// children.
 ///
-/// ## Invites are the exception
+/// ## Edit and invites are the exceptions
 ///
-/// To its owners and admins, the screen offers an entry to the household's
-/// invites (#455), with how many await approval (#489). Invites are
-/// online-only, read from the server and never queued, so they need no sync
-/// op. The entry is left out for a household the server does not know yet
-/// (`isLocalOnly`), whose id it would not recognise, and where the
-/// composition passes no [invites] client.
+/// To its owners and admins, the screen offers Edit in the app bar (#476),
+/// and an entry to the household's invites (#455), with how many await
+/// approval (#489). Both are online-only: an edit is sent straight to the
+/// server and its answer cached, and invites are read from the server and
+/// never queued, so neither needs a sync op. Both are left out for a
+/// household the server does not know yet (`isLocalOnly`), whose id it
+/// would not recognise, and where the composition passes no [onEdit] or no
+/// [invites] client.
 ///
 /// ## Not-found is an answer, not an error
 ///
@@ -67,6 +69,7 @@ class HouseholdDetailScreen extends StatelessWidget {
     this.onRetry,
     this.invites,
     this.onOpenInvites,
+    this.onEdit,
     super.key,
   });
 
@@ -98,6 +101,9 @@ class HouseholdDetailScreen extends StatelessWidget {
 
   /// Key on the entry to the household's invites.
   static const Key invitesKey = Key('household_detail.invites');
+
+  /// Key on the Edit button.
+  static const Key editKey = Key('household_detail.edit');
 
   /// The household to show. A literal `create` never reaches the
   /// repository — see the class doc.
@@ -134,6 +140,11 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// the invites entry out.
   final void Function(BuildContext context, String householdId)? onOpenInvites;
 
+  /// Opens the household's edit form, with this screen's context and the
+  /// household's current id. Offered to its owners and admins only. Null
+  /// leaves Edit out.
+  final void Function(BuildContext context, String householdId)? onEdit;
+
   /// The reserved create segment. `/household/create` is a route of its
   /// own, declared first; this is the belt to that braces (#270 D6).
   static const String _reservedCreateId = 'create';
@@ -164,6 +175,7 @@ class HouseholdDetailScreen extends StatelessWidget {
         canRetry: onRetry != null,
         invites: invites,
         onOpenInvites: onOpenInvites,
+        onEdit: onEdit,
       ),
     );
   }
@@ -175,6 +187,7 @@ class _HouseholdDetailView extends StatelessWidget {
     this.canRetry = false,
     this.invites,
     this.onOpenInvites,
+    this.onEdit,
   });
 
   final void Function(BuildContext context)? onBack;
@@ -184,6 +197,7 @@ class _HouseholdDetailView extends StatelessWidget {
 
   final HouseholdInviteRemoteDataSource? invites;
   final void Function(BuildContext context, String householdId)? onOpenInvites;
+  final void Function(BuildContext context, String householdId)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -214,6 +228,7 @@ class _HouseholdDetailView extends StatelessWidget {
             canRetry: canRetry,
             invites: invites,
             onOpenInvites: onOpenInvites,
+            onEdit: onEdit,
           ),
         };
       },
@@ -228,6 +243,7 @@ class _ReadyPage extends StatelessWidget {
     this.canRetry = false,
     this.invites,
     this.onOpenInvites,
+    this.onEdit,
   });
 
   final HouseholdDetailReady state;
@@ -237,6 +253,7 @@ class _ReadyPage extends StatelessWidget {
 
   final HouseholdInviteRemoteDataSource? invites;
   final void Function(BuildContext context, String householdId)? onOpenInvites;
+  final void Function(BuildContext context, String householdId)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -246,12 +263,23 @@ class _ReadyPage extends StatelessWidget {
     final hasDescription = description != null && description.isNotEmpty;
     final invites = this.invites;
     final openInvites = onOpenInvites;
+    final edit = onEdit;
 
     return BgePage(
       // The household's own name, not a generic one: the title is the first
       // thing that says where you landed, and the invite deep link (#243)
       // will land here without the user having walked past the list.
       title: Text(state.household.name),
+      actions: [
+        if (edit != null &&
+            HouseholdEditPermissions.mayEdit(state.household, state.role))
+          IconButton(
+            key: HouseholdDetailScreen.editKey,
+            icon: const Icon(Icons.edit_outlined),
+            tooltip: l10n.householdDetailEdit,
+            onPressed: () => edit(context, state.household.id),
+          ),
+      ],
       width: BgePageWidth.pane,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

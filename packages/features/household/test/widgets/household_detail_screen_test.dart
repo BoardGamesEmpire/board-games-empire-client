@@ -82,6 +82,7 @@ void main() {
     TextScaler textScaler = TextScaler.noScaling,
     HouseholdInviteRemoteDataSource? invites,
     void Function(BuildContext context, String householdId)? onOpenInvites,
+    void Function(BuildContext context, String householdId)? onEdit,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -98,6 +99,7 @@ void main() {
       onRetry: onRetry,
       invites: invites,
       onOpenInvites: onOpenInvites,
+      onEdit: onEdit,
     ),
   );
 
@@ -733,6 +735,77 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(invites.calls, hasLength(2));
+    });
+  });
+
+  group('the Edit entry (#476)', () {
+    late List<String> edited;
+
+    setUp(() => edited = []);
+
+    Widget withEdit() =>
+        harness(onEdit: (_, householdId) => edited.add(householdId));
+
+    testWidgets('an owner sees Edit', (tester) async {
+      await tester.pumpWidget(withEdit());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.editKey), findsOneWidget);
+      expect(find.byTooltip('Edit household'), findsOneWidget);
+    });
+
+    testWidgets('an admin sees Edit', (tester) async {
+      await tester.pumpWidget(withEdit());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdAdmin)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.editKey), findsOneWidget);
+    });
+
+    testWidgets('a member does not see Edit', (tester) async {
+      await tester.pumpWidget(withEdit());
+      await settleWith(tester);
+
+      expect(find.byKey(HouseholdDetailScreen.editKey), findsNothing);
+    });
+
+    testWidgets('a household not yet synced has no Edit', (tester) async {
+      await tester.pumpWidget(withEdit());
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(isLocalOnly: true),
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.editKey), findsNothing);
+    });
+
+    testWidgets('no onEdit, no Edit', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.editKey), findsNothing);
+    });
+
+    testWidgets('tapping Edit calls onEdit with the id', (tester) async {
+      await tester.pumpWidget(withEdit());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.editKey));
+      await tester.pump();
+
+      expect(edited, [_id]);
     });
   });
 }
