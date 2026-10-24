@@ -30,9 +30,9 @@ import '../widgets/event_row.dart';
 ///
 /// Three groups of [groupCap] keep the overview to a screen on a phone. A
 /// group holding more names how many in a *See all* button beside its
-/// heading, which opens the group's page ([onOpenGroup]). The heading, not
-/// the group, is the button: once rows open their events, a tappable group
-/// would nest one tap target inside another. A group of [groupCap] or fewer
+/// heading, which opens the group's page ([onOpenGroup]). The button, not
+/// the group, is what opens it: once rows open their events, a tappable
+/// group would nest one tap target inside another. A group of [groupCap] or fewer
 /// has no button, because every event in it is already shown, and a group
 /// with none is left off.
 ///
