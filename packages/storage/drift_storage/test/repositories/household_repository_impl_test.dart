@@ -375,6 +375,113 @@ void main() {
         expect(retrieved, isNotNull);
         expect(retrieved!.name, equals('Cached'));
       });
+
+      group('member invite policy (#476)', () {
+        Household household({
+          String name = 'Cached',
+          HouseholdSettings? settings,
+        }) {
+          final at = DateTime.utc(2024, 1, 15, 10, 30);
+          return Household(
+            id: 'h-1',
+            name: name,
+            settings: settings,
+            createdAt: at,
+            updatedAt: at,
+          );
+        }
+
+        setUp(() async {
+          await _seedHousehold(db, id: 'h-1');
+          await _seedMember(
+            db,
+            id: 'm-1',
+            userId: _kUserId,
+            householdId: 'h-1',
+          );
+        });
+
+        test('a cached policy reads back', () async {
+          await repo.cacheHousehold(
+            household(
+              settings: const HouseholdSettings(
+                memberInvitePolicy: MemberInvitePolicy.off,
+              ),
+            ),
+          );
+
+          final read = await repo.getHousehold('h-1');
+          expect(
+            read?.settings?.memberInvitePolicy,
+            equals(MemberInvitePolicy.off),
+          );
+        });
+
+        test('a household written without settings keeps the cached '
+            'policy', () async {
+          await repo.cacheHousehold(
+            household(
+              settings: const HouseholdSettings(
+                memberInvitePolicy: MemberInvitePolicy.needsApproval,
+              ),
+            ),
+          );
+
+          // The create answer carries no settings, and neither does an
+          // older server. Neither may wipe what a list read cached.
+          await repo.cacheHousehold(household(name: 'Renamed'));
+
+          final read = await repo.getHousehold('h-1');
+          expect(read?.name, equals('Renamed'));
+          expect(
+            read?.settings?.memberInvitePolicy,
+            equals(MemberInvitePolicy.needsApproval),
+          );
+        });
+
+        test('an unknown policy round-trips as unknown', () async {
+          await repo.cacheHousehold(
+            household(
+              settings: const HouseholdSettings(
+                memberInvitePolicy: MemberInvitePolicy.unknown,
+              ),
+            ),
+          );
+
+          final read = await repo.getHousehold('h-1');
+          expect(
+            read?.settings?.memberInvitePolicy,
+            equals(MemberInvitePolicy.unknown),
+          );
+        });
+
+        test('a household never given settings reads with none', () async {
+          await repo.cacheHousehold(household());
+
+          final read = await repo.getHousehold('h-1');
+          expect(read, isNotNull);
+          expect(read!.settings, isNull);
+        });
+
+        test('a roster write carries the policy', () async {
+          // The hydrate's write: the list read is where a policy first
+          // reaches the cache.
+          await repo.cacheHouseholdWithRoster(
+            household(
+              settings: const HouseholdSettings(
+                memberInvitePolicy: MemberInvitePolicy.direct,
+              ),
+            ),
+            const [],
+          );
+
+          final read = await repo.getHousehold('h-1');
+          expect(
+            read?.settings?.memberInvitePolicy,
+            equals(MemberInvitePolicy.direct),
+          );
+        });
+      });
     });
 
     group('cacheMember() / cacheMembers()', () {

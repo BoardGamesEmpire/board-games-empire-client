@@ -253,18 +253,27 @@ class HouseholdRepositoryImpl
   /// flags say: a row a server write marked dirty or local-only would be
   /// one no later server write could refresh and no acknowledgement would
   /// clear.
-  HouseholdsTableCompanion _serverHouseholdCompanion(Household household) =>
-      HouseholdsTableCompanion.insert(
-        id: household.id,
-        name: household.name,
-        description: Value(household.description),
-        image: Value(household.image),
-        isDirty: const Value(false),
-        isLocalOnly: const Value(false),
-        deletedAt: Value(household.deletedAt),
-        createdAt: household.createdAt,
-        updatedAt: household.updatedAt,
-      );
+  ///
+  /// A household with no settings leaves the cached policy as it is. The
+  /// create answer carries none, and neither does an older server, and
+  /// neither means the policy was cleared (#476).
+  HouseholdsTableCompanion _serverHouseholdCompanion(Household household) {
+    final settings = household.settings;
+    return HouseholdsTableCompanion.insert(
+      id: household.id,
+      name: household.name,
+      description: Value(household.description),
+      image: Value(household.image),
+      memberInvitePolicy: settings == null
+          ? const Value.absent()
+          : Value(_encodePolicy(settings.memberInvitePolicy)),
+      isDirty: const Value(false),
+      isLocalOnly: const Value(false),
+      deletedAt: Value(household.deletedAt),
+      createdAt: household.createdAt,
+      updatedAt: household.updatedAt,
+    );
+  }
 
   @override
   Future<void> cacheMember(HouseholdMember member) async {
@@ -766,6 +775,12 @@ class HouseholdRepositoryImpl
     name: row.name,
     description: row.description,
     image: row.image,
+    settings: switch (row.memberInvitePolicy) {
+      null => null,
+      final policy => HouseholdSettings(
+        memberInvitePolicy: _decodePolicy(policy),
+      ),
+    },
     isDirty: row.isDirty,
     isLocalOnly: row.isLocalOnly,
     deletedAt: row.deletedAt,
@@ -838,4 +853,18 @@ class HouseholdRepositoryImpl
       HouseholdRole.unknown => 'Unknown',
     };
   }
+
+  /// Maps a persisted policy name to a typed [MemberInvitePolicy]. Any name
+  /// this client does not know, `'Unknown'` included, maps to
+  /// [MemberInvitePolicy.unknown].
+  static MemberInvitePolicy _decodePolicy(String value) =>
+      MemberInvitePolicy.fromWire(value);
+
+  /// Maps a typed [MemberInvitePolicy] back to the persisted policy name.
+  /// [MemberInvitePolicy.unknown] persists as `'Unknown'`; the server's
+  /// original name is not preserved through this bridge.
+  static String _encodePolicy(MemberInvitePolicy policy) => switch (policy) {
+    MemberInvitePolicy.unknown => 'Unknown',
+    _ => policy.toWire(),
+  };
 }

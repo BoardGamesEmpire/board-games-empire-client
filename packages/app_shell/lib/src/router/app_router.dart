@@ -59,6 +59,12 @@ abstract final class AppRoutes {
   static const _householdInvitesSegment = 'invites';
   static const _householdInviteSendSegment = 'new';
 
+  /// The form for editing one household (#476), beneath its detail screen.
+  /// Build a concrete location with [householdEditOf].
+  static const householdEdit = '$householdDetail/$_householdEditSegment';
+
+  static const _householdEditSegment = 'edit';
+
   /// The location of one household's invites.
   static String householdInvitesOf(String householdId) =>
       '${householdDetailOf(householdId)}/$_householdInvitesSegment';
@@ -66,6 +72,10 @@ abstract final class AppRoutes {
   /// The location of one household's send-invite form.
   static String householdInviteSendOf(String householdId) =>
       '${householdInvitesOf(householdId)}/$_householdInviteSendSegment';
+
+  /// The location of one household's edit form.
+  static String householdEditOf(String householdId) =>
+      '${householdDetailOf(householdId)}/$_householdEditSegment';
 
   /// The invites sent to the current user (#455). Top-level: the inbox
   /// spans every household, so it belongs under none of them.
@@ -312,6 +322,19 @@ typedef SendHouseholdInviteScreenBuilder = Widget? Function(
   String householdId,
 );
 
+/// Builds the edit form for one household (#476) for the
+/// [AppRoutes.householdEdit] route. Same null contract as
+/// [SendHouseholdInviteScreenBuilder], with the per-server
+/// `HouseholdRemoteDataSource` the save is sent through in place of the
+/// invite client.
+///
+/// Not gated on the viewer's role. A deep link by someone who may not edit
+/// reaches the screen, which says only owners and admins can.
+typedef EditHouseholdScreenBuilder = Widget? Function(
+  BuildContext context,
+  String householdId,
+);
+
 /// Builds the collection list (#44) for the [AppRoutes.collection] route.
 /// Supplied by [BgeApp]; returns null at navigation time when no active
 /// server is resolvable or its container carries no
@@ -422,6 +445,7 @@ GoRouter buildAppRouter({
   HouseholdDetailScreenBuilder? householdDetailBuilder,
   HouseholdInvitesScreenBuilder? householdInvitesBuilder,
   SendHouseholdInviteScreenBuilder? sendHouseholdInviteBuilder,
+  EditHouseholdScreenBuilder? editHouseholdBuilder,
   InviteInboxScreenBuilder? inviteInboxBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
   GameBrowseScreenBuilder? gameBrowseBuilder,
@@ -569,7 +593,8 @@ GoRouter buildAppRouter({
             },
             // #455: a household's invites and its send form, nested for the
             // reason the household children are (#308): a `go` to either
-            // builds what is above it, so leaving is a plain pop.
+            // builds what is above it, so leaving is a plain pop. The edit
+            // form (#476) sits beside the invites.
             routes: [
               GoRoute(
                 path: AppRoutes._householdInvitesSegment,
@@ -591,6 +616,17 @@ GoRouter buildAppRouter({
                     },
                   ),
                 ],
+              ),
+              // #476: the household's edit form, nested beside its invites
+              // for the same reason, so a save leaves by a plain pop.
+              GoRoute(
+                path: AppRoutes._householdEditSegment,
+                builder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
+                  return editHouseholdBuilder?.call(context, id) ??
+                      const NotYetAvailableScreen();
+                },
               ),
             ],
           ),

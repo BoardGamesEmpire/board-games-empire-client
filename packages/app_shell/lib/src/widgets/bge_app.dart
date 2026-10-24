@@ -386,6 +386,7 @@ class _BgeAppState extends State<BgeApp> {
       householdDetailBuilder: _buildHouseholdDetailRoute,
       householdInvitesBuilder: _buildHouseholdInvitesRoute,
       sendHouseholdInviteBuilder: _buildSendHouseholdInviteRoute,
+      editHouseholdBuilder: _buildEditHouseholdRoute,
       inviteInboxBuilder: _buildInviteInboxRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
@@ -952,6 +953,14 @@ class _BgeAppState extends State<BgeApp> {
       invites: _inviteClient(container),
       onOpenInvites: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.householdInvitesOf(id))),
+      // #476: Edit. The screen itself hides it from a viewer who may not
+      // edit and for a household the server does not know yet; here it is
+      // only whether this composition can send the edit, so a composition
+      // that can't is not offered a way to a placeholder.
+      onEdit: _householdRemote(container) == null
+          ? null
+          : (ctx, id) =>
+                unawaited(ctx.push<void>(AppRoutes.householdEditOf(id))),
     );
   }
 
@@ -962,6 +971,43 @@ class _BgeAppState extends State<BgeApp> {
   ) => container.isRegistered<HouseholdInviteRemoteDataSource>()
       ? container.get<HouseholdInviteRemoteDataSource>()
       : null;
+
+  /// The per-server household remote, or null where this composition has
+  /// none. An edit is sent through it (#476).
+  HouseholdRemoteDataSource? _householdRemote(DependencyContainer container) =>
+      container.isRegistered<HouseholdRemoteDataSource>()
+      ? container.get<HouseholdRemoteDataSource>()
+      : null;
+
+  /// The #476 household-edit wiring. Null (→ [NotYetAvailableScreen])
+  /// without an active server, the user-session [HouseholdRepository] that
+  /// holds the household and says who is looking, or the household remote
+  /// the save is sent through.
+  ///
+  /// Not gated on the viewer's role: a deep link by someone who may not
+  /// edit reaches the screen, which says only owners and admins can.
+  /// Leaving after a save is a pop: the route is the detail screen's
+  /// child, and the detail screen shows the cached answer. A household
+  /// that is gone, or an edit the server refuses, runs the households'
+  /// own pass, as the refresh banner's retry does.
+  Widget? _buildEditHouseholdRoute(BuildContext context, String householdId) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final remote = _householdRemote(container);
+    if (remote == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return EditHouseholdScreen(
+      householdId: householdId,
+      repository: container.get<HouseholdRepository>(),
+      remote: remote,
+      onRefresh: _householdRetry(container),
+      onSaved: (ctx) => ctx.pop(),
+    );
+  }
 
   /// The #455 household-invites wiring. Null (→ [NotYetAvailableScreen])
   /// without an active server, the invite client, or the user-session

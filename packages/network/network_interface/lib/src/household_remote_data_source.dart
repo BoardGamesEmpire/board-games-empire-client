@@ -24,11 +24,11 @@ typedef HouseholdWithMembers = ({
 /// session the endpoints require; this interface adds no auth handling
 /// of its own.
 ///
-/// ## Scope today: create + list
+/// ## Scope today: create + list + update
 ///
-/// [createHousehold] (#39) and [fetchHouseholds] (#266). The remaining
-/// household calls — update, delete, and every membership mutation — land
-/// with the membership work (#122) and #246.
+/// [createHousehold] (#39), [fetchHouseholds] (#266) and [updateHousehold]
+/// (#476). The remaining household calls — delete, and every membership
+/// mutation — land with the membership work (#122) and #246.
 ///
 /// ## Failure classification
 ///
@@ -44,17 +44,21 @@ typedef HouseholdWithMembers = ({
 /// - [HouseholdRemotePermanentException]: 400 (validation), every 4xx the
 ///   four rules below do not carve out, and a 2xx whose body doesn't carry a
 ///   parseable household — retrying cannot succeed.
+/// - [HouseholdNotFoundException]: a 404 from [updateHousehold] that carries
+///   the API's error envelope. Permanent: the household is gone. This is the
+///   one per-route clause, and the 404 rule below says why only this route
+///   has it.
 ///
 /// The governing question is not "did this fail" but **"will the same request
 /// fail the same way again?"**, because that is what the drain acts on. So the
 /// bar for permanent is evidence that the household API itself rejected the
 /// request — not merely that something did. Four 4xx answers do not clear it:
 ///
-/// **No 404 from any household route is permanent** (#297). Every household
-/// route is fixed server-side, so a 404 reports a routing or deployment fault
-/// — a misrouted path prefix, an API not yet deployed, a proxy answering for
-/// it — rather than an answer about households. There is no household route
-/// whose 404 could mean "this row is gone".
+/// **No 404 from a fixed household route is permanent** (#297). The list and
+/// the create routes are fixed server-side, so a 404 from either reports a
+/// routing or deployment fault — a misrouted path prefix, an API not yet
+/// deployed, a proxy answering for it — rather than an answer about
+/// households. Neither has a 404 that could mean "this row is gone".
 ///
 /// On [fetchHouseholds] the cost of getting this wrong is a hydrate that
 /// ends for the life of the process, including after the server is fixed
@@ -80,15 +84,23 @@ typedef HouseholdWithMembers = ({
 /// the application rejecting the request and stays permanent.
 ///
 /// Implementations must not gate the **404** rule on the API's own error
-/// envelope.
+/// envelope for those routes.
 /// A 404 needs that envelope before it can be read as a statement about a
-/// *row* (see [GameCollectionRemoteDataSource]), but no household route has
-/// such a reading, and Nest answers an unmatched route with the same
+/// *row* (see [GameCollectionRemoteDataSource]), but the list and the create
+/// have no such reading, and Nest answers an unmatched route with the same
 /// envelope — so an envelope-gated rule would still call a partial deploy a
-/// rejection. The membership mutations in #122 add the first household routes
-/// whose 404 can carry row semantics — a member or household the request names
-/// and the server says is gone — and that is when this contract grows a
-/// per-route clause and the envelope requirement with it.
+/// rejection.
+///
+/// **A 404 from [updateHousehold] that carries the envelope is
+/// [HouseholdNotFoundException]** (#476). That route names a household by id,
+/// and the server answers 404 when it is unknown or deleted, so it is the
+/// first household route whose 404 can be about a row. The envelope is the
+/// minimum bar for that reading, and a 404 without it stays transient, as
+/// everywhere else. The envelope is not proof: Nest's route-not-found carries
+/// it too, so a server without the route reads as "gone". That is accepted
+/// because an edit is never queued, so a misread costs the user one message
+/// and a refresh, not a parked operation. A queued caller of this method
+/// would have to weigh it again.
 abstract class HouseholdRemoteDataSource {
   /// The server's `limit` ceiling for the household list. A larger `limit`
   /// is **rejected with a 400**, not clamped.
@@ -192,6 +204,90 @@ abstract class HouseholdRemoteDataSource {
     String? language,
     String? visibility,
   });
+
+  /// Changes a household's name, description or member invite policy.
+  ///
+  /// Wire contract (backend `libs/api/household`): `PATCH
+  /// /api/households/:id` with only the fields [update] names → 200
+  /// `{ message, household }`, the household with its settings. The policy
+  /// travels nested, as `{ settings: { memberInvitePolicy } }`. A cleared
+  /// description is sent as `description: null`, which the server stores
+  /// as cleared; every other field it leaves out is left alone.
+  ///
+  /// The returned [Household] is the server's state, with `isDirty` and
+  /// `isLocalOnly` `false`. Callers cache it.
+  ///
+  /// Not queued (#476): the caller sends it and shows the answer, so a
+  /// failure is the user's to retry.
+  ///
+  /// Throws [ArgumentError] before any request when [update] changes
+  /// nothing, which the server answers with a 400, or when [householdId] is
+  /// empty. Throws [HouseholdNotFoundException] for a 404 carrying the API's
+  /// error envelope, and [HouseholdRemoteException] for every other failure
+  /// (see class doc for classification). A 403 is the server refusing this
+  /// user the edit.
+  Future<Household> updateHousehold(String householdId, HouseholdUpdate update);
+}
+
+/// What [HouseholdRemoteDataSource.updateHousehold] changes.
+///
+/// Each field is null when the update leaves it alone, so a caller names
+/// only what changed. Sending a field that did not change would overwrite
+/// whatever another device wrote since the caller read it.
+///
+/// The constructor refuses a value the server would refuse, with an
+/// [ArgumentError]:
+///
+/// - [name] is trimmed, and must not be blank. The server accepts a blank
+///   name (backend#884), so this is the only guard.
+/// - [description] and [clearDescription] are not both set.
+/// - [memberInvitePolicy] is not [MemberInvitePolicy.unknown], which has no
+///   wire name.
+final class HouseholdUpdate {
+  HouseholdUpdate({
+    String? name,
+    this.description,
+    this.clearDescription = false,
+    this.memberInvitePolicy,
+  }) : name = name?.trim() {
+    final trimmed = this.name;
+    if (trimmed != null && trimmed.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be blank');
+    }
+    if (description != null && clearDescription) {
+      throw ArgumentError.value(
+        description,
+        'description',
+        'cannot be set and cleared at once',
+      );
+    }
+    if (memberInvitePolicy == MemberInvitePolicy.unknown) {
+      throw ArgumentError.value(
+        memberInvitePolicy,
+        'memberInvitePolicy',
+        'has no wire name',
+      );
+    }
+  }
+
+  /// The new name, trimmed.
+  final String? name;
+
+  /// The new description. To remove it, set [clearDescription] instead.
+  final String? description;
+
+  /// Whether the description is removed.
+  final bool clearDescription;
+
+  /// The new member invite policy.
+  final MemberInvitePolicy? memberInvitePolicy;
+
+  /// True when this changes nothing.
+  bool get isEmpty =>
+      name == null &&
+      description == null &&
+      !clearDescription &&
+      memberInvitePolicy == null;
 }
 
 /// Base class for all household remote-call failures.
@@ -234,6 +330,26 @@ final class HouseholdRemoteTransientException extends HouseholdRemoteException {
 /// parseable household.
 final class HouseholdRemotePermanentException extends HouseholdRemoteException {
   const HouseholdRemotePermanentException(
+    super.message, {
+    super.statusCode,
+    super.cause,
+  });
+}
+
+/// The household is gone: a 404 from
+/// [HouseholdRemoteDataSource.updateHousehold] that carries the API's error
+/// envelope. Permanent.
+///
+/// Callers refresh rather than delete the cached row: the next hydrate
+/// removes it, so one answer never deletes a row by itself (#476).
+///
+/// The residual: Nest answers an unmatched route with the same envelope, so
+/// a server that does not have the route yet, as in a partial deploy, reads
+/// as "gone" too. That is accepted because an edit is never queued, so a
+/// misread costs one message and one refresh. See the 404 rule on
+/// [HouseholdRemoteDataSource].
+final class HouseholdNotFoundException extends HouseholdRemoteException {
+  const HouseholdNotFoundException(
     super.message, {
     super.statusCode,
     super.cause,

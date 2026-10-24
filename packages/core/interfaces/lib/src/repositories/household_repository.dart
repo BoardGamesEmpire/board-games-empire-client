@@ -20,10 +20,13 @@ enum HouseholdRosterWrite {
 /// ## Scope: create + read-cache + cache-writer
 ///
 /// [create] is the first user-initiated mutation (P4, #39): a signed-in
-/// user creating a household they own. The remaining household mutations
-/// (leave, kick, transfer-ownership, delete, invite, role changes) are
-/// still deferred — they land with the membership work (#122), at which
-/// point membership-mutation sync ops join the queue.
+/// user creating a household they own. An edit of a household's name,
+/// description or settings does not come through here: the caller sends
+/// it to the server, and caches the server's answer with [cacheHousehold]
+/// (#476). The remaining household mutations (leave, kick,
+/// transfer-ownership, delete, invite, role changes) are still deferred —
+/// they land with the membership work (#122), at which point
+/// membership-mutation sync ops join the queue.
 ///
 /// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
 /// [cacheHouseholdWithRoster]) and [purgeHouseholdsAbsentFrom] are
@@ -250,6 +253,11 @@ abstract class HouseholdRepository {
   /// values, tombstone included. It holds local changes the server has not
   /// accepted yet, and only the server's acknowledgement of them may
   /// overwrite it ([reconcileCreatedHousehold], for a create).
+  ///
+  /// A [household] with null [Household.settings] leaves the cached
+  /// settings as they are: the server's create answer carries none, and
+  /// neither does an older server. [cacheHouseholdWithRoster] and
+  /// [reconcileCreatedHousehold] write settings by the same rule (#476).
   Future<void> cacheHousehold(Household household);
 
   /// Upserts a [HouseholdMember] from a server response. User-agnostic

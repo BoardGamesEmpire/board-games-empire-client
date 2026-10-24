@@ -4,6 +4,7 @@ import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import 'package:dio_network/dio_network.dart';
@@ -1157,6 +1158,326 @@ void main() {
         const permanent = HouseholdRemotePermanentException('p');
         expect(transient, isA<HouseholdRemoteException>());
         expect(permanent, isA<HouseholdRemoteException>());
+      });
+    });
+  });
+
+  group('HouseholdRemoteDataSourceImpl.updateHousehold (#476)', () {
+    Map<String, dynamic> updateEnvelope(Map<String, dynamic> household) => {
+      'message': 'success.household.updated',
+      'household': household,
+    };
+
+    void stubPatch(Response<String> response) {
+      when(
+        () => mockDio.patch<String>(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+        ),
+      ).thenAnswer((_) async => response);
+    }
+
+    Map<String, dynamic> capturedBody() =>
+        verify(
+              () => mockDio.patch<String>(
+                any(),
+                options: any(named: 'options'),
+                data: captureAny(named: 'data'),
+              ),
+            ).captured.single
+            as Map<String, dynamic>;
+
+    String envelope(int status, String message, String error) =>
+        jsonEncode({'statusCode': status, 'message': message, 'error': error});
+
+    group('the request', () {
+      test('sends only the fields the update names', () async {
+        stubPatch(_resp(updateEnvelope(_householdJson()), statusCode: 200));
+
+        await remote.updateHousehold(
+          'hh_server_1',
+          HouseholdUpdate(name: 'Den'),
+        );
+
+        expect(capturedBody(), equals({'name': 'Den'}));
+      });
+
+      test('a cleared description is sent as null', () async {
+        // The server stores a null description as cleared. Dropping the key
+        // instead would leave the old description in place.
+        stubPatch(_resp(updateEnvelope(_householdJson()), statusCode: 200));
+
+        await remote.updateHousehold(
+          'hh_server_1',
+          HouseholdUpdate(clearDescription: true),
+        );
+
+        final body = capturedBody();
+        expect(body, equals({'description': null}));
+        expect(body.containsKey('description'), isTrue);
+      });
+
+      test('a new description is sent as given', () async {
+        stubPatch(_resp(updateEnvelope(_householdJson()), statusCode: 200));
+
+        await remote.updateHousehold(
+          'hh_server_1',
+          HouseholdUpdate(description: 'Board games'),
+        );
+
+        expect(capturedBody(), equals({'description': 'Board games'}));
+      });
+
+      test('the policy is nested under settings', () async {
+        stubPatch(_resp(updateEnvelope(_householdJson()), statusCode: 200));
+
+        await remote.updateHousehold(
+          'hh_server_1',
+          HouseholdUpdate(memberInvitePolicy: MemberInvitePolicy.off),
+        );
+
+        expect(
+          capturedBody(),
+          equals({
+            'settings': {'memberInvitePolicy': 'Off'},
+          }),
+        );
+      });
+
+      test('patches the household by its encoded id', () async {
+        stubPatch(_resp(updateEnvelope(_householdJson()), statusCode: 200));
+
+        await remote.updateHousehold('hh 1/x', HouseholdUpdate(name: 'Den'));
+
+        verify(
+          () => mockDio.patch<String>(
+            '/api/households/hh%201%2Fx',
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        ).called(1);
+      });
+
+      test('an empty update is refused before any request', () async {
+        // The server answers a patch that names nothing with a 400.
+        await expectLater(
+          () => remote.updateHousehold('hh_server_1', HouseholdUpdate()),
+          throwsArgumentError,
+        );
+        verifyNever(
+          () => mockDio.patch<String>(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        );
+      });
+
+      test('an empty id is refused before any request', () async {
+        await expectLater(
+          () => remote.updateHousehold('', HouseholdUpdate(name: 'Den')),
+          throwsArgumentError,
+        );
+        verifyNever(
+          () => mockDio.patch<String>(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        );
+      });
+    });
+
+    group('the answer', () {
+      test('maps the answer, settings included', () async {
+        stubPatch(
+          _resp(
+            updateEnvelope({
+              ..._householdJson(name: 'Den', description: 'Board games'),
+              'settings': {'memberInvitePolicy': 'NeedsApproval'},
+            }),
+            statusCode: 200,
+          ),
+        );
+
+        final household = await remote.updateHousehold(
+          'hh_server_1',
+          HouseholdUpdate(name: 'Den'),
+        );
+
+        expect(household.id, 'hh_server_1');
+        expect(household.name, 'Den');
+        expect(household.description, 'Board games');
+        expect(
+          household.settings,
+          const HouseholdSettings(
+            memberInvitePolicy: MemberInvitePolicy.needsApproval,
+          ),
+        );
+        expect(household.isDirty, isFalse);
+        expect(household.isLocalOnly, isFalse);
+      });
+
+      test('an answer with no settings maps to none', () async {
+        stubPatch(_resp(updateEnvelope(_householdJson()), statusCode: 200));
+
+        final household = await remote.updateHousehold(
+          'hh_server_1',
+          HouseholdUpdate(name: 'Den'),
+        );
+
+        expect(household.settings, isNull);
+      });
+
+      test('an answer missing the household object is permanent', () {
+        stubPatch(
+          _resp({'message': 'success.household.updated'}, statusCode: 200),
+        );
+
+        expect(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(isA<HouseholdRemotePermanentException>()),
+        );
+      });
+    });
+
+    group('failures', () {
+      HouseholdRemoteDataSource remoteOver(Dio dio) =>
+          HouseholdRemoteDataSourceImpl(dio);
+
+      test('a 404 with the error envelope is not found', () async {
+        final remote = remoteOver(
+          cannedDio(
+            body: envelope(404, 'common.not_found', 'Not Found'),
+            statusCode: 404,
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(
+            isA<HouseholdNotFoundException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              404,
+            ),
+          ),
+        );
+      });
+
+      test('a 404 without the envelope stays transient', () async {
+        final remote = remoteOver(
+          cannedDio(
+            body: '<html>Not Found</html>',
+            statusCode: 404,
+            contentType: 'text/html',
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(
+            isA<HouseholdRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              404,
+            ),
+          ),
+        );
+      });
+
+      test('a 403 with the envelope is permanent', () async {
+        final remote = remoteOver(
+          cannedDio(
+            body: envelope(403, 'common.forbidden.update', 'Forbidden'),
+            statusCode: 403,
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(
+            isA<HouseholdRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              403,
+            ),
+          ),
+        );
+      });
+
+      test('a 400 is permanent', () async {
+        final remote = remoteOver(
+          cannedDio(
+            body: envelope(400, 'validation.isEnum', 'Bad Request'),
+            statusCode: 400,
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(
+            isA<HouseholdRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              400,
+            ),
+          ),
+        );
+      });
+
+      test('a thrown 404 with the envelope is not found too', () async {
+        // An injected Dio without the permissive validateStatus throws the
+        // 404 instead of returning it. The body must still decide.
+        final remote = remoteOver(
+          cannedDio(
+            body: envelope(404, 'common.not_found', 'Not Found'),
+            statusCode: 404,
+            permissiveStatus: false,
+          ),
+        );
+
+        await expectLater(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(isA<HouseholdNotFoundException>()),
+        );
+      });
+
+      test('a connection error is transient', () {
+        when(
+          () => mockDio.patch<String>(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+          ),
+        ).thenThrow(_dioError(DioExceptionType.connectionError));
+
+        expect(
+          () => remote.updateHousehold(
+            'hh_server_1',
+            HouseholdUpdate(name: 'Den'),
+          ),
+          throwsA(isA<HouseholdRemoteTransientException>()),
+        );
       });
     });
   });

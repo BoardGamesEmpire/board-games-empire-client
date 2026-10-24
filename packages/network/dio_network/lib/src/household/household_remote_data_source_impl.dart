@@ -122,10 +122,8 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     String? visibility,
   }) async {
     _checkClientRequestId(clientRequestId);
-    const action = 'Household create';
-    late final Response<String> response;
-    try {
-      response = await _dio.post<String>(
+    return _sendForHousehold(
+      () => _dio.post<String>(
         '/api/households',
         options: _plainBody,
         data: {
@@ -136,9 +134,61 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
           'language': ?language,
           'visibility': ?visibility,
         },
+      ),
+      action: 'Household create',
+    );
+  }
+
+  @override
+  Future<Household> updateHousehold(
+    String householdId,
+    HouseholdUpdate update,
+  ) async {
+    if (householdId.isEmpty) {
+      throw ArgumentError.value(householdId, 'householdId', 'is empty');
+    }
+    if (update.isEmpty) {
+      throw ArgumentError.value(
+        update,
+        'update',
+        'changes nothing (the server rejects an empty patch with a 400)',
       );
+    }
+
+    return _sendForHousehold(
+      () => _dio.patch<String>(
+        '$_basePath/${Uri.encodeComponent(householdId)}',
+        options: _plainBody,
+        data: {
+          'name': ?update.name,
+          // A null description is how the server is told to clear it, so
+          // the key is sent rather than dropped (#476).
+          if (update.clearDescription)
+            'description': null
+          else
+            'description': ?update.description,
+          if (update.memberInvitePolicy case final policy?)
+            'settings': {'memberInvitePolicy': policy.toWire()},
+        },
+      ),
+      action: 'Household update',
+      // The route names the household, so an enveloped 404 is about it.
+      rowRoute: true,
+    );
+  }
+
+  /// Sends [request] and reads the `{ message, household }` answer the
+  /// create and the update share. [rowRoute] is passed to [_classifyStatus].
+  Future<Household> _sendForHousehold(
+    Future<Response<String>> Function() request, {
+    required String action,
+    bool rowRoute = false,
+  }) async {
+    late final Response<String> response;
+    try {
+      response = await request();
     } on DioException catch (error) {
-      throw _classifyDioException(error, action: action);
+      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
     } on Object catch (error) {
       throw HouseholdRemoteTransientException(
         '$action failed unexpectedly',
@@ -148,9 +198,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
 
     final status = response.statusCode;
     if (status == null) {
-      throw const HouseholdRemoteTransientException(
-        'Household create returned no status',
-      );
+      throw HouseholdRemoteTransientException('$action returned no status');
     }
     if (status < 200 || status >= 300) {
       throw _classifyStatus(
@@ -158,6 +206,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         '$action returned $status',
         cause: null,
         body: response.data,
+        rowRoute: rowRoute,
       );
     }
 
@@ -170,7 +219,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     final household = data['household'];
     if (household is! Map<String, dynamic>) {
       throw HouseholdRemotePermanentException(
-        'Household create response missing a "household" object',
+        '$action response missing a "household" object',
         statusCode: status,
       );
     }
@@ -179,7 +228,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       return _mapHousehold(household);
     } on Object catch (error) {
       throw HouseholdRemotePermanentException(
-        'Failed to parse created household: $error',
+        'Failed to parse the $action response: $error',
         statusCode: status,
         cause: error,
       );
@@ -198,6 +247,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     name: json['name'] as String,
     description: json['description'] as String?,
     image: json['image'] as String?,
+    settings: _mapSettings(json['settings']),
     deletedAt: _dateOrNull(json['deletedAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
@@ -253,6 +303,33 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
+
+  /// Reads the household's settings: the list, the detail and the update
+  /// answer carry them, and the create answer does not (#476).
+  ///
+  /// An absent or null `settings` is none, which leaves a cached policy as
+  /// it is. One of the wrong shape, or a policy that is not a string, is a
+  /// contract breach and throws, for the same reason the role projection
+  /// does: [MemberInvitePolicy.unknown] is for a policy name this client
+  /// does not know, not for a payload it failed to read.
+  static HouseholdSettings? _mapSettings(Object? settings) {
+    if (settings == null) return null;
+    if (settings is! Map<String, dynamic>) {
+      throw FormatException(
+        'household "settings" is ${settings.runtimeType}, expected an object',
+      );
+    }
+    final policy = settings['memberInvitePolicy'];
+    if (policy is! String) {
+      throw FormatException(
+        'household settings "memberInvitePolicy" is ${policy.runtimeType}, '
+        'expected a string',
+      );
+    }
+    return HouseholdSettings(
+      memberInvitePolicy: MemberInvitePolicy.fromWire(policy),
+    );
+  }
 
   /// Reads the role name out of the embedded join projection.
   ///
@@ -427,9 +504,11 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
 
   /// A response status, when present, is authoritative; without one the
   /// failure is a connection-level fault and always transient.
+  /// [rowRoute] is passed to [_classifyStatus].
   HouseholdRemoteException _classifyDioException(
     DioException error, {
     required String action,
+    bool rowRoute = false,
   }) {
     final status = error.response?.statusCode;
     if (status != null) {
@@ -438,6 +517,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         '$action failed with status $status',
         cause: error,
         body: error.response?.data,
+        rowRoute: rowRoute,
       );
     }
     return HouseholdRemoteTransientException('$action failed', cause: error);
@@ -457,10 +537,12 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// - **5xx, and 401 / 407 / 408 / 429** — transient. Expired session,
   ///   timeout, throttle, proxy auth: all conditions a later attempt can
   ///   survive.
-  /// - **404** — transient, unconditionally. Every household route is fixed
-  ///   server-side, so a 404 can only mean the request did not reach the
-  ///   module (#297). See the branch below for why the envelope is not
-  ///   consulted.
+  /// - **404** — transient, unless [rowRoute] is set and the body
+  ///   carries the API's error envelope, which is
+  ///   [HouseholdNotFoundException]. The list and the create are fixed
+  ///   routes, so a 404 from either can only mean the request did not reach
+  ///   the module (#297). The update names a household, and its enveloped
+  ///   404 says that household is gone (#476). See the branch below.
   /// - **403** — transient unless the body carries the API's error envelope.
   ///   The application can genuinely emit a 403, so this one is gated on
   ///   evidence rather than settled by the status (#350).
@@ -469,20 +551,22 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   ///   accident on the server, not a judgement on the request (#431).
   /// - **Any other 4xx** — permanent. A 400, any other 409, or a 422 on these
   ///   routes is the application rejecting the request's content, and the
-  ///   content will not change on retry. #122 adds the first routes whose 4xx
-  ///   can carry row semantics; that is when this grows a per-call-site
-  ///   meaning.
+  ///   content will not change on retry.
   /// - **1xx / 3xx** — transient. Surfaced only by the permissive
   ///   `validateStatus`, and carrying no rejection semantics at all.
   ///
-  /// [body] is the raw, undecoded body when there is one. Only the 403 and
-  /// 409 branches read it, and only through the bounded probes in
-  /// `api_error_envelope.dart`.
+  /// [body] is the raw, undecoded body when there is one. Only the 403, 409
+  /// and row-level 404 branches read it, and only through the bounded
+  /// probes in `api_error_envelope.dart`.
+  ///
+  /// [rowRoute] says the route names a household by id, so an enveloped
+  /// 404 from it is about that household. Only the update sets it.
   HouseholdRemoteException _classifyStatus(
     int status,
     String message, {
     required Object? cause,
     required Object? body,
+    bool rowRoute = false,
   }) {
     final transient = status >= 500 || _retryable4xx.contains(status);
     if (transient) {
@@ -493,8 +577,17 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
     if (status == 404) {
-      // EVERY household route is fixed server-side — there is no household
-      // route whose 404 could mean "this row is gone" — so a 404 always says
+      // On a route that names the household, an enveloped 404 says it is
+      // gone (#476). The envelope is the minimum bar, and why it is accepted
+      // though Nest's route-not-found carries it too is in the contract.
+      if (rowRoute && isApiErrorEnvelope(body, status)) {
+        return HouseholdNotFoundException(
+          '$message — the household is gone',
+          cause: cause,
+          statusCode: status,
+        );
+      }
+      // The list and the create are fixed routes, so a 404 from either says
       // the request did not reach the household module: a misrouted path
       // prefix, an API not deployed yet, a proxy or gateway answering for
       // it. Permanent would end a hydrate for the life of the process, and
@@ -503,26 +596,15 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       // it by hand, for a failure a retry thirty seconds later would have
       // survived (#297).
       //
-      // Note what is deliberately NOT consulted here: the API's own error
-      // envelope. The collection data source requires that envelope before
-      // reading a 404 as a statement about a row, because a proxy 404
-      // cannot license such a conclusion. That check does not separate the
-      // two cases on a *fixed* route, because Nest answers an unmatched
-      // route with the same envelope (`Cannot POST /api/households`,
-      // rendered by the global `I18nExceptionFilter`) — the residual the
-      // collection source documents on its own `_isApplicationError`. So an
-      // envelope-gated rule would still classify a partial deploy as a
-      // rejection, which is the exact bug #297 is about. Since no household
-      // route has a row-level reading to gate, the envelope buys nothing
-      // and is left out rather than added as decoration.
-      //
-      // The membership mutations in #122 add the first household routes
-      // whose 404 *can* carry row semantics — a member or household the
-      // request names by id and the server reports gone. That is when this
-      // grows a per-call-site meaning plus the envelope check, following the
-      // collection source as the template — not before. (Not #272: that
-      // epic is read-only and its list and detail screens both read the
-      // local cache, so it adds no route with a row-level 404.)
+      // The envelope is deliberately NOT consulted for those routes. It does
+      // not separate the two cases on a *fixed* route, because Nest answers
+      // an unmatched route with the same envelope (`Cannot POST
+      // /api/households`, rendered by the global `I18nExceptionFilter`) —
+      // the residual the collection source documents on its own
+      // `_isApplicationError`. So an envelope-gated rule would still
+      // classify a partial deploy as a rejection, which is the exact bug
+      // #297 is about. A 404 without the envelope from the update lands
+      // here too: nothing says the application wrote it.
       return HouseholdRemoteTransientException(
         '$message — the household route was not reachable',
         cause: cause,
