@@ -29,8 +29,9 @@ import 'event_overview_state.dart';
 /// | ended, rows read | any | those rows, frozen |
 ///
 /// An error is not terminal: drift keeps a stream open after a failed
-/// query, so the next table update delivers rows on the same subscription.
-/// Only rows clear it; a hydrate result is an annotation, not data.
+/// query, so the next table update delivers rows on the same subscription,
+/// and a retry reads the cache again. Only rows clear it; a hydrate result
+/// is an annotation, not data.
 ///
 /// A null [hydration] stream means there is no hydrate to wait for, which
 /// reads as settled rather than as loading forever.
@@ -81,11 +82,17 @@ import 'event_overview_state.dart';
 /// The bloc calls [onRetry] rather than the button, because starting a pass
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it. A retry from a failed read
-/// runs the same pass, whose writes are what make drift run the read again,
-/// and the error says it is running until it ends, as the banner does.
+/// runs the same pass, and the error says it is running until it ends, as
+/// the banner does.
+///
+/// It also reads the cache again, on a new subscription. The pass's writes
+/// would make drift run the failed read again, but a pass can write
+/// nothing: one over an empty list caches nothing and purges nothing, and
+/// the error would outlast every retry. An ended cache is not read again,
+/// since its repository is gone.
 class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   EventOverviewBloc({
-    required EventRepository repository,
+    required this._repository,
     Stream<List<Household>>? households,
     Stream<EventHydration>? hydration,
     this._onRetry,
@@ -102,18 +109,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     on<EventOverviewClockTicked>(_onClockTicked);
     on<EventOverviewRetryRequested>(_onRetryRequested);
 
-    _cache = repository.watchAttendingEventListItems().listen(
-      (items) => add(EventOverviewCacheUpdated(items)),
-      onError: (Object error, StackTrace stackTrace) {
-        _logger.warn(
-          'Events overview read failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        add(const EventOverviewCacheFailed());
-      },
-      onDone: () => add(const EventOverviewCacheEnded()),
-    );
+    _cache = _watchCache();
 
     _householdUpdates = households?.listen(
       (households) => add(EventOverviewHouseholdsUpdated(households)),
@@ -138,6 +134,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     );
   }
 
+  final EventRepository _repository;
   final DateTime Function() _now;
   final BgeLogger _logger;
 
@@ -149,7 +146,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   /// would ignore.
   bool get canRetry => _onRetry != null;
 
-  late final StreamSubscription<List<EventListItem>> _cache;
+  late StreamSubscription<List<EventListItem>> _cache;
   StreamSubscription<List<Household>>? _householdUpdates;
   StreamSubscription<EventHydration>? _hydrationUpdates;
 
@@ -164,6 +161,10 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   /// Set by a failed read, cleared by the next rows.
   bool _readFailed = false;
 
+  /// Set once the cache stream has ended, after which nothing reads it
+  /// again.
+  bool _cacheEnded = false;
+
   /// What the hydrate last reported. The default is also what an absent
   /// hydrate means: idle, nothing confirmed, nothing failed.
   EventHydration _hydration = const EventHydration();
@@ -176,6 +177,25 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
 
   /// The longest [_regroup] waits before it is set again.
   static const _maxRegroupWait = Duration(days: 1);
+
+  /// Set once [close] starts. An event already queued, or a retry ending,
+  /// can still be handled during its awaits, and must neither set
+  /// [_regroup] to fire into the closed bloc nor start a read or a pass.
+  bool _closing = false;
+
+  StreamSubscription<List<EventListItem>> _watchCache() =>
+      _repository.watchAttendingEventListItems().listen(
+        (items) => add(EventOverviewCacheUpdated(items)),
+        onError: (Object error, StackTrace stackTrace) {
+          _logger.warn(
+            'Events overview read failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          add(const EventOverviewCacheFailed());
+        },
+        onDone: () => add(const EventOverviewCacheEnded()),
+      );
 
   void _onCacheUpdated(
     EventOverviewCacheUpdated event,
@@ -198,6 +218,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     EventOverviewCacheEnded event,
     Emitter<EventOverviewState> emit,
   ) {
+    _cacheEnded = true;
     // Rows already read stay up while the auth redirect pops the route.
     if (_items != null) return;
     // Held like a failed read: a closed stream will never send the rows
@@ -234,7 +255,13 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     final retry = _onRetry;
     // The hydrator would join a second call rather than duplicate the
     // pass, but the button should not queue passes either.
-    if (retry == null || _retrying) return;
+    if (retry == null || _retrying || _closing) return;
+
+    if (_readFailed && !_cacheEnded) {
+      final failed = _cache;
+      _cache = _watchCache();
+      unawaited(failed.cancel());
+    }
 
     _retrying = true;
     _emitDerived(emit);
@@ -284,6 +311,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
       ),
     );
 
+    if (_closing) return;
     if (nextRegroupAt(items, now: now) case final next?) {
       final wait = next.difference(now);
       _regroup = Timer(
@@ -295,6 +323,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
 
   @override
   Future<void> close() async {
+    _closing = true;
     _regroup?.cancel();
     await _cache.cancel();
     await _householdUpdates?.cancel();

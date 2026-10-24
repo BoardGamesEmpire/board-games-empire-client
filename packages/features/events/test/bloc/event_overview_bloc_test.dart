@@ -251,6 +251,28 @@ void main() {
     expect(DateTime.now().isAfter(end), isTrue, reason: 'not before it ends');
   });
 
+  test('an update still queued at close sets no timer', () async {
+    // The queued update is handled during close's own awaits, after the
+    // timer was cancelled. A timer it set would fire into the closed bloc.
+    final end = DateTime.now().add(const Duration(milliseconds: 50));
+    final bloc = build(now: DateTime.now);
+
+    bloc.add(
+      EventOverviewCacheUpdated([
+        item(
+          'e-1',
+          occurrences: [
+            confirmed('o-1', end.subtract(const Duration(hours: 1)), end: end),
+          ],
+        ),
+      ]),
+    );
+    await bloc.close();
+
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(DateTime.now().isAfter(end), isTrue, reason: 'not before it ends');
+  });
+
   group('the households', () {
     String? householdNameOf(EventOverviewState state) =>
         (state as EventOverviewReady).groups.upcoming.single.householdName;
@@ -612,36 +634,78 @@ void main() {
       },
     );
 
-    test('a retry from a failed read runs the pass', () async {
-      // A hydrate pass writes to the tables the failed query reads, which
-      // is what makes Drift run it again on the same subscription.
-      final bloc = buildWithRetry();
-      addTearDown(bloc.close);
-      items.addError(StateError('transient read failure'));
-      await settle();
+    group('from a failed read', () {
+      // Each read the bloc starts after the first.
+      late StreamController<List<EventListItem>> reread;
 
-      bloc.add(const EventOverviewRetryRequested());
-      await settle();
+      setUp(() {
+        reread = StreamController<List<EventListItem>>();
+      });
 
-      expect(calls, 1);
-      expect(bloc.state, const EventOverviewError(retrying: true));
+      tearDown(() => unawaited(reread.close()));
 
-      items.add([upcoming('e-1')]);
-      pass.complete();
-      await settle();
-
-      expect(bloc.state, readyWith(upcoming: ['e-1'], refreshing: isFalse));
-    });
-
-    test(
-      'a retry that leaves the read failed ends in the plain error',
-      () async {
+      Future<EventOverviewBloc> buildOnAFailedRead() async {
         final bloc = buildWithRetry();
-        addTearDown(bloc.close);
         items.addError(StateError('transient read failure'));
         await settle();
+        when(repository.watchAttendingEventListItems)
+            .thenAnswer((_) => reread.stream);
+        return bloc;
+      }
+
+      test('runs the pass, and says so until it ends', () async {
+        final bloc = await buildOnAFailedRead();
+        addTearDown(bloc.close);
 
         bloc.add(const EventOverviewRetryRequested());
+        await settle();
+
+        expect(calls, 1);
+        expect(bloc.state, const EventOverviewError(retrying: true));
+
+        pass.complete();
+        await settle();
+
+        expect(bloc.state, const EventOverviewError());
+      });
+
+      test('reads the cache again, and its rows recover the screen', () async {
+        final bloc = await buildOnAFailedRead();
+        addTearDown(bloc.close);
+
+        bloc.add(const EventOverviewRetryRequested());
+        reread.add([upcoming('e-1')]);
+        await settle();
+
+        expect(bloc.state, readyWith(upcoming: ['e-1'], refreshing: isTrue));
+
+        pass.complete();
+        await settle();
+
+        expect(bloc.state, readyWith(upcoming: ['e-1'], refreshing: isFalse));
+      });
+
+      test('recovers to an empty list that no write announced', () async {
+        // A pass over an empty list caches nothing and purges nothing, so
+        // Drift is never told to run the failed query again.
+        final bloc = await buildOnAFailedRead();
+        addTearDown(bloc.close);
+
+        bloc.add(const EventOverviewRetryRequested());
+        reread.add(const []);
+        pass.complete();
+        status.finished(EventHydrateOutcome.complete);
+        await settle();
+
+        expect(bloc.state, readyWith(isEmpty: isTrue, refreshing: isFalse));
+      });
+
+      test('a read that fails again keeps the error', () async {
+        final bloc = await buildOnAFailedRead();
+        addTearDown(bloc.close);
+
+        bloc.add(const EventOverviewRetryRequested());
+        reread.addError(StateError('still failing'));
         await settle();
         expect(bloc.state, const EventOverviewError(retrying: true));
 
@@ -649,8 +713,24 @@ void main() {
         await settle();
 
         expect(bloc.state, const EventOverviewError());
-      },
-    );
+      });
+
+      test('does not read an ended cache again', () async {
+        // Teardown closed the stream: the repository is disposed, and a
+        // read of it would fail or end at once.
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        await items.close();
+        await settle();
+
+        bloc.add(const EventOverviewRetryRequested());
+        pass.complete();
+        await settle();
+
+        verify(repository.watchAttendingEventListItems).called(1);
+        expect(bloc.state, const EventOverviewError());
+      });
+    });
 
     test('a pass that throws still ends the refresh', () async {
       // Passes report failure through the status, not by throwing. If one
