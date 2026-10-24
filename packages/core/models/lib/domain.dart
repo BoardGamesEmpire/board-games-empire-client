@@ -48,6 +48,8 @@ export 'src/domain/household/household_invite.dart';
 export 'src/domain/household/household_invite_status.dart';
 export 'src/domain/household/household_member.dart';
 export 'src/domain/household/household_role.dart';
+export 'src/domain/household/household_settings.dart';
+export 'src/domain/household/member_invite_policy.dart';
 
 export 'src/domain/push/push_notification.dart';
 export 'src/domain/push/push_permission_status.dart';
