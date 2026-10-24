@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
+import 'package:events/events.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:household/household.dart';
@@ -173,10 +174,11 @@ AuthResponse sampleSession() => AuthResponse(
 );
 
 /// An [ActiveServer] whose scoped container carries [repo] (and optionally
-/// the household deps, the collection deps and the user-session seam),
-/// mirroring the production per-server scope the shell reads its
-/// dependencies from. Pass the household or collection deps to model a
-/// server whose user-session scope is active (native, post-#135/#129);
+/// the household deps, the collection deps, the event deps and the
+/// user-session seam), mirroring the production per-server scope the shell
+/// reads its dependencies from. Pass the household, collection or event deps
+/// to model a server whose user-session scope is active (native,
+/// post-#135/#129);
 /// omit them to model web or a signed-out server. Pass [userSessionScope]
 /// to observe or script the shell's #135 activate/deactivate wiring; omit
 /// it to model a platform without the seam (web until #137).
@@ -191,6 +193,9 @@ ActiveServer buildActiveServer(
   GameCollectionRepository? gameCollectionRepository,
   GameCollectionHydrationStatus? gameCollectionHydrationStatus,
   GameCollectionRefresher? gameCollectionRefresher,
+  EventRepository? eventRepository,
+  EventHydrationStatus? eventHydrationStatus,
+  EventRefresher? eventRefresher,
   UserSessionScope? userSessionScope,
   SessionRehydrator? sessionRehydrator,
   UnsentChangesNoticeRepository? unsentChangesNotice,
@@ -241,6 +246,15 @@ ActiveServer buildActiveServer(
     container.registerSingleton<GameCollectionRefresher>(
       gameCollectionRefresher,
     );
+  }
+  if (eventRepository != null) {
+    container.registerSingleton<EventRepository>(eventRepository);
+  }
+  if (eventHydrationStatus != null) {
+    container.registerSingleton<EventHydrationStatus>(eventHydrationStatus);
+  }
+  if (eventRefresher != null) {
+    container.registerSingleton<EventRefresher>(eventRefresher);
   }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);

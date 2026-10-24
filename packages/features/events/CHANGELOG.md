@@ -12,3 +12,9 @@
 * `EventHydrationStatus` publishes what the pass is doing, and
   `EventRefresher` runs one on demand, for the event screens. A pass that
   ends `windowed` or `drained` reads as refreshed, like `complete`.
+* The events overview (#497): `EventOverviewScreen` groups the cached events
+  as Upcoming, Planning and Past by their confirmed dates, five to a group,
+  and `EventGroupScreen` lists a whole group. Rows show the date in local time
+  with the platform's 24-hour setting, the venue, the household and the
+  user's RSVP where known. Its `onOpen` and `onCreate` hooks are optional and
+  unwired: #498 wires opening an event, and #499 creating one.

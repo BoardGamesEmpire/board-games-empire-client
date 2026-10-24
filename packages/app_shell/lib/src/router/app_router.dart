@@ -110,6 +110,24 @@ abstract final class AppRoutes {
   static String gameDetailOf(String gameId) =>
       '$games/${Uri.encodeComponent(gameId)}';
 
+  /// The signed-in user's events overview (#497). Plural, like [games]: it
+  /// lists many events, not one thing the user has. Not the reserved
+  /// `/server/:serverId/event/:eventId` deep link, which names a server.
+  static const events = '/events';
+
+  /// The segments of the group pages beneath [events], one per group the
+  /// overview shows (#497), in its order. Each is the group's `EventGroup`
+  /// name, which is how the shell maps one back to its group.
+  ///
+  /// These and #498's `:eventId` detail beneath [events] will **overlap**:
+  /// `upcoming` is a legal event id, so the group pages must stay declared
+  /// first, as game search is before the game detail.
+  static const eventGroupSegments = <String>['upcoming', 'planning', 'past'];
+
+  /// The location of the group page named [segment], one of
+  /// [eventGroupSegments].
+  static String eventGroupOf(String segment) => '$events/$segment';
+
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
   static const stuckChanges = '/stuck-changes';
@@ -331,6 +349,25 @@ typedef GameDetailScreenBuilder = Widget? Function(
   String gameId,
 );
 
+/// Builds the events overview (#497) for the [AppRoutes.events] route.
+/// Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container carries no `EventRepository`
+/// (tests without a container; no active user session), in which case the
+/// route falls back to [NotYetAvailableScreen].
+///
+/// Guarded on the repository alone, like the collection list: the overview
+/// reads the local cache, and a missing hydrate costs it only the retry.
+typedef EventOverviewScreenBuilder = Widget? Function(BuildContext context);
+
+/// Builds one group's page (#497) for a route beneath [AppRoutes.events],
+/// given its segment, one of [AppRoutes.eventGroupSegments]. Same null
+/// contract as [EventOverviewScreenBuilder], and null too for a segment that
+/// names no group.
+typedef EventGroupScreenBuilder = Widget? Function(
+  BuildContext context,
+  String segment,
+);
+
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -390,6 +427,8 @@ GoRouter buildAppRouter({
   GameBrowseScreenBuilder? gameBrowseBuilder,
   GameSearchScreenBuilder? gameSearchBuilder,
   GameDetailScreenBuilder? gameDetailBuilder,
+  EventOverviewScreenBuilder? eventOverviewBuilder,
+  EventGroupScreenBuilder? eventGroupBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
@@ -600,6 +639,30 @@ GoRouter buildAppRouter({
                   const NotYetAvailableScreen();
             },
           ),
+        ],
+      ),
+      // #497: the events overview and a page per group. Outside the auth
+      // ShellRoute, like the collection list, and pushed from the home
+      // drawer. The group pages are children of the overview, as the
+      // household children are of their list (#308), so a `go` straight to
+      // one builds the overview beneath it.
+      //
+      // #498's `:eventId` child MUST be declared after the group pages:
+      // `upcoming` is a legal `:eventId`, and go_router takes the first
+      // declared match, as with game search and the game detail.
+      GoRoute(
+        path: AppRoutes.events,
+        builder: (context, _) =>
+            eventOverviewBuilder?.call(context) ??
+            const NotYetAvailableScreen(),
+        routes: [
+          for (final segment in AppRoutes.eventGroupSegments)
+            GoRoute(
+              path: segment,
+              builder: (context, _) =>
+                  eventGroupBuilder?.call(context, segment) ??
+                  const NotYetAvailableScreen(),
+            ),
         ],
       ),
       // #190: the changes that couldn't sync. Outside the auth ShellRoute
