@@ -45,11 +45,15 @@ import 'event_overview_state.dart';
 ///
 /// ## The clock
 ///
-/// Every derivation groups the cached events again against [now], so an
-/// event that ends while the overview is open moves to Past at the next
-/// emission of any stream. Nothing writes to the cache when time passes,
-/// and no timer is needed: the five-minute re-hydrate on entry and resume
-/// supplies emissions (#300).
+/// Every derivation groups the cached events again against [now]. Nothing
+/// writes to the cache when time passes, and while the screen stays open
+/// none of the streams need emit, so the bloc also sets a timer for the
+/// next instant a shown date ends ([nextRegroupAt]) and groups the same
+/// rows again then. An event that ends while the overview is open moves to
+/// Past when it ends.
+///
+/// The timer waits a day at most and is set again when it fires: a browser
+/// fires a timeout longer than about 24.8 days at once.
 ///
 /// ## A re-check is not a first fill
 ///
@@ -94,6 +98,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     on<EventOverviewCacheEnded>(_onCacheEnded);
     on<EventOverviewHouseholdsUpdated>(_onHouseholdsUpdated);
     on<EventOverviewHydrationUpdated>(_onHydrationUpdated);
+    on<EventOverviewClockTicked>(_onClockTicked);
     on<EventOverviewRetryRequested>(_onRetryRequested);
 
     _cache = repository.watchAttendingEventListItems().listen(
@@ -165,6 +170,12 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   /// Whether a pass this screen asked for is still running.
   bool _retrying = false;
 
+  /// Fires when the groups next move with the clock, if anything will.
+  Timer? _regroup;
+
+  /// The longest [_regroup] waits before it is set again.
+  static const _maxRegroupWait = Duration(days: 1);
+
   void _onCacheUpdated(
     EventOverviewCacheUpdated event,
     Emitter<EventOverviewState> emit,
@@ -210,6 +221,11 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     _emitDerived(emit);
   }
 
+  void _onClockTicked(
+    EventOverviewClockTicked event,
+    Emitter<EventOverviewState> emit,
+  ) => _emitDerived(emit);
+
   Future<void> _onRetryRequested(
     EventOverviewRetryRequested event,
     Emitter<EventOverviewState> emit,
@@ -240,6 +256,9 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   }
 
   void _emitDerived(Emitter<EventOverviewState> emit) {
+    _regroup?.cancel();
+    _regroup = null;
+
     // Holds the error against everything except fresh rows.
     if (_readFailed) return emit(const EventOverviewError());
 
@@ -254,21 +273,27 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
         !_hydration.everRefreshed;
     if (filling) return emit(const EventOverviewLoading());
 
+    final now = _now();
     emit(
       EventOverviewReady(
-        groups: groupEvents(
-          items,
-          now: _now(),
-          householdNames: _householdNames,
-        ),
+        groups: groupEvents(items, now: now, householdNames: _householdNames),
         refreshFailed: _hydration.lastPassFailed,
         refreshing: _retrying,
       ),
     );
+
+    if (nextRegroupAt(items, now: now) case final next?) {
+      final wait = next.difference(now);
+      _regroup = Timer(
+        wait < _maxRegroupWait ? wait : _maxRegroupWait,
+        () => add(const EventOverviewClockTicked()),
+      );
+    }
   }
 
   @override
   Future<void> close() async {
+    _regroup?.cancel();
     await _cache.cancel();
     await _householdUpdates?.cancel();
     await _hydrationUpdates?.cancel();

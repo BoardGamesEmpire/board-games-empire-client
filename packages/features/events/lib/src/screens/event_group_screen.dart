@@ -18,8 +18,9 @@ import 'event_overview_screen.dart';
 /// Every event in one of the overview's groups (#497), in the group's
 /// order, in one lazily built list over the cache.
 ///
-/// Opened from a group's *See all* on [EventOverviewScreen], with the
-/// overview's bloc, banner, spinner and failed read. The cache already holds
+/// Opened from a group's *See all* on [EventOverviewScreen], with a bloc of
+/// its own over the same cache and the overview's banner, spinner and
+/// failed read. The cache already holds
 /// every page of the user's list, and the server pages it by creation date
 /// rather than by event date, so a lazy list that builds only the rows on
 /// screen does all paging would, without asking the server for anything.

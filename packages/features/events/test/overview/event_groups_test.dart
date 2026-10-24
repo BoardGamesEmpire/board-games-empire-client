@@ -359,4 +359,64 @@ void main() {
       expect(groupEvents(items, now: now), groupEvents(items, now: now));
     });
   });
+
+  group('the next regroup', () {
+    test('is just past the earliest end that lies ahead', () {
+      final items = [
+        item(
+          'e-1',
+          occurrences: [
+            confirmed('o-a', at(23, 17), end: at(23, 21)),
+            confirmed('o-b', at(30, 19)),
+          ],
+        ),
+        item(
+          'e-2',
+          occurrences: [confirmed('o-c', at(23, 19), end: at(23, 20))],
+        ),
+        item('e-past', occurrences: [confirmed('o-d', at(20))]),
+        item('e-plan'),
+      ];
+
+      final next = nextRegroupAt(items, now: now)!;
+
+      expect(next, at(23, 20).add(const Duration(microseconds: 1)));
+      // At it, the event that ended has moved; just before, nothing has.
+      expect(groupEvents(items, now: next).past.map((r) => r.event.id), [
+        'e-2',
+        'e-past',
+      ]);
+      expect(groupEvents(items, now: at(23, 20)), groupEvents(items, now: now));
+    });
+
+    test('counts a date ending exactly now as ahead', () {
+      final items = [
+        item('e-1', occurrences: [confirmed('o-1', at(23, 15), end: now)]),
+      ];
+
+      expect(
+        nextRegroupAt(items, now: now),
+        now.add(const Duration(microseconds: 1)),
+      );
+    });
+
+    test('is null when no end lies ahead', () {
+      expect(
+        nextRegroupAt([
+          item('e-past', occurrences: [confirmed('o-1', at(20))]),
+          item('e-plan'),
+          item(
+            'e-cancelled',
+            occurrences: [
+              confirmed(
+                'o-2',
+                at(30),
+              ).copyWith(status: OccurrenceStatus.cancelled),
+            ],
+          ),
+        ], now: now),
+        isNull,
+      );
+    });
+  });
 }

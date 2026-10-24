@@ -56,6 +56,11 @@ final class EventOverviewHydrationUpdated extends EventOverviewEvent {
   List<Object?> get props => [hydration];
 }
 
+/// A shown date may have ended: time to group the same rows again.
+final class EventOverviewClockTicked extends EventOverviewEvent {
+  const EventOverviewClockTicked();
+}
+
 /// The user asked for another hydrate pass.
 ///
 /// Distinct from a pass arriving on [EventOverviewHydrationUpdated]: this

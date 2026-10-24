@@ -219,6 +219,38 @@ void main() {
     );
   });
 
+  test('regroups when a shown date ends, with nothing emitting', () async {
+    // The overview left open in the foreground: no stream emits, so only
+    // the bloc's own timer can move the event. On the real clock, with an
+    // end just ahead of it.
+    final end = DateTime.now().add(const Duration(milliseconds: 50));
+    final bloc = build(now: DateTime.now);
+    addTearDown(bloc.close);
+
+    items.add([
+      item(
+        'e-1',
+        occurrences: [
+          confirmed('o-1', end.subtract(const Duration(hours: 1)), end: end),
+        ],
+      ),
+    ]);
+    await settle();
+    expect(bloc.state, readyWith(upcoming: ['e-1']));
+
+    await expectLater(
+      bloc.stream,
+      emitsThrough(
+        isA<EventOverviewReady>()
+            .having((s) => s.groups.upcoming, 'upcoming', isEmpty)
+            .having((s) => s.groups.past.map((r) => r.event.id), 'past', [
+              'e-1',
+            ]),
+      ),
+    );
+    expect(DateTime.now().isAfter(end), isTrue, reason: 'not before it ends');
+  });
+
   group('the households', () {
     String? householdNameOf(EventOverviewState state) =>
         (state as EventOverviewReady).groups.upcoming.single.householdName;
@@ -657,6 +689,7 @@ void main() {
       );
       expect(EventOverviewCacheFailed(), EventOverviewCacheFailed());
       expect(EventOverviewCacheFailed(), isNot(EventOverviewCacheEnded()));
+      expect(EventOverviewClockTicked(), EventOverviewClockTicked());
     });
   });
 }

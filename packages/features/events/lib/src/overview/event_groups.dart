@@ -102,8 +102,8 @@ final class EventGroups extends Equatable {
 ///
 /// [now] is a parameter because the groups move as time passes without any
 /// write to the cache: an event that ends while the overview is open moves to
-/// past at the next grouping. Instants compare as instants, whatever zone
-/// they were read in.
+/// past at the next grouping, which [nextRegroupAt] says when to run.
+/// Instants compare as instants, whatever zone they were read in.
 ///
 /// [householdNames] maps a household's id to its name, for the households
 /// the user belongs to.
@@ -133,12 +133,7 @@ EventGroups groupEvents(
       },
     );
 
-    final dates = [
-      for (final o in item.occurrences)
-        if (o.startDate case final start?
-            when o.status == OccurrenceStatus.confirmed)
-          (occurrence: o, start: start, end: o.endDate ?? start),
-    ];
+    final dates = _datesOf(item);
     if (dates.isEmpty) {
       planning.add(row(EventGroup.planning));
       continue;
@@ -177,9 +172,33 @@ EventGroups groupEvents(
   );
 }
 
+/// The first instant after [now] at which [groupEvents] over [items] answers
+/// differently (#497): just past the earliest end among the dates that
+/// haven't ended. At that instant an event moves to past, or shows its next
+/// date. Null when no date's end lies ahead, so nothing will move.
+DateTime? nextRegroupAt(List<EventListItem> items, {required DateTime now}) {
+  DateTime? earliest;
+  for (final item in items) {
+    for (final date in _datesOf(item)) {
+      if (date.end.isBefore(now)) continue;
+      if (earliest == null || date.end.isBefore(earliest)) earliest = date.end;
+    }
+  }
+  // A date ending at an instant has not ended at it.
+  return earliest?.add(const Duration(microseconds: 1));
+}
+
 /// A date that counts: a confirmed occurrence, its start, and when it is
 /// over, which is its end, or its start when it has none.
 typedef _Date = ({EventOccurrence occurrence, DateTime start, DateTime end});
+
+/// [item]'s dates that count, in the occurrences' order.
+List<_Date> _datesOf(EventListItem item) => [
+  for (final o in item.occurrences)
+    if (o.startDate case final start?
+        when o.status == OccurrenceStatus.confirmed)
+      (occurrence: o, start: start, end: o.endDate ?? start),
+];
 
 /// Orders dates by start, earliest first. Two that start at the same instant
 /// keep the server's order, sortOrder then id, as [_latestFirst]'s do.
