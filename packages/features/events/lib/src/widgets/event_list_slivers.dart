@@ -1,0 +1,166 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:ui/ui.dart';
+import 'package:ui_tokens/ui_tokens.dart';
+
+import 'package:events/l10n/events_localizations.dart';
+
+import '../bloc/event_overview_bloc.dart';
+import '../bloc/event_overview_event.dart';
+import '../bloc/event_overview_state.dart';
+import '../overview/event_groups.dart';
+import '../screens/event_overview_screen.dart';
+
+/// What the overview and every group's page show around their rows (#497):
+/// the couldn't-refresh banner over whatever the cache holds, the
+/// first-fill spinner, and the failed read. [ready] builds the rows from
+/// the cache's grouped answer.
+///
+/// Reads an [EventOverviewBloc] from context. The surfaces are the
+/// collection list's, keyed with [EventOverviewScreen]'s keys on either page.
+class EventListStatesSliver extends StatelessWidget {
+  const EventListStatesSliver({required this.ready, super.key});
+
+  final Widget Function(BuildContext context, EventGroups groups) ready;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final bloc = context.read<EventOverviewBloc>();
+    void retry() => bloc.add(const EventOverviewRetryRequested());
+
+    return BlocBuilder<EventOverviewBloc, EventOverviewState>(
+      builder: (context, state) => SliverMainAxisGroup(
+        slivers: [
+          if (state
+              case EventOverviewReady(:final refreshFailed, :final refreshing)
+              when refreshFailed || refreshing)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
+                child: _RefreshBanner(
+                  key: EventOverviewScreen.refreshBannerKey,
+                  refreshing: refreshing,
+                  onRetry: bloc.canRetry ? retry : null,
+                ),
+              ),
+            ),
+          switch (state) {
+            EventOverviewLoading() => SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                key: EventOverviewScreen.loadingKey,
+                child: Semantics(
+                  liveRegion: true,
+                  label: l10n.eventsLoading,
+                  child: const ExcludeSemantics(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              ),
+            ),
+            EventOverviewError() => EventMessageSliver(
+              child: bloc.canRetry
+                  // #49's error-with-retry. The pass writes to the tables the
+                  // failed read watches, which is what makes drift run it
+                  // again.
+                  ? BgeErrorState(
+                      key: EventOverviewScreen.errorKey,
+                      icon: Icons.error_outline,
+                      title: l10n.eventsError,
+                      body: l10n.eventsErrorBody,
+                      retryLabel: l10n.eventsRefreshRetry,
+                      onRetry: retry,
+                    )
+                  // No pass to run, so no button that would do nothing.
+                  : BgeInlineBanner(
+                      key: EventOverviewScreen.errorKey,
+                      tone: BgeBannerTone.error,
+                      message: l10n.eventsError,
+                    ),
+            ),
+            EventOverviewReady(:final groups) => ready(context, groups),
+          },
+        ],
+      ),
+    );
+  }
+}
+
+/// A group's name: its heading on the overview, and its page's title.
+String eventGroupName(EventsLocalizations l10n, EventGroup group) =>
+    switch (group) {
+      EventGroup.upcoming => l10n.eventsGroupUpcoming,
+      EventGroup.planning => l10n.eventsGroupPlanning,
+      EventGroup.past => l10n.eventsGroupPast,
+    };
+
+/// A short message filling the rest of the page, centered.
+class EventMessageSliver extends StatelessWidget {
+  const EventMessageSliver({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      SliverFillRemaining(hasScrollBody: false, child: Center(child: child));
+}
+
+/// The stale-data banner and its retry: the collection list's, with this
+/// feature's copy.
+///
+/// The failed copy names no cause, because the hydrate reports one
+/// undifferentiated failure. While a pass the user asked for runs, the
+/// button stays in place, disabled, with the in-progress label rather than
+/// a bare spinner: a control that disappears mid-interaction moves focus.
+class _RefreshBanner extends StatelessWidget {
+  const _RefreshBanner({required this.refreshing, this.onRetry, super.key});
+
+  final bool refreshing;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final retry = onRetry;
+
+    return BgeInlineBanner(
+      tone: refreshing ? BgeBannerTone.info : BgeBannerTone.warning,
+      message: refreshing
+          ? l10n.eventsRefreshInProgress
+          : l10n.eventsRefreshFailed,
+      // Furniture for as long as the data stays stale, already at the top
+      // of the viewport.
+      reveal: false,
+      action: retry == null
+          ? null
+          : TextButton.icon(
+              key: EventOverviewScreen.refreshRetryKey,
+              onPressed: refreshing ? null : retry,
+              icon: refreshing
+                  ? const _RetrySpinner()
+                  : const Icon(Icons.refresh),
+              label: Text(
+                refreshing
+                    ? l10n.eventsRefreshInProgress
+                    : l10n.eventsRefreshRetry,
+              ),
+            ),
+    );
+  }
+}
+
+/// The retry button's in-flight icon, scaled with the label beside it and
+/// silent to a screen reader: the label announces the state.
+class _RetrySpinner extends StatelessWidget {
+  const _RetrySpinner();
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    child: SizedBox.square(
+      dimension: BgeTextScale.clampedOf(context)
+          .scale(BgeTokens.of(context).spaceMd),
+      child: const CircularProgressIndicator(strokeWidth: 2),
+    ),
+  );
+}
