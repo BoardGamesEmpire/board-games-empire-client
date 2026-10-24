@@ -475,5 +475,97 @@
         "type": "int"
       }
     }
+  },
+  "householdDetailEdit": "Edit household",
+  "@householdDetailEdit": {
+    "description": "Tooltip and accessible name of the button on the household screen that opens the edit form. Shown to its owners and admins."
+  },
+  "editHouseholdTitle": "Edit household",
+  "@editHouseholdTitle": {
+    "description": "Title of the screen for editing a household."
+  },
+  "editHouseholdSave": "Save changes",
+  "@editHouseholdSave": {
+    "description": "Submit button of the household edit form."
+  },
+  "editHouseholdSaving": "Saving\u2026",
+  "@editHouseholdSaving": {
+    "description": "Submit button label of the household edit form while the edit is being sent."
+  },
+  "editHouseholdSaved": "Household updated.",
+  "@editHouseholdSaved": {
+    "description": "Shown once a household edit is saved, as the edit form closes."
+  },
+  "editHouseholdPolicyLabel": "Who can invite",
+  "@editHouseholdPolicyLabel": {
+    "description": "Heading of the household edit form section for the member invite policy."
+  },
+  "editHouseholdPolicyIntro": "Owners and admins can always invite, and guests never can. A change applies to invites sent after it.",
+  "@editHouseholdPolicyIntro": {
+    "description": "Under the member invite policy heading on the household edit form: what the policy does not change, and when a change takes effect."
+  },
+  "editHouseholdPolicyDirect": "Members invite directly",
+  "@editHouseholdPolicyDirect": {
+    "description": "Member invite policy option on the household edit form: members may invite without approval."
+  },
+  "editHouseholdPolicyDirectDetail": "A member's invite goes straight to the person invited.",
+  "@editHouseholdPolicyDirectDetail": {
+    "description": "Under the \"Members invite directly\" option: what it means."
+  },
+  "editHouseholdPolicyNeedsApproval": "Members invite with approval",
+  "@editHouseholdPolicyNeedsApproval": {
+    "description": "Member invite policy option on the household edit form: an owner or admin approves each member invite."
+  },
+  "editHouseholdPolicyNeedsApprovalDetail": "An owner or admin approves each member's invite before the person invited sees it.",
+  "@editHouseholdPolicyNeedsApprovalDetail": {
+    "description": "Under the \"Members invite with approval\" option: what it means."
+  },
+  "editHouseholdPolicyOff": "Only owners and admins invite",
+  "@editHouseholdPolicyOff": {
+    "description": "Member invite policy option on the household edit form: members may not invite."
+  },
+  "editHouseholdPolicyOffDetail": "Members can't invite.",
+  "@editHouseholdPolicyOffDetail": {
+    "description": "Under the \"Only owners and admins invite\" option: what it means."
+  },
+  "editHouseholdPolicyNotKnown": "This app doesn't know the current setting. Choose one to change it, or leave it as it is.",
+  "@editHouseholdPolicyNotKnown": {
+    "description": "On the household edit form, above the member invite policy options, when none is preselected: the app has not read the setting yet, or the server holds one this app does not know."
+  },
+  "editHouseholdErrorTitle": "Couldn't save",
+  "@editHouseholdErrorTitle": {
+    "description": "Heading of the error shown above the save button when a household edit was not saved."
+  },
+  "editHouseholdErrorOffline": "Couldn't reach the server. Your changes are still here, so try again when you're back online.",
+  "@editHouseholdErrorOffline": {
+    "description": "Household edit error: the server could not be reached. The form keeps what was typed."
+  },
+  "editHouseholdErrorGone": "This household no longer exists.",
+  "@editHouseholdErrorGone": {
+    "description": "Household edit error: the server says the household was deleted."
+  },
+  "editHouseholdErrorRefused": "You can no longer edit this household.",
+  "@editHouseholdErrorRefused": {
+    "description": "Household edit error: the server refused the edit, for instance because the user's role changed."
+  },
+  "editHouseholdErrorInvalid": "The server didn't accept these changes. Check them and try again.",
+  "@editHouseholdErrorInvalid": {
+    "description": "Household edit error: the server rejected the values."
+  },
+  "editHouseholdErrorUnexpected": "Something went wrong saving your changes. Please try again.",
+  "@editHouseholdErrorUnexpected": {
+    "description": "Household edit error: any other failure."
+  },
+  "editHouseholdNotAllowed": "Only the household's owners and admins can edit it.",
+  "@editHouseholdNotAllowed": {
+    "description": "Shown on the household edit screen instead of the form when the user is not an owner or admin."
+  },
+  "editHouseholdNotYetSynced": "This household is still being created. You can edit it once it has synced.",
+  "@editHouseholdNotYetSynced": {
+    "description": "Shown on the household edit screen instead of the form when the household has not reached the server yet."
+  },
+  "editHouseholdNotFound": "We couldn't find this household.",
+  "@editHouseholdNotFound": {
+    "description": "Shown on the household edit screen instead of the form when the household is not cached, or the user is no longer a member."
   }
 }
