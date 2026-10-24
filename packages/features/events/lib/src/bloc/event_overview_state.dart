@@ -48,6 +48,14 @@ final class EventOverviewReady extends EventOverviewState {
 /// Two ways in: a read delivered as a stream error, such as an
 /// unauthenticated one while a session ends, and a stream that closes on
 /// teardown before it ever emitted.
+///
+/// [retrying] says a pass the user asked for from this state is running,
+/// whose writes are what would make the read run again.
 final class EventOverviewError extends EventOverviewState {
-  const EventOverviewError();
+  const EventOverviewError({this.retrying = false});
+
+  final bool retrying;
+
+  @override
+  List<Object?> get props => [retrying];
 }

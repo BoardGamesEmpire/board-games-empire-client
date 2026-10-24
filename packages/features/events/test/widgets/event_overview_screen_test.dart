@@ -245,6 +245,40 @@ void main() {
       expect(calls, 1);
     });
 
+    testWidgets('says the retry is running, and offers it again after', (
+      tester,
+    ) async {
+      // A press that leaves the failure up would otherwise look like one
+      // that did nothing.
+      final pass = Completer<void>();
+      var calls = 0;
+      await tester.pumpWidget(
+        harness(
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        ),
+      );
+      items.addError(StateError('no authenticated user'));
+      await tester.pump();
+
+      await tester.tap(find.text(_retryCopy));
+      await tester.pump();
+
+      expect(find.byKey(EventOverviewScreen.errorKey), findsOneWidget);
+      expect(find.text('Refreshing…'), findsOneWidget);
+      expect(find.text(_retryCopy), findsNothing);
+      await tester.tap(find.text('Refreshing…'), warnIfMissed: false);
+      expect(calls, 1, reason: 'disabled while the pass runs');
+
+      pass.complete();
+      await tester.pump();
+
+      expect(find.byKey(EventOverviewScreen.errorKey), findsOneWidget);
+      expect(find.text(_retryCopy), findsOneWidget);
+    });
+
     testWidgets('says so with nothing to press where no retry exists', (
       tester,
     ) async {

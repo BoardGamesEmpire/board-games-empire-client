@@ -624,7 +624,7 @@ void main() {
       await settle();
 
       expect(calls, 1);
-      expect(bloc.state, isA<EventOverviewError>());
+      expect(bloc.state, const EventOverviewError(retrying: true));
 
       items.add([upcoming('e-1')]);
       pass.complete();
@@ -632,6 +632,25 @@ void main() {
 
       expect(bloc.state, readyWith(upcoming: ['e-1'], refreshing: isFalse));
     });
+
+    test(
+      'a retry that leaves the read failed ends in the plain error',
+      () async {
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+        items.addError(StateError('transient read failure'));
+        await settle();
+
+        bloc.add(const EventOverviewRetryRequested());
+        await settle();
+        expect(bloc.state, const EventOverviewError(retrying: true));
+
+        pass.complete();
+        await settle();
+
+        expect(bloc.state, const EventOverviewError());
+      },
+    );
 
     test('a pass that throws still ends the refresh', () async {
       // Passes report failure through the status, not by throwing. If one
@@ -666,6 +685,7 @@ void main() {
       // the state the screen already shows does not rebuild it.
       expect(EventOverviewLoading(), EventOverviewLoading());
       expect(EventOverviewError(), EventOverviewError());
+      expect(EventOverviewError(), isNot(EventOverviewError(retrying: true)));
       expect(EventOverviewLoading(), isNot(EventOverviewError()));
       expect(
         EventOverviewReady(groups: groupEvents([upcoming('e-1')], now: kNow)),

@@ -81,7 +81,8 @@ import 'event_overview_state.dart';
 /// The bloc calls [onRetry] rather than the button, because starting a pass
 /// and saying one is running are the same event: the status stream reports
 /// every pass as `running`, whoever started it. A retry from a failed read
-/// runs the same pass, whose writes are what make drift run the read again.
+/// runs the same pass, whose writes are what make drift run the read again,
+/// and the error says it is running until it ends, as the banner does.
 class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   EventOverviewBloc({
     required EventRepository repository,
@@ -190,7 +191,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     Emitter<EventOverviewState> emit,
   ) {
     _readFailed = true;
-    emit(const EventOverviewError());
+    _emitDerived(emit);
   }
 
   void _onCacheEnded(
@@ -202,7 +203,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     // Held like a failed read: a closed stream will never send the rows
     // that would clear it, so a later hydrate result must not lift it.
     _readFailed = true;
-    emit(const EventOverviewError());
+    _emitDerived(emit);
   }
 
   void _onHouseholdsUpdated(
@@ -259,8 +260,9 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     _regroup?.cancel();
     _regroup = null;
 
-    // Holds the error against everything except fresh rows.
-    if (_readFailed) return emit(const EventOverviewError());
+    // Holds the error against everything except fresh rows, saying only
+    // whether the retry pressed on it is still running.
+    if (_readFailed) return emit(EventOverviewError(retrying: _retrying));
 
     final items = _items;
     if (items == null) return emit(const EventOverviewLoading());

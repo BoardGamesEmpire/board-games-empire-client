@@ -59,7 +59,7 @@ class EventListStatesSliver extends StatelessWidget {
                 ),
               ),
             ),
-            EventOverviewError() => EventMessageSliver(
+            EventOverviewError(:final retrying) => EventMessageSliver(
               child: bloc.canRetry
                   // #49's error-with-retry. The pass writes to the tables the
                   // failed read watches, which is what makes drift run it
@@ -70,6 +70,8 @@ class EventListStatesSliver extends StatelessWidget {
                       title: l10n.eventsError,
                       body: l10n.eventsErrorBody,
                       retryLabel: l10n.eventsRefreshRetry,
+                      retryProgressLabel: l10n.eventsRefreshInProgress,
+                      retrying: retrying,
                       onRetry: retry,
                     )
                   // No pass to run, so no button that would do nothing.
