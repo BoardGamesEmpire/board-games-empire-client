@@ -23,8 +23,9 @@ import 'household_name_validator.dart';
 /// replaces what was typed.
 ///
 /// The cached policy is preselected. When there is none, or it is one this
-/// client does not know, nothing is, and a note says so: submitting with no
-/// option chosen leaves the policy as the server has it.
+/// client does not know, a note says so and a fourth option, to leave it as
+/// it is, comes first and is chosen. Choosing it again after another undoes
+/// that choice: submitting with it leaves the policy as the server has it.
 class EditHouseholdForm extends StatefulWidget {
   const EditHouseholdForm({
     required this.initial,
@@ -62,6 +63,9 @@ class EditHouseholdForm extends StatefulWidget {
   static const Key nameFieldKey = Key('edit_household.name');
   static const Key descriptionFieldKey = Key('edit_household.description');
   static const Key submitButtonKey = Key('edit_household.submit');
+
+  /// The option that leaves a policy this client does not know as it is.
+  static const Key policyUnchangedKey = Key('edit_household.policy_unchanged');
 
   /// Per-option key: `edit_household.policy_<name>`.
   static Key policyOptionKey(MemberInvitePolicy policy) =>
@@ -186,7 +190,9 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
           const BgeGap.sm(),
           ReactiveValueListenableBuilder<MemberInvitePolicy>(
             formControlName: 'policy',
-            builder: (context, control, _) => RadioGroup<MemberInvitePolicy>(
+            // Nullable, so that leaving it as it is is an option like the
+            // others.
+            builder: (context, control, _) => RadioGroup<MemberInvitePolicy?>(
               groupValue: control.value,
               // Read-only while submitting, as the fields are: the options
               // stay in the focus order and simply ignore a change.
@@ -196,6 +202,14 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (!_policyKnown)
+                    RadioListTile<MemberInvitePolicy?>(
+                      key: EditHouseholdForm.policyUnchangedKey,
+                      value: null,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(l10n.editHouseholdPolicyUnchanged),
+                      subtitle: Text(l10n.editHouseholdPolicyUnchangedDetail),
+                    ),
                   for (final policy in EditHouseholdForm._offered)
                     _option(l10n, policy),
                 ],
@@ -223,7 +237,7 @@ class _EditHouseholdFormState extends State<EditHouseholdForm> {
     MemberInvitePolicy policy,
   ) {
     final (title, detail) = _labels(l10n, policy);
-    return RadioListTile<MemberInvitePolicy>(
+    return RadioListTile<MemberInvitePolicy?>(
       key: EditHouseholdForm.policyOptionKey(policy),
       value: policy,
       contentPadding: EdgeInsets.zero,

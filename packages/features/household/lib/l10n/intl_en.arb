@@ -528,9 +528,17 @@
   "@editHouseholdPolicyOffDetail": {
     "description": "Under the \"Only owners and admins invite\" option: what it means."
   },
-  "editHouseholdPolicyNotKnown": "This app doesn't know the current setting. Choose one to change it, or leave it as it is.",
+  "editHouseholdPolicyNotKnown": "This app doesn't know the current setting. Leave it as it is, or choose one to change it.",
   "@editHouseholdPolicyNotKnown": {
-    "description": "On the household edit form, above the member invite policy options, when none is preselected: the app has not read the setting yet, or the server holds one this app does not know."
+    "description": "On the household edit form, above the member invite policy options, when the option to leave it as it is is offered: the app has not read the setting yet, or the server holds one this app does not know."
+  },
+  "editHouseholdPolicyUnchanged": "Leave it as it is",
+  "@editHouseholdPolicyUnchanged": {
+    "description": "Household edit form: the invite policy option, offered only when this app does not know the current policy, that sends no change to it."
+  },
+  "editHouseholdPolicyUnchangedDetail": "The household keeps the setting it has now.",
+  "@editHouseholdPolicyUnchangedDetail": {
+    "description": "Household edit form: the line under the option that leaves an invite policy this app does not know unchanged."
   },
   "editHouseholdErrorTitle": "Couldn't save",
   "@editHouseholdErrorTitle": {

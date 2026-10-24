@@ -67,8 +67,14 @@ void main() {
       .controller
       .text;
 
-  RadioGroup<MemberInvitePolicy> radioGroup(WidgetTester tester) =>
-      tester.widget(find.byType(RadioGroup<MemberInvitePolicy>));
+  RadioGroup<MemberInvitePolicy?> radioGroup(WidgetTester tester) =>
+      tester.widget(find.byType(RadioGroup<MemberInvitePolicy?>));
+
+  Future<void> tapOption(WidgetTester tester, Key key) async {
+    await tester.ensureVisible(find.byKey(key));
+    await tester.tap(find.byKey(key));
+    await tester.pump();
+  }
 
   group('EditHouseholdForm', () {
     testWidgets("starts from the household's values", (tester) async {
@@ -141,8 +147,8 @@ void main() {
       expect(radioGroup(tester).groupValue, isNull);
       expect(
         find.text(
-          "This app doesn't know the current setting. Choose one to change "
-          'it, or leave it as it is.',
+          "This app doesn't know the current setting. Leave it as it is, or "
+          'choose one to change it.',
         ),
         findsOneWidget,
       );
@@ -162,6 +168,34 @@ void main() {
         find.textContaining("This app doesn't know the current setting."),
         findsOneWidget,
       );
+    });
+
+    testWidgets('leaving an unknown policy as it is can be chosen again '
+        'after picking one', (tester) async {
+      await tester.pumpWidget(form(_household(policy: null)));
+
+      expect(find.byKey(EditHouseholdForm.policyUnchangedKey), findsOneWidget);
+      expect(find.text('Leave it as it is'), findsOneWidget);
+
+      await tapOption(
+        tester,
+        EditHouseholdForm.policyOptionKey(MemberInvitePolicy.direct),
+      );
+      expect(radioGroup(tester).groupValue, MemberInvitePolicy.direct);
+
+      await tapOption(tester, EditHouseholdForm.policyUnchangedKey);
+      expect(radioGroup(tester).groupValue, isNull);
+
+      await submit(tester);
+      expect(submitted.single.memberInvitePolicy, isNull);
+    });
+
+    testWidgets('a known policy offers no option to leave it as it is', (
+      tester,
+    ) async {
+      await tester.pumpWidget(form(_household(policy: MemberInvitePolicy.off)));
+
+      expect(find.byKey(EditHouseholdForm.policyUnchangedKey), findsNothing);
     });
 
     testWidgets('the cached policy is preselected', (tester) async {
@@ -233,7 +267,7 @@ void main() {
         );
       }
       // Only the known policies are offered.
-      expect(find.byType(RadioListTile<MemberInvitePolicy>), findsNWidgets(3));
+      expect(find.byType(RadioListTile<MemberInvitePolicy?>), findsNWidgets(3));
     });
 
     testWidgets('the fields and options are read-only while submitting', (
@@ -256,7 +290,7 @@ void main() {
         EditHouseholdForm.policyOptionKey(MemberInvitePolicy.off),
       );
       expect(
-        tester.widget<RadioListTile<MemberInvitePolicy>>(off).enabled,
+        tester.widget<RadioListTile<MemberInvitePolicy?>>(off).enabled,
         isNot(isFalse),
       );
       await tester.ensureVisible(off);
