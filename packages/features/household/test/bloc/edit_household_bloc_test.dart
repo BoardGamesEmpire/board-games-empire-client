@@ -343,6 +343,22 @@ void main() {
     );
 
     expectFailure(
+      'a success this device could not read is unexpected, and refreshes',
+      // The server most likely saved the edit, so the cache is behind.
+      error: const HouseholdRemotePermanentException('?', statusCode: 200),
+      reason: EditHouseholdFailure.unexpected,
+      refreshed: true,
+    );
+
+    expectFailure(
+      'an unreadable success that is transient still refreshes',
+      // A decode that could not start says nothing about what was saved.
+      error: const HouseholdRemoteTransientException('?', statusCode: 200),
+      reason: EditHouseholdFailure.unexpected,
+      refreshed: true,
+    );
+
+    expectFailure(
       'any other permanent failure is unexpected',
       error: const HouseholdRemotePermanentException('?', statusCode: 409),
       reason: EditHouseholdFailure.unexpected,

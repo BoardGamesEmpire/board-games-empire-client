@@ -536,9 +536,9 @@
   "@editHouseholdErrorTitle": {
     "description": "Heading of the error shown above the save button when a household edit was not saved."
   },
-  "editHouseholdErrorOffline": "Couldn't reach the server. Your changes are still here, so try again when you're back online.",
+  "editHouseholdErrorOffline": "Couldn't get your changes to the server. They're still here, so try again in a moment.",
   "@editHouseholdErrorOffline": {
-    "description": "Household edit error: the server could not be reached. The form keeps what was typed."
+    "description": "Household edit error: the server could not be reached, or answered with something a later attempt can survive (a server error, an expired session, a throttle). Must not say the device is offline. The form keeps what was typed."
   },
   "editHouseholdErrorGone": "This household no longer exists.",
   "@editHouseholdErrorGone": {

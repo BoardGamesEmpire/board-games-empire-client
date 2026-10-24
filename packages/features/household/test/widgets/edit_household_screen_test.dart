@@ -283,8 +283,8 @@ void main() {
     expect(find.text("Couldn't save"), findsOneWidget);
     expect(
       find.text(
-        "Couldn't reach the server. Your changes are still here, so try "
-        "again when you're back online.",
+        "Couldn't get your changes to the server. They're still here, so "
+        'try again in a moment.',
       ),
       findsOneWidget,
     );

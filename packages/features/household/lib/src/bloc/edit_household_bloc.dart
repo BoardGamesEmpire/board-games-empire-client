@@ -106,6 +106,18 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
 
   EditHouseholdFailure _failure(Object error, StackTrace stackTrace) {
     switch (error) {
+      // A success this device could not read, whichever variant carries it:
+      // the server most likely saved the edit, so the cache is the stale
+      // side. Sending it again is harmless, since it sets the same values.
+      case HouseholdRemoteException(statusCode: final status?)
+          when status >= 200 && status < 300:
+        _logger.warn(
+          'Household edit answered $status, but could not be read',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        _refresh();
+        return EditHouseholdFailure.unexpected;
       case HouseholdRemoteTransientException():
         return EditHouseholdFailure.offline;
       case HouseholdNotFoundException():
