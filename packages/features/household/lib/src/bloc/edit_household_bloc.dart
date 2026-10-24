@@ -15,8 +15,9 @@ import 'edit_household_state.dart';
 ///
 /// The edit goes straight to the server, never through the sync queue: one
 /// `PATCH` carrying only what changed from the household the form opened
-/// with, and the server's answer cached. Sending a field that did not
-/// change would overwrite whatever another device wrote since. Nothing is
+/// with, or what an earlier failed save may have changed, and the server's
+/// answer cached. Sending a field that did not change would overwrite
+/// whatever another device wrote since. Nothing is
 /// retried on its own, and a failure leaves the form as typed.
 ///
 /// A submit while one is on its way is dropped, so a double tap sends one
@@ -45,6 +46,13 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
   final Future<void> Function()? _onRefresh;
   final BgeLogger _logger;
 
+  /// The fields a failed save sent that the server may hold anyway: its
+  /// answer was a success that could not be read, a server failure, or
+  /// none at all. [_original] may no longer describe them, so each is sent
+  /// on every later submit, changed from it or not: one put back as it was
+  /// reverts the server instead of reading as no change.
+  final Set<_Field> _maybeSaved = {};
+
   Future<void> _onSubmitted(
     EditHouseholdSubmitted event,
     Emitter<EditHouseholdState> emit,
@@ -53,8 +61,9 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
     if (state is EditHouseholdSaved) return;
 
     final Household answer;
+    HouseholdUpdate? update;
     try {
-      final update = _changes(event);
+      update = _changes(event);
       // The server answers a patch that names nothing with a 400, and there
       // is nothing to save.
       if (update.isEmpty) {
@@ -64,7 +73,7 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
       emit(const EditHouseholdSaving());
       answer = await _remote.updateHousehold(_original.id, update);
     } on Object catch (error, stackTrace) {
-      emit(EditHouseholdFailed(_failure(error, stackTrace)));
+      emit(EditHouseholdFailed(_failure(error, stackTrace, update)));
       return;
     }
 
@@ -81,7 +90,8 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
     emit(EditHouseholdSaved(answer));
   }
 
-  /// What [event] changes on [_original].
+  /// What [event] changes on [_original], plus whatever [_maybeSaved]
+  /// names.
   ///
   /// The form trims what it hands over, and the server stores a name or
   /// description as it was sent, so another client may have left
@@ -92,19 +102,31 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
     final description = event.description;
     final policy = event.memberInvitePolicy;
     final originalDescription = _original.description?.trim() ?? '';
+    final sendName =
+        event.name != _original.name.trim() ||
+        _maybeSaved.contains(_Field.name);
+    // The form hands over a blank description as null.
+    final sendDescription =
+        (description ?? '') != originalDescription ||
+        _maybeSaved.contains(_Field.description);
+    // No choice cannot be sent, so a policy the server may hold stays.
+    final sendPolicy =
+        policy != null &&
+        (policy != _original.settings?.memberInvitePolicy ||
+            _maybeSaved.contains(_Field.memberInvitePolicy));
     return HouseholdUpdate(
-      name: event.name == _original.name.trim() ? null : event.name,
-      description: description == null || description == originalDescription
-          ? null
-          : description,
-      clearDescription: description == null && originalDescription.isNotEmpty,
-      memberInvitePolicy: policy == _original.settings?.memberInvitePolicy
-          ? null
-          : policy,
+      name: sendName ? event.name : null,
+      description: sendDescription ? description : null,
+      clearDescription: sendDescription && description == null,
+      memberInvitePolicy: sendPolicy ? policy : null,
     );
   }
 
-  EditHouseholdFailure _failure(Object error, StackTrace stackTrace) {
+  EditHouseholdFailure _failure(
+    Object error,
+    StackTrace stackTrace,
+    HouseholdUpdate? update,
+  ) {
     switch (error) {
       // A success this device could not read, whichever variant carries it:
       // the server most likely saved the edit, so the cache is the stale
@@ -116,9 +138,16 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
           error: error,
           stackTrace: stackTrace,
         );
+        _rememberMaybeSaved(update);
         _refresh();
         return EditHouseholdFailure.unexpected;
-      case HouseholdRemoteTransientException():
+      case HouseholdRemoteTransientException(:final statusCode):
+        // With no answer, or the server's own failure, the edit may have
+        // been written before the connection or the server gave out. A 4xx
+        // here turned it away first.
+        if (statusCode == null || statusCode >= 500) {
+          _rememberMaybeSaved(update);
+        }
         return EditHouseholdFailure.offline;
       case HouseholdNotFoundException():
         // The refresh, not this answer, removes it from the cache.
@@ -138,6 +167,10 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
         );
         return EditHouseholdFailure.unexpected;
     }
+  }
+
+  void _rememberMaybeSaved(HouseholdUpdate? update) {
+    if (update != null) _maybeSaved.addAll(_Field.sentBy(update));
   }
 
   void _refresh() {
@@ -163,4 +196,18 @@ class EditHouseholdBloc extends Bloc<EditHouseholdEvent, EditHouseholdState> {
   void _onEdited(EditHouseholdEdited event, Emitter<EditHouseholdState> emit) {
     if (state is EditHouseholdFailed) emit(const EditHouseholdEditing());
   }
+}
+
+/// A field one [HouseholdUpdate] can carry.
+enum _Field {
+  name,
+  description,
+  memberInvitePolicy;
+
+  /// The fields [update] sends, a removed description included.
+  static Iterable<_Field> sentBy(HouseholdUpdate update) => [
+    if (update.name != null) name,
+    if (update.description != null || update.clearDescription) description,
+    if (update.memberInvitePolicy != null) memberInvitePolicy,
+  ];
 }

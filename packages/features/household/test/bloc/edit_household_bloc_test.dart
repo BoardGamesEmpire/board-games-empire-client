@@ -411,4 +411,164 @@ void main() {
       expect: () => const <EditHouseholdState>[],
     );
   });
+
+  group('after a save that may have landed', () {
+    // The first save is answered with a 2xx this device could not read, so
+    // the server most likely holds it; the second is answered.
+    void failThenAnswer(Object error) {
+      var calls = 0;
+      when(() => remote.updateHousehold(any(), any())).thenAnswer((_) async {
+        if (calls++ == 0) throw error;
+        return _household();
+      });
+    }
+
+    const unreadable = HouseholdRemotePermanentException('?', statusCode: 200);
+
+    List<HouseholdUpdate> sentAll() =>
+        verify(() => remote.updateHousehold('hh_1', captureAny())).captured
+            .cast<HouseholdUpdate>();
+
+    Future<void> submitTwice(
+      EditHouseholdBloc bloc,
+      EditHouseholdSubmitted first,
+      EditHouseholdSubmitted second,
+    ) async {
+      bloc.add(first);
+      await Future<void>.delayed(Duration.zero);
+      bloc
+        ..add(const EditHouseholdEdited())
+        ..add(second);
+    }
+
+    blocTest<EditHouseholdBloc, EditHouseholdState>(
+      'a name changed back is sent, not read as no change',
+      setUp: () => failThenAnswer(unreadable),
+      build: build,
+      act: (bloc) => submitTwice(
+        bloc,
+        const EditHouseholdSubmitted(
+          name: 'Annex',
+          memberInvitePolicy: MemberInvitePolicy.needsApproval,
+        ),
+        const EditHouseholdSubmitted(
+          name: 'Den',
+          memberInvitePolicy: MemberInvitePolicy.needsApproval,
+        ),
+      ),
+      expect: () => [
+        const EditHouseholdSaving(),
+        const EditHouseholdFailed(EditHouseholdFailure.unexpected),
+        const EditHouseholdEditing(),
+        const EditHouseholdSaving(),
+        EditHouseholdSaved(_household()),
+      ],
+      verify: (_) {
+        final second = sentAll().last;
+        expect(second.name, 'Den');
+        // Only what the first save carried: the policy was never sent.
+        expect(second.memberInvitePolicy, isNull);
+        expect(second.description, isNull);
+        expect(second.clearDescription, isFalse);
+      },
+    );
+
+    blocTest<EditHouseholdBloc, EditHouseholdState>(
+      'a description added and then taken away is cleared',
+      setUp: () => failThenAnswer(unreadable),
+      build: build,
+      act: (bloc) => submitTwice(
+        bloc,
+        const EditHouseholdSubmitted(name: 'Den', description: 'Cosy'),
+        const EditHouseholdSubmitted(name: 'Den'),
+      ),
+      verify: (_) {
+        final second = sentAll().last;
+        expect(second.clearDescription, isTrue);
+        expect(second.name, isNull);
+      },
+    );
+
+    blocTest<EditHouseholdBloc, EditHouseholdState>(
+      'a policy changed back is sent',
+      setUp: () => failThenAnswer(unreadable),
+      build: build,
+      act: (bloc) => submitTwice(
+        bloc,
+        const EditHouseholdSubmitted(
+          name: 'Den',
+          memberInvitePolicy: MemberInvitePolicy.direct,
+        ),
+        const EditHouseholdSubmitted(
+          name: 'Den',
+          memberInvitePolicy: MemberInvitePolicy.needsApproval,
+        ),
+      ),
+      verify: (_) => expect(
+        sentAll().last.memberInvitePolicy,
+        MemberInvitePolicy.needsApproval,
+      ),
+    );
+
+    void expectSentBack(String description, {required Object error}) {
+      blocTest<EditHouseholdBloc, EditHouseholdState>(
+        description,
+        setUp: () => failThenAnswer(error),
+        build: build,
+        act: (bloc) => submitTwice(
+          bloc,
+          const EditHouseholdSubmitted(name: 'Annex'),
+          const EditHouseholdSubmitted(name: 'Den'),
+        ),
+        verify: (_) => expect(sentAll().last.name, 'Den'),
+      );
+    }
+
+    void expectNothingSentBack(
+      String description, {
+      required Object error,
+      required EditHouseholdFailure reason,
+    }) {
+      blocTest<EditHouseholdBloc, EditHouseholdState>(
+        description,
+        setUp: () => failThenAnswer(error),
+        build: build,
+        act: (bloc) => submitTwice(
+          bloc,
+          const EditHouseholdSubmitted(name: 'Annex'),
+          const EditHouseholdSubmitted(name: 'Den'),
+        ),
+        expect: () => [
+          const EditHouseholdSaving(),
+          EditHouseholdFailed(reason),
+          const EditHouseholdEditing(),
+          EditHouseholdSaved(_household(), changed: false),
+        ],
+      );
+    }
+
+    expectSentBack(
+      'a save with no answer may have landed',
+      // A timeout after the request went out.
+      error: const HouseholdRemoteTransientException('timed out'),
+    );
+
+    expectSentBack(
+      'a save the server failed on may have landed',
+      // A gateway timing out, or a failure after the write.
+      error: const HouseholdRemoteTransientException('?', statusCode: 504),
+    );
+
+    expectNothingSentBack(
+      'a save turned away for a retry leaves nothing to send back',
+      error: const HouseholdRemoteTransientException('slow', statusCode: 429),
+      reason: EditHouseholdFailure.offline,
+    );
+
+    expectNothingSentBack(
+      'a save the server refused leaves nothing to send back',
+      error: const HouseholdRemotePermanentException('bad', statusCode: 400),
+      reason: EditHouseholdFailure.invalid,
+    );
+  });
 }
