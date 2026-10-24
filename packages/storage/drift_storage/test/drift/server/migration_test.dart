@@ -12,6 +12,7 @@ import 'generated/schema_v4.dart' as v4;
 import 'generated/schema_v5.dart' as v5;
 import 'generated/schema_v6.dart' as v6;
 import 'generated/schema_v7.dart' as v7;
+import 'generated/schema_v8.dart' as v8;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -772,6 +773,50 @@ void main() {
         expect(await newDb.select(newDb.eventPolicies).get(), isEmpty);
         expect(await newDb.select(newDb.eventAccess).get(), isEmpty);
         expect(await newDb.select(newDb.eventGeneration).get(), isEmpty);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v7 → v8 (#476): the step adds a nullable
+  // `households.member_invite_policy`. A household cached before it holds
+  // null, which reads as "settings not read yet", until the next hydrate
+  // writes the policy the list carries.
+  test('migration from v7 to v8 adds an empty member invite policy and '
+      'keeps households', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 7,
+      newVersion: 8,
+      createOld: v7.DatabaseAtV7.new,
+      createNew: v8.DatabaseAtV8.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.households,
+          const v7.HouseholdsData(
+            id: 'hh_v7_1',
+            name: 'Game Night HQ',
+            description: 'Where we play',
+            isDirty: 0,
+            isLocalOnly: 0,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.households).get(), const [
+          v8.HouseholdsData(
+            id: 'hh_v7_1',
+            name: 'Game Night HQ',
+            description: 'Where we play',
+            isDirty: 0,
+            isLocalOnly: 0,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
       },
     );
   });
