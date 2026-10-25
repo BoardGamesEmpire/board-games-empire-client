@@ -8,6 +8,7 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
 
 const _inboxKey = Key('invite_inbox_route_marker');
+const _sentKey = Key('sent_invites_route_marker');
 const _invitesKey = Key('household_invites_route_marker');
 const _sendKey = Key('household_invite_send_route_marker');
 const _detailKey = Key('household_detail_route_marker');
@@ -25,6 +26,7 @@ void main() {
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
     InviteInboxScreenBuilder? inviteInboxBuilder,
+    SentInvitesScreenBuilder? sentInvitesBuilder,
     HouseholdInvitesScreenBuilder? householdInvitesBuilder,
     SendHouseholdInviteScreenBuilder? sendHouseholdInviteBuilder,
     HouseholdDetailScreenBuilder? householdDetailBuilder,
@@ -40,6 +42,7 @@ void main() {
       bootstrapCubit: cubit,
       refreshListenable: listenable,
       inviteInboxBuilder: inviteInboxBuilder,
+      sentInvitesBuilder: sentInvitesBuilder,
       householdInvitesBuilder: householdInvitesBuilder,
       sendHouseholdInviteBuilder: sendHouseholdInviteBuilder,
       householdDetailBuilder: householdDetailBuilder,
@@ -72,6 +75,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(_inboxKey), findsOneWidget);
+  });
+
+  testWidgets('the sent invites are their own route, under the inbox', (
+    tester,
+  ) async {
+    final router = await pumpRouter(
+      tester,
+      inviteInboxBuilder: (_) => marker(_inboxKey),
+      sentInvitesBuilder: (_) => marker(_sentKey),
+    );
+
+    router.go(AppRoutes.invitesSent);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(_sentKey), findsOneWidget);
+    expect(find.byKey(_inboxKey, skipOffstage: false), findsOneWidget);
   });
 
   testWidgets("a household's invites get its id, over its detail screen", (
@@ -135,6 +154,7 @@ void main() {
 
     for (final location in [
       AppRoutes.invites,
+      AppRoutes.invitesSent,
       AppRoutes.householdInvitesOf('hh_1'),
       AppRoutes.householdInviteSendOf('hh_1'),
     ]) {

@@ -388,6 +388,7 @@ class _BgeAppState extends State<BgeApp> {
       sendHouseholdInviteBuilder: _buildSendHouseholdInviteRoute,
       editHouseholdBuilder: _buildEditHouseholdRoute,
       inviteInboxBuilder: _buildInviteInboxRoute,
+      sentInvitesBuilder: _buildSentInvitesRoute,
       createHouseholdBuilder: _buildCreateHouseholdRoute,
       collectionListBuilder: _buildCollectionListRoute,
       gameBrowseBuilder: _buildGameBrowseRoute,
@@ -1106,7 +1107,26 @@ class _BgeAppState extends State<BgeApp> {
           : (_) => refreshAfterJoin(refresher, status),
       onOpenHousehold: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.householdDetailOf(id))),
+      onOpenSent: (ctx) => unawaited(ctx.push<void>(AppRoutes.invitesSent)),
     );
+  }
+
+  /// The #487 sent invites: the same container lookups as
+  /// [_buildInviteInboxRoute], and null under the same conditions, so the
+  /// two routes are available together. The screen never reads the
+  /// [HouseholdRepository]; it is asked for as the inbox's gate is, because
+  /// the user tier registers it, so the route opens only in a live session.
+  Widget? _buildSentInvitesRoute(BuildContext context) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    final invites = _inviteClient(container);
+    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+      return null;
+    }
+
+    return SentInvitesScreen(remote: invites);
   }
 
   /// The #129 create-household wiring: resolves the [HouseholdRepository]
