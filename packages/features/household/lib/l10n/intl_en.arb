@@ -191,7 +191,7 @@
   },
   "inviteErrorRoleChanged": "You can't do this any more. Your role in the household may have changed.",
   "@inviteErrorRoleChanged": {
-    "description": "Shown when withdrawing, revoking or approving an invite was refused, most likely because the user's role in the household changed since the list loaded."
+    "description": "Shown when revoking or approving an invite was refused, most likely because the user's role in the household changed since the list loaded."
   },
   "householdInvitesTitle": "Invites",
   "@householdInvitesTitle": {
@@ -262,6 +262,16 @@
   "householdInviteExpires": "Expires {date}",
   "@householdInviteExpires": {
     "description": "When an invite expires.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMd"
+      }
+    }
+  },
+  "householdInviteExpired": "Expired {date}",
+  "@householdInviteExpired": {
+    "description": "When an invite expired, on the row of an invite that ran out before it was answered.",
     "placeholders": {
       "date": {
         "type": "DateTime",
@@ -462,6 +472,82 @@
   "inviteInboxDeclined": "Invite declined.",
   "@inviteInboxDeclined": {
     "description": "Shown when the user declined an invite."
+  },
+  "inviteInboxSentLink": "See the invites you sent",
+  "@inviteInboxSentLink": {
+    "description": "Button under the empty invite inbox that opens the list of invites the user sent."
+  },
+  "sentInvitesTitle": "Sent invites",
+  "@sentInvitesTitle": {
+    "description": "Title of the screen listing the invites the current user sent, across every household, and the tooltip of the invite inbox button that opens it."
+  },
+  "sentInvitesLoading": "Loading the invites you sent",
+  "@sentInvitesLoading": {
+    "description": "Announced and shown while the invites the user sent are first being read."
+  },
+  "sentInvitesFailed": "Couldn't load the invites you sent",
+  "@sentInvitesFailed": {
+    "description": "Title shown when the invites the user sent could not be read."
+  },
+  "sentInvitesEmpty": "You have no open or expired invites.",
+  "@sentInvitesEmpty": {
+    "description": "Shown on the sent invites screen, under the default filter, when none of the invites the user sent is still waiting or has expired."
+  },
+  "sentInvitesEmptyFiltered": "No invites you sent have this status.",
+  "@sentInvitesEmptyFiltered": {
+    "description": "Shown on the sent invites screen when none of the invites the user sent has the status chosen in the filter."
+  },
+  "sentInvitesFilterLabel": "Show: {filter}",
+  "@sentInvitesFilterLabel": {
+    "description": "The button on the sent invites screen that opens the menu picking which of the user's invites to list, by status. Names the status chosen now.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Open and expired"
+      }
+    }
+  },
+  "sentInvitesFilterOpenAndExpired": "Open and expired",
+  "@sentInvitesFilterOpenAndExpired": {
+    "description": "The sent invites filter's first choice, chosen when the screen opens: invites still waiting on someone, and those that expired."
+  },
+  "inviteStatusPending": "Pending",
+  "@inviteStatusPending": {
+    "description": "An invite's status: sent and waiting for the invitee to answer. A choice in the sent invites filter menu."
+  },
+  "inviteStatusExpired": "Expired",
+  "@inviteStatusExpired": {
+    "description": "An invite's status: it ran out before the invitee answered. A choice in the sent invites filter menu."
+  },
+  "inviteStatusAccepted": "Accepted",
+  "@inviteStatusAccepted": {
+    "description": "An invite's status: the invitee accepted it. A choice in the sent invites filter menu, and the status line on an accepted invite's row."
+  },
+  "inviteStatusDeclined": "Declined",
+  "@inviteStatusDeclined": {
+    "description": "An invite's status: the invitee declined it. A choice in the sent invites filter menu, and the status line on a declined invite's row."
+  },
+  "inviteStatusWithdrawn": "Withdrawn",
+  "@inviteStatusWithdrawn": {
+    "description": "An invite's status: its sender took it back. A choice in the sent invites filter menu, and the status line on a withdrawn invite's row."
+  },
+  "inviteStatusRevoked": "Revoked",
+  "@inviteStatusRevoked": {
+    "description": "An invite's status: it was cancelled, by an owner or admin of the household, or by the server when the household's invite policy no longer allowed it. A choice in the sent invites filter menu, and the status line on a revoked invite's row."
+  },
+  "sentInviteFor": "For {name}",
+  "@sentInviteFor": {
+    "description": "On a row of the sent invites screen: who the invite is for, by the name the user gave them or the address it went to.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ana"
+      }
+    }
+  },
+  "sentInviteForAccount": "For a user account",
+  "@sentInviteForAccount": {
+    "description": "On a row of the sent invites screen: who the invite is for, when it went to a user account and the user gave no name."
   },
   "householdDetailInvites": "Invites",
   "@householdDetailInvites": {

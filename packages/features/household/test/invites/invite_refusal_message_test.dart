@@ -167,9 +167,8 @@ void main() {
       }
     });
 
-    test('withdraw, revoke or approve: 403 is a role that changed', () {
+    test('revoke or approve: 403 is a role that changed', () {
       for (final action in [
-        HouseholdInviteAction.withdraw,
         HouseholdInviteAction.revoke,
         HouseholdInviteAction.approve,
       ]) {
@@ -179,6 +178,13 @@ void main() {
           'changed.',
         );
       }
+    });
+
+    test('withdraw: 403 is unexpected, since withdrawing asks no role', () {
+      expect(
+        message(HouseholdInviteAction.withdraw, _refused(403)),
+        unexpected,
+      );
     });
 
     test('any other refused status is unexpected', () {

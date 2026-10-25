@@ -13,7 +13,9 @@ import '../bloc/household_invite_list_state.dart';
 import '../bloc/invite_inbox_bloc.dart';
 import '../bloc/invite_inbox_event.dart';
 import '../bloc/invite_inbox_state.dart';
+import '../invites/invite_expiry_line.dart';
 import '../invites/invite_refusal_message.dart';
+import '../widgets/household_invite_busy_indicator.dart';
 import '../widgets/household_role_label.dart';
 
 /// The invites sent to the current user (#455, #454): accept one to join
@@ -22,13 +24,14 @@ import '../widgets/household_role_label.dart';
 /// Online-only, read from the server when the screen opens. Decoupled from
 /// DI like the other household screens: the caller resolves the per-server
 /// [HouseholdInviteRemoteDataSource], brings a joined household onto the
-/// device through [onJoined], and owns the route to it through
-/// [onOpenHousehold].
+/// device through [onJoined], and owns the routes to it through
+/// [onOpenHousehold] and to the invites the user sent through [onOpenSent].
 class InviteInboxScreen extends StatelessWidget {
   const InviteInboxScreen({
     required this.remote,
     this.onJoined,
     this.onOpenHousehold,
+    this.onOpenSent,
     super.key,
   });
 
@@ -39,6 +42,12 @@ class InviteInboxScreen extends StatelessWidget {
   static const Key outcomeKey = Key('invite_inbox.outcome');
   static const Key openHouseholdKey = Key('invite_inbox.open_household');
   static const Key declineConfirmKey = Key('invite_inbox.decline_confirm');
+
+  /// The app-bar action that opens the invites the user sent.
+  static const Key sentKey = Key('invite_inbox.sent');
+
+  /// The empty inbox's link to the invites the user sent.
+  static const Key sentLinkKey = Key('invite_inbox.sent_link');
 
   /// Per-row keys.
   static Key rowKey(String inviteId) => Key('invite_inbox.row_$inviteId');
@@ -57,20 +66,27 @@ class InviteInboxScreen extends StatelessWidget {
   final void Function(BuildContext context, String householdId)?
   onOpenHousehold;
 
+  /// Opens the invites the user sent (#487). Null offers no way there.
+  final void Function(BuildContext context)? onOpenSent;
+
   @override
   Widget build(BuildContext context) => BlocProvider<InviteInboxBloc>(
     create: (_) =>
         InviteInboxBloc(remote: remote, onJoined: onJoined)
           ..add(const InviteInboxLoadRequested()),
-    child: _InviteInboxView(onOpenHousehold: onOpenHousehold),
+    child: _InviteInboxView(
+      onOpenHousehold: onOpenHousehold,
+      onOpenSent: onOpenSent,
+    ),
   );
 }
 
 class _InviteInboxView extends StatelessWidget {
-  const _InviteInboxView({this.onOpenHousehold});
+  const _InviteInboxView({this.onOpenHousehold, this.onOpenSent});
 
   final void Function(BuildContext context, String householdId)?
   onOpenHousehold;
+  final void Function(BuildContext context)? onOpenSent;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +97,7 @@ class _InviteInboxView extends StatelessWidget {
         final bloc = context.read<InviteInboxBloc>();
         final ready = state is InviteInboxReady ? state : null;
         final tokens = BgeTokens.of(context);
+        final openSent = onOpenSent;
 
         return BgePage.slivers(
           title: Text(l10n.inviteInboxTitle),
@@ -88,6 +105,15 @@ class _InviteInboxView extends StatelessWidget {
           semanticChildCount: ready == null || ready.invites.isEmpty
               ? null
               : ready.invites.length,
+          actions: [
+            if (openSent != null)
+              IconButton(
+                key: InviteInboxScreen.sentKey,
+                icon: const Icon(Icons.outbox_outlined),
+                tooltip: l10n.sentInvitesTitle,
+                onPressed: () => openSent(context),
+              ),
+          ],
           slivers: [
             if (ready?.outcome case final outcome?)
               SliverToBoxAdapter(
@@ -144,6 +170,14 @@ class _InviteInboxView extends StatelessWidget {
                           style: Theme.of(context).textTheme.bodyLarge,
                           textAlign: TextAlign.center,
                         ),
+                        if (openSent != null) ...[
+                          const BgeGap.sm(),
+                          TextButton(
+                            key: InviteInboxScreen.sentLinkKey,
+                            onPressed: () => openSent(context),
+                            child: Text(l10n.inviteInboxSentLink),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -229,6 +263,7 @@ class _InboxRow extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final role = invite.role;
     final message = invite.message;
+    final expiry = inviteExpiryLine(l10n, invite);
 
     return Column(
       key: InviteInboxScreen.rowKey(invite.id),
@@ -242,7 +277,7 @@ class _InboxRow extends StatelessWidget {
             children: [
               if (role != null) Text(householdRoleLabel(l10n, role)),
               Text(l10n.householdInviteFrom(invite.inviter.label)),
-              Text(l10n.householdInviteExpires(invite.expiresAt.toLocal())),
+              if (expiry != null) Text(expiry),
               if (message != null) ...[
                 const BgeGap.xs(),
                 Text(
@@ -254,18 +289,7 @@ class _InboxRow extends StatelessWidget {
               ],
             ],
           ),
-          trailing: busy
-              ? Semantics(
-                  label: l10n.householdInviteBusy,
-                  liveRegion: true,
-                  child: ExcludeSemantics(
-                    child: SizedBox.square(
-                      dimension: tokens.spaceLg,
-                      child: const CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              : null,
+          trailing: busy ? const HouseholdInviteBusyIndicator() : null,
         ),
         Padding(
           padding: EdgeInsetsDirectional.only(

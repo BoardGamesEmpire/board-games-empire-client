@@ -210,6 +210,33 @@ void main() {
       );
     });
 
+    test('the template defines the sent invites surface (#487)', () {
+      // With the two #487 strings drawn elsewhere: the expired line every
+      // invite row shows, and the empty inbox's link to this screen.
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'sentInvitesTitle',
+          'sentInvitesLoading',
+          'sentInvitesFailed',
+          'sentInvitesEmpty',
+          'sentInvitesEmptyFiltered',
+          'sentInvitesFilterLabel',
+          'sentInvitesFilterOpenAndExpired',
+          'inviteStatusPending',
+          'inviteStatusExpired',
+          'inviteStatusAccepted',
+          'inviteStatusDeclined',
+          'inviteStatusWithdrawn',
+          'inviteStatusRevoked',
+          'sentInviteFor',
+          'sentInviteForAccount',
+          'householdInviteExpired',
+          'inviteInboxSentLink',
+        ]),
+      );
+    });
+
     test("the template defines the household screen's invites entry "
         '(#455, #489)', () {
       expect(
