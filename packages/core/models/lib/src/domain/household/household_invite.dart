@@ -12,10 +12,10 @@ part 'household_invite.freezed.dart';
 /// never stored on the device. Accepting one creates a membership, and the
 /// household then arrives through the ordinary hydrate pass.
 ///
-/// The same type serves both lists. A household's own list leaves
+/// The same type serves all three lists. A household's own list leaves
 /// [householdId] and [householdName] null, since the screen already knows
-/// them; the invitee's inbox sets both, since its rows come from many
-/// households.
+/// them; the invitee's inbox and the sender's sent list set both, since
+/// their rows come from many households.
 @freezed
 abstract class HouseholdInvite with _$HouseholdInvite {
   const HouseholdInvite._();
@@ -32,14 +32,15 @@ abstract class HouseholdInvite with _$HouseholdInvite {
     String? inviteeName,
 
     /// The address an email invite went to. The server shows it to the
-    /// household's owners and admins, and to the invitee.
+    /// household's owners and admins, to the invitee, and to the sender on the
+    /// sent list.
     String? inviteeEmail,
     String? message,
 
-    /// Set only on inbox rows.
+    /// Set only on inbox and sent rows.
     String? householdId,
 
-    /// Set only on inbox rows.
+    /// Set only on inbox and sent rows.
     String? householdName,
     required DateTime expiresAt,
     required DateTime createdAt,

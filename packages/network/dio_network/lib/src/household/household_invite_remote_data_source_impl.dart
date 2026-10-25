@@ -72,6 +72,51 @@ class HouseholdInviteRemoteDataSourceImpl
     HouseholdInviteStatus? status,
     int page = 1,
     int limit = HouseholdInviteRemoteDataSource.defaultPageSize,
+  }) =>
+      // A deleted household and a server without the route both answer an
+      // enveloped 404 here, and they cannot be told apart. See the contract.
+      _fetchPage(
+        _householdInvites(householdId),
+        action: 'Household invite list',
+        status: status,
+        page: page,
+        limit: limit,
+      );
+
+  @override
+  Future<PaginatedResult<HouseholdInvite>> fetchInbox({
+    int page = 1,
+    int limit = HouseholdInviteRemoteDataSource.defaultPageSize,
+  }) => _fetchPage(
+    '/api/invites',
+    action: 'Invite inbox',
+    page: page,
+    limit: limit,
+  );
+
+  @override
+  Future<PaginatedResult<HouseholdInvite>> fetchSent({
+    HouseholdInviteStatus? status,
+    int page = 1,
+    int limit = HouseholdInviteRemoteDataSource.defaultPageSize,
+  }) => _fetchPage(
+    '/api/invites/sent',
+    action: 'Sent invites',
+    status: status,
+    page: page,
+    limit: limit,
+  );
+
+  /// Reads one page of invites from the list at [path], narrowed to
+  /// [status] when one is given. A list's 404 never says a row is gone, so
+  /// none is a row route; the household's list included, for the reason on
+  /// [fetchHouseholdInvites].
+  Future<PaginatedResult<HouseholdInvite>> _fetchPage(
+    String path, {
+    required String action,
+    required int page,
+    required int limit,
+    HouseholdInviteStatus? status,
   }) async {
     _checkPaging(
       page: page,
@@ -82,50 +127,15 @@ class HouseholdInviteRemoteDataSourceImpl
       throw ArgumentError.value(status, 'status', 'has no wire name');
     }
 
-    const action = 'Household invite list';
     final response = await _send(
       request: () => _dio.get<String>(
-        _householdInvites(householdId),
+        path,
         options: _plainBody,
         queryParameters: {
           'page': page,
           'limit': limit,
           'status': ?status?.toWire(),
         },
-      ),
-      action: action,
-      // A deleted household and a server without the route both answer an
-      // enveloped 404 here, and they cannot be told apart. See the contract.
-      rowRoute: false,
-    );
-    return _parse(
-      () => PaginatedResult.fromEnvelope(
-        response.body,
-        key: 'invites',
-        item: _mapInvite,
-      ),
-      action: action,
-      status: response.status,
-    );
-  }
-
-  @override
-  Future<PaginatedResult<HouseholdInvite>> fetchInbox({
-    int page = 1,
-    int limit = HouseholdInviteRemoteDataSource.defaultPageSize,
-  }) async {
-    _checkPaging(
-      page: page,
-      limit: limit,
-      max: HouseholdInviteRemoteDataSource.maxPageSize,
-    );
-
-    const action = 'Invite inbox';
-    final response = await _send(
-      request: () => _dio.get<String>(
-        '/api/invites',
-        options: _plainBody,
-        queryParameters: {'page': page, 'limit': limit},
       ),
       action: action,
       rowRoute: false,
@@ -266,7 +276,7 @@ class HouseholdInviteRemoteDataSourceImpl
   ///
   /// Explicit rather than generated, so the mapping reads only what the
   /// model holds. `inviteeEmail` and `message` are absent from some rows;
-  /// `household` is present only on inbox rows.
+  /// `household` is present only on inbox and sent rows.
   static HouseholdInvite _mapInvite(Map<String, dynamic> json) {
     final role = json['role'] as Map<String, dynamic>?;
     final household = json['household'] as Map<String, dynamic>?;

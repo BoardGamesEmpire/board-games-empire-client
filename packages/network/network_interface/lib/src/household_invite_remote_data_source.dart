@@ -154,6 +154,7 @@ final class InviteQuota {
 /// | [send] | `POST /api/households/:hid/invites` | 201 `{ message, invite }` |
 /// | [fetchHouseholdInvites] | `GET /api/households/:hid/invites` | `{ invites, pagination }` |
 /// | [fetchInbox] | `GET /api/invites` | `{ invites, pagination }`; rows add `household` |
+/// | [fetchSent] | `GET /api/invites/sent` | `{ invites, pagination }`; rows add `household` |
 /// | [accept] | `POST /api/invites/:id/accept` | `{ message, invite, member }` |
 /// | [decline] | `POST /api/invites/:id/decline` | `{ message, invite }` |
 /// | [withdraw] | `POST /api/invites/:id/withdraw` | `{ message, invite }` |
@@ -167,7 +168,12 @@ final class InviteQuota {
 /// invite past its expiry counts as expired. The inbox holds only pending,
 /// unexpired invites into a live household the caller is not already in:
 /// one awaiting approval is the household's to decide, and is not shown to
-/// its invitee until it is approved.
+/// its invitee until it is approved. The sent list holds the caller's open
+/// and expired invites, or one status when asked, judged as it stands now so
+/// an outstanding invite past its expiry reads expired, into a live
+/// household only. Into a household the caller has no seat in (such as a
+/// server owner's), only their outstanding, unexpired invites are listed,
+/// whatever the status asked for.
 ///
 /// ## Failure classification
 ///
@@ -184,11 +190,12 @@ final class InviteQuota {
 /// - [HouseholdInviteTransientException]: no response at all, 401, 407, 408,
 ///   429, every 5xx, a 409 saying `retryable: true`, a 403 or 404 without the
 ///   envelope (a proxy answered, not the API), and a 404 with the envelope
-///   from the inbox, the household list or user search. A list route is
-///   never absent, and Nest's unmatched-route 404 carries the same envelope,
-///   so there it may mean a server without the route. The household list
-///   names a household, and a deleted one answers it with an enveloped 404
-///   too; the two cannot be told apart, so it is read the cautious way.
+///   from the inbox, the sent list, the household list or user search. A
+///   list route is never absent, and Nest's unmatched-route 404 carries the
+///   same envelope, so there it may mean a server without the route. The
+///   household list names a household, and a deleted one answers it with an
+///   enveloped 404 too; the two cannot be told apart, so it is read the
+///   cautious way.
 /// - [HouseholdInvitePermanentException]: any other 4xx, and a 2xx whose body
 ///   cannot be read as the contract above.
 ///
@@ -236,6 +243,15 @@ abstract class HouseholdInviteRemoteDataSource {
   /// One page of the pending invites sent to the caller, by user or by a
   /// verified address, newest first. Each row names its household.
   Future<PaginatedResult<HouseholdInvite>> fetchInbox({
+    int page = 1,
+    int limit = defaultPageSize,
+  });
+
+  /// One page of the household invites the caller sent, newest first, across
+  /// every household: open and expired ones, or those with [status] when it
+  /// is given. Each row names its household.
+  Future<PaginatedResult<HouseholdInvite>> fetchSent({
+    HouseholdInviteStatus? status,
     int page = 1,
     int limit = defaultPageSize,
   });

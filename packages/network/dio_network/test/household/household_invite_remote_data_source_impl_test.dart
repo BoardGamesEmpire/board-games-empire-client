@@ -278,6 +278,63 @@ void main() {
     });
   });
 
+  group('fetchSent', () {
+    test('asks for open and expired unless a status is given', () async {
+      final remote = answering(_list('invites', const [], total: 0));
+
+      await remote.fetchSent();
+
+      expect(adapter.sent.single.method, 'GET');
+      expect(adapter.sent.single.path, '/api/invites/sent');
+      expect(adapter.sent.single.query, {'page': 1, 'limit': 25});
+    });
+
+    test('sends the status filter when one is given', () async {
+      final remote = answering(_list('invites', const [], total: 0));
+
+      await remote.fetchSent(
+        status: HouseholdInviteStatus.revoked,
+        page: 2,
+        limit: 1,
+      );
+
+      expect(adapter.sent.single.query, {
+        'page': 2,
+        'limit': 1,
+        'status': 'Revoked',
+      });
+    });
+
+    test('names each row\'s household and reads its status', () async {
+      final remote = answering(
+        _list('invites', [
+          _row(
+            status: 'Expired',
+            extra: {
+              'household': {'id': 'hh_9', 'name': 'Sunday Crew'},
+            },
+          ),
+        ], total: 1),
+      );
+
+      final page = await remote.fetchSent();
+
+      expect(page.items.single.status, HouseholdInviteStatus.expired);
+      expect(page.items.single.householdId, 'hh_9');
+      expect(page.items.single.householdName, 'Sunday Crew');
+    });
+
+    test('refuses a status filter of unknown before any request', () {
+      final remote = answering(_list('invites', const [], total: 0));
+
+      expect(
+        () => remote.fetchSent(status: HouseholdInviteStatus.unknown),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+  });
+
   group('answers and actions', () {
     test(
       'accept returns the accepted invite and the household joined',
@@ -385,6 +442,7 @@ void main() {
       final remote = answering(_list('invites', const [], total: 0));
 
       expect(() => remote.fetchInbox(page: 0), throwsArgumentError);
+      expect(() => remote.fetchSent(page: 0), throwsArgumentError);
       expect(adapter.sent, isEmpty);
     });
 
@@ -395,6 +453,7 @@ void main() {
         () => remote.fetchHouseholdInvites('hh_1', limit: 101),
         throwsArgumentError,
       );
+      expect(() => remote.fetchSent(limit: 101), throwsArgumentError);
       expect(adapter.sent, isEmpty);
     });
   });
@@ -447,6 +506,7 @@ void main() {
 
     test('an enveloped 404 from a list or search route is transient', () {
       expect(answering(_envelope(404), status: 404).fetchInbox(), transient);
+      expect(answering(_envelope(404), status: 404).fetchSent(), transient);
       expect(
         answering(_envelope(404), status: 404).fetchHouseholdInvites('hh_1'),
         transient,
