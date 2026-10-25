@@ -188,6 +188,36 @@ void main() {
     });
   });
 
+  testWidgets('the inbox opens the sent invites', (tester) async {
+    when(
+      () => remote.fetchSent(
+        status: any(named: 'status'),
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+      ),
+    ).thenAnswer(
+      (_) async => _page([
+        _invite('i_s', householdId: 'hh_9', householdName: 'Sunday Crew'),
+      ]),
+    );
+    await pumpApp(tester);
+    await openDrawer(tester);
+    await tester.tap(find.byKey(HomeScreen.entryKey('invites')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(InviteInboxScreen.sentKey));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SentInvitesScreen), findsOneWidget);
+    expect(find.text('Sunday Crew'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(InviteInboxScreen), findsOneWidget);
+    expect(find.byType(SentInvitesScreen), findsNothing);
+  });
+
   testWidgets('accepting in the inbox refreshes the households', (
     tester,
   ) async {
@@ -304,7 +334,10 @@ void main() {
 
     router.go(AppRoutes.invites);
     await tester.pumpAndSettle();
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
 
+    router.go(AppRoutes.invitesSent);
+    await tester.pumpAndSettle();
     expect(find.byType(NotYetAvailableScreen), findsOneWidget);
   });
 }

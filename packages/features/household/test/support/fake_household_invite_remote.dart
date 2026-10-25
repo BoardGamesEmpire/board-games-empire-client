@@ -26,6 +26,12 @@ class FakeHouseholdInviteRemote implements HouseholdInviteRemoteDataSource {
   onFetchHouseholdInvites;
   Future<PaginatedResult<HouseholdInvite>> Function(int page, int limit)?
   onFetchInbox;
+  Future<PaginatedResult<HouseholdInvite>> Function(
+    HouseholdInviteStatus? status,
+    int page,
+    int limit,
+  )?
+  onFetchSent;
   Future<AcceptedHouseholdInvite> Function(String inviteId)? onAccept;
   Future<HouseholdInvite> Function(String inviteId)? onDecline;
   Future<HouseholdInvite> Function(String inviteId)? onWithdraw;
@@ -76,6 +82,16 @@ class FakeHouseholdInviteRemote implements HouseholdInviteRemoteDataSource {
   }) {
     calls.add('fetchInbox($page, $limit)');
     return _run(onFetchInbox, 'fetchInbox')(page, limit);
+  }
+
+  @override
+  Future<PaginatedResult<HouseholdInvite>> fetchSent({
+    HouseholdInviteStatus? status,
+    int page = 1,
+    int limit = HouseholdInviteRemoteDataSource.defaultPageSize,
+  }) {
+    calls.add('fetchSent(${status?.name}, $page, $limit)');
+    return _run(onFetchSent, 'fetchSent')(status, page, limit);
   }
 
   @override

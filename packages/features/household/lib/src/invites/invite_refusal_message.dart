@@ -41,11 +41,11 @@ String _refusal(
     HouseholdInviteAction.revoke,
     HouseholdInviteAction.approve,
   };
-  const manages = {
-    HouseholdInviteAction.withdraw,
-    HouseholdInviteAction.revoke,
-    HouseholdInviteAction.approve,
-  };
+  // Withdraw is left out: the server lets an inviter withdraw whatever
+  // their role, so its 403 is never a role that changed. It goes only to
+  // the invitee, or to a caller not signed in as themself, and no list
+  // offers a withdraw to either.
+  const manages = {HouseholdInviteAction.revoke, HouseholdInviteAction.approve};
 
   return switch (status) {
     410 => l10n.inviteErrorExpired,

@@ -26,16 +26,18 @@ void main() {
     opened = [];
   });
 
-  Widget harness() => MaterialApp(
-    theme: BgeTheme.light(),
-    localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
-    supportedLocales: HouseholdLocalizations.supportedLocales,
-    home: InviteInboxScreen(
-      remote: remote,
-      onJoined: (_) async {},
-      onOpenHousehold: (_, householdId) => opened.add(householdId),
-    ),
-  );
+  Widget harness({void Function(BuildContext context)? onOpenSent}) =>
+      MaterialApp(
+        theme: BgeTheme.light(),
+        localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
+        supportedLocales: HouseholdLocalizations.supportedLocales,
+        home: InviteInboxScreen(
+          remote: remote,
+          onJoined: (_) async {},
+          onOpenHousehold: (_, householdId) => opened.add(householdId),
+          onOpenSent: onOpenSent,
+        ),
+      );
 
   testWidgets('a row names the household and who sent it', (tester) async {
     remote.onFetchInbox = (_, _) async => pageOf([_received('i_1')]);
@@ -104,5 +106,40 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(InviteInboxScreen.failedKey), findsOneWidget);
+  });
+
+  testWidgets('the sent action and empty link open the sent invites', (
+    tester,
+  ) async {
+    remote.onFetchInbox = (_, _) async => pageOf(const []);
+    var opens = 0;
+    await tester.pumpWidget(harness(onOpenSent: (_) => opens++));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(InviteInboxScreen.sentKey));
+    expect(opens, 1);
+    expect(find.byTooltip('Sent invites'), findsOneWidget);
+
+    expect(
+      find.descendant(
+        of: find.byKey(InviteInboxScreen.sentLinkKey),
+        matching: find.text('See the invites you sent'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(InviteInboxScreen.sentLinkKey));
+    expect(opens, 2);
+  });
+
+  testWidgets('without onOpenSent there is no way to the sent invites', (
+    tester,
+  ) async {
+    remote.onFetchInbox = (_, _) async => pageOf(const []);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(InviteInboxScreen.emptyKey), findsOneWidget);
+    expect(find.byKey(InviteInboxScreen.sentKey), findsNothing);
+    expect(find.byKey(InviteInboxScreen.sentLinkKey), findsNothing);
   });
 }

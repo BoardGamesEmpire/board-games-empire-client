@@ -81,6 +81,10 @@ abstract final class AppRoutes {
   /// spans every household, so it belongs under none of them.
   static const invites = '/invites';
 
+  /// The invites the current user sent (#487). Under the inbox, because it
+  /// is reached from there.
+  static const invitesSent = '/invites/sent';
+
   /// The location of one household's detail screen.
   ///
   /// Ids are server- or client-assigned cuid2s, which are already
@@ -301,6 +305,11 @@ typedef HouseholdDetailScreenBuilder = Widget? Function(
 /// case the route falls back to [NotYetAvailableScreen].
 typedef InviteInboxScreenBuilder = Widget? Function(BuildContext context);
 
+/// Builds the invites the current user sent (#487) for the
+/// [AppRoutes.invitesSent] route. Supplied by [BgeApp]; same null contract
+/// as [InviteInboxScreenBuilder], so the two routes are available together.
+typedef SentInvitesScreenBuilder = Widget? Function(BuildContext context);
+
 /// Builds one household's invites (#455) for the
 /// [AppRoutes.householdInvites] route, given the `:householdId` the path
 /// carried. Same null contract as [InviteInboxScreenBuilder], and also null
@@ -447,6 +456,7 @@ GoRouter buildAppRouter({
   SendHouseholdInviteScreenBuilder? sendHouseholdInviteBuilder,
   EditHouseholdScreenBuilder? editHouseholdBuilder,
   InviteInboxScreenBuilder? inviteInboxBuilder,
+  SentInvitesScreenBuilder? sentInvitesBuilder,
   CollectionListScreenBuilder? collectionListBuilder,
   GameBrowseScreenBuilder? gameBrowseBuilder,
   GameSearchScreenBuilder? gameSearchBuilder,
@@ -637,6 +647,15 @@ GoRouter buildAppRouter({
         path: AppRoutes.invites,
         builder: (context, _) =>
             inviteInboxBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        routes: [
+          // #487: the invites the current user sent, pushed from the inbox.
+          GoRoute(
+            path: 'sent',
+            builder: (context, _) =>
+                sentInvitesBuilder?.call(context) ??
+                const NotYetAvailableScreen(),
+          ),
+        ],
       ),
       // #44: the collection list. Outside the auth ShellRoute (no AuthBloc
       // needed; see [CollectionListScreenBuilder]), pushed from the home

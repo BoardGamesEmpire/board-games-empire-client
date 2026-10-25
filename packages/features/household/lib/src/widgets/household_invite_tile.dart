@@ -5,7 +5,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:household/l10n/household_localizations.dart';
 
 import '../invites/household_invite_permissions.dart';
+import '../invites/invite_expiry_line.dart';
 import 'household_invite_awaiting_badge.dart';
+import 'household_invite_busy_indicator.dart';
 import 'household_role_label.dart';
 
 /// One invite on a household's invite list (#455): who it is for, the role
@@ -54,6 +56,7 @@ class HouseholdInviteTile extends StatelessWidget {
     final tokens = BgeTokens.of(context);
     final role = invite.role;
     final awaiting = invite.status == HouseholdInviteStatus.awaitingApproval;
+    final expiry = inviteExpiryLine(l10n, invite);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -67,21 +70,10 @@ class HouseholdInviteTile extends StatelessWidget {
               if (role != null) Text(householdRoleLabel(l10n, role)),
               if (awaiting) const HouseholdInviteAwaitingBadge(),
               Text(l10n.householdInviteFrom(invite.inviter.label)),
-              Text(l10n.householdInviteExpires(invite.expiresAt.toLocal())),
+              if (expiry != null) Text(expiry),
             ],
           ),
-          trailing: busy
-              ? Semantics(
-                  label: l10n.householdInviteBusy,
-                  liveRegion: true,
-                  child: ExcludeSemantics(
-                    child: SizedBox.square(
-                      dimension: tokens.spaceLg,
-                      child: const CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              : null,
+          trailing: busy ? const HouseholdInviteBusyIndicator() : null,
         ),
         if (actions.isNotEmpty)
           Padding(

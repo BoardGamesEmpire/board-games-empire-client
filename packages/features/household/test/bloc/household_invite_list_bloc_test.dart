@@ -530,6 +530,53 @@ void main() {
 
       expect(ready(bloc).outcome, isNull);
     });
+
+    test("changing the filter retires the last action's outcome", () async {
+      remote
+        ..onFetchHouseholdInvites = ((_, status, _, _) async => pageOf([
+          if (status == null)
+            invite('i_1')
+          else
+            invite('i_2', status: HouseholdInviteStatus.awaitingApproval),
+        ]))
+        ..onRevoke = (_, _) async => throw offline();
+      final bloc = build()..add(const HouseholdInviteListLoadRequested());
+      addTearDown(bloc.close);
+      await _settle();
+      bloc.add(
+        const HouseholdInviteListActionRequested(
+          HouseholdInviteRowAction.revoke,
+          'i_1',
+        ),
+      );
+      await _settle();
+      expect(ready(bloc).outcome?.result, HouseholdInviteActionResult.failed);
+
+      final states = <HouseholdInviteListState>[];
+      bloc.stream.listen(states.add);
+      bloc.add(
+        const HouseholdInviteListFilterChanged(
+          HouseholdInviteFilter.awaitingApproval,
+        ),
+      );
+      await _settle();
+
+      expect(states, [
+        const HouseholdInviteListLoading(
+          filter: HouseholdInviteFilter.awaitingApproval,
+        ),
+        HouseholdInviteListReady(
+          invites: [
+            invite('i_2', status: HouseholdInviteStatus.awaitingApproval),
+          ],
+          filter: HouseholdInviteFilter.awaitingApproval,
+          hasMore: false,
+          loadingMore: false,
+          viewerUserId: _me,
+          viewerRole: HouseholdRole.householdOwner,
+        ),
+      ]);
+    });
   });
 
   group('more', () {
