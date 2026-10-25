@@ -176,4 +176,36 @@ void main() {
       }
     });
   });
+
+  group('sentRowActions', () {
+    test('an outstanding invite offers withdraw', () {
+      for (final status in [
+        HouseholdInviteStatus.pending,
+        HouseholdInviteStatus.awaitingApproval,
+      ]) {
+        expect(
+          HouseholdInvitePermissions.sentRowActions(_invite(status: status)),
+          {HouseholdInviteRowAction.withdraw},
+          reason: '$status',
+        );
+      }
+    });
+
+    test('a settled or expired invite offers nothing', () {
+      for (final status in [
+        HouseholdInviteStatus.expired,
+        HouseholdInviteStatus.accepted,
+        HouseholdInviteStatus.declined,
+        HouseholdInviteStatus.withdrawn,
+        HouseholdInviteStatus.revoked,
+        HouseholdInviteStatus.unknown,
+      ]) {
+        expect(
+          HouseholdInvitePermissions.sentRowActions(_invite(status: status)),
+          isEmpty,
+          reason: '$status',
+        );
+      }
+    });
+  });
 }

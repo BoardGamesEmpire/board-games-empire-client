@@ -28,6 +28,7 @@ export 'src/bloc/user_search_state.dart';
 export 'src/edit/household_edit_permissions.dart';
 export 'src/invites/household_invite_permissions.dart';
 export 'src/invites/invite_refusal_message.dart';
+export 'src/invites/sent_invite_filter.dart';
 export 'src/screens/create_household_screen.dart';
 export 'src/screens/edit_household_screen.dart';
 export 'src/screens/household_detail_screen.dart';

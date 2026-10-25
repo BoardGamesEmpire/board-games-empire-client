@@ -82,4 +82,16 @@ abstract final class HouseholdInvitePermissions {
       if (authority && !own) HouseholdInviteRowAction.revoke,
     };
   }
+
+  /// The actions a row of the viewer's sent list offers.
+  ///
+  /// Takes no role: the server binds the sent list to its sender, so every
+  /// row is the viewer's own, and it lets an inviter withdraw their own
+  /// outstanding invite whatever their role (#454). A settled or expired
+  /// invite offers none. Approving your own invite awaiting approval stays
+  /// on the household's invite list, so it is not offered here (#487).
+  static Set<HouseholdInviteRowAction> sentRowActions(HouseholdInvite invite) =>
+      invite.status.isOutstanding
+      ? const {HouseholdInviteRowAction.withdraw}
+      : const {};
 }
