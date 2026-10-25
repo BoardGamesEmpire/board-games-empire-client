@@ -29,7 +29,8 @@ import 'invite_pages.dart';
 /// An action that ends while a read is in flight asks for the list again:
 /// the server may have answered that read before the action's write. So
 /// does one that dropped its row while a More was out, which may have
-/// skipped a row (see [InvitePages]).
+/// skipped a row, and one that spanned a filter change (see
+/// [InvitePages.settle]).
 ///
 /// A refusal that says the list is out of date asks for it again too: the
 /// invite was already settled (409), expired (410) or is gone (404), or the
@@ -120,9 +121,12 @@ class HouseholdInviteListBloc
   ) async {
     if (event.filter != _filter) {
       // The rows under the old filter are not the new filter's, so the list
-      // starts over from the spinner rather than showing them under it.
+      // starts over from the spinner rather than showing them under it. An
+      // action's banner described those rows, so it goes with them; one
+      // still in flight reports when it ends.
       _filter = event.filter;
       _pages.clear();
+      _outcome = null;
     }
     await _load(emit);
   }
@@ -232,23 +236,14 @@ class HouseholdInviteListBloc
     _busy.add(id);
     _outcome = null;
     _emitReady(emit);
-    final more = _pages.moreMark;
+    final mark = _pages.actionMark;
 
     final (after, result, error) = await _attempt(event.action, row);
 
-    // Settled against the rows as they are now, not as they were when the
-    // action started: a reload or another row's action may have landed. A
-    // failed or refused action says nothing about the row, so whatever is
-    // there now stays.
     _busy.remove(id);
-    final rows = _pages.rows;
-    final dropped = after != null && !_belongs(after);
-    if (rows != null && after != null) {
-      _pages.rows = [
-        for (final invite in rows)
-          if (invite.id != id) invite else if (!dropped) after,
-      ];
-    }
+    final readAgain = _pages.settle(id, after, mark, admits: _belongs);
+    // Shown even under a filter changed meanwhile: how the action ended is
+    // news the person has not been told yet.
     _outcome = HouseholdInviteListOutcome(
       action: event.action,
       result: result,
@@ -259,8 +254,7 @@ class HouseholdInviteListBloc
     final outOfDate =
         error is HouseholdInviteRefusedException &&
         const {403, 404, 409, 410}.contains(error.statusCode);
-    final skipped = dropped && _pages.moreSince(more);
-    if ((_pages.reading || outOfDate || skipped) && !isClosed) {
+    if ((readAgain || outOfDate) && !isClosed) {
       add(const HouseholdInviteListLoadRequested());
     }
   }

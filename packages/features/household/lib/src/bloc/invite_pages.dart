@@ -2,6 +2,10 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
+/// Where an invite list stood as an action began, for
+/// [InvitePages.settle].
+typedef InviteActionMark = ({int mores, int clears});
+
 /// One paged list of invites read from the server, and the reads that fill
 /// it: the household's invite list and the invite inbox (#455) share it.
 ///
@@ -22,6 +26,11 @@ import 'package:observability/observability.dart';
 /// skip a row, whichever answers first. Rows past that page say nothing
 /// about the gap, so the bloc reads the list again instead (see
 /// [moreMark]).
+///
+/// An action that spans a [clear] ends over rows read after it began. The
+/// server may have answered that read before the action's write, and left
+/// out a row the action has since brought under the filter, so [settle]
+/// asks for the list again.
 class InvitePages {
   InvitePages({
     required this._fetch,
@@ -79,10 +88,47 @@ class InvitePages {
   /// Whether a More has asked the server since [mark] was taken.
   bool moreSince(int mark) => _moresAsked != mark;
 
+  /// How many times the rows were forgotten for another filter.
+  int _clears = 0;
+
+  /// A mark taken as an action starts, for [settle].
+  InviteActionMark get actionMark => (mores: moreMark, clears: _clears);
+
   /// Forgets the rows, for a list that starts over under another filter.
   void clear() {
     rows = null;
     _moreWaiting = false;
+    _clears++;
+  }
+
+  /// Settles an action on the row [id], begun at [mark], against the rows
+  /// as they are now: a reload or another row's action may have landed.
+  ///
+  /// [after] is the invite as the server left it, which replaces the row,
+  /// or drops it when [admits] says it no longer belongs. Null for an
+  /// action that failed or was refused, which says nothing about the row,
+  /// so whatever is there now stays.
+  ///
+  /// Answers whether the list is to be read again: a read is in flight, a
+  /// dropped row may have been skipped by a More, or the rows were read
+  /// under a filter set after the action began.
+  bool settle(
+    String id,
+    HouseholdInvite? after,
+    InviteActionMark mark, {
+    required bool Function(HouseholdInvite invite) admits,
+  }) {
+    final shown = rows;
+    final dropped = after != null && !admits(after);
+    if (shown != null && after != null) {
+      rows = [
+        for (final invite in shown)
+          if (invite.id != id) invite else if (!dropped) after,
+      ];
+    }
+    final skipped = dropped && moreSince(mark.mores);
+    final refiltered = after != null && _clears != mark.clears;
+    return reading || skipped || refiltered;
   }
 
   /// Reads the first page into [rows].
