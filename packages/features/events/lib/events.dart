@@ -1,5 +1,8 @@
 library;
 
+export 'src/bloc/event_detail_bloc.dart';
+export 'src/bloc/event_detail_event.dart';
+export 'src/bloc/event_detail_state.dart';
 export 'src/bloc/event_overview_bloc.dart';
 export 'src/bloc/event_overview_event.dart';
 export 'src/bloc/event_overview_state.dart';
