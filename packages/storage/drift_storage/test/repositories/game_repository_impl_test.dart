@@ -189,7 +189,7 @@ void main() {
           final row = await (db.select(
             db.gamesTable,
           )..where((t) => t.id.equals('g-reach'))).getSingle();
-          expect(row.visibility, 'Unknown');
+          expect(row.reach, 'Unknown');
           expect((await repo.getGame('g-reach'))!.reach, Reach.unknown);
         },
       );

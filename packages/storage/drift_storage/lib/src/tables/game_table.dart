@@ -12,15 +12,10 @@ class GamesTable extends Table {
   IntColumn get minPlayers => integer().nullable()();
   IntColumn get maxPlayers => integer().nullable()();
 
-  /// Aggregate playing time in minutes (server `Game.playingTime`).
-  /// Distinct from [minPlayTime] / [maxPlayTime] which carry per-end
-  /// values with their own unit measure columns.
-  IntColumn get playingTime => integer().nullable()();
-
+  /// Play time, in minutes. One playing time is a range whose two ends are
+  /// equal (backend#869).
   IntColumn get minPlayTime => integer().nullable()();
-  TextColumn get minPlayTimeMeasure => text().nullable()();
   IntColumn get maxPlayTime => integer().nullable()();
-  TextColumn get maxPlayTimeMeasure => text().nullable()();
   IntColumn get minAge => integer().nullable()();
 
   RealColumn get complexity => real().nullable()();
@@ -43,8 +38,10 @@ class GamesTable extends Table {
   TextColumn get tagsJson => text().withDefault(const Constant('[]'))();
 
   /// `Reach`, as the backend's enum name; a name this client can't read is
-  /// stored as 'Unknown'. Default 'Public', the server's default (#602).
-  TextColumn get visibility => text().withDefault(const Constant('Public'))();
+  /// stored as 'Unknown'. A row cached before v10 keeps the visibility name it
+  /// had, so an old 'Household' reads as unknown too. Default 'Public', the
+  /// server's default (#602).
+  TextColumn get reach => text().withDefault(const Constant('Public'))();
 
   /// Server user id of the row's creator. Nullable for legacy/imported
   /// games whose creator is unknown.

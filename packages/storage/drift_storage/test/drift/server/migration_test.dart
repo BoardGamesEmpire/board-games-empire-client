@@ -14,6 +14,7 @@ import 'generated/schema_v6.dart' as v6;
 import 'generated/schema_v7.dart' as v7;
 import 'generated/schema_v8.dart' as v8;
 import 'generated/schema_v9.dart' as v9;
+import 'generated/schema_v10.dart' as v10;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -881,6 +882,170 @@ void main() {
             updatedAt: at,
           ),
         ]);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v9 → v10 (#602, #471): the step renames
+  // `games.visibility` to `reach`, drops the play-time unit columns from
+  // `games` and `platform_games` and `games.playing_time`, and indexes
+  // `game_collections (platform_game_id)`. All of it is `ALTER TABLE` in
+  // place on tables that other tables reference, so the seed is a full
+  // chain: a game, a platform game on it and a collection row on that, each
+  // of which must come through with every kept value as it was.
+  //
+  // The game's reach is `Household`, a value the server dropped. The rename
+  // keeps it as written, and `Reach.fromWire` reads it as unknown, so no
+  // value is mapped here.
+  test('migration from v9 to v10 renames reach, drops the play-time units '
+      'and indexes game_collections', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+    const cachedAt = '2024-01-16T08:00:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 9,
+      newVersion: 10,
+      createOld: v9.DatabaseAtV9.new,
+      createNew: v10.DatabaseAtV10.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.games,
+          const v9.GamesData(
+            id: 'g_1',
+            title: 'Brass',
+            subtitle: 'Birmingham',
+            publishYear: 2018,
+            minPlayers: 2,
+            maxPlayers: 4,
+            playingTime: 90,
+            minPlayTime: 60,
+            minPlayTimeMeasure: 'Minutes',
+            maxPlayTime: 120,
+            maxPlayTimeMeasure: 'Minutes',
+            minAge: 14,
+            complexity: 3.9,
+            contentType: 'BaseGame',
+            totalPlayCount: 7,
+            ownedByCount: 3,
+            categoriesJson: '["Economic"]',
+            mechanicsJson: '[]',
+            designersJson: '["Martin Wallace"]',
+            publishersJson: '[]',
+            tagsJson: '[]',
+            visibility: 'Household',
+            createdById: 'user_1',
+            createdAt: at,
+            updatedAt: at,
+            fullRecordCachedAt: cachedAt,
+          ),
+        );
+        batch.insert(
+          oldDb.platformGames,
+          const v9.PlatformGamesData(
+            id: 'pg_1',
+            gameId: 'g_1',
+            platformId: 'plat_tabletop',
+            platformName: 'Tabletop',
+            minPlayTime: 45,
+            minPlayTimeMeasure: 'Minutes',
+            maxPlayTime: 90,
+            maxPlayTimeMeasure: 'Minutes',
+            supportsSolo: 1,
+            supportsLocal: 1,
+            supportsOnline: 0,
+            hasAsyncPlay: 0,
+            hasRealtime: 0,
+            hasTutorial: 0,
+            createdAt: at,
+            updatedAt: at,
+            fullRecordCachedAt: cachedAt,
+          ),
+        );
+        batch.insert(
+          oldDb.gameCollections,
+          const v9.GameCollectionsData(
+            id: 'gc_1',
+            userId: 'user_1',
+            platformGameId: 'pg_1',
+            medium: 'Physical',
+            quantity: 1,
+            rating: 8,
+            isDirty: 0,
+            isLocalOnly: 0,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.games).get(), const [
+          v10.GamesData(
+            id: 'g_1',
+            title: 'Brass',
+            subtitle: 'Birmingham',
+            publishYear: 2018,
+            minPlayers: 2,
+            maxPlayers: 4,
+            minPlayTime: 60,
+            maxPlayTime: 120,
+            minAge: 14,
+            complexity: 3.9,
+            contentType: 'BaseGame',
+            totalPlayCount: 7,
+            ownedByCount: 3,
+            categoriesJson: '["Economic"]',
+            mechanicsJson: '[]',
+            designersJson: '["Martin Wallace"]',
+            publishersJson: '[]',
+            tagsJson: '[]',
+            reach: 'Household',
+            createdById: 'user_1',
+            createdAt: at,
+            updatedAt: at,
+            fullRecordCachedAt: cachedAt,
+          ),
+        ]);
+        expect(await newDb.select(newDb.platformGames).get(), const [
+          v10.PlatformGamesData(
+            id: 'pg_1',
+            gameId: 'g_1',
+            platformId: 'plat_tabletop',
+            platformName: 'Tabletop',
+            minPlayTime: 45,
+            maxPlayTime: 90,
+            supportsSolo: 1,
+            supportsLocal: 1,
+            supportsOnline: 0,
+            hasAsyncPlay: 0,
+            hasRealtime: 0,
+            hasTutorial: 0,
+            createdAt: at,
+            updatedAt: at,
+            fullRecordCachedAt: cachedAt,
+          ),
+        ]);
+        expect(await newDb.select(newDb.gameCollections).get(), const [
+          v10.GameCollectionsData(
+            id: 'gc_1',
+            userId: 'user_1',
+            platformGameId: 'pg_1',
+            medium: 'Physical',
+            quantity: 1,
+            rating: 8,
+            isDirty: 0,
+            isLocalOnly: 0,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        final index = await newDb
+            .customSelect(
+              "SELECT name FROM sqlite_master WHERE type = 'index' "
+              "AND name = 'game_collections_platform_game_id_idx'",
+            )
+            .get();
+        expect(index, hasLength(1));
       },
     );
   });

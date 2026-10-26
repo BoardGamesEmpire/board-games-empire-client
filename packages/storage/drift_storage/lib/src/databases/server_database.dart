@@ -53,7 +53,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **9**.
+/// `schemaVersion` is **10**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -111,6 +111,16 @@ part 'server_database.g.dart';
 ///   list embeds it. Additive: three `addColumn` calls, no table rebuilt. A
 ///   row cached before it holds null names until the next hydrate writes the
 ///   ones the list carries.
+/// - **v9 → v10 (#602, #471):** renames `games.visibility` to `reach`, as the
+///   server renamed it, and drops `games.playing_time`,
+///   `games.min_play_time_measure`, `games.max_play_time_measure`,
+///   `platform_games.min_play_time_measure` and
+///   `platform_games.max_play_time_measure`: play time is minutes with no
+///   unit. Adds `game_collections_platform_game_id_idx`, which backs
+///   `game_collections`' foreign key to `platform_games`. `ALTER TABLE`
+///   renames and drops in place, so no table is rebuilt and #54 stays
+///   deferred. A reach cached before it is kept as written, so an old
+///   `Household` reads as unknown. `DROP COLUMN` needs SQLite 3.35.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -120,13 +130,14 @@ part 'server_database.g.dart';
 /// #288).
 ///
 /// Every step is a hand-written [OnUpgrade] closure using the live table
-/// definitions — sufficient and safe for purely-additive changes and for
-/// a rebuild of an FK-free table whose rows are deliberately discarded.
+/// definitions — sufficient and safe for purely-additive changes, for
+/// in-place `ALTER TABLE` renames and drops, and for a rebuild of an FK-free
+/// table whose rows are deliberately discarded.
 /// If/when the generated step-by-step harness is activated (#54), swap the
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v9.json`, and
+/// `drift_schemas/server/drift_schema_v10.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -171,7 +182,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -296,6 +307,24 @@ class ServerDatabase extends _$ServerDatabase {
           householdMembersTable,
           householdMembersTable.avatarUrl,
         );
+      }
+      if (from < 10 && to >= 10) {
+        // v9 → v10 (#602, #471): the server renamed a game's visibility to
+        // reach and sends play time in minutes with no unit. ALTER TABLE
+        // renames and drops in place, so no table is rebuilt and no FK-off
+        // wrapper is needed (#54 stays deferred). DROP COLUMN refuses a
+        // column in an index, a foreign key or a trigger, and none of these
+        // is; it needs SQLite 3.35. A reach cached before this is kept as
+        // written: an old `Household` reads as unknown.
+        await m.renameColumn(gamesTable, 'visibility', gamesTable.reach);
+        await m.dropColumn(gamesTable, 'playing_time');
+        await m.dropColumn(gamesTable, 'min_play_time_measure');
+        await m.dropColumn(gamesTable, 'max_play_time_measure');
+        await m.dropColumn(platformGamesTable, 'min_play_time_measure');
+        await m.dropColumn(platformGamesTable, 'max_play_time_measure');
+        // The index backs game_collections' foreign key to platform_games
+        // (#471).
+        await m.createIndex(gameCollectionsPlatformGameIdIdx);
       }
     },
   );
