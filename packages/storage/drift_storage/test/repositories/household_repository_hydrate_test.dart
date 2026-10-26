@@ -26,15 +26,24 @@ Household _household(String id, {String? name}) => Household(
   updatedAt: _t,
 );
 
-HouseholdMember _member(String householdId, String userId, {String? id}) =>
-    HouseholdMember(
-      id: id ?? 'm-$householdId-$userId',
-      userId: userId,
-      householdId: householdId,
-      role: HouseholdRole.householdMember,
-      createdAt: _t,
-      updatedAt: _t,
-    );
+HouseholdMember _member(
+  String householdId,
+  String userId, {
+  String? id,
+  String? username,
+  String? displayName,
+  String? avatarUrl,
+}) => HouseholdMember(
+  id: id ?? 'm-$householdId-$userId',
+  userId: userId,
+  householdId: householdId,
+  role: HouseholdRole.householdMember,
+  username: username,
+  displayName: displayName,
+  avatarUrl: avatarUrl,
+  createdAt: _t,
+  updatedAt: _t,
+);
 
 void main() {
   late ServerDatabase db;
@@ -89,6 +98,35 @@ void main() {
         members.map((m) => m.userId),
         unorderedEquals([_kUserId, _kOtherUserId]),
       );
+    });
+
+    test('names the members a dirty household already has, adding no one '
+        '(#304)', () async {
+      // Who is on a held roster is the queue's, but not what they are
+      // called: without this a pending edit, or every queued household
+      // right after the v9 migration, lists its members unnamed until the
+      // queue drains.
+      await _seedHousehold(db, id: 'h-1', name: 'Local edit', isDirty: true);
+      await _seedMember(db, householdId: 'h-1', userId: _kUserId);
+      await _seedMember(db, householdId: 'h-1', userId: _kOtherUserId);
+
+      final write = await repo.cacheHouseholdWithRoster(
+        _household('h-1', name: 'Server'),
+        [
+          _member('h-1', _kUserId, username: 'alexd', displayName: 'Alex'),
+          _member('h-1', 'user-third', username: 'cy'),
+        ],
+      );
+
+      expect(write, equals(HouseholdRosterWrite.held));
+      expect((await repo.getHousehold('h-1'))!.name, equals('Local edit'));
+      final byUser = {
+        for (final m in await repo.getMembers('h-1')) m.userId: m,
+      };
+      expect(byUser.keys, unorderedEquals([_kUserId, _kOtherUserId]));
+      expect(byUser[_kUserId]?.username, 'alexd');
+      expect(byUser[_kUserId]?.displayName, 'Alex');
+      expect(byUser[_kOtherUserId]?.username, isNull);
     });
 
     test('leaves a local-only household and its roster alone', () async {
@@ -154,6 +192,53 @@ void main() {
         unorderedEquals([_kUserId, _kOtherUserId, 'user-third']),
       );
     });
+
+    test("a roster write keeps each member's names (#304)", () async {
+      await repo.cacheHouseholdWithRoster(_household('h-1'), [
+        _member(
+          'h-1',
+          _kUserId,
+          username: 'alexd',
+          displayName: 'Alex',
+          avatarUrl: 'https://x/a.png',
+        ),
+        _member('h-1', _kOtherUserId, username: 'bea'),
+      ]);
+
+      final members = await repo.watchMembers('h-1').first;
+      final byUser = {for (final m in members) m.userId: m};
+
+      expect(byUser[_kUserId]?.username, 'alexd');
+      expect(byUser[_kUserId]?.displayName, 'Alex');
+      expect(byUser[_kUserId]?.avatarUrl, 'https://x/a.png');
+      expect(byUser[_kOtherUserId]?.username, 'bea');
+      expect(byUser[_kOtherUserId]?.displayName, isNull);
+      expect(byUser[_kOtherUserId]?.avatarUrl, isNull);
+    });
+
+    test(
+      'a display name the server stopped sending is cleared (#304)',
+      () async {
+        await repo.cacheHouseholdWithRoster(_household('h-1'), [
+          _member(
+            'h-1',
+            _kUserId,
+            username: 'alexd',
+            displayName: 'Alex',
+            avatarUrl: 'https://x/a.png',
+          ),
+        ]);
+
+        await repo.cacheHouseholdWithRoster(_household('h-1'), [
+          _member('h-1', _kUserId, username: 'alexd'),
+        ]);
+
+        final member = (await repo.getMembers('h-1')).single;
+        expect(member.username, 'alexd');
+        expect(member.displayName, isNull);
+        expect(member.avatarUrl, isNull);
+      },
+    );
   });
 
   group('purgeHouseholdsAbsentFrom', () {

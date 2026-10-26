@@ -68,7 +68,8 @@ import 'watch_disposal.dart';
 /// as `false`. [cacheHousehold] never overwrites a row carrying either
 /// flag (#298): the sync queue owns that row until the server acknowledges
 /// it. [cacheHouseholdWithRoster] and [purgeHouseholdsAbsentFrom] leave it
-/// alone for the same reason, roster included.
+/// alone for the same reason, roster included, though the roster write
+/// still refreshes the names of the members it has (#304).
 ///
 /// ## Removals made elsewhere (#268)
 ///
@@ -233,7 +234,8 @@ class HouseholdRepositoryImpl
   /// Whether the sync queue owns [row]: it carries local changes the server
   /// has not acknowledged (#298). [_writeServerHousehold],
   /// [cacheHouseholdWithRoster] and [purgeHouseholdsAbsentFrom] leave it
-  /// alone, roster included; only the acknowledgement settles it.
+  /// alone, roster included, save for the members' names; only the
+  /// acknowledgement settles it.
   /// [cacheMember] and [cacheMembers] do not check it yet (#122).
   static bool _isQueueOwned(HouseholdsTableData row) =>
       row.isDirty || row.isLocalOnly;
@@ -324,6 +326,7 @@ class HouseholdRepositoryImpl
         _db.householdsTable,
       )..where((t) => t.id.equals(household.id))).getSingleOrNull();
       if (cached != null && _isQueueOwned(cached)) {
+        await _refreshMemberNames(household.id, roster);
         return HouseholdRosterWrite.held;
       }
 
@@ -344,6 +347,28 @@ class HouseholdRepositoryImpl
       return HouseholdRosterWrite.replaced;
     });
   }
+
+  /// Writes [roster]'s names onto the member rows [householdId] already
+  /// has, adding and removing no one (#304). The queue owns who a held
+  /// household's members are, not what they are called, so a pending edit
+  /// does not leave the roster unnamed until it drains.
+  Future<void> _refreshMemberNames(
+    String householdId,
+    List<HouseholdMember> roster,
+  ) => _db.batch((b) {
+    for (final m in roster) {
+      b.update(
+        _db.householdMembersTable,
+        HouseholdMembersTableCompanion(
+          username: Value(m.username),
+          displayName: Value(m.displayName),
+          avatarUrl: Value(m.avatarUrl),
+        ),
+        where: (t) =>
+            t.householdId.equals(householdId) & t.userId.equals(m.userId),
+      );
+    }
+  });
 
   @override
   Future<Map<String, String>> purgeableMemberships() async {
@@ -794,6 +819,9 @@ class HouseholdRepositoryImpl
     householdId: row.householdId,
     showAllGames: row.showAllGames,
     role: _decodeRole(row.roleName),
+    username: row.username,
+    displayName: row.displayName,
+    avatarUrl: row.avatarUrl,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );
@@ -822,6 +850,11 @@ class HouseholdRepositoryImpl
         householdId: m.householdId,
         showAllGames: Value(m.showAllGames),
         roleName: Value(_encodeRole(m.role)),
+        // Written as they arrive, nulls included: a display name the server
+        // stopped sending is cleared, not kept (#304).
+        username: Value(m.username),
+        displayName: Value(m.displayName),
+        avatarUrl: Value(m.avatarUrl),
         createdAt: m.createdAt,
         updatedAt: m.updatedAt,
       );

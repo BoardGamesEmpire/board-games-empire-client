@@ -240,12 +240,7 @@ class _AttendeeEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
-    // A guest has no account to take a name from, only the one given when
-    // they were added.
-    final name =
-        _present(attendee.displayName) ??
-        _present(attendee.username) ??
-        _present(attendee.guestName);
+    final name = attendee.name;
     final role = attendee.role;
     final details = [
       if (role != null) ?eventRoleLabel(l10n, role),

@@ -53,7 +53,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **8**.
+/// `schemaVersion` is **9**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -106,6 +106,11 @@ part 'server_database.g.dart';
 ///   `addColumn`, no table rebuilt. A row cached before it holds null, read
 ///   as settings not read yet, until the next hydrate writes the policy the
 ///   list carries.
+/// - **v8 → v9 (#304):** adds nullable `household_members.username`,
+///   `display_name` and `avatar_url`, the member's identity as the household
+///   list embeds it. Additive: three `addColumn` calls, no table rebuilt. A
+///   row cached before it holds null names until the next hydrate writes the
+///   ones the list carries.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -121,7 +126,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v8.json`, and
+/// `drift_schemas/server/drift_schema_v9.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -166,7 +171,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -274,6 +279,23 @@ class ServerDatabase extends _$ServerDatabase {
         // and nullable: every existing row holds null until the next
         // hydrate writes it, so there is nothing to backfill.
         await m.addColumn(householdsTable, householdsTable.memberInvitePolicy);
+      }
+      if (from < 9 && to >= 9) {
+        // v8 → v9 (#304): each member's name and avatar. Additive and
+        // nullable: every existing row holds null until the next hydrate
+        // writes them, so there is nothing to backfill.
+        await m.addColumn(
+          householdMembersTable,
+          householdMembersTable.username,
+        );
+        await m.addColumn(
+          householdMembersTable,
+          householdMembersTable.displayName,
+        );
+        await m.addColumn(
+          householdMembersTable,
+          householdMembersTable.avatarUrl,
+        );
       }
     },
   );

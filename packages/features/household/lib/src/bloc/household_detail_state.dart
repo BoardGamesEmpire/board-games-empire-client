@@ -23,11 +23,12 @@ final class HouseholdDetailLoading extends HouseholdDetailState {
 
 /// The household, as the cache currently holds it.
 ///
-/// [memberCount] comes from the roster rather than a field: `Household`
-/// carries no count, and the server's is not cached. [role] is the current
-/// user's own, read off the same roster (#270 D4) — null when their member
-/// row carries no role binding, or when the row could not be identified at
-/// all.
+/// [members] is the roster as the cache holds it, ordered for display
+/// (#304). Its length is [memberCount], since `Household` carries no count
+/// and the server's is not cached. [currentUserId] says which row is the
+/// user's own, and is null while that is unknown. [role] is the current
+/// user's own, read off the same roster (#270) — null when their member row
+/// carries no role binding, or when the row could not be identified at all.
 ///
 /// [refreshFailed] says the last hydrate pass ended early, so this copy may
 /// be stale. Orthogonal to everything else here: a household can be shown
@@ -40,23 +41,31 @@ final class HouseholdDetailLoading extends HouseholdDetailState {
 final class HouseholdDetailReady extends HouseholdDetailState {
   const HouseholdDetailReady({
     required this.household,
-    required this.memberCount,
-    this.role,
+    required this.members,
+    this.currentUserId,
     this.refreshFailed = false,
     this.refreshing = false,
   });
 
   final Household household;
-  final int memberCount;
-  final HouseholdRole? role;
+  final List<HouseholdMember> members;
+  final String? currentUserId;
   final bool refreshFailed;
   final bool refreshing;
+
+  int get memberCount => members.length;
+
+  HouseholdRole? get role {
+    final userId = currentUserId;
+    if (userId == null) return null;
+    return members.where((m) => m.userId == userId).firstOrNull?.role;
+  }
 
   @override
   List<Object?> get props => [
     household,
-    memberCount,
-    role,
+    members,
+    currentUserId,
     refreshFailed,
     refreshing,
   ];

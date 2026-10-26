@@ -21,11 +21,15 @@ HouseholdMember _member(
   String userId, {
   HouseholdRole? role = HouseholdRole.householdMember,
   String householdId = _id,
+  String? username,
+  String? displayName,
 }) => HouseholdMember(
   id: 'm-$userId',
   userId: userId,
   householdId: householdId,
   role: role,
+  username: username,
+  displayName: displayName,
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
@@ -374,6 +378,80 @@ void main() {
         bloc.stream,
         emitsThrough(
           isA<HouseholdDetailReady>().having((s) => s.role, 'role', isNull),
+        ),
+      );
+    });
+  });
+
+  group('the roster (#304)', () {
+    Future<HouseholdDetailReady> readyWith(List<HouseholdMember> roster) async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add(roster);
+
+      return await bloc.stream.firstWhere((s) => s is HouseholdDetailReady)
+          as HouseholdDetailReady;
+    }
+
+    test('orders the roster by role, then by name ignoring case', () async {
+      final ready = await readyWith([
+        _member('u-1', displayName: 'bea'),
+        _member('u-2', role: HouseholdRole.householdOwner, displayName: 'Zed'),
+        _member('u-3', username: 'Ann'),
+        _member('u-4', role: HouseholdRole.householdAdmin, username: 'carl'),
+      ]);
+
+      expect(ready.members.map((m) => m.userId), ['u-2', 'u-4', 'u-3', 'u-1']);
+      expect(ready.memberCount, 4);
+    });
+
+    test('nameless members follow the named ones in their role', () async {
+      // Two nameless members compare equal on name, so the user id settles
+      // them, and the order never depends on how the cache returned them.
+      final ready = await readyWith([
+        _member('u-3'),
+        _member('u-2', username: 'zed'),
+        _member('u-1'),
+      ]);
+
+      expect(ready.members.map((m) => m.userId), ['u-2', 'u-1', 'u-3']);
+    });
+
+    test('a member with no role sorts after every role', () async {
+      final ready = await readyWith([
+        _member('u-1', role: null, username: 'ann'),
+        _member('u-2', role: HouseholdRole.unknown, username: 'bea'),
+        _member('u-3', role: HouseholdRole.householdGuest, username: 'cy'),
+      ]);
+
+      expect(ready.members.map((m) => m.userId), ['u-3', 'u-2', 'u-1']);
+    });
+
+    test("carries the current user's id", () async {
+      final ready = await readyWith([_member('u-me')]);
+
+      expect(ready.currentUserId, 'u-me');
+    });
+
+    test('a member renamed in the cache re-emits the roster', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add([_member('u-me', displayName: 'Alex')]);
+      await settle();
+      members.add([_member('u-me', displayName: 'Alexandra')]);
+
+      await expectLater(
+        bloc.stream,
+        emitsThrough(
+          isA<HouseholdDetailReady>().having(
+            (s) => s.members.single.name,
+            'members.single.name',
+            'Alexandra',
+          ),
         ),
       );
     });

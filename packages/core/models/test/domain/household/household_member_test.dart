@@ -3,16 +3,24 @@ import 'package:models/domain.dart';
 
 DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');
 
-HouseholdMember _make({HouseholdRole? role, bool showAllGames = true}) =>
-    HouseholdMember(
-      id: 'hm_1',
-      userId: 'user_1',
-      householdId: 'h_1',
-      role: role,
-      showAllGames: showAllGames,
-      createdAt: _now,
-      updatedAt: _now,
-    );
+HouseholdMember _make({
+  HouseholdRole? role,
+  bool showAllGames = true,
+  String? username,
+  String? displayName,
+  String? avatarUrl,
+}) => HouseholdMember(
+  id: 'hm_1',
+  userId: 'user_1',
+  householdId: 'h_1',
+  role: role,
+  showAllGames: showAllGames,
+  username: username,
+  displayName: displayName,
+  avatarUrl: avatarUrl,
+  createdAt: _now,
+  updatedAt: _now,
+);
 
 void main() {
   group('HouseholdMember', () {
@@ -54,6 +62,26 @@ void main() {
       final json = _make(role: HouseholdRole.householdOwner).toJson();
       expect(json['showAllGames'], isTrue);
       expect(json['role'], equals('HouseholdOwner'));
+    });
+
+    group("the member's name (#304)", () {
+      test('name prefers the display name', () {
+        expect(_make(username: 'alexd', displayName: 'Alex').name, 'Alex');
+        expect(_make(username: 'alexd').name, 'alexd');
+      });
+
+      test('name is null for a member with no identity cached', () {
+        expect(_make().name, isNull);
+      });
+
+      test('the names survive a JSON round trip', () {
+        final m = _make(
+          username: 'alexd',
+          displayName: 'Alex',
+          avatarUrl: 'https://x/a.png',
+        );
+        expect(HouseholdMember.fromJson(m.toJson()), equals(m));
+      });
     });
   });
 }
