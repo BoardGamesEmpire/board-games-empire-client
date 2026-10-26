@@ -16,7 +16,8 @@ import '../widgets/oidc_strategy_button.dart';
 ///
 /// Strategy-aware: renders exactly the forms and buttons that the server
 /// advertises via [identity]. If the server disables registration,
-/// the registration form and toggle link are suppressed.
+/// the registration form and toggle link are suppressed, and the same goes
+/// once the server refuses a registration while the screen is up (#443).
 ///
 /// Accessibility:
 /// - Operation failures surface in a banner directly above the submit that
@@ -82,8 +83,21 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   /// Whether the user is in sign-in or register mode.
-  /// Only relevant when [EmailAndPasswordStrategy.signUpDisabled] is false.
+  /// Only relevant while registration is offered: when
+  /// [EmailAndPasswordStrategy.signUpDisabled] is false and
+  /// [_registrationClosed] is not set.
   bool _isSignIn = true;
+
+  /// Whether the server has refused a registration on this screen.
+  ///
+  /// Discovery was read before the form was shown, and a server can close
+  /// registration after that (#443). Once it refuses, the register form
+  /// stays up to show the refusal, and its submit still works: another try
+  /// gets the same refusal. Once the user switches to sign-in, the screen
+  /// no longer offers registration. Set once and never cleared, so it lasts
+  /// only as long as the screen. A newly built one reads the cached identity
+  /// again and offers registration until #87 refreshes it.
+  bool _registrationClosed = false;
 
   /// Read when the screen appears rather than in build: the page rebuilds on
   /// every failure, and the count only changes when a session starts. That
@@ -106,10 +120,19 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<AuthBloc, AuthBlocState>(
-      listenWhen: (previous, current) =>
-          previous is AuthAuthenticated && current is! AuthAuthenticated,
-      listener: (_, _) => setState(_readUnsentChangesCount),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<AuthBloc, AuthBlocState>(
+          listenWhen: (previous, current) =>
+              previous is AuthAuthenticated && current is! AuthAuthenticated,
+          listener: (_, _) => setState(_readUnsentChangesCount),
+        ),
+        BlocListener<AuthBloc, AuthBlocState>(
+          listenWhen: (_, current) =>
+              current is AuthFailureRegistrationDisabled,
+          listener: (_, _) => setState(() => _registrationClosed = true),
+        ),
+      ],
       child: _buildCounted(context),
     );
   }
@@ -241,7 +264,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _buildEmailPasswordSection(BuildContext context, AuthBlocState state) {
     final strategy = widget.identity.emailAndPasswordStrategy!;
-    final canRegister = !strategy.signUpDisabled;
+    final canRegister = !strategy.signUpDisabled && !_registrationClosed;
     final l10n = AuthLocalizations.of(context);
 
     // Only sign-in and register emit an operation failure, so the form that
