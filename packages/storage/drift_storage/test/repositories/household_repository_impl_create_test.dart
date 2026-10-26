@@ -97,6 +97,16 @@ void main() {
       expect(member.role, HouseholdRole.householdOwner);
     });
 
+    test("a created household's owner row has no name yet (#304)", () async {
+      // Only the list writes a member's names; the next hydrate replaces
+      // this row with the server's, which carries them.
+      final created = await repo.create(name: 'HQ');
+
+      final member = await repo.getCurrentUserMember(created.household.id);
+      expect(member!.name, isNull);
+      expect(member.avatarUrl, isNull);
+    });
+
     test(
       'makes the household immediately visible through the read gate',
       () async {
