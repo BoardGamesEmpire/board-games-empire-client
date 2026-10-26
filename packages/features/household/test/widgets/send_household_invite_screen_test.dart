@@ -435,6 +435,38 @@ void main() {
       expect(find.text('Invite sent.'), findsOneWidget);
     });
 
+    for (final (label, role) in [
+      ('a guest', HouseholdRole.householdGuest),
+      ('a role the app doesn\'t know', HouseholdRole.unknown),
+      ('a role the cache can\'t say', null),
+    ]) {
+      testWidgets('a send still on its way when the viewer becomes $label '
+          'calls onMemberSent, not onSent', (tester) async {
+        final answer = Completer<HouseholdInvite>();
+        remote.onSend = (_, _) => answer.future;
+        await tester.pumpWidget(
+          harness(viewerRole: member, policy: MemberInvitePolicy.direct),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(SendHouseholdInviteScreen.emailKey),
+          'ana@example.com',
+        );
+        await submit(tester);
+
+        await tester.pumpWidget(
+          harness(viewerRole: role, policy: MemberInvitePolicy.direct),
+        );
+        await tester.pump();
+
+        answer.complete(invite('i_1'));
+        await sentAndSpinning(tester);
+
+        expect(memberSent, 1);
+        expect(sent, 0);
+      });
+    }
+
     testWidgets('a policy back on while a send is on its way offers no '
         'second send', (tester) async {
       final answer = Completer<HouseholdInvite>();

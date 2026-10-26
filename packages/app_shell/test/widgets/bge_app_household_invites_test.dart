@@ -453,6 +453,46 @@ void main() {
       expect(find.byType(SentInvitesScreen), findsNothing);
     });
 
+    testWidgets('a viewer made a member under a form opened from the invites '
+        'lands on Sent with the household beneath', (tester) async {
+      var role = HouseholdRole.householdOwner;
+      final members = StreamController<List<HouseholdMember>>.broadcast();
+      addTearDown(members.close);
+      final router = await pumpApp(
+        tester,
+        stub: (repository) {
+          asMember(MemberInvitePolicy.direct)(repository);
+          when(() => repository.watchMembers(any())).thenAnswer((_) async* {
+            yield [_viewer('hh_a', role)];
+            yield* members.stream;
+          });
+          when(() => repository.getCurrentUserMember(any()))
+              .thenAnswer((_) async => _viewer('hh_a', role));
+        },
+      );
+      router.go(AppRoutes.householdInvitesOf('hh_a'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdInviteListScreen.inviteKey));
+      await tester.pumpAndSettle();
+
+      role = HouseholdRole.householdMember;
+      members.add([_viewer('hh_a', role)]);
+      await tester.pumpAndSettle();
+
+      await sendTo(tester, 'ana@example.com');
+
+      expect(find.byType(SentInvitesScreen), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+      expect(
+        find.byType(HouseholdInviteListScreen, skipOffstage: false),
+        findsNothing,
+      );
+    });
+
     testWidgets('a policy switch to Off replaces an open form', (tester) async {
       var households = [
         _household('hh_a', 'Alpha Crew', policy: MemberInvitePolicy.direct),

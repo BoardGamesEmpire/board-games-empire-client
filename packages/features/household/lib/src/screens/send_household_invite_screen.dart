@@ -87,7 +87,8 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   /// context. A confirmation SnackBar is already showing, above the route.
   final void Function(BuildContext context) onSent;
 
-  /// Called in place of [onSent] once a member's invite is sent. A member
+  /// Called in place of [onSent] once a member's invite is sent, or that of
+  /// anyone else who isn't an owner or admin by the time it lands. They
   /// can't read the household's invites, so the caller takes them where
   /// their own sent invites show (#569).
   final void Function(BuildContext context) onMemberSent;
@@ -107,6 +108,11 @@ class SendHouseholdInviteScreen extends StatelessWidget {
     );
 
     final member = viewerRole == HouseholdRole.householdMember;
+
+    // Only a viewer who may read the household's invites goes back to them.
+    // Anyone else, including a member whose role changed under a send on
+    // its way, goes where their own sent invites show.
+    final manages = HouseholdInvitePermissions.mayManage(viewerRole);
 
     // The blocs sit above the gate, so a send on its way when the viewer
     // loses the form still lands, and the form it comes back to is still
@@ -137,10 +143,10 @@ class SendHouseholdInviteScreen extends StatelessWidget {
               ),
             ),
           );
-          if (member) {
-            onMemberSent(context);
-          } else {
+          if (manages) {
             onSent(context);
+          } else {
+            onMemberSent(context);
           }
         },
         child: roles.isEmpty

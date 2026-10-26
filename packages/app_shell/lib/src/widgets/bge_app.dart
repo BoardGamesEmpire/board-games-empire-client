@@ -1060,9 +1060,9 @@ class _BgeAppState extends State<BgeApp> {
   /// The route is the detail screen's child. An owner or admin leaves after
   /// a send by a pop, back to the invites they pushed it from, which read
   /// themselves again as they come back into view, or to the household. A
-  /// member is replaced by the Sent screen instead, because they can't read
-  /// the household's invites; Back from it still returns to the household
-  /// (#569).
+  /// member, or anyone else who can't read the household's invites by the
+  /// time the send lands, goes back to the household and on to the Sent
+  /// screen instead, so Back from it returns to the household (#569).
   Widget? _buildSendHouseholdInviteRoute(
     BuildContext context,
     String householdId,
@@ -3009,7 +3009,17 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       remote: widget.remote,
       onRefresh: widget.onRefresh,
       onSent: (ctx) => ctx.pop(),
-      onMemberSent: (ctx) => ctx.pushReplacement(AppRoutes.invitesSent),
+      // Back from Sent returns to the household, even under a form opened
+      // from its invites by a viewer who has since lost them (#569). Pops,
+      // rather than a `go`, keep the household and what is beneath it.
+      onMemberSent: (ctx) {
+        final router = GoRouter.of(ctx);
+        while (router.state.fullPath != AppRoutes.householdDetail &&
+            router.canPop()) {
+          router.pop();
+        }
+        unawaited(router.push<void>(AppRoutes.invitesSent));
+      },
     );
   }
 }

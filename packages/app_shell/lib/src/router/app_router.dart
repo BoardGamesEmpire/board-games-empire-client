@@ -607,7 +607,8 @@ GoRouter buildAppRouter({
             // edit form (#476), side by side and nested for the reason the
             // household children are (#308): a `go` to any of them builds
             // the household beneath it, so leaving is a plain pop. A
-            // member's send is the exception, replaced by the Sent screen.
+            // member's send is the exception, which leaves for the Sent
+            // screen above the household.
             routes: [
               GoRoute(
                 path: AppRoutes._householdInvitesSegment,
