@@ -86,6 +86,14 @@ Response<String> _status(int code, [Map<String, dynamic>? data]) => Response(
   requestOptions: RequestOptions(path: ''),
 );
 
+/// A response whose body is passed through as given, for bodies that are
+/// not a JSON envelope at all.
+Response<String> _raw(int code, String? body) => Response(
+  data: body,
+  statusCode: code,
+  requestOptions: RequestOptions(path: ''),
+);
+
 void main() {
   late MockDio mockDio;
   late WebAuthRepositoryImpl repo;
@@ -161,6 +169,79 @@ void main() {
 
         expect(
           () => repo.signIn(email: 'a@b.com', password: 'wrong'),
+          throwsA(isA<AuthInvalidCredentialsException>()),
+        );
+      });
+
+      // BetterAuth refuses an unverified sign-in with a 403 after the
+      // password check passes (#394). The status alone reads as a wrong
+      // password, so only the body code can tell the two apart.
+      test('a 403 EMAIL_NOT_VERIFIED is an unverified email, not a wrong '
+          'password', () {
+        when(
+          () => mockDio.post<String>(
+            any(),
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer(
+          (_) async => _status(403, {
+            'code': 'EMAIL_NOT_VERIFIED',
+            'message': 'Email not verified',
+          }),
+        );
+
+        expect(
+          () => repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(isA<AuthEmailNotVerifiedException>()),
+        );
+      });
+
+      test('a 403 without a known code stays invalid credentials', () {
+        when(
+          () => mockDio.post<String>(
+            any(),
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(403, {'code': 'SOMETHING_ELSE'}));
+
+        expect(
+          () => repo.signIn(email: 'a@b.com', password: 'pass'),
+          throwsA(isA<AuthInvalidCredentialsException>()),
+        );
+      });
+
+      test('a 403 that is not a readable envelope stays invalid '
+          'credentials', () async {
+        for (final body in ['<html><body>Forbidden</body></html>', '', null]) {
+          when(
+            () => mockDio.post<String>(
+              any(),
+              data: any(named: 'data'),
+              options: any(named: 'options'),
+            ),
+          ).thenAnswer((_) async => _raw(403, body));
+
+          await expectLater(
+            repo.signIn(email: 'a@b.com', password: 'pass'),
+            throwsA(isA<AuthInvalidCredentialsException>()),
+            reason: 'body: ${body == null ? 'null' : "'$body'"}',
+          );
+        }
+      });
+
+      test('a 401 carrying a code stays invalid credentials', () {
+        when(
+          () => mockDio.post<String>(
+            any(),
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer((_) async => _status(401, {'code': 'EMAIL_NOT_VERIFIED'}));
+
+        expect(
+          () => repo.signIn(email: 'a@b.com', password: 'pass'),
           throwsA(isA<AuthInvalidCredentialsException>()),
         );
       });
@@ -283,6 +364,36 @@ void main() {
           () => repo.signUp(email: 'a@b.com', password: 'p', username: 'u'),
           throwsA(isA<AuthServerException>()),
         );
+      });
+
+      // Discovery said registration was open, so the request goes out, and
+      // the server's route gate refuses it (#443).
+      test('a 403 REGISTRATION_DISABLED means registration closed after '
+          'discovery was read', () async {
+        when(
+          () => mockDio.post<String>(
+            any(),
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).thenAnswer(
+          (_) async => _status(403, {
+            'code': 'REGISTRATION_DISABLED',
+            'message': 'Registration is disabled on this server.',
+          }),
+        );
+
+        await expectLater(
+          repo.signUp(email: 'a@b.com', password: 'p', username: 'u'),
+          throwsA(isA<AuthRegistrationDisabledException>()),
+        );
+        verify(
+          () => mockDio.post<String>(
+            '$_kAuthBase/sign-up/email',
+            data: any(named: 'data'),
+            options: any(named: 'options'),
+          ),
+        ).called(1);
       });
     });
 

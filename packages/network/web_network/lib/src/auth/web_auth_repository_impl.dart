@@ -1512,10 +1512,11 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   }
 
   void _assertSuccess(int? status, Object? body, {required String context}) {
-    if (status == HttpStatusCode.unauthorized ||
-        status == HttpStatusCode.forbidden) {
+    if (status == HttpStatusCode.unauthorized) {
       throw const AuthInvalidCredentialsException();
     }
+
+    if (status == HttpStatusCode.forbidden) throw _forbidden(body);
 
     if (_isEmailAlreadyExists(status, body)) {
       throw const AuthEmailAlreadyExistsException();
@@ -1564,6 +1565,12 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// and #360 rejected a shared request-shaping seam.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
+  /// Ceiling on the synchronous probe below. A rejection envelope is a few
+  /// hundred bytes, so anything past this is not the envelope being looked
+  /// for, and reading it would be paying main-thread parse time for a body
+  /// that cannot answer the question.
+  static const int _probeMaxChars = 4 * 1024;
+
   /// Whether a rejected auth response means "this email is already
   /// registered".
   ///
@@ -1576,20 +1583,42 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
   /// NOT a bare status-422 match: other validation failures could share the
   /// status, and showing "account already exists" for those would be worse
   /// than the generic server-error copy.
-  /// Ceiling on the synchronous probe below. A rejection envelope is a few
-  /// hundred bytes, so anything past this is not the envelope being looked
-  /// for, and reading it would be paying main-thread parse time for a body
-  /// that cannot answer the question.
-  static const int _probeMaxChars = 4 * 1024;
-
   bool _isEmailAlreadyExists(int? status, Object? body) {
     if (status == HttpStatusCode.conflict) return true;
-    final decoded = body is String ? _probeJson(body) : body;
-    final code = decoded is Map ? decoded['code'] : null;
-    return code is String && code.startsWith('USER_ALREADY_EXISTS');
+    final code = _rejectionCode(body);
+    return code != null && code.startsWith('USER_ALREADY_EXISTS');
   }
 
-  /// Best-effort synchronous decode, for the duplicate-email probe alone.
+  /// What a 403 on a credential grant means, read by its body code (#394).
+  ///
+  /// BetterAuth answers two refusals with a 403 that are not a wrong
+  /// password: `EMAIL_NOT_VERIFIED` on sign-in, after the password check has
+  /// passed, and `REGISTRATION_DISABLED` from the `/sign-up/email` route gate
+  /// once the server has closed registration (#443). Each code comes from one
+  /// route only, so the code decides, not which grant made the request.
+  ///
+  /// The code is read under the same bound as the duplicate-email envelope.
+  /// The status still decides first: only a 403 gets here, and the body only
+  /// refines it. A 403 without a readable envelope (a proxy's HTML page, an
+  /// envelope past [_probeMaxChars], no body at all) stays the invalid
+  /// credentials it always was.
+  AuthException _forbidden(Object? body) => switch (_rejectionCode(body)) {
+    'EMAIL_NOT_VERIFIED' => const AuthEmailNotVerifiedException(),
+    'REGISTRATION_DISABLED' => const AuthRegistrationDisabledException(),
+    _ => const AuthInvalidCredentialsException(),
+  };
+
+  /// The `code` of a rejection envelope, or null when [body] is not one.
+  ///
+  /// A `String` is the raw body and goes through [_probeJson]; a `Map` is a
+  /// body [_requireGrantBody] has already decoded, and is taken as it is.
+  String? _rejectionCode(Object? body) {
+    final decoded = body is String ? _probeJson(body) : body;
+    final code = decoded is Map ? decoded['code'] : null;
+    return code is String ? code : null;
+  }
+
+  /// Best-effort synchronous decode, for [_rejectionCode] alone.
   ///
   /// [_mapDioException] reads the body off a **thrown** `DioException`, where
   /// it now arrives as the raw `String` the request asked for rather than the
@@ -1613,8 +1642,9 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     }
   }
 
-  /// [credentialGrant] gates the duplicate-email probe, which is meaningful
-  /// only where an account is being created or a credential presented.
+  /// [credentialGrant] gates the body probes, the duplicate-email one and a
+  /// 403's code, which are meaningful only where an account is being created
+  /// or a credential presented.
   ///
   /// `_isEmailAlreadyExists` treats **any** 409 as a duplicate, so without
   /// this a 409 from the session endpoint — a route that cannot mean
@@ -1629,9 +1659,16 @@ class WebAuthRepositoryImpl implements AuthRepository, Disposable {
     required bool credentialGrant,
   }) {
     final status = e.response?.statusCode;
-    if (status == HttpStatusCode.unauthorized ||
-        status == HttpStatusCode.forbidden) {
+    if (status == HttpStatusCode.unauthorized) {
       return const AuthInvalidCredentialsException();
+    }
+
+    // A session 403 is the definitive negative `getSession` settles on,
+    // whatever its body says, so only a grant's body is read.
+    if (status == HttpStatusCode.forbidden) {
+      return credentialGrant
+          ? _forbidden(e.response?.data)
+          : const AuthInvalidCredentialsException();
     }
 
     if (credentialGrant && _isEmailAlreadyExists(status, e.response?.data)) {

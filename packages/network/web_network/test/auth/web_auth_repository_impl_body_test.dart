@@ -391,6 +391,90 @@ void main() {
     });
   });
 
+  group('a 403 on a credential grant is read by its code (#394)', () {
+    test('a thrown 403 EMAIL_NOT_VERIFIED still maps', () async {
+      final repo = repoWith(
+        routingDio({
+          '/sign-in/email': ('{"code":"EMAIL_NOT_VERIFIED"}', 403),
+        }, permissiveStatus: false),
+      );
+
+      await expectLater(
+        repo.signIn(email: 'a@b.c', password: 'pw'),
+        throwsA(isA<AuthEmailNotVerifiedException>()),
+      );
+    });
+
+    test('a thrown 403 REGISTRATION_DISABLED still maps', () async {
+      final repo = repoWith(
+        routingDio({
+          '/sign-up/email': ('{"code":"REGISTRATION_DISABLED"}', 403),
+        }, permissiveStatus: false),
+      );
+
+      await expectLater(
+        repo.signUp(email: 'a@b.c', password: 'pw', username: 'u'),
+        throwsA(isA<AuthRegistrationDisabledException>()),
+      );
+    });
+
+    // The thrown twin of the response-path case in the sibling suite: a
+    // proxy's page or an empty body is not an envelope, so the status
+    // decides.
+    test('a thrown 403 that is not a readable envelope stays invalid '
+        'credentials', () async {
+      for (final body in [_kHtml, '']) {
+        final repo = repoWith(
+          routingDio({'/sign-in/email': (body, 403)}, permissiveStatus: false),
+        );
+
+        await expectLater(
+          repo.signIn(email: 'a@b.c', password: 'pw'),
+          throwsA(isA<AuthInvalidCredentialsException>()),
+          reason: 'body: ${body.isEmpty ? 'empty' : 'HTML'}',
+        );
+      }
+    });
+
+    // The duplicate-email envelope's bound, and the same trade: an envelope
+    // this large is not read, so the status decides on its own.
+    for (final permissive in [true, false]) {
+      test('a 403 envelope past the probe bound stays invalid credentials '
+          '(${permissive ? 'response' : 'thrown'} path)', () async {
+        final huge = '{"code":"EMAIL_NOT_VERIFIED","pad":"${'x' * 5000}"}';
+        final repo = repoWith(
+          routingDio({
+            '/sign-in/email': (huge, 403),
+          }, permissiveStatus: permissive),
+        );
+
+        await expectLater(
+          repo.signIn(email: 'a@b.c', password: 'pw'),
+          throwsA(isA<AuthInvalidCredentialsException>()),
+        );
+      });
+    }
+
+    // The session endpoint never reads a rejection body: a 403 there is the
+    // definitive negative whatever it carries.
+    for (final permissive in [true, false]) {
+      test('a session 403 carrying a code still reads as signed out '
+          '(${permissive ? 'response' : 'thrown'} path)', () async {
+        final repo = repoWith(
+          routingDio({
+            '/get-session': ('{"code":"EMAIL_NOT_VERIFIED"}', 403),
+          }, permissiveStatus: permissive),
+        );
+
+        expect(await repo.getSession(), isNull);
+        expect(
+          await repo.watchAuthState().first,
+          const AuthStateUnauthenticated(),
+        );
+      });
+    }
+  });
+
   group('the decode is a suspension point the epoch has to bound (#146)', () {
     // Regression for a window this PR opened: moving the decode below the
     // first epoch guard put an await between that guard and the state
