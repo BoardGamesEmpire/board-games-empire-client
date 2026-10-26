@@ -52,12 +52,14 @@ abstract final class AppRoutes {
   static const householdInvites = '$householdDetail/$_householdInvitesSegment';
 
   /// The form for inviting someone to one household (#455), beneath its
-  /// invites. Build a concrete location with [householdInviteSendOf].
+  /// detail screen beside its invites (#569), since a member may send but
+  /// can't read the invites. Build a concrete location with
+  /// [householdInviteSendOf].
   static const householdInviteSend =
-      '$householdInvites/$_householdInviteSendSegment';
+      '$householdDetail/$_householdInviteSendSegment';
 
   static const _householdInvitesSegment = 'invites';
-  static const _householdInviteSendSegment = 'new';
+  static const _householdInviteSendSegment = 'invite';
 
   /// The form for editing one household (#476), beneath its detail screen.
   /// Build a concrete location with [householdEditOf].
@@ -71,7 +73,7 @@ abstract final class AppRoutes {
 
   /// The location of one household's send-invite form.
   static String householdInviteSendOf(String householdId) =>
-      '${householdInvitesOf(householdId)}/$_householdInviteSendSegment';
+      '${householdDetailOf(householdId)}/$_householdInviteSendSegment';
 
   /// The location of one household's edit form.
   static String householdEditOf(String householdId) =>
@@ -630,10 +632,12 @@ GoRouter buildAppRouter({
               return householdDetailBuilder?.call(context, id) ??
                   const NotYetAvailableScreen();
             },
-            // #455: a household's invites and its send form, nested for the
-            // reason the household children are (#308): a `go` to either
-            // builds what is above it, so leaving is a plain pop. The edit
-            // form (#476) sits beside the invites.
+            // #455: the household's invites, its send form (#569) and its
+            // edit form (#476), side by side and nested for the reason the
+            // household children are (#308): a `go` to any of them builds
+            // the household beneath it, so leaving is a plain pop. A
+            // member's send is the exception, which leaves for the Sent
+            // screen above the household.
             routes: [
               GoRoute(
                 path: AppRoutes._householdInvitesSegment,
@@ -643,21 +647,23 @@ GoRouter buildAppRouter({
                   return householdInvitesBuilder?.call(context, id) ??
                       const NotYetAvailableScreen();
                 },
-                routes: [
-                  GoRoute(
-                    path: AppRoutes._householdInviteSendSegment,
-                    builder: (context, state) {
-                      final id =
-                          state.pathParameters[AppRoutes.householdIdParam] ??
-                          '';
-                      return sendHouseholdInviteBuilder?.call(context, id) ??
-                          const NotYetAvailableScreen();
-                    },
-                  ),
-                ],
               ),
-              // #476: the household's edit form, nested beside its invites
-              // for the same reason, so a save leaves by a plain pop.
+              // #569: the send form sits beside the invites rather than
+              // under them. A member may send but can't read the invites,
+              // so a `go` here builds the household beneath the form, not
+              // a list that would answer them 403. The invites' own button
+              // pushes it, which keeps the invites beneath.
+              GoRoute(
+                path: AppRoutes._householdInviteSendSegment,
+                builder: (context, state) {
+                  final id =
+                      state.pathParameters[AppRoutes.householdIdParam] ?? '';
+                  return sendHouseholdInviteBuilder?.call(context, id) ??
+                      const NotYetAvailableScreen();
+                },
+              ),
+              // #476: the household's edit form. A save leaves by a plain
+              // pop.
               GoRoute(
                 path: AppRoutes._householdEditSegment,
                 builder: (context, state) {

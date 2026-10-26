@@ -47,23 +47,116 @@ void main() {
     });
   });
 
+  group('maySend', () {
+    const policies = <MemberInvitePolicy?>[null, ...MemberInvitePolicy.values];
+
+    test('an owner or admin may send whatever the policy', () {
+      for (final policy in policies) {
+        expect(
+          HouseholdInvitePermissions.maySend(owner, policy),
+          isTrue,
+          reason: 'owner, $policy',
+        );
+        expect(
+          HouseholdInvitePermissions.maySend(admin, policy),
+          isTrue,
+          reason: 'admin, $policy',
+        );
+      }
+    });
+
+    test('a member may send under Direct or NeedsApproval', () {
+      expect(
+        HouseholdInvitePermissions.maySend(member, MemberInvitePolicy.direct),
+        isTrue,
+      );
+      expect(
+        HouseholdInvitePermissions.maySend(
+          member,
+          MemberInvitePolicy.needsApproval,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a member may not send under Off', () {
+      expect(
+        HouseholdInvitePermissions.maySend(member, MemberInvitePolicy.off),
+        isFalse,
+      );
+    });
+
+    test('a member may not send under an unknown or missing policy', () {
+      expect(
+        HouseholdInvitePermissions.maySend(member, MemberInvitePolicy.unknown),
+        isFalse,
+      );
+      expect(HouseholdInvitePermissions.maySend(member, null), isFalse);
+    });
+
+    test('a guest or an unknown role never sends', () {
+      for (final role in [guest, HouseholdRole.unknown, null]) {
+        for (final policy in policies) {
+          expect(
+            HouseholdInvitePermissions.maySend(role, policy),
+            isFalse,
+            reason: '$role, $policy',
+          );
+        }
+      }
+    });
+  });
+
   group('offerableRoles', () {
     test('an owner may offer Admin, Member or Guest', () {
-      expect(HouseholdInvitePermissions.offerableRoles(owner), [
-        admin,
-        member,
-        guest,
-      ]);
+      expect(
+        HouseholdInvitePermissions.offerableRoles(
+          owner,
+          MemberInvitePolicy.off,
+        ),
+        [admin, member, guest],
+      );
     });
 
     test('an admin may offer Member or Guest, not Admin', () {
-      expect(HouseholdInvitePermissions.offerableRoles(admin), [member, guest]);
+      expect(
+        HouseholdInvitePermissions.offerableRoles(
+          admin,
+          MemberInvitePolicy.off,
+        ),
+        [member, guest],
+      );
+    });
+
+    test('a member who may send may offer Member or Guest', () {
+      for (final policy in [
+        MemberInvitePolicy.direct,
+        MemberInvitePolicy.needsApproval,
+      ]) {
+        expect(HouseholdInvitePermissions.offerableRoles(member, policy), [
+          member,
+          guest,
+        ], reason: '$policy');
+      }
+    });
+
+    test('a member under Off offers nothing', () {
+      expect(
+        HouseholdInvitePermissions.offerableRoles(
+          member,
+          MemberInvitePolicy.off,
+        ),
+        isEmpty,
+      );
     });
 
     test('anyone else may offer nothing', () {
-      for (final role in [member, guest, HouseholdRole.unknown, null]) {
+      for (final role in [guest, HouseholdRole.unknown, null]) {
         expect(
-          HouseholdInvitePermissions.offerableRoles(role),
+          HouseholdInvitePermissions.offerableRoles(
+            role,
+            MemberInvitePolicy.direct,
+          ),
           isEmpty,
           reason: '$role',
         );

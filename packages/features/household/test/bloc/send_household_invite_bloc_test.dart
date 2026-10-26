@@ -68,6 +68,59 @@ void main() {
     expect(bloc.state, const SendHouseholdInviteEditing());
   });
 
+  group('the refresh after a refusal (#569)', () {
+    late int refreshes;
+
+    setUp(() => refreshes = 0);
+
+    SendHouseholdInviteBloc refreshing({Future<void> Function()? onRefresh}) =>
+        SendHouseholdInviteBloc(
+          householdId: 'hh_1',
+          remote: remote,
+          onRefresh: onRefresh ?? () async => refreshes++,
+        );
+
+    blocTest<SendHouseholdInviteBloc, SendHouseholdInviteState>(
+      'a 403 runs the refresh once',
+      setUp: () => remote.onSend = (_, _) async => throw refused(403),
+      build: refreshing,
+      act: (bloc) => bloc.add(SendHouseholdInviteSubmitted(draft)),
+      expect: () => [
+        const SendHouseholdInviteSending(),
+        isA<SendHouseholdInviteFailed>(),
+      ],
+      verify: (_) {
+        expect(refreshes, 1);
+        expect(remote.calls, ['send(hh_1)'], reason: 'never sent again');
+      },
+    );
+
+    blocTest<SendHouseholdInviteBloc, SendHouseholdInviteState>(
+      "a refusal that isn't a 403 doesn't refresh",
+      setUp: () => remote.onSend = (_, _) async => throw refused(409),
+      build: refreshing,
+      act: (bloc) => bloc.add(SendHouseholdInviteSubmitted(draft)),
+      expect: () => [
+        const SendHouseholdInviteSending(),
+        isA<SendHouseholdInviteFailed>(),
+      ],
+      verify: (_) => expect(refreshes, 0),
+    );
+
+    blocTest<SendHouseholdInviteBloc, SendHouseholdInviteState>(
+      'a refresh that throws leaves the failure showing',
+      setUp: () => remote.onSend = (_, _) async => throw refused(403),
+      build: () =>
+          refreshing(onRefresh: () async => throw StateError('refresh failed')),
+      act: (bloc) => bloc.add(SendHouseholdInviteSubmitted(draft)),
+      expect: () => [
+        const SendHouseholdInviteSending(),
+        isA<SendHouseholdInviteFailed>(),
+      ],
+      verify: (bloc) => expect(bloc.state, isA<SendHouseholdInviteFailed>()),
+    );
+  });
+
   test('a refusal can be fixed and sent again', () async {
     final error = refused(409);
     remote.onSend = (_, _) async => throw error;

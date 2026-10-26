@@ -83,6 +83,7 @@ void main() {
     HouseholdInviteRemoteDataSource? invites,
     void Function(BuildContext context, String householdId)? onOpenInvites,
     void Function(BuildContext context, String householdId)? onEdit,
+    void Function(BuildContext context, String householdId)? onInvite,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -100,6 +101,7 @@ void main() {
       invites: invites,
       onOpenInvites: onOpenInvites,
       onEdit: onEdit,
+      onInvite: onInvite,
     ),
   );
 
@@ -735,6 +737,124 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(invites.calls, hasLength(2));
+    });
+  });
+
+  group('the Invite row (#569)', () {
+    late FakeHouseholdInviteRemote invites;
+    late List<String> invited;
+
+    setUp(() {
+      invites = FakeHouseholdInviteRemote()
+        ..onFetchHouseholdInvites = (_, _, _, limit) async =>
+            pageOf(const [], limit: limit, total: 0);
+      invited = [];
+    });
+
+    Widget withInvite() => harness(
+      invites: invites,
+      onOpenInvites: (_, _) {},
+      onInvite: (_, householdId) => invited.add(householdId),
+    );
+
+    Household under(MemberInvitePolicy? policy) => _household(_id).copyWith(
+      settings: policy == null
+          ? null
+          : HouseholdSettings(memberInvitePolicy: policy),
+    );
+
+    testWidgets('a member under Direct gets the Invite row, not the invites '
+        'entry', (tester) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(tester, household: under(MemberInvitePolicy.direct));
+
+      expect(
+        find.descendant(
+          of: find.byKey(HouseholdDetailScreen.inviteKey),
+          matching: find.text('Invite someone'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsNothing);
+      expect(invites.calls, isEmpty);
+    });
+
+    testWidgets('a member under NeedsApproval gets the Invite row', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(
+        tester,
+        household: under(MemberInvitePolicy.needsApproval),
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.inviteKey), findsOneWidget);
+    });
+
+    testWidgets('a member under Off gets no Invite row', (tester) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(tester, household: under(MemberInvitePolicy.off));
+
+      expect(find.byKey(HouseholdDetailScreen.inviteKey), findsNothing);
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsNothing);
+    });
+
+    testWidgets('a member gets no Invite row while the policy is unknown', (
+      tester,
+    ) async {
+      for (final policy in [null, MemberInvitePolicy.unknown]) {
+        await tester.pumpWidget(withInvite());
+        await settleWith(tester, household: under(policy));
+
+        expect(
+          find.byKey(HouseholdDetailScreen.inviteKey),
+          findsNothing,
+          reason: '$policy',
+        );
+      }
+    });
+
+    testWidgets('an owner gets the invites entry, not the Invite row', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(
+        tester,
+        household: under(MemberInvitePolicy.direct),
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.invitesKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.inviteKey), findsNothing);
+    });
+
+    testWidgets('a local-only household offers no Invite row', (tester) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(
+        tester,
+        household: under(MemberInvitePolicy.direct).copyWith(isLocalOnly: true),
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.inviteKey), findsNothing);
+    });
+
+    testWidgets('no onInvite, no Invite row', (tester) async {
+      await tester.pumpWidget(harness(invites: invites));
+      await settleWith(tester, household: under(MemberInvitePolicy.direct));
+
+      expect(find.byKey(HouseholdDetailScreen.inviteKey), findsNothing);
+    });
+
+    testWidgets("tapping Invite calls onInvite with the household's id", (
+      tester,
+    ) async {
+      await tester.pumpWidget(withInvite());
+      await settleWith(tester, household: under(MemberInvitePolicy.direct));
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.inviteKey));
+      await tester.pump();
+
+      expect(invited, [_id]);
     });
   });
 
