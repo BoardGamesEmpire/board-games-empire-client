@@ -1296,6 +1296,25 @@ class _BgeAppState extends State<BgeApp> {
   static void _openGame(BuildContext context, String gameId) =>
       unawaited(context.push<void>(AppRoutes.gameDetailOf(gameId)));
 
+  /// Imports a DataGateway result the server does not hold, from the search
+  /// (#43). Once the import completes the dialog closes, and the game it
+  /// became opens in its place, as [_openGame] opens any other. Closing the
+  /// dialog first opens nothing.
+  static Future<void> _importGame(
+    BuildContext context,
+    GamesRemoteDataSource remote,
+    String gatewayId,
+    GameSearchHit hit,
+  ) async {
+    final gameId = await GameImportDialog.show(
+      context,
+      remote: remote,
+      gatewayId: gatewayId,
+      hit: hit,
+    );
+    if (gameId != null && context.mounted) _openGame(context, gameId);
+  }
+
   /// Tells the catalog lists open that a game is gone: see
   /// [_gamesFoundGone]. A detail answering after the app is gone tells no
   /// one.
@@ -1337,18 +1356,21 @@ class _BgeAppState extends State<BgeApp> {
   /// The #42 search screen. Same gate as [_buildGameBrowseRoute], plus the
   /// DataGateways' names where the user may read them.
   ///
-  /// No `onImport`: importing a DataGateway result is #43's, and until it
-  /// supplies one those rows stay inert.
+  /// A DataGateway result the server does not hold imports through
+  /// [_importGame] (#43), over the same games remote the search reads.
   Widget? _buildGameSearchRoute(BuildContext context) {
     final container = _catalogContainer();
     if (container == null) return null;
 
+    final remote = container.get<GamesRemoteDataSource>();
     return GameSearchScreen(
-      remote: container.get<GamesRemoteDataSource>(),
+      remote: remote,
       cache: _gamesCache(container),
       sourceNames: _dataGatewayNames(container),
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
+      onImport: (ctx, sourceId, hit) =>
+          unawaited(_importGame(ctx, remote, sourceId, hit)),
     );
   }
 

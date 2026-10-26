@@ -122,6 +122,7 @@ final class EmailAndPasswordStrategy extends ServerAuthStrategy {
 /// with `{ providerId, callbackURL }`. BetterAuth handles the code exchange.
 final class OidcStrategy extends ServerAuthStrategy {
   const OidcStrategy({
+    this.signUpDisabled = false,
     required this.providerId,
     required this.discoveryUrl,
     required this.authorizationEndpoint,
@@ -129,11 +130,21 @@ final class OidcStrategy extends ServerAuthStrategy {
 
   factory OidcStrategy.fromJson(Map<String, dynamic> json) {
     return OidcStrategy(
+      signUpDisabled: json['sign_up_disabled'] as bool? ?? false,
       providerId: json['provider_id'] as String,
       discoveryUrl: json['discovery_url'] as String,
       authorizationEndpoint: json['authorization_endpoint'] as String,
     );
   }
+
+  /// Whether a first sign-in, which would create the account, is refused.
+  ///
+  /// Existing accounts still sign in through the provider, so the strategy
+  /// stays listed either way. Optional on the wire: a server older than
+  /// backend#585 doesn't send it, and failing the whole discovery parse over
+  /// it would report a working server as an invalid one (#443). Nothing reads
+  /// it until the provider sign-in flow is built (#583).
+  final bool signUpDisabled;
 
   /// Provider identifier passed to BetterAuth's oauth2 sign-in endpoint.
   final String providerId;
@@ -151,11 +162,17 @@ final class OidcStrategy extends ServerAuthStrategy {
   @override
   Map<String, dynamic> toJson() => {
     'type': AuthStrategyType.oidc,
+    'sign_up_disabled': signUpDisabled,
     'provider_id': providerId,
     'discovery_url': discoveryUrl,
     'authorization_endpoint': authorizationEndpoint,
   };
 
   @override
-  List<Object?> get props => [providerId, discoveryUrl, authorizationEndpoint];
+  List<Object?> get props => [
+    signUpDisabled,
+    providerId,
+    discoveryUrl,
+    authorizationEndpoint,
+  ];
 }

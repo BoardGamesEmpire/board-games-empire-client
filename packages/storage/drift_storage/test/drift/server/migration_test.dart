@@ -14,6 +14,7 @@ import 'generated/schema_v6.dart' as v6;
 import 'generated/schema_v7.dart' as v7;
 import 'generated/schema_v8.dart' as v8;
 import 'generated/schema_v9.dart' as v9;
+import 'generated/schema_v10.dart' as v10;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -822,12 +823,8 @@ void main() {
     );
   });
 
-  // Data-integrity coverage for v8 → v9 (#499): the step only creates
-  // `event_moves`. An event cached before it, one the sync queue owns above
-  // all, must come through unchanged, and the new table starts empty because
-  // no earlier version created an event on the device.
-  test('migration from v8 to v9 adds an empty event_moves and preserves '
-      'events', () async {
+  test('migration from v8 to v9 adds empty member names and keeps '
+      'members', () async {
     const at = '2024-01-15T10:30:00.000Z';
 
     await verifier.testWithDataIntegrity(
@@ -838,12 +835,79 @@ void main() {
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
         batch.insert(
-          oldDb.events,
-          const v8.EventsData(
-            id: 'e_v8_1',
-            title: 'Game night',
-            createdById: 'user_v8_1',
+          oldDb.households,
+          const v8.HouseholdsData(
+            id: 'hh_v8_1',
+            name: 'Game Night HQ',
+            isDirty: 0,
+            isLocalOnly: 0,
+            memberInvitePolicy: 'AdminsOnly',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+        batch.insert(
+          oldDb.householdMembers,
+          const v8.HouseholdMembersData(
+            id: 'hm_v8_1',
+            userId: 'user_1',
             householdId: 'hh_v8_1',
+            showAllGames: 0,
+            roleName: 'HouseholdOwner',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.householdMembers).get(), const [
+          v9.HouseholdMembersData(
+            id: 'hm_v8_1',
+            userId: 'user_1',
+            householdId: 'hh_v8_1',
+            showAllGames: 0,
+            roleName: 'HouseholdOwner',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.households).get(), const [
+          v9.HouseholdsData(
+            id: 'hh_v8_1',
+            name: 'Game Night HQ',
+            isDirty: 0,
+            isLocalOnly: 0,
+            memberInvitePolicy: 'AdminsOnly',
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v9 → v10 (#499): the step only creates
+  // `event_moves`. An event cached before it, one the sync queue owns above
+  // all, must come through unchanged, and the new table starts empty because
+  // no earlier version created an event on the device.
+  test('migration from v9 to v10 adds an empty event_moves and preserves '
+      'events', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 9,
+      newVersion: 10,
+      createOld: v9.DatabaseAtV9.new,
+      createNew: v10.DatabaseAtV10.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v9.EventsData(
+            id: 'e_v9_1',
+            title: 'Game night',
+            createdById: 'user_v9_1',
+            householdId: 'hh_v9_1',
             description: 'Bring snacks.',
             location: 'Kitchen table',
             type: 'StrategyNight',
@@ -860,11 +924,11 @@ void main() {
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.events).get(), const [
-          v9.EventsData(
-            id: 'e_v8_1',
+          v10.EventsData(
+            id: 'e_v9_1',
             title: 'Game night',
-            createdById: 'user_v8_1',
-            householdId: 'hh_v8_1',
+            createdById: 'user_v9_1',
+            householdId: 'hh_v9_1',
             description: 'Bring snacks.',
             location: 'Kitchen table',
             type: 'StrategyNight',

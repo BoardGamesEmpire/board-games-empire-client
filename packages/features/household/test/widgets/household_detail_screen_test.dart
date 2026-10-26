@@ -32,11 +32,15 @@ Household _household(
 HouseholdMember _member(
   String userId, {
   HouseholdRole? role = HouseholdRole.householdMember,
+  String? username,
+  String? displayName,
 }) => HouseholdMember(
   id: 'm-$userId',
   userId: userId,
   householdId: _id,
   role: role,
+  username: username,
+  displayName: displayName,
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
@@ -56,6 +60,13 @@ void main() {
   late StreamController<List<Household>> households;
   late StreamController<List<HouseholdMember>> members;
   late StreamController<HouseholdHydrationState> hydration;
+
+  /// [text] inside the "Your role" block. The user's own roster row says
+  /// their role too (#304).
+  Finder inRoleBlock(String text) => find.descendant(
+    of: find.byKey(HouseholdDetailScreen.roleKey),
+    matching: find.text(text),
+  );
 
   setUp(() {
     repository = _MockHouseholdRepository();
@@ -199,7 +210,7 @@ void main() {
       );
 
       expect(find.byKey(HouseholdDetailScreen.roleKey), findsOneWidget);
-      expect(find.text('Owner'), findsOneWidget);
+      expect(inRoleBlock('Owner'), findsOneWidget);
     });
 
     testWidgets('says an unknown role is unrecognised, not absent', (
@@ -214,7 +225,7 @@ void main() {
         roster: [_member('u-me', role: HouseholdRole.unknown)],
       );
 
-      expect(find.text(_unknownRoleCopy), findsOneWidget);
+      expect(inRoleBlock(_unknownRoleCopy), findsOneWidget);
     });
 
     testWidgets('appears on the deep-link path, where the cache was cold', (
@@ -238,7 +249,7 @@ void main() {
       );
 
       expect(find.byKey(HouseholdDetailScreen.roleKey), findsOneWidget);
-      expect(find.text('Owner'), findsOneWidget);
+      expect(inRoleBlock('Owner'), findsOneWidget);
     });
 
     testWidgets('omits the block entirely for a null binding', (tester) async {
@@ -262,6 +273,197 @@ void main() {
 
       expect(find.byKey(HouseholdDetailScreen.roleKey), findsNothing);
       expect(find.text('1 member'), findsOneWidget);
+    });
+  });
+
+  group('the roster (#304)', () {
+    Finder inRow(String userId, String text) => find.descendant(
+      of: find.byKey(HouseholdDetailScreen.memberKey(userId)),
+      matching: find.text(text),
+    );
+
+    testWidgets('names each member with their role', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', displayName: 'Alex'),
+          _member(
+            'u-2',
+            role: HouseholdRole.householdOwner,
+            displayName: 'Zed',
+            username: 'zed99',
+          ),
+        ],
+      );
+
+      expect(inRow('u-2', 'Zed'), findsOneWidget);
+      expect(inRow('u-2', 'Owner'), findsOneWidget);
+      expect(find.text('zed99'), findsNothing);
+    });
+
+    testWidgets('names a member by username when they set no display name', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me'),
+          _member('u-2', username: 'zed99'),
+        ],
+      );
+
+      expect(inRow('u-2', 'zed99'), findsOneWidget);
+    });
+
+    testWidgets('lists them in the order the bloc gives', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', username: 'alexd'),
+          _member('u-2', role: HouseholdRole.householdOwner, username: 'zed'),
+        ],
+      );
+
+      final owner = tester.getTopLeft(
+        find.byKey(HouseholdDetailScreen.memberKey('u-2')),
+      );
+      final me = tester.getTopLeft(
+        find.byKey(HouseholdDetailScreen.memberKey('u-me')),
+      );
+      expect(owner.dy, lessThan(me.dy));
+    });
+
+    testWidgets("marks the current user's own row", (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(tester, roster: [_member('u-me', displayName: 'Alex')]);
+
+      expect(inRow('u-me', 'Alex (you)'), findsOneWidget);
+    });
+
+    testWidgets("the current user's row without a name reads You", (
+      tester,
+    ) async {
+      // The owner row a local create synthesizes, until a hydrate replaces
+      // it with the server's.
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(inRow('u-me', 'You'), findsOneWidget);
+      expect(inRow('u-me', 'Owner'), findsOneWidget);
+    });
+
+    testWidgets('another member without a name reads as their role alone', (
+      tester,
+    ) async {
+      // "Member" over a role of member would say it twice.
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', username: 'alexd'),
+          _member('u-2', role: HouseholdRole.householdAdmin),
+          _member('u-3'),
+        ],
+      );
+
+      expect(inRow('u-2', 'Admin'), findsOneWidget);
+      expect(inRow('u-2', 'Member'), findsNothing);
+      expect(inRow('u-3', 'Member'), findsOneWidget);
+    });
+
+    testWidgets('another member with neither a name nor a role reads Member', (
+      tester,
+    ) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', username: 'alexd'),
+          _member('u-2', role: null),
+        ],
+      );
+
+      expect(inRow('u-2', 'Member'), findsOneWidget);
+    });
+
+    testWidgets('every member has a row, named or not', (tester) async {
+      // The list is as long as the count beside it.
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me'),
+          _member('u-2', username: 'zed'),
+          _member('u-3'),
+        ],
+      );
+
+      expect(find.text('3 members'), findsOneWidget);
+      for (final userId in ['u-me', 'u-2', 'u-3']) {
+        expect(
+          find.byKey(HouseholdDetailScreen.memberKey(userId)),
+          findsOneWidget,
+          reason: userId,
+        );
+      }
+      expect(inRow('u-me', 'You'), findsOneWidget);
+    });
+
+    testWidgets('the count heads the list', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(tester);
+
+      expect(
+        tester.getSemantics(find.byKey(HouseholdDetailScreen.memberCountKey)),
+        isSemantics(isHeader: true),
+      );
+    });
+
+    testWidgets('each row is one semantics node', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', username: 'alexd'),
+          _member(
+            'u-2',
+            role: HouseholdRole.householdOwner,
+            displayName: 'Zed',
+          ),
+        ],
+      );
+
+      final label = tester
+          .getSemantics(find.byKey(HouseholdDetailScreen.memberKey('u-2')))
+          .label;
+      expect(label, contains('Zed'));
+      expect(label, contains('Owner'));
+    });
+
+    testWidgets('a member without a role shows no role line', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', username: 'alexd'),
+          _member('u-2', role: null, displayName: 'Zed'),
+        ],
+      );
+
+      expect(
+        find.descendant(
+          of: find.byKey(HouseholdDetailScreen.memberKey('u-2')),
+          matching: find.byType(Text),
+        ),
+        findsOneWidget,
+      );
+      expect(inRow('u-2', 'Zed'), findsOneWidget);
     });
   });
 
@@ -520,11 +722,20 @@ void main() {
     await settleWith(
       tester,
       household: _household(_id, description: 'Board games, every Sunday.'),
-      roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      roster: [
+        _member('u-me', role: HouseholdRole.householdOwner),
+        // A long name has to wrap inside the pane (#304).
+        _member(
+          'u-2',
+          displayName:
+              'Maximiliana Theodora Wolfeschlegelsteinhausen-Bergdorff',
+        ),
+      ],
     );
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(HouseholdDetailScreen.memberCountKey), findsOneWidget);
+    expect(find.byKey(HouseholdDetailScreen.memberKey('u-2')), findsOneWidget);
   });
 
   group('the retry on the refresh banner (#300 D10)', () {

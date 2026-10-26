@@ -34,17 +34,25 @@ Map<String, dynamic> _householdRow({
   'members': members,
 };
 
+/// Stands for [_memberRow]'s default `user` projection, so a test can still
+/// pass an explicit null.
+const _defaultUser = Object();
+
 /// A member row as the list include embeds it.
 ///
 /// `role` is a **nested projection**, not the enum string the domain model
 /// serialises: the Prisma include is
 /// `role: { include: { role: { select: { id, name } } } }`.
+///
+/// [user] is the embedded `{ id, username, profile }` projection, an account
+/// named "ada" with display name "Ada" unless a test passes its own.
 Map<String, dynamic> _memberRow({
   String id = 'hm_1',
   String userId = 'user-abc',
   String householdId = 'hh_1',
   String? roleName = 'HouseholdOwner',
   bool showAllGames = true,
+  Object? user = _defaultUser,
 }) => {
   'id': id,
   'userId': userId,
@@ -62,11 +70,13 @@ Map<String, dynamic> _memberRow({
           'roleId': 'role_1',
           'role': {'id': 'role_1', 'name': roleName},
         },
-  'user': {
-    'id': userId,
-    'username': 'ada',
-    'profile': {'avatarUrl': null, 'displayName': 'Ada'},
-  },
+  'user': identical(user, _defaultUser)
+      ? {
+          'id': userId,
+          'username': 'ada',
+          'profile': {'avatarUrl': null, 'displayName': 'Ada'},
+        }
+      : user,
 };
 
 Map<String, dynamic> _envelope(
@@ -374,6 +384,83 @@ void main() {
         () => remote.fetchHouseholds(),
         throwsA(isA<HouseholdRemotePermanentException>()),
       );
+    });
+  });
+
+  group("fetchHouseholds — the member's identity (#304)", () {
+    Future<HouseholdMember> fetchMember(Map<String, dynamic> member) async {
+      stubGet(
+        _resp(
+          _envelope([
+            _householdRow(members: [member]),
+          ]),
+        ),
+      );
+      return (await remote.fetchHouseholds()).items.single.members.single;
+    }
+
+    test("keeps the member's username, display name and avatar", () async {
+      final member = await fetchMember(
+        _memberRow(
+          user: {
+            'id': 'user-abc',
+            'username': 'alexd',
+            'profile': {'displayName': 'Alex', 'avatarUrl': 'https://x/a.png'},
+          },
+        ),
+      );
+
+      expect(member.username, 'alexd');
+      expect(member.displayName, 'Alex');
+      expect(member.avatarUrl, 'https://x/a.png');
+    });
+
+    test('a member whose user has no profile has a username alone', () async {
+      final member = await fetchMember(
+        _memberRow(
+          user: {'id': 'user-abc', 'username': 'alexd', 'profile': null},
+        ),
+      );
+
+      expect(member.username, 'alexd');
+      expect(member.displayName, isNull);
+      expect(member.avatarUrl, isNull);
+    });
+
+    test('a member with no user projection has no identity', () async {
+      // An older server, or a fixture: the page still maps, and the member
+      // is cached nameless.
+      for (final member in [
+        _memberRow()..remove('user'),
+        _memberRow(user: null),
+      ]) {
+        final mapped = await fetchMember(member);
+
+        expect(mapped.username, isNull);
+        expect(mapped.displayName, isNull);
+        expect(mapped.avatarUrl, isNull);
+        expect(mapped.role, HouseholdRole.householdOwner);
+      }
+    });
+
+    test('a user projection of the wrong shape is permanent', () async {
+      for (final user in <Object>[
+        'oops',
+        {'id': 'user-abc', 'username': 'alexd', 'profile': 'Alex'},
+      ]) {
+        stubGet(
+          _resp(
+            _envelope([
+              _householdRow(members: [_memberRow(user: user)]),
+            ]),
+          ),
+        );
+
+        await expectLater(
+          remote.fetchHouseholds(),
+          throwsA(isA<HouseholdRemotePermanentException>()),
+        );
+      }
     });
   });
 

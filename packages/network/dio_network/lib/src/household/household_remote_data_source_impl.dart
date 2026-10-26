@@ -5,6 +5,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
+import '../network/user_projection.dart';
 
 /// [HouseholdRemoteDataSource] over a **per-server** Dio instance (#39).
 ///
@@ -291,18 +292,30 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// `isAdmin` false for everyone. Unwrapping here keeps
   /// [HouseholdRole.unknown] meaning what it was designed to mean: a
   /// server-defined role name this client does not recognise.
-  HouseholdMember _mapMember(Map<String, dynamic> json) => HouseholdMember(
-    id: json['id'] as String,
-    userId: json['userId'] as String,
-    householdId: json['householdId'] as String,
-    // Read strictly, not `?? true`: this is a non-nullable server column, and
-    // defaulting a *sharing* flag to its permissive value on a payload we
-    // could not read is the wrong direction to fail in.
-    showAllGames: json['showAllGames'] as bool,
-    role: _mapRole(json['role']),
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    updatedAt: DateTime.parse(json['updatedAt'] as String),
-  );
+  ///
+  /// The `user` field is unwrapped too: the list embeds the member's account
+  /// as `user: { id, username, profile: { avatarUrl, displayName } }`, the
+  /// projection the event roster embeds, and [readUserProjection] reads it
+  /// for both (#304). An absent or null `user` leaves the member nameless
+  /// rather than failing the page, and one of the wrong shape throws.
+  HouseholdMember _mapMember(Map<String, dynamic> json) {
+    final user = readUserProjection(json['user'], row: 'member');
+    return HouseholdMember(
+      id: json['id'] as String,
+      userId: json['userId'] as String,
+      householdId: json['householdId'] as String,
+      // Read strictly, not `?? true`: this is a non-nullable server column,
+      // and defaulting a *sharing* flag to its permissive value on a payload
+      // we could not read is the wrong direction to fail in.
+      showAllGames: json['showAllGames'] as bool,
+      role: _mapRole(json['role']),
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
 
   /// Reads the household's settings: the list, the detail and the update
   /// answer carry them, and the create answer does not (#476).

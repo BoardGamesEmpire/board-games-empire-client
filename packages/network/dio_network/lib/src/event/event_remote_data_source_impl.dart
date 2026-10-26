@@ -4,6 +4,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
+import '../network/user_projection.dart';
 
 /// [EventRemoteDataSource] over a **per-server** Dio instance (#496, #499).
 ///
@@ -341,7 +342,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   }
 
   static EventAttendee _mapAttendee(Map<String, dynamic> json) {
-    final user = _mapUser(json['user']);
+    final user = readUserProjection(json['user'], row: 'attendee');
     return EventAttendee(
       id: json['id'] as String,
       eventId: json['eventId'] as String,
@@ -356,41 +357,6 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       rsvpDate: _dateOrNull(json['rsvpDate']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
-    );
-  }
-
-  /// Reads the account name, display name and avatar out of the embedded
-  /// `user` projection, `{ id, username, profile: { avatarUrl, displayName } }`.
-  ///
-  /// A null `user` is a guest, who has no account to take them from, so all
-  /// three are null. An account that has set no profile has a username and
-  /// neither of the others. A projection whose shape is wrong is a contract
-  /// breach and throws, as the role projection does.
-  static ({String? username, String? displayName, String? avatarUrl}) _mapUser(
-    Object? projection,
-  ) {
-    if (projection == null) {
-      return (username: null, displayName: null, avatarUrl: null);
-    }
-    if (projection is! Map<String, dynamic>) {
-      throw FormatException(
-        'attendee "user" is ${projection.runtimeType}, expected an object or '
-        'null',
-      );
-    }
-    final profile = projection['profile'];
-    if (profile != null && profile is! Map<String, dynamic>) {
-      throw FormatException(
-        'attendee "user" profile is ${profile.runtimeType}, expected an '
-        'object or null',
-      );
-    }
-    final fields = profile as Map<String, dynamic>?;
-    return (
-      // Read strictly: an account always has a username.
-      username: projection['username'] as String,
-      displayName: fields?['displayName'] as String?,
-      avatarUrl: fields?['avatarUrl'] as String?,
     );
   }
 

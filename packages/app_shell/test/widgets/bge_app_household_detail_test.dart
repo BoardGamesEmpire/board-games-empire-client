@@ -42,6 +42,13 @@ HouseholdMember _member(
   updatedAt: DateTime.utc(2026),
 );
 
+/// [text] in the current user's "Your role" block. Each roster row says its
+/// member's role too (#304).
+Finder _inYourRole(String text) => find.descendant(
+  of: find.byKey(HouseholdDetailScreen.roleKey),
+  matching: find.text(text),
+);
+
 /// Exercises `_buildHouseholdDetailRoute` (#270) through the real
 /// composition, which is the half `household_detail_route_test.dart` cannot
 /// reach: that file pins the *route table* against injected builders, this
@@ -146,7 +153,7 @@ void main() {
 
       expect(find.text('Sunday Crew'), findsOneWidget);
       expect(find.text('1 member'), findsOneWidget);
-      expect(find.text('Owner'), findsOneWidget);
+      expect(_inYourRole('Owner'), findsOneWidget);
     });
 
     testWidgets('back from the detail screen lands on the list', (
@@ -231,7 +238,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Alpha Crew'), findsOneWidget);
       expect(find.text('1 member'), findsOneWidget);
-      expect(find.text('Owner'), findsOneWidget);
+      expect(_inYourRole('Owner'), findsOneWidget);
 
       router.go(AppRoutes.householdDetailOf('hh_b'));
       await tester.pumpAndSettle();
@@ -239,8 +246,8 @@ void main() {
       expect(find.text('Beta Crew'), findsOneWidget);
       expect(find.text('Alpha Crew'), findsNothing);
       expect(find.text('2 members'), findsOneWidget);
-      expect(find.text('Member'), findsOneWidget);
-      expect(find.text('Owner'), findsNothing);
+      expect(_inYourRole('Member'), findsOneWidget);
+      expect(_inYourRole('Owner'), findsNothing);
     });
 
     testWidgets('falls back to NotYetAvailable when the per-user repository '

@@ -20,26 +20,27 @@ import '../widgets/household_refresh_banner.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
 
-/// One household (#270): its name, its description, how many people are in
-/// it, and what the current user is in it.
+/// One household (#270): its name, its description, who is in it, and what
+/// the current user is in it.
 ///
 /// Decoupled from DI like the list and create screens: the caller resolves
 /// the user-session [HouseholdRepository] and the optional
 /// [HouseholdHydrationStatus] stream and passes them in; the screen owns
 /// its bloc.
 ///
+/// ## The roster (#304)
+///
+/// The member count heads a list of the members: each one's name over their
+/// role, by role and then by name, with the user's own row marked. A name
+/// is the member's display name, else their username, which every account
+/// has. A row no hydrate has named still renders, so the list is as long as
+/// the count: the user's own reads "You", as on a household just created
+/// here, and anyone else's reads as their role alone, or "Member" with none.
+///
 /// ## What this screen does not show
 ///
-/// **No roster.** Not a scope call — `HouseholdMember` has no name on it.
-/// The domain model carries `userId` and nothing else identifying, the
-/// `household_members` table has no column for a name, and the wire
-/// adapter drops the username and display name the server embeds. A
-/// "roster" built on what is actually cached would be a column of cuid2s,
-/// which is worse than the count. See the deviation recorded on #270.
-///
-/// **No avatars** (#124, the media pipeline) and **no membership actions**
-/// — no delete, no leave, no kick, no transfer. Those stay with #246's
-/// children.
+/// **No avatars** yet (#603), and no opening a member's row yet (#540). **No membership actions** — no delete, no leave, no kick, no
+/// transfer. Those stay with #246's children.
 ///
 /// ## Edit and invites are the exceptions
 ///
@@ -100,8 +101,11 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on the couldn't-refresh banner.
   static const Key refreshBannerKey = Key('household_detail.refresh_banner');
 
-  /// Key on the member count.
+  /// Key on the member count, which heads the roster.
   static const Key memberCountKey = Key('household_detail.member_count');
+
+  /// Key on a member's row in the roster, by their user id.
+  static Key memberKey(String userId) => Key('household_detail.member.$userId');
 
   /// Key on the current user's role.
   static const Key roleKey = Key('household_detail.role');
@@ -318,11 +322,21 @@ class _ReadyPage extends StatelessWidget {
             Text(description, style: theme.textTheme.bodyLarge),
             const BgeGap.lg(),
           ],
-          Text(
-            key: HouseholdDetailScreen.memberCountKey,
-            l10n.householdDetailMembers(state.memberCount),
-            style: theme.textTheme.titleMedium,
+          Semantics(
+            header: true,
+            child: Text(
+              key: HouseholdDetailScreen.memberCountKey,
+              l10n.householdDetailMembers(state.memberCount),
+              style: theme.textTheme.titleMedium,
+            ),
           ),
+          const BgeGap.xs(),
+          for (final member in state.members)
+            _MemberRow(
+              key: HouseholdDetailScreen.memberKey(member.userId),
+              member: member,
+              isYou: member.userId == state.currentUserId,
+            ),
           // Omitted entirely when there is no role to state (#270 D4):
           // a null binding, or an identity we could not resolve. An empty
           // "Your role" label would be a question the screen asks itself.
@@ -413,6 +427,53 @@ class _InvitesEntry extends StatelessWidget {
           },
         ),
       );
+}
+
+/// One member of the roster: their name over their role, as one semantics
+/// node (#304). The role line is left out where the member has no role
+/// binding, and stands in for the name of anyone else no hydrate has named:
+/// "Member" over a role of member would say the same thing twice.
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({required this.member, required this.isYou, super.key});
+
+  final HouseholdMember member;
+
+  /// Whether this is the current user's own row.
+  final bool isYou;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+    final theme = Theme.of(context);
+    final name = member.name;
+    final role = member.role;
+    final roleLabel = role == null ? null : householdRoleLabel(l10n, role);
+    final byRoleAlone = !isYou && name == null;
+
+    return MergeSemantics(
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceSm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(switch ((isYou, name)) {
+              (true, final name?) => l10n.householdDetailMemberYou(name),
+              (true, null) => l10n.householdDetailMemberYouUnnamed,
+              (false, final name?) => name,
+              (false, null) => roleLabel ?? l10n.householdDetailMemberUnnamed,
+            }, style: theme.textTheme.bodyLarge),
+            if (roleLabel != null && !byRoleAlone)
+              Text(
+                roleLabel,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// "Your role" over its value, as one semantics node so a screen reader

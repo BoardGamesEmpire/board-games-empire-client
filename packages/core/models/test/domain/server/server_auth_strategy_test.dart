@@ -61,6 +61,39 @@ void main() {
           );
           expect(oidc.authorizationEndpoint, '/api/auth/sign-in/oauth2');
         });
+
+        // A server older than backend#585 sends no such field, and failing
+        // the whole discovery parse over one nothing reads yet would turn a
+        // working server into an invalid response (#443).
+        test('an OIDC strategy without sign_up_disabled parses as open', () {
+          final json = {
+            'type': 'oidc',
+            'provider_id': 'acme-sso',
+            'discovery_url':
+                'https://auth.acme.com/.well-known/openid-configuration',
+            'authorization_endpoint': '/api/auth/sign-in/oauth2',
+          };
+
+          final oidc = ServerAuthStrategy.fromJson(json) as OidcStrategy;
+
+          expect(oidc.signUpDisabled, isFalse);
+        });
+
+        test('an OIDC strategy reads sign_up_disabled', () {
+          final json = {
+            'type': 'oidc',
+            'sign_up_disabled': true,
+            'provider_id': 'acme-sso',
+            'discovery_url':
+                'https://auth.acme.com/.well-known/openid-configuration',
+            'authorization_endpoint': '/api/auth/sign-in/oauth2',
+          };
+
+          final oidc = ServerAuthStrategy.fromJson(json) as OidcStrategy;
+
+          expect(oidc.signUpDisabled, isTrue);
+          expect(oidc.toJson()['sign_up_disabled'], isTrue);
+        });
       });
 
       test('throws FormatException for unknown type', () {
@@ -183,6 +216,24 @@ void main() {
         );
 
         expect(a, equals(b));
+      });
+
+      test('sign_up_disabled is part of OIDC equality', () {
+        const open = OidcStrategy(
+          providerId: 'acme',
+          discoveryUrl:
+              'https://auth.acme.com/.well-known/openid-configuration',
+          authorizationEndpoint: '/api/auth/sign-in/oauth2',
+        );
+        const closed = OidcStrategy(
+          signUpDisabled: true,
+          providerId: 'acme',
+          discoveryUrl:
+              'https://auth.acme.com/.well-known/openid-configuration',
+          authorizationEndpoint: '/api/auth/sign-in/oauth2',
+        );
+
+        expect(open, isNot(equals(closed)));
       });
     });
 

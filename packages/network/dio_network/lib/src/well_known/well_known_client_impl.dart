@@ -108,7 +108,9 @@ class WellKnownClientImpl implements WellKnownClient {
   /// the contract requires.
   ///
   /// Status decides first: it is the only part of the answer that is
-  /// meaningful regardless of what the body turned out to be.
+  /// meaningful regardless of what the body turned out to be. A 5xx is its
+  /// own answer whatever the body says, so a gateway's HTML error page is a
+  /// server error, not an invalid identity (#389).
   Future<ServerIdentity> _interpret({
     required int? statusCode,
     required Object? body,
@@ -122,6 +124,15 @@ class WellKnownClientImpl implements WellKnownClient {
         message:
             'No BGE identity document found at $url. '
             'Verify the server URL or confirm this is a BGE instance.',
+      );
+    }
+
+    if (statusCode != null && statusCode.isServerErrorHttpStatusCode) {
+      throw WellKnownServerErrorException(
+        serverUrl: serverUrl,
+        message: 'Server error HTTP $statusCode from $url',
+        statusCode: statusCode,
+        cause: cause,
       );
     }
 

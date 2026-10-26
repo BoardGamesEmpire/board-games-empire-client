@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
+import 'package:ui_tokens/ui_tokens.dart';
+
+import '../../l10n/auth_localizations.dart';
 
 /// Button representing a single OIDC authentication provider.
 ///
-/// Accessibility: uses [Semantics.button] with a descriptive label that
-/// includes the provider name, meeting WCAG 2.1 SC 1.3.1 (Info and
-/// Relationships). The minimum touch target is enforced via [minimumSize].
+/// Accessibility: the [OutlinedButton] reports itself as one semantics node,
+/// a button with its enabled state and the provider in its label, which
+/// meets WCAG 2.1 SC 1.3.1 (Info and Relationships). A wrapper restating any
+/// of that splits it into two nodes, and a screen reader announces the
+/// provider twice (#188). The minimum touch target comes from
+/// [BgeTokens.minTapTarget].
 class OidcStrategyButton extends StatelessWidget {
   const OidcStrategyButton({
     super.key,
@@ -20,25 +26,24 @@ class OidcStrategyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = 'Continue with ${_displayName(strategy.providerId)}';
-
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: label,
-      child: OutlinedButton.icon(
-        onPressed: enabled ? onPressed : null,
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(double.infinity, 48),
-        ),
-        icon: const Icon(Icons.login, size: 20),
-        label: Text(label),
+    return OutlinedButton.icon(
+      onPressed: enabled ? onPressed : null,
+      style: OutlinedButton.styleFrom(
+        minimumSize: Size(double.infinity, BgeTokens.of(context).minTapTarget),
+      ),
+      icon: const Icon(Icons.login, size: 20),
+      label: Text(
+        AuthLocalizations.of(context)
+            .authContinueWith(_displayName(strategy.providerId)),
       ),
     );
   }
 
   /// Converts a raw provider ID into a display-friendly name.
   /// e.g. 'google-oidc' → 'Google Oidc', 'azure-ad' → 'Azure Ad'
+  ///
+  /// A fallback: the provider sign-in flow replaces it with the strategy's
+  /// own display name (#583).
   String _displayName(String providerId) => providerId
       .split(RegExp(r'[-_]'))
       .map(

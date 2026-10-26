@@ -84,8 +84,8 @@ void main() {
   tearDown(() async => db.close());
 
   group('ServerDatabase', () {
-    test('reports schemaVersion 9', () {
-      expect(db.schemaVersion, equals(9));
+    test('reports schemaVersion 10', () {
+      expect(db.schemaVersion, equals(10));
     });
 
     group('PRAGMA foreign_keys', () {

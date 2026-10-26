@@ -3857,6 +3857,30 @@ class HouseholdMembers extends Table
     requiredDuringInsert: false,
     $customConstraints: 'NULL',
   );
+  late final GeneratedColumn<String> username = GeneratedColumn<String>(
+    'username',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NULL',
+  );
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NULL',
+  );
+  late final GeneratedColumn<String> avatarUrl = GeneratedColumn<String>(
+    'avatar_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'NULL',
+  );
   late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
     'created_at',
     aliasedName,
@@ -3880,6 +3904,9 @@ class HouseholdMembers extends Table
     householdId,
     showAllGames,
     roleName,
+    username,
+    displayName,
+    avatarUrl,
     createdAt,
     updatedAt,
   ];
@@ -3914,6 +3941,18 @@ class HouseholdMembers extends Table
         DriftSqlType.string,
         data['${effectivePrefix}role_name'],
       ),
+      username: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}username'],
+      ),
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      ),
+      avatarUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}avatar_url'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}created_at'],
@@ -3943,6 +3982,9 @@ class HouseholdMembersData extends DataClass
   final String householdId;
   final int showAllGames;
   final String? roleName;
+  final String? username;
+  final String? displayName;
+  final String? avatarUrl;
   final String createdAt;
   final String updatedAt;
   const HouseholdMembersData({
@@ -3951,6 +3993,9 @@ class HouseholdMembersData extends DataClass
     required this.householdId,
     required this.showAllGames,
     this.roleName,
+    this.username,
+    this.displayName,
+    this.avatarUrl,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -3963,6 +4008,15 @@ class HouseholdMembersData extends DataClass
     map['show_all_games'] = Variable<int>(showAllGames);
     if (!nullToAbsent || roleName != null) {
       map['role_name'] = Variable<String>(roleName);
+    }
+    if (!nullToAbsent || username != null) {
+      map['username'] = Variable<String>(username);
+    }
+    if (!nullToAbsent || displayName != null) {
+      map['display_name'] = Variable<String>(displayName);
+    }
+    if (!nullToAbsent || avatarUrl != null) {
+      map['avatar_url'] = Variable<String>(avatarUrl);
     }
     map['created_at'] = Variable<String>(createdAt);
     map['updated_at'] = Variable<String>(updatedAt);
@@ -3978,6 +4032,15 @@ class HouseholdMembersData extends DataClass
       roleName: roleName == null && nullToAbsent
           ? const Value.absent()
           : Value(roleName),
+      username: username == null && nullToAbsent
+          ? const Value.absent()
+          : Value(username),
+      displayName: displayName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayName),
+      avatarUrl: avatarUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarUrl),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -3994,6 +4057,9 @@ class HouseholdMembersData extends DataClass
       householdId: serializer.fromJson<String>(json['householdId']),
       showAllGames: serializer.fromJson<int>(json['showAllGames']),
       roleName: serializer.fromJson<String?>(json['roleName']),
+      username: serializer.fromJson<String?>(json['username']),
+      displayName: serializer.fromJson<String?>(json['displayName']),
+      avatarUrl: serializer.fromJson<String?>(json['avatarUrl']),
       createdAt: serializer.fromJson<String>(json['createdAt']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
     );
@@ -4007,6 +4073,9 @@ class HouseholdMembersData extends DataClass
       'householdId': serializer.toJson<String>(householdId),
       'showAllGames': serializer.toJson<int>(showAllGames),
       'roleName': serializer.toJson<String?>(roleName),
+      'username': serializer.toJson<String?>(username),
+      'displayName': serializer.toJson<String?>(displayName),
+      'avatarUrl': serializer.toJson<String?>(avatarUrl),
       'createdAt': serializer.toJson<String>(createdAt),
       'updatedAt': serializer.toJson<String>(updatedAt),
     };
@@ -4018,6 +4087,9 @@ class HouseholdMembersData extends DataClass
     String? householdId,
     int? showAllGames,
     Value<String?> roleName = const Value.absent(),
+    Value<String?> username = const Value.absent(),
+    Value<String?> displayName = const Value.absent(),
+    Value<String?> avatarUrl = const Value.absent(),
     String? createdAt,
     String? updatedAt,
   }) => HouseholdMembersData(
@@ -4026,6 +4098,9 @@ class HouseholdMembersData extends DataClass
     householdId: householdId ?? this.householdId,
     showAllGames: showAllGames ?? this.showAllGames,
     roleName: roleName.present ? roleName.value : this.roleName,
+    username: username.present ? username.value : this.username,
+    displayName: displayName.present ? displayName.value : this.displayName,
+    avatarUrl: avatarUrl.present ? avatarUrl.value : this.avatarUrl,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -4040,6 +4115,11 @@ class HouseholdMembersData extends DataClass
           ? data.showAllGames.value
           : this.showAllGames,
       roleName: data.roleName.present ? data.roleName.value : this.roleName,
+      username: data.username.present ? data.username.value : this.username,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      avatarUrl: data.avatarUrl.present ? data.avatarUrl.value : this.avatarUrl,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -4053,6 +4133,9 @@ class HouseholdMembersData extends DataClass
           ..write('householdId: $householdId, ')
           ..write('showAllGames: $showAllGames, ')
           ..write('roleName: $roleName, ')
+          ..write('username: $username, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarUrl: $avatarUrl, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -4066,6 +4149,9 @@ class HouseholdMembersData extends DataClass
     householdId,
     showAllGames,
     roleName,
+    username,
+    displayName,
+    avatarUrl,
     createdAt,
     updatedAt,
   );
@@ -4078,6 +4164,9 @@ class HouseholdMembersData extends DataClass
           other.householdId == this.householdId &&
           other.showAllGames == this.showAllGames &&
           other.roleName == this.roleName &&
+          other.username == this.username &&
+          other.displayName == this.displayName &&
+          other.avatarUrl == this.avatarUrl &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -4088,6 +4177,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
   final Value<String> householdId;
   final Value<int> showAllGames;
   final Value<String?> roleName;
+  final Value<String?> username;
+  final Value<String?> displayName;
+  final Value<String?> avatarUrl;
   final Value<String> createdAt;
   final Value<String> updatedAt;
   final Value<int> rowid;
@@ -4097,6 +4189,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
     this.householdId = const Value.absent(),
     this.showAllGames = const Value.absent(),
     this.roleName = const Value.absent(),
+    this.username = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.avatarUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -4107,6 +4202,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
     required String householdId,
     this.showAllGames = const Value.absent(),
     this.roleName = const Value.absent(),
+    this.username = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.avatarUrl = const Value.absent(),
     required String createdAt,
     required String updatedAt,
     this.rowid = const Value.absent(),
@@ -4121,6 +4219,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
     Expression<String>? householdId,
     Expression<int>? showAllGames,
     Expression<String>? roleName,
+    Expression<String>? username,
+    Expression<String>? displayName,
+    Expression<String>? avatarUrl,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<int>? rowid,
@@ -4131,6 +4232,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
       if (householdId != null) 'household_id': householdId,
       if (showAllGames != null) 'show_all_games': showAllGames,
       if (roleName != null) 'role_name': roleName,
+      if (username != null) 'username': username,
+      if (displayName != null) 'display_name': displayName,
+      if (avatarUrl != null) 'avatar_url': avatarUrl,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -4143,6 +4247,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
     Value<String>? householdId,
     Value<int>? showAllGames,
     Value<String?>? roleName,
+    Value<String?>? username,
+    Value<String?>? displayName,
+    Value<String?>? avatarUrl,
     Value<String>? createdAt,
     Value<String>? updatedAt,
     Value<int>? rowid,
@@ -4153,6 +4260,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
       householdId: householdId ?? this.householdId,
       showAllGames: showAllGames ?? this.showAllGames,
       roleName: roleName ?? this.roleName,
+      username: username ?? this.username,
+      displayName: displayName ?? this.displayName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -4177,6 +4287,15 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
     if (roleName.present) {
       map['role_name'] = Variable<String>(roleName.value);
     }
+    if (username.present) {
+      map['username'] = Variable<String>(username.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (avatarUrl.present) {
+      map['avatar_url'] = Variable<String>(avatarUrl.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(createdAt.value);
     }
@@ -4197,6 +4316,9 @@ class HouseholdMembersCompanion extends UpdateCompanion<HouseholdMembersData> {
           ..write('householdId: $householdId, ')
           ..write('showAllGames: $showAllGames, ')
           ..write('roleName: $roleName, ')
+          ..write('username: $username, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarUrl: $avatarUrl, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -9007,196 +9129,6 @@ class EventGenerationCompanion extends UpdateCompanion<EventGenerationData> {
   }
 }
 
-class EventMoves extends Table with TableInfo<EventMoves, EventMovesData> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  EventMoves(this.attachedDatabase, [this._alias]);
-  late final GeneratedColumn<String> localId = GeneratedColumn<String>(
-    'local_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    $customConstraints: 'NOT NULL',
-  );
-  late final GeneratedColumn<String> serverId = GeneratedColumn<String>(
-    'server_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    $customConstraints: 'NOT NULL',
-  );
-  @override
-  List<GeneratedColumn> get $columns => [localId, serverId];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'event_moves';
-  @override
-  Set<GeneratedColumn> get $primaryKey => {localId};
-  @override
-  EventMovesData map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return EventMovesData(
-      localId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}local_id'],
-      )!,
-      serverId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}server_id'],
-      )!,
-    );
-  }
-
-  @override
-  EventMoves createAlias(String alias) {
-    return EventMoves(attachedDatabase, alias);
-  }
-
-  @override
-  List<String> get customConstraints => const ['PRIMARY KEY(local_id)'];
-  @override
-  bool get dontWriteConstraints => true;
-}
-
-class EventMovesData extends DataClass implements Insertable<EventMovesData> {
-  final String localId;
-  final String serverId;
-  const EventMovesData({required this.localId, required this.serverId});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['local_id'] = Variable<String>(localId);
-    map['server_id'] = Variable<String>(serverId);
-    return map;
-  }
-
-  EventMovesCompanion toCompanion(bool nullToAbsent) {
-    return EventMovesCompanion(
-      localId: Value(localId),
-      serverId: Value(serverId),
-    );
-  }
-
-  factory EventMovesData.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return EventMovesData(
-      localId: serializer.fromJson<String>(json['localId']),
-      serverId: serializer.fromJson<String>(json['serverId']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'localId': serializer.toJson<String>(localId),
-      'serverId': serializer.toJson<String>(serverId),
-    };
-  }
-
-  EventMovesData copyWith({String? localId, String? serverId}) =>
-      EventMovesData(
-        localId: localId ?? this.localId,
-        serverId: serverId ?? this.serverId,
-      );
-  EventMovesData copyWithCompanion(EventMovesCompanion data) {
-    return EventMovesData(
-      localId: data.localId.present ? data.localId.value : this.localId,
-      serverId: data.serverId.present ? data.serverId.value : this.serverId,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('EventMovesData(')
-          ..write('localId: $localId, ')
-          ..write('serverId: $serverId')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(localId, serverId);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is EventMovesData &&
-          other.localId == this.localId &&
-          other.serverId == this.serverId);
-}
-
-class EventMovesCompanion extends UpdateCompanion<EventMovesData> {
-  final Value<String> localId;
-  final Value<String> serverId;
-  final Value<int> rowid;
-  const EventMovesCompanion({
-    this.localId = const Value.absent(),
-    this.serverId = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  EventMovesCompanion.insert({
-    required String localId,
-    required String serverId,
-    this.rowid = const Value.absent(),
-  }) : localId = Value(localId),
-       serverId = Value(serverId);
-  static Insertable<EventMovesData> custom({
-    Expression<String>? localId,
-    Expression<String>? serverId,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (localId != null) 'local_id': localId,
-      if (serverId != null) 'server_id': serverId,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  EventMovesCompanion copyWith({
-    Value<String>? localId,
-    Value<String>? serverId,
-    Value<int>? rowid,
-  }) {
-    return EventMovesCompanion(
-      localId: localId ?? this.localId,
-      serverId: serverId ?? this.serverId,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (localId.present) {
-      map['local_id'] = Variable<String>(localId.value);
-    }
-    if (serverId.present) {
-      map['server_id'] = Variable<String>(serverId.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('EventMovesCompanion(')
-          ..write('localId: $localId, ')
-          ..write('serverId: $serverId, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class DatabaseAtV9 extends GeneratedDatabase {
   DatabaseAtV9(QueryExecutor e) : super(e);
   late final Games games = Games(this);
@@ -9215,7 +9147,6 @@ class DatabaseAtV9 extends GeneratedDatabase {
   late final EventPolicies eventPolicies = EventPolicies(this);
   late final EventAccess eventAccess = EventAccess(this);
   late final EventGeneration eventGeneration = EventGeneration(this);
-  late final EventMoves eventMoves = EventMoves(this);
   late final Index platformGamesGameIdIdx = Index(
     'platform_games_game_id_idx',
     'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
@@ -9285,7 +9216,6 @@ class DatabaseAtV9 extends GeneratedDatabase {
     eventPolicies,
     eventAccess,
     eventGeneration,
-    eventMoves,
     platformGamesGameIdIdx,
     gameCollectionsUserIdx,
     gameCollectionsUserPgameMediumUniqueIdx,

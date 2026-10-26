@@ -5,7 +5,11 @@ import 'package:network_interface/network_interface.dart';
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 
-/// [GamesRemoteDataSource] over a **per-server** Dio instance (#42).
+/// What a request's path names, which is what lets an application 404 mean
+/// that thing is gone. A list or write route names nothing: see `_send`.
+enum _Row { game, importBatch }
+
+/// [GamesRemoteDataSource] over a **per-server** Dio instance (#42, #43).
 ///
 /// Built on the DataGateway source's request plumbing, which is the
 /// collection source's (#351): the body is asked for as a `String` with the
@@ -65,7 +69,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         queryParameters: {'page': page, 'limit': limit},
       ),
       action: action,
-      rowRoute: false,
+      row: null,
     );
 
     return _parse(
@@ -87,7 +91,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     final response = await _send(
       request: () => _dio.get<String>('$_basePath/$id', options: _plainBody),
       action: action,
-      rowRoute: true,
+      row: _Row.game,
     );
 
     return _parse(
@@ -155,11 +159,75 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         },
       ),
       action: action,
-      rowRoute: false,
+      row: null,
     );
 
     return _parse(
       () => _mapSearchResults(response.body),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<GameImportReceipt> startImport({
+    required String gatewayId,
+    required String externalId,
+    required String correlationId,
+  }) async {
+    if (gatewayId.isEmpty) {
+      throw ArgumentError.value(gatewayId, 'gatewayId', 'is empty');
+    }
+    if (externalId.isEmpty) {
+      throw ArgumentError.value(externalId, 'externalId', 'is empty');
+    }
+    _checkUuid(correlationId, 'correlationId');
+
+    const action = 'Game import start';
+    final response = await _send(
+      request: () => _dio.post<String>(
+        '$_basePath/import',
+        options: _plainBody,
+        // No `expansionExternalIds` and no `locale`: both are optional on the
+        // server, and the base game alone, with no locale, is what #43
+        // imports.
+        data: {
+          'gatewayId': gatewayId,
+          'externalId': externalId,
+          'correlationId': correlationId,
+        },
+      ),
+      action: action,
+      row: null,
+    );
+
+    return _parse(
+      () => GameImportReceipt(
+        batchId: response.body['batchId'] as String,
+        baseJobId: response.body['baseJobId'] as String,
+        correlationId: response.body['correlationId'] as String,
+      ),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<ImportBatch> fetchImport(String batchId) async {
+    // The server's ParseUUIDPipe refuses anything else with a 400, and the id
+    // goes into the path as it stands.
+    _checkUuid(batchId, 'batchId');
+
+    const action = 'Game import poll';
+    final response = await _send(
+      request: () =>
+          _dio.get<String>('$_basePath/import/$batchId', options: _plainBody),
+      action: action,
+      row: _Row.importBatch,
+    );
+
+    return _parse(
+      () => _mapImportBatch(response.body),
       action: action,
       status: response.status,
     );
@@ -170,18 +238,19 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   /// Sends [request] and returns its decoded body, having converted every
   /// failure into a [GamesRemoteException].
   ///
-  /// [rowRoute] says whether the path names one game, which is what lets an
-  /// application 404 mean that game is gone.
+  /// [row] is what the path names, which is what lets an application 404 mean
+  /// that it is gone. Null for a list or write route: those are never absent,
+  /// so their 404 means the route is not deployed.
   Future<({Map<String, dynamic> body, int status})> _send({
     required Future<Response<String>> Function() request,
     required String action,
-    required bool rowRoute,
+    required _Row? row,
   }) async {
     late final Response<String> response;
     try {
       response = await request();
     } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
+      throw _classifyDioException(error, action: action, row: row);
     } on Object catch (error) {
       // Nothing else should escape Dio. `Object`, not `Exception`, so an
       // `Error` cannot break the "no raw transport error" promise either.
@@ -200,7 +269,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         status,
         '$action returned $status',
         cause: null,
-        rowRoute: rowRoute,
+        row: row,
         body: response.data,
       );
     }
@@ -460,6 +529,47 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   static PlatformType _searchPlatformType(String wire) =>
       PlatformType.fromWire(_protoPlatformTypes[wire] ?? wire);
 
+  // ── Import ──────────────────────────────────────────────────────────
+
+  /// Maps a polled batch field by field, as `toBatchDto` builds it.
+  static ImportBatch _mapImportBatch(Map<String, dynamic> json) => ImportBatch(
+    batchId: json['batchId'] as String,
+    correlationId: json['correlationId'] as String,
+    status: ImportBatchStatus.fromWire(json['status'] as String),
+    jobs: [
+      for (final row in (json['jobs'] as List).cast<Map<String, dynamic>>())
+        _mapImportJob(row),
+    ],
+  );
+
+  /// Maps one job, as `toJobDto` builds it. A field the server leaves out
+  /// until the job has a result reads as absent.
+  ///
+  /// Not read: `parentJobId` and `requestedExpansions`, which only matter to
+  /// a batch with expansions, and the `thumbnail`, `error` message and times,
+  /// which nothing shows.
+  static ImportJob _mapImportJob(Map<String, dynamic> json) => ImportJob(
+    jobId: json['jobId'] as String,
+    status: ImportJobStatus.fromWire(json['status'] as String),
+    isExpansion: json['isExpansion'] as bool,
+    externalId: json['externalId'] as String,
+    gameId: json['gameId'] as String?,
+    gameTitle: json['gameTitle'] as String?,
+    platformGames: [
+      for (final pg
+          in (json['platformGames'] as List? ?? const [])
+              .cast<Map<String, dynamic>>())
+        ImportPlatformGame(
+          platformId: pg['platformId'] as String,
+          platformGameId: pg['platformGameId'] as String,
+        ),
+    ],
+    errorCode: switch (json['errorCode'] as String?) {
+      final code? => ImportErrorCode.fromWire(code),
+      null => null,
+    },
+  );
+
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
   /// One path segment of URL-safe characters: a game id that can only reach
@@ -481,6 +591,22 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     }
   }
 
+  /// A UUID of any version, which is what the import routes accept for a
+  /// correlation id (`@IsUUID`) and a batch id (`ParseUUIDPipe`).
+  static final RegExp _uuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  void _checkUuid(String value, String name) {
+    if (!_uuid.hasMatch(value)) {
+      throw ArgumentError.value(
+        value,
+        name,
+        'is not a UUID, which the server refuses with a 400',
+      );
+    }
+  }
+
   void _checkLimit(int limit) {
     const maxPageSize = GamesRemoteDataSource.maxPageSize;
     if (limit < 1 || limit > maxPageSize) {
@@ -498,7 +624,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   GamesRemoteException _classifyDioException(
     DioException error, {
     required String action,
-    required bool rowRoute,
+    required _Row? row,
   }) {
     final status = error.response?.statusCode;
     if (status != null) {
@@ -506,7 +632,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         status,
         '$action failed with status $status',
         cause: error,
-        rowRoute: rowRoute,
+        row: row,
         body: error.response?.data,
       );
     }
@@ -517,7 +643,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     int status,
     String message, {
     required Object? cause,
-    required bool rowRoute,
+    required _Row? row,
     required Object? body,
   }) {
     if (status >= 500 || _retryable4xx.contains(status)) {
@@ -544,14 +670,28 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     }
     if (status == 404) {
       // Nest answers an unregistered route with this same envelope, so on a
-      // list route even an application 404 means "not deployed".
-      return fromApi && rowRoute
-          ? GameNotFoundException(message, cause: cause, statusCode: status)
-          : GamesRemoteTransientException(
-              '$message; the route was not reachable',
-              cause: cause,
-              statusCode: status,
-            );
+      // list or write route even an application 404 means "not deployed".
+      final GamesRemoteException? gone = !fromApi
+          ? null
+          : switch (row) {
+              _Row.game => GameNotFoundException(
+                message,
+                cause: cause,
+                statusCode: status,
+              ),
+              _Row.importBatch => GameImportNotFoundException(
+                message,
+                cause: cause,
+                statusCode: status,
+              ),
+              null => null,
+            };
+      return gone ??
+          GamesRemoteTransientException(
+            '$message; the route was not reachable',
+            cause: cause,
+            statusCode: status,
+          );
     }
     if (status >= 400) {
       return GamesRemotePermanentException(

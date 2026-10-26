@@ -11,7 +11,9 @@ enum HouseholdRosterWrite {
   /// was removed.
   merged,
 
-  /// Nothing was written: the cached household is dirty or local-only.
+  /// The cached household is dirty or local-only, so neither it nor who
+  /// is on its roster was written. Only the names of the members already
+  /// cached were refreshed.
   held,
 }
 
@@ -282,6 +284,8 @@ abstract class HouseholdRepository {
   /// - A cached household that is `isDirty` or `isLocalOnly` is left
   ///   alone, roster included ([HouseholdRosterWrite.held]). The queue
   ///   owns it until the server acknowledges it, as for [cacheHousehold].
+  ///   The one exception is the names of the members it already has, which
+  ///   are refreshed from [roster] (#304): no one is added or removed.
   /// - A roster that is empty or leaves out the current user is not
   ///   trusted to say who left. The household is written and the roster
   ///   merged in, deleting no one ([HouseholdRosterWrite.merged]). Applied

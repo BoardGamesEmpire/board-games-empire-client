@@ -573,8 +573,8 @@ class HouseholdDetailBloc
     emit(
       HouseholdDetailReady(
         household: household,
-        memberCount: members.length,
-        role: _roleOf(members),
+        members: _ordered(members),
+        currentUserId: _currentUserId,
         refreshFailed: _refreshFailed,
         refreshing: _retrying,
       ),
@@ -587,14 +587,25 @@ class HouseholdDetailBloc
       ? const HouseholdDetailError()
       : const HouseholdDetailLoading();
 
-  /// The current user's role, off the roster the screen is already showing
-  /// a count of. Null when identity is unknown, or when our row carries no
-  /// role binding — two different reasons the screen renders identically,
-  /// because it has nothing to say in either case.
-  HouseholdRole? _roleOf(List<HouseholdMember> members) {
-    final userId = _currentUserId;
-    if (userId == null) return null;
-    return members.where((m) => m.userId == userId).firstOrNull?.role;
+  /// The roster in the order the screen lists it (#304): by role, in
+  /// [HouseholdRole]'s order with no role last; then by name, ignoring
+  /// case, with the nameless after the named; then by user id, so the
+  /// order never depends on how the cache returned the rows. The user's
+  /// own row takes its place like any other.
+  static List<HouseholdMember> _ordered(List<HouseholdMember> members) {
+    int rank(HouseholdRole? role) => role?.index ?? HouseholdRole.values.length;
+
+    return [...members]..sort((a, b) {
+      final byRole = rank(a.role).compareTo(rank(b.role));
+      if (byRole != 0) return byRole;
+      final byName = switch ((a.name?.toLowerCase(), b.name?.toLowerCase())) {
+        (final x?, final y?) => x.compareTo(y),
+        (null, null) => 0,
+        (null, _) => 1,
+        (_, null) => -1,
+      };
+      return byName != 0 ? byName : a.userId.compareTo(b.userId);
+    });
   }
 
   @override

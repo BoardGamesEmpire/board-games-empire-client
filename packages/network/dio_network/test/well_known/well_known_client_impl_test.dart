@@ -190,14 +190,14 @@ void main() {
     });
 
     group('non-200/404 response', () {
-      test('throws WellKnownInvalidResponseException for 500', () async {
+      test('throws WellKnownServerErrorException for 500 (#389)', () async {
         when(() => mockDio.get<String>(any(), options: any(named: 'options')))
             .thenAnswer((_) async => _makeEmptyResponse(statusCode: 500));
 
         expect(
           () => client.fetchIdentity(_kServerUrl),
           throwsA(
-            isA<WellKnownInvalidResponseException>().having(
+            isA<WellKnownServerErrorException>().having(
               (e) => e.statusCode,
               'statusCode',
               500,
@@ -552,6 +552,79 @@ void main() {
       });
     });
 
+    // A 5xx means the server is there and failing for now, usually a proxy
+    // answering while the server behind it is down or starting. Calling it
+    // misconfigured or the wrong version sends the user to check things that
+    // are fine.
+    // Real Dio, as in the group above: the body is a gateway's HTML page.
+    group('a 5xx is a server that is not responding right now (#389)', () {
+      WellKnownClient clientOver(Dio dio) => WellKnownClientImpl.withDio(dio);
+
+      test('a 502 gateway page is a server error, not an invalid '
+          'identity', () async {
+        final client = clientOver(
+          cannedDio(
+            body: '<html><body>502 Bad Gateway</body></html>',
+            statusCode: 502,
+            contentType: 'text/html',
+          ),
+        );
+
+        await expectLater(
+          () => client.fetchIdentity(_kServerUrl),
+          throwsA(
+            isA<WellKnownServerErrorException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              502,
+            ),
+          ),
+        );
+      });
+
+      test('the whole 5xx range is a server error', () async {
+        for (final status in [500, 503, 504, 599]) {
+          await expectLater(
+            () =>
+                clientOver(cannedDio(body: '', statusCode: status))
+                    .fetchIdentity(_kServerUrl),
+            throwsA(
+              isA<WellKnownServerErrorException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                status,
+              ),
+            ),
+            reason: 'HTTP $status',
+          );
+        }
+      });
+
+      test('statuses outside 5xx keep their buckets', () async {
+        for (final status in [403, 429, 301]) {
+          await expectLater(
+            () =>
+                clientOver(cannedDio(body: '', statusCode: status))
+                    .fetchIdentity(_kServerUrl),
+            throwsA(
+              isA<WellKnownInvalidResponseException>().having(
+                (e) => e.statusCode,
+                'statusCode',
+                status,
+              ),
+            ),
+            reason: 'HTTP $status',
+          );
+        }
+        await expectLater(
+          () =>
+              clientOver(cannedDio(body: '', statusCode: 404))
+                  .fetchIdentity(_kServerUrl),
+          throwsA(isA<WellKnownNotFoundException>()),
+        );
+      });
+    });
+
     group('WellKnownException base', () {
       test('all exception types are subtypes of WellKnownException', () {
         const unreachable = WellKnownUnreachableException(
@@ -566,10 +639,16 @@ void main() {
           serverUrl: 'https://x.com',
           message: 'bad body',
         );
+        const serverError = WellKnownServerErrorException(
+          serverUrl: 'https://x.com',
+          message: '503',
+          statusCode: 503,
+        );
 
         expect(unreachable, isA<WellKnownException>());
         expect(notFound, isA<WellKnownException>());
         expect(invalid, isA<WellKnownException>());
+        expect(serverError, isA<WellKnownException>());
       });
     });
   });

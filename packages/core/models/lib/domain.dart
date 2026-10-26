@@ -40,6 +40,7 @@ export 'src/domain/game/game_collection.dart';
 export 'src/domain/game/game_collection_list_item.dart';
 export 'src/domain/game/game_medium.dart';
 export 'src/domain/game/game.dart';
+export 'src/domain/game/game_import.dart';
 export 'src/domain/game/game_search_results.dart';
 export 'src/domain/game/platform_game.dart';
 export 'src/domain/game/platform_game_summary.dart';
@@ -75,6 +76,7 @@ export 'src/domain/sync/sync_queue_entry.dart';
 export 'src/domain/sync/sync_status.dart';
 
 export 'src/domain/user/auth_strategy.dart';
+export 'src/domain/user/person_name.dart';
 export 'src/domain/user/user_authentication.dart';
 export 'src/domain/user/user_device.dart';
 export 'src/domain/user/user_external_identity.dart';

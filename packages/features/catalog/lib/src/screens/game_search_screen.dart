@@ -19,8 +19,8 @@ import '../widgets/catalog_slivers.dart';
 ///
 /// One page of results, in two sections: what this server holds, then what
 /// its DataGateways found. Each result the server holds opens its detail.
-/// A DataGateway result it does not hold goes to [onImport], which #43
-/// supplies; until then those rows are inert content.
+/// A DataGateway result it does not hold goes to [onImport], which imports it
+/// (#43); without one, those rows are inert content.
 ///
 /// ## What a screen reader hears
 ///
@@ -97,6 +97,9 @@ class GameSearchScreen extends StatelessWidget {
 
   /// Imports a DataGateway result this server does not hold (#43). Null
   /// leaves those rows inert.
+  ///
+  /// The context is the screen's, which stays mounted while the results
+  /// change beneath an import.
   final void Function(BuildContext context, String sourceId, GameSearchHit hit)?
   onImport;
 
@@ -331,12 +334,13 @@ class _GameSearchPageState extends State<_GameSearchPage> {
     final import = widget.onImport;
 
     // A game the server already holds opens like one from this server;
-    // anything else is an import.
+    // anything else is an import. The import gets the screen's context, not
+    // the row's: it outlasts the tap, and the row can go while it runs.
     final VoidCallback? onTap = gameId != null
         ? (open == null ? null : () => open(context, gameId))
         : (import == null
               ? null
-              : () => import(context, result.source.id, hit));
+              : () => import(this.context, result.source.id, hit));
 
     final sourceName = result.source.name;
     return CatalogGameRow(

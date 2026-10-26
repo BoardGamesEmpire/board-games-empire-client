@@ -7,10 +7,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-// Every body below is shaped from the backend source at a21cd51e, not
-// recorded from a running server: `GameService.getGames` returns bare Prisma
+// Every body below is shaped from the backend source, not recorded from a
+// running server. At a21cd51e, `GameService.getGames` returns bare Prisma
 // rows, `getGame` adds the includes listed there, and the search service's
-// `queryLocalGames` / `mapProtoGame` build each result.
+// `queryLocalGames` / `mapProtoGame` build each result. At 83e62bb0, the
+// import controller answers the start, and `GameImportStatusService`'s
+// `toBatchDto` / `toJobDto` build the poll's.
 
 /// A catalog row: every scalar column of the Prisma `Game` model, which
 /// `findMany` returns with no `select`.
@@ -207,12 +209,69 @@ String _envelope(int status, String error) => jsonEncode({
   'error': error,
 });
 
+/// The import batch every import body names: the server mints a v4 UUID.
+const _batch = '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f';
+
+/// The correlation id an import is started with.
+const _corr = '5a1e4b3c-2d6f-4a8b-9c0d-1e2f3a4b5c6d';
+
+/// What `POST /games/import` answers once the import is queued.
+String _receiptBody() => jsonEncode({
+  'message': 'Import queued',
+  'batchId': _batch,
+  'baseJobId': 'job_base',
+  'expansionJobIds': <String>[],
+  'correlationId': _corr,
+});
+
+/// One job of a polled batch, as `toJobDto` maps a `Job` row: the result's
+/// fields only once the job has one, and `undefined` left out.
+Map<String, dynamic> _jobRow({
+  String status = 'Running',
+  String? gameId,
+  String? gameTitle,
+  Object? platformGames,
+  String? errorCode,
+  bool isExpansion = false,
+}) => {
+  'jobId': isExpansion ? 'job_expansion' : 'job_base',
+  'status': status,
+  'isExpansion': isExpansion,
+  'parentJobId': isExpansion ? 'job_base' : null,
+  // The coordinator snapshots the requested expansions on the base job only.
+  if (!isExpansion) 'requestedExpansions': <String>[],
+  'externalId': isExpansion ? '927' : '926',
+  'gameId': ?gameId,
+  'gameTitle': ?gameTitle,
+  // A completed job's result stores its thumbnail, null or not.
+  if (gameId != null) 'thumbnail': null,
+  'platformGames': ?platformGames,
+  'errorCode': ?errorCode,
+  if (errorCode != null) 'error': 'Fetching game data from the gateway failed.',
+  'startedAt': status == 'Pending' ? null : '2026-10-26T10:00:00.000Z',
+  'completedAt': const {'Pending', 'Running'}.contains(status)
+      ? null
+      : '2026-10-26T10:00:04.000Z',
+};
+
+/// What `GET /games/import/:batchId` answers.
+String _batchBody({
+  String status = 'Running',
+  List<Map<String, dynamic>>? jobs,
+}) => jsonEncode({
+  'batchId': _batch,
+  'correlationId': _corr,
+  'status': status,
+  'jobs': jobs ?? [_jobRow()],
+});
+
 /// One request as the transport received it.
 typedef _Sent = ({
   String method,
   String path,
   Map<String, dynamic> query,
   Duration? receiveTimeout,
+  Object? data,
 });
 
 /// Answers every request with one canned response, and records what it was
@@ -235,6 +294,7 @@ class _RecordingAdapter implements HttpClientAdapter {
       path: options.path,
       query: options.queryParameters,
       receiveTimeout: options.receiveTimeout,
+      data: options.data,
     ));
     return ResponseBody.fromString(
       body,
@@ -634,6 +694,235 @@ void main() {
       expect(
         remote.search('catan'),
         throwsA(isA<GamesRemoteTransientException>()),
+      );
+    });
+  });
+
+  group('import', () {
+    Future<GameImportReceipt> start(GamesRemoteDataSource remote) =>
+        remote.startImport(
+          gatewayId: 'dg_bgg',
+          externalId: '926',
+          correlationId: _corr,
+        );
+
+    test('startImport sends the three fields and reads the receipt', () async {
+      final remote = answering(_receiptBody(), status: 201);
+
+      final receipt = await start(remote);
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'POST');
+      expect(sent.path, '/api/games/import');
+      expect(sent.data, {
+        'gatewayId': 'dg_bgg',
+        'externalId': '926',
+        'correlationId': _corr,
+      });
+      expect(
+        receipt,
+        const GameImportReceipt(
+          batchId: _batch,
+          baseJobId: 'job_base',
+          correlationId: _corr,
+        ),
+      );
+    });
+
+    test('startImport refuses a correlation id that is not a UUID, before '
+        'sending', () {
+      final remote = answering(_receiptBody(), status: 201);
+
+      expect(
+        () => remote.startImport(
+          gatewayId: 'dg_bgg',
+          externalId: '926',
+          correlationId: 'ck1abc',
+        ),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('startImport refuses an empty gateway or external id, before '
+        'sending', () {
+      final remote = answering(_receiptBody(), status: 201);
+
+      expect(
+        () => remote.startImport(
+          gatewayId: '',
+          externalId: '926',
+          correlationId: _corr,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => remote.startImport(
+          gatewayId: 'dg_bgg',
+          externalId: '',
+          correlationId: _corr,
+        ),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('fetchImport reads a completed base job and its platform '
+        'games', () async {
+      final remote = answering(
+        _batchBody(
+          status: 'Completed',
+          jobs: [
+            _jobRow(
+              status: 'Completed',
+              gameId: 'g_seafarers',
+              gameTitle: 'Catan: Seafarers',
+              platformGames: [
+                {'platformId': 'plat_tabletop', 'platformGameId': 'pg_1'},
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final batch = await remote.fetchImport(_batch);
+
+      expect(adapter.sent.single.path, '/api/games/import/$_batch');
+      expect(
+        batch,
+        const ImportBatch(
+          batchId: _batch,
+          correlationId: _corr,
+          status: ImportBatchStatus.completed,
+          jobs: [
+            ImportJob(
+              jobId: 'job_base',
+              status: ImportJobStatus.completed,
+              isExpansion: false,
+              externalId: '926',
+              gameId: 'g_seafarers',
+              gameTitle: 'Catan: Seafarers',
+              platformGames: [
+                ImportPlatformGame(
+                  platformId: 'plat_tabletop',
+                  platformGameId: 'pg_1',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    });
+
+    test("fetchImport tells the base game's job from an expansion's", () async {
+      final remote = answering(
+        _batchBody(
+          jobs: [
+            _jobRow(),
+            _jobRow(status: 'Pending', isExpansion: true),
+          ],
+        ),
+      );
+
+      final batch = await remote.fetchImport(_batch);
+
+      expect(batch.jobs.map((job) => (job.jobId, job.isExpansion)), [
+        ('job_base', false),
+        ('job_expansion', true),
+      ]);
+    });
+
+    test("fetchImport reads a failed job's error code", () async {
+      final remote = answering(
+        _batchBody(
+          status: 'Failed',
+          jobs: [_jobRow(status: 'Failed', errorCode: 'GATEWAY_ERROR')],
+        ),
+      );
+
+      final job = (await remote.fetchImport(_batch)).jobs.single;
+
+      expect(job.status, ImportJobStatus.failed);
+      expect(job.errorCode, ImportErrorCode.gatewayError);
+    });
+
+    test('fetchImport reads names it does not know as unknown', () async {
+      final remote = answering(
+        _batchBody(
+          status: 'Paused',
+          jobs: [_jobRow(status: 'Paused', errorCode: 'TIMEOUT')],
+        ),
+      );
+
+      final batch = await remote.fetchImport(_batch);
+
+      expect(batch.status, ImportBatchStatus.unknown);
+      expect(batch.jobs.single.status, ImportJobStatus.unknown);
+      expect(batch.jobs.single.errorCode, ImportErrorCode.unknown);
+    });
+
+    test('an application 404 on the poll is an unknown import', () {
+      final remote = answering(_envelope(404, 'Not Found'), status: 404);
+
+      expect(
+        remote.fetchImport(_batch),
+        throwsA(isA<GameImportNotFoundException>()),
+      );
+    });
+
+    test('a 404 on the poll without the envelope came from a proxy, so it is '
+        'transient', () {
+      final remote = answering('<html>Not Found</html>', status: 404);
+
+      expect(
+        remote.fetchImport(_batch),
+        throwsA(isA<GamesRemoteTransientException>()),
+      );
+    });
+
+    test('an application 403 on either route is forbidden', () async {
+      final remote = answering(_envelope(403, 'Forbidden'), status: 403);
+
+      await expectLater(start(remote), throwsA(isA<GamesForbiddenException>()));
+      await expectLater(
+        remote.fetchImport(_batch),
+        throwsA(isA<GamesForbiddenException>()),
+      );
+    });
+
+    test('a 404 on the start route is transient, envelope or not', () async {
+      for (final body in [
+        _envelope(404, 'Not Found'),
+        '<html>Not Found</html>',
+      ]) {
+        await expectLater(
+          start(answering(body, status: 404)),
+          throwsA(isA<GamesRemoteTransientException>()),
+          reason: body,
+        );
+      }
+    });
+
+    test('fetchImport refuses a batch id that is not a UUID, before '
+        'sending', () {
+      final remote = answering(_batchBody());
+
+      expect(() => remote.fetchImport('../games'), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('a poll body without jobs is permanent', () {
+      final remote = answering(
+        jsonEncode({
+          'batchId': _batch,
+          'correlationId': _corr,
+          'status': 'Running',
+        }),
+      );
+
+      expect(
+        remote.fetchImport(_batch),
+        throwsA(isA<GamesRemotePermanentException>()),
       );
     });
   });

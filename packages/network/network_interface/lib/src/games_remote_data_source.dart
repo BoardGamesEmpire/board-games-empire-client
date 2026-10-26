@@ -20,7 +20,7 @@ typedef GameWithPlatformGames = ({
 });
 
 /// Remote data source for the server's games: the catalog, one game, and
-/// search (#42).
+/// search (#42), and importing a game from a DataGateway (#43).
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [DataGatewayRemoteDataSource]: the injected client carries the base URL
@@ -28,14 +28,16 @@ typedef GameWithPlatformGames = ({
 ///
 /// ## Wire contract
 ///
-/// Backend `libs/api/game` and `libs/api/game-search` at `a21cd51e`, all under
-/// the `api` global prefix:
+/// Backend `libs/api/game` and `libs/api/game-search` at `a21cd51e`, and
+/// `libs/api/game-import` at `83e62bb0`, all under the `api` global prefix:
 ///
 /// | Method | Path | Body |
 /// |---|---|---|
 /// | [fetchPage] | `GET /api/games` | `{ games: [...], pagination }` |
 /// | [fetchGame] | `GET /api/games/:id` | `{ game }` |
 /// | [search] | `GET /api/games/search` | `{ correlationId, resultsBySource, errors?, rateLimitedSources?, unavailableSources? }` |
+/// | [startImport] | `POST /api/games/import` | `{ message, batchId, baseJobId, expansionJobIds, correlationId }` |
+/// | [fetchImport] | `GET /api/games/import/:batchId` | `{ batchId, correlationId, status, jobs: [...] }` |
 ///
 /// The two list reads page differently. [fetchPage] is page-based, ordered by
 /// title and then id, and refuses `?offset=` with a 400. [search] is
@@ -80,16 +82,20 @@ typedef GameWithPlatformGames = ({
 ///   game that exists and the caller may not read is a 403, not a 404, at
 ///   `GET /games/:id`.
 /// - [GameNotFoundException]: a 404 carrying the envelope from [fetchGame].
+/// - [GameImportNotFoundException]: a 404 carrying the envelope from
+///   [fetchImport].
 /// - [GamesRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out, and a 2xx whose body cannot be read as the contract above.
 /// - [GamesRemoteTransientException]: no response at all, 401, 407, 408, 429,
-///   every 5xx, a 403 or 404 without the envelope, a 404 from [fetchPage] or
-///   [search] even with it (a list route is never absent, so the route is not
-///   deployed), and a 2xx body this device could not decode at all.
+///   every 5xx, a 403 or 404 without the envelope, a 404 from [fetchPage],
+///   [search] or [startImport] even with it (a list or write route is never
+///   absent, so the route is not deployed), and a 2xx body this device could
+///   not decode at all.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: a page, limit or offset out of range, a filter naming an
-/// unknown type, or an id that is not one path segment.
+/// unknown type, an id that is not one path segment, an empty DataGateway or
+/// external id, or a correlation or batch id that is not a UUID.
 abstract class GamesRemoteDataSource {
   /// The backend's `limit` ceiling on both list reads
   /// (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is a 400, not clamped.
@@ -133,6 +139,26 @@ abstract class GamesRemoteDataSource {
     Set<ContentType> contentTypes = const {},
     Set<PlatformType> platformTypes = const {},
   });
+
+  /// Starts importing the game [externalId] from the DataGateway [gatewayId],
+  /// with no expansions and no locale (#43), and answers once the server has
+  /// queued it. The import runs on the server: follow it with [fetchImport].
+  ///
+  /// [correlationId] must be a UUID, which is all the server accepts. Send the
+  /// same one again only for a start whose answer never came: the server may
+  /// have started that batch.
+  Future<GameImportReceipt> startImport({
+    required String gatewayId,
+    required String externalId,
+    required String correlationId,
+  });
+
+  /// The import batch [batchId], as it stands now (#43).
+  ///
+  /// The server sets no deadline on an import, so a caller following one
+  /// needs its own. Throws [GameImportNotFoundException] when there is no
+  /// such batch, or none of its jobs the caller may read.
+  Future<ImportBatch> fetchImport(String batchId);
 }
 
 /// Base class for every games remote failure.
@@ -160,6 +186,16 @@ final class GamesForbiddenException extends GamesRemoteException {
 /// There is no game with this id.
 final class GameNotFoundException extends GamesRemoteException {
   const GameNotFoundException(super.message, {super.statusCode, super.cause});
+}
+
+/// There is no import batch with this id, or none of its jobs the caller may
+/// read (#43).
+final class GameImportNotFoundException extends GamesRemoteException {
+  const GameImportNotFoundException(
+    super.message, {
+    super.statusCode,
+    super.cause,
+  });
 }
 
 /// The server refused the request, and sending it again will not change that.
