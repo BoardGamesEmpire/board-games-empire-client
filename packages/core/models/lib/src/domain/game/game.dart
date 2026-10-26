@@ -1,6 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import '../common/visibility.dart';
+import '../common/reach.dart';
 import 'content_type.dart';
 import 'time_measure.dart';
 
@@ -64,7 +64,11 @@ abstract class Game with _$Game {
     @Default(<String>[]) List<String> tags,
 
     // Access control
-    @Default(Visibility.public) Visibility visibility,
+    // A reach the server adds before this client knows it reads as unknown
+    // rather than failing the game, as contentType's does.
+    @JsonKey(unknownEnumValue: Reach.unknown)
+    @Default(Reach.public)
+    Reach reach,
     String? createdById,
 
     DateTime? deletedAt,

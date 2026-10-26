@@ -356,7 +356,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     ratingsCount: json['ratingsCount'] as int?,
     ownedByCount: json['ownedByCount'] as int? ?? 0,
     contentType: ContentType.fromWire(json['contentType'] as String),
-    visibility: _visibility(json['visibility'] as String),
+    reach: _reach(json['reach']),
     createdById: json['createdById'] as String?,
     deletedAt: _date(json['deletedAt']),
     createdAt: DateTime.parse(json['createdAt'] as String),
@@ -374,17 +374,12 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     }
   }
 
-  /// A visibility this client does not know reads as private, rather than
-  /// failing the page the game is on. Private claims the least, and nothing
-  /// decides a read by it: the cache answers by what the server sent each
-  /// user (#434). Its tiers are due to be replaced (backend#495).
-  static Visibility _visibility(String wire) {
-    try {
-      return Visibility.fromWire(wire);
-    } on StateError {
-      return Visibility.private;
-    }
-  }
+  /// A missing reach, or one this client does not know, reads as unknown
+  /// rather than failing the page the game is on. Nothing decides a read by
+  /// it: the cache answers by what the server sent each user (#434). A strict
+  /// read here is how a renamed field failed every catalog page (#602).
+  static Reach _reach(Object? wire) =>
+      wire is String ? Reach.fromWire(wire) : Reach.unknown;
 
   static DateTime? _date(Object? wire) =>
       wire is String ? DateTime.parse(wire) : null;

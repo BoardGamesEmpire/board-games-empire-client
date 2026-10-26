@@ -5,7 +5,7 @@ DateTime get _now => DateTime.parse('2024-01-15T10:30:00Z');
 
 Game _make({
   ContentType contentType = ContentType.baseGame,
-  Visibility visibility = Visibility.public,
+  Reach reach = Reach.public,
   String? createdById,
   List<String> tags = const <String>[],
   int totalPlayCount = 0,
@@ -17,7 +17,7 @@ Game _make({
   title: 'Catan',
   subtitle: 'The Settlers of',
   contentType: contentType,
-  visibility: visibility,
+  reach: reach,
   createdById: createdById,
   tags: tags,
   totalPlayCount: totalPlayCount,
@@ -33,7 +33,7 @@ void main() {
     test('defaults for new aggregate fields are sensible', () {
       final game = _make();
       expect(game.totalPlayCount, equals(0));
-      expect(game.visibility, equals(Visibility.public));
+      expect(game.reach, equals(Reach.public));
       expect(game.createdById, isNull);
       expect(game.tags, isEmpty);
       expect(game.playingTime, isNull);
@@ -47,7 +47,7 @@ void main() {
 
     test('serializes added fields with camelCase keys', () {
       final game = _make(
-        visibility: Visibility.private,
+        reach: Reach.private,
         createdById: 'user_123',
         tags: const ['family', 'classic'],
         totalPlayCount: 42,
@@ -55,7 +55,7 @@ void main() {
       );
       final json = game.toJson();
 
-      expect(json['visibility'], equals('Private'));
+      expect(json['reach'], equals('Private'));
       expect(json['createdById'], equals('user_123'));
       expect(json['tags'], equals(<String>['family', 'classic']));
       expect(json['totalPlayCount'], equals(42));
@@ -91,7 +91,7 @@ void main() {
         designers: const ['Martin Wallace'],
         publishers: const ['Roxley'],
         tags: const ['heavy', 'highly rated'],
-        visibility: Visibility.public,
+        reach: Reach.public,
         createdById: null,
         createdAt: _now,
         updatedAt: _now,
@@ -101,19 +101,25 @@ void main() {
       expect(round, equals(game));
     });
 
-    test('Visibility round-trips through Game.visibility', () {
-      for (final value in Visibility.values) {
-        final game = _make(visibility: value);
+    test('Reach round-trips through Game.reach', () {
+      for (final value in Reach.values.where((r) => r != Reach.unknown)) {
+        final game = _make(reach: value);
         final round = Game.fromJson(game.toJson());
-        expect(round.visibility, equals(value));
+        expect(round.reach, equals(value));
       }
     });
 
-    test('JSON omitting visibility defaults to Public', () {
+    test('JSON omitting reach defaults to Public', () {
       final json = _make().toJson();
-      json.remove('visibility');
+      json.remove('reach');
       final round = Game.fromJson(json);
-      expect(round.visibility, equals(Visibility.public));
+      expect(round.reach, equals(Reach.public));
+    });
+
+    test('JSON with a reach this client does not know reads as unknown', () {
+      final json = _make().toJson();
+      json['reach'] = 'Guild';
+      expect(Game.fromJson(json).reach, equals(Reach.unknown));
     });
 
     test('Game.fromJson with an unknown contentType wire value falls back to '

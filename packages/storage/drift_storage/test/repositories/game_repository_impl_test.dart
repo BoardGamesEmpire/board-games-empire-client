@@ -28,7 +28,7 @@ Game _makeGame({
   List<String> designers = const <String>[],
   List<String> publishers = const <String>[],
   List<String> tags = const <String>[],
-  Visibility visibility = Visibility.public,
+  Reach reach = Reach.public,
   String? createdById,
   DateTime? deletedAt,
 }) {
@@ -51,7 +51,7 @@ Game _makeGame({
     designers: designers,
     publishers: publishers,
     tags: tags,
-    visibility: visibility,
+    reach: reach,
     createdById: createdById,
     deletedAt: deletedAt,
     createdAt: t,
@@ -175,7 +175,7 @@ void main() {
       });
 
       test(
-        '(playingTime / totalPlayCount / tags / visibility / createdById)',
+        '(playingTime / totalPlayCount / tags / reach / createdById)',
         () async {
           await repo.cacheGame(
             _makeGame(
@@ -183,7 +183,7 @@ void main() {
               playingTime: 90,
               totalPlayCount: 42,
               tags: ['Solo Mode', 'Heavy'],
-              visibility: Visibility.private,
+              reach: Reach.private,
               createdById: 'user-abc',
             ),
           );
@@ -192,7 +192,7 @@ void main() {
           expect(found.playingTime, 90);
           expect(found.totalPlayCount, 42);
           expect(found.tags, equals(['Solo Mode', 'Heavy']));
-          expect(found.visibility, Visibility.private);
+          expect(found.reach, Reach.private);
           expect(found.createdById, 'user-abc');
         },
       );
@@ -204,9 +204,21 @@ void main() {
         expect(found.playingTime, isNull);
         expect(found.totalPlayCount, 0);
         expect(found.tags, isEmpty);
-        expect(found.visibility, Visibility.public);
+        expect(found.reach, Reach.public);
         expect(found.createdById, isNull);
       });
+
+      test(
+        'stores an unknown reach as Unknown and reads it back as unknown',
+        () async {
+          await repo.cacheGame(_makeGame(id: 'g-reach', reach: Reach.unknown));
+          final row = await (db.select(
+            db.gamesTable,
+          )..where((t) => t.id.equals('g-reach'))).getSingle();
+          expect(row.visibility, 'Unknown');
+          expect((await repo.getGame('g-reach'))!.reach, Reach.unknown);
+        },
+      );
 
       test('getGame returns null for a tombstoned game', () async {
         await repo.cacheGame(

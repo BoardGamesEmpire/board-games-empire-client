@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 import '../tables/game_access_table.dart';
+import 'stored_enum_name.dart';
 import 'watch_disposal.dart';
 
 /// [GameRepository] over the per-server [ServerDatabase], for one user
@@ -452,7 +453,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     designers: _decodeStringList(row.designersJson),
     publishers: _decodeStringList(row.publishersJson),
     tags: _decodeStringList(row.tagsJson),
-    visibility: Visibility.fromWire(row.visibility),
+    reach: Reach.fromWire(row.visibility),
     createdById: row.createdById,
     deletedAt: row.deletedAt,
     createdAt: row.createdAt,
@@ -489,7 +490,9 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
         designersJson: Value(jsonEncode(g.designers)),
         publishersJson: Value(jsonEncode(g.publishers)),
         tagsJson: Value(jsonEncode(g.tags)),
-        visibility: Value(g.visibility.toWire()),
+        visibility: Value(
+          storedEnumName(g.reach, Reach.unknown, (v) => v.toWire()),
+        ),
         createdById: Value(g.createdById),
         deletedAt: Value(g.deletedAt),
         createdAt: g.createdAt,

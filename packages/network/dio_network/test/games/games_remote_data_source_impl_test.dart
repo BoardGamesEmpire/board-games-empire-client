@@ -24,7 +24,7 @@ Map<String, dynamic> _gameRow({
   String thumbnail = 'https://cf.geekdo-images.com/catan_t.jpg',
   String? minPlayTimeMeasure = 'Minutes',
   String contentType = 'BaseGame',
-  String visibility = 'Public',
+  Object? reach = 'Public',
 }) => {
   'id': id,
   'title': title,
@@ -50,7 +50,7 @@ Map<String, dynamic> _gameRow({
   'enrichmentSource': 'bgg',
   'frozenAt': null,
   'contentType': contentType,
-  'visibility': visibility,
+  'reach': ?reach,
   'createdById': 'user_service',
   'updatedById': null,
   'deletedAt': null,
@@ -125,6 +125,7 @@ final _catan = Game(
   bayesRating: 6.9,
   ratingsCount: 120000,
   ownedByCount: 3,
+  reach: Reach.public,
   createdById: 'user_service',
   createdAt: DateTime.utc(2026, 9, 1, 10),
   updatedAt: DateTime.utc(2026, 10, 1, 12, 30),
@@ -371,7 +372,7 @@ void main() {
           _gameRow(
             minPlayTimeMeasure: 'Fortnights',
             contentType: 'Miniature',
-            visibility: 'Guild',
+            reach: 'Guild',
           ),
         ]),
       );
@@ -382,8 +383,16 @@ void main() {
           isA<Game>()
               .having((g) => g.minPlayTimeMeasure, 'unit', isNull)
               .having((g) => g.contentType, 'type', ContentType.unknown)
-              .having((g) => g.visibility, 'visibility', Visibility.private),
+              .having((g) => g.reach, 'reach', Reach.unknown),
         ),
+      );
+    });
+
+    test('reads a row with no reach as unknown', () {
+      final remote = answering(_catalogBody([_gameRow(reach: null)]));
+      return expectLater(
+        remote.fetchPage().then((page) => page.items.single.reach),
+        completion(Reach.unknown),
       );
     });
 

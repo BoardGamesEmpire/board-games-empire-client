@@ -42,10 +42,8 @@ class GamesTable extends Table {
   TextColumn get publishersJson => text().withDefault(const Constant('[]'))();
   TextColumn get tagsJson => text().withDefault(const Constant('[]'))();
 
-  /// Visibility wire format (PascalCase: 'Public', 'Private', 'Household',
-  /// 'Friends', 'FriendsOfFriends', 'FriendsOfHouseholds'). Matches the
-  /// [JsonValue] annotations on the [Visibility] enum. Default 'Public'
-  /// mirrors the model's default.
+  /// `Reach`, as the backend's enum name; a name this client can't read is
+  /// stored as 'Unknown'. Default 'Public', the server's default (#602).
   TextColumn get visibility => text().withDefault(const Constant('Public'))();
 
   /// Server user id of the row's creator. Nullable for legacy/imported
