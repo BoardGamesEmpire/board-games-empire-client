@@ -504,9 +504,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
 
   /// Emits an optimistic session if one is available, else the retryable
   /// failure carrying the ORIGINAL cause — not whatever the restore
-  /// attempt did. The user's problem is that the server was unreachable;
-  /// a keychain hiccup during the fallback would be a misleading
-  /// substitute.
+  /// attempt did. The user's problem is whatever kept the check from
+  /// completing; a keychain hiccup during the fallback would be a misleading
+  /// substitute, and would pick the wrong kind for the view.
   Future<void> _emitRestoreOrFailed(
     Emitter<AuthBlocState> emit,
     Object cause,
@@ -517,8 +517,27 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       _emitOptimistic(emit, restored);
       return;
     }
-    emit(AuthSessionCheckFailed(cause, stackTrace));
+    emit(
+      AuthSessionCheckFailed(
+        kind: _sessionCheckFailureKind(cause),
+        cause: cause,
+        stackTrace: stackTrace,
+      ),
+    );
   }
+
+  /// What the retry view tells the user, from what kept the check from
+  /// completing (#396). Only a check nothing answered points at the
+  /// connection. Unlike the form, an [AuthException] this doesn't name is
+  /// [SessionCheckFailureKind.unexpected], not a server fault: the server
+  /// faults a session check can meet are all [AuthServerException].
+  static SessionCheckFailureKind _sessionCheckFailureKind(Object cause) =>
+      switch (cause) {
+        AuthNetworkException() ||
+        TimeoutException() => SessionCheckFailureKind.unreachable,
+        AuthServerException() => SessionCheckFailureKind.serverFault,
+        _ => SessionCheckFailureKind.unexpected,
+      };
 
   /// Never throws. An optimistic restore is an enhancement over the retry
   /// view, so a fault here must degrade to "no cached session" rather than

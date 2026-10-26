@@ -18,10 +18,11 @@ import 'auth_screen.dart';
 ///   already advanced the bootstrap cubit, so the router is about to
 ///   redirect to home; the gate holds splash for the intervening
 ///   microtask instead of flashing the form.
-/// - [AuthSessionCheckFailed] → [SessionUnreachableView] — the stored
-///   session is indeterminate (offline / timeout / server error), never
-///   rejected, so showing the sign-in form would wrongly suggest it is
-///   gone. Retry re-dispatches the session check; true offline-first
+/// - [AuthSessionCheckFailed] → [SessionCheckFailedView] — the stored
+///   session is indeterminate (offline / timeout / server error / a fault
+///   on this device), never rejected, so showing the sign-in form would
+///   wrongly suggest it is gone. The view's copy follows the failure's kind
+///   (#396). Retry re-dispatches the session check; true offline-first
 ///   restore is #98.
 /// - [AuthUnauthenticated] / [AuthLoading] / [AuthOperationFailure] →
 ///   [AuthScreen] — no session (or an interactive attempt in flight /
@@ -44,7 +45,7 @@ class AuthGate extends StatelessWidget {
   final ServerIdentity identity;
 
   /// Human-readable server name, for attribution on the form and the
-  /// unreachable view.
+  /// session-check retry view.
   final String serverDisplayName;
 
   /// Rendered while the session check is unresolved (and for the redirect
@@ -66,7 +67,8 @@ class AuthGate extends StatelessWidget {
         AuthInitial() ||
         AuthSessionCheckInProgress() ||
         AuthAuthenticated() => splash,
-        AuthSessionCheckFailed() => SessionUnreachableView(
+        AuthSessionCheckFailed(:final kind) => SessionCheckFailedView(
+          kind: kind,
           serverDisplayName: serverDisplayName,
           onRetry: () =>
               context.read<AuthBloc>().add(const AuthSessionCheckRequested()),
@@ -84,31 +86,56 @@ class AuthGate extends StatelessWidget {
   }
 }
 
-/// Rendered when the startup session check cannot reach the server (#37).
+/// Rendered when the startup session check could not complete (#37), saying
+/// what failed (#396).
+///
+/// Title, body and icon all follow [kind], because "Can't reach the server"
+/// is true of only one kind. Retry is the only action for every kind, a
+/// locked keychain included: it unlocks, and anything else on offer would
+/// throw the session away.
 ///
 /// The layout and its accessibility (one live region for the failure, an
 /// autofocused retry) come from [BgeErrorState], shared with the bootstrap
 /// error screen (#102).
-class SessionUnreachableView extends StatelessWidget {
-  const SessionUnreachableView({
+class SessionCheckFailedView extends StatelessWidget {
+  const SessionCheckFailedView({
     super.key,
+    required this.kind,
     required this.serverDisplayName,
     required this.onRetry,
   });
 
+  final SessionCheckFailureKind kind;
   final String serverDisplayName;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AuthLocalizations.of(context);
+    final (icon, title, body) = switch (kind) {
+      SessionCheckFailureKind.unreachable => (
+        Icons.cloud_off_outlined,
+        l10n.authSessionUnreachableTitle(serverDisplayName),
+        l10n.authSessionUnreachableBody,
+      ),
+      SessionCheckFailureKind.serverFault => (
+        Icons.dns_outlined,
+        l10n.authSessionServerFaultTitle(serverDisplayName),
+        l10n.authSessionServerFaultBody,
+      ),
+      SessionCheckFailureKind.unexpected => (
+        Icons.error_outline,
+        l10n.authSessionUnexpectedTitle,
+        l10n.authSessionUnexpectedBody,
+      ),
+    };
 
     return BgePage(
       centerVertically: true,
       child: BgeErrorState(
-        icon: Icons.cloud_off_outlined,
-        title: l10n.authSessionUnreachableTitle(serverDisplayName),
-        body: l10n.authSessionUnreachableBody,
+        icon: icon,
+        title: title,
+        body: body,
         retryLabel: l10n.authRetryButton,
         onRetry: onRetry,
       ),

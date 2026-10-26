@@ -193,6 +193,27 @@
   "@authSessionUnreachableBody": {
     "description": "Body of the session-restore failure view (#37)"
   },
+  "authSessionServerFaultTitle": "{serverName} isn't working right now",
+  "@authSessionServerFaultTitle": {
+    "description": "Title of the session-restore failure view when the server answered and failed (a 5xx, or a reply that isn't what it should be). The server is reachable, so the copy must not mention the connection.",
+    "placeholders": {
+      "serverName": {
+        "type": "String"
+      }
+    }
+  },
+  "authSessionServerFaultBody": "The server answered but couldn't check your session. Try again in a moment.",
+  "@authSessionServerFaultBody": {
+    "description": "Body of the session-restore failure view when the server answered and failed. Says a retry shortly is worth it, and nothing about the connection."
+  },
+  "authSessionUnexpectedTitle": "Couldn't check your session",
+  "@authSessionUnexpectedTitle": {
+    "description": "Title of the session-restore failure view when the fault is on this device (a reply it couldn't decode, or a locked keychain), not the server or the connection."
+  },
+  "authSessionUnexpectedBody": "Something went wrong on this device. Try again.",
+  "@authSessionUnexpectedBody": {
+    "description": "Body of the session-restore failure view when the fault is on this device. Must not mention the connection or the server."
+  },
   "authRetryButton": "Try Again",
   "@authRetryButton": {
     "description": "Retry button on the session-restore failure view"

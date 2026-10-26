@@ -113,6 +113,28 @@ enum SignOutCause {
   sessionLost,
 }
 
+/// What kept the startup session check from completing (#396). Picks the
+/// retry view's copy; the cause itself is never for display.
+///
+/// An enum rather than a sealed family: the gate and the bloc's log match
+/// [AuthSessionCheckFailed] directly, and a switch over the kind is just as
+/// exhaustive.
+enum SessionCheckFailureKind {
+  /// Nothing answered: an [AuthNetworkException], or the check's own
+  /// `TimeoutException` when its budget ran out. The one kind whose advice
+  /// is the connection.
+  unreachable,
+
+  /// The server answered and failed: an [AuthServerException] (a 5xx, a 2xx
+  /// that isn't JSON, an unexpected status). Worth retrying shortly.
+  serverFault,
+
+  /// Something on this device: an [AuthLocalDecodeException], any other
+  /// [AuthException], or a non-auth fault such as a locked keychain's
+  /// `PlatformException`.
+  unexpected,
+}
+
 /// The startup session check could not be completed AND no cached session
 /// was eligible to enter on (#37, narrowed by #98).
 ///
@@ -130,11 +152,19 @@ enum SignOutCause {
 ///    user snapshot, a passed expiry, or a device clock that has moved
 ///    backwards.
 ///
-/// The auth gate renders a retryable "can't reach the server" view, never
+/// The auth gate renders a retryable view whose copy follows [kind], never
 /// the sign-in form — which would wrongly suggest the stored session was
 /// rejected. Retry re-dispatches the session check.
 final class AuthSessionCheckFailed extends AuthBlocState {
-  const AuthSessionCheckFailed([this.cause, this.stackTrace]);
+  const AuthSessionCheckFailed({
+    required this.kind,
+    this.cause,
+    this.stackTrace,
+  });
+
+  /// What failed, which decides what the retry view tells the user (#396).
+  /// The only field in equality.
+  final SessionCheckFailureKind kind;
 
   /// The underlying error — retained for the feedback pipeline
   /// (logging/reporting), excluded from equality so tests can match on
@@ -147,6 +177,9 @@ final class AuthSessionCheckFailed extends AuthBlocState {
   /// locked keychain). Excluded from equality (diagnostic, not identity),
   /// same as [cause].
   final StackTrace? stackTrace;
+
+  @override
+  List<Object?> get props => [kind];
 }
 
 /// Why an interactive auth operation (sign-in / register) failed. Each
