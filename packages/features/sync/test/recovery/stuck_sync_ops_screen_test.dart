@@ -30,6 +30,12 @@ const _ops = [
   StuckSyncOp(entryId: 'q5', kind: StuckSyncOpKind.unreadable),
 ];
 
+const _eventCreate = StuckSyncOp(
+  entryId: 'q6',
+  kind: StuckSyncOpKind.createEvent,
+  subject: 'Game night',
+);
+
 /// The retry-or-discard screen (#190) over a mocked [SyncRecovery].
 void main() {
   late _MockRecovery recovery;
@@ -76,6 +82,14 @@ void main() {
       expect(find.text(text), findsOneWidget);
     }
     expect(find.text("Couldn't sync"), findsNWidgets(_visibleRows(tester)));
+  });
+
+  testWidgets('a stuck event create reads "Create the event “Game night”"', (
+    tester,
+  ) async {
+    await show(tester, const [_eventCreate]);
+
+    expect(find.text('Create the event “Game night”'), findsOneWidget);
   });
 
   testWidgets('tells a screen reader how many stuck ops there are, and '
@@ -218,6 +232,15 @@ void main() {
         expect(find.text(body), findsOneWidget);
       });
     }
+
+    testWidgets('for an event create, says it goes alone', (tester) async {
+      await show(tester, const [_eventCreate]);
+
+      await tester.tap(find.byKey(StuckSyncOpsScreen.discardKey('q6')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(alone), findsOneWidget);
+    });
   });
 
   testWidgets('an action that throws says so', (tester) async {

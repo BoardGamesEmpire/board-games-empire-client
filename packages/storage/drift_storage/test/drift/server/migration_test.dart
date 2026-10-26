@@ -15,6 +15,7 @@ import 'generated/schema_v7.dart' as v7;
 import 'generated/schema_v8.dart' as v8;
 import 'generated/schema_v9.dart' as v9;
 import 'generated/schema_v10.dart' as v10;
+import 'generated/schema_v11.dart' as v11;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -886,7 +887,68 @@ void main() {
     );
   });
 
-  // Data-integrity coverage for v9 → v10 (#602, #471): the step renames
+  // Data-integrity coverage for v9 → v10 (#499): the step only creates
+  // `event_moves`. An event cached before it, one the sync queue owns above
+  // all, must come through unchanged, and the new table starts empty because
+  // no earlier version created an event on the device.
+  test('migration from v9 to v10 adds an empty event_moves and preserves '
+      'events', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 9,
+      newVersion: 10,
+      createOld: v9.DatabaseAtV9.new,
+      createNew: v10.DatabaseAtV10.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v9.EventsData(
+            id: 'e_v9_1',
+            title: 'Game night',
+            createdById: 'user_v9_1',
+            householdId: 'hh_v9_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 1,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.events).get(), const [
+          v10.EventsData(
+            id: 'e_v9_1',
+            title: 'Game night',
+            createdById: 'user_v9_1',
+            householdId: 'hh_v9_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 1,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.eventMoves).get(), isEmpty);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v10 → v11 (#602, #471): the step renames
   // `games.visibility` to `reach`, drops the play-time unit columns from
   // `games` and `platform_games` and `games.playing_time`, and indexes
   // `game_collections (platform_game_id)`. All of it is `ALTER TABLE` in
@@ -897,21 +959,21 @@ void main() {
   // The game's reach is `Household`, a value the server dropped. The rename
   // keeps it as written, and `Reach.fromWire` reads it as unknown, so no
   // value is mapped here.
-  test('migration from v9 to v10 renames reach, drops the play-time units '
+  test('migration from v10 to v11 renames reach, drops the play-time units '
       'and indexes game_collections', () async {
     const at = '2024-01-15T10:30:00.000Z';
     const cachedAt = '2024-01-16T08:00:00.000Z';
 
     await verifier.testWithDataIntegrity(
-      oldVersion: 9,
-      newVersion: 10,
-      createOld: v9.DatabaseAtV9.new,
-      createNew: v10.DatabaseAtV10.new,
+      oldVersion: 10,
+      newVersion: 11,
+      createOld: v10.DatabaseAtV10.new,
+      createNew: v11.DatabaseAtV11.new,
       openTestedDatabase: ServerDatabase.new,
       createItems: (batch, oldDb) {
         batch.insert(
           oldDb.games,
-          const v9.GamesData(
+          const v10.GamesData(
             id: 'g_1',
             title: 'Brass',
             subtitle: 'Birmingham',
@@ -942,7 +1004,7 @@ void main() {
         );
         batch.insert(
           oldDb.platformGames,
-          const v9.PlatformGamesData(
+          const v10.PlatformGamesData(
             id: 'pg_1',
             gameId: 'g_1',
             platformId: 'plat_tabletop',
@@ -964,7 +1026,7 @@ void main() {
         );
         batch.insert(
           oldDb.gameCollections,
-          const v9.GameCollectionsData(
+          const v10.GameCollectionsData(
             id: 'gc_1',
             userId: 'user_1',
             platformGameId: 'pg_1',
@@ -980,7 +1042,7 @@ void main() {
       },
       validateItems: (newDb) async {
         expect(await newDb.select(newDb.games).get(), const [
-          v10.GamesData(
+          v11.GamesData(
             id: 'g_1',
             title: 'Brass',
             subtitle: 'Birmingham',
@@ -1007,7 +1069,7 @@ void main() {
           ),
         ]);
         expect(await newDb.select(newDb.platformGames).get(), const [
-          v10.PlatformGamesData(
+          v11.PlatformGamesData(
             id: 'pg_1',
             gameId: 'g_1',
             platformId: 'plat_tabletop',
@@ -1026,7 +1088,7 @@ void main() {
           ),
         ]);
         expect(await newDb.select(newDb.gameCollections).get(), const [
-          v10.GameCollectionsData(
+          v11.GameCollectionsData(
             id: 'gc_1',
             userId: 'user_1',
             platformGameId: 'pg_1',

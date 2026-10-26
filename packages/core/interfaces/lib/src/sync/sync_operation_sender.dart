@@ -28,9 +28,9 @@ abstract interface class SyncOperationSender {
   /// Claims [entryId], sends [operation], and records the outcome on the
   /// queue entry.
   ///
-  /// [operation] is the op queued under [entryId]. A household create goes
-  /// out keyed by its `localId`, so a retry after a lost response returns
-  /// the household the first attempt made (#131).
+  /// [operation] is the op queued under [entryId]. A household or event
+  /// create goes out keyed by its `localId`, so a retry after a lost
+  /// response returns what the first attempt made (#131, #499).
   ///
   /// Never throws for anything the send or its acknowledgement does: those
   /// all come back as a [SyncDelivery]. A queue write that records the
@@ -63,11 +63,16 @@ sealed class SyncDelivery {
 /// The server applied the op and the cache now holds its answer. The entry
 /// is completed.
 final class SyncDelivered extends SyncDelivery {
-  const SyncDelivered({this.householdId});
+  const SyncDelivered({this.householdId, this.eventId});
 
   /// For a household create, the id the server assigned, which the
   /// optimistic row now carries. Null for every other op.
   final String? householdId;
+
+  /// For an event create, the id the server assigned, which the cache now
+  /// holds the event under (#499). Null for a replay of a create whose event
+  /// was deleted since, which leaves no event, and for every other op.
+  final String? eventId;
 }
 
 /// Another sender holds the entry, or it can no longer be taken: completed,

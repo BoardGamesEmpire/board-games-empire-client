@@ -23,7 +23,7 @@ import 'event_detail_state.dart';
 ///
 /// | cache | the read | state |
 /// |---|---|---|
-/// | any | 404, and nothing written since | not found, for the bloc's life |
+/// | any | 404, and nothing written since | not found, for the bloc's life or until a follow |
 /// | a detail | any other | ready: a populated cache is never hidden |
 /// | null | 404, its forget running | not found |
 /// | null or an error | succeeded, and no answer since its write | loading |
@@ -65,6 +65,32 @@ import 'event_detail_state.dart';
 /// A read whose write fails is a failed read: the server's answer never
 /// reached the cache, and the screen shows only the cache.
 ///
+/// ## An event created on this device (#499)
+///
+/// An event created here is cached under a local id until the sync queue
+/// delivers its create. The reconcile then deletes the local event and
+/// caches the server's copy under the id the server gave it. To the watch on
+/// the local id that is the event going, as a null, which the screen must
+/// not show as not found.
+///
+/// So each cache answer first asks [EventRepository.reconciledEventId]
+/// whether the id has moved. The repository reads the moves before it
+/// delivers an answer, so the one that drops the local event finds the move,
+/// whichever tab ran the reconcile. The bloc then follows it as though it
+/// had been opened on the server's id. It watches that id instead, and drops
+/// whatever the local id's watch or a read of the local id still delivers.
+/// The server id's first answer starts the open's read, as any open's
+/// does. The reconcile has cached the server's copy by then, but the
+/// create's answer embeds each attendee's role and not their user, so the
+/// read is what names the roster. The local event stays on screen until the
+/// server's copy replaces it, so the screen passes through neither a spinner
+/// nor not found. A bloc built on the local id after the move follows it on
+/// its first answer, and reads only the server's id.
+///
+/// A replay of a create whose event was deleted since records no move: the
+/// local event goes, and the detail settles on not found. An open on the
+/// local event reads nothing, since the local-only flag outlasts the null.
+///
 /// ## A roster the read withholds
 ///
 /// A friend, a household guest or anyone reading a Public event reads an
@@ -87,7 +113,8 @@ import 'event_detail_state.dart';
 /// rather than on the next hydrate. While the forget runs, the screen shows
 /// what the cache holds, and not found once the forget's null reaches it, so
 /// it never passes through a spinner. Not found then holds for the bloc's
-/// life: what the cache says afterwards is not a new answer from the server.
+/// life, bar a follow of a reconcile (#499), which starts the outcome over:
+/// what the cache says afterwards is not a new answer from the server.
 /// A forget that fails is logged, and the event is not found all the same.
 ///
 /// The forget takes the cache's [EventRepository.lastWrite], read before the
@@ -180,7 +207,9 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     );
   }
 
-  final String _eventId;
+  /// The id this detail watches and reads, which a reconcile can move
+  /// (#499); see [_followReconcile].
+  String _eventId;
   final EventRepository _repository;
   final EventRemoteDataSource? _remote;
   final Future<bool> Function()? _confirmSession;
@@ -191,14 +220,16 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
   StreamSubscription<List<Household>>? _householdUpdates;
 
   /// Whether the cache has delivered a value yet, which is not the same as
-  /// having delivered a detail.
+  /// having delivered a detail. A follow clears it, so that the server id's
+  /// first answer is an open's.
   bool _cacheAnswered = false;
 
   /// The cache's latest value. A cache error leaves it as it was.
   EventDetail? _detail;
 
   /// Whether the event, as last delivered, was created offline. Kept apart
-  /// from [_detail] so it outlasts a null.
+  /// from [_detail] so it outlasts a null, though not a follow: the server
+  /// id's first answer decides it, null included.
   bool _localOnly = false;
 
   /// Set by a cache error, cleared by its next value.
@@ -257,25 +288,35 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
   /// a retry started again.
   bool get _refreshing => (_reading && _userRead) || _cacheRetry;
 
-  StreamSubscription<EventDetail?> _watchCache() => _repository
-      .watchEvent(_eventId)
-      .listen(
-        (detail) => add(EventDetailCacheUpdated(detail)),
-        onError: (Object error, StackTrace stackTrace) {
-          _logger.warn(
-            'Event detail cache read failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          add(const EventDetailCacheFailed());
-        },
-        onDone: () => add(const EventDetailCacheEnded()),
-      );
+  StreamSubscription<EventDetail?> _watchCache() {
+    final eventId = _eventId;
+    return _repository
+        .watchEvent(eventId)
+        .listen(
+          (detail) => add(EventDetailCacheUpdated(detail, eventId: eventId)),
+          onError: (Object error, StackTrace stackTrace) {
+            _logger.warn(
+              'Event detail cache read failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            add(EventDetailCacheFailed(eventId: eventId));
+          },
+          onDone: () => add(const EventDetailCacheEnded()),
+        );
+  }
 
   void _onCacheUpdated(
     EventDetailCacheUpdated event,
     Emitter<EventDetailState> emit,
   ) {
+    _followReconcile();
+    // An answer about an id this detail has followed a move off: the one
+    // that dropped the local event, or one sent before the move was known.
+    // The server id's watch answers next, and the screen keeps what it
+    // shows until then.
+    if (event.eventId != _eventId) return;
+
     final detail = event.detail;
     final first = !_cacheAnswered;
     _cacheAnswered = true;
@@ -285,6 +326,9 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     if (detail != null) {
       _localOnly = detail.snapshot.event.isLocalOnly;
       _lookUpHouseholdRole(detail.snapshot.event.householdId);
+    } else if (first) {
+      // Set already only after a follow, and then it was the local event's.
+      _localOnly = false;
     }
 
     if (first) {
@@ -298,10 +342,42 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     _emitDerived(emit);
   }
 
+  /// Moves this detail onto the id a reconcile moved its event to, if one
+  /// has (#499), as though it had been opened on that id: it watches that id
+  /// instead, and its first answer starts the open's read.
+  ///
+  /// Asked on every cache answer, since the reconcile can land at any point
+  /// in the detail's life, and the repository reads the moves before it
+  /// delivers one, in whichever tab the reconcile ran.
+  ///
+  /// What the bloc knew of the old id's reads goes with it: whether one is
+  /// running, how the last ended, a write waiting on the cache and a
+  /// withheld roster. The local event is never read, so these are only ever
+  /// set for a local id read before its move, whose answer is about that id
+  /// alone. The detail and the cache's failure stay, so the screen keeps
+  /// what it shows, and a retry the user pressed keeps its read theirs.
+  void _followReconcile() {
+    if (_closing) return;
+    final movedTo = _repository.reconciledEventId(_eventId);
+    if (movedTo == null) return;
+    _eventId = movedTo;
+    _cacheAnswered = false;
+    _reading = false;
+    _userRead = false;
+    _outcome = null;
+    _writePending = false;
+    _rosterWithheld = false;
+    final left = _cache;
+    _cache = _watchCache();
+    unawaited(left.cancel());
+  }
+
   void _onCacheFailed(
     EventDetailCacheFailed event,
     Emitter<EventDetailState> emit,
   ) {
+    // The local id's watch, failing after the move was followed.
+    if (event.eventId != _eventId) return;
     _cacheFailed = true;
     _cacheRetry = false;
     // The cache's next answer, though not the one the write was waiting on.
@@ -340,6 +416,8 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     EventDetailReadSettled event,
     Emitter<EventDetailState> emit,
   ) {
+    // A read of an id this detail has followed a move off.
+    if (event.eventId != _eventId) return;
     _reading = false;
     _userRead = false;
     _outcome = event.outcome;
@@ -382,41 +460,51 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     if (remote == null || _localOnly || _closing) return;
     _reading = true;
     _userRead = asked;
-    unawaited(_read(remote));
+    unawaited(_read(remote, _eventId));
   }
 
-  /// Reads the event and writes it to the cache as `read` access, or forgets
-  /// it on a 404.
+  /// Reads the event [eventId] and writes it to the cache as `read` access,
+  /// or forgets it on a 404.
   ///
   /// Runs whether or not the screen is still open: a write or a forget is the
-  /// server's answer either way. Only the settled event depends on it.
-  Future<void> _read(EventRemoteDataSource remote) async {
-    if (!await _confirmed()) return _settle(EventDetailReadOutcome.failed);
+  /// server's answer either way. Only the settled event depends on it. It
+  /// keeps to [eventId] when the bloc follows a move while it runs (#499), so
+  /// a 404 for the local id never forgets the server's event.
+  Future<void> _read(EventRemoteDataSource remote, String eventId) async {
+    if (!await _confirmed()) {
+      return _settle(eventId, EventDetailReadOutcome.failed);
+    }
 
     int? lastWrite;
     final EventSnapshot snapshot;
     try {
       // Before the request goes out, so that a write landing while it is out
       // is one its 404 can't speak for.
-      lastWrite = await _repository.lastWrite(_eventId);
-      snapshot = await remote.fetchEvent(_eventId);
+      lastWrite = await _repository.lastWrite(eventId);
+      snapshot = await remote.fetchEvent(eventId);
     } on EventRemoteNotFoundException {
-      if (!await _confirmed()) return _settle(EventDetailReadOutcome.failed);
+      if (!await _confirmed()) {
+        return _settle(eventId, EventDetailReadOutcome.failed);
+      }
       // Settled before the forget starts, so the null its write puts on the
       // cache finds the screen on not found rather than a spinner. With
       // nothing cached there is nothing to forget, and no null coming.
-      if (lastWrite != null) _settle(EventDetailReadOutcome.forgetting);
-      return _settle(await _forget(lastWrite));
+      if (lastWrite != null) {
+        _settle(eventId, EventDetailReadOutcome.forgetting);
+      }
+      return _settle(eventId, await _forget(eventId, lastWrite));
     } on Object catch (error, stackTrace) {
       _logger.warn(
         'Event detail read failed',
         error: error,
         stackTrace: stackTrace,
       );
-      return _settle(EventDetailReadOutcome.failed);
+      return _settle(eventId, EventDetailReadOutcome.failed);
     }
 
-    if (!await _confirmed()) return _settle(EventDetailReadOutcome.failed);
+    if (!await _confirmed()) {
+      return _settle(eventId, EventDetailReadOutcome.failed);
+    }
     try {
       await _repository.cacheEvent(snapshot, source: EventAccessSource.read);
     } on Object catch (error, stackTrace) {
@@ -425,18 +513,29 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
         error: error,
         stackTrace: stackTrace,
       );
-      return _settle(EventDetailReadOutcome.failed);
+      return _settle(eventId, EventDetailReadOutcome.failed);
     }
 
     _settle(
+      eventId,
       EventDetailReadOutcome.succeeded,
       rosterWithheld: snapshot.attendees?.isEmpty ?? false,
     );
   }
 
-  void _settle(EventDetailReadOutcome outcome, {bool rosterWithheld = false}) {
+  void _settle(
+    String eventId,
+    EventDetailReadOutcome outcome, {
+    bool rosterWithheld = false,
+  }) {
     if (_closing) return;
-    add(EventDetailReadSettled(outcome, rosterWithheld: rosterWithheld));
+    add(
+      EventDetailReadSettled(
+        outcome,
+        eventId: eventId,
+        rosterWithheld: rosterWithheld,
+      ),
+    );
   }
 
   /// Whether the session is still this cache's user's: [confirmSession]
@@ -466,18 +565,19 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
     return confirmed;
   }
 
-  /// Forgets the event a 404 answered for, unless the cache was written
-  /// since [lastWrite] was read, and says which of the two the 404 was.
-  Future<EventDetailReadOutcome> _forget(int? lastWrite) async {
+  /// Forgets [eventId], which a 404 answered for, unless the cache was
+  /// written since [lastWrite] was read, and says which of the two the 404
+  /// was.
+  Future<EventDetailReadOutcome> _forget(String eventId, int? lastWrite) async {
     try {
       if (lastWrite != null &&
-          await _repository.forgetEvent(_eventId, lastWrite: lastWrite)) {
+          await _repository.forgetEvent(eventId, lastWrite: lastWrite)) {
         return EventDetailReadOutcome.notFound;
       }
       // Declined, or nothing was cached to forget. A write since the request
       // went out names a new last write, and is newer than the 404. One that
       // isn't, for an event the sync queue owns say, leaves the 404 standing.
-      return await _repository.lastWrite(_eventId) == lastWrite
+      return await _repository.lastWrite(eventId) == lastWrite
           ? EventDetailReadOutcome.notFound
           : EventDetailReadOutcome.overtaken;
     } on Object catch (error, stackTrace) {

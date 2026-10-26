@@ -746,6 +746,11 @@ class GameCollectionRepositoryImpl
           'syncQueueId',
           'names a household op; HouseholdRepository discards those',
         ),
+        CreateEventOperation() => throw ArgumentError.value(
+          syncQueueId,
+          'syncQueueId',
+          'names an event op; EventRepository discards those',
+        ),
       };
 
       final row =
@@ -962,6 +967,7 @@ class GameCollectionRepositoryImpl
         case RemoveFromCollectionOperation():
           replayed = replayed.copyWith(deletedAt: now);
         case CreateHouseholdOperation():
+        case CreateEventOperation():
           // The lookup returns collection ops only.
           break;
       }

@@ -54,6 +54,8 @@ void main() {
     bool householdRemote = true,
     bool collection = true,
     bool collectionRemote = true,
+    bool events = true,
+    bool eventRemote = true,
   }) {
     if (queue) container.registerSingleton<SyncQueueRepository>(h.queue);
     if (households) {
@@ -69,6 +71,10 @@ void main() {
       container.registerSingleton<GameCollectionRemoteDataSource>(
         h.collectionRemote,
       );
+    }
+    if (events) container.registerSingleton<EventRepository>(h.events);
+    if (eventRemote) {
+      container.registerSingleton<EventRemoteDataSource>(h.eventRemote);
     }
   }
 
@@ -190,6 +196,8 @@ void main() {
       ('the household client', () => register(householdRemote: false)),
       ('the collection repository', () => register(collection: false)),
       ('the collection client', () => register(collectionRemote: false)),
+      ('the event repository', () => register(events: false)),
+      ('the event client', () => register(eventRemote: false)),
     ]) {
       test('registers nothing without $label, and does not throw', () async {
         registerAllBut();

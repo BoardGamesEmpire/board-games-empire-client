@@ -4009,6 +4009,453 @@ final class Schema10 extends i0.VersionedSchema {
     eventPolicies,
     eventAccess,
     eventGeneration,
+    eventMoves,
+    platformGamesGameIdIdx,
+    gameCollectionsUserIdx,
+    gameCollectionsUserPgameMediumUniqueIdx,
+    householdMembersUserIdx,
+    householdMembersHouseholdUserUniqueIdx,
+    syncQueueUserStatusIdx,
+    gameAccessGameIdIdx,
+    platformGameAccessPlatformGameIdIdx,
+    eventOccurrencesEventIdIdx,
+    eventAttendeesEventIdIdx,
+    eventAttendeesUserIdIdx,
+    eventAccessEventIdIdx,
+  ];
+  late final Shape9 games = Shape9(
+    source: i0.VersionedTable(
+      entityName: 'games',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_1,
+        _column_2,
+        _column_3,
+        _column_4,
+        _column_5,
+        _column_6,
+        _column_7,
+        _column_8,
+        _column_9,
+        _column_10,
+        _column_11,
+        _column_12,
+        _column_13,
+        _column_14,
+        _column_15,
+        _column_16,
+        _column_17,
+        _column_18,
+        _column_19,
+        _column_20,
+        _column_21,
+        _column_22,
+        _column_23,
+        _column_24,
+        _column_25,
+        _column_26,
+        _column_27,
+        _column_28,
+        _column_29,
+        _column_30,
+        _column_31,
+        _column_67,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape10 platformGames = Shape10(
+    source: i0.VersionedTable(
+      entityName: 'platform_games',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_32,
+        _column_33,
+        _column_34,
+        _column_7,
+        _column_8,
+        _column_10,
+        _column_11,
+        _column_12,
+        _column_13,
+        _column_4,
+        _column_5,
+        _column_35,
+        _column_36,
+        _column_37,
+        _column_38,
+        _column_39,
+        _column_40,
+        _column_30,
+        _column_31,
+        _column_67,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape2 gameCollections = Shape2(
+    source: i0.VersionedTable(
+      entityName: 'game_collections',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_42,
+        _column_43,
+        _column_44,
+        _column_45,
+        _column_46,
+        _column_47,
+        _column_48,
+        _column_49,
+        _column_50,
+        _column_51,
+        _column_52,
+        _column_53,
+        _column_54,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape19 households = Shape19(
+    source: i0.VersionedTable(
+      entityName: 'households',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_55,
+        _column_3,
+        _column_4,
+        _column_113,
+        _column_53,
+        _column_54,
+        _column_29,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape20 householdMembers = Shape20(
+    source: i0.VersionedTable(
+      entityName: 'household_members',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_56,
+        _column_57,
+        _column_58,
+        _column_88,
+        _column_89,
+        _column_90,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape7 householdMoves = Shape7(
+    source: i0.VersionedTable(
+      entityName: 'household_moves',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(local_id)'],
+      columns: [_column_64, _column_65],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape6 syncQueue = Shape6(
+    source: i0.VersionedTable(
+      entityName: 'sync_queue',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_41,
+        _column_59,
+        _column_60,
+        _column_61,
+        _column_62,
+        _column_30,
+        _column_63,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape8 unsentChangesUsers = Shape8(
+    source: i0.VersionedTable(
+      entityName: 'unsent_changes_users',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id)'],
+      columns: [_column_41, _column_66],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape11 gameAccess = Shape11(
+    source: i0.VersionedTable(
+      entityName: 'game_access',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, game_id, source)'],
+      columns: [_column_41, _column_32, _column_68],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape12 platformGameAccess = Shape12(
+    source: i0.VersionedTable(
+      entityName: 'platform_game_access',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, platform_game_id, source)'],
+      columns: [_column_41, _column_42, _column_68],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape13 events = Shape13(
+    source: i0.VersionedTable(
+      entityName: 'events',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_1,
+        _column_69,
+        _column_70,
+        _column_3,
+        _column_4,
+        _column_71,
+        _column_72,
+        _column_73,
+        _column_74,
+        _column_75,
+        _column_76,
+        _column_53,
+        _column_54,
+        _column_77,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape14 eventOccurrences = Shape14(
+    source: i0.VersionedTable(
+      entityName: 'event_occurrences',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_78,
+        _column_79,
+        _column_80,
+        _column_81,
+        _column_71,
+        _column_75,
+        _column_82,
+        _column_83,
+        _column_84,
+        _column_85,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape15 eventAttendees = Shape15(
+    source: i0.VersionedTable(
+      entityName: 'event_attendees',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [
+        _column_0,
+        _column_78,
+        _column_86,
+        _column_87,
+        _column_88,
+        _column_89,
+        _column_90,
+        _column_91,
+        _column_75,
+        _column_58,
+        _column_92,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape16 eventPolicies = Shape16(
+    source: i0.VersionedTable(
+      entityName: 'event_policies',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(event_id)'],
+      columns: [
+        _column_0,
+        _column_78,
+        _column_93,
+        _column_94,
+        _column_95,
+        _column_96,
+        _column_97,
+        _column_98,
+        _column_99,
+        _column_100,
+        _column_101,
+        _column_102,
+        _column_103,
+        _column_104,
+        _column_105,
+        _column_106,
+        _column_107,
+        _column_108,
+        _column_109,
+        _column_110,
+        _column_30,
+        _column_31,
+      ],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape17 eventAccess = Shape17(
+    source: i0.VersionedTable(
+      entityName: 'event_access',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(user_id, event_id, source)'],
+      columns: [_column_41, _column_78, _column_68],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape18 eventGeneration = Shape18(
+    source: i0.VersionedTable(
+      entityName: 'event_generation',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(id)'],
+      columns: [_column_111, _column_112],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  late final Shape7 eventMoves = Shape7(
+    source: i0.VersionedTable(
+      entityName: 'event_moves',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(local_id)'],
+      columns: [_column_64, _column_65],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
+  final i1.Index platformGamesGameIdIdx = i1.Index(
+    'platform_games_game_id_idx',
+    'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
+  );
+  final i1.Index gameCollectionsUserIdx = i1.Index(
+    'game_collections_user_idx',
+    'CREATE INDEX game_collections_user_idx ON game_collections (user_id)',
+  );
+  final i1.Index gameCollectionsUserPgameMediumUniqueIdx = i1.Index(
+    'game_collections_user_pgame_medium_unique_idx',
+    'CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx ON game_collections (user_id, platform_game_id, medium) WHERE deleted_at IS NULL',
+  );
+  final i1.Index householdMembersUserIdx = i1.Index(
+    'household_members_user_idx',
+    'CREATE INDEX household_members_user_idx ON household_members (user_id)',
+  );
+  final i1.Index householdMembersHouseholdUserUniqueIdx = i1.Index(
+    'household_members_household_user_unique_idx',
+    'CREATE UNIQUE INDEX household_members_household_user_unique_idx ON household_members (household_id, user_id)',
+  );
+  final i1.Index syncQueueUserStatusIdx = i1.Index(
+    'sync_queue_user_status_idx',
+    'CREATE INDEX sync_queue_user_status_idx ON sync_queue (user_id, status, created_at)',
+  );
+  final i1.Index gameAccessGameIdIdx = i1.Index(
+    'game_access_game_id_idx',
+    'CREATE INDEX game_access_game_id_idx ON game_access (game_id)',
+  );
+  final i1.Index platformGameAccessPlatformGameIdIdx = i1.Index(
+    'platform_game_access_platform_game_id_idx',
+    'CREATE INDEX platform_game_access_platform_game_id_idx ON platform_game_access (platform_game_id)',
+  );
+  final i1.Index eventOccurrencesEventIdIdx = i1.Index(
+    'event_occurrences_event_id_idx',
+    'CREATE INDEX event_occurrences_event_id_idx ON event_occurrences (event_id)',
+  );
+  final i1.Index eventAttendeesEventIdIdx = i1.Index(
+    'event_attendees_event_id_idx',
+    'CREATE INDEX event_attendees_event_id_idx ON event_attendees (event_id)',
+  );
+  final i1.Index eventAttendeesUserIdIdx = i1.Index(
+    'event_attendees_user_id_idx',
+    'CREATE INDEX event_attendees_user_id_idx ON event_attendees (user_id)',
+  );
+  final i1.Index eventAccessEventIdIdx = i1.Index(
+    'event_access_event_id_idx',
+    'CREATE INDEX event_access_event_id_idx ON event_access (event_id)',
+  );
+}
+
+final class Schema11 extends i0.VersionedSchema {
+  Schema11({required super.database}) : super(version: 11);
+  @override
+  late final List<i1.DatabaseSchemaEntity> entities = [
+    games,
+    platformGames,
+    gameCollections,
+    households,
+    householdMembers,
+    householdMoves,
+    syncQueue,
+    unsentChangesUsers,
+    gameAccess,
+    platformGameAccess,
+    events,
+    eventOccurrences,
+    eventAttendees,
+    eventPolicies,
+    eventAccess,
+    eventGeneration,
+    eventMoves,
     platformGamesGameIdIdx,
     gameCollectionsUserIdx,
     gameCollectionsPlatformGameIdIdx,
@@ -4369,6 +4816,17 @@ final class Schema10 extends i0.VersionedSchema {
     ),
     alias: null,
   );
+  late final Shape7 eventMoves = Shape7(
+    source: i0.VersionedTable(
+      entityName: 'event_moves',
+      withoutRowId: false,
+      isStrict: false,
+      tableConstraints: ['PRIMARY KEY(local_id)'],
+      columns: [_column_64, _column_65],
+      attachedDatabase: database,
+    ),
+    alias: null,
+  );
   final i1.Index platformGamesGameIdIdx = i1.Index(
     'platform_games_game_id_idx',
     'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
@@ -4549,6 +5007,7 @@ i0.MigrationStepWithVersion migrationSteps({
   required Future<void> Function(i1.Migrator m, Schema8 schema) from7To8,
   required Future<void> Function(i1.Migrator m, Schema9 schema) from8To9,
   required Future<void> Function(i1.Migrator m, Schema10 schema) from9To10,
+  required Future<void> Function(i1.Migrator m, Schema11 schema) from10To11,
 }) {
   return (currentVersion, database) async {
     switch (currentVersion) {
@@ -4597,6 +5056,11 @@ i0.MigrationStepWithVersion migrationSteps({
         final migrator = i1.Migrator(database, schema);
         await from9To10(migrator, schema);
         return 10;
+      case 10:
+        final schema = Schema11(database: database);
+        final migrator = i1.Migrator(database, schema);
+        await from10To11(migrator, schema);
+        return 11;
       default:
         throw ArgumentError.value('Unknown migration from $currentVersion');
     }
@@ -4613,6 +5077,7 @@ i1.OnUpgrade stepByStep({
   required Future<void> Function(i1.Migrator m, Schema8 schema) from7To8,
   required Future<void> Function(i1.Migrator m, Schema9 schema) from8To9,
   required Future<void> Function(i1.Migrator m, Schema10 schema) from9To10,
+  required Future<void> Function(i1.Migrator m, Schema11 schema) from10To11,
 }) => i0.VersionedSchema.stepByStepHelper(
   step: migrationSteps(
     from1To2: from1To2,
@@ -4624,5 +5089,6 @@ i1.OnUpgrade stepByStep({
     from7To8: from7To8,
     from8To9: from8To9,
     from9To10: from9To10,
+    from10To11: from10To11,
   ),
 );

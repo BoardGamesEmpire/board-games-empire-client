@@ -15,11 +15,14 @@ import 'sync_operation_sender_impl.dart';
 /// `buildWebUserScopeInstallers`, because the create screen sends through it
 /// on both. Only native runs a drain over it so far; the web drain is #447.
 ///
-/// It resolves the [SyncQueueRepository], [HouseholdRepository] and
-/// [GameCollectionRepository] that `UserSessionScopeInstaller` registers, and
-/// the two remotes the network installer registers per server, which the
-/// user-scope container view falls through to. So it must run after
-/// `UserSessionScopeInstaller` in whichever list holds it.
+/// It resolves the [SyncQueueRepository], [HouseholdRepository],
+/// [GameCollectionRepository] and [EventRepository] that
+/// `UserSessionScopeInstaller` registers, and the three remotes the network
+/// installer registers per server, which the user-scope container view falls
+/// through to. So it must run after `UserSessionScopeInstaller` in whichever
+/// list holds it. The network installer registers the event remote on native
+/// and web alike, so requiring it (#499) strands no household or collection
+/// op on either.
 ///
 /// ## Nothing here may throw
 ///
@@ -49,7 +52,9 @@ class SyncSenderInstaller implements UserScopeInstaller {
         !container.isRegistered<HouseholdRepository>() ||
         !container.isRegistered<HouseholdRemoteDataSource>() ||
         !container.isRegistered<GameCollectionRepository>() ||
-        !container.isRegistered<GameCollectionRemoteDataSource>()) {
+        !container.isRegistered<GameCollectionRemoteDataSource>() ||
+        !container.isRegistered<EventRepository>() ||
+        !container.isRegistered<EventRemoteDataSource>()) {
       _log.debug(
         'No queue, cache or client to send through on this server; '
         'skipping the sender',
@@ -64,6 +69,8 @@ class SyncSenderInstaller implements UserScopeInstaller {
       householdRemote: container.get<HouseholdRemoteDataSource>(),
       collection: container.get<GameCollectionRepository>(),
       collectionRemote: container.get<GameCollectionRemoteDataSource>(),
+      events: container.get<EventRepository>(),
+      eventRemote: container.get<EventRemoteDataSource>(),
     );
 
     // Nothing to dispose: it holds no resources of its own, and what it

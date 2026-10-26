@@ -81,6 +81,14 @@ class Games extends Table with TableInfo<Games, GamesData> {
     requiredDuringInsert: false,
     $customConstraints: 'NULL',
   );
+  late final GeneratedColumn<int> playingTime = GeneratedColumn<int>(
+    'playing_time',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'NULL',
+  );
   late final GeneratedColumn<int> minPlayTime = GeneratedColumn<int>(
     'min_play_time',
     aliasedName,
@@ -89,6 +97,15 @@ class Games extends Table with TableInfo<Games, GamesData> {
     requiredDuringInsert: false,
     $customConstraints: 'NULL',
   );
+  late final GeneratedColumn<String> minPlayTimeMeasure =
+      GeneratedColumn<String>(
+        'min_play_time_measure',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        $customConstraints: 'NULL',
+      );
   late final GeneratedColumn<int> maxPlayTime = GeneratedColumn<int>(
     'max_play_time',
     aliasedName,
@@ -97,6 +114,15 @@ class Games extends Table with TableInfo<Games, GamesData> {
     requiredDuringInsert: false,
     $customConstraints: 'NULL',
   );
+  late final GeneratedColumn<String> maxPlayTimeMeasure =
+      GeneratedColumn<String>(
+        'max_play_time_measure',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        $customConstraints: 'NULL',
+      );
   late final GeneratedColumn<int> minAge = GeneratedColumn<int>(
     'min_age',
     aliasedName,
@@ -209,8 +235,8 @@ class Games extends Table with TableInfo<Games, GamesData> {
     $customConstraints: 'NOT NULL DEFAULT \'[]\'',
     defaultValue: const CustomExpression('\'[]\''),
   );
-  late final GeneratedColumn<String> reach = GeneratedColumn<String>(
-    'reach',
+  late final GeneratedColumn<String> visibility = GeneratedColumn<String>(
+    'visibility',
     aliasedName,
     false,
     type: DriftSqlType.string,
@@ -270,8 +296,11 @@ class Games extends Table with TableInfo<Games, GamesData> {
     publishYear,
     minPlayers,
     maxPlayers,
+    playingTime,
     minPlayTime,
+    minPlayTimeMeasure,
     maxPlayTime,
+    maxPlayTimeMeasure,
     minAge,
     complexity,
     contentType,
@@ -285,7 +314,7 @@ class Games extends Table with TableInfo<Games, GamesData> {
     designersJson,
     publishersJson,
     tagsJson,
-    reach,
+    visibility,
     createdById,
     deletedAt,
     createdAt,
@@ -339,13 +368,25 @@ class Games extends Table with TableInfo<Games, GamesData> {
         DriftSqlType.int,
         data['${effectivePrefix}max_players'],
       ),
+      playingTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}playing_time'],
+      ),
       minPlayTime: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}min_play_time'],
       ),
+      minPlayTimeMeasure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}min_play_time_measure'],
+      ),
       maxPlayTime: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}max_play_time'],
+      ),
+      maxPlayTimeMeasure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}max_play_time_measure'],
       ),
       minAge: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
@@ -399,9 +440,9 @@ class Games extends Table with TableInfo<Games, GamesData> {
         DriftSqlType.string,
         data['${effectivePrefix}tags_json'],
       )!,
-      reach: attachedDatabase.typeMapping.read(
+      visibility: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}reach'],
+        data['${effectivePrefix}visibility'],
       )!,
       createdById: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -447,8 +488,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
   final int? publishYear;
   final int? minPlayers;
   final int? maxPlayers;
+  final int? playingTime;
   final int? minPlayTime;
+  final String? minPlayTimeMeasure;
   final int? maxPlayTime;
+  final String? maxPlayTimeMeasure;
   final int? minAge;
   final double? complexity;
   final String contentType;
@@ -462,7 +506,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
   final String designersJson;
   final String publishersJson;
   final String tagsJson;
-  final String reach;
+  final String visibility;
   final String? createdById;
   final String? deletedAt;
   final String createdAt;
@@ -478,8 +522,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     this.publishYear,
     this.minPlayers,
     this.maxPlayers,
+    this.playingTime,
     this.minPlayTime,
+    this.minPlayTimeMeasure,
     this.maxPlayTime,
+    this.maxPlayTimeMeasure,
     this.minAge,
     this.complexity,
     required this.contentType,
@@ -493,7 +540,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     required this.designersJson,
     required this.publishersJson,
     required this.tagsJson,
-    required this.reach,
+    required this.visibility,
     this.createdById,
     this.deletedAt,
     required this.createdAt,
@@ -526,11 +573,20 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     if (!nullToAbsent || maxPlayers != null) {
       map['max_players'] = Variable<int>(maxPlayers);
     }
+    if (!nullToAbsent || playingTime != null) {
+      map['playing_time'] = Variable<int>(playingTime);
+    }
     if (!nullToAbsent || minPlayTime != null) {
       map['min_play_time'] = Variable<int>(minPlayTime);
     }
+    if (!nullToAbsent || minPlayTimeMeasure != null) {
+      map['min_play_time_measure'] = Variable<String>(minPlayTimeMeasure);
+    }
     if (!nullToAbsent || maxPlayTime != null) {
       map['max_play_time'] = Variable<int>(maxPlayTime);
+    }
+    if (!nullToAbsent || maxPlayTimeMeasure != null) {
+      map['max_play_time_measure'] = Variable<String>(maxPlayTimeMeasure);
     }
     if (!nullToAbsent || minAge != null) {
       map['min_age'] = Variable<int>(minAge);
@@ -555,7 +611,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     map['designers_json'] = Variable<String>(designersJson);
     map['publishers_json'] = Variable<String>(publishersJson);
     map['tags_json'] = Variable<String>(tagsJson);
-    map['reach'] = Variable<String>(reach);
+    map['visibility'] = Variable<String>(visibility);
     if (!nullToAbsent || createdById != null) {
       map['created_by_id'] = Variable<String>(createdById);
     }
@@ -595,12 +651,21 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       maxPlayers: maxPlayers == null && nullToAbsent
           ? const Value.absent()
           : Value(maxPlayers),
+      playingTime: playingTime == null && nullToAbsent
+          ? const Value.absent()
+          : Value(playingTime),
       minPlayTime: minPlayTime == null && nullToAbsent
           ? const Value.absent()
           : Value(minPlayTime),
+      minPlayTimeMeasure: minPlayTimeMeasure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(minPlayTimeMeasure),
       maxPlayTime: maxPlayTime == null && nullToAbsent
           ? const Value.absent()
           : Value(maxPlayTime),
+      maxPlayTimeMeasure: maxPlayTimeMeasure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(maxPlayTimeMeasure),
       minAge: minAge == null && nullToAbsent
           ? const Value.absent()
           : Value(minAge),
@@ -624,7 +689,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       designersJson: Value(designersJson),
       publishersJson: Value(publishersJson),
       tagsJson: Value(tagsJson),
-      reach: Value(reach),
+      visibility: Value(visibility),
       createdById: createdById == null && nullToAbsent
           ? const Value.absent()
           : Value(createdById),
@@ -654,8 +719,15 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       publishYear: serializer.fromJson<int?>(json['publishYear']),
       minPlayers: serializer.fromJson<int?>(json['minPlayers']),
       maxPlayers: serializer.fromJson<int?>(json['maxPlayers']),
+      playingTime: serializer.fromJson<int?>(json['playingTime']),
       minPlayTime: serializer.fromJson<int?>(json['minPlayTime']),
+      minPlayTimeMeasure: serializer.fromJson<String?>(
+        json['minPlayTimeMeasure'],
+      ),
       maxPlayTime: serializer.fromJson<int?>(json['maxPlayTime']),
+      maxPlayTimeMeasure: serializer.fromJson<String?>(
+        json['maxPlayTimeMeasure'],
+      ),
       minAge: serializer.fromJson<int?>(json['minAge']),
       complexity: serializer.fromJson<double?>(json['complexity']),
       contentType: serializer.fromJson<String>(json['contentType']),
@@ -669,7 +741,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       designersJson: serializer.fromJson<String>(json['designersJson']),
       publishersJson: serializer.fromJson<String>(json['publishersJson']),
       tagsJson: serializer.fromJson<String>(json['tagsJson']),
-      reach: serializer.fromJson<String>(json['reach']),
+      visibility: serializer.fromJson<String>(json['visibility']),
       createdById: serializer.fromJson<String?>(json['createdById']),
       deletedAt: serializer.fromJson<String?>(json['deletedAt']),
       createdAt: serializer.fromJson<String>(json['createdAt']),
@@ -692,8 +764,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       'publishYear': serializer.toJson<int?>(publishYear),
       'minPlayers': serializer.toJson<int?>(minPlayers),
       'maxPlayers': serializer.toJson<int?>(maxPlayers),
+      'playingTime': serializer.toJson<int?>(playingTime),
       'minPlayTime': serializer.toJson<int?>(minPlayTime),
+      'minPlayTimeMeasure': serializer.toJson<String?>(minPlayTimeMeasure),
       'maxPlayTime': serializer.toJson<int?>(maxPlayTime),
+      'maxPlayTimeMeasure': serializer.toJson<String?>(maxPlayTimeMeasure),
       'minAge': serializer.toJson<int?>(minAge),
       'complexity': serializer.toJson<double?>(complexity),
       'contentType': serializer.toJson<String>(contentType),
@@ -707,7 +782,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       'designersJson': serializer.toJson<String>(designersJson),
       'publishersJson': serializer.toJson<String>(publishersJson),
       'tagsJson': serializer.toJson<String>(tagsJson),
-      'reach': serializer.toJson<String>(reach),
+      'visibility': serializer.toJson<String>(visibility),
       'createdById': serializer.toJson<String?>(createdById),
       'deletedAt': serializer.toJson<String?>(deletedAt),
       'createdAt': serializer.toJson<String>(createdAt),
@@ -726,8 +801,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     Value<int?> publishYear = const Value.absent(),
     Value<int?> minPlayers = const Value.absent(),
     Value<int?> maxPlayers = const Value.absent(),
+    Value<int?> playingTime = const Value.absent(),
     Value<int?> minPlayTime = const Value.absent(),
+    Value<String?> minPlayTimeMeasure = const Value.absent(),
     Value<int?> maxPlayTime = const Value.absent(),
+    Value<String?> maxPlayTimeMeasure = const Value.absent(),
     Value<int?> minAge = const Value.absent(),
     Value<double?> complexity = const Value.absent(),
     String? contentType,
@@ -741,7 +819,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     String? designersJson,
     String? publishersJson,
     String? tagsJson,
-    String? reach,
+    String? visibility,
     Value<String?> createdById = const Value.absent(),
     Value<String?> deletedAt = const Value.absent(),
     String? createdAt,
@@ -757,8 +835,15 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     publishYear: publishYear.present ? publishYear.value : this.publishYear,
     minPlayers: minPlayers.present ? minPlayers.value : this.minPlayers,
     maxPlayers: maxPlayers.present ? maxPlayers.value : this.maxPlayers,
+    playingTime: playingTime.present ? playingTime.value : this.playingTime,
     minPlayTime: minPlayTime.present ? minPlayTime.value : this.minPlayTime,
+    minPlayTimeMeasure: minPlayTimeMeasure.present
+        ? minPlayTimeMeasure.value
+        : this.minPlayTimeMeasure,
     maxPlayTime: maxPlayTime.present ? maxPlayTime.value : this.maxPlayTime,
+    maxPlayTimeMeasure: maxPlayTimeMeasure.present
+        ? maxPlayTimeMeasure.value
+        : this.maxPlayTimeMeasure,
     minAge: minAge.present ? minAge.value : this.minAge,
     complexity: complexity.present ? complexity.value : this.complexity,
     contentType: contentType ?? this.contentType,
@@ -774,7 +859,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     designersJson: designersJson ?? this.designersJson,
     publishersJson: publishersJson ?? this.publishersJson,
     tagsJson: tagsJson ?? this.tagsJson,
-    reach: reach ?? this.reach,
+    visibility: visibility ?? this.visibility,
     createdById: createdById.present ? createdById.value : this.createdById,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     createdAt: createdAt ?? this.createdAt,
@@ -802,12 +887,21 @@ class GamesData extends DataClass implements Insertable<GamesData> {
       maxPlayers: data.maxPlayers.present
           ? data.maxPlayers.value
           : this.maxPlayers,
+      playingTime: data.playingTime.present
+          ? data.playingTime.value
+          : this.playingTime,
       minPlayTime: data.minPlayTime.present
           ? data.minPlayTime.value
           : this.minPlayTime,
+      minPlayTimeMeasure: data.minPlayTimeMeasure.present
+          ? data.minPlayTimeMeasure.value
+          : this.minPlayTimeMeasure,
       maxPlayTime: data.maxPlayTime.present
           ? data.maxPlayTime.value
           : this.maxPlayTime,
+      maxPlayTimeMeasure: data.maxPlayTimeMeasure.present
+          ? data.maxPlayTimeMeasure.value
+          : this.maxPlayTimeMeasure,
       minAge: data.minAge.present ? data.minAge.value : this.minAge,
       complexity: data.complexity.present
           ? data.complexity.value
@@ -843,7 +937,9 @@ class GamesData extends DataClass implements Insertable<GamesData> {
           ? data.publishersJson.value
           : this.publishersJson,
       tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
-      reach: data.reach.present ? data.reach.value : this.reach,
+      visibility: data.visibility.present
+          ? data.visibility.value
+          : this.visibility,
       createdById: data.createdById.present
           ? data.createdById.value
           : this.createdById,
@@ -868,8 +964,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
           ..write('publishYear: $publishYear, ')
           ..write('minPlayers: $minPlayers, ')
           ..write('maxPlayers: $maxPlayers, ')
+          ..write('playingTime: $playingTime, ')
           ..write('minPlayTime: $minPlayTime, ')
+          ..write('minPlayTimeMeasure: $minPlayTimeMeasure, ')
           ..write('maxPlayTime: $maxPlayTime, ')
+          ..write('maxPlayTimeMeasure: $maxPlayTimeMeasure, ')
           ..write('minAge: $minAge, ')
           ..write('complexity: $complexity, ')
           ..write('contentType: $contentType, ')
@@ -883,7 +982,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
           ..write('designersJson: $designersJson, ')
           ..write('publishersJson: $publishersJson, ')
           ..write('tagsJson: $tagsJson, ')
-          ..write('reach: $reach, ')
+          ..write('visibility: $visibility, ')
           ..write('createdById: $createdById, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('createdAt: $createdAt, ')
@@ -904,8 +1003,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     publishYear,
     minPlayers,
     maxPlayers,
+    playingTime,
     minPlayTime,
+    minPlayTimeMeasure,
     maxPlayTime,
+    maxPlayTimeMeasure,
     minAge,
     complexity,
     contentType,
@@ -919,7 +1021,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
     designersJson,
     publishersJson,
     tagsJson,
-    reach,
+    visibility,
     createdById,
     deletedAt,
     createdAt,
@@ -939,8 +1041,11 @@ class GamesData extends DataClass implements Insertable<GamesData> {
           other.publishYear == this.publishYear &&
           other.minPlayers == this.minPlayers &&
           other.maxPlayers == this.maxPlayers &&
+          other.playingTime == this.playingTime &&
           other.minPlayTime == this.minPlayTime &&
+          other.minPlayTimeMeasure == this.minPlayTimeMeasure &&
           other.maxPlayTime == this.maxPlayTime &&
+          other.maxPlayTimeMeasure == this.maxPlayTimeMeasure &&
           other.minAge == this.minAge &&
           other.complexity == this.complexity &&
           other.contentType == this.contentType &&
@@ -954,7 +1059,7 @@ class GamesData extends DataClass implements Insertable<GamesData> {
           other.designersJson == this.designersJson &&
           other.publishersJson == this.publishersJson &&
           other.tagsJson == this.tagsJson &&
-          other.reach == this.reach &&
+          other.visibility == this.visibility &&
           other.createdById == this.createdById &&
           other.deletedAt == this.deletedAt &&
           other.createdAt == this.createdAt &&
@@ -972,8 +1077,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
   final Value<int?> publishYear;
   final Value<int?> minPlayers;
   final Value<int?> maxPlayers;
+  final Value<int?> playingTime;
   final Value<int?> minPlayTime;
+  final Value<String?> minPlayTimeMeasure;
   final Value<int?> maxPlayTime;
+  final Value<String?> maxPlayTimeMeasure;
   final Value<int?> minAge;
   final Value<double?> complexity;
   final Value<String> contentType;
@@ -987,7 +1095,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
   final Value<String> designersJson;
   final Value<String> publishersJson;
   final Value<String> tagsJson;
-  final Value<String> reach;
+  final Value<String> visibility;
   final Value<String?> createdById;
   final Value<String?> deletedAt;
   final Value<String> createdAt;
@@ -1004,8 +1112,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     this.publishYear = const Value.absent(),
     this.minPlayers = const Value.absent(),
     this.maxPlayers = const Value.absent(),
+    this.playingTime = const Value.absent(),
     this.minPlayTime = const Value.absent(),
+    this.minPlayTimeMeasure = const Value.absent(),
     this.maxPlayTime = const Value.absent(),
+    this.maxPlayTimeMeasure = const Value.absent(),
     this.minAge = const Value.absent(),
     this.complexity = const Value.absent(),
     this.contentType = const Value.absent(),
@@ -1019,7 +1130,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     this.designersJson = const Value.absent(),
     this.publishersJson = const Value.absent(),
     this.tagsJson = const Value.absent(),
-    this.reach = const Value.absent(),
+    this.visibility = const Value.absent(),
     this.createdById = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -1037,8 +1148,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     this.publishYear = const Value.absent(),
     this.minPlayers = const Value.absent(),
     this.maxPlayers = const Value.absent(),
+    this.playingTime = const Value.absent(),
     this.minPlayTime = const Value.absent(),
+    this.minPlayTimeMeasure = const Value.absent(),
     this.maxPlayTime = const Value.absent(),
+    this.maxPlayTimeMeasure = const Value.absent(),
     this.minAge = const Value.absent(),
     this.complexity = const Value.absent(),
     this.contentType = const Value.absent(),
@@ -1052,7 +1166,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     this.designersJson = const Value.absent(),
     this.publishersJson = const Value.absent(),
     this.tagsJson = const Value.absent(),
-    this.reach = const Value.absent(),
+    this.visibility = const Value.absent(),
     this.createdById = const Value.absent(),
     this.deletedAt = const Value.absent(),
     required String createdAt,
@@ -1073,8 +1187,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     Expression<int>? publishYear,
     Expression<int>? minPlayers,
     Expression<int>? maxPlayers,
+    Expression<int>? playingTime,
     Expression<int>? minPlayTime,
+    Expression<String>? minPlayTimeMeasure,
     Expression<int>? maxPlayTime,
+    Expression<String>? maxPlayTimeMeasure,
     Expression<int>? minAge,
     Expression<double>? complexity,
     Expression<String>? contentType,
@@ -1088,7 +1205,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     Expression<String>? designersJson,
     Expression<String>? publishersJson,
     Expression<String>? tagsJson,
-    Expression<String>? reach,
+    Expression<String>? visibility,
     Expression<String>? createdById,
     Expression<String>? deletedAt,
     Expression<String>? createdAt,
@@ -1106,8 +1223,13 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
       if (publishYear != null) 'publish_year': publishYear,
       if (minPlayers != null) 'min_players': minPlayers,
       if (maxPlayers != null) 'max_players': maxPlayers,
+      if (playingTime != null) 'playing_time': playingTime,
       if (minPlayTime != null) 'min_play_time': minPlayTime,
+      if (minPlayTimeMeasure != null)
+        'min_play_time_measure': minPlayTimeMeasure,
       if (maxPlayTime != null) 'max_play_time': maxPlayTime,
+      if (maxPlayTimeMeasure != null)
+        'max_play_time_measure': maxPlayTimeMeasure,
       if (minAge != null) 'min_age': minAge,
       if (complexity != null) 'complexity': complexity,
       if (contentType != null) 'content_type': contentType,
@@ -1121,7 +1243,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
       if (designersJson != null) 'designers_json': designersJson,
       if (publishersJson != null) 'publishers_json': publishersJson,
       if (tagsJson != null) 'tags_json': tagsJson,
-      if (reach != null) 'reach': reach,
+      if (visibility != null) 'visibility': visibility,
       if (createdById != null) 'created_by_id': createdById,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (createdAt != null) 'created_at': createdAt,
@@ -1142,8 +1264,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     Value<int?>? publishYear,
     Value<int?>? minPlayers,
     Value<int?>? maxPlayers,
+    Value<int?>? playingTime,
     Value<int?>? minPlayTime,
+    Value<String?>? minPlayTimeMeasure,
     Value<int?>? maxPlayTime,
+    Value<String?>? maxPlayTimeMeasure,
     Value<int?>? minAge,
     Value<double?>? complexity,
     Value<String>? contentType,
@@ -1157,7 +1282,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     Value<String>? designersJson,
     Value<String>? publishersJson,
     Value<String>? tagsJson,
-    Value<String>? reach,
+    Value<String>? visibility,
     Value<String?>? createdById,
     Value<String?>? deletedAt,
     Value<String>? createdAt,
@@ -1175,8 +1300,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
       publishYear: publishYear ?? this.publishYear,
       minPlayers: minPlayers ?? this.minPlayers,
       maxPlayers: maxPlayers ?? this.maxPlayers,
+      playingTime: playingTime ?? this.playingTime,
       minPlayTime: minPlayTime ?? this.minPlayTime,
+      minPlayTimeMeasure: minPlayTimeMeasure ?? this.minPlayTimeMeasure,
       maxPlayTime: maxPlayTime ?? this.maxPlayTime,
+      maxPlayTimeMeasure: maxPlayTimeMeasure ?? this.maxPlayTimeMeasure,
       minAge: minAge ?? this.minAge,
       complexity: complexity ?? this.complexity,
       contentType: contentType ?? this.contentType,
@@ -1190,7 +1318,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
       designersJson: designersJson ?? this.designersJson,
       publishersJson: publishersJson ?? this.publishersJson,
       tagsJson: tagsJson ?? this.tagsJson,
-      reach: reach ?? this.reach,
+      visibility: visibility ?? this.visibility,
       createdById: createdById ?? this.createdById,
       deletedAt: deletedAt ?? this.deletedAt,
       createdAt: createdAt ?? this.createdAt,
@@ -1230,11 +1358,20 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     if (maxPlayers.present) {
       map['max_players'] = Variable<int>(maxPlayers.value);
     }
+    if (playingTime.present) {
+      map['playing_time'] = Variable<int>(playingTime.value);
+    }
     if (minPlayTime.present) {
       map['min_play_time'] = Variable<int>(minPlayTime.value);
     }
+    if (minPlayTimeMeasure.present) {
+      map['min_play_time_measure'] = Variable<String>(minPlayTimeMeasure.value);
+    }
     if (maxPlayTime.present) {
       map['max_play_time'] = Variable<int>(maxPlayTime.value);
+    }
+    if (maxPlayTimeMeasure.present) {
+      map['max_play_time_measure'] = Variable<String>(maxPlayTimeMeasure.value);
     }
     if (minAge.present) {
       map['min_age'] = Variable<int>(minAge.value);
@@ -1275,8 +1412,8 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
     if (tagsJson.present) {
       map['tags_json'] = Variable<String>(tagsJson.value);
     }
-    if (reach.present) {
-      map['reach'] = Variable<String>(reach.value);
+    if (visibility.present) {
+      map['visibility'] = Variable<String>(visibility.value);
     }
     if (createdById.present) {
       map['created_by_id'] = Variable<String>(createdById.value);
@@ -1311,8 +1448,11 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
           ..write('publishYear: $publishYear, ')
           ..write('minPlayers: $minPlayers, ')
           ..write('maxPlayers: $maxPlayers, ')
+          ..write('playingTime: $playingTime, ')
           ..write('minPlayTime: $minPlayTime, ')
+          ..write('minPlayTimeMeasure: $minPlayTimeMeasure, ')
           ..write('maxPlayTime: $maxPlayTime, ')
+          ..write('maxPlayTimeMeasure: $maxPlayTimeMeasure, ')
           ..write('minAge: $minAge, ')
           ..write('complexity: $complexity, ')
           ..write('contentType: $contentType, ')
@@ -1326,7 +1466,7 @@ class GamesCompanion extends UpdateCompanion<GamesData> {
           ..write('designersJson: $designersJson, ')
           ..write('publishersJson: $publishersJson, ')
           ..write('tagsJson: $tagsJson, ')
-          ..write('reach: $reach, ')
+          ..write('visibility: $visibility, ')
           ..write('createdById: $createdById, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('createdAt: $createdAt, ')
@@ -1400,6 +1540,15 @@ class PlatformGames extends Table
     requiredDuringInsert: false,
     $customConstraints: 'NULL',
   );
+  late final GeneratedColumn<String> minPlayTimeMeasure =
+      GeneratedColumn<String>(
+        'min_play_time_measure',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        $customConstraints: 'NULL',
+      );
   late final GeneratedColumn<int> maxPlayTime = GeneratedColumn<int>(
     'max_play_time',
     aliasedName,
@@ -1408,6 +1557,15 @@ class PlatformGames extends Table
     requiredDuringInsert: false,
     $customConstraints: 'NULL',
   );
+  late final GeneratedColumn<String> maxPlayTimeMeasure =
+      GeneratedColumn<String>(
+        'max_play_time_measure',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        $customConstraints: 'NULL',
+      );
   late final GeneratedColumn<String> image = GeneratedColumn<String>(
     'image',
     aliasedName,
@@ -1512,7 +1670,9 @@ class PlatformGames extends Table
     minPlayers,
     maxPlayers,
     minPlayTime,
+    minPlayTimeMeasure,
     maxPlayTime,
+    maxPlayTimeMeasure,
     image,
     thumbnail,
     supportsSolo,
@@ -1564,9 +1724,17 @@ class PlatformGames extends Table
         DriftSqlType.int,
         data['${effectivePrefix}min_play_time'],
       ),
+      minPlayTimeMeasure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}min_play_time_measure'],
+      ),
       maxPlayTime: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}max_play_time'],
+      ),
+      maxPlayTimeMeasure: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}max_play_time_measure'],
       ),
       image: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -1635,7 +1803,9 @@ class PlatformGamesData extends DataClass
   final int? minPlayers;
   final int? maxPlayers;
   final int? minPlayTime;
+  final String? minPlayTimeMeasure;
   final int? maxPlayTime;
+  final String? maxPlayTimeMeasure;
   final String? image;
   final String? thumbnail;
   final int supportsSolo;
@@ -1655,7 +1825,9 @@ class PlatformGamesData extends DataClass
     this.minPlayers,
     this.maxPlayers,
     this.minPlayTime,
+    this.minPlayTimeMeasure,
     this.maxPlayTime,
+    this.maxPlayTimeMeasure,
     this.image,
     this.thumbnail,
     required this.supportsSolo,
@@ -1684,8 +1856,14 @@ class PlatformGamesData extends DataClass
     if (!nullToAbsent || minPlayTime != null) {
       map['min_play_time'] = Variable<int>(minPlayTime);
     }
+    if (!nullToAbsent || minPlayTimeMeasure != null) {
+      map['min_play_time_measure'] = Variable<String>(minPlayTimeMeasure);
+    }
     if (!nullToAbsent || maxPlayTime != null) {
       map['max_play_time'] = Variable<int>(maxPlayTime);
+    }
+    if (!nullToAbsent || maxPlayTimeMeasure != null) {
+      map['max_play_time_measure'] = Variable<String>(maxPlayTimeMeasure);
     }
     if (!nullToAbsent || image != null) {
       map['image'] = Variable<String>(image);
@@ -1722,9 +1900,15 @@ class PlatformGamesData extends DataClass
       minPlayTime: minPlayTime == null && nullToAbsent
           ? const Value.absent()
           : Value(minPlayTime),
+      minPlayTimeMeasure: minPlayTimeMeasure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(minPlayTimeMeasure),
       maxPlayTime: maxPlayTime == null && nullToAbsent
           ? const Value.absent()
           : Value(maxPlayTime),
+      maxPlayTimeMeasure: maxPlayTimeMeasure == null && nullToAbsent
+          ? const Value.absent()
+          : Value(maxPlayTimeMeasure),
       image: image == null && nullToAbsent
           ? const Value.absent()
           : Value(image),
@@ -1758,7 +1942,13 @@ class PlatformGamesData extends DataClass
       minPlayers: serializer.fromJson<int?>(json['minPlayers']),
       maxPlayers: serializer.fromJson<int?>(json['maxPlayers']),
       minPlayTime: serializer.fromJson<int?>(json['minPlayTime']),
+      minPlayTimeMeasure: serializer.fromJson<String?>(
+        json['minPlayTimeMeasure'],
+      ),
       maxPlayTime: serializer.fromJson<int?>(json['maxPlayTime']),
+      maxPlayTimeMeasure: serializer.fromJson<String?>(
+        json['maxPlayTimeMeasure'],
+      ),
       image: serializer.fromJson<String?>(json['image']),
       thumbnail: serializer.fromJson<String?>(json['thumbnail']),
       supportsSolo: serializer.fromJson<int>(json['supportsSolo']),
@@ -1785,7 +1975,9 @@ class PlatformGamesData extends DataClass
       'minPlayers': serializer.toJson<int?>(minPlayers),
       'maxPlayers': serializer.toJson<int?>(maxPlayers),
       'minPlayTime': serializer.toJson<int?>(minPlayTime),
+      'minPlayTimeMeasure': serializer.toJson<String?>(minPlayTimeMeasure),
       'maxPlayTime': serializer.toJson<int?>(maxPlayTime),
+      'maxPlayTimeMeasure': serializer.toJson<String?>(maxPlayTimeMeasure),
       'image': serializer.toJson<String?>(image),
       'thumbnail': serializer.toJson<String?>(thumbnail),
       'supportsSolo': serializer.toJson<int>(supportsSolo),
@@ -1808,7 +2000,9 @@ class PlatformGamesData extends DataClass
     Value<int?> minPlayers = const Value.absent(),
     Value<int?> maxPlayers = const Value.absent(),
     Value<int?> minPlayTime = const Value.absent(),
+    Value<String?> minPlayTimeMeasure = const Value.absent(),
     Value<int?> maxPlayTime = const Value.absent(),
+    Value<String?> maxPlayTimeMeasure = const Value.absent(),
     Value<String?> image = const Value.absent(),
     Value<String?> thumbnail = const Value.absent(),
     int? supportsSolo,
@@ -1828,7 +2022,13 @@ class PlatformGamesData extends DataClass
     minPlayers: minPlayers.present ? minPlayers.value : this.minPlayers,
     maxPlayers: maxPlayers.present ? maxPlayers.value : this.maxPlayers,
     minPlayTime: minPlayTime.present ? minPlayTime.value : this.minPlayTime,
+    minPlayTimeMeasure: minPlayTimeMeasure.present
+        ? minPlayTimeMeasure.value
+        : this.minPlayTimeMeasure,
     maxPlayTime: maxPlayTime.present ? maxPlayTime.value : this.maxPlayTime,
+    maxPlayTimeMeasure: maxPlayTimeMeasure.present
+        ? maxPlayTimeMeasure.value
+        : this.maxPlayTimeMeasure,
     image: image.present ? image.value : this.image,
     thumbnail: thumbnail.present ? thumbnail.value : this.thumbnail,
     supportsSolo: supportsSolo ?? this.supportsSolo,
@@ -1862,9 +2062,15 @@ class PlatformGamesData extends DataClass
       minPlayTime: data.minPlayTime.present
           ? data.minPlayTime.value
           : this.minPlayTime,
+      minPlayTimeMeasure: data.minPlayTimeMeasure.present
+          ? data.minPlayTimeMeasure.value
+          : this.minPlayTimeMeasure,
       maxPlayTime: data.maxPlayTime.present
           ? data.maxPlayTime.value
           : this.maxPlayTime,
+      maxPlayTimeMeasure: data.maxPlayTimeMeasure.present
+          ? data.maxPlayTimeMeasure.value
+          : this.maxPlayTimeMeasure,
       image: data.image.present ? data.image.value : this.image,
       thumbnail: data.thumbnail.present ? data.thumbnail.value : this.thumbnail,
       supportsSolo: data.supportsSolo.present
@@ -1903,7 +2109,9 @@ class PlatformGamesData extends DataClass
           ..write('minPlayers: $minPlayers, ')
           ..write('maxPlayers: $maxPlayers, ')
           ..write('minPlayTime: $minPlayTime, ')
+          ..write('minPlayTimeMeasure: $minPlayTimeMeasure, ')
           ..write('maxPlayTime: $maxPlayTime, ')
+          ..write('maxPlayTimeMeasure: $maxPlayTimeMeasure, ')
           ..write('image: $image, ')
           ..write('thumbnail: $thumbnail, ')
           ..write('supportsSolo: $supportsSolo, ')
@@ -1920,7 +2128,7 @@ class PlatformGamesData extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     gameId,
     platformId,
@@ -1928,7 +2136,9 @@ class PlatformGamesData extends DataClass
     minPlayers,
     maxPlayers,
     minPlayTime,
+    minPlayTimeMeasure,
     maxPlayTime,
+    maxPlayTimeMeasure,
     image,
     thumbnail,
     supportsSolo,
@@ -1940,7 +2150,7 @@ class PlatformGamesData extends DataClass
     createdAt,
     updatedAt,
     fullRecordCachedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1952,7 +2162,9 @@ class PlatformGamesData extends DataClass
           other.minPlayers == this.minPlayers &&
           other.maxPlayers == this.maxPlayers &&
           other.minPlayTime == this.minPlayTime &&
+          other.minPlayTimeMeasure == this.minPlayTimeMeasure &&
           other.maxPlayTime == this.maxPlayTime &&
+          other.maxPlayTimeMeasure == this.maxPlayTimeMeasure &&
           other.image == this.image &&
           other.thumbnail == this.thumbnail &&
           other.supportsSolo == this.supportsSolo &&
@@ -1974,7 +2186,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
   final Value<int?> minPlayers;
   final Value<int?> maxPlayers;
   final Value<int?> minPlayTime;
+  final Value<String?> minPlayTimeMeasure;
   final Value<int?> maxPlayTime;
+  final Value<String?> maxPlayTimeMeasure;
   final Value<String?> image;
   final Value<String?> thumbnail;
   final Value<int> supportsSolo;
@@ -1995,7 +2209,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
     this.minPlayers = const Value.absent(),
     this.maxPlayers = const Value.absent(),
     this.minPlayTime = const Value.absent(),
+    this.minPlayTimeMeasure = const Value.absent(),
     this.maxPlayTime = const Value.absent(),
+    this.maxPlayTimeMeasure = const Value.absent(),
     this.image = const Value.absent(),
     this.thumbnail = const Value.absent(),
     this.supportsSolo = const Value.absent(),
@@ -2017,7 +2233,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
     this.minPlayers = const Value.absent(),
     this.maxPlayers = const Value.absent(),
     this.minPlayTime = const Value.absent(),
+    this.minPlayTimeMeasure = const Value.absent(),
     this.maxPlayTime = const Value.absent(),
+    this.maxPlayTimeMeasure = const Value.absent(),
     this.image = const Value.absent(),
     this.thumbnail = const Value.absent(),
     this.supportsSolo = const Value.absent(),
@@ -2044,7 +2262,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
     Expression<int>? minPlayers,
     Expression<int>? maxPlayers,
     Expression<int>? minPlayTime,
+    Expression<String>? minPlayTimeMeasure,
     Expression<int>? maxPlayTime,
+    Expression<String>? maxPlayTimeMeasure,
     Expression<String>? image,
     Expression<String>? thumbnail,
     Expression<int>? supportsSolo,
@@ -2066,7 +2286,11 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
       if (minPlayers != null) 'min_players': minPlayers,
       if (maxPlayers != null) 'max_players': maxPlayers,
       if (minPlayTime != null) 'min_play_time': minPlayTime,
+      if (minPlayTimeMeasure != null)
+        'min_play_time_measure': minPlayTimeMeasure,
       if (maxPlayTime != null) 'max_play_time': maxPlayTime,
+      if (maxPlayTimeMeasure != null)
+        'max_play_time_measure': maxPlayTimeMeasure,
       if (image != null) 'image': image,
       if (thumbnail != null) 'thumbnail': thumbnail,
       if (supportsSolo != null) 'supports_solo': supportsSolo,
@@ -2091,7 +2315,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
     Value<int?>? minPlayers,
     Value<int?>? maxPlayers,
     Value<int?>? minPlayTime,
+    Value<String?>? minPlayTimeMeasure,
     Value<int?>? maxPlayTime,
+    Value<String?>? maxPlayTimeMeasure,
     Value<String?>? image,
     Value<String?>? thumbnail,
     Value<int>? supportsSolo,
@@ -2113,7 +2339,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
       minPlayers: minPlayers ?? this.minPlayers,
       maxPlayers: maxPlayers ?? this.maxPlayers,
       minPlayTime: minPlayTime ?? this.minPlayTime,
+      minPlayTimeMeasure: minPlayTimeMeasure ?? this.minPlayTimeMeasure,
       maxPlayTime: maxPlayTime ?? this.maxPlayTime,
+      maxPlayTimeMeasure: maxPlayTimeMeasure ?? this.maxPlayTimeMeasure,
       image: image ?? this.image,
       thumbnail: thumbnail ?? this.thumbnail,
       supportsSolo: supportsSolo ?? this.supportsSolo,
@@ -2153,8 +2381,14 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
     if (minPlayTime.present) {
       map['min_play_time'] = Variable<int>(minPlayTime.value);
     }
+    if (minPlayTimeMeasure.present) {
+      map['min_play_time_measure'] = Variable<String>(minPlayTimeMeasure.value);
+    }
     if (maxPlayTime.present) {
       map['max_play_time'] = Variable<int>(maxPlayTime.value);
+    }
+    if (maxPlayTimeMeasure.present) {
+      map['max_play_time_measure'] = Variable<String>(maxPlayTimeMeasure.value);
     }
     if (image.present) {
       map['image'] = Variable<String>(image.value);
@@ -2205,7 +2439,9 @@ class PlatformGamesCompanion extends UpdateCompanion<PlatformGamesData> {
           ..write('minPlayers: $minPlayers, ')
           ..write('maxPlayers: $maxPlayers, ')
           ..write('minPlayTime: $minPlayTime, ')
+          ..write('minPlayTimeMeasure: $minPlayTimeMeasure, ')
           ..write('maxPlayTime: $maxPlayTime, ')
+          ..write('maxPlayTimeMeasure: $maxPlayTimeMeasure, ')
           ..write('image: $image, ')
           ..write('thumbnail: $thumbnail, ')
           ..write('supportsSolo: $supportsSolo, ')
@@ -8893,6 +9129,196 @@ class EventGenerationCompanion extends UpdateCompanion<EventGenerationData> {
   }
 }
 
+class EventMoves extends Table with TableInfo<EventMoves, EventMovesData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  EventMoves(this.attachedDatabase, [this._alias]);
+  late final GeneratedColumn<String> localId = GeneratedColumn<String>(
+    'local_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  late final GeneratedColumn<String> serverId = GeneratedColumn<String>(
+    'server_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    $customConstraints: 'NOT NULL',
+  );
+  @override
+  List<GeneratedColumn> get $columns => [localId, serverId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'event_moves';
+  @override
+  Set<GeneratedColumn> get $primaryKey => {localId};
+  @override
+  EventMovesData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return EventMovesData(
+      localId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_id'],
+      )!,
+      serverId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_id'],
+      )!,
+    );
+  }
+
+  @override
+  EventMoves createAlias(String alias) {
+    return EventMoves(attachedDatabase, alias);
+  }
+
+  @override
+  List<String> get customConstraints => const ['PRIMARY KEY(local_id)'];
+  @override
+  bool get dontWriteConstraints => true;
+}
+
+class EventMovesData extends DataClass implements Insertable<EventMovesData> {
+  final String localId;
+  final String serverId;
+  const EventMovesData({required this.localId, required this.serverId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['local_id'] = Variable<String>(localId);
+    map['server_id'] = Variable<String>(serverId);
+    return map;
+  }
+
+  EventMovesCompanion toCompanion(bool nullToAbsent) {
+    return EventMovesCompanion(
+      localId: Value(localId),
+      serverId: Value(serverId),
+    );
+  }
+
+  factory EventMovesData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return EventMovesData(
+      localId: serializer.fromJson<String>(json['localId']),
+      serverId: serializer.fromJson<String>(json['serverId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'localId': serializer.toJson<String>(localId),
+      'serverId': serializer.toJson<String>(serverId),
+    };
+  }
+
+  EventMovesData copyWith({String? localId, String? serverId}) =>
+      EventMovesData(
+        localId: localId ?? this.localId,
+        serverId: serverId ?? this.serverId,
+      );
+  EventMovesData copyWithCompanion(EventMovesCompanion data) {
+    return EventMovesData(
+      localId: data.localId.present ? data.localId.value : this.localId,
+      serverId: data.serverId.present ? data.serverId.value : this.serverId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EventMovesData(')
+          ..write('localId: $localId, ')
+          ..write('serverId: $serverId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(localId, serverId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is EventMovesData &&
+          other.localId == this.localId &&
+          other.serverId == this.serverId);
+}
+
+class EventMovesCompanion extends UpdateCompanion<EventMovesData> {
+  final Value<String> localId;
+  final Value<String> serverId;
+  final Value<int> rowid;
+  const EventMovesCompanion({
+    this.localId = const Value.absent(),
+    this.serverId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  EventMovesCompanion.insert({
+    required String localId,
+    required String serverId,
+    this.rowid = const Value.absent(),
+  }) : localId = Value(localId),
+       serverId = Value(serverId);
+  static Insertable<EventMovesData> custom({
+    Expression<String>? localId,
+    Expression<String>? serverId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (localId != null) 'local_id': localId,
+      if (serverId != null) 'server_id': serverId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  EventMovesCompanion copyWith({
+    Value<String>? localId,
+    Value<String>? serverId,
+    Value<int>? rowid,
+  }) {
+    return EventMovesCompanion(
+      localId: localId ?? this.localId,
+      serverId: serverId ?? this.serverId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (localId.present) {
+      map['local_id'] = Variable<String>(localId.value);
+    }
+    if (serverId.present) {
+      map['server_id'] = Variable<String>(serverId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EventMovesCompanion(')
+          ..write('localId: $localId, ')
+          ..write('serverId: $serverId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class DatabaseAtV10 extends GeneratedDatabase {
   DatabaseAtV10(QueryExecutor e) : super(e);
   late final Games games = Games(this);
@@ -8911,6 +9337,7 @@ class DatabaseAtV10 extends GeneratedDatabase {
   late final EventPolicies eventPolicies = EventPolicies(this);
   late final EventAccess eventAccess = EventAccess(this);
   late final EventGeneration eventGeneration = EventGeneration(this);
+  late final EventMoves eventMoves = EventMoves(this);
   late final Index platformGamesGameIdIdx = Index(
     'platform_games_game_id_idx',
     'CREATE INDEX platform_games_game_id_idx ON platform_games (game_id)',
@@ -8918,10 +9345,6 @@ class DatabaseAtV10 extends GeneratedDatabase {
   late final Index gameCollectionsUserIdx = Index(
     'game_collections_user_idx',
     'CREATE INDEX game_collections_user_idx ON game_collections (user_id)',
-  );
-  late final Index gameCollectionsPlatformGameIdIdx = Index(
-    'game_collections_platform_game_id_idx',
-    'CREATE INDEX game_collections_platform_game_id_idx ON game_collections (platform_game_id)',
   );
   late final Index gameCollectionsUserPgameMediumUniqueIdx = Index(
     'game_collections_user_pgame_medium_unique_idx',
@@ -8984,9 +9407,9 @@ class DatabaseAtV10 extends GeneratedDatabase {
     eventPolicies,
     eventAccess,
     eventGeneration,
+    eventMoves,
     platformGamesGameIdIdx,
     gameCollectionsUserIdx,
-    gameCollectionsPlatformGameIdIdx,
     gameCollectionsUserPgameMediumUniqueIdx,
     householdMembersUserIdx,
     householdMembersHouseholdUserUniqueIdx,

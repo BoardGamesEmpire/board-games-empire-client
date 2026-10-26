@@ -106,6 +106,16 @@
             "dsl_features": []
           },
           {
+            "name": "playing_time",
+            "getter_name": "playingTime",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
             "name": "min_play_time",
             "getter_name": "minPlayTime",
             "moor_type": "int",
@@ -116,9 +126,29 @@
             "dsl_features": []
           },
           {
+            "name": "min_play_time_measure",
+            "getter_name": "minPlayTimeMeasure",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
             "name": "max_play_time",
             "getter_name": "maxPlayTime",
             "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_play_time_measure",
+            "getter_name": "maxPlayTimeMeasure",
+            "moor_type": "string",
             "nullable": true,
             "customConstraints": null,
             "default_dart": null,
@@ -256,8 +286,8 @@
             "dsl_features": []
           },
           {
-            "name": "reach",
-            "getter_name": "reach",
+            "name": "visibility",
+            "getter_name": "visibility",
             "moor_type": "string",
             "nullable": false,
             "customConstraints": null,
@@ -421,9 +451,29 @@
             "dsl_features": []
           },
           {
+            "name": "min_play_time_measure",
+            "getter_name": "minPlayTimeMeasure",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
             "name": "max_play_time",
             "getter_name": "maxPlayTime",
             "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "max_play_time_measure",
+            "getter_name": "maxPlayTimeMeasure",
+            "moor_type": "string",
             "nullable": true,
             "customConstraints": null,
             "default_dart": null,
@@ -2287,6 +2337,43 @@
     },
     {
       "id": 16,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "event_moves",
+        "was_declared_in_moor": false,
+        "columns": [
+          {
+            "name": "local_id",
+            "getter_name": "localId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "server_id",
+            "getter_name": "serverId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [],
+        "explicit_pk": [
+          "local_id"
+        ]
+      }
+    },
+    {
+      "id": 17,
       "references": [
         1
       ],
@@ -2305,7 +2392,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 18,
       "references": [
         2
       ],
@@ -2318,25 +2405,6 @@
         "columns": [
           {
             "column": "user_id",
-            "order_by": null
-          }
-        ]
-      }
-    },
-    {
-      "id": 18,
-      "references": [
-        2
-      ],
-      "type": "index",
-      "data": {
-        "on": 2,
-        "name": "game_collections_platform_game_id_idx",
-        "sql": null,
-        "unique": false,
-        "columns": [
-          {
-            "column": "platform_game_id",
             "order_by": null
           }
         ]
@@ -2546,7 +2614,7 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"games\" (\"id\" TEXT NOT NULL, \"title\" TEXT NOT NULL, \"subtitle\" TEXT NULL, \"description\" TEXT NULL, \"image\" TEXT NULL, \"thumbnail\" TEXT NULL, \"publish_year\" INTEGER NULL, \"min_players\" INTEGER NULL, \"max_players\" INTEGER NULL, \"min_play_time\" INTEGER NULL, \"max_play_time\" INTEGER NULL, \"min_age\" INTEGER NULL, \"complexity\" REAL NULL, \"content_type\" TEXT NOT NULL DEFAULT 'BaseGame', \"total_play_count\" INTEGER NOT NULL DEFAULT 0, \"average_rating\" REAL NULL, \"bayes_rating\" REAL NULL, \"ratings_count\" INTEGER NULL, \"owned_by_count\" INTEGER NOT NULL DEFAULT 0, \"categories_json\" TEXT NOT NULL DEFAULT '[]', \"mechanics_json\" TEXT NOT NULL DEFAULT '[]', \"designers_json\" TEXT NOT NULL DEFAULT '[]', \"publishers_json\" TEXT NOT NULL DEFAULT '[]', \"tags_json\" TEXT NOT NULL DEFAULT '[]', \"reach\" TEXT NOT NULL DEFAULT 'Public', \"created_by_id\" TEXT NULL, \"deleted_at\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"full_record_cached_at\" TEXT NULL, PRIMARY KEY (\"id\"));"
+          "sql": "CREATE TABLE IF NOT EXISTS \"games\" (\"id\" TEXT NOT NULL, \"title\" TEXT NOT NULL, \"subtitle\" TEXT NULL, \"description\" TEXT NULL, \"image\" TEXT NULL, \"thumbnail\" TEXT NULL, \"publish_year\" INTEGER NULL, \"min_players\" INTEGER NULL, \"max_players\" INTEGER NULL, \"playing_time\" INTEGER NULL, \"min_play_time\" INTEGER NULL, \"min_play_time_measure\" TEXT NULL, \"max_play_time\" INTEGER NULL, \"max_play_time_measure\" TEXT NULL, \"min_age\" INTEGER NULL, \"complexity\" REAL NULL, \"content_type\" TEXT NOT NULL DEFAULT 'BaseGame', \"total_play_count\" INTEGER NOT NULL DEFAULT 0, \"average_rating\" REAL NULL, \"bayes_rating\" REAL NULL, \"ratings_count\" INTEGER NULL, \"owned_by_count\" INTEGER NOT NULL DEFAULT 0, \"categories_json\" TEXT NOT NULL DEFAULT '[]', \"mechanics_json\" TEXT NOT NULL DEFAULT '[]', \"designers_json\" TEXT NOT NULL DEFAULT '[]', \"publishers_json\" TEXT NOT NULL DEFAULT '[]', \"tags_json\" TEXT NOT NULL DEFAULT '[]', \"visibility\" TEXT NOT NULL DEFAULT 'Public', \"created_by_id\" TEXT NULL, \"deleted_at\" TEXT NULL, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"full_record_cached_at\" TEXT NULL, PRIMARY KEY (\"id\"));"
         }
       ]
     },
@@ -2555,7 +2623,7 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"platform_games\" (\"id\" TEXT NOT NULL, \"game_id\" TEXT NOT NULL REFERENCES games (id), \"platform_id\" TEXT NOT NULL, \"platform_name\" TEXT NOT NULL, \"min_players\" INTEGER NULL, \"max_players\" INTEGER NULL, \"min_play_time\" INTEGER NULL, \"max_play_time\" INTEGER NULL, \"image\" TEXT NULL, \"thumbnail\" TEXT NULL, \"supports_solo\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_solo\" IN (0, 1)), \"supports_local\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_local\" IN (0, 1)), \"supports_online\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_online\" IN (0, 1)), \"has_async_play\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_async_play\" IN (0, 1)), \"has_realtime\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_realtime\" IN (0, 1)), \"has_tutorial\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_tutorial\" IN (0, 1)), \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"full_record_cached_at\" TEXT NULL, PRIMARY KEY (\"id\"));"
+          "sql": "CREATE TABLE IF NOT EXISTS \"platform_games\" (\"id\" TEXT NOT NULL, \"game_id\" TEXT NOT NULL REFERENCES games (id), \"platform_id\" TEXT NOT NULL, \"platform_name\" TEXT NOT NULL, \"min_players\" INTEGER NULL, \"max_players\" INTEGER NULL, \"min_play_time\" INTEGER NULL, \"min_play_time_measure\" TEXT NULL, \"max_play_time\" INTEGER NULL, \"max_play_time_measure\" TEXT NULL, \"image\" TEXT NULL, \"thumbnail\" TEXT NULL, \"supports_solo\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_solo\" IN (0, 1)), \"supports_local\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_local\" IN (0, 1)), \"supports_online\" INTEGER NOT NULL DEFAULT 0 CHECK (\"supports_online\" IN (0, 1)), \"has_async_play\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_async_play\" IN (0, 1)), \"has_realtime\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_realtime\" IN (0, 1)), \"has_tutorial\" INTEGER NOT NULL DEFAULT 0 CHECK (\"has_tutorial\" IN (0, 1)), \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"full_record_cached_at\" TEXT NULL, PRIMARY KEY (\"id\"));"
         }
       ]
     },
@@ -2686,6 +2754,15 @@
       ]
     },
     {
+      "name": "event_moves",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"event_moves\" (\"local_id\" TEXT NOT NULL, \"server_id\" TEXT NOT NULL, PRIMARY KEY (\"local_id\"));"
+        }
+      ]
+    },
+    {
       "name": "platform_games_game_id_idx",
       "sql": [
         {
@@ -2700,15 +2777,6 @@
         {
           "dialect": "sqlite",
           "sql": "CREATE INDEX game_collections_user_idx ON game_collections (user_id)"
-        }
-      ]
-    },
-    {
-      "name": "game_collections_platform_game_id_idx",
-      "sql": [
-        {
-          "dialect": "sqlite",
-          "sql": "CREATE INDEX game_collections_platform_game_id_idx ON game_collections (platform_game_id)"
         }
       ]
     },

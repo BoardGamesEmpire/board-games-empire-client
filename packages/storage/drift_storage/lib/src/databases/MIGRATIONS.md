@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 10`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 11`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -58,22 +58,35 @@ Server schema history:
   `user_id`. All six start empty, because no earlier version cached an
   event. Additive (new tables whose foreign keys point at the new `events`,
   no rebuild), so #54 stays deferred.
-- **v7 → v8 (#476):** adds a nullable `households.member_invite_policy`. One
-  `addColumn`, no rebuild; existing rows hold null until the next hydrate.
+- **v7 → v8 (#476):** adds a nullable `households.member_invite_policy`, the
+  household's member invite policy by its wire name, by one `addColumn`. A
+  row cached before it holds null, read as settings not read yet, until the
+  next hydrate writes the policy the list carries. Additive (one nullable
+  column, no rebuild), so #54 stays deferred.
 - **v8 → v9 (#304):** adds nullable `household_members.username`,
-  `display_name` and `avatar_url`. Three `addColumn` calls, no rebuild;
-  existing rows hold null until the next hydrate.
-- **v9 → v10 (#602, #471):** renames `games.visibility` to `reach`, drops
+  `display_name` and `avatar_url`, the member's identity as the household
+  list embeds it, by three `addColumn` calls. A row cached before it holds
+  null names until the next hydrate writes the ones the list carries.
+  Additive (nullable columns, no rebuild), so #54 stays deferred.
+- **v9 → v10 (#499):** adds `event_moves` (`local_id` primary key,
+  `server_id`), the persisted record of where a reconciled event went, so
+  every tab and a reload can follow an event created on this device. A new
+  table with no FK edges, created by one `createTable`, so #54 stays
+  deferred.
+- **v10 → v11 (#602, #471):** renames `games.visibility` to `reach`, drops
   `games.playing_time` and the `min_play_time_measure` /
   `max_play_time_measure` columns on `games` and `platform_games`, and adds
   `game_collections_platform_game_id_idx`, which backs `game_collections`'
   foreign key to `platform_games`. `renameColumn`, five `dropColumn` calls
   (`ALTER TABLE … DROP COLUMN`, SQLite 3.35+) and one `createIndex`, all in
-  place, so #54 stays deferred. A reach cached before it is kept as written.
+  place, so #54 stays deferred. A reach cached before it is kept as written,
+  and so is a bound: none is converted from its unit or filled from
+  `playing_time`, since the server's own step converted nothing
+  (backend#869).
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v10.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v11.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live
@@ -99,7 +112,7 @@ schema.
    renames and drops, and FK-free table rebuilds); switching
    to the generated `stepByStep(...)` dispatcher remains an open option under
    #54 and becomes compelling with the first rebuild of an FK-referenced
-   table. An in-place rename or drop, as v10 makes, copies no table, so it
+   table. An in-place rename or drop, as v11 makes, copies no table, so it
    doesn't count (#602):
 
    ```dart
@@ -163,8 +176,8 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 ## Deferred items
 
 - **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
-  the FK-off + transaction wrapper decision above. Nine migrations have
-  shipped without them: additive ones, one FK-free rebuild (v3) and v10's
+  the FK-off + transaction wrapper decision above. Ten migrations have
+  shipped without them: additive ones, one FK-free rebuild (v3) and v11's
   in-place renames and drops. The trigger is the first rebuild of an
   FK-referenced table (see "Adding a schema change"). The
   generated `test/drift/**` migration tests already exist and are committed.

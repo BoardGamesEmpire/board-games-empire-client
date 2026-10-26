@@ -68,6 +68,15 @@
       }
     }
   },
+  "syncStuckCreateEvent": "Create the event “{title}”",
+  "@syncStuckCreateEvent": {
+    "description": "A stuck change that creates an event (#499). {title} is the title the user gave it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "syncStuckUnreadable": "A change this version of the app can't read",
   "@syncStuckUnreadable": {
     "description": "A stuck change whose stored form this build can't decode, such as one saved by a newer version (#190). It can be discarded; trying it again won't help."

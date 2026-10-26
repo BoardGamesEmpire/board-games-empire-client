@@ -6,8 +6,10 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 // The detail screen's storage (#498): one event watched with the current
 // user's own row on its roster, and one the server no longer serves
@@ -16,21 +18,33 @@ import '../support/event_fixture.dart';
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
 
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
+
 void main() {
   late ServerDatabase db;
   late EventRepositoryImpl a;
   late EventRepositoryImpl b;
 
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    a = EventRepositoryImpl(db, userId: _kUserA);
-    b = EventRepositoryImpl(db, userId: _kUserB);
+    a = repoFor(_kUserA);
+    b = repoFor(_kUserB);
   });
 
   tearDown(() => db.close());
 
-  // No writer sets either sync flag yet (#499, #527), so these set them as
-  // one would. The cache ignores a snapshot's own flags.
+  // Only a create sets the flags yet, and only on an event of its own
+  // (#499), so these set them over a cached one, as a queued edit would
+  // (#500). The cache ignores a snapshot's own flags.
   Future<void> markDirty(String id) =>
       (db.update(db.eventsTable)..where((t) => t.id.equals(id))).write(
         const EventsTableCompanion(isDirty: Value(true)),

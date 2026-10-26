@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:di/di.dart' show LocalClockService;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
@@ -378,7 +379,16 @@ void main() {
     test('over the real cache, for a user who never cached it', () async {
       final db = inMemoryServerDatabase();
       addTearDown(db.close);
-      final cached = EventRepositoryImpl(db, userId: 'user-me');
+      final cached = EventRepositoryImpl(
+        db,
+        userId: 'user-me',
+        syncQueue: SyncQueueRepositoryImpl(
+          db,
+          const LocalClockService(),
+          userId: 'user-me',
+        ),
+        clock: const LocalClockService(),
+      );
       final remote = FakeEventRemote.detail((_) => _snapshot());
       final bloc = EventDetailBloc(
         eventId: 'e-1',
@@ -778,6 +788,224 @@ void main() {
       );
     },
   );
+
+  group('an event created here, moved onto its server id (#499)', () {
+    // The sync queue delivers a create, and the reconcile deletes the local
+    // event and caches the server's under the id it gave it. To a watch on
+    // the local id that is the event going. The create's answer embeds each
+    // attendee's role and not their user, so the names come with a read.
+    late ServerDatabase db;
+    late EventRepositoryImpl cached;
+
+    EventRepositoryImpl over(ServerDatabase db) => EventRepositoryImpl(
+      db,
+      userId: 'user-me',
+      syncQueue: SyncQueueRepositoryImpl(
+        db,
+        const LocalClockService(),
+        userId: 'user-me',
+      ),
+      clock: const LocalClockService(),
+    );
+
+    setUp(() {
+      db = inMemoryServerDatabase();
+      cached = over(db);
+    });
+
+    tearDown(() => db.close());
+
+    /// The current user's row as host of `ev-server`: bare, as the create
+    /// answers it, or [named], as a detail read does.
+    EventAttendee host({bool named = false}) {
+      final row = _attending(EventRole.host).copyWith(eventId: 'ev-server');
+      return named ? row.copyWith(username: 'me', displayName: 'Me') : row;
+    }
+
+    /// `ev-server`, the event the server made of the local one.
+    EventSnapshot server({bool named = false}) => EventSnapshot(
+      event: item('ev-server').event.copyWith(createdById: 'user-me'),
+      occurrences: const [],
+      attendees: [host(named: named)],
+    );
+
+    /// A server that reads `ev-server` with its roster named, and has never
+    /// heard of any other id.
+    FakeEventRemote serverOnly() => FakeEventRemote.detail(
+      (id) => id == 'ev-server'
+          ? server(named: true)
+          : throw const EventRemoteNotFoundException('unknown id'),
+    );
+
+    Future<({String localId, String syncQueueId})> createHere() async {
+      final created = await cached.create(
+        const EventDraft(title: 'Game night'),
+      );
+      return (localId: created.event.id, syncQueueId: created.syncQueueId);
+    }
+
+    Future<void> reconcile(
+      ({String localId, String syncQueueId}) created, {
+      bool deleted = false,
+    }) => cached.reconcileCreatedEvent(
+      server(),
+      localId: created.localId,
+      deleted: deleted,
+      completedSyncQueueId: created.syncQueueId,
+    );
+
+    final namedOnServerId = isA<EventDetailReady>()
+        .having((s) => s.detail.snapshot.event.id, 'event.id', 'ev-server')
+        .having(
+          (s) => s.detail.snapshot.attendees?.map((a) => a.displayName),
+          'attendee names',
+          ['Me'],
+        );
+
+    test('a detail open on a local event follows it onto the server\'s '
+        'id', () async {
+      final created = await createHere();
+      final remote = serverOnly();
+      final bloc = EventDetailBloc(
+        eventId: created.localId,
+        repository: cached,
+        remote: remote,
+      );
+      addTearDown(bloc.close);
+      final states = record(bloc);
+      await bloc.stream
+          .firstWhere((state) => state is EventDetailReady)
+          .timeout(const Duration(seconds: 5));
+
+      await reconcile(created);
+      await pumpEventQueue();
+
+      expect(bloc.state, namedOnServerId);
+      // Neither a spinner nor not found between the two.
+      expect(states, everyElement(isA<EventDetailReady>()));
+      // The move is a new open of the server's id, which reads it once.
+      expect(remote.detailRequests, ['ev-server']);
+    });
+
+    test('a detail built on a local id after its move opens the server\'s '
+        'event', () async {
+      final created = await createHere();
+      await reconcile(created);
+      // A repository that did not run the reconcile, as after a reload or in
+      // another tab: it hears of the move with its first answer.
+      final reloaded = over(db);
+      final remote = serverOnly();
+      final bloc = EventDetailBloc(
+        eventId: created.localId,
+        repository: reloaded,
+        remote: remote,
+      );
+      addTearDown(bloc.close);
+      final states = record(bloc);
+
+      await pumpEventQueue();
+
+      expect(bloc.state, namedOnServerId);
+      expect(states, everyElement(isA<EventDetailReady>()));
+      expect(remote.detailRequests, ['ev-server']);
+    });
+
+    test('a deleted replay leaves the detail not found', () async {
+      // The event was deleted before the create was answered: the local
+      // event goes, and no move is recorded.
+      final created = await createHere();
+      final remote = serverOnly();
+      final bloc = EventDetailBloc(
+        eventId: created.localId,
+        repository: cached,
+        remote: remote,
+      );
+      addTearDown(bloc.close);
+      await bloc.stream
+          .firstWhere((state) => state is EventDetailReady)
+          .timeout(const Duration(seconds: 5));
+
+      await reconcile(created, deleted: true);
+      await pumpEventQueue();
+
+      expect(bloc.state, const EventDetailNotFound());
+      expect(remote.detailRequests, isEmpty);
+    });
+
+    test('an answer the local id sent before the move was followed is '
+        'dropped', () async {
+      // The move can be known while the local id's watch still has answers
+      // on their way: here the local event read before the reconcile
+      // committed, and the null after it. Taken for the server id's first
+      // answer, that null would put a spinner up between the two.
+      final local = StreamController<EventDetail?>(sync: true);
+      final moved = StreamController<EventDetail?>();
+      addTearDown(() => unawaited(local.close()));
+      addTearDown(() => unawaited(moved.close()));
+      when(() => repository.watchEvent('e-1')).thenAnswer((_) => local.stream);
+      when(() => repository.watchEvent('ev-server'))
+          .thenAnswer((_) => moved.stream);
+      final remote = unanswered();
+      final bloc = build(remote: remote);
+      addTearDown(bloc.close);
+      final states = record(bloc);
+      final localEvent = _detail(snapshot: _snapshot(isLocalOnly: true));
+
+      local.add(localEvent);
+      await settle();
+      when(() => repository.reconciledEventId('e-1')).thenReturn('ev-server');
+      local
+        ..add(localEvent)
+        ..add(null);
+      await settle();
+      moved.add(_detail(snapshot: server()));
+      await settle();
+
+      expect(bloc.state, readyWith(detail: _detail(snapshot: server())));
+      expect(states, everyElement(isA<EventDetailReady>()));
+      expect(remote.detailRequests, ['ev-server']);
+    });
+
+    test('a read of the local id answers only for it', () async {
+      // The real cache never has the local id read before its move. Were it,
+      // its 404 would forget the server's event, and put it on not found
+      // for good.
+      final moved = StreamController<EventDetail?>();
+      addTearDown(() => unawaited(moved.close()));
+      when(() => repository.watchEvent('ev-server'))
+          .thenAnswer((_) => moved.stream);
+      final reads = <String, Completer<EventSnapshot>>{};
+      final remote = FakeEventRemote.detail(
+        (id) => (reads[id] = Completer<EventSnapshot>()).future,
+      );
+      final bloc = build(remote: remote);
+      addTearDown(bloc.close);
+
+      cache.add(null);
+      await settle();
+      when(() => repository.reconciledEventId('e-1')).thenReturn('ev-server');
+      cache.add(null);
+      await settle();
+      moved.add(_detail(snapshot: server()));
+      await settle();
+      reads['e-1']!.completeError(
+        const EventRemoteNotFoundException('unknown id'),
+      );
+      await settle();
+
+      expect(remote.detailRequests, ['e-1', 'ev-server']);
+      verifyNever(
+        () => repository.forgetEvent(
+          'ev-server',
+          lastWrite: any(named: 'lastWrite'),
+        ),
+      );
+      expect(
+        bloc.state,
+        readyWith(detail: _detail(snapshot: server()), refreshFailed: false),
+      );
+    });
+  });
 
   group('when the user retries', () {
     late List<Completer<EventSnapshot>> reads;
@@ -1367,16 +1595,27 @@ void main() {
       final households = [_household('h-1', 'The Smiths')];
 
       expect(
-        EventDetailCacheUpdated(_detail()),
-        EventDetailCacheUpdated(_detail()),
+        EventDetailCacheUpdated(_detail(), eventId: 'e-1'),
+        EventDetailCacheUpdated(_detail(), eventId: 'e-1'),
       );
       expect(
-        const EventDetailCacheUpdated(null),
-        isNot(EventDetailCacheUpdated(_detail())),
+        const EventDetailCacheUpdated(null, eventId: 'e-1'),
+        isNot(EventDetailCacheUpdated(_detail(), eventId: 'e-1')),
       );
-      expect(const EventDetailCacheFailed(), const EventDetailCacheFailed());
       expect(
-        const EventDetailCacheFailed(),
+        const EventDetailCacheUpdated(null, eventId: 'e-1'),
+        isNot(const EventDetailCacheUpdated(null, eventId: 'ev-server')),
+      );
+      expect(
+        const EventDetailCacheFailed(eventId: 'e-1'),
+        const EventDetailCacheFailed(eventId: 'e-1'),
+      );
+      expect(
+        const EventDetailCacheFailed(eventId: 'e-1'),
+        isNot(const EventDetailCacheFailed(eventId: 'ev-server')),
+      );
+      expect(
+        const EventDetailCacheFailed(eventId: 'e-1'),
         isNot(const EventDetailCacheEnded()),
       );
       expect(
@@ -1394,14 +1633,38 @@ void main() {
         ),
       );
       expect(
-        const EventDetailReadSettled(EventDetailReadOutcome.failed),
-        isNot(const EventDetailReadSettled(EventDetailReadOutcome.notFound)),
+        const EventDetailReadSettled(
+          EventDetailReadOutcome.failed,
+          eventId: 'e-1',
+        ),
+        isNot(
+          const EventDetailReadSettled(
+            EventDetailReadOutcome.notFound,
+            eventId: 'e-1',
+          ),
+        ),
       );
       expect(
-        const EventDetailReadSettled(EventDetailReadOutcome.succeeded),
+        const EventDetailReadSettled(
+          EventDetailReadOutcome.failed,
+          eventId: 'e-1',
+        ),
+        isNot(
+          const EventDetailReadSettled(
+            EventDetailReadOutcome.failed,
+            eventId: 'ev-server',
+          ),
+        ),
+      );
+      expect(
+        const EventDetailReadSettled(
+          EventDetailReadOutcome.succeeded,
+          eventId: 'e-1',
+        ),
         isNot(
           const EventDetailReadSettled(
             EventDetailReadOutcome.succeeded,
+            eventId: 'e-1',
             rosterWithheld: true,
           ),
         ),

@@ -13,6 +13,10 @@ import 'package:observability/observability.dart';
 ///
 /// - a household create goes out keyed by its `localId` (#131) and is
 ///   acknowledged with [HouseholdRepository.reconcileCreatedHousehold];
+/// - an event create goes out keyed by its `localId` too, and is
+///   acknowledged with [EventRepository.reconcileCreatedEvent] (#499). A
+///   replay of a create whose event was deleted since is acknowledged the
+///   same way, and leaves no event;
 /// - a collection add, update or remove is acknowledged with
 ///   [GameCollectionRepository.reconcileFromServer], which replays the ops
 ///   still queued behind it (#429). A removal the server reports as already
@@ -20,7 +24,7 @@ import 'package:observability/observability.dart';
 ///
 /// A failed request is judged by the exception's variant and status, as
 /// [SyncFailure] sets out, and recorded on the entry: parked, counted, or
-/// handed back. Both exception families carry the status, so none of this
+/// handed back. Every exception family carries the status, so none of this
 /// waits on a shared classifier (#260).
 ///
 /// Every queue write that records an outcome is bookkeeping. If one throws,
@@ -33,6 +37,8 @@ class SyncOperationSenderImpl implements SyncOperationSender {
     required this._householdRemote,
     required this._collection,
     required this._collectionRemote,
+    required this._events,
+    required this._eventRemote,
     BgeLogger? logger,
   }) : _log = logger ?? BgeLogger('bge.sync.sender');
 
@@ -41,6 +47,8 @@ class SyncOperationSenderImpl implements SyncOperationSender {
   final HouseholdRemoteDataSource _householdRemote;
   final GameCollectionRepository _collection;
   final GameCollectionRemoteDataSource _collectionRemote;
+  final EventRepository _events;
+  final EventRemoteDataSource _eventRemote;
   final BgeLogger _log;
 
   @override
@@ -90,6 +98,7 @@ class SyncOperationSenderImpl implements SyncOperationSender {
   ) async {
     final delivery = await switch (operation) {
       CreateHouseholdOperation() => _createHousehold(entryId, operation),
+      CreateEventOperation() => _createEvent(entryId, operation),
       AddToCollectionOperation() => _addToCollection(entryId, operation),
       UpdateCollectionOperation() => _updateCollectionEntry(entryId, operation),
       RemoveFromCollectionOperation() => _removeFromCollection(
@@ -130,6 +139,36 @@ class SyncOperationSenderImpl implements SyncOperationSender {
         completedSyncQueueId: entryId,
       );
       return SyncDelivered(householdId: created.id);
+    });
+  }
+
+  Future<SyncDelivery> _createEvent(
+    String entryId,
+    CreateEventOperation op,
+  ) async {
+    final CreatedEvent created;
+    try {
+      created = await _eventRemote.createEvent(
+        op.draft,
+        // The same key on every attempt at this create, so a retry after a
+        // lost response returns the event the first attempt made rather
+        // than a second one (#499).
+        clientRequestId: op.localId,
+      );
+    } on Object catch (error) {
+      return _failedRequest(entryId, error);
+    }
+    // A replay of a create whose event was deleted since: the local event
+    // goes, and nothing takes its place.
+    final deleted = created.deletedAt != null;
+    return _acknowledge(entryId, () async {
+      await _events.reconcileCreatedEvent(
+        created.snapshot,
+        localId: op.localId,
+        deleted: deleted,
+        completedSyncQueueId: entryId,
+      );
+      return SyncDelivered(eventId: deleted ? null : created.snapshot.event.id);
     });
   }
 
@@ -218,8 +257,8 @@ class SyncOperationSenderImpl implements SyncOperationSender {
   /// If it throws, the attempt is counted rather than handed back. A fault
   /// here may recur on every attempt, and an uncounted one would then be
   /// retried forever. The retry is safe: the server's half is replayed, not
-  /// repeated, since a household create is keyed (#131) and every collection
-  /// write is an upsert, an absolute update or a removal.
+  /// repeated, since a household or event create is keyed (#131, #499) and
+  /// every collection write is an upsert, an absolute update or a removal.
   Future<SyncDelivery> _acknowledge(
     String entryId,
     Future<SyncDelivery> Function() confirm,
@@ -238,18 +277,27 @@ class SyncOperationSenderImpl implements SyncOperationSender {
   static SyncDelivery _judge(Object error) => switch (error) {
     // A success this device could not read, whichever variant carries it:
     // the server refused nothing, and most likely applied the write. Parked,
-    // a household create would stay local-only beside the copy the next
-    // hydrate brings. Counted, the retry replays it, as for a failed
+    // a household or event create would stay local-only beside the copy the
+    // next hydrate brings. Counted, the retry replays it, as for a failed
     // acknowledgement (see [_acknowledge]).
     HouseholdRemoteException(statusCode: final status?) ||
-    GameCollectionRemoteException(statusCode: final status?)
+    GameCollectionRemoteException(statusCode: final status?) ||
+    EventRemoteException(statusCode: final status?)
         when status >= 200 && status < 300 =>
       SyncFailed(SyncFailure.localFault, error),
     HouseholdRemotePermanentException() ||
     GameCollectionRemotePermanentException() ||
-    GameCollectionNotFoundException() => SyncParked(error),
+    GameCollectionNotFoundException() ||
+    // A create the API refused, such as for an invitee it won't take, is
+    // refused the same way on every attempt (#499). The two read refusals
+    // never come from a create, and would be refusals too if one did.
+    EventCreateRefusedException() ||
+    EventRemotePermanentException() ||
+    EventRemoteForbiddenException() ||
+    EventRemoteNotFoundException() => SyncParked(error),
     HouseholdRemoteTransientException(:final statusCode) ||
-    GameCollectionRemoteTransientException(
+    GameCollectionRemoteTransientException(:final statusCode) ||
+    EventRemoteTransientException(
       :final statusCode,
     ) => SyncFailed(_transientFailure(statusCode), error),
     // Raised before any request: a request the server would refuse, a
@@ -347,6 +395,7 @@ class SyncOperationSenderImpl implements SyncOperationSender {
     'entryId': entryId,
     'op': switch (op) {
       CreateHouseholdOperation() => CreateHouseholdOperation.type,
+      CreateEventOperation() => CreateEventOperation.type,
       AddToCollectionOperation() => AddToCollectionOperation.type,
       UpdateCollectionOperation() => UpdateCollectionOperation.type,
       RemoveFromCollectionOperation() => RemoveFromCollectionOperation.type,

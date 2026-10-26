@@ -6,8 +6,10 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 // The hydrate's purge (#496): it removes the current user's attendance of
 // the events a snapshot of their list no longer holds, judged only within
@@ -16,13 +18,24 @@ import '../support/event_fixture.dart';
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
 
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
+
 void main() {
   late ServerDatabase db;
   late EventRepositoryImpl a;
 
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    a = EventRepositoryImpl(db, userId: _kUserA);
+    a = repoFor(_kUserA);
   });
 
   tearDown(() => db.close());
@@ -33,8 +46,9 @@ void main() {
     source: EventAccessSource.attending,
   );
 
-  // No writer sets either sync flag yet (#499, #527), so these set them as
-  // one would.
+  // Only a create sets the flags yet, and only on an event of its own
+  // (#499), so these set them over a cached one, as a queued edit would
+  // (#500).
   Future<void> markDirty(String id) =>
       (db.update(db.eventsTable)..where((t) => t.id.equals(id))).write(
         const EventsTableCompanion(isDirty: Value(true)),
@@ -108,7 +122,7 @@ void main() {
     // host has removed, so one it leaves out is one they no longer attend.
     // Kept, their row would still answer with their old role and RSVP, and
     // pass the roster rule, though the server now serves them no roster.
-    final b = EventRepositoryImpl(db, userId: _kUserB);
+    final b = repoFor(_kUserB);
     final roster = [
       testAttendee('att-a', userId: _kUserA),
       testAttendee('att-b', userId: _kUserB),
@@ -140,7 +154,7 @@ void main() {
   });
 
   test('an event another user still attends stays cached', () async {
-    final b = EventRepositoryImpl(db, userId: _kUserB);
+    final b = repoFor(_kUserB);
     await attend('e-1');
     await b.cacheEvent(
       testSnapshot('e-1'),
