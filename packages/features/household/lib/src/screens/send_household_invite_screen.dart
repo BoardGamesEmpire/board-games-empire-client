@@ -106,24 +106,11 @@ class SendHouseholdInviteScreen extends StatelessWidget {
       memberInvitePolicy,
     );
 
-    if (roles.isEmpty) {
-      final reason = _notAllowedText(l10n, viewerRole, memberInvitePolicy);
-      return BgePage(
-        title: Text(l10n.inviteSendTitle),
-        width: BgePageWidth.pane,
-        centerVertically: true,
-        child: reason == null
-            ? _CantTellYet(onRefresh: onRefresh)
-            : Text(
-                key: notAllowedKey,
-                reason,
-                style: Theme.of(context).textTheme.bodyLarge,
-                textAlign: TextAlign.center,
-              ),
-      );
-    }
     final member = viewerRole == HouseholdRole.householdMember;
 
+    // The blocs sit above the gate, so a send on its way when the viewer
+    // loses the form still lands, and the form it comes back to is still
+    // sending rather than a fresh one to send again.
     return MultiBlocProvider(
       // A new household is a new form (#466).
       key: ValueKey<String>(householdId),
@@ -156,17 +143,36 @@ class SendHouseholdInviteScreen extends StatelessWidget {
             onSent(context);
           }
         },
-        child: BgePage(
-          title: Text(l10n.inviteSendTitle),
-          width: BgePageWidth.pane,
-          child: _SendForm(
-            roles: roles,
-            approvalNote:
-                member &&
-                memberInvitePolicy == MemberInvitePolicy.needsApproval,
-          ),
-        ),
+        child: roles.isEmpty
+            ? _notAllowed(context, l10n)
+            : BgePage(
+                title: Text(l10n.inviteSendTitle),
+                width: BgePageWidth.pane,
+                child: _SendForm(
+                  roles: roles,
+                  approvalNote:
+                      member &&
+                      memberInvitePolicy == MemberInvitePolicy.needsApproval,
+                ),
+              ),
       ),
+    );
+  }
+
+  Widget _notAllowed(BuildContext context, HouseholdLocalizations l10n) {
+    final reason = _notAllowedText(l10n, viewerRole, memberInvitePolicy);
+    return BgePage(
+      title: Text(l10n.inviteSendTitle),
+      width: BgePageWidth.pane,
+      centerVertically: true,
+      child: reason == null
+          ? _CantTellYet(onRefresh: onRefresh)
+          : Text(
+              key: notAllowedKey,
+              reason,
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
     );
   }
 }

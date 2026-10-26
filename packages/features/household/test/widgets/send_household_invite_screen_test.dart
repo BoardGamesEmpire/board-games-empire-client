@@ -401,6 +401,78 @@ void main() {
       expect(memberSent, 0);
     });
 
+    testWidgets('a send still on its way when the policy turns Off lands', (
+      tester,
+    ) async {
+      final answer = Completer<HouseholdInvite>();
+      remote.onSend = (_, _) => answer.future;
+      await tester.pumpWidget(
+        harness(viewerRole: member, policy: MemberInvitePolicy.direct),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.emailKey),
+        'ana@example.com',
+      );
+      await submit(tester);
+
+      await tester.pumpWidget(
+        harness(viewerRole: member, policy: MemberInvitePolicy.off),
+      );
+      await tester.pump();
+      expect(
+        notAllowed(
+          "This household isn't taking invites from members right now. "
+          'An owner or admin can still invite people.',
+        ),
+        findsOneWidget,
+      );
+
+      answer.complete(invite('i_1'));
+      await sentAndSpinning(tester);
+
+      expect(memberSent, 1);
+      expect(find.text('Invite sent.'), findsOneWidget);
+    });
+
+    testWidgets('a policy back on while a send is on its way offers no '
+        'second send', (tester) async {
+      final answer = Completer<HouseholdInvite>();
+      remote.onSend = (_, _) => answer.future;
+      await tester.pumpWidget(
+        harness(viewerRole: member, policy: MemberInvitePolicy.direct),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.emailKey),
+        'ana@example.com',
+      );
+      await submit(tester);
+
+      await tester.pumpWidget(
+        harness(viewerRole: member, policy: MemberInvitePolicy.off),
+      );
+      await tester.pump();
+      await tester.pumpWidget(
+        harness(viewerRole: member, policy: MemberInvitePolicy.direct),
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<BgeSubmitButton>(
+              find.byKey(SendHouseholdInviteScreen.submitKey),
+            )
+            .submitting,
+        isTrue,
+      );
+
+      answer.complete(invite('i_1'));
+      await sentAndSpinning(tester);
+      expect(remote.sentDrafts, hasLength(1));
+      expect(memberSent, 1);
+    });
+
     testWidgets('a send awaiting approval says Sent for approval.', (
       tester,
     ) async {
