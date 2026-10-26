@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -386,28 +385,23 @@ void main() {
     );
   });
 
-  test('a server write keeps the sync flags a local writer set', () async {
-    await repo.cacheEvent(
-      testSnapshot('e-1'),
-      source: EventAccessSource.attending,
-    );
-    // No writer sets either flag yet (#499, #527), so set them as one would.
-    await (db.update(db.eventsTable)..where((t) => t.id.equals('e-1'))).write(
-      const EventsTableCompanion(
-        isDirty: Value(true),
-        isLocalOnly: Value(true),
-      ),
-    );
+  test("a server write never takes the sync flags from the snapshot's "
+      'event', () async {
+    // The flags are local state. A server copy carrying them would be a row
+    // no later server read could refresh, since the queue owns it, and no
+    // acknowledgement would clear.
+    final snapshot = testSnapshot('e-1');
 
     await repo.cacheEvent(
-      testSnapshot('e-1', title: 'Renamed on the server'),
+      snapshot.copyWith(
+        event: snapshot.event.copyWith(isDirty: true, isLocalOnly: true),
+      ),
       source: EventAccessSource.attending,
     );
 
     final cached = (await repo.getEvent('e-1'))!.event;
-    expect(cached.title, 'Renamed on the server', reason: 'the write landed');
-    expect(cached.isDirty, isTrue);
-    expect(cached.isLocalOnly, isTrue);
+    expect(cached.isDirty, isFalse);
+    expect(cached.isLocalOnly, isFalse);
   });
 
   group('a page of snapshots', () {

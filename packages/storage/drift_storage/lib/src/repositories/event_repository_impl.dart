@@ -66,19 +66,55 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   }
 
   /// Writes [snapshots] for this user under [source]: the steps
-  /// [EventRepository.cacheEvent] lists, for every snapshot at once.
+  /// [EventRepository.cacheEvent] lists, for every snapshot at once, except
+  /// for an event that is `isDirty` or `isLocalOnly`.
   ///
-  /// One batch, which is one transaction, so Drift tells a live query about
-  /// the page once, and one round trip, which on web is one message to the
-  /// database worker rather than several per event.
+  /// That event belongs to the sync queue until the server acknowledges it,
+  /// as #298 has it for households: a server copy written over it would undo
+  /// what the queue is about to send, or replace an event the server has not
+  /// seen. It gets no upsert, no generation, no children and no access row,
+  /// and the events beside it in the page are written as usual.
+  ///
+  /// One transaction, so the flags are read in the state the write sees. It
+  /// also joins the caller's, where there is one, as Drift nests it in a
+  /// savepoint.
   Future<void> _writeSnapshots(
     List<EventSnapshot> snapshots,
     EventAccessSource source,
   ) async {
     // An event named twice is written from its later snapshot alone, so its
     // occurrences and roster aren't inserted twice.
-    final byId = {for (final s in snapshots) s.event.id: s};
-    if (byId.isEmpty) return;
+    final named = {for (final s in snapshots) s.event.id: s};
+    if (named.isEmpty) return;
+
+    await _db.transaction(() async {
+      final owned = await _queueOwnedIds(named.keys);
+      final byId = {
+        for (final entry in named.entries)
+          if (!owned.contains(entry.key)) entry.key: entry.value,
+      };
+      if (byId.isEmpty) return;
+      await _writeBatch(byId, source);
+    });
+  }
+
+  /// Which of [eventIds] are cached with local changes the server has not
+  /// acknowledged: `isDirty` or `isLocalOnly`.
+  Future<Set<String>> _queueOwnedIds(Iterable<String> eventIds) async {
+    final t = _db.eventsTable;
+    final query = _db.selectOnly(t)
+      ..addColumns([t.id])
+      ..where(t.id.isIn(eventIds) & (t.isDirty | t.isLocalOnly));
+    return {for (final row in await query.get()) row.read(t.id)!};
+  }
+
+  /// Writes [byId], none of them queue-owned, as one batch, so Drift tells a
+  /// live query about the page once, and one round trip, which on web is one
+  /// message to the database worker rather than several per event.
+  Future<void> _writeBatch(
+    Map<String, EventSnapshot> byId,
+    EventAccessSource source,
+  ) async {
     final written = byId.values;
 
     // The list carries no roster, and an empty one is a roster the caller
@@ -641,9 +677,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   );
 
   /// The server's copy of [e]: every column but the two sync flags. Left
-  /// absent, an insert takes their defaults and an update keeps what a local
-  /// writer set, since a server copy carries no local sync state (#298's
-  /// rule for households). The model's own flags are never written.
+  /// absent, an insert takes their defaults, since a server copy carries no
+  /// local sync state (#298's rule for households). The model's own flags are
+  /// never written, and the upsert never reaches a row whose flags are set,
+  /// because [_writeSnapshots] leaves that event alone.
   EventsTableCompanion _eventToCompanion(Event e) =>
       EventsTableCompanion.insert(
         id: e.id,

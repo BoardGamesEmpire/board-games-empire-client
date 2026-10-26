@@ -61,7 +61,12 @@ enum EventAccessSource {
 /// ## What each read may change
 ///
 /// [cacheEvent] and [cacheEvents] trust each part of a snapshot as far as the
-/// read that carried it can vouch for:
+/// read that carried it can vouch for. An event that is `isDirty` or
+/// `isLocalOnly` is the exception: it belongs to the sync queue until the
+/// server acknowledges it, so a read writes nothing of it, not the event, its
+/// occurrences, its roster, its policy, its generation or its access. The
+/// events beside it on the same page are written as usual, and a read after
+/// the flags clear writes it again. For the rest:
 ///
 /// - **The event** is written whole on every read. Its `updatedAt` is not
 ///   bumped by attendee, occurrence or vote writes, so it can't be used to
@@ -106,16 +111,21 @@ abstract class EventRepository {
   ///
   /// The write leaves the event's sync state alone: a new row starts with
   /// `isDirty` and `isLocalOnly` false, whatever the snapshot's event says,
-  /// and a cached row keeps the flags a local writer set. Nothing sets either
-  /// yet, and #499 decides whether a server write may refresh an event the
-  /// sync queue owns.
+  /// and a cached row keeps the flags a local writer set.
+  ///
+  /// An event that is `isDirty` or `isLocalOnly` is left alone entirely, as
+  /// #298 has it for households: it belongs to the sync queue until the
+  /// server acknowledges it, and a server copy written over it would undo
+  /// what the queue is about to send. Nothing of it is written, whatever the
+  /// snapshot says. A read after the flags clear writes it as any other.
   Future<void> cacheEvent(
     EventSnapshot snapshot, {
     required EventAccessSource source,
   });
 
   /// Writes a page of [snapshots] for the current user, each as [cacheEvent]
-  /// writes one, all in one transaction.
+  /// writes one, all in one transaction. An event that is `isDirty` or
+  /// `isLocalOnly` is skipped as there, and the others are written.
   ///
   /// The hydrate writes up to a hundred events a page. A transaction per
   /// event had a live [watchAttendingEvents] rebuild its list once per event

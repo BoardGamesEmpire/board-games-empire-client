@@ -13,6 +13,7 @@ import 'generated/schema_v5.dart' as v5;
 import 'generated/schema_v6.dart' as v6;
 import 'generated/schema_v7.dart' as v7;
 import 'generated/schema_v8.dart' as v8;
+import 'generated/schema_v9.dart' as v9;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -817,6 +818,67 @@ void main() {
             updatedAt: at,
           ),
         ]);
+      },
+    );
+  });
+
+  // Data-integrity coverage for v8 → v9 (#499): the step only creates
+  // `event_moves`. An event cached before it, one the sync queue owns above
+  // all, must come through unchanged, and the new table starts empty because
+  // no earlier version created an event on the device.
+  test('migration from v8 to v9 adds an empty event_moves and preserves '
+      'events', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 8,
+      newVersion: 9,
+      createOld: v8.DatabaseAtV8.new,
+      createNew: v9.DatabaseAtV9.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v8.EventsData(
+            id: 'e_v8_1',
+            title: 'Game night',
+            createdById: 'user_v8_1',
+            householdId: 'hh_v8_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 1,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.events).get(), const [
+          v9.EventsData(
+            id: 'e_v8_1',
+            title: 'Game night',
+            createdById: 'user_v8_1',
+            householdId: 'hh_v8_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 1,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.eventMoves).get(), isEmpty);
       },
     );
   });
