@@ -2935,6 +2935,7 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
         memberInvitePolicy: null,
         remote: widget.remote,
         onSent: (ctx) => ctx.pop(),
+        onMemberSent: (ctx) => ctx.pop(),
       );
     },
   );

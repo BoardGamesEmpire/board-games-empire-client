@@ -415,9 +415,33 @@
   "@inviteSendDone": {
     "description": "Confirmation shown when the invite was sent."
   },
-  "inviteSendNotAllowed": "Only this household's owners and admins can invite people.",
-  "@inviteSendNotAllowed": {
-    "description": "Shown on the invite form instead of the fields when the current user may not invite anyone to this household."
+  "inviteSendDoneAwaitingApproval": "Sent for approval.",
+  "@inviteSendDoneAwaitingApproval": {
+    "description": "Confirmation shown when a member's invite was sent and now waits for an owner or admin to approve it. Promises nothing about the invite standing: the server checks the sender again when it is approved."
+  },
+  "inviteSendNeedsApprovalNote": "An owner or admin has to approve this invite before the person you're inviting sees it.",
+  "@inviteSendNeedsApprovalNote": {
+    "description": "Note above the invite form's submit button, shown to a member when the household's invites from members need approval. Says approval is needed, not that it will happen: an owner or admin may turn the invite down."
+  },
+  "inviteSendNotAllowedGuest": "Guests can't invite people to this household.",
+  "@inviteSendNotAllowedGuest": {
+    "description": "Shown on the invite form instead of the fields when the current user is a guest of the household."
+  },
+  "inviteSendNotAllowedOff": "This household isn't taking invites from members right now. An owner or admin can still invite people.",
+  "@inviteSendNotAllowedOff": {
+    "description": "Shown on the invite form instead of the fields when the current user is a member and the household's policy lets no member invite."
+  },
+  "inviteSendNotAllowedUnknown": "Can't tell yet whether you can invite people to this household.",
+  "@inviteSendNotAllowedUnknown": {
+    "description": "Shown on the invite form instead of the fields when the app can't tell yet whether the current user may invite: the household's member invite policy or the user's role hasn't been read yet. Shown with a Try again button that reads the household again."
+  },
+  "inviteSendNotAllowedUnrecognisedPolicy": "This household uses an invite setting this version of the app doesn't recognise.",
+  "@inviteSendNotAllowedUnrecognisedPolicy": {
+    "description": "Shown on the invite form instead of the fields when the current user is a member and the household's member invite policy is one this version of the app doesn't know. Reading the household again won't change it, so nothing is offered to press."
+  },
+  "inviteSendNotAllowedUnrecognisedRole": "This version of the app doesn't recognise your role in this household, so it can't tell whether you can invite people.",
+  "@inviteSendNotAllowedUnrecognisedRole": {
+    "description": "Shown on the invite form instead of the fields when the current user's role in the household is one this version of the app doesn't know. Reading the household again won't change it, so nothing is offered to press."
   },
   "inviteInboxTitle": "Invites",
   "@inviteInboxTitle": {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -23,14 +24,26 @@ import '../widgets/household_role_label.dart';
 /// The form for inviting someone to a household (#455): by email address,
 /// or by picking someone who has an account through user search.
 ///
-/// The roles offered depend on [viewerRole], through
-/// [HouseholdInvitePermissions.offerableRoles]. A viewer who may offer none
-/// sees a short explanation instead of the form, which only a deep link can
-/// reach: the list offers no invite button to them.
+/// The roles offered depend on [viewerRole] and, for a member, on the
+/// household's [memberInvitePolicy] (#569), through
+/// [HouseholdInvitePermissions.offerableRoles]. A member under
+/// `NeedsApproval` is told an owner or admin has to approve the invite
+/// first. A viewer who may offer none sees why instead of the form: a guest
+/// never invites, the policy lets no member invite, this version of the app
+/// doesn't recognise the policy or the viewer's role, or the cache can't
+/// say yet. Only that last one offers Try again, through [onRefresh]: a
+/// read of the household can bring a policy or a role the cache lacks, but
+/// not one the app doesn't know. Only a deep link, or a change under an
+/// open form, reaches any of these: nothing offers the form to them.
+///
+/// No copy promises that a sent invite will stand. The server checks its
+/// sender again when it is approved or accepted
+/// (BoardGamesEmpire/board-games-empire-backend#747).
 ///
 /// Decoupled from DI like the other household screens: the caller resolves
-/// [viewerRole] and the per-server [HouseholdInviteRemoteDataSource], and
-/// leaves the screen in [onSent].
+/// [viewerRole], [memberInvitePolicy] and the per-server
+/// [HouseholdInviteRemoteDataSource], and leaves the screen in [onSent] or,
+/// for a member, [onMemberSent].
 class SendHouseholdInviteScreen extends StatelessWidget {
   const SendHouseholdInviteScreen({
     required this.householdId,
@@ -38,6 +51,7 @@ class SendHouseholdInviteScreen extends StatelessWidget {
     required this.memberInvitePolicy,
     required this.remote,
     required this.onSent,
+    required this.onMemberSent,
     this.onRefresh,
     super.key,
   });
@@ -50,6 +64,9 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   static const Key messageKey = Key('send_household_invite.message');
   static const Key submitKey = Key('send_household_invite.submit');
   static const Key errorKey = Key('send_household_invite.error');
+  static const Key approvalNoteKey = Key('send_household_invite.approval_note');
+  static const Key notAllowedKey = Key('send_household_invite.not_allowed');
+  static const Key refreshKey = Key('send_household_invite.refresh');
 
   /// Per-result key: `send_household_invite.result_<userId>`.
   static Key resultKey(String userId) =>
@@ -66,13 +83,19 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   final MemberInvitePolicy? memberInvitePolicy;
   final HouseholdInviteRemoteDataSource remote;
 
-  /// Called once the invite is sent, with this screen's context. A
-  /// confirmation SnackBar is already showing, above the route.
+  /// Called once an owner's or admin's invite is sent, with this screen's
+  /// context. A confirmation SnackBar is already showing, above the route.
   final void Function(BuildContext context) onSent;
 
+  /// Called in place of [onSent] once a member's invite is sent. A member
+  /// can't read the household's invites, so the caller takes them where
+  /// their own sent invites show (#569).
+  final void Function(BuildContext context) onMemberSent;
+
   /// Reads the household again after a send is refused with 403: the
-  /// policy or the viewer's role may have changed on another device. Null
-  /// skips the read.
+  /// policy or the viewer's role may have changed on another device. Also
+  /// what Try again runs when the cache can't say yet whether the viewer
+  /// may invite. Null skips the read, and offers no Try again.
   final Future<void> Function()? onRefresh;
 
   @override
@@ -84,17 +107,22 @@ class SendHouseholdInviteScreen extends StatelessWidget {
     );
 
     if (roles.isEmpty) {
+      final reason = _notAllowedText(l10n, viewerRole, memberInvitePolicy);
       return BgePage(
         title: Text(l10n.inviteSendTitle),
         width: BgePageWidth.pane,
         centerVertically: true,
-        child: Text(
-          l10n.inviteSendNotAllowed,
-          style: Theme.of(context).textTheme.bodyLarge,
-          textAlign: TextAlign.center,
-        ),
+        child: reason == null
+            ? _CantTellYet(onRefresh: onRefresh)
+            : Text(
+                key: notAllowedKey,
+                reason,
+                style: Theme.of(context).textTheme.bodyLarge,
+                textAlign: TextAlign.center,
+              ),
       );
     }
+    final member = viewerRole == HouseholdRole.householdMember;
 
     return MultiBlocProvider(
       // A new household is a new form (#466).
@@ -111,17 +139,124 @@ class SendHouseholdInviteScreen extends StatelessWidget {
       ],
       child: BlocListener<SendHouseholdInviteBloc, SendHouseholdInviteState>(
         listenWhen: (_, state) => state is SendHouseholdInviteSent,
-        listener: (context, _) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(l10n.inviteSendDone)));
-          onSent(context);
+        listener: (context, state) {
+          final status = (state as SendHouseholdInviteSent).invite.status;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                status == HouseholdInviteStatus.awaitingApproval
+                    ? l10n.inviteSendDoneAwaitingApproval
+                    : l10n.inviteSendDone,
+              ),
+            ),
+          );
+          if (member) {
+            onMemberSent(context);
+          } else {
+            onSent(context);
+          }
         },
         child: BgePage(
           title: Text(l10n.inviteSendTitle),
           width: BgePageWidth.pane,
-          child: _SendForm(roles: roles),
+          child: _SendForm(
+            roles: roles,
+            approvalNote:
+                member &&
+                memberInvitePolicy == MemberInvitePolicy.needsApproval,
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Why [role] may not send under [policy], or null when the cache can't say
+/// yet. Reached only when [HouseholdInvitePermissions.offerableRoles]
+/// offers nothing.
+String? _notAllowedText(
+  HouseholdLocalizations l10n,
+  HouseholdRole? role,
+  MemberInvitePolicy? policy,
+) => switch ((role, policy)) {
+  (HouseholdRole.householdGuest, _) => l10n.inviteSendNotAllowedGuest,
+  (HouseholdRole.householdMember, MemberInvitePolicy.off) =>
+    l10n.inviteSendNotAllowedOff,
+  (HouseholdRole.householdMember, MemberInvitePolicy.unknown) =>
+    l10n.inviteSendNotAllowedUnrecognisedPolicy,
+  (HouseholdRole.unknown, _) => l10n.inviteSendNotAllowedUnrecognisedRole,
+  // A member whose household's policy the cache hasn't read, or a viewer
+  // the cache can't place.
+  _ => null,
+};
+
+/// The cache can't say yet whether the viewer may invite, with Try again
+/// to read the household. The screen's caller redraws it with what the
+/// read brings back, so a pass that answers leaves this page for the form
+/// or a reason; one that doesn't leaves it as it was, to try again.
+///
+/// Try again is worded as the household screens' refresh banner words its
+/// retry (#300), but sits under the text rather than in a banner: the
+/// banner squeezes its message beside the action on a narrow screen
+/// (#452).
+class _CantTellYet extends StatefulWidget {
+  const _CantTellYet({required this.onRefresh});
+
+  final Future<void> Function()? onRefresh;
+
+  @override
+  State<_CantTellYet> createState() => _CantTellYetState();
+}
+
+class _CantTellYetState extends State<_CantTellYet> {
+  final BgeLogger _logger = BgeLogger('bge.household.invites.send');
+
+  /// A read the viewer asked for is running.
+  bool _refreshing = false;
+
+  Future<void> _retry(Future<void> Function() onRefresh) async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await onRefresh();
+    } on Object catch (error, stackTrace) {
+      // Unreachable by contract; caught because the cost of being wrong is
+      // a "Refreshing…" the viewer cannot clear.
+      _logger.warn(
+        'Household refresh escaped its own error handling',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    if (mounted) setState(() => _refreshing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+    final onRefresh = widget.onRefresh;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          key: SendHouseholdInviteScreen.notAllowedKey,
+          l10n.inviteSendNotAllowedUnknown,
+          style: Theme.of(context).textTheme.bodyLarge,
+          textAlign: TextAlign.center,
+        ),
+        if (onRefresh != null) ...[
+          const BgeGap.lg(),
+          BgeSubmitButton(
+            key: SendHouseholdInviteScreen.refreshKey,
+            label: l10n.householdRefreshRetry,
+            progressLabel: l10n.householdRefreshInProgress,
+            icon: Icons.refresh,
+            expand: false,
+            submitting: _refreshing,
+            onPressed: () => unawaited(_retry(onRefresh)),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -129,10 +264,14 @@ class SendHouseholdInviteScreen extends StatelessWidget {
 enum _Mode { email, person }
 
 class _SendForm extends StatefulWidget {
-  const _SendForm({required this.roles});
+  const _SendForm({required this.roles, required this.approvalNote});
 
   /// What the viewer may offer, in picker order. Never empty.
   final List<HouseholdRole> roles;
+
+  /// Whether to say, above the submit, that an owner or admin approves the
+  /// invite before its invitee sees it.
+  final bool approvalNote;
 
   @override
   State<_SendForm> createState() => _SendFormState();
@@ -402,6 +541,17 @@ class _SendFormState extends State<_SendForm> {
                 },
               ),
               const BgeGap.lg(),
+              if (widget.approvalNote) ...[
+                // Part of the form, not an outcome: it neither announces
+                // itself nor scrolls into view.
+                BgeInlineBanner(
+                  key: SendHouseholdInviteScreen.approvalNoteKey,
+                  message: l10n.inviteSendNeedsApprovalNote,
+                  announce: false,
+                  reveal: false,
+                ),
+                const BgeGap.md(),
+              ],
               BgeFormActions(
                 failure: state is SendHouseholdInviteFailed
                     ? BgeFormFailure(

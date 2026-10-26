@@ -185,7 +185,22 @@ void main() {
           'inviteSendSending',
           'inviteSendFailedTitle',
           'inviteSendDone',
-          'inviteSendNotAllowed',
+        ]),
+      );
+    });
+
+    test("the template defines the send-invite form's member surface "
+        '(#569)', () {
+      expect(
+        report.templateKeys,
+        containsAll(<String>[
+          'inviteSendNeedsApprovalNote',
+          'inviteSendDoneAwaitingApproval',
+          'inviteSendNotAllowedGuest',
+          'inviteSendNotAllowedOff',
+          'inviteSendNotAllowedUnknown',
+          'inviteSendNotAllowedUnrecognisedPolicy',
+          'inviteSendNotAllowedUnrecognisedRole',
         ]),
       );
     });
