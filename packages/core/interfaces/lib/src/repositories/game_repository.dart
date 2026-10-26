@@ -89,9 +89,10 @@ abstract class GameRepository {
   /// user, whatever cached them: for when the server answers that this user
   /// can't read the game, as `GET /games/:id`'s 404 and 403 do (#42).
   ///
-  /// Other users' records are left alone, and so are the rows themselves:
-  /// removing rows no user can read is #469's. Caching the game again makes
-  /// it readable again.
+  /// Other users' records are left alone. The game and platform game rows
+  /// left with no record, and no collection row or platform game pointing at
+  /// them, are deleted (#469). Caching the game again makes it readable
+  /// again.
   Future<void> forgetGame(String id);
 
   /// Upserts [platformGame]'s full record into the local cache, and records

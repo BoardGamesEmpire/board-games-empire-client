@@ -178,6 +178,17 @@ void main() {
       expect(await a.getGame('g-1'), isNotNull);
     });
 
+    test('deletes the rows once no user can read them', () async {
+      final a = repoFor(_kUserA);
+      await a.cacheGame(_game());
+      await a.cachePlatformGame(_platformGame());
+
+      await a.forgetGame('g-1');
+
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
+    });
+
     test('throws once the session has ended', () async {
       final a = repoFor(_kUserA);
       await a.onDispose();
