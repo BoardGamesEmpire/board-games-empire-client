@@ -25,29 +25,32 @@ final class GameCacheAccess {
 
   /// Deletes [userId]'s records of every source for [gameId] and its
   /// platform games, then prunes them.
-  Future<void> forgetGame({
-    required String userId,
-    required String gameId,
-  }) => _db.transaction(() async {
-    final platformGames = _db.platformGamesTable;
-    final platformGameIds =
-        await (_db.selectOnly(platformGames)
-              ..addColumns([platformGames.id])
-              ..where(platformGames.gameId.equals(gameId)))
+  Future<void> forgetGame({required String userId, required String gameId}) =>
+      _db.transaction(() async {
+        final platformGames = _db.platformGamesTable;
+        // A subquery rather than the ids below, so the delete binds two
+        // variables however many platform games the game has.
+        final ofGame = _db.selectOnly(platformGames)
+          ..addColumns([platformGames.id])
+          ..where(platformGames.gameId.equals(gameId));
+        final platformGameIds = await ofGame
             .map((row) => row.read(platformGames.id)!)
             .get();
 
-    await (_db.delete(_db.platformGameAccessTable)..where(
-          (t) =>
-              t.userId.equals(userId) & t.platformGameId.isIn(platformGameIds),
-        ))
-        .go();
-    await (_db.delete(
-      _db.gameAccessTable,
-    )..where((t) => t.userId.equals(userId) & t.gameId.equals(gameId))).go();
+        await (_db.delete(_db.platformGameAccessTable)..where(
+              (t) =>
+                  t.userId.equals(userId) & t.platformGameId.isInQuery(ofGame),
+            ))
+            .go();
+        await (_db.delete(_db.gameAccessTable)
+              ..where((t) => t.userId.equals(userId) & t.gameId.equals(gameId)))
+            .go();
 
-    await prune(gameIds: {gameId}, platformGameIds: platformGameIds.toSet());
-  });
+        await prune(
+          gameIds: {gameId},
+          platformGameIds: platformGameIds.toSet(),
+        );
+      });
 
   /// Deletes [userId]'s `catalog` records, game and platform game, then
   /// prunes what they named.

@@ -98,7 +98,9 @@ enum CollectionHydrateOutcome {
 /// [GameCollectionRepository.removalMark] before requesting page 1 and passes
 /// it with every page, the catch-up's included, and the merge skips a live
 /// copy of anything confirmed removed since. The next pass writes it, if the
-/// entry is live again by then.
+/// entry is live again by then. The merge still ends the `collection` record
+/// the page's summary wrote for a skipped copy, unless the user has another
+/// entry on that platform game (#469).
 ///
 /// A confirmation, a discard that deletes a local-only entry, or a detail's
 /// `forgetGame` can also land between a page's summary write and its

@@ -217,12 +217,12 @@ class GameCollectionRepositoryImpl
   /// platform game goes (#469).
   final GameCacheAccess _access;
 
-  /// The platform games the open transaction purged entries on, for it to
-  /// release once its other writes are done (#469). Open only inside
-  /// [_purgingTransaction], which [reconcileFromServer], [confirmRemoved]
-  /// and [mergeFromServer] run in, and null again once they release or
-  /// throw, so a purge anywhere else throws rather than skipping its
-  /// release.
+  /// The platform games the open transaction purged entries on, and a
+  /// merge's whole page, for it to release once its other writes are done
+  /// (#469). Open only inside [_purgingTransaction], which
+  /// [reconcileFromServer], [confirmRemoved] and [mergeFromServer] run in,
+  /// and null again once they release or throw, so a purge anywhere else
+  /// throws rather than skipping its release.
   ///
   /// A field, not a parameter through [_writeServerEntry]: drift runs the
   /// transactions on one database one at a time, so two never share it.
@@ -1064,6 +1064,11 @@ class GameCollectionRepositoryImpl
         _rebuildFromServer.remove(serverEntry.id);
         await _writeServerEntry(serverEntry);
       }
+      // The page's summaries gave the user a record on every platform game
+      // it names, including one whose copy was skipped above for a removal
+      // confirmed since the read. A platform game the user has no entry on
+      // by now ends that record too.
+      _released!.addAll(serverEntries.map((entry) => entry.platformGameId));
       // After the whole page: a live entry later in it may hold a platform
       // game an earlier tombstone purged.
       await _releasePurged();

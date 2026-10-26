@@ -254,6 +254,32 @@ void main() {
         [_kUserB],
       );
     });
+
+    test('binds more platform games than one statement can hold', () async {
+      const count = 40000;
+      final now = DateTime.now().toUtc();
+      await seedGame(db, id: 'g-1');
+      await db.batch((b) {
+        b.insertAll(db.platformGamesTable, [
+          for (var i = 0; i < count; i++)
+            PlatformGamesTableCompanion.insert(
+              id: 'pg-$i',
+              gameId: 'g-1',
+              platformId: 'plat-1',
+              platformName: 'Tabletop',
+              createdAt: now,
+              updatedAt: now,
+            ),
+        ]);
+      });
+      await platformRecord(_kUserA, 'pg-0');
+
+      await access.forgetGame(userId: _kUserA, gameId: 'g-1');
+
+      expect(await db.select(db.platformGameAccessTable).get(), isEmpty);
+      expect(await platformGameIds(), isEmpty);
+      expect(await gameIds(), isEmpty);
+    });
   });
 
   group('forgetCatalog', () {
