@@ -16,6 +16,13 @@ class FakeGamesRemote implements GamesRemoteDataSource {
     Set<ContentType> contentTypes,
   )?
   onSearch;
+  Future<GameImportReceipt> Function(
+    String gatewayId,
+    String externalId,
+    String correlationId,
+  )?
+  onStartImport;
+  Future<ImportBatch> Function(String batchId)? onFetchImport;
 
   @override
   Future<PaginatedResult<Game>> fetchPage({
@@ -46,6 +53,26 @@ class FakeGamesRemote implements GamesRemoteDataSource {
     final platform = platformTypes.isEmpty ? '' : ' {${names(platformTypes)}}';
     calls.add('search($query$content$platform)');
     return _run(onSearch, 'search')(query, contentTypes);
+  }
+
+  @override
+  Future<GameImportReceipt> startImport({
+    required String gatewayId,
+    required String externalId,
+    required String correlationId,
+  }) {
+    calls.add('startImport($gatewayId/$externalId $correlationId)');
+    return _run(onStartImport, 'startImport')(
+      gatewayId,
+      externalId,
+      correlationId,
+    );
+  }
+
+  @override
+  Future<ImportBatch> fetchImport(String batchId) {
+    calls.add('fetchImport($batchId)');
+    return _run(onFetchImport, 'fetchImport')(batchId);
   }
 
   static T _run<T>(T? handler, String name) =>

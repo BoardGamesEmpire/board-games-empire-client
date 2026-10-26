@@ -169,6 +169,29 @@ void main() {
     expect(imported, ['dg_bgg/926']);
   });
 
+  // An import runs while its dialog is open, and the results can change
+  // beneath it: the context it is given must outlive the row.
+  testWidgets("the import's context is the screen's, not the row's", (
+    tester,
+  ) async {
+    remote.onSearch = (_, _) async => results;
+    BuildContext? importedFrom;
+
+    await show(tester, onImport: (context, _, _) => importedFrom = context);
+    await search(tester, 'catan');
+    await tester.tap(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+    );
+    remote.onSearch = (_, _) async => const GameSearchResults();
+    await search(tester, 'zzz');
+
+    expect(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+      findsNothing,
+    );
+    expect(importedFrom?.mounted, isTrue);
+  });
+
   testWidgets('without an import, that row is content, not a control', (
     tester,
   ) async {

@@ -8,3 +8,7 @@
   game and its platform games.
 * The three screens over them, with the description rendered as Markdown
   (#472).
+* Importing a DataGateway result the server doesn't hold (#43):
+  `GameImportBloc` starts the import and polls it until its base game's job
+  ends, and `GameImportDialog` shows its progress and completes with the
+  imported game's id, whose detail the shell opens.
