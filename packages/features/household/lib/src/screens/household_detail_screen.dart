@@ -52,6 +52,12 @@ import '../sync/household_hydration_status.dart';
 /// would not recognise, and where the composition passes no [onEdit] or no
 /// [invites] client.
 ///
+/// To a member, the screen offers an Invite row in the entry's place when
+/// the household's member invite policy lets members invite (#569). It
+/// opens the send form, since a member can't read the household's invites.
+/// It is left out for a household the server does not know yet, and where
+/// the composition passes no [onInvite].
+///
 /// ## Not-found is an answer, not an error
 ///
 /// An id the current user cannot read renders the not-found state, and it
@@ -70,6 +76,7 @@ class HouseholdDetailScreen extends StatelessWidget {
     this.invites,
     this.onOpenInvites,
     this.onEdit,
+    this.onInvite,
     super.key,
   });
 
@@ -104,6 +111,9 @@ class HouseholdDetailScreen extends StatelessWidget {
 
   /// Key on the Edit button.
   static const Key editKey = Key('household_detail.edit');
+
+  /// Key on a member's Invite row.
+  static const Key inviteKey = Key('household_detail.invite');
 
   /// The household to show. A literal `create` never reaches the
   /// repository — see the class doc.
@@ -145,6 +155,11 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// leaves Edit out.
   final void Function(BuildContext context, String householdId)? onEdit;
 
+  /// Opens the send-invite form, with this screen's context and the
+  /// household's current id. Offered to a member whose household's policy
+  /// lets members invite. Null leaves the Invite row out.
+  final void Function(BuildContext context, String householdId)? onInvite;
+
   /// The reserved create segment. `/household/create` is a route of its
   /// own, declared first; this is the belt to that braces (#270 D6).
   static const String _reservedCreateId = 'create';
@@ -176,6 +191,7 @@ class HouseholdDetailScreen extends StatelessWidget {
         invites: invites,
         onOpenInvites: onOpenInvites,
         onEdit: onEdit,
+        onInvite: onInvite,
       ),
     );
   }
@@ -188,6 +204,7 @@ class _HouseholdDetailView extends StatelessWidget {
     this.invites,
     this.onOpenInvites,
     this.onEdit,
+    this.onInvite,
   });
 
   final void Function(BuildContext context)? onBack;
@@ -198,6 +215,7 @@ class _HouseholdDetailView extends StatelessWidget {
   final HouseholdInviteRemoteDataSource? invites;
   final void Function(BuildContext context, String householdId)? onOpenInvites;
   final void Function(BuildContext context, String householdId)? onEdit;
+  final void Function(BuildContext context, String householdId)? onInvite;
 
   @override
   Widget build(BuildContext context) {
@@ -229,6 +247,7 @@ class _HouseholdDetailView extends StatelessWidget {
             invites: invites,
             onOpenInvites: onOpenInvites,
             onEdit: onEdit,
+            onInvite: onInvite,
           ),
         };
       },
@@ -244,6 +263,7 @@ class _ReadyPage extends StatelessWidget {
     this.invites,
     this.onOpenInvites,
     this.onEdit,
+    this.onInvite,
   });
 
   final HouseholdDetailReady state;
@@ -254,6 +274,7 @@ class _ReadyPage extends StatelessWidget {
   final HouseholdInviteRemoteDataSource? invites;
   final void Function(BuildContext context, String householdId)? onOpenInvites;
   final void Function(BuildContext context, String householdId)? onEdit;
+  final void Function(BuildContext context, String householdId)? onInvite;
 
   @override
   Widget build(BuildContext context) {
@@ -264,6 +285,7 @@ class _ReadyPage extends StatelessWidget {
     final invites = this.invites;
     final openInvites = onOpenInvites;
     final edit = onEdit;
+    final invite = onInvite;
 
     return BgePage(
       // The household's own name, not a generic one: the title is the first
@@ -320,6 +342,25 @@ class _ReadyPage extends StatelessWidget {
               householdId: state.household.id,
               invites: invites,
               onOpen: openInvites,
+            ),
+          ],
+          // In the entry's place, for a member who may invite but can't
+          // read the household's invites (#569).
+          if (invite != null &&
+              !HouseholdInvitePermissions.mayManage(state.role) &&
+              HouseholdInvitePermissions.maySend(
+                state.role,
+                state.household.settings?.memberInvitePolicy,
+              ) &&
+              !state.household.isLocalOnly) ...[
+            const BgeGap.lg(),
+            ListTile(
+              key: HouseholdDetailScreen.inviteKey,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.person_add_alt_1_outlined),
+              title: Text(l10n.householdDetailInvite),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => invite(context, state.household.id),
             ),
           ],
         ],

@@ -421,6 +421,23 @@ void main() {
       expect(find.byType(SentInvitesScreen), findsNothing);
     });
 
+    testWidgets("the household screen's Invite row opens the send form", (
+      tester,
+    ) async {
+      final router = await pumpApp(
+        tester,
+        stub: asMember(MemberInvitePolicy.direct),
+      );
+      router.go(AppRoutes.householdDetailOf('hh_a'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.inviteKey));
+      await tester.pumpAndSettle();
+
+      expect(router.state.uri.path, AppRoutes.householdInviteSendOf('hh_a'));
+      expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsOneWidget);
+    });
+
     testWidgets("an owner's send goes back to the invites", (tester) async {
       final router = await pumpApp(tester);
       router.go(AppRoutes.householdInvitesOf('hh_a'));

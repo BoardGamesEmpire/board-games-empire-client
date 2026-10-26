@@ -962,6 +962,13 @@ class _BgeAppState extends State<BgeApp> {
           ? null
           : (ctx, id) =>
                 unawaited(ctx.push<void>(AppRoutes.householdEditOf(id))),
+      // #569: a member's Invite row. The screen itself offers it only to a
+      // member whose household's policy lets members invite; here it is
+      // only whether this composition can send one.
+      onInvite: _inviteClient(container) == null
+          ? null
+          : (ctx, id) =>
+                unawaited(ctx.push<void>(AppRoutes.householdInviteSendOf(id))),
     );
   }
 

@@ -253,12 +253,13 @@ void main() {
     });
 
     test("the template defines the household screen's invites entry "
-        '(#455, #489)', () {
+        '(#455, #489) and its Invite row (#569)', () {
       expect(
         report.templateKeys,
         containsAll(<String>[
           'householdDetailInvites',
           'householdDetailInvitesAwaiting',
+          'householdDetailInvite',
         ]),
       );
     });

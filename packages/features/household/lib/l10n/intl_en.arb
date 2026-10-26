@@ -577,6 +577,10 @@
   "@householdDetailInvites": {
     "description": "Entry on the household screen that opens the household's invites. Shown to its owners and admins."
   },
+  "householdDetailInvite": "Invite someone",
+  "@householdDetailInvite": {
+    "description": "Row on the household screen that opens the form for inviting someone. Shown to a member when the household's policy lets members invite; owners and admins invite from the household's invites instead."
+  },
   "householdDetailInvitesAwaiting": "{count, plural, =1{1 awaiting approval} other{{count} awaiting approval}}",
   "@householdDetailInvitesAwaiting": {
     "description": "Under the invites entry: how many invites wait for an owner or admin to approve them. Hidden when none do.",
