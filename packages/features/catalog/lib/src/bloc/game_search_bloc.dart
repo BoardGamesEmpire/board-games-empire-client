@@ -63,7 +63,10 @@ import 'game_search_state.dart';
 /// A 403 says this user may not read the server's games at all: the route
 /// checks that before it searches. So the bloc reports [GameSearchDenied]
 /// rather than searching the cache: the server's answer wins over an old
-/// copy, as it does on the detail.
+/// copy, as it does on the detail. The refusal also forgets this user's
+/// catalog on this device, so offline browse and search show only the games
+/// their collection reaches (#557). A failed forget is logged and otherwise
+/// ignored.
 ///
 /// ## When the search fails
 ///
@@ -215,6 +218,8 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       _shown = results;
       emit(_ready(results, fromCache: false));
     } on GamesForbiddenException {
+      // A stale 403 still says the catalog is refused.
+      await _forgetCatalog();
       if (search != _sequence) return;
       emit(GameSearchDenied(query: query, filter: filter));
     } on Object catch (error, stackTrace) {
@@ -225,6 +230,20 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         stackTrace: stackTrace,
       );
       await _searchCache(emit, search: search, query: query, filter: filter);
+    }
+  }
+
+  Future<void> _forgetCatalog() async {
+    final cache = _cache;
+    if (cache == null) return;
+    try {
+      await cache.forgetCatalog();
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Forgetting the refused catalog failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

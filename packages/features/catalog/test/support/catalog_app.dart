@@ -30,6 +30,9 @@ class FakeGamesCache extends Fake implements GameRepository {
   Future<void> cacheGame(Game game) async {}
 
   @override
+  Future<void> forgetCatalog() async {}
+
+  @override
   Future<Game?> getGame(String id) async =>
       _games.where((g) => g.id == id).firstOrNull;
 

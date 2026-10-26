@@ -120,6 +120,12 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     await _access.forgetGame(userId: _userId, gameId: id);
   }
 
+  @override
+  Future<void> forgetCatalog() async {
+    checkNotDisposed();
+    await _access.forgetCatalog(userId: _userId);
+  }
+
   /// Matches LIKE-wildcard metacharacters: `%` and `_`.
   static final RegExp _likeWildcardChars = RegExp(r'[%_]');
 

@@ -95,6 +95,19 @@ abstract class GameRepository {
   /// again.
   Future<void> forgetGame(String id);
 
+  /// Stops reading as cached for this user whatever the catalog cached: for
+  /// when the server answers that this user can read none of its games, as
+  /// `GET /games` and `GET /games/search` do with a 403 (#557).
+  ///
+  /// Deletes this user's `catalog` records. Their `collection` records and
+  /// other users' records are left alone, so a game the server sent with
+  /// this user's collection still reads. A game added on this device gets
+  /// its `collection` record only when a collection sync sends it back, so
+  /// until then it stops reading too. The game and platform game rows left
+  /// with no record, and nothing pointing at them, are deleted. Throws once
+  /// the session has ended, like every other method.
+  Future<void> forgetCatalog();
+
   /// Upserts [platformGame]'s full record into the local cache, and records
   /// it for this user. Its game must already be cached.
   Future<void> cachePlatformGame(PlatformGame platformGame);

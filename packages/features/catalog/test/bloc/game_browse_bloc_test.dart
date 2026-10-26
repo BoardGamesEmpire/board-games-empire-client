@@ -9,7 +9,14 @@ import 'package:game_catalog/game_catalog.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
+
+/// A cache that cannot forget, as a session ending mid-refusal would leave it.
+class _FailingForgetCache extends FakeGamesCache {
+  @override
+  Future<void> forgetCatalog() async => throw StateError('disposed');
+}
 
 void main() {
   late FakeGamesRemote remote;
@@ -324,6 +331,103 @@ void main() {
       },
       skip: 3,
       expect: () => [const GameBrowseDenied()],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a refusal forgets this user\'s catalog, so a retry that fails shows '
+      'nothing cached',
+      setUp: () async {
+        await cache.cacheGames([azul]);
+        remote.onFetchPage = (_, _) async => throw refused;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        bloc.add(const GameBrowseLoadRequested());
+      },
+      expect: () => [
+        const GameBrowseLoading(),
+        const GameBrowseDenied(),
+        const GameBrowseLoading(),
+        const GameBrowseFailed(),
+      ],
+    );
+
+    test('a screen opened again offline after a refusal shows nothing '
+        'cached', () async {
+      await cache.cacheGames([azul]);
+      remote.onFetchPage = (_, _) async => throw refused;
+      final first = build()..add(const GameBrowseLoadRequested());
+      await first.stream.firstWhere((s) => s is GameBrowseDenied);
+      await first.close();
+
+      remote.onFetchPage = (_, _) async => throw unreachable();
+      final second = build();
+      addTearDown(second.close);
+      final states = <GameBrowseState>[];
+      final sub = second.stream.listen(states.add);
+      addTearDown(sub.cancel);
+      second.add(const GameBrowseLoadRequested());
+      await pumpEventQueue();
+
+      expect(states, [const GameBrowseLoading(), const GameBrowseFailed()]);
+    });
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a refused later page forgets the catalog too',
+      setUp: () =>
+          remote.onFetchPage = (page, _) async =>
+              page == 1 ? pageOf([azul, brass], hasMore: true) : throw refused,
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+      },
+      skip: 3,
+      expect: () => [const GameBrowseDenied()],
+      verify: (_) async => expect(await cache.getGamesPage(limit: 10), isEmpty),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a refusal keeps games this user reaches through their collection',
+      setUp: () async {
+        await cache.cachePlatformGameSummaries([
+          PlatformGameSummary(
+            id: 'pg_azul',
+            platformId: 'plat_1',
+            platformName: 'Platform',
+            game: GameSummary(id: 'g_azul', title: 'Azul'),
+          ),
+        ]);
+        await cache.cacheGames([azul]);
+        remote.onFetchPage = (_, _) async => throw refused;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        bloc.add(const GameBrowseLoadRequested());
+      },
+      skip: 3,
+      expect: () => [
+        GameBrowseReady(games: [azul], fromCache: true),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'still says the user may not browse when forgetting fails',
+      setUp: () => remote.onFetchPage = (_, _) async => throw refused,
+      build: () => GameBrowseBloc(
+        remote: remote,
+        cache: _FailingForgetCache(),
+        pageSize: 2,
+      ),
+      act: (bloc) => bloc.add(const GameBrowseLoadRequested()),
+      expect: () => [const GameBrowseLoading(), const GameBrowseDenied()],
     );
 
     blocTest<GameBrowseBloc, GameBrowseState>(
