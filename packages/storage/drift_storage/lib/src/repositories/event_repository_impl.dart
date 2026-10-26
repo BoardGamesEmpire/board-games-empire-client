@@ -267,9 +267,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     // cache and the queue untouched.
     final title = draft.title.trim();
     _checkDraft(draft, title);
-    if (draft.householdId case final householdId?) {
-      await _checkHousehold(householdId);
-    }
+    final householdId = switch (draft.householdId) {
+      final id? => await _sendableHousehold(id),
+      null => null,
+    };
 
     return _db.transaction(() async {
       final now = _clock.nowUtc();
@@ -288,7 +289,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
             id: localId,
             title: title,
             createdById: _userId,
-            householdId: Value(draft.householdId),
+            householdId: Value(householdId),
             description: Value(draft.description),
             location: Value(draft.location),
             url: Value(draft.url),
@@ -351,7 +352,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       // If this throws, the writes above roll back.
       final operation = CreateEventOperation(
         localId: localId,
-        draft: draft.copyWith(title: title),
+        draft: draft.copyWith(title: title, householdId: householdId),
       );
       final entry = await _syncQueue.enqueue(operation);
 
@@ -389,10 +390,22 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     draft.checkSendable();
   }
 
+  /// The id to send for [householdId]: the server's, where the household was
+  /// created on this device and its create has landed since, as when it
+  /// lands while the form is open. Either way an id the server has never
+  /// heard of would be refused with a 404.
+  ///
   /// Throws [ArgumentError] when [householdId] names a household created on
-  /// this device that the server has yet to confirm: an id the server has
-  /// never heard of, which it refuses with a 404.
-  Future<void> _checkHousehold(String householdId) async {
+  /// this device that the server has yet to confirm.
+  Future<String> _sendableHousehold(String householdId) async {
+    final moves = _db.householdMovesTable;
+    final moved =
+        await (_db.selectOnly(moves)
+              ..addColumns([moves.serverId])
+              ..where(moves.localId.equals(householdId)))
+            .getSingleOrNull();
+    if (moved != null) return moved.read(moves.serverId)!;
+
     final t = _db.householdsTable;
     final localOnly = _db.selectOnly(t)
       ..addColumns([t.id])
@@ -404,6 +417,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         'names a household the server has yet to confirm',
       );
     }
+    return householdId;
   }
 
   @override
@@ -432,7 +446,19 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       //    other, in this tab or another. A second reconcile of the same
       //    local id replaces it.
       if (!deleted) {
-        await _writeSnapshots([server], EventAccessSource.attending);
+        final roster = server.attendees;
+        // Attended, unless the roster leaves the creator off: a repeat
+        // answers as they may read the event now, which may be after they
+        // left it, or lost read on it. Kept apart from the attended events,
+        // as a read's, it still answers a screen following the move.
+        final attends =
+            roster == null || roster.any((a) => a.userId == _userId);
+        await _writeSnapshots([
+          if (roster == null)
+            server
+          else
+            server.copyWith(attendees: await _keepCachedNames(roster)),
+        ], attends ? EventAccessSource.attending : EventAccessSource.read);
         if (moved) {
           await _db
               .into(_db.eventMovesTable)
@@ -465,14 +491,13 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       final entry = await _syncQueue.getEntry(syncQueueId);
       if (entry == null) return false;
 
-      final SyncOperation op;
+      SyncOperation? op;
       try {
         op = entry.operation;
       } on Object {
-        // Nothing it did can be read back, so there is nothing to undo.
-        return _syncQueue.discardStuck(entry.id);
+        op = null;
       }
-      if (op is! CreateEventOperation) {
+      if (op != null && op is! CreateEventOperation) {
         throw ArgumentError.value(
           syncQueueId,
           'syncQueueId',
@@ -480,11 +505,19 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
               'discard those',
         );
       }
+      final localId = switch (op) {
+        CreateEventOperation(:final localId) => localId,
+        // A create a newer build queued, with a name this one can't read,
+        // still names its local event, which nothing else would remove: no
+        // read, purge or reconcile touches a local-only event. Anything else
+        // that won't decode left nothing here to undo.
+        _ => CreateEventOperation.localIdOf(entry.payload),
+      };
       // Checked in the statement that deletes it: a create another tab
       // retried since may be on its way to the server.
       if (!await _syncQueue.discardStuck(entry.id)) return false;
 
-      await _deleteLocalOnly(op.localId);
+      if (localId != null) await _deleteLocalOnly(localId);
       return true;
     });
   }
@@ -502,6 +535,43 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       _db.eventAccessTable,
     )..where((a) => a.eventId.isInQuery(localOnly))).go();
     await _deleteUnreachable({localId});
+  }
+
+  /// [roster], a create's answer, with each account's name and avatar taken
+  /// from the row cached for the same attendee, where one is. Run inside the
+  /// reconcile's transaction.
+  ///
+  /// The answer embeds each attendee's role and not their user, so every
+  /// name in it is null. Written as it is, it would blank a named roster a
+  /// hydrate or detail read cached under the server's id first, as one does
+  /// while a create's lost answer waits on its retry. A name belongs to the
+  /// account, which the create doesn't change.
+  Future<List<EventAttendee>> _keepCachedNames(
+    List<EventAttendee> roster,
+  ) async {
+    final ids = [
+      for (final a in roster)
+        if (a.userId != null && a.username == null) a.id,
+    ];
+    if (ids.isEmpty) return roster;
+    final cached = {
+      for (final row in await (_db.select(
+        _db.eventAttendeesTable,
+      )..where((t) => t.id.isIn(ids))).get())
+        row.id: row,
+    };
+    return [
+      for (final a in roster)
+        switch (cached[a.id]) {
+          final row? when row.userId == a.userId && a.username == null =>
+            a.copyWith(
+              username: row.username,
+              displayName: row.displayName,
+              avatarUrl: row.avatarUrl,
+            ),
+          _ => a,
+        },
+    ];
   }
 
   // ── Purge ──────────────────────────────────────────────────────────────
@@ -808,8 +878,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// a write touched, not which rows, so a single joined query would re-run
   /// as often; this costs a few indexed lookups per committed write.
   ///
-  /// Each read takes in the moves too, for [reconciledEventId] (#499). They
-  /// are no part of the emission, so `distinct` drops a read as before.
+  /// Each read takes in [id]'s move too, for [reconciledEventId] (#499). It
+  /// is no part of the emission, so `distinct` drops a read as before.
   @override
   Stream<EventDetail?> watchEvent(String id) => untilDisposed(
     () => _db
@@ -837,7 +907,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   Future<EventDetail?> _readDetail(String id) async {
     final snapshot = await _db.transaction(() async {
       final snapshot = await _readSnapshot(id);
-      await _readMoves();
+      await _readMove(id);
       return snapshot;
     });
     if (snapshot == null) return null;
@@ -849,20 +919,26 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     );
   }
 
-  /// Refreshes [_moves] from `event_moves`, after the detail read of an
-  /// emission and in its transaction (#499).
+  /// Refreshes [_moves] with the move of the event [localId], if it has
+  /// one, after the detail read of an emission for it and in its transaction
+  /// (#499).
   ///
-  /// A subscriber that asks [reconciledEventId] on an emission then finds
-  /// every move the detail reflects, whichever repository or tab made it: a
-  /// move commits with the deletion of its local event, is never removed,
-  /// and this read sees the cache as the detail read saw it. Read before the
-  /// detail, outside its transaction, a reconcile committing between the two
-  /// would deliver the local event gone with no move known, and the detail
-  /// would show it not found.
-  Future<void> _readMoves() async {
-    for (final move in await _db.select(_db.eventMovesTable).get()) {
-      _moves[move.localId] = move.serverId;
-    }
+  /// A subscriber that asks [reconciledEventId] for the event it watches on
+  /// an emission then finds its move if the detail reflects one, whichever
+  /// repository or tab made it: a move commits with the deletion of its
+  /// local event, is never removed, and this read sees the cache as the
+  /// detail read saw it. Read before the detail, outside its transaction, a
+  /// reconcile committing between the two would deliver the local event gone
+  /// with no move known, and the detail would show it not found.
+  ///
+  /// The one row, by its key, not the table, which gains a row for every
+  /// event created on this device and is read on every emission of every
+  /// open detail. A server id never moves again, so no other row is needed.
+  Future<void> _readMove(String localId) async {
+    final move = await (_db.select(
+      _db.eventMovesTable,
+    )..where((t) => t.localId.equals(localId))).getSingleOrNull();
+    if (move != null) _moves[move.localId] = move.serverId;
   }
 
   @override

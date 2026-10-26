@@ -49,10 +49,16 @@ abstract class EventDraft with _$EventDraft {
   static const int maxInvitees = 50;
 
   /// Throws [ArgumentError], naming the field, for what no create can send:
-  /// more than [maxInvitees] invitees, and an `unknown` enum value anywhere in
-  /// the draft, which has no wire name for the server to be sent. Each is a
-  /// 400, which is permanent and parks a queued create on its first attempt,
-  /// so the caller hears of it before the draft is queued or sent.
+  /// more than [maxInvitees] invitees, an `unknown` enum value anywhere in
+  /// the draft, which has no wire name for the server to be sent, a vote
+  /// threshold or quorum type sent without the value it takes, and a vote
+  /// threshold, quorum or window below 1. Each is a 400, which is permanent
+  /// and parks a queued create on its first attempt, so the caller hears of
+  /// it before the draft is queued or sent.
+  ///
+  /// [url] is not checked: the server's `@IsUrl` is validator.js's `isURL`,
+  /// whose rules this can't mirror without either passing what it refuses or
+  /// refusing what it takes. The form that takes the url checks it.
   ///
   /// A caller adds its own checks to these.
   void checkSendable() {
@@ -93,6 +99,43 @@ abstract class EventDraft with _$EventDraft {
         policy.voteQuorumType,
         VoteQuorumType.unknown,
         'draft.policy.voteQuorumType',
+      );
+
+      // The server reads a threshold or quorum value only for the types
+      // that take one, and then requires it.
+      void positive(int? value, String field, {required bool required}) {
+        if (value == null ? required : value < 1) {
+          throw ArgumentError.value(
+            value,
+            field,
+            required
+                ? 'must be at least 1 for this type'
+                : 'must be at least 1',
+          );
+        }
+      }
+
+      if (policy.voteThresholdType
+          case VoteThresholdType.supermajority ||
+              VoteThresholdType.fixedCount) {
+        positive(
+          policy.voteThresholdValue,
+          'draft.policy.voteThresholdValue',
+          required: true,
+        );
+      }
+      if (policy.voteQuorumType
+          case VoteQuorumType.percentOfAttendees || VoteQuorumType.fixedCount) {
+        positive(
+          policy.voteQuorumValue,
+          'draft.policy.voteQuorumValue',
+          required: true,
+        );
+      }
+      positive(
+        policy.votingWindowHours,
+        'draft.policy.votingWindowHours',
+        required: false,
       );
     }
   }

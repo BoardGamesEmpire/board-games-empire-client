@@ -320,6 +320,25 @@ final class CreateEventOperation extends SyncOperation {
     );
   }
 
+  /// The [localId] of the event create [payload] holds, read without
+  /// decoding the rest, or null when [payload] holds no event create or no
+  /// readable id.
+  ///
+  /// For an entry whose [SyncQueueEntry.operation] throws: one a newer build
+  /// queued with an enum name this build can't read still names the local
+  /// event a discard has to delete with it.
+  static String? localIdOf(String payload) {
+    try {
+      return switch (jsonDecode(payload)) {
+        {'type': CreateEventOperation.type, 'local_id': final String localId} =>
+          localId,
+        _ => null,
+      };
+    } on FormatException {
+      return null;
+    }
+  }
+
   /// Local cuid2 id of the local-only event this op creates.
   ///
   /// Also the create's idempotency key: it goes to the server as

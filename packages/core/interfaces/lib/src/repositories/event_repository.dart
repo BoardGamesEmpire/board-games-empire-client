@@ -335,10 +335,12 @@ abstract class EventRepository {
   ///
   /// Throws [ArgumentError], before any write, for a draft the server is
   /// sure to refuse, since a queued create it refuses is parked on its first
-  /// attempt: a blank title, more than one occurrence on a Fixed event, more
-  /// than [EventDraft.maxInvitees] invitees, an `unknown` value anywhere,
-  /// which has no wire name, and a household created on this device that the
-  /// server has yet to confirm, whose id it has never heard of.
+  /// attempt: a blank title, more than one occurrence on a Fixed event, what
+  /// [EventDraft.checkSendable] refuses, and a household created on this
+  /// device that the server has yet to confirm, whose id it has never heard
+  /// of. A household confirmed since, under the server's id, is sent and
+  /// cached under that id. The url is the one field left to the caller to
+  /// check, as [EventDraft.checkSendable] explains.
   Future<({Event event, String syncQueueId, CreateEventOperation operation})>
   create(EventDraft draft);
 
@@ -347,8 +349,9 @@ abstract class EventRepository {
   ///
   /// The local event is removed with its occurrences, roster and access,
   /// while it is still `isLocalOnly`. Unless [deleted], [server] is then
-  /// cached as attended, by the rules [cacheEvent] writes a read by, and
-  /// where its id differs from [localId] the move is recorded for
+  /// cached by the rules [cacheEvent] writes a read by: as attended, or as
+  /// [EventAccessSource.read] where its roster leaves the current user off.
+  /// Where its id differs from [localId] the move is recorded for
   /// [reconciledEventId]. When [completedSyncQueueId] is given, that queue
   /// entry is completed in the same transaction. If any step throws, all of
   /// it rolls back.
@@ -356,10 +359,11 @@ abstract class EventRepository {
   /// So a copy of [server] a hydrate cached first is written over, and the
   /// cache holds one event, under the server's id. A repeat of the create
   /// answers with the event as its creator may read it now, so one who has
-  /// lost read on it since gets an empty roster and no policy, which mean
-  /// what they mean to [cacheEvent]. The roster carries no one's name either
-  /// way: the create's answer embeds each attendee's role and not their user,
-  /// so the names come with the next detail read.
+  /// left it since is not listed as attending it, and one who has lost read
+  /// on it gets an empty roster and no policy, which mean what they mean to
+  /// [cacheEvent]. The create's answer embeds each attendee's role and not
+  /// their user, so it names no one: an attendee keeps the name a cached
+  /// roster already gave them, and the rest come with the next detail read.
   ///
   /// [deleted] is for a repeat of a create whose event was deleted since:
   /// the local event goes, nothing is cached in its place, and no move is
@@ -384,11 +388,12 @@ abstract class EventRepository {
   /// The move is stored with the reconcile, so it is found whichever
   /// repository made it, another tab's over the same database included, and
   /// after a reload. This answers from the moves this repository last
-  /// recorded or read: its own reconciles, and the moves it reads before
-  /// delivering each [watchEvent] emission. A subscriber that checks this on
-  /// every emission therefore sees a move on the emission that drops the
-  /// local event. Asked before [watchEvent] has emitted, it may answer null
-  /// for a move another repository made.
+  /// recorded or read: its own reconciles, and the watched event's move,
+  /// which it reads before delivering each [watchEvent] emission. A
+  /// subscriber that checks this for the event it watches on every emission
+  /// therefore sees a move on the emission that drops the local event. Asked
+  /// before [watchEvent] has emitted for [localId], it may answer null for a
+  /// move another repository made.
   ///
   /// Never throws, including after disposal.
   String? reconciledEventId(String localId);
@@ -405,8 +410,10 @@ abstract class EventRepository {
   /// make it, a lost answer being how the retries ran out, the next hydrate
   /// brings it back.
   ///
-  /// A completed or unknown entry changes nothing, and so does a payload
-  /// that won't decode, beyond deleting the entry. Returns whether the entry
+  /// A completed or unknown entry changes nothing. A payload that won't
+  /// decode is deleted, with the local event it names where it is an event
+  /// create ([CreateEventOperation.localIdOf]), as one a newer build queued
+  /// may be. Returns whether the entry
   /// was deleted. Throws [ArgumentError] for a collection or household op,
   /// before any write.
   Future<bool> discardQueuedOp(String syncQueueId);

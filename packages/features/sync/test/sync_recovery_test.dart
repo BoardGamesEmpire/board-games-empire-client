@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -312,6 +313,35 @@ void main() {
       await recovery().discard(garbled);
 
       expect(await h.queue.getAllEntries(), isEmpty);
+    });
+
+    test('undoes an event create a newer build queued, and refreshes the '
+        'events', () async {
+      // Another tab, on a newer build, queued it with a type this one can't
+      // read. Its local event would otherwise stay on the overview for good.
+      final created = await h.events.create(eventDraft());
+      await park(created.syncQueueId);
+      await h.db.customStatement(
+        'UPDATE sync_queue SET payload = ? WHERE id = ?',
+        [
+          jsonEncode({
+            ...created.operation.toJson(),
+            'event_type': 'Tournament2027',
+          }),
+          created.syncQueueId,
+        ],
+      );
+      expect(
+        (await recovery().watch().first).single.kind,
+        StuckSyncOpKind.unreadable,
+      );
+
+      await recovery().discard(created.syncQueueId);
+
+      expect(await h.events.getEvent(created.event.id), isNull);
+      expect(await h.events.watchAttendingEvents().first, isEmpty);
+      expect(await h.queue.getAllEntries(), isEmpty);
+      expect(eventRefreshes, 1);
     });
 
     test('leaves an op that is not stuck alone', () async {

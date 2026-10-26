@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -8,6 +10,8 @@ import 'package:drift_storage/drift_storage_native.dart'
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:drift_storage/src/tables/event_access_table.dart'
+    show eventAccessSourceRead;
 
 import '../support/event_fixture.dart';
 import '../support/fixed_clock.dart';
@@ -278,6 +282,14 @@ void main() {
           ],
         ),
         'Reach.unknown': fixedDraft().copyWith(reach: Reach.unknown),
+        'a Supermajority threshold with no value': fixedDraft().copyWith(
+          policy: const EventPolicyDraft(
+            voteThresholdType: VoteThresholdType.supermajority,
+          ),
+        ),
+        'a voting window of 0 hours': fixedDraft().copyWith(
+          policy: const EventPolicyDraft(votingWindowHours: 0),
+        ),
         'a local-only household': fixedDraft().copyWith(
           householdId: 'hh-local',
         ),
@@ -294,6 +306,29 @@ void main() {
       expect(await db.select(db.eventsTable).get(), isEmpty);
       expect(await db.select(db.eventAccessTable).get(), isEmpty);
       expect(await queue.getAllEntries(), isEmpty);
+    });
+
+    test('a household created here whose create has landed since is sent '
+        'under the server\'s id', () async {
+      // The form was opened on the local id, and the household's reconcile
+      // replaced it before the event was submitted.
+      await db
+          .into(db.householdMovesTable)
+          .insert(
+            HouseholdMovesTableCompanion.insert(
+              localId: 'hh-local',
+              serverId: 'hh-server',
+            ),
+          );
+
+      final created = await repo.create(
+        fixedDraft().copyWith(householdId: 'hh-local'),
+      );
+
+      expect(created.event.householdId, 'hh-server');
+      expect(created.operation.draft.householdId, 'hh-server');
+      final queued = (await entry(created.syncQueueId)).operation;
+      expect((queued as CreateEventOperation).draft.householdId, 'hh-server');
     });
 
     test('create writes nothing when the enqueue throws', () async {
@@ -462,6 +497,74 @@ void main() {
       expect(cached.policy, isNull);
       expect(await repo.getEvent(created.event.id), isNull);
       expect(repo.reconciledEventId(created.event.id), 'ev-server');
+      // Not on the roster, so not attending it: it is no longer listed.
+      expect(await repo.watchAttendingEvents().first, isEmpty);
+    });
+
+    test('a replay whose roster leaves the creator off is read, not '
+        'attended', () async {
+      // The creator left the event, from another device, before the retry
+      // replayed the create.
+      final created = await repo.create(fixedDraft());
+      final server = serverCopy();
+
+      await repo.reconcileCreatedEvent(
+        server.copyWith(
+          attendees: [
+            for (final a in server.attendees!)
+              if (a.userId != _kUserA) a,
+          ],
+        ),
+        localId: created.event.id,
+        deleted: false,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      expect(await repo.watchAttendingEvents().first, isEmpty);
+      expect(await repo.getEvent('ev-server'), isNotNull);
+      expect(
+        (await db.select(db.eventAccessTable).get()).map(
+          (a) => (a.eventId, a.source),
+        ),
+        [('ev-server', eventAccessSourceRead)],
+      );
+    });
+
+    test('reconcile keeps the names a cached roster gave', () async {
+      // The create's answer was lost, and a detail read cached the event,
+      // names and all, before the retry's replay.
+      final created = await repo.create(fixedDraft());
+      final server = serverCopy();
+      final named = [
+        testAttendee(
+          'att-a',
+          userId: _kUserA,
+          eventId: 'ev-server',
+        ).copyWith(role: EventRole.host),
+        testAttendee('att-b', userId: _kUserB, eventId: 'ev-server'),
+      ];
+      await repo.cacheEvent(
+        server.copyWith(attendees: named),
+        source: EventAccessSource.attending,
+      );
+
+      await repo.reconcileCreatedEvent(
+        server,
+        localId: created.event.id,
+        deleted: false,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      final roster = (await repo.getEvent('ev-server'))!.attendees!;
+      expect(roster.map((a) => (a.id, a.username, a.displayName)), [
+        ('att-a', 'name-$_kUserA', 'Display $_kUserA'),
+        ('att-b', 'name-$_kUserB', 'Display $_kUserB'),
+      ]);
+      // The rest is the answer's.
+      expect(
+        roster.map((a) => (a.status, a.role)),
+        server.attendees!.map((a) => (a.status, a.role)),
+      );
     });
 
     test(
@@ -623,6 +726,47 @@ void main() {
 
       expect(await repo.getEvent(created.event.id), isNotNull);
       expect(await queue.getAllEntries(), hasLength(1));
+    });
+
+    test('discard of a create this build can\'t read removes its event '
+        'too', () async {
+      // Queued by a newer build, in another tab, with a type this one
+      // doesn't know. Nothing else would ever remove the local event.
+      final created = await repo.create(fixedDraft());
+      await queue.park(created.syncQueueId, error: 'refused: 400');
+      await db.customStatement(
+        'UPDATE sync_queue SET payload = ? WHERE id = ?',
+        [
+          jsonEncode(
+            created.operation.toJson()..['event_type'] = 'Tournament2027',
+          ),
+          created.syncQueueId,
+        ],
+      );
+      final unreadable = await entry(created.syncQueueId);
+      expect(() => unreadable.operation, throwsFormatException);
+
+      expect(await repo.discardQueuedOp(created.syncQueueId), isTrue);
+
+      expect(await repo.getEvent(created.event.id), isNull);
+      expect(await db.select(db.eventsTable).get(), isEmpty);
+      expect(await queue.getAllEntries(), isEmpty);
+    });
+
+    test('discard of an entry that won\'t decode at all deletes only the '
+        'entry', () async {
+      final created = await repo.create(fixedDraft());
+      await queue.park(created.syncQueueId, error: 'refused: 400');
+      await db.customStatement(
+        'UPDATE sync_queue SET payload = ? WHERE id = ?',
+        ['{not json', created.syncQueueId],
+      );
+
+      expect(await repo.discardQueuedOp(created.syncQueueId), isTrue);
+
+      expect(await queue.getAllEntries(), isEmpty);
+      // Nothing in the payload names the local event any longer.
+      expect(await repo.getEvent(created.event.id), isNotNull);
     });
 
     test('discard of a household op throws ArgumentError', () async {

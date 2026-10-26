@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:test/test.dart';
 import 'package:models/domain.dart';
 
@@ -244,6 +246,36 @@ void main() {
           throwsFormatException,
           reason: field,
         );
+      }
+    });
+
+    test('localIdOf reads the id out of a create this build can\'t '
+        'decode', () {
+      final newer = jsonEncode({...full.toJson(), 'event_type': 'Picnic'});
+      expect(() => SyncOperation.deserialize(newer), throwsFormatException);
+
+      expect(CreateEventOperation.localIdOf(newer), full.localId);
+      expect(CreateEventOperation.localIdOf(full.serialized), full.localId);
+    });
+
+    test('localIdOf answers null for anything but an event create with an '
+        'id', () {
+      final notCreates = {
+        'not JSON': '{not json',
+        'not an object': '[]',
+        'a household create': const CreateHouseholdOperation(
+          localId: 'hh-local',
+          name: 'HQ',
+        ).serialized,
+        'no local_id': jsonEncode({'type': CreateEventOperation.type}),
+        'a local_id that is not a string': jsonEncode({
+          'type': CreateEventOperation.type,
+          'local_id': 7,
+        }),
+      };
+
+      for (final MapEntry(key: reason, value: payload) in notCreates.entries) {
+        expect(CreateEventOperation.localIdOf(payload), isNull, reason: reason);
       }
     });
 

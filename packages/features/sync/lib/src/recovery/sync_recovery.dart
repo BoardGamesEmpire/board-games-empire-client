@@ -129,7 +129,15 @@ class SyncRecovery {
     try {
       op = entry.operation;
     } on Object {
-      await _queue.discardStuck(entryId);
+      // An event create a newer build queued still names its local event,
+      // and the events repository deletes the two together.
+      if (CreateEventOperation.localIdOf(entry.payload) != null) {
+        if (await _events.discardQueuedOp(entryId)) {
+          _refresh(_refreshEvents, 'events');
+        }
+      } else {
+        await _queue.discardStuck(entryId);
+      }
       return;
     }
     switch (op) {
