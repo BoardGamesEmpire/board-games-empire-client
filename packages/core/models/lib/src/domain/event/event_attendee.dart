@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../user/person_name.dart';
 import 'event_participation_status.dart';
 import 'event_role.dart';
 
@@ -52,4 +53,12 @@ abstract class EventAttendee with _$EventAttendee {
   /// True when the attendee has no account ([userId] is null), so the roster
   /// can only name them by [guestName].
   bool get isGuest => userId == null;
+
+  /// The name to show for this attendee: [displayName], else [username], else
+  /// [guestName]. A guest has no account to take either of the first two
+  /// from, only the name given when they were added. Null where none holds
+  /// anything.
+  String? get name =>
+      personName(displayName: displayName, username: username) ??
+      personName(username: guestName);
 }
