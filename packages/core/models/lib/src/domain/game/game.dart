@@ -2,7 +2,6 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../common/reach.dart';
 import 'content_type.dart';
-import 'time_measure.dart';
 
 part 'game.freezed.dart';
 part 'game.g.dart';
@@ -29,13 +28,10 @@ abstract class Game with _$Game {
     int? minPlayers,
     int? maxPlayers,
 
-    // Play time
-    /// Aggregate playing time in minutes (server `Game.playingTime`).
-    int? playingTime,
+    // Play time, in minutes. One playing time is a range whose two ends are
+    // equal (backend#869).
     int? minPlayTime,
-    TimeMeasure? minPlayTimeMeasure,
     int? maxPlayTime,
-    TimeMeasure? maxPlayTimeMeasure,
     int? minAge,
 
     double? complexity,

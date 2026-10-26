@@ -69,12 +69,12 @@ void main() {
 
       test('fromWire throws StateError on an unrecognised wire value', () {
         // Visibility's design is deliberately strict: there's no
-        // `unknown` fallback variant (unlike ContentType,
-        // TimeMeasure, GameMedium, HouseholdRole). An unrecognised
-        // wire string represents either DB corruption or a
-        // server-side enum extension this client hasn't been
-        // updated for, and both must surface rather than be
-        // silently coerced into one of the existing variants.
+        // `unknown` fallback variant (unlike ContentType, Reach,
+        // GameMedium, HouseholdRole). An unrecognised wire string
+        // represents either DB corruption or a server-side enum
+        // extension this client hasn't been updated for, and both
+        // must surface rather than be silently coerced into one of
+        // the existing variants.
         //
         // A future regression that adds an `unknown` fallback or
         // changes the default arm to a silent coercion would fail

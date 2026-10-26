@@ -9,7 +9,6 @@ Game _make({
   String? createdById,
   List<String> tags = const <String>[],
   int totalPlayCount = 0,
-  int? playingTime,
   int? minPlayers = 3,
   int? maxPlayers = 4,
 }) => Game(
@@ -21,7 +20,6 @@ Game _make({
   createdById: createdById,
   tags: tags,
   totalPlayCount: totalPlayCount,
-  playingTime: playingTime,
   minPlayers: minPlayers,
   maxPlayers: maxPlayers,
   createdAt: _now,
@@ -36,7 +34,6 @@ void main() {
       expect(game.reach, equals(Reach.public));
       expect(game.createdById, isNull);
       expect(game.tags, isEmpty);
-      expect(game.playingTime, isNull);
       expect(game.ownedByCount, equals(0));
       expect(game.categories, isEmpty);
       expect(game.mechanics, isEmpty);
@@ -51,7 +48,6 @@ void main() {
         createdById: 'user_123',
         tags: const ['family', 'classic'],
         totalPlayCount: 42,
-        playingTime: 90,
       );
       final json = game.toJson();
 
@@ -59,7 +55,6 @@ void main() {
       expect(json['createdById'], equals('user_123'));
       expect(json['tags'], equals(<String>['family', 'classic']));
       expect(json['totalPlayCount'], equals(42));
-      expect(json['playingTime'], equals(90));
     });
 
     test('round-trips a fully populated game', () {
@@ -73,11 +68,8 @@ void main() {
         publishYear: 2018,
         minPlayers: 2,
         maxPlayers: 4,
-        playingTime: 120,
         minPlayTime: 60,
-        minPlayTimeMeasure: TimeMeasure.minutes,
         maxPlayTime: 120,
-        maxPlayTimeMeasure: TimeMeasure.minutes,
         minAge: 14,
         complexity: 3.89,
         contentType: ContentType.baseGame,

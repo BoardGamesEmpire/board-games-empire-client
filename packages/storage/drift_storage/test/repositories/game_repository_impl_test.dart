@@ -17,11 +17,8 @@ Game _makeGame({
   ContentType contentType = ContentType.baseGame,
   int? minPlayers,
   int? maxPlayers,
-  int? playingTime,
   int? minPlayTime,
-  TimeMeasure? minPlayTimeMeasure,
   int? maxPlayTime,
-  TimeMeasure? maxPlayTimeMeasure,
   int totalPlayCount = 0,
   List<String> categories = const <String>[],
   List<String> mechanics = const <String>[],
@@ -40,11 +37,8 @@ Game _makeGame({
     contentType: contentType,
     minPlayers: minPlayers,
     maxPlayers: maxPlayers,
-    playingTime: playingTime,
     minPlayTime: minPlayTime,
-    minPlayTimeMeasure: minPlayTimeMeasure,
     maxPlayTime: maxPlayTime,
-    maxPlayTimeMeasure: maxPlayTimeMeasure,
     totalPlayCount: totalPlayCount,
     categories: categories,
     mechanics: mechanics,
@@ -126,24 +120,6 @@ void main() {
         expect(found!.title, equals('Updated'));
       });
 
-      test('round-trips TimeMeasure enums through the wire format', () async {
-        await repo.cacheGame(
-          _makeGame(
-            id: 'g-tm',
-            minPlayTime: 30,
-            minPlayTimeMeasure: TimeMeasure.minutes,
-            maxPlayTime: 2,
-            maxPlayTimeMeasure: TimeMeasure.hours,
-          ),
-        );
-
-        final found = (await repo.getGame('g-tm'))!;
-        expect(found.minPlayTime, 30);
-        expect(found.minPlayTimeMeasure, TimeMeasure.minutes);
-        expect(found.maxPlayTime, 2);
-        expect(found.maxPlayTimeMeasure, TimeMeasure.hours);
-      });
-
       test('round-trips ContentType enum', () async {
         await repo.cacheGame(
           _makeGame(id: 'g-ct', contentType: ContentType.expansion),
@@ -174,34 +150,32 @@ void main() {
         expect(found.publishers, equals(['Asmodee']));
       });
 
-      test(
-        '(playingTime / totalPlayCount / tags / reach / createdById)',
-        () async {
-          await repo.cacheGame(
-            _makeGame(
-              id: 'g-pass1',
-              playingTime: 90,
-              totalPlayCount: 42,
-              tags: ['Solo Mode', 'Heavy'],
-              reach: Reach.private,
-              createdById: 'user-abc',
-            ),
-          );
+      test('(minPlayTime / maxPlayTime / totalPlayCount / tags / reach / createdById)', () async {
+        await repo.cacheGame(
+          _makeGame(
+            id: 'g-pass1',
+            minPlayTime: 60,
+            maxPlayTime: 120,
+            totalPlayCount: 42,
+            tags: ['Solo Mode', 'Heavy'],
+            reach: Reach.private,
+            createdById: 'user-abc',
+          ),
+        );
 
-          final found = (await repo.getGame('g-pass1'))!;
-          expect(found.playingTime, 90);
-          expect(found.totalPlayCount, 42);
-          expect(found.tags, equals(['Solo Mode', 'Heavy']));
-          expect(found.reach, Reach.private);
-          expect(found.createdById, 'user-abc');
-        },
-      );
+        final found = (await repo.getGame('g-pass1'))!;
+        expect((found.minPlayTime, found.maxPlayTime), (60, 120));
+        expect(found.totalPlayCount, 42);
+        expect(found.tags, equals(['Solo Mode', 'Heavy']));
+        expect(found.reach, Reach.private);
+        expect(found.createdById, 'user-abc');
+      });
 
       test('preserves model defaults for unset fields', () async {
         await repo.cacheGame(_makeGame(id: 'g-defaults'));
 
         final found = (await repo.getGame('g-defaults'))!;
-        expect(found.playingTime, isNull);
+        expect((found.minPlayTime, found.maxPlayTime), (null, null));
         expect(found.totalPlayCount, 0);
         expect(found.tags, isEmpty);
         expect(found.reach, Reach.public);

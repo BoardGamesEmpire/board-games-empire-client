@@ -12,7 +12,9 @@ import 'package:network_interface/network_interface.dart';
 // rows, `getGame` adds the includes listed there, and the search service's
 // `queryLocalGames` / `mapProtoGame` build each result. At 83e62bb0, the
 // import controller answers the start, and `GameImportStatusService`'s
-// `toBatchDto` / `toJobDto` build the poll's.
+// `toBatchDto` / `toJobDto` build the poll's. A game row's columns are the
+// `Game` model's at cb287e07: a `reach`, and play time in minutes with no
+// unit (#602).
 
 /// A catalog row: every scalar column of the Prisma `Game` model, which
 /// `findMany` returns with no `select`.
@@ -22,7 +24,6 @@ Map<String, dynamic> _gameRow({
   Object? complexity = 2.3,
   String image = 'https://cf.geekdo-images.com/catan.jpg',
   String thumbnail = 'https://cf.geekdo-images.com/catan_t.jpg',
-  String? minPlayTimeMeasure = 'Minutes',
   String contentType = 'BaseGame',
   Object? reach = 'Public',
 }) => {
@@ -35,11 +36,8 @@ Map<String, dynamic> _gameRow({
   'publishYear': 1995,
   'minPlayers': 3,
   'maxPlayers': 4,
-  'playingTime': 90,
   'minPlayTime': 60,
-  'minPlayTimeMeasure': minPlayTimeMeasure,
   'maxPlayTime': 120,
-  'maxPlayTimeMeasure': 'Minutes',
   'minAge': 10,
   'complexity': complexity,
   'totalPlayCount': 12,
@@ -113,11 +111,8 @@ final _catan = Game(
   publishYear: 1995,
   minPlayers: 3,
   maxPlayers: 4,
-  playingTime: 90,
   minPlayTime: 60,
-  minPlayTimeMeasure: TimeMeasure.minutes,
   maxPlayTime: 120,
-  maxPlayTimeMeasure: TimeMeasure.minutes,
   minAge: 10,
   complexity: 2.3,
   totalPlayCount: 12,
@@ -368,20 +363,13 @@ void main() {
 
     test('degrades names it does not know rather than failing the page', () {
       final remote = answering(
-        _catalogBody([
-          _gameRow(
-            minPlayTimeMeasure: 'Fortnights',
-            contentType: 'Miniature',
-            reach: 'Guild',
-          ),
-        ]),
+        _catalogBody([_gameRow(contentType: 'Miniature', reach: 'Guild')]),
       );
 
       return expectLater(
         remote.fetchPage().then((page) => page.items.single),
         completion(
           isA<Game>()
-              .having((g) => g.minPlayTimeMeasure, 'unit', isNull)
               .having((g) => g.contentType, 'type', ContentType.unknown)
               .having((g) => g.reach, 'reach', Reach.unknown),
         ),

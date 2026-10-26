@@ -431,15 +431,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     publishYear: row.publishYear,
     minPlayers: row.minPlayers,
     maxPlayers: row.maxPlayers,
-    playingTime: row.playingTime,
     minPlayTime: row.minPlayTime,
-    minPlayTimeMeasure: row.minPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
-        : null,
     maxPlayTime: row.maxPlayTime,
-    maxPlayTimeMeasure: row.maxPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.maxPlayTimeMeasure!)
-        : null,
     minAge: row.minAge,
     complexity: row.complexity,
     contentType: ContentType.fromWire(row.contentType),
@@ -472,11 +465,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
         publishYear: Value(g.publishYear),
         minPlayers: Value(g.minPlayers),
         maxPlayers: Value(g.maxPlayers),
-        playingTime: Value(g.playingTime),
         minPlayTime: Value(g.minPlayTime),
-        minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toWire()),
         maxPlayTime: Value(g.maxPlayTime),
-        maxPlayTimeMeasure: Value(g.maxPlayTimeMeasure?.toWire()),
         minAge: Value(g.minAge),
         complexity: Value(g.complexity),
         contentType: Value(g.contentType.toWire()),
@@ -508,13 +498,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     minPlayers: row.minPlayers,
     maxPlayers: row.maxPlayers,
     minPlayTime: row.minPlayTime,
-    minPlayTimeMeasure: row.minPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
-        : null,
     maxPlayTime: row.maxPlayTime,
-    maxPlayTimeMeasure: row.maxPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.maxPlayTimeMeasure!)
-        : null,
     image: row.image,
     thumbnail: row.thumbnail,
     supportsSolo: row.supportsSolo,
@@ -539,9 +523,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     minPlayers: Value(pg.minPlayers),
     maxPlayers: Value(pg.maxPlayers),
     minPlayTime: Value(pg.minPlayTime),
-    minPlayTimeMeasure: Value(pg.minPlayTimeMeasure?.toWire()),
     maxPlayTime: Value(pg.maxPlayTime),
-    maxPlayTimeMeasure: Value(pg.maxPlayTimeMeasure?.toWire()),
     image: Value(pg.image),
     thumbnail: Value(pg.thumbnail),
     supportsSolo: Value(pg.supportsSolo),

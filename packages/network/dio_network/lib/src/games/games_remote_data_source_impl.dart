@@ -342,11 +342,8 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     publishYear: json['publishYear'] as int?,
     minPlayers: json['minPlayers'] as int?,
     maxPlayers: json['maxPlayers'] as int?,
-    playingTime: json['playingTime'] as int?,
     minPlayTime: json['minPlayTime'] as int?,
-    minPlayTimeMeasure: _timeMeasure(json['minPlayTimeMeasure']),
     maxPlayTime: json['maxPlayTime'] as int?,
-    maxPlayTimeMeasure: _timeMeasure(json['maxPlayTimeMeasure']),
     minAge: json['minAge'] as int?,
     // Prisma `Float` columns: JSON writes 3.0 as 3, which decodes as an int.
     complexity: (json['complexity'] as num?)?.toDouble(),
@@ -362,17 +359,6 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     createdAt: DateTime.parse(json['createdAt'] as String),
     updatedAt: DateTime.parse(json['updatedAt'] as String),
   );
-
-  /// A unit this client does not know reads as no unit, rather than failing
-  /// the page the game is on.
-  static TimeMeasure? _timeMeasure(Object? wire) {
-    if (wire is! String) return null;
-    try {
-      return TimeMeasure.fromWire(wire);
-    } on FormatException {
-      return null;
-    }
-  }
 
   /// A missing reach, or one this client does not know, reads as unknown
   /// rather than failing the page the game is on. Nothing decides a read by
