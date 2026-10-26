@@ -16,12 +16,14 @@ enum EventAccessSource {
 }
 
 /// Read cache of the events the server sent each user, for a single server,
-/// read as one user (#496).
+/// read as one user (#496), and the local half of creating one (#499).
 ///
-/// Events are read-only on the device for now. The repository caches what
-/// the two event reads return, the list (`GET /events`) and the detail
-/// (`GET /events/:id`), and serves reads from that. Creating an event is
-/// #499, and answering an invitation or voting is #527.
+/// The repository caches what the two event reads return, the list
+/// (`GET /events`) and the detail (`GET /events/:id`), and serves reads from
+/// that. [create] is its one local write: it writes a local-only event and
+/// queues its create, and the sync queue owns that event until
+/// [reconcileCreatedEvent] replaces it with the server's. Answering an
+/// invitation or voting is #527, and editing an event #500.
 ///
 /// ## Per user
 ///
@@ -34,7 +36,7 @@ enum EventAccessSource {
 /// what decides it is what the server sent each user.
 ///
 /// After the session ends the `Future` methods throw [StateError], and
-/// [watchAttendingEvents] streams close.
+/// [watchAttendingEvents] streams close. [reconciledEventId] still answers.
 ///
 /// ## The roster, only to a user on it
 ///
@@ -300,4 +302,112 @@ abstract class EventRepository {
   /// changes, and on each write [watchAttendingEvents] emits for. As there,
   /// a write that changes nothing here may still emit the list unchanged.
   Stream<List<EventListItem>> watchAttendingEventListItems();
+
+  // ── The queued create (#499) ───────────────────────────────────────────
+
+  /// Creates the event [draft] describes, with the current user as its host.
+  ///
+  /// Writes the event locally with `isLocalOnly` and `isDirty` set, and
+  /// enqueues a [CreateEventOperation] carrying [draft], in one transaction:
+  /// if the enqueue fails, nothing is written. The event is listed and read
+  /// at once, for the current user alone.
+  ///
+  /// The local event is what the server makes of [draft]:
+  ///
+  /// - its title trimmed, and where [draft] leaves them null, the type and
+  ///   reach the server defaults to, a casual gathering for friends;
+  /// - `planning` for a poll, with each date `proposed`, and otherwise
+  ///   `scheduled`, with each date `confirmed` now;
+  /// - each occurrence's `sortOrder` its position in [draft];
+  /// - a roster of the current user alone, as host and attending.
+  ///
+  /// It has no policy and no invitees. The reconcile brings both.
+  ///
+  /// This does not contact the server. The sync queue sends the op and calls
+  /// [reconcileCreatedEvent] with the answer. Until then the event belongs to
+  /// the queue: no read writes over it, and neither a purge nor
+  /// [forgetEvent] removes it.
+  ///
+  /// Returns the local event, the `syncQueueId` of its op, which the caller
+  /// passes to [reconcileCreatedEvent] so the op closes with it, and the
+  /// `operation` as it was queued. A caller that sends it inline sends that
+  /// `operation`, so the send carries every field a later drain's would.
+  ///
+  /// Throws [ArgumentError], before any write, for a draft the server is
+  /// sure to refuse, since a queued create it refuses is parked on its first
+  /// attempt: a blank title, more than one occurrence on a Fixed event, more
+  /// than [EventDraft.maxInvitees] invitees, an `unknown` value anywhere,
+  /// which has no wire name, and a household created on this device that the
+  /// server has yet to confirm, whose id it has never heard of.
+  Future<({Event event, String syncQueueId, CreateEventOperation operation})>
+  create(EventDraft draft);
+
+  /// Replaces the local event [create] wrote under [localId] with [server],
+  /// the event the server made of it, in one transaction.
+  ///
+  /// The local event is removed with its occurrences, roster and access,
+  /// while it is still `isLocalOnly`. Unless [deleted], [server] is then
+  /// cached as attended, by the rules [cacheEvent] writes a read by, and
+  /// where its id differs from [localId] the move is recorded for
+  /// [reconciledEventId]. When [completedSyncQueueId] is given, that queue
+  /// entry is completed in the same transaction. If any step throws, all of
+  /// it rolls back.
+  ///
+  /// So a copy of [server] a hydrate cached first is written over, and the
+  /// cache holds one event, under the server's id. A repeat of the create
+  /// answers with the event as its creator may read it now, so one who has
+  /// lost read on it since gets an empty roster and no policy, which mean
+  /// what they mean to [cacheEvent]. The roster carries no one's name either
+  /// way: the create's answer embeds each attendee's role and not their user,
+  /// so the names come with the next detail read.
+  ///
+  /// [deleted] is for a repeat of a create whose event was deleted since:
+  /// the local event goes, nothing is cached in its place, and no move is
+  /// recorded, so a screen holding [localId] finds the event gone.
+  Future<void> reconcileCreatedEvent(
+    EventSnapshot server, {
+    required String localId,
+    required bool deleted,
+    String? completedSyncQueueId,
+  });
+
+  /// The id of the event [reconcileCreatedEvent] replaced [localId] with, or
+  /// null if it has not: before the reconcile, when the server kept the
+  /// local id, when the event was deleted before the create was answered,
+  /// and when a reconcile rolled back.
+  ///
+  /// For a screen that holds an event by its local id when the id changes
+  /// under it: one open during the reconcile, or one opened on the local id
+  /// afterwards. The local event is gone by then, so the local id reads as
+  /// an event that is not cached.
+  ///
+  /// The move is stored with the reconcile, so it is found whichever
+  /// repository made it, another tab's over the same database included, and
+  /// after a reload. This answers from the moves this repository last
+  /// recorded or read: its own reconciles, and the moves it reads before
+  /// delivering each [watchEvent] emission. A subscriber that checks this on
+  /// every emission therefore sees a move on the emission that drops the
+  /// local event. Asked before [watchEvent] has emitted, it may answer null
+  /// for a move another repository made.
+  ///
+  /// Never throws, including after disposal.
+  String? reconciledEventId(String localId);
+
+  /// Discards the queued event create [syncQueueId] names, and the local
+  /// event [create] wrote for it.
+  ///
+  /// Only for a create that is stuck: the server refused it, or its retries
+  /// ran out. The event is deleted with its occurrences, roster and access,
+  /// and the queue entry with them through
+  /// `SyncQueueRepository.discardStuck`, in one transaction; a create that
+  /// isn't stuck by then, such as one another tab retried, changes nothing.
+  /// Only an event still [Event.isLocalOnly] is deleted. If the server did
+  /// make it, a lost answer being how the retries ran out, the next hydrate
+  /// brings it back.
+  ///
+  /// A completed or unknown entry changes nothing, and so does a payload
+  /// that won't decode, beyond deleting the entry. Returns whether the entry
+  /// was deleted. Throws [ArgumentError] for a collection or household op,
+  /// before any write.
+  Future<bool> discardQueuedOp(String syncQueueId);
 }

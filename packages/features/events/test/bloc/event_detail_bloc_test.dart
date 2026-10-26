@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:di/di.dart' show LocalClockService;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
@@ -378,7 +379,16 @@ void main() {
     test('over the real cache, for a user who never cached it', () async {
       final db = inMemoryServerDatabase();
       addTearDown(db.close);
-      final cached = EventRepositoryImpl(db, userId: 'user-me');
+      final cached = EventRepositoryImpl(
+        db,
+        userId: 'user-me',
+        syncQueue: SyncQueueRepositoryImpl(
+          db,
+          const LocalClockService(),
+          userId: 'user-me',
+        ),
+        clock: const LocalClockService(),
+      );
       final remote = FakeEventRemote.detail((_) => _snapshot());
       final bloc = EventDetailBloc(
         eventId: 'e-1',

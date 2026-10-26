@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:di/di.dart' show LocalClockService;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
@@ -100,9 +101,22 @@ void main() {
   late ServerDatabase db;
   late EventRepositoryImpl repository;
 
+  /// The user's repository over [db], with a queue of its own over the same
+  /// database, as the session scope wires it.
+  EventRepositoryImpl openRepository() => EventRepositoryImpl(
+    db,
+    userId: _kUserId,
+    syncQueue: SyncQueueRepositoryImpl(
+      db,
+      const LocalClockService(),
+      userId: _kUserId,
+    ),
+    clock: const LocalClockService(),
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    repository = EventRepositoryImpl(db, userId: _kUserId);
+    repository = openRepository();
   });
 
   tearDown(() async => db.close());
@@ -131,8 +145,7 @@ void main() {
 
   /// A fresh repository over the same database, as the next session opens
   /// one, to read the cache back once [repository] has been disposed.
-  EventRepositoryImpl nextSession() =>
-      EventRepositoryImpl(db, userId: _kUserId);
+  EventRepositoryImpl nextSession() => openRepository();
 
   group('what a pass writes (#496)', () {
     test('a page at a time, so a live list changes once a page', () async {

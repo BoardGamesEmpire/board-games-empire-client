@@ -1,5 +1,7 @@
+import 'package:cuid2/cuid2.dart';
 import 'package:drift/drift.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
@@ -24,6 +26,16 @@ import 'watch_disposal.dart';
 /// popping, still records its events for the user they came from. No method
 /// takes a user id.
 ///
+/// ## The queued create (#499)
+///
+/// [create] is the one local write. In one transaction it writes the event
+/// with `isLocalOnly` and `isDirty` set, its dates, the creator's row on its
+/// roster and their `attending` access, and enqueues the op. The flags hand
+/// the event to the sync queue: a read writes nothing of it, and neither a
+/// purge nor [forgetEvent] removes it. [reconcileCreatedEvent] deletes it,
+/// writes the server's copy in its place by a read's rules, and records in
+/// `event_moves` where it went, for [reconciledEventId].
+///
 /// ## Disposal
 ///
 /// Registered in the user-session scope, which pops on sign-out, a server
@@ -31,11 +43,33 @@ import 'watch_disposal.dart';
 /// per-server database, which outlives that scope, so it takes the shared
 /// [WatchDisposal] contract (#138): after `onDispose()` the `Future` methods
 /// throw [StateError], and [watchAttendingEvents] and [watchEvent] close.
+/// [reconciledEventId] still answers.
 class EventRepositoryImpl with WatchDisposal implements EventRepository {
-  EventRepositoryImpl(this._db, {required this._userId});
+  /// [_syncQueue] must be over this same [_db], as `HouseholdRepositoryImpl`'s
+  /// is, for [create]'s one transaction to hold: the enqueue joins the
+  /// transaction only when it writes to the same database. Over another, it
+  /// would commit apart from the event, which a failure could then leave
+  /// without its op, and no test would catch it. `UserSessionScopeInstaller`
+  /// wires the session's queue, over this scope's database.
+  EventRepositoryImpl(
+    this._db, {
+    required this._userId,
+    required this._syncQueue,
+    required this._clock,
+  });
 
   final ServerDatabase _db;
   final String _userId;
+  final SyncQueueRepository _syncQueue;
+
+  /// Server-corrected time (#12), for the timestamps [create] writes, as the
+  /// queue's own are.
+  final ClockService _clock;
+
+  /// Local id to the server's, for every move this repository has recorded
+  /// or read from `event_moves` ([reconciledEventId]). Never shrinks: a move
+  /// is never undone.
+  final Map<String, String> _moves = {};
 
   /// What an enum column holds for a value this client could not read. No
   /// enum has it as a wire name, so each one's `fromWire` reads it back as
@@ -98,6 +132,39 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     });
   }
 
+  /// Gives each of [eventIds] the next generation, in [b], after the batch
+  /// has written them.
+  ///
+  /// Every write takes one, so a purge that read the events before it can
+  /// tell it happened. From the shared counter, not the event's own row,
+  /// which a purge may have deleted since: a row counted afresh would repeat
+  /// the deleted one's.
+  void _stampGeneration(Batch b, Iterable<String> eventIds) {
+    final counter = _db.eventGenerationTable;
+    b.insert(
+      counter,
+      const EventGenerationTableCompanion(
+        id: Value(0),
+        lastGeneration: Value(1),
+      ),
+      onConflict: DoUpdate(
+        ($EventGenerationTableTable old) =>
+            EventGenerationTableCompanion.custom(
+              lastGeneration: old.lastGeneration + const Constant(1),
+            ),
+      ),
+    );
+    b.update(
+      _db.eventsTable,
+      EventsTableCompanion.custom(
+        generation: subqueryExpression<int>(
+          _db.selectOnly(counter)..addColumns([counter.lastGeneration]),
+        ),
+      ),
+      where: (t) => t.id.isIn(eventIds),
+    );
+  }
+
   /// Which of [eventIds] are cached with local changes the server has not
   /// acknowledged: `isDirty` or `isLocalOnly`.
   Future<Set<String>> _queueOwnedIds(Iterable<String> eventIds) async {
@@ -108,9 +175,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     return {for (final row in await query.get()) row.read(t.id)!};
   }
 
-  /// Writes [byId], none of them queue-owned, as one batch, so Drift tells a
-  /// live query about the page once, and one round trip, which on web is one
-  /// message to the database worker rather than several per event.
+  /// Writes [byId], none of them queue-owned, as one batch, so it is one round
+  /// trip, which on web is one message to the database worker rather than
+  /// several per event. Drift tells a live query about the page once because
+  /// [_writeSnapshots] holds the transaction open around it.
   Future<void> _writeBatch(
     Map<String, EventSnapshot> byId,
     EventAccessSource source,
@@ -141,33 +209,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       b.insertAllOnConflictUpdate(_db.eventsTable, [
         for (final s in written) _eventToCompanion(s.event),
       ]);
-      // Every write takes the next generation, so a purge that read the
-      // events before this one can tell it happened. From the shared
-      // counter, not the event's own row, which a purge may have deleted
-      // since: a row counted afresh would repeat the deleted one's.
-      final counter = _db.eventGenerationTable;
-      b.insert(
-        counter,
-        const EventGenerationTableCompanion(
-          id: Value(0),
-          lastGeneration: Value(1),
-        ),
-        onConflict: DoUpdate(
-          ($EventGenerationTableTable old) =>
-              EventGenerationTableCompanion.custom(
-                lastGeneration: old.lastGeneration + const Constant(1),
-              ),
-        ),
-      );
-      b.update(
-        _db.eventsTable,
-        EventsTableCompanion.custom(
-          generation: subqueryExpression<int>(
-            _db.selectOnly(counter)..addColumns([counter.lastGeneration]),
-          ),
-        ),
-        where: (t) => t.id.isIn(byId.keys),
-      );
+      _stampGeneration(b, byId.keys);
 
       // A snapshot without a policy says nothing about the cached one: a
       // read serves none to a caller its own check refuses, and the server
@@ -213,6 +255,253 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           ),
       ], mode: InsertMode.insertOrIgnore);
     });
+  }
+
+  // ── The queued create (#499) ───────────────────────────────────────────
+
+  @override
+  Future<({Event event, String syncQueueId, CreateEventOperation operation})>
+  create(EventDraft draft) async {
+    checkNotDisposed();
+    // Before the transaction, so a draft the server would refuse leaves the
+    // cache and the queue untouched.
+    final title = draft.title.trim();
+    _checkDraft(draft, title);
+    if (draft.householdId case final householdId?) {
+      await _checkHousehold(householdId);
+    }
+
+    return _db.transaction(() async {
+      final now = _clock.nowUtc();
+      // The event's id until the reconcile replaces it with the server's,
+      // and the create's idempotency key, so minted once, here.
+      final localId = cuid();
+      // The server's own rules for a new event's status and dates.
+      final poll = draft.schedulingMode == EventSchedulingMode.poll;
+
+      await _db.batch((b) {
+        // The type and reach the server defaults to where the draft leaves
+        // them out.
+        b.insert(
+          _db.eventsTable,
+          EventsTableCompanion.insert(
+            id: localId,
+            title: title,
+            createdById: _userId,
+            householdId: Value(draft.householdId),
+            description: Value(draft.description),
+            location: Value(draft.location),
+            url: Value(draft.url),
+            type: (draft.type ?? EventType.casualGathering).toWire(),
+            reach: (draft.reach ?? Reach.friends).toWire(),
+            status: (poll ? EventStatus.planning : EventStatus.scheduled)
+                .toWire(),
+            schedulingMode: draft.schedulingMode.toWire(),
+            isDirty: const Value(true),
+            isLocalOnly: const Value(true),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        b.insertAll(_db.eventOccurrencesTable, [
+          for (final (index, occurrence) in draft.occurrences.indexed)
+            EventOccurrencesTableCompanion.insert(
+              id: cuid(),
+              eventId: localId,
+              label: Value(occurrence.label),
+              startDate: Value(occurrence.startDate?.toUtc()),
+              endDate: Value(occurrence.endDate?.toUtc()),
+              location: Value(occurrence.location),
+              status:
+                  (poll
+                          ? OccurrenceStatus.proposed
+                          : OccurrenceStatus.confirmed)
+                      .toWire(),
+              sortOrder: index,
+              confirmedAt: Value(poll ? null : now),
+              createdAt: now,
+              updatedAt: now,
+            ),
+        ]);
+        // The server makes the creator its host, and this row makes the
+        // event read as theirs at once, on the overview and in its detail.
+        b.insert(
+          _db.eventAttendeesTable,
+          EventAttendeesTableCompanion.insert(
+            id: cuid(),
+            eventId: localId,
+            userId: Value(_userId),
+            status: EventParticipationStatus.attending.toWire(),
+            roleName: Value(EventRole.host.toWire()),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        b.insert(
+          _db.eventAccessTable,
+          EventAccessTableCompanion.insert(
+            userId: _userId,
+            eventId: localId,
+            source: eventAccessSourceAttending,
+          ),
+        );
+        _stampGeneration(b, [localId]);
+      });
+
+      // If this throws, the writes above roll back.
+      final operation = CreateEventOperation(
+        localId: localId,
+        draft: draft.copyWith(title: title),
+      );
+      final entry = await _syncQueue.enqueue(operation);
+
+      final row = await (_db.select(
+        _db.eventsTable,
+      )..where((t) => t.id.equals(localId))).getSingle();
+      return (
+        event: _mapEvent(row),
+        syncQueueId: entry.id,
+        operation: operation,
+      );
+    });
+  }
+
+  /// Throws [ArgumentError] for a draft the server is sure to refuse with a
+  /// 400, given [title], its title trimmed. A queued create the server
+  /// refuses is parked on its first attempt, so the caller hears of it here
+  /// instead.
+  static void _checkDraft(EventDraft draft, String title) {
+    if (title.isEmpty) {
+      throw ArgumentError.value(
+        draft.title,
+        'draft.title',
+        'must not be blank',
+      );
+    }
+    if (draft.schedulingMode == EventSchedulingMode.fixed &&
+        draft.occurrences.length > 1) {
+      throw ArgumentError.value(
+        draft.occurrences.length,
+        'draft.occurrences',
+        'a Fixed event takes at most one date',
+      );
+    }
+    draft.checkSendable();
+  }
+
+  /// Throws [ArgumentError] when [householdId] names a household created on
+  /// this device that the server has yet to confirm: an id the server has
+  /// never heard of, which it refuses with a 404.
+  Future<void> _checkHousehold(String householdId) async {
+    final t = _db.householdsTable;
+    final localOnly = _db.selectOnly(t)
+      ..addColumns([t.id])
+      ..where(t.id.equals(householdId) & t.isLocalOnly.equals(true));
+    if (await localOnly.getSingleOrNull() != null) {
+      throw ArgumentError.value(
+        householdId,
+        'draft.householdId',
+        'names a household the server has yet to confirm',
+      );
+    }
+  }
+
+  @override
+  Future<void> reconcileCreatedEvent(
+    EventSnapshot server, {
+    required String localId,
+    required bool deleted,
+    String? completedSyncQueueId,
+  }) async {
+    checkNotDisposed();
+    final serverId = server.event.id;
+    // Not where the server kept the local id: a move to itself would have a
+    // screen that follows moves follow it forever.
+    final moved = !deleted && serverId != localId;
+
+    await _db.transaction(() async {
+      // 1. The local event goes first, even where the server kept its id: a
+      //    read writes nothing of an event the queue owns, so the server's
+      //    copy could not be written over it.
+      await _deleteLocalOnly(localId);
+
+      // 2. The server's copy, by a read's rules: a copy a hydrate cached
+      //    first is written over, and a replay's empty roster or missing
+      //    policy says what it says there. Then where the event went,
+      //    committed with the deletion so no reader finds one without the
+      //    other, in this tab or another. A second reconcile of the same
+      //    local id replaces it.
+      if (!deleted) {
+        await _writeSnapshots([server], EventAccessSource.attending);
+        if (moved) {
+          await _db
+              .into(_db.eventMovesTable)
+              .insertOnConflictUpdate(
+                EventMovesTableCompanion.insert(
+                  localId: localId,
+                  serverId: serverId,
+                ),
+              );
+        }
+      }
+
+      // 3. The queued op closes with it, when the caller knows which it was.
+      if (completedSyncQueueId != null) {
+        await _syncQueue.markCompleted(completedSyncQueueId);
+      }
+    });
+    // So a caller here can ask at once, without waiting on an emission to
+    // read the move back.
+    if (moved) _moves[localId] = serverId;
+  }
+
+  @override
+  String? reconciledEventId(String localId) => _moves[localId];
+
+  @override
+  Future<bool> discardQueuedOp(String syncQueueId) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      final entry = await _syncQueue.getEntry(syncQueueId);
+      if (entry == null) return false;
+
+      final SyncOperation op;
+      try {
+        op = entry.operation;
+      } on Object {
+        // Nothing it did can be read back, so there is nothing to undo.
+        return _syncQueue.discardStuck(entry.id);
+      }
+      if (op is! CreateEventOperation) {
+        throw ArgumentError.value(
+          syncQueueId,
+          'syncQueueId',
+          'names a collection or household op; their own repositories '
+              'discard those',
+        );
+      }
+      // Checked in the statement that deletes it: a create another tab
+      // retried since may be on its way to the server.
+      if (!await _syncQueue.discardStuck(entry.id)) return false;
+
+      await _deleteLocalOnly(op.localId);
+      return true;
+    });
+  }
+
+  /// Deletes the event [localId] with its occurrences, roster, policy and
+  /// every user's access to it, while it is `isLocalOnly`: an event [create]
+  /// wrote that the server has not confirmed. Anything else cached under
+  /// that id stays. Run inside the caller's transaction.
+  Future<void> _deleteLocalOnly(String localId) async {
+    final t = _db.eventsTable;
+    final localOnly = _db.selectOnly(t)
+      ..addColumns([t.id])
+      ..where(t.id.equals(localId) & t.isLocalOnly.equals(true));
+    await (_db.delete(
+      _db.eventAccessTable,
+    )..where((a) => a.eventId.isInQuery(localOnly))).go();
+    await _deleteUnreachable({localId});
   }
 
   // ── Purge ──────────────────────────────────────────────────────────────
@@ -518,6 +807,9 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// reads that found nothing changed here. Drift tells a stream which tables
   /// a write touched, not which rows, so a single joined query would re-run
   /// as often; this costs a few indexed lookups per committed write.
+  ///
+  /// Each read takes in the moves too, for [reconciledEventId] (#499). They
+  /// are no part of the emission, so `distinct` drops a read as before.
   @override
   Stream<EventDetail?> watchEvent(String id) => untilDisposed(
     () => _db
@@ -543,7 +835,11 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// names, so it holds theirs wherever one is cached, and one state of the
   /// cache gives both.
   Future<EventDetail?> _readDetail(String id) async {
-    final snapshot = await _db.transaction(() => _readSnapshot(id));
+    final snapshot = await _db.transaction(() async {
+      final snapshot = await _readSnapshot(id);
+      await _readMoves();
+      return snapshot;
+    });
     if (snapshot == null) return null;
     return EventDetail(
       snapshot: snapshot,
@@ -551,6 +847,22 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           ?.where((attendee) => attendee.userId == _userId)
           .firstOrNull,
     );
+  }
+
+  /// Refreshes [_moves] from `event_moves`, after the detail read of an
+  /// emission and in its transaction (#499).
+  ///
+  /// A subscriber that asks [reconciledEventId] on an emission then finds
+  /// every move the detail reflects, whichever repository or tab made it: a
+  /// move commits with the deletion of its local event, is never removed,
+  /// and this read sees the cache as the detail read saw it. Read before the
+  /// detail, outside its transaction, a reconcile committing between the two
+  /// would deliver the local event gone with no move known, and the detail
+  /// would show it not found.
+  Future<void> _readMoves() async {
+    for (final move in await _db.select(_db.eventMovesTable).get()) {
+      _moves[move.localId] = move.serverId;
+    }
   }
 
   @override

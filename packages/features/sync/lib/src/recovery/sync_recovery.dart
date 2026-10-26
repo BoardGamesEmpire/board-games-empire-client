@@ -16,8 +16,9 @@ import 'stuck_sync_op.dart';
 ///
 /// - **Retry** puts the op back as new and sends it through the drain where
 ///   the session runs one. Where none does yet, which is web until #447, a
-///   household create goes out inline through the sender, and a collection
-///   op waits for a drain: only a drain keeps one entry's ops in order.
+///   household or event create goes out inline through the sender, and a
+///   collection op waits for a drain: only a drain keeps one entry's ops in
+///   order.
 /// - **Discard** deletes the op and undoes what it did locally, through the
 ///   repository that owns its rows, then refreshes that cache from the
 ///   server so the undone row shows the server's copy.
@@ -26,27 +27,31 @@ import 'stuck_sync_op.dart';
 /// repositories it reads.
 class SyncRecovery {
   /// [drain] runs a pass that reads the queue after the call, and is
-  /// preferred to an inline send through [sender] when given. The two
-  /// refreshes run a hydrate of their cache. Each is optional because a
+  /// preferred to an inline send through [sender] when given. The three
+  /// refreshes each run a hydrate of their cache. Each is optional because a
   /// composition may not have it, and then that step is skipped.
   SyncRecovery({
     required this._queue,
     required this._collection,
     required this._households,
+    required this._events,
     this._sender,
     this._drain,
     this._refreshCollection,
     this._refreshHouseholds,
+    this._refreshEvents,
     BgeLogger? logger,
   }) : _log = logger ?? BgeLogger('bge.sync.recovery');
 
   final SyncQueueRepository _queue;
   final GameCollectionRepository _collection;
   final HouseholdRepository _households;
+  final EventRepository _events;
   final SyncOperationSender? _sender;
   final Future<void> Function()? _drain;
   final Future<void> Function()? _refreshCollection;
   final Future<void> Function()? _refreshHouseholds;
+  final Future<void> Function()? _refreshEvents;
   final BgeLogger _log;
 
   /// Every stuck op, in queue order, on subscribe and whenever the stuck set
@@ -89,14 +94,19 @@ class SyncRecovery {
     return !(after?.isStuck ?? false);
   }
 
-  /// Whether [entry] can go out without a drain. A household create can: no
-  /// other op waits on it, as the inline create screen already sends it. A
-  /// collection op can't, because only a drain holds it behind the add its
-  /// entry is still waiting on, and sends what that add's acknowledgement
-  /// releases.
+  /// Whether [entry] can go out without a drain. A household or event
+  /// create can: no other op waits on it, which is why the household's
+  /// create screen already sends one inline. A collection op can't, because
+  /// only a drain holds it behind the add its entry is still waiting on, and
+  /// sends what that add's acknowledgement releases.
   static bool _sendsInline(SyncQueueEntry entry) {
     try {
-      return entry.operation is CreateHouseholdOperation;
+      return switch (entry.operation) {
+        CreateHouseholdOperation() || CreateEventOperation() => true,
+        AddToCollectionOperation() ||
+        UpdateCollectionOperation() ||
+        RemoveFromCollectionOperation() => false,
+      };
     } on Object {
       return false;
     }
@@ -126,6 +136,10 @@ class SyncRecovery {
       case CreateHouseholdOperation():
         if (await _households.discardQueuedOp(entryId)) {
           _refresh(_refreshHouseholds, 'households');
+        }
+      case CreateEventOperation():
+        if (await _events.discardQueuedOp(entryId)) {
+          _refresh(_refreshEvents, 'events');
         }
       case AddToCollectionOperation() ||
           UpdateCollectionOperation() ||
@@ -163,6 +177,11 @@ class SyncRecovery {
         entryId: entry.id,
         kind: StuckSyncOpKind.createHousehold,
         subject: name,
+      ),
+      CreateEventOperation(:final draft) => StuckSyncOp(
+        entryId: entry.id,
+        kind: StuckSyncOpKind.createEvent,
+        subject: draft.title,
       ),
       AddToCollectionOperation(:final localId) => StuckSyncOp(
         entryId: entry.id,

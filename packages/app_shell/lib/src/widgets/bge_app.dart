@@ -1552,13 +1552,14 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// Whether [container] holds what the #190 retry-or-discard screen needs:
-  /// the session's queue, and both repositories a discard undoes through.
-  /// The user tier registers all three, so this holds exactly while a
-  /// session is active, on both platforms.
+  /// the session's queue, and the three repositories a discard undoes
+  /// through. The user tier registers all four, so this holds exactly while
+  /// a session is active, on both platforms.
   static bool _canRecoverStuckChanges(DependencyContainer container) =>
       container.isRegistered<SyncQueueRepository>() &&
       container.isRegistered<GameCollectionRepository>() &&
-      container.isRegistered<HouseholdRepository>();
+      container.isRegistered<HouseholdRepository>() &&
+      container.isRegistered<EventRepository>();
 
   /// The #190 retry-or-discard wiring. Null (→ [NotYetAvailableScreen])
   /// when no active server is resolvable or [_canRecoverStuckChanges] says
@@ -1584,6 +1585,7 @@ class _BgeAppState extends State<BgeApp> {
         queue: container.get<SyncQueueRepository>(),
         collection: container.get<GameCollectionRepository>(),
         households: container.get<HouseholdRepository>(),
+        events: container.get<EventRepository>(),
         sender: container.isRegistered<SyncOperationSender>()
             ? container.get<SyncOperationSender>()
             : null,
@@ -1592,6 +1594,7 @@ class _BgeAppState extends State<BgeApp> {
             : null,
         refreshCollection: _collectionRefreshAfterChange(container),
         refreshHouseholds: _householdRetry(container),
+        refreshEvents: _eventsRetry(container),
       ),
     );
   }

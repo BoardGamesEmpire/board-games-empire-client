@@ -5,11 +5,15 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 const _kUserA = 'user-a';
 const _kUserB = 'user-b';
+
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
 
 /// The event cache is one set of tables per server, shared by every user
 /// signed in to it on this device. Each read returns only the events cached
@@ -20,8 +24,14 @@ void main() {
   setUp(() => db = inMemoryServerDatabase());
   tearDown(() => db.close());
 
-  EventRepositoryImpl repoFor(String userId) =>
-      EventRepositoryImpl(db, userId: userId);
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
 
   test('another user sees nothing of an event cached for this user', () async {
     final a = repoFor(_kUserA);

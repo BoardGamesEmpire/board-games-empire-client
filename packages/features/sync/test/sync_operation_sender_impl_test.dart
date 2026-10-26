@@ -540,4 +540,184 @@ void main() {
       },
     );
   });
+
+  group('an event create', () {
+    test('is sent keyed by its localId, reconciled, and completed', () async {
+      final created = await h.events.create(eventDraft());
+      final localId = created.operation.localId;
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(
+        delivery,
+        isA<SyncDelivered>()
+            .having((d) => d.eventId, 'eventId', 'ev-server')
+            .having((d) => d.householdId, 'householdId', isNull),
+      );
+      final sent = h.eventRemote.creates.single;
+      expect(sent.clientRequestId, localId);
+      expect(sent.draft, created.operation.draft);
+      expect((await h.entry(created.syncQueueId)).status, SyncStatus.completed);
+      final events = await h.events.watchAttendingEvents().first;
+      expect(events.single.id, 'ev-server');
+      expect(events.single.isLocalOnly, isFalse);
+      expect(await h.events.getEvent(localId), isNull);
+      expect(h.events.reconciledEventId(localId), 'ev-server');
+    });
+
+    test('a retry after a lost response sends the same key and caches one '
+        'event', () async {
+      final created = await h.events.create(eventDraft());
+      // The server made the event, and its answer never arrived.
+      var calls = 0;
+      h.eventRemote.respond = (_) => calls++ == 0
+          ? throw const EventRemoteTransientException('lost')
+          : (snapshot: serverEvent(), deletedAt: null);
+
+      final lost = await h.sender.deliverEntry(
+        await h.entry(created.syncQueueId),
+      );
+      expect(lost, isA<SyncFailed>());
+      final retried = await h.sender.deliverEntry(
+        await h.entry(created.syncQueueId),
+      );
+
+      expect(retried, isA<SyncDelivered>());
+      expect(h.eventRemote.creates, hasLength(2));
+      expect(h.eventRemote.creates.map((c) => c.clientRequestId).toSet(), {
+        created.operation.localId,
+      });
+      final events = await h.events.watchAttendingEvents().first;
+      expect(events.map((e) => e.id), ['ev-server']);
+    });
+
+    test('a refused invitee parks it, and the event stays', () async {
+      final created = await h.events.create(eventDraft());
+      h.eventRemote.respond = (_) => throw const EventCreateRefusedException(
+        'Event create returned 403',
+        statusCode: 403,
+      );
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(delivery, isA<SyncParked>());
+      final entry = await h.entry(created.syncQueueId);
+      expect(entry.status, SyncStatus.failed);
+      expect(entry.isExhausted, isTrue);
+      final kept = await h.events.getEvent(created.event.id);
+      expect(kept?.event.isLocalOnly, isTrue, reason: 'kept, not rolled back');
+    });
+
+    test('an unknown invitee parks it', () async {
+      final created = await h.events.create(eventDraft());
+      h.eventRemote.respond = (_) => throw const EventCreateRefusedException(
+        'Event create returned 404',
+        statusCode: 404,
+      );
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(delivery, isA<SyncParked>());
+      expect((await h.entry(created.syncQueueId)).isExhausted, isTrue);
+      expect(await h.events.getEvent(created.event.id), isNotNull);
+    });
+
+    test('a request the server rejects parks it', () async {
+      final created = await h.events.create(eventDraft());
+      h.eventRemote.respond = (_) => throw const EventRemotePermanentException(
+        'Event create returned 400',
+        statusCode: 400,
+      );
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(delivery, isA<SyncParked>());
+      expect((await h.entry(created.syncQueueId)).isExhausted, isTrue);
+      expect(await h.events.getEvent(created.event.id), isNotNull);
+    });
+
+    test('a 2xx whose body would not parse is counted, never parked', () async {
+      final created = await h.events.create(eventDraft());
+      h.eventRemote.respond = (_) => throw const EventRemotePermanentException(
+        'Event create response has no roster',
+        statusCode: 201,
+      );
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(
+        delivery,
+        isA<SyncFailed>().having(
+          (d) => d.failure,
+          'failure',
+          SyncFailure.localFault,
+        ),
+      );
+      final entry = await h.entry(created.syncQueueId);
+      expect(entry.retryCount, 1);
+      expect(entry.isExhausted, isFalse);
+    });
+
+    test('an answer from no server is handed back', () async {
+      final created = await h.events.create(eventDraft());
+      h.eventRemote.respond = (_) =>
+          throw const EventRemoteTransientException('connection refused');
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(
+        delivery,
+        isA<SyncFailed>().having(
+          (d) => d.failure,
+          'failure',
+          SyncFailure.unreachable,
+        ),
+      );
+      final entry = await h.entry(created.syncQueueId);
+      expect(entry.status, SyncStatus.pending);
+      expect(entry.retryCount, 0);
+    });
+
+    test('a deleted replay completes the op and leaves no event', () async {
+      final created = await h.events.create(eventDraft());
+      final localId = created.operation.localId;
+      // A repeat of a create whose event was deleted since: the server
+      // answers with that event and when it was deleted.
+      h.eventRemote.respond = (_) =>
+          (snapshot: serverEvent(), deletedAt: DateTime.utc(2026, 10, 3));
+
+      final delivery = await h.sender.deliver(
+        created.syncQueueId,
+        created.operation,
+      );
+
+      expect(
+        delivery,
+        isA<SyncDelivered>().having((d) => d.eventId, 'eventId', isNull),
+      );
+      expect((await h.entry(created.syncQueueId)).status, SyncStatus.completed);
+      expect(await h.events.watchAttendingEvents().first, isEmpty);
+      expect(await h.events.getEvent(localId), isNull);
+      expect(await h.events.getEvent('ev-server'), isNull);
+      expect(h.events.reconciledEventId(localId), isNull);
+    });
+  });
 }

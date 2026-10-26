@@ -40,14 +40,15 @@ class EventsTable extends Table {
   /// `EventSchedulingMode`, stored as [type] is.
   TextColumn get schedulingMode => text()();
 
-  /// True when this row has local changes not yet synced to the server.
-  /// Events are read-only on the device until writes land (#499, #527), so
-  /// nothing sets it yet.
+  /// True when this row has local changes not yet synced to the server. Only
+  /// `EventRepository.create` sets it yet, with [isLocalOnly], on the row it
+  /// writes (#499). While either is set the row belongs to the sync queue,
+  /// and no server read writes over it.
   BoolColumn get isDirty => boolean().withDefault(const Constant(false))();
 
-  /// True when this row was created offline / optimistically and has not yet
-  /// been confirmed by the server. Nothing sets it yet, for the same reason as
-  /// [isDirty].
+  /// True when this row was created on this device and has not yet been
+  /// confirmed by the server (#499). The reconcile deletes the row and writes
+  /// the server's copy, which carries neither flag.
   BoolColumn get isLocalOnly => boolean().withDefault(const Constant(false))();
 
   /// Which write, by any user, last wrote this row: the `event_generation`

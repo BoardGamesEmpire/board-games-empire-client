@@ -15,27 +15,33 @@ class _MockCollection extends Mock implements GameCollectionRepository {}
 
 class _MockHouseholds extends Mock implements HouseholdRepository {}
 
+class _MockEvents extends Mock implements EventRepository {}
+
 /// Retrying and discarding stuck ops (#190), over the real repositories and
 /// sender with fake remotes.
 void main() {
   late Harness h;
   late int collectionRefreshes;
   late int householdRefreshes;
+  late int eventRefreshes;
 
   SyncRecovery recovery({SyncQueueDrain? drain}) => SyncRecovery(
     queue: h.queue,
     collection: h.collection,
     households: h.households,
+    events: h.events,
     sender: h.sender,
     drain: drain?.drainAfterChange,
     refreshCollection: () async => collectionRefreshes++,
     refreshHouseholds: () async => householdRefreshes++,
+    refreshEvents: () async => eventRefreshes++,
   );
 
   setUp(() async {
     h = await Harness.open();
     collectionRefreshes = 0;
     householdRefreshes = 0;
+    eventRefreshes = 0;
   });
 
   tearDown(() async => h.close());
@@ -45,11 +51,14 @@ void main() {
         throw const HouseholdRemotePermanentException('rejected: 400');
     h.collectionRemote.respond = (_) =>
         throw const GameCollectionRemotePermanentException('rejected: 400');
+    h.eventRemote.respond = (_) =>
+        throw const EventCreateRefusedException('rejected: 403');
   }
 
   void acceptEverything() {
     h.householdRemote.respond = (_) => serverHousehold();
     h.collectionRemote.respond = (_) => serverEntry();
+    h.eventRemote.respond = (_) => (snapshot: serverEvent(), deletedAt: null);
   }
 
   /// Sends [id] once while every send is refused, which parks it.
@@ -113,6 +122,21 @@ void main() {
       ]);
     });
 
+    test('a stuck event create is listed by its title', () async {
+      final created = await h.events.create(eventDraft());
+      await park(created.syncQueueId);
+
+      final stuck = await recovery().watch().first;
+
+      expect(stuck, [
+        StuckSyncOp(
+          entryId: created.syncQueueId,
+          kind: StuckSyncOpKind.createEvent,
+          subject: 'Game night',
+        ),
+      ]);
+    });
+
     test('describes the stuck set again only when it changes', () async {
       final queue = _MockQueue();
       final collection = _MockCollection();
@@ -133,6 +157,7 @@ void main() {
         queue: queue,
         collection: collection,
         households: _MockHouseholds(),
+        events: _MockEvents(),
       ).watch().listen(described.add);
       addTearDown(subscription.cancel);
 
@@ -187,6 +212,23 @@ void main() {
       expect(await recovery().retry(create.id), isTrue);
 
       expect((await h.entry(create.id)).status, SyncStatus.completed);
+    });
+
+    test('sends a stuck event create inline where no drain runs', () async {
+      final created = await h.events.create(eventDraft());
+      await park(created.syncQueueId);
+      acceptEverything();
+
+      expect(await recovery().retry(created.syncQueueId), isTrue);
+
+      expect((await h.entry(created.syncQueueId)).status, SyncStatus.completed);
+      expect(
+        h.eventRemote.creates,
+        hasLength(2),
+        reason: 'the park, then this',
+      );
+      final events = await h.events.watchAttendingEvents().first;
+      expect(events.map((e) => e.id), ['ev-server']);
     });
 
     test('where nothing drains the queue, reopens a collection op but '
@@ -247,6 +289,20 @@ void main() {
       expect(await h.households.getHouseholds(), isEmpty);
       expect(await h.queue.getAllEntries(), isEmpty);
       expect(householdRefreshes, 1);
+      expect(collectionRefreshes, 0);
+    });
+
+    test('undoes a stuck event create and refreshes the events', () async {
+      final created = await h.events.create(eventDraft());
+      await park(created.syncQueueId);
+
+      await recovery().discard(created.syncQueueId);
+
+      expect(await h.events.getEvent(created.event.id), isNull);
+      expect(await h.events.watchAttendingEvents().first, isEmpty);
+      expect(await h.queue.getAllEntries(), isEmpty);
+      expect(eventRefreshes, 1);
+      expect(householdRefreshes, 0);
       expect(collectionRefreshes, 0);
     });
 

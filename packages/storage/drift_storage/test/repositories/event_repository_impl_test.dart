@@ -6,9 +6,11 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 // What one user's cache of an event holds after each kind of read (#496):
 // the event and its policy upserted, its occurrences replaced wholesale, its
@@ -25,13 +27,24 @@ const _kOtherUserId = 'user-other';
 final _me = testAttendee('att-me', userId: _kUserId);
 final _other = testAttendee('att-other', userId: _kOtherUserId);
 
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
+
 void main() {
   late ServerDatabase db;
   late EventRepositoryImpl repo;
 
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    repo = EventRepositoryImpl(db, userId: _kUserId);
+    repo = repoFor(_kUserId);
   });
 
   tearDown(() => db.close());

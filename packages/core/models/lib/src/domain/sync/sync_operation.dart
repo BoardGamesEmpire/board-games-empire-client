@@ -1,5 +1,13 @@
 import 'dart:convert';
 
+import '../common/reach.dart';
+import '../event/event_draft.dart';
+import '../event/event_scheduling_mode.dart';
+import '../event/event_type.dart';
+import '../event/game_addition_mode.dart';
+import '../event/vote_quorum_type.dart';
+import '../event/vote_threshold_type.dart';
+
 /// Sealed hierarchy of operations the sync queue can process.
 ///
 /// Each variant carries exactly the data needed to reconstruct the server
@@ -18,6 +26,7 @@ sealed class SyncOperation {
       RemoveFromCollectionOperation.type =>
         RemoveFromCollectionOperation.fromJson(json),
       CreateHouseholdOperation.type => CreateHouseholdOperation.fromJson(json),
+      CreateEventOperation.type => CreateEventOperation.fromJson(json),
       _ => throw FormatException('Unknown SyncOperation type: "$type"'),
     };
   }
@@ -245,4 +254,174 @@ final class CreateHouseholdOperation extends SyncOperation {
     if (language != null) 'language': language,
     if (visibility != null) 'visibility': visibility,
   };
+}
+
+// ── Event operations ─────────────────────────────────────────────────
+
+/// Creates an event on the server (`POST /api/events`, #499).
+///
+/// Enqueued by `EventRepositoryImpl.create` in the transaction that writes
+/// the local-only event. Carries the whole [draft], so the send reads no
+/// other table. [localId] is sent too, but as the create's idempotency key
+/// (`clientRequestId`), never as the event's id: the server assigns that
+/// itself.
+///
+/// As for [CreateHouseholdOperation], [localId] is the only handle that ties
+/// the server's answer to the local event, since an event has no natural
+/// unique key either.
+///
+/// ## Its JSON
+///
+/// Each enum goes in by its wire name, and each date as ISO-8601 in UTC. An
+/// enum name this build can't read fails the decode with a
+/// [FormatException], rather than reading back as `unknown`: that has no
+/// wire name, so the send could never put it on the wire. The sender counts
+/// the entry as an op it can't read instead.
+final class CreateEventOperation extends SyncOperation {
+  const CreateEventOperation({required this.localId, required this.draft});
+
+  static const String type = 'create_event';
+
+  factory CreateEventOperation.fromJson(Map<String, dynamic> json) {
+    final policy = json['policy'] as Map<String, dynamic>?;
+    return CreateEventOperation(
+      localId: json['local_id'] as String,
+      draft: EventDraft(
+        title: json['title'] as String,
+        householdId: json['household_id'] as String?,
+        description: json['description'] as String?,
+        location: json['location'] as String?,
+        url: json['url'] as String?,
+        type: _enumFromWireOrNull(
+          json['event_type'],
+          EventType.fromWire,
+          EventType.unknown,
+        ),
+        reach: _enumFromWireOrNull(
+          json['reach'],
+          Reach.fromWire,
+          Reach.unknown,
+        ),
+        schedulingMode: _enumFromWire(
+          json['scheduling_mode'] as String,
+          EventSchedulingMode.fromWire,
+          EventSchedulingMode.unknown,
+        ),
+        occurrences: [
+          for (final occurrence in json['occurrences'] as List<dynamic>)
+            _occurrenceFromJson(occurrence as Map<String, dynamic>),
+        ],
+        policy: policy == null ? null : _policyFromJson(policy),
+        inviteUserIds: [
+          for (final id in json['invite_user_ids'] as List<dynamic>)
+            id as String,
+        ],
+      ),
+    );
+  }
+
+  /// Local cuid2 id of the local-only event this op creates.
+  ///
+  /// Also the create's idempotency key: it goes to the server as
+  /// `clientRequestId`, and the server returns the event the first attempt
+  /// made instead of creating another (backend#252). That works only
+  /// because this value never changes for the life of the op, so every
+  /// retry carries the same key. Never re-mint it.
+  final String localId;
+
+  /// What the person asked for, with its title trimmed. A field it leaves
+  /// null is left out of the JSON and of the request, so the server's
+  /// default applies.
+  final EventDraft draft;
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'local_id': localId,
+    'title': draft.title,
+    'household_id': ?draft.householdId,
+    'description': ?draft.description,
+    'location': ?draft.location,
+    'url': ?draft.url,
+    'event_type': ?draft.type?.toWire(),
+    'reach': ?draft.reach?.toWire(),
+    'scheduling_mode': draft.schedulingMode.toWire(),
+    'occurrences': [
+      for (final occurrence in draft.occurrences)
+        {
+          'label': ?occurrence.label,
+          'start_date': ?_writeDate(occurrence.startDate),
+          'end_date': ?_writeDate(occurrence.endDate),
+          'location': ?occurrence.location,
+        },
+    ],
+    if (draft.policy case final policy?)
+      'policy': {
+        'game_addition_mode': ?policy.gameAdditionMode?.toWire(),
+        'vote_threshold_type': ?policy.voteThresholdType?.toWire(),
+        'vote_threshold_value': ?policy.voteThresholdValue,
+        'vote_quorum_type': ?policy.voteQuorumType?.toWire(),
+        'vote_quorum_value': ?policy.voteQuorumValue,
+        'voting_window_hours': ?policy.votingWindowHours,
+      },
+    'invite_user_ids': draft.inviteUserIds,
+  };
+
+  static EventOccurrenceDraft _occurrenceFromJson(Map<String, dynamic> json) =>
+      EventOccurrenceDraft(
+        label: json['label'] as String?,
+        startDate: _readDate(json['start_date']),
+        endDate: _readDate(json['end_date']),
+        location: json['location'] as String?,
+      );
+
+  static EventPolicyDraft _policyFromJson(Map<String, dynamic> json) =>
+      EventPolicyDraft(
+        gameAdditionMode: _enumFromWireOrNull(
+          json['game_addition_mode'],
+          GameAdditionMode.fromWire,
+          GameAdditionMode.unknown,
+        ),
+        voteThresholdType: _enumFromWireOrNull(
+          json['vote_threshold_type'],
+          VoteThresholdType.fromWire,
+          VoteThresholdType.unknown,
+        ),
+        voteThresholdValue: json['vote_threshold_value'] as int?,
+        voteQuorumType: _enumFromWireOrNull(
+          json['vote_quorum_type'],
+          VoteQuorumType.fromWire,
+          VoteQuorumType.unknown,
+        ),
+        voteQuorumValue: json['vote_quorum_value'] as int?,
+        votingWindowHours: json['voting_window_hours'] as int?,
+      );
+
+  /// The value [name] stands for, or a [FormatException] for a name this
+  /// build reads as [unknown]. `'Unknown'` included, which no enum has as a
+  /// wire name.
+  static T _enumFromWire<T extends Enum>(
+    String name,
+    T Function(String) fromWire,
+    T unknown,
+  ) {
+    final value = fromWire(name);
+    if (value == unknown) {
+      throw FormatException(
+        'CreateEventOperation: no $T has the wire name "$name"',
+      );
+    }
+    return value;
+  }
+
+  static T? _enumFromWireOrNull<T extends Enum>(
+    Object? name,
+    T Function(String) fromWire,
+    T unknown,
+  ) => name == null ? null : _enumFromWire(name as String, fromWire, unknown);
+
+  static String? _writeDate(DateTime? date) => date?.toUtc().toIso8601String();
+
+  static DateTime? _readDate(Object? value) =>
+      value == null ? null : DateTime.parse(value as String).toUtc();
 }

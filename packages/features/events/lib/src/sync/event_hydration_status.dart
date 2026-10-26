@@ -69,10 +69,11 @@ final class EventHydration extends Equatable {
 ///
 /// Modelled on `GameCollectionHydrationStatus`, and like it without the
 /// household's `markStale`: nothing on the event screens invalidates the
-/// cache, because #496 makes no writes. Each reading carries its history
-/// ([EventHydration]), and [isStaleAfter] reads a clock that went backwards as
-/// stale. #407 is where the copies would become one, and events are its third
-/// consumer, after households and collections.
+/// cache, because a create (#499) caches the server's event itself, once it
+/// is acknowledged. Each reading carries its history ([EventHydration]), and
+/// [isStaleAfter] reads a clock that went backwards as stale. #407 is where
+/// the copies would become one, and events are its third consumer, after
+/// households and collections.
 ///
 /// [started] and [finished] belong to `EventHydrateInstaller`'s pass. The
 /// screens read [watch]; the installer's `SessionRehydrator` entry reads

@@ -6,8 +6,10 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 // A server read leaves an event the sync queue owns alone (#499): one that is
 // `isLocalOnly`, created here and not yet acknowledged, or `isDirty`, with
@@ -18,19 +20,31 @@ import '../support/event_fixture.dart';
 const _kUserId = 'user-me';
 const _kOtherUserId = 'user-other';
 
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
+
 void main() {
   late ServerDatabase db;
   late EventRepositoryImpl repo;
 
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    repo = EventRepositoryImpl(db, userId: _kUserId);
+    repo = repoFor(_kUserId);
   });
 
   tearDown(() => db.close());
 
-  // No writer sets either sync flag yet (#499, #527), so these set them as
-  // one would: the row is cached, then the flag is written over it.
+  // Only a create sets the flags yet, and only on an event of its own
+  // (#499), so these set them over a cached one, as a queued edit would
+  // (#500): the row is cached, then the flag is written over it.
   Future<void> markLocalOnly(String id) =>
       (db.update(db.eventsTable)..where((t) => t.id.equals(id))).write(
         const EventsTableCompanion(isLocalOnly: Value(true)),
