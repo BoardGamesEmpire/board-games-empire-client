@@ -24,21 +24,32 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockInviteRemote extends Mock
     implements HouseholdInviteRemoteDataSource {}
 
-Household _household(String id, String name) => Household(
-  id: id,
-  name: name,
-  createdAt: DateTime.utc(2026),
-  updatedAt: DateTime.utc(2026),
-);
+Household _household(String id, String name, {MemberInvitePolicy? policy}) =>
+    Household(
+      id: id,
+      name: name,
+      settings: policy == null
+          ? null
+          : HouseholdSettings(memberInvitePolicy: policy),
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
 
-HouseholdMember _owner(String householdId) => HouseholdMember(
-  id: 'm-$householdId',
-  userId: 'u-me',
-  householdId: householdId,
-  role: HouseholdRole.householdOwner,
-  createdAt: DateTime.utc(2026),
-  updatedAt: DateTime.utc(2026),
-);
+HouseholdMember _owner(String householdId) =>
+    _viewer(householdId, HouseholdRole.householdOwner);
+
+HouseholdMember _member(String householdId) =>
+    _viewer(householdId, HouseholdRole.householdMember);
+
+HouseholdMember _viewer(String householdId, HouseholdRole role) =>
+    HouseholdMember(
+      id: 'm-$householdId',
+      userId: 'u-me',
+      householdId: householdId,
+      role: role,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
 
 HouseholdInvite _invite(
   String id, {
@@ -81,7 +92,10 @@ void main() {
   /// Tears down the session scope [pumpApp] built, as a sign-out does.
   late Future<void> Function() endSession;
 
-  setUpAll(() => registerFallbackValue(HouseholdInviteStatus.pending));
+  setUpAll(() {
+    registerFallbackValue(HouseholdInviteStatus.pending);
+    registerFallbackValue(HouseholdInviteDraft(invitee: InviteeEmail('a@b.c')));
+  });
 
   setUp(() {
     cubit = _MockAppBootstrapCubit();
@@ -162,6 +176,37 @@ void main() {
 
   Future<void> openDrawer(WidgetTester tester) async {
     await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+  }
+
+  /// Makes the viewer a member of every household, with hh_a under
+  /// [policy].
+  void Function(HouseholdRepository) asMember(MemberInvitePolicy policy) =>
+      (repository) {
+        when(repository.watchHouseholds).thenAnswer(
+          (_) => Stream.value([
+            _household('hh_a', 'Alpha Crew', policy: policy),
+            _household('hh_b', 'Beta Crew'),
+          ]),
+        );
+        when(() => repository.watchMembers(any())).thenAnswer(
+          (invocation) => Stream.value([
+            _member(invocation.positionalArguments.first as String),
+          ]),
+        );
+        when(() => repository.getCurrentUserMember(any())).thenAnswer(
+          (invocation) async =>
+              _member(invocation.positionalArguments.first as String),
+        );
+      };
+
+  Future<void> sendTo(WidgetTester tester, String email) async {
+    await tester.enterText(
+      find.byKey(SendHouseholdInviteScreen.emailKey),
+      email,
+    );
+    await tester.ensureVisible(find.byKey(SendHouseholdInviteScreen.submitKey));
+    await tester.tap(find.byKey(SendHouseholdInviteScreen.submitKey));
     await tester.pumpAndSettle();
   }
 
@@ -325,6 +370,154 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsOneWidget);
+  });
+
+  group('the send form beside the household (#569)', () {
+    setUp(() {
+      when(() => remote.send(any(), any()))
+          .thenAnswer((_) async => _invite('i_new'));
+      when(
+        () => remote.fetchSent(
+          status: any(named: 'status'),
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => _page([
+          _invite('i_new', householdId: 'hh_a', householdName: 'Alpha Crew'),
+        ]),
+      );
+    });
+
+    testWidgets('a member under Direct sends from the form and lands on '
+        'Sent', (tester) async {
+      final router = await pumpApp(
+        tester,
+        stub: asMember(MemberInvitePolicy.direct),
+      );
+      router.go(AppRoutes.householdDetailOf('hh_a'));
+      await tester.pumpAndSettle();
+      unawaited(router.push<void>(AppRoutes.householdInviteSendOf('hh_a')));
+      await tester.pumpAndSettle();
+
+      await sendTo(tester, 'ana@example.com');
+
+      expect(find.byType(SentInvitesScreen), findsOneWidget);
+      expect(find.byType(SendHouseholdInviteScreen), findsNothing);
+      verify(() => remote.send('hh_a', any())).called(1);
+      verifyNever(
+        () => remote.fetchHouseholdInvites(
+          any(),
+          status: any(named: 'status'),
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      );
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+      expect(find.byType(SentInvitesScreen), findsNothing);
+    });
+
+    testWidgets("an owner's send goes back to the invites", (tester) async {
+      final router = await pumpApp(tester);
+      router.go(AppRoutes.householdInvitesOf('hh_a'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdInviteListScreen.inviteKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(SendHouseholdInviteScreen), findsOneWidget);
+
+      await sendTo(tester, 'ana@example.com');
+
+      expect(find.byType(HouseholdInviteListScreen), findsOneWidget);
+      expect(find.byType(SendHouseholdInviteScreen), findsNothing);
+      expect(find.byType(SentInvitesScreen), findsNothing);
+    });
+
+    testWidgets('a policy switch to Off replaces an open form', (tester) async {
+      var households = [
+        _household('hh_a', 'Alpha Crew', policy: MemberInvitePolicy.direct),
+      ];
+      final updates = StreamController<List<Household>>.broadcast();
+      addTearDown(updates.close);
+      final router = await pumpApp(
+        tester,
+        stub: (repository) {
+          asMember(MemberInvitePolicy.direct)(repository);
+          when(repository.watchHouseholds).thenAnswer((_) async* {
+            yield households;
+            yield* updates.stream;
+          });
+        },
+      );
+      router.go(AppRoutes.householdInviteSendOf('hh_a'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsOneWidget);
+
+      households = [
+        _household('hh_a', 'Alpha Crew', policy: MemberInvitePolicy.off),
+      ];
+      updates.add(households);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(SendHouseholdInviteScreen.notAllowedKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsNothing);
+    });
+
+    testWidgets("trying again on the can't-tell text refreshes the household, "
+        'and the form opens once the policy arrives', (tester) async {
+      var households = [_household('hh_a', 'Alpha Crew')];
+      final updates = StreamController<List<Household>>.broadcast();
+      addTearDown(updates.close);
+      final router = await pumpApp(
+        tester,
+        stub: (repository) {
+          asMember(MemberInvitePolicy.direct)(repository);
+          when(repository.watchHouseholds).thenAnswer((_) async* {
+            yield households;
+            yield* updates.stream;
+          });
+        },
+      );
+      router.go(AppRoutes.householdInviteSendOf('hh_a'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsNothing);
+
+      await tester.tap(find.byKey(SendHouseholdInviteScreen.refreshKey));
+      await tester.pumpAndSettle();
+      expect(refreshes, 1);
+
+      households = [
+        _household('hh_a', 'Alpha Crew', policy: MemberInvitePolicy.direct),
+      ];
+      updates.add(households);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(SendHouseholdInviteScreen.submitKey), findsOneWidget);
+    });
+
+    testWidgets('a refused send refreshes the household', (tester) async {
+      when(() => remote.send(any(), any())).thenAnswer(
+        (_) async =>
+            throw const HouseholdInviteRefusedException('off', statusCode: 403),
+      );
+      final router = await pumpApp(
+        tester,
+        stub: asMember(MemberInvitePolicy.direct),
+      );
+      router.go(AppRoutes.householdInviteSendOf('hh_a'));
+      await tester.pumpAndSettle();
+
+      await sendTo(tester, 'ana@example.com');
+
+      expect(refreshes, 1);
+      expect(find.byKey(SendHouseholdInviteScreen.errorKey), findsOneWidget);
+    });
   });
 
   testWidgets('the invite routes fall back without an invite client', (

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
@@ -15,9 +17,9 @@ const _detailKey = Key('household_detail_route_marker');
 const _createKey = Key('household_create_route_marker');
 
 /// #455: the invite routes. The inbox is top-level; a household's invites
-/// and its send form are children of the household's detail route, so a
-/// `go` to either builds the detail screen beneath it and leaving is a
-/// plain pop.
+/// and its send form are children of the household's detail route, side by
+/// side since #569, so a `go` to either builds the detail screen beneath it
+/// and leaving is a plain pop.
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -114,11 +116,18 @@ void main() {
     expect(find.byKey(_detailKey, skipOffstage: false), findsOneWidget);
   });
 
-  testWidgets('the send form gets the id, over the invites', (tester) async {
+  testWidgets('the send form gets the id, over the household', (tester) async {
+    // #569: a member's deep link must not build the invites, which answer
+    // them 403.
     String? seen;
+    var invitesBuilt = 0;
     final router = await pumpRouter(
       tester,
-      householdInvitesBuilder: (_, _) => marker(_invitesKey),
+      householdDetailBuilder: (_, _) => marker(_detailKey),
+      householdInvitesBuilder: (_, _) {
+        invitesBuilt++;
+        return marker(_invitesKey);
+      },
       sendHouseholdInviteBuilder: (_, id) {
         seen = id;
         return marker(_sendKey);
@@ -128,9 +137,35 @@ void main() {
     router.go(AppRoutes.householdInviteSendOf('hh_1'));
     await tester.pumpAndSettle();
 
+    expect(router.state.uri.path, '/household/hh_1/invite');
     expect(find.byKey(_sendKey), findsOneWidget);
     expect(seen, 'hh_1');
-    expect(find.byKey(_invitesKey, skipOffstage: false), findsOneWidget);
+    expect(find.byKey(_detailKey, skipOffstage: false), findsOneWidget);
+    expect(find.byKey(_detailKey), findsNothing, reason: 'offstage');
+    expect(invitesBuilt, 0);
+  });
+
+  testWidgets('a push from the invites keeps the invites beneath', (
+    tester,
+  ) async {
+    final router = await pumpRouter(
+      tester,
+      householdDetailBuilder: (_, _) => marker(_detailKey),
+      householdInvitesBuilder: (_, _) => marker(_invitesKey),
+      sendHouseholdInviteBuilder: (_, _) => marker(_sendKey),
+    );
+
+    router.go(AppRoutes.householdInvitesOf('hh_1'));
+    await tester.pumpAndSettle();
+    unawaited(router.push<void>(AppRoutes.householdInviteSendOf('hh_1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(_sendKey), findsOneWidget);
+
+    router.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(_invitesKey), findsOneWidget);
+    expect(find.byKey(_sendKey), findsNothing);
   });
 
   testWidgets('create still reaches create', (tester) async {

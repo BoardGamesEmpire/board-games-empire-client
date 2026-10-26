@@ -21,9 +21,8 @@ import '../widgets/household_invite_tile.dart';
 /// #489), with withdraw, revoke and approve.
 ///
 /// Online-only: read from the server when the screen opens, and again
-/// whenever it comes back into view, so an invite sent from the form shows
-/// up without the form handing anything back. That includes a form this
-/// screen did not open, such as one a deep link built the list beneath.
+/// whenever it comes back into view, so an invite sent from the form it
+/// opened shows up without the form handing anything back.
 ///
 /// Decoupled from DI like the other household screens: the caller resolves
 /// the per-server [HouseholdInviteRemoteDataSource] and the user-session

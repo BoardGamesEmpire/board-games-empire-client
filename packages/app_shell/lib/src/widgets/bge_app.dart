@@ -1043,11 +1043,19 @@ class _BgeAppState extends State<BgeApp> {
   /// The #455 send-invite wiring. Same null contract as
   /// [_buildHouseholdInvitesRoute].
   ///
-  /// The form offers roles by who is looking, which is a cache read; the
-  /// screen takes the answer rather than reading it, so it stays
-  /// synchronous. Leaving after a send is a pop: the route is the invite
-  /// list's child, and the list reads itself again as it comes back into
-  /// view.
+  /// The form offers roles by who is looking and, for a member, by the
+  /// household's member invite policy (#569). Both are cache reads; the
+  /// screen takes the answers rather than reading them, so it stays
+  /// synchronous. A send refused with 403 runs the households' own pass, as
+  /// an edit refused with 403 does, and the form redraws from what it
+  /// brings back.
+  ///
+  /// The route is the detail screen's child. An owner or admin leaves after
+  /// a send by a pop, back to the invites they pushed it from, which read
+  /// themselves again as they come back into view, or to the household. A
+  /// member is replaced by the Sent screen instead, because they can't read
+  /// the household's invites; Back from it still returns to the household
+  /// (#569).
   Widget? _buildSendHouseholdInviteRoute(
     BuildContext context,
     String householdId,
@@ -1069,6 +1077,7 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
       remote: invites,
+      onRefresh: _householdRetry(container),
     );
   }
 
@@ -2860,22 +2869,27 @@ class _UnverifiedSessionBannerHostState
   }
 }
 
-/// Resolves who is looking, then shows the send-invite form (#455).
+/// Resolves who is looking and the household's member invite policy, then
+/// shows the send-invite form (#455, #569).
 ///
-/// A cache read that takes a frame or two. While it runs the page shows a
-/// spinner under the form's own title, so the route does not flash a
-/// different screen first. A failed read is a viewer the cache cannot
-/// place, which the form answers with its not-allowed note.
+/// Cache reads that take a frame or two. Until both have answered once the
+/// page shows a spinner under the form's own title, so the route does not
+/// flash a different screen first. A failed role read is a viewer the cache
+/// cannot place, and a household list that fails before it answers is a
+/// policy nobody knows; the form answers either with its not-allowed text.
 ///
-/// Asked again whenever the household's roster changes, the household detail
-/// screen's way: on a deep link the cache may be cold when the route opens,
-/// and the hydrate's member rows are what let the form open. A role changed
-/// under the open form reaches it the same way.
+/// Asked again whenever the household's roster or the households change,
+/// the household detail screen's way: on a deep link the cache may be cold
+/// when the route opens, and the hydrate's rows are what let the form open.
+/// A role or a policy changed under the open form reaches it the same way,
+/// so a switch to `Off` replaces a member's form with the reason. Once a
+/// stream has answered, an error on it leaves the last answer standing.
 class _SendHouseholdInviteRoute extends StatefulWidget {
   const _SendHouseholdInviteRoute({
     required this.householdId,
     required this.repository,
     required this.remote,
+    this.onRefresh,
     super.key,
   });
 
@@ -2883,60 +2897,112 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
   final HouseholdRepository repository;
   final HouseholdInviteRemoteDataSource remote;
 
+  /// Runs the households' own pass after a send refused with 403.
+  final Future<void> Function()? onRefresh;
+
   @override
   State<_SendHouseholdInviteRoute> createState() =>
       _SendHouseholdInviteRouteState();
 }
 
 class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
-  /// Records, so a null role still reads as an answer.
-  late final Stream<({HouseholdRole? role})> _viewer = _watch();
+  StreamSubscription<List<HouseholdMember>>? _members;
+  StreamSubscription<List<Household>>? _households;
 
-  Stream<({HouseholdRole? role})> _watch() async* {
-    yield await _read();
-    try {
-      await for (final _ in widget.repository.watchMembers(
-        widget.householdId,
-      )) {
-        yield await _read();
-      }
-    } on Object {
-      // The last answer stands.
-    }
+  /// The newest household list, once [_householdsAnswered].
+  List<Household>? _latestHouseholds;
+  bool _householdsAnswered = false;
+
+  /// Who is looking under which policy, once both have answered. A record,
+  /// so a null role or policy still reads as an answer.
+  ({HouseholdRole? role, MemberInvitePolicy? policy})? _viewer;
+
+  /// Role reads started, and the newest one applied. Each event starts a
+  /// read, and one that resolves after a newer one is dropped.
+  int _readsStarted = 0;
+  int _readApplied = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_reread());
+    _members = widget.repository
+        .watchMembers(widget.householdId)
+        .listen(
+          (_) => unawaited(_reread()),
+          // The last answer stands.
+          onError: (Object _) {},
+        );
+    _households = widget.repository.watchHouseholds().listen(
+      (households) {
+        _latestHouseholds = households;
+        _householdsAnswered = true;
+        unawaited(_reread());
+      },
+      onError: (Object _) {
+        // The last answer stands, or with none yet, no policy is known.
+        if (_householdsAnswered) return;
+        _householdsAnswered = true;
+        unawaited(_reread());
+      },
+    );
   }
 
-  Future<({HouseholdRole? role})> _read() async {
+  @override
+  void dispose() {
+    unawaited(_members?.cancel());
+    unawaited(_households?.cancel());
+    super.dispose();
+  }
+
+  /// Reads the role again, and shows it with the newest policy, so the two
+  /// change on screen together.
+  Future<void> _reread() async {
+    final read = ++_readsStarted;
+    final role = await _readRole();
+    if (!mounted || read < _readApplied || !_householdsAnswered) return;
+    _readApplied = read;
+    final household = _latestHouseholds
+        ?.where((household) => household.id == widget.householdId)
+        .firstOrNull;
+    setState(
+      () => _viewer = (
+        role: role,
+        policy: household?.settings?.memberInvitePolicy,
+      ),
+    );
+  }
+
+  Future<HouseholdRole?> _readRole() async {
     try {
       final member = await widget.repository.getCurrentUserMember(
         widget.householdId,
       );
-      return (role: member?.role);
+      return member?.role;
     } on Object {
-      return (role: null);
+      return null;
     }
   }
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<({HouseholdRole? role})>(
-    stream: _viewer,
-    builder: (context, snapshot) {
-      final viewer = snapshot.data;
-      if (viewer == null) {
-        return BgePage(
-          title: Text(HouseholdLocalizations.of(context).inviteSendTitle),
-          width: BgePageWidth.pane,
-          centerVertically: true,
-          child: const Center(child: CircularProgressIndicator()),
-        );
-      }
-      return SendHouseholdInviteScreen(
-        householdId: widget.householdId,
-        viewerRole: viewer.role,
-        memberInvitePolicy: null,
-        remote: widget.remote,
-        onSent: (ctx) => ctx.pop(),
-        onMemberSent: (ctx) => ctx.pop(),
+  Widget build(BuildContext context) {
+    final viewer = _viewer;
+    if (viewer == null) {
+      return BgePage(
+        title: Text(HouseholdLocalizations.of(context).inviteSendTitle),
+        width: BgePageWidth.pane,
+        centerVertically: true,
+        child: const Center(child: CircularProgressIndicator()),
       );
-    },
-  );
+    }
+    return SendHouseholdInviteScreen(
+      householdId: widget.householdId,
+      viewerRole: viewer.role,
+      memberInvitePolicy: viewer.policy,
+      remote: widget.remote,
+      onRefresh: widget.onRefresh,
+      onSent: (ctx) => ctx.pop(),
+      onMemberSent: (ctx) => ctx.pushReplacement(AppRoutes.invitesSent),
+    );
+  }
 }
