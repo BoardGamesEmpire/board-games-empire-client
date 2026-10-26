@@ -1,9 +1,10 @@
 # events
 
-The events feature: the hydrate (#496) and the overview (#497). The hydrate
-is the pass that keeps a per-user cache of the events the signed-in user
-attends, which every event screen reads, and what the screens can learn from
-it and ask of it. The overview is the first screen to read it.
+The events feature: the hydrate (#496), the overview (#497) and the detail
+(#498). The hydrate is the pass that keeps a per-user cache of the events the
+signed-in user attends, which every event screen reads, and what the screens
+can learn from it and ask of it. The overview is the first screen to read it,
+and the detail shows one event from it.
 
 ## The hydrate
 
@@ -61,9 +62,9 @@ and so does every other user's, roster rows included. An event that no one
 can read any more is deleted from the cache.
 
 The accepted cost: an event created before page 1's range that the user
-leaves stays on their list until the list fits on one page, or until a detail
-read answers 404 for it. Acting on that 404 comes with the detail screen,
-#498, since the overview makes no detail reads.
+leaves stays on their list until the list fits on one page, or until they
+open it and its detail read answers 404, which forgets it (see the detail,
+below).
 
 ## When it runs
 
@@ -145,16 +146,42 @@ row shows its title, its date in device-local time with the platform's
 and the user's RSVP where their row is cached, which until backend#867 is
 only after a detail read. The screens take optional hooks for what isn't
 built yet: without `onOpen` a row is inert, and without `onCreate` there is
-no create button. #498 wires the first and #499 the second. The shell opens
-the overview from the home drawer at `/events`, and each group at
-`/events/upcoming`, `/events/planning` and `/events/past`.
+no create button. The shell wires `onOpen` to the detail, and #499 wires
+`onCreate`. The shell opens the overview from the home drawer at `/events`,
+and each group at `/events/upcoming`, `/events/planning` and `/events/past`.
+
+## The detail
+
+`EventDetailScreen` shows one event, at `/events/:eventId` above the list it
+was opened from, from `EventRepository.watchEvent`: the cached snapshot with
+the user's own row on its roster. `EventDetailBloc` drives it, and its class
+doc has the full state table. Every open reads `GET /events/:id` once and
+writes the answer back as `read` access, so the screen shows the cache at
+once and the server's answer when the watch delivers it. A failed read keeps
+the cached event up under a banner with a retry. A local-only event is never
+read, since the server has never heard of its id.
+
+A 404 means the server no longer serves the user the event, and
+`EventRepository.forgetEvent` removes their access, so it leaves the overview
+at once. The forget is handed `EventRepository.lastWrite`, read before the
+request went out, and leaves an event written since: a later open or a
+hydrate may have cached it again while the 404 was out, and that newer write
+wins, on screen as in the cache.
+
+Before the request goes out, and again before its answer is written or its
+404 acted on, the bloc asks the server's `SessionIdentityGuard` whether the
+session is still this scope's user, as the hydrate does. A refusal is a
+failed read. Native has no guard and is always confirmed.
+
+`eventActionsFor` maps the viewer's event role, and their household role on a
+household event, to what they may do to it. The screen shows no buttons yet:
+each action's issue (#500 to #518) adds its own and reads that table.
 
 Run `melos run generate` once after checkout: the localizations under
 `lib/l10n/` are generated and gitignored.
 
 ## Not here yet
 
-- **The detail.** Opening an event is #498.
 - **Writes.** Creating an event is #499, and answering an invitation or voting
   is #527. Nothing here queues or sends anything.
 - **Invitations.** Whether invited events get a group of their own is #568.

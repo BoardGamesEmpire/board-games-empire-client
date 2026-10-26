@@ -133,14 +133,31 @@ abstract final class AppRoutes {
   /// overview shows (#497), in its order. Each is the group's `EventGroup`
   /// name, which is how the shell maps one back to its group.
   ///
-  /// These and #498's `:eventId` detail beneath [events] will **overlap**:
-  /// `upcoming` is a legal event id, so the group pages must stay declared
-  /// first, as game search is before the game detail.
+  /// These and the `:eventId` detail beneath [events] (#498, [eventDetail])
+  /// **overlap**: `upcoming` is a legal event id, so the group pages are
+  /// declared first and the detail after them, as game search is before the
+  /// game detail.
   static const eventGroupSegments = <String>['upcoming', 'planning', 'past'];
 
   /// The location of the group page named [segment], one of
   /// [eventGroupSegments].
   static String eventGroupOf(String segment) => '$events/$segment';
+
+  /// One event, beneath [events] (#498). Build a concrete location with
+  /// [eventDetailOf].
+  static const eventDetail = '$events/$_eventDetailSegment';
+
+  /// The id segment of [eventDetail].
+  static const eventIdParam = 'eventId';
+
+  static const _eventDetailSegment = ':$eventIdParam';
+
+  /// The location of one event's detail screen.
+  ///
+  /// Ids are path-safe in practice, as [householdDetailOf]'s are; the encode
+  /// is here for the id that one day is not.
+  static String eventDetailOf(String eventId) =>
+      '$events/${Uri.encodeComponent(eventId)}';
 
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
@@ -400,6 +417,17 @@ typedef EventGroupScreenBuilder = Widget? Function(
   String segment,
 );
 
+/// Builds one event's detail screen (#498) for the [AppRoutes.eventDetail]
+/// route, given the `:eventId` the path carried. Same null contract as
+/// [EventOverviewScreenBuilder].
+///
+/// The id reaches the builder unvalidated. The screen answers one that names
+/// no event with its not-found state.
+typedef EventDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String eventId,
+);
+
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -463,6 +491,7 @@ GoRouter buildAppRouter({
   GameDetailScreenBuilder? gameDetailBuilder,
   EventOverviewScreenBuilder? eventOverviewBuilder,
   EventGroupScreenBuilder? eventGroupBuilder,
+  EventDetailScreenBuilder? eventDetailBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
@@ -702,9 +731,10 @@ GoRouter buildAppRouter({
       // household children are of their list (#308), so a `go` straight to
       // one builds the overview beneath it.
       //
-      // #498's `:eventId` child MUST be declared after the group pages:
-      // `upcoming` is a legal `:eventId`, and go_router takes the first
-      // declared match, as with game search and the game detail.
+      // #498: one event is a child of the overview too, so a `go` straight to
+      // it builds the overview beneath it. It MUST be declared after the
+      // group pages: `upcoming` is a legal `:eventId`, and go_router takes
+      // the first declared match, as with game search and the game detail.
       GoRoute(
         path: AppRoutes.events,
         builder: (context, _) =>
@@ -718,6 +748,14 @@ GoRouter buildAppRouter({
                   eventGroupBuilder?.call(context, segment) ??
                   const NotYetAvailableScreen(),
             ),
+          GoRoute(
+            path: AppRoutes._eventDetailSegment,
+            builder: (context, state) {
+              final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
+              return eventDetailBuilder?.call(context, id) ??
+                  const NotYetAvailableScreen();
+            },
+          ),
         ],
       ),
       // #190: the changes that couldn't sync. Outside the auth ShellRoute

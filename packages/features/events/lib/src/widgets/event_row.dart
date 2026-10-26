@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:models/domain.dart';
 
 import 'package:events/l10n/events_localizations.dart';
 
 import '../overview/event_groups.dart';
+import 'event_labels.dart';
 
 /// One event on the overview or a group's page (#497): its title, when it
 /// happens, and where, whose and whether the user is going, as one
@@ -13,17 +13,15 @@ import '../overview/event_groups.dart';
 ///
 /// ## The date is the device's
 ///
-/// The date and time are shown in device-local time. The day is an ARB
-/// `DateTime` placeholder, as the collection's last-played date is, with the
-/// year only when it isn't this year. The time comes from
-/// [MaterialLocalizations.formatTimeOfDay], told the platform's 24-hour
-/// setting, rather than from `intl`: `intl` follows the locale alone, so a
-/// user who set 24-hour time on a 12-hour locale would get the 12-hour form.
+/// The date and time are shown in device-local time, with the year only when
+/// it isn't this year, by [eventWhenLabel], through which the event's detail
+/// screen says its dates too (#498).
 ///
 /// ## A row is content until there is somewhere to go
 ///
 /// Without [onOpen] a row is inert content, not a focus stop: a tap that
-/// leads nowhere is worse than no tap (#269). #498 wires it.
+/// leads nowhere is worse than no tap (#269). The shell passes [onOpen] where
+/// it has a detail route for the event (#498), so there a row is a button.
 class EventRowTile extends StatelessWidget {
   const EventRowTile({
     required this.row,
@@ -50,14 +48,8 @@ class EventRowTile extends StatelessWidget {
     final details = [
       ?row.venue,
       ?row.householdName,
-      ?switch (row.rsvp) {
-        EventParticipationStatus.attending => l10n.eventsRsvpAttending,
-        EventParticipationStatus.maybe => l10n.eventsRsvpMaybe,
-        EventParticipationStatus.notAttending => l10n.eventsRsvpNotAttending,
-        EventParticipationStatus.invited => l10n.eventsRsvpInvited,
-        // An answer this client can't read is not a guess at one.
-        EventParticipationStatus.unknown || null => null,
-      },
+      // An answer this client can't read is not a guess at one.
+      ?eventRsvpLabel(l10n, row.rsvp),
     ];
 
     // MergeSemantics rather than a Semantics container: a tappable ListTile
@@ -95,14 +87,6 @@ class EventRowTile extends StatelessWidget {
           : l10n.eventsNoDateYet;
     }
 
-    // The server stamps it in UTC; the user goes on their own day.
-    final local = start.toLocal();
-    final time = MaterialLocalizations.of(context).formatTimeOfDay(
-      TimeOfDay.fromDateTime(local),
-      alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
-    );
-    return local.year == now().toLocal().year
-        ? l10n.eventsWhen(local, time)
-        : l10n.eventsWhenWithYear(local, time);
+    return eventWhenLabel(context, start, now: now());
   }
 }

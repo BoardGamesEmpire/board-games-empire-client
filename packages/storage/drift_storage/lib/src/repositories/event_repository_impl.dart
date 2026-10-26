@@ -30,7 +30,7 @@ import 'watch_disposal.dart';
 /// switch, suspend and context dispose. Its Drift stream is tied to the
 /// per-server database, which outlives that scope, so it takes the shared
 /// [WatchDisposal] contract (#138): after `onDispose()` the `Future` methods
-/// throw [StateError], and [watchAttendingEvents] closes.
+/// throw [StateError], and [watchAttendingEvents] and [watchEvent] close.
 class EventRepositoryImpl with WatchDisposal implements EventRepository {
   EventRepositoryImpl(this._db, {required this._userId});
 
@@ -225,22 +225,77 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         _db.eventAttendeesTable,
       )..where((t) => t.userId.equals(_userId) & t.eventId.isIn(purged))).go();
 
-      // An event no user has an access row for is one no read can reach, so
-      // it goes, its children first for their foreign keys.
-      await (_db.delete(
-        _db.eventOccurrencesTable,
-      )..where((t) => _unreachable(t.eventId, purged))).go();
-      await (_db.delete(
-        _db.eventAttendeesTable,
-      )..where((t) => _unreachable(t.eventId, purged))).go();
-      await (_db.delete(
-        _db.eventPoliciesTable,
-      )..where((t) => _unreachable(t.eventId, purged))).go();
-      await (_db.delete(
-        _db.eventsTable,
-      )..where((t) => _unreachable(t.id, purged))).go();
+      await _deleteUnreachable(purged);
       return purged;
     });
+  }
+
+  @override
+  Future<int?> lastWrite(String id) async {
+    checkNotDisposed();
+    final t = _db.eventsTable;
+    final query = _db.selectOnly(t)
+      ..addColumns([t.generation])
+      ..where(t.id.equals(id) & _readableEvent(t));
+    return (await query.getSingleOrNull())?.read(t.generation);
+  }
+
+  @override
+  Future<bool> forgetEvent(String id, {required int lastWrite}) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      // Only an event this user can read, and not one the sync queue owns.
+      // A local-only event is one the server has never heard of, so a 404
+      // for its id says nothing about it, and a dirty one carries an edit
+      // the queue has yet to send (#298's rule for households).
+      final event = await (_db.select(
+        _db.eventsTable,
+      )..where((t) => t.id.equals(id) & _readableEvent(t))).getSingleOrNull();
+      if (event == null || event.isDirty || event.isLocalOnly) return false;
+      // Nor one written since the read was sent, which may be newer news
+      // than its 404, as the purge leaves one alone.
+      if (event.generation != lastWrite) return false;
+
+      // Both sources, where the purge removes `attending` alone. The list
+      // speaks for a user's attendance and nothing else, but an event the
+      // server refuses this user by id is closed to them by either route.
+      // Theirs only: another user's access stays, and the event with it.
+      await (_db.delete(
+        _db.eventAccessTable,
+      )..where((t) => t.userId.equals(_userId) & t.eventId.equals(id))).go();
+
+      // And their own place on the roster, for the reason the purge gives:
+      // kept, it would still answer with their old role and RSVP and pass
+      // the roster rule for whoever reads the event next. Everyone else's
+      // rows stay.
+      await (_db.delete(
+        _db.eventAttendeesTable,
+      )..where((t) => t.userId.equals(_userId) & t.eventId.equals(id))).go();
+
+      await _deleteUnreachable({id});
+      return true;
+    });
+  }
+
+  /// Deletes each of [eventIds] that no user, by any source, has an access
+  /// row for any longer, with its occurrences, roster and policy: an event
+  /// no read can reach.
+  ///
+  /// The children go first, for their foreign keys. Run inside the
+  /// transaction that removed the access.
+  Future<void> _deleteUnreachable(Set<String> eventIds) async {
+    await (_db.delete(
+      _db.eventOccurrencesTable,
+    )..where((t) => _unreachable(t.eventId, eventIds))).go();
+    await (_db.delete(
+      _db.eventAttendeesTable,
+    )..where((t) => _unreachable(t.eventId, eventIds))).go();
+    await (_db.delete(
+      _db.eventPoliciesTable,
+    )..where((t) => _unreachable(t.eventId, eventIds))).go();
+    await (_db.delete(
+      _db.eventsTable,
+    )..where((t) => _unreachable(t.id, eventIds))).go();
   }
 
   /// The events this user has `attending` access to, less any carrying local
@@ -324,8 +379,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// `household_members` is cached in the same database, so everyone the
   /// roster doesn't name reads it empty, as the server's empty roster reads.
   /// That includes a household member who doesn't attend, and staff, who
-  /// read every roster on the server through `read:public_content`. #498 and
-  /// #503 widen it as they start caching those reads.
+  /// read every roster on the server through `read:public_content`. #567
+  /// widens it.
   Expression<bool> _readableAttendee($EventAttendeesTableTable t) {
     final me = _db.alias(_db.eventAttendeesTable, 'me');
     return t.eventId.isInQuery(
@@ -340,50 +395,54 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     checkNotDisposed();
     // One transaction, so a write landing between these reads can't pair an
     // event from one snapshot with occurrences or a roster from another.
-    return _db.transaction(() async {
-      final event = await (_db.select(
-        _db.eventsTable,
-      )..where((t) => t.id.equals(id) & _readableEvent(t))).getSingleOrNull();
-      if (event == null) return null;
+    return _db.transaction(() => _readSnapshot(id));
+  }
 
-      // The detail read's order. `createdAt` is compared as an instant, as
-      // [_purgeableAttendance] explains.
-      final occurrences =
-          await (_db.select(_db.eventOccurrencesTable)
-                ..where((t) => t.eventId.equals(id))
-                ..orderBy([
-                  (t) => OrderingTerm.asc(t.sortOrder),
-                  (t) => OrderingTerm.asc(t.id),
-                ]))
-              .get();
-      final attendees =
-          await (_db.select(_db.eventAttendeesTable)
-                ..where((t) => t.eventId.equals(id) & _readableAttendee(t))
-                ..orderBy([
-                  (t) => OrderingTerm.asc(t.createdAt.julianday),
-                  (t) => OrderingTerm.asc(t.id),
-                ]))
-              .get();
-      final policy = await (_db.select(
-        _db.eventPoliciesTable,
-      )..where((t) => t.eventId.equals(id))).getSingleOrNull();
+  /// [getEvent]'s reads, for the caller's transaction: they are several
+  /// queries, and only one transaction keeps them to one state of the cache.
+  Future<EventSnapshot?> _readSnapshot(String id) async {
+    final event = await (_db.select(
+      _db.eventsTable,
+    )..where((t) => t.id.equals(id) & _readableEvent(t))).getSingleOrNull();
+    if (event == null) return null;
 
-      // The snapshot's three states: the roster for a user on it, empty for
-      // one it doesn't name, and null where no read has cached one.
-      final List<EventAttendee>? roster;
-      if (attendees.isNotEmpty) {
-        roster = attendees.map(_mapAttendee).toList();
-      } else {
-        roster = await _hasRoster(id) ? const [] : null;
-      }
+    // The detail read's order. `createdAt` is compared as an instant, as
+    // [_purgeableAttendance] explains.
+    final occurrences =
+        await (_db.select(_db.eventOccurrencesTable)
+              ..where((t) => t.eventId.equals(id))
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.sortOrder),
+                (t) => OrderingTerm.asc(t.id),
+              ]))
+            .get();
+    final attendees =
+        await (_db.select(_db.eventAttendeesTable)
+              ..where((t) => t.eventId.equals(id) & _readableAttendee(t))
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.createdAt.julianday),
+                (t) => OrderingTerm.asc(t.id),
+              ]))
+            .get();
+    final policy = await (_db.select(
+      _db.eventPoliciesTable,
+    )..where((t) => t.eventId.equals(id))).getSingleOrNull();
 
-      return EventSnapshot(
-        event: _mapEvent(event),
-        occurrences: occurrences.map(_mapOccurrence).toList(),
-        policy: policy == null ? null : _mapPolicy(policy),
-        attendees: roster,
-      );
-    });
+    // The snapshot's three states: the roster for a user on it, empty for
+    // one it doesn't name, and null where no read has cached one.
+    final List<EventAttendee>? roster;
+    if (attendees.isNotEmpty) {
+      roster = attendees.map(_mapAttendee).toList();
+    } else {
+      roster = await _hasRoster(id) ? const [] : null;
+    }
+
+    return EventSnapshot(
+      event: _mapEvent(event),
+      occurrences: occurrences.map(_mapOccurrence).toList(),
+      policy: policy == null ? null : _mapPolicy(policy),
+      attendees: roster,
+    );
   }
 
   /// Whether a roster is cached for [eventId], whoever is on it.
@@ -408,6 +467,54 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
             ))
             .getSingleOrNull();
     return row == null ? null : _mapAttendee(row);
+  }
+
+  /// Re-reads the event whenever a table [getEvent] reads from changes, or
+  /// the access that makes it readable does (#498).
+  ///
+  /// The event is several queries over five tables, so the stream is a
+  /// trigger and a read, not one query for Drift to follow: a constant select
+  /// that declares the tables it stands for, so Drift emits on listen and
+  /// after any write to them, and each emission re-reads the detail in one
+  /// transaction. [awaitedOnDispose] holds disposal back for a read under
+  /// way, whose database would otherwise close beneath it. A write to those
+  /// tables re-reads whichever event it was for, and `distinct` drops the
+  /// reads that found nothing changed here. Drift tells a stream which tables
+  /// a write touched, not which rows, so a single joined query would re-run
+  /// as often; this costs a few indexed lookups per committed write.
+  @override
+  Stream<EventDetail?> watchEvent(String id) => untilDisposed(
+    () => _db
+        .customSelect(
+          'SELECT 1',
+          readsFrom: {
+            _db.eventsTable,
+            _db.eventOccurrencesTable,
+            _db.eventAttendeesTable,
+            _db.eventPoliciesTable,
+            _db.eventAccessTable,
+          },
+        )
+        .watch()
+        .asyncMap((_) => awaitedOnDispose(_readDetail(id)))
+        .distinct(),
+  );
+
+  /// The event and the user's own row on its roster, as [getEvent] and
+  /// [getCurrentUserAttendance] answer them.
+  ///
+  /// The row is the snapshot's own: a roster is read only by a user it
+  /// names, so it holds theirs wherever one is cached, and one state of the
+  /// cache gives both.
+  Future<EventDetail?> _readDetail(String id) async {
+    final snapshot = await _db.transaction(() => _readSnapshot(id));
+    if (snapshot == null) return null;
+    return EventDetail(
+      snapshot: snapshot,
+      attendance: snapshot.attendees
+          ?.where((attendee) => attendee.userId == _userId)
+          .firstOrNull,
+    );
   }
 
   @override

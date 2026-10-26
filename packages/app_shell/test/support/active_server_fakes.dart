@@ -196,7 +196,9 @@ ActiveServer buildActiveServer(
   EventRepository? eventRepository,
   EventHydrationStatus? eventHydrationStatus,
   EventRefresher? eventRefresher,
+  EventRemoteDataSource? eventRemoteDataSource,
   UserSessionScope? userSessionScope,
+  SessionIdentityGuard? sessionIdentityGuard,
   SessionRehydrator? sessionRehydrator,
   UnsentChangesNoticeRepository? unsentChangesNotice,
   SyncQueueRepository? syncQueueRepository,
@@ -256,8 +258,14 @@ ActiveServer buildActiveServer(
   if (eventRefresher != null) {
     container.registerSingleton<EventRefresher>(eventRefresher);
   }
+  if (eventRemoteDataSource != null) {
+    container.registerSingleton<EventRemoteDataSource>(eventRemoteDataSource);
+  }
   if (userSessionScope != null) {
     container.registerSingleton<UserSessionScope>(userSessionScope);
+  }
+  if (sessionIdentityGuard != null) {
+    container.registerSingleton<SessionIdentityGuard>(sessionIdentityGuard);
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);

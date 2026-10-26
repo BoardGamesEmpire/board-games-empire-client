@@ -396,6 +396,7 @@ class _BgeAppState extends State<BgeApp> {
       gameDetailBuilder: _buildGameDetailRoute,
       eventOverviewBuilder: _buildEventOverviewRoute,
       eventGroupBuilder: _buildEventGroupRoute,
+      eventDetailBuilder: _buildEventDetailRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
@@ -1410,11 +1411,17 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<EventHydrationStatus>().watch()
       : null;
 
+  /// Opens an event's detail (#498), pushed above the list it was opened
+  /// from so that back returns there. One callback for the overview and the
+  /// group pages, which are both lists of the same rows.
+  static void _openEvent(BuildContext context, String eventId) =>
+      unawaited(context.push<void>(AppRoutes.eventDetailOf(eventId)));
+
   /// The #497 events overview, behind [_eventsContainer]'s gate, with the
   /// optional households, status, retry and entry trigger.
   ///
-  /// No `onOpen` and no `onCreate`: rows stay inert until #498 gives them a
-  /// detail route, and there is no create button until #499.
+  /// Rows open the event's detail (#498). No `onCreate`: there is no create
+  /// button until #499.
   Widget? _buildEventOverviewRoute(BuildContext context) {
     final container = _eventsContainer();
     if (container == null) return null;
@@ -1423,6 +1430,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<EventRepository>(),
       households: _eventHouseholds(container),
       hydration: _eventHydration(container),
+      onOpen: _openEvent,
       onOpenGroup: (ctx, group) =>
           unawaited(ctx.push<void>(AppRoutes.eventGroupOf(group.name))),
       onRetry: _eventsRetry(container),
@@ -1445,8 +1453,66 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<EventRepository>(),
       households: _eventHouseholds(container),
       hydration: _eventHydration(container),
+      onOpen: _openEvent,
       onRetry: _eventsRetry(container),
     );
+  }
+
+  /// The #498 detail for the event [eventId], behind [_eventsContainer]'s
+  /// gate.
+  ///
+  /// The remote is optional: a composition without one shows the cached event
+  /// and offers no retry, as the screen's own doc says. The viewer's household
+  /// role is looked up from the cached memberships, so it is available
+  /// offline, and only where this composition has a household repository.
+  /// Back is a pop: the route is the list's child, so there is always a list
+  /// beneath it.
+  Widget? _buildEventDetailRoute(BuildContext context, String eventId) {
+    final container = _eventsContainer();
+    if (container == null) return null;
+
+    return EventDetailScreen(
+      eventId: eventId,
+      repository: container.get<EventRepository>(),
+      remote: container.isRegistered<EventRemoteDataSource>()
+          ? container.get<EventRemoteDataSource>()
+          : null,
+      confirmSession: _confirmEventSession(container),
+      households: _eventHouseholds(container),
+      householdRole: _eventHouseholdRole(container),
+      onBack: (ctx) => ctx.pop(),
+    );
+  }
+
+  /// Asks the server's [SessionIdentityGuard] whether the session is still
+  /// the user whose scope the detail's repository lives in (#432), as the
+  /// event hydrate asks for its pass. Null where the server has no guard, as
+  /// on native.
+  ///
+  /// The user is the session scope's when the route is built, which is the
+  /// repository's: a user switch tears that scope down, and ends the
+  /// screen's cache with it. With no user scope to name one, every answer is
+  /// no.
+  static Future<bool> Function()? _confirmEventSession(
+    DependencyContainer container,
+  ) {
+    if (!container.isRegistered<SessionIdentityGuard>()) return null;
+    final guard = container.get<SessionIdentityGuard>();
+    final userId = container.isRegistered<UserSessionScope>()
+        ? container.get<UserSessionScope>().activeUserId
+        : null;
+    if (userId == null) return () async => false;
+    return () async =>
+        await guard.confirm(userId) == SessionConfirmation.confirmed;
+  }
+
+  /// The user's role in a household, from the cached memberships, or null
+  /// where the session has no household cache.
+  static Future<HouseholdRole?> Function(String householdId)?
+  _eventHouseholdRole(DependencyContainer container) {
+    if (!container.isRegistered<HouseholdRepository>()) return null;
+    final repository = container.get<HouseholdRepository>();
+    return (id) async => (await repository.getCurrentUserMember(id))?.role;
   }
 
   /// Reads every DataGateway's name, by id, for the search screen (#42), or

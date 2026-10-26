@@ -1,9 +1,14 @@
 library;
 
+export 'src/bloc/event_detail_bloc.dart';
+export 'src/bloc/event_detail_event.dart';
+export 'src/bloc/event_detail_state.dart';
 export 'src/bloc/event_overview_bloc.dart';
 export 'src/bloc/event_overview_event.dart';
 export 'src/bloc/event_overview_state.dart';
+export 'src/detail/event_actions.dart';
 export 'src/overview/event_groups.dart';
+export 'src/screens/event_detail_screen.dart';
 export 'src/screens/event_group_screen.dart';
 export 'src/screens/event_overview_screen.dart';
 export 'src/sync/event_hydrate_installer.dart';
