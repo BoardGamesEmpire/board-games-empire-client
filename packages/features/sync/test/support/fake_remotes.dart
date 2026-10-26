@@ -43,6 +43,34 @@ class FakeHouseholdRemote implements HouseholdRemoteDataSource {
       throw UnimplementedError('${invocation.memberName} is not a send');
 }
 
+/// One event create as the sender sent it (#499).
+typedef EventCreate = ({EventDraft draft, String clientRequestId});
+
+/// An event remote that answers creates from [respond] and records each one,
+/// before it is answered. A create is the only event call the sender makes.
+class FakeEventRemote implements EventRemoteDataSource {
+  FakeEventRemote(this.respond);
+
+  /// Swappable mid-test, so a server can change its answer.
+  FutureOr<CreatedEvent> Function(EventCreate create) respond;
+
+  final List<EventCreate> creates = [];
+
+  @override
+  Future<CreatedEvent> createEvent(
+    EventDraft draft, {
+    required String clientRequestId,
+  }) async {
+    final create = (draft: draft, clientRequestId: clientRequestId);
+    creates.add(create);
+    return respond(create);
+  }
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not a send');
+}
+
 /// One collection write as the sender sent it: the method, the entry id it
 /// named (null for an add), and the fields it carried.
 typedef CollectionWrite = ({

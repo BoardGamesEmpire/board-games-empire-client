@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -7,9 +6,11 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 import 'package:drift_storage/src/tables/event_access_table.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 // What one user's cache of an event holds after each kind of read (#496):
 // the event and its policy upserted, its occurrences replaced wholesale, its
@@ -26,13 +27,24 @@ const _kOtherUserId = 'user-other';
 final _me = testAttendee('att-me', userId: _kUserId);
 final _other = testAttendee('att-other', userId: _kOtherUserId);
 
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
+
 void main() {
   late ServerDatabase db;
   late EventRepositoryImpl repo;
 
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    repo = EventRepositoryImpl(db, userId: _kUserId);
+    repo = repoFor(_kUserId);
   });
 
   tearDown(() => db.close());
@@ -386,28 +398,23 @@ void main() {
     );
   });
 
-  test('a server write keeps the sync flags a local writer set', () async {
-    await repo.cacheEvent(
-      testSnapshot('e-1'),
-      source: EventAccessSource.attending,
-    );
-    // No writer sets either flag yet (#499, #527), so set them as one would.
-    await (db.update(db.eventsTable)..where((t) => t.id.equals('e-1'))).write(
-      const EventsTableCompanion(
-        isDirty: Value(true),
-        isLocalOnly: Value(true),
-      ),
-    );
+  test("a server write never takes the sync flags from the snapshot's "
+      'event', () async {
+    // The flags are local state. A server copy carrying them would be a row
+    // no later server read could refresh, since the queue owns it, and no
+    // acknowledgement would clear.
+    final snapshot = testSnapshot('e-1');
 
     await repo.cacheEvent(
-      testSnapshot('e-1', title: 'Renamed on the server'),
+      snapshot.copyWith(
+        event: snapshot.event.copyWith(isDirty: true, isLocalOnly: true),
+      ),
       source: EventAccessSource.attending,
     );
 
     final cached = (await repo.getEvent('e-1'))!.event;
-    expect(cached.title, 'Renamed on the server', reason: 'the write landed');
-    expect(cached.isDirty, isTrue);
-    expect(cached.isLocalOnly, isTrue);
+    expect(cached.isDirty, isFalse);
+    expect(cached.isLocalOnly, isFalse);
   });
 
   group('a page of snapshots', () {

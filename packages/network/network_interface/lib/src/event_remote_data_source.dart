@@ -2,12 +2,20 @@ import 'package:models/domain.dart';
 
 import 'paginated_result.dart';
 
-/// Remote data source for the events the signed-in user attends (#496).
+/// What [EventRemoteDataSource.createEvent] got back: the event the server
+/// holds, and whether it is deleted.
 ///
-/// Read-only. The event hydrate pages through [fetchEvents] to cache the
-/// user's events, and [fetchEvent] reads one event whole, roster included,
-/// which the list does not carry. Creating an event is #499, and answering an
-/// invitation or voting is #527.
+/// [deletedAt] is null for a live event. A repeat of a create whose event was
+/// deleted since returns that event with the time it was deleted (#499).
+typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
+
+/// Remote data source for the events the signed-in user attends (#496), and
+/// for creating one (#499).
+///
+/// The event hydrate pages through [fetchEvents] to cache the user's events,
+/// and [fetchEvent] reads one event whole, roster included, which the list
+/// does not carry. [createEvent] sends a new event. Answering an invitation or
+/// voting is #527.
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -21,6 +29,7 @@ import 'paginated_result.dart';
 /// |---|---|---|
 /// | [fetchEvents] | `GET /api/events` | `{ events: [...], pagination }` |
 /// | [fetchEvent] | `GET /api/events/:id` | `{ event }` |
+/// | [createEvent] | `POST /api/events` | `{ message, event }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
 /// which it got:
@@ -81,10 +90,12 @@ import 'paginated_result.dart';
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
 ///   [fetchEvent]. The event is gone, or the caller may not read it.
+/// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
+///   [createEvent], which says the API refused that create (below).
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, and a 409 that is not
 ///   asking for a retry), and a 2xx whose body cannot be read as the contract
-///   above, such as a detail with no roster.
+///   above, such as a detail or a create with no roster.
 /// - [EventRemoteTransientException]: no response at all, 401, 407, 408, 429,
 ///   every 5xx, a 403 or 404 without the envelope (a proxy answered, not the
 ///   API), a 404 from [fetchEvents] even with it (a list route is never absent,
@@ -96,12 +107,34 @@ import 'paginated_result.dart';
 /// #253): only the application's own answer licenses a conclusion about the
 /// caller's role or about a row.
 ///
+/// ### The create's refusals
+///
+/// [createEvent] is sent from a queue, so what matters is whether the same
+/// request will be answered the same way. A 403 or 404 carrying the envelope
+/// is the API's answer about this request: the caller has no grant to create
+/// in the household, the household does not exist, the server's or an
+/// invitee's settings refuse an invitee, or an invitee does not exist. Sending
+/// it again changes nothing, so it surfaces as [EventCreateRefusedException],
+/// not as the reads' [EventRemoteForbiddenException] (the caller may not read
+/// events) or [EventRemoteNotFoundException] (the event is gone). Without the
+/// envelope a 403 or 404 stays transient, as everywhere else.
+///
+/// An enveloped 404 is read as a refusal even though Nest answers an unrouted
+/// path with the same envelope, so a server without the route is misread as
+/// refusing. That is accepted: a refusal is parked, which is bounded and can
+/// be discarded by hand, where a transient failure would be retried forever.
+///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: an out-of-range page or limit, or an empty id.
+/// unwrapped: an out-of-range page or limit, an empty id, or a create that
+/// could not be sent (what [createEvent] never sends).
 abstract class EventRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is
   /// a 400, not clamped.
   static const int maxPageSize = 100;
+
+  /// The server's length ceiling for [createEvent]'s `clientRequestId`,
+  /// measured after it trims the key. A longer key is a 400.
+  static const int maxClientRequestIdLength = 128;
 
   /// `GET /api/events`: one page of the events the caller attends, newest
   /// first. Each snapshot has `attendees: null`, because the list carries no
@@ -125,6 +158,51 @@ abstract class EventRemoteDataSource {
   /// Throws [EventRemoteNotFoundException] when the event is gone or the caller
   /// may not read it.
   Future<EventSnapshot> fetchEvent(String id);
+
+  /// `POST /api/events`: creates the event [draft] describes, with the caller
+  /// as its host, and returns it with its occurrences, policy and roster.
+  ///
+  /// Wire contract (backend `libs/api/event`): `POST /api/events` with the
+  /// draft's fields, each occurrence's `sortOrder` its position in the draft,
+  /// and [clientRequestId] → 201 `{ message, event }`. A field the draft leaves
+  /// null is left out, so the server's default applies. Times go out in UTC.
+  ///
+  /// The returned snapshot's `attendees` is never null, but the create's roster
+  /// embeds each attendee's role and not the `user` the detail read embeds, so
+  /// the names on it are null. The caller who needs them reads the event.
+  ///
+  /// ### [clientRequestId] makes the create idempotent
+  ///
+  /// The server keeps at most one event per user per key (backend#252). A
+  /// create carrying a key it has already seen creates nothing, and notifies
+  /// no one again: it returns the event the first one made, answered 201
+  /// again, **ignoring the repeat's payload**. That holds if the event has
+  /// since been deleted, and [CreatedEvent.deletedAt] then says when.
+  ///
+  /// So pass the queued create's `localId`, the same value on every attempt at
+  /// one create: then a response lost in transit cannot turn the retry into a
+  /// second event. A key minted per attempt defeats the guarantee without
+  /// failing anything.
+  ///
+  /// A repeat reads the event's parts as the caller may read them now, as
+  /// [fetchEvent] does. A creator who has lost read on the event since gets
+  /// the event, an empty roster and no policy.
+  ///
+  /// ### What is never sent
+  ///
+  /// Each of these is a 400, which is permanent and parks a queued create on
+  /// its first attempt, so it throws [ArgumentError] before the request: a
+  /// [clientRequestId] that is empty or longer than [maxClientRequestIdLength]
+  /// after trimming, more than [EventDraft.maxInvitees] invitees, and an
+  /// `unknown` enum value anywhere in [draft], which has no wire name. Like the
+  /// reads' paging checks, that error is not an [EventRemoteException].
+  ///
+  /// Throws [EventCreateRefusedException] when the API refuses the create, and
+  /// otherwise [EventRemoteException] per the class doc.
+  Future<CreatedEvent> createEvent(
+    EventDraft draft, {
+    required String clientRequestId,
+  });
 }
 
 /// Base class for every event remote failure.
@@ -156,6 +234,20 @@ final class EventRemoteNotFoundException extends EventRemoteException {
 /// The caller may not read events: a 403 from the API itself.
 final class EventRemoteForbiddenException extends EventRemoteException {
   const EventRemoteForbiddenException(
+    super.message, {
+    super.statusCode,
+    super.cause,
+  });
+}
+
+/// The API refused this create, and the same request will be refused again: a
+/// 403 or 404 carrying its error envelope (#499).
+///
+/// A missing household grant, a refused invitee, an unknown household and an
+/// unknown invitee all read this way. It is not [EventRemoteForbiddenException]
+/// or [EventRemoteNotFoundException], which are about reading events.
+final class EventCreateRefusedException extends EventRemoteException {
+  const EventCreateRefusedException(
     super.message, {
     super.statusCode,
     super.cause,

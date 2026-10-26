@@ -76,6 +76,20 @@ void main() {
       },
     );
 
+    test('an event create goes out on a pass', () async {
+      final created = await h.events.create(eventDraft());
+
+      await drain.drain();
+
+      expect((await entry(created.syncQueueId)).status, SyncStatus.completed);
+      expect(
+        h.eventRemote.creates.single.clientRequestId,
+        created.operation.localId,
+      );
+      final events = await h.events.watchAttendingEvents().first;
+      expect(events.map((e) => e.id), ['ev-server']);
+    });
+
     test('stops at a server error, counting it, and sends nothing '
         'after', () async {
       final first = await h.queuedCreate(name: 'First');

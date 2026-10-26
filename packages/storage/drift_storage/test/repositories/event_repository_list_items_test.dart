@@ -6,8 +6,10 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/event_repository_impl.dart';
+import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
 
 import '../support/event_fixture.dart';
+import '../support/fixed_clock.dart';
 
 // The events overview's one watch (#497): each attending event with its
 // dates and the current user's own attendee row, from one joined query, so a
@@ -19,13 +21,24 @@ const _kOtherUserId = 'user-other';
 final _me = testAttendee('att-me', userId: _kUserId);
 final _other = testAttendee('att-other', userId: _kOtherUserId);
 
+final _clock = FixedClockService(DateTime.utc(2026, 10, 26, 12));
+
 void main() {
   late ServerDatabase db;
   late EventRepositoryImpl repo;
 
+  /// [userId]'s repository, with a queue of its own over the same database,
+  /// as the session scope wires it.
+  EventRepositoryImpl repoFor(String userId) => EventRepositoryImpl(
+    db,
+    userId: userId,
+    syncQueue: SyncQueueRepositoryImpl(db, _clock, userId: userId),
+    clock: _clock,
+  );
+
   setUp(() {
     db = inMemoryServerDatabase();
-    repo = EventRepositoryImpl(db, userId: _kUserId);
+    repo = repoFor(_kUserId);
   });
 
   tearDown(() => db.close());
@@ -130,7 +143,7 @@ void main() {
     // Two users on one device share the cached roster. User B's detail read
     // cached a roster naming only B; user A has the event from the list. A
     // must not be handed B's RSVP as their own.
-    final otherRepo = EventRepositoryImpl(db, userId: _kOtherUserId);
+    final otherRepo = repoFor(_kOtherUserId);
     await otherRepo.cacheEvent(
       testSnapshot('e-1', attendees: [_other]),
       source: EventAccessSource.attending,
@@ -165,7 +178,7 @@ void main() {
   });
 
   test('another user\'s event is left out', () async {
-    final otherRepo = EventRepositoryImpl(db, userId: _kOtherUserId);
+    final otherRepo = repoFor(_kOtherUserId);
     await otherRepo.cacheEvent(
       testSnapshot('e-theirs'),
       source: EventAccessSource.attending,

@@ -106,7 +106,16 @@ void main() {
 
   setUp(() {
     db = inMemoryServerDatabase();
-    events = EventRepositoryImpl(db, userId: _kUserId);
+    events = EventRepositoryImpl(
+      db,
+      userId: _kUserId,
+      syncQueue: SyncQueueRepositoryImpl(
+        db,
+        const LocalClockService(),
+        userId: _kUserId,
+      ),
+      clock: const LocalClockService(),
+    );
     container = DependencyContainerImpl();
     answer = (_) => _empty();
     remote = FakeEventRemote((request) => answer(request));

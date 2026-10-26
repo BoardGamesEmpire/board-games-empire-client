@@ -14,24 +14,38 @@ sealed class EventDetailEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-/// The cache emitted the event as it now holds it, or null where it holds
-/// nothing this user may read.
+/// The cache emitted the event [eventId] as it now holds it, or null where
+/// it holds nothing this user may read.
+///
+/// Carries the id it was read for because the bloc can move to a new one
+/// (#499): the local id's watch can still have answers queued after the bloc
+/// has followed a created event onto its server id.
 final class EventDetailCacheUpdated extends EventDetailEvent {
-  const EventDetailCacheUpdated(this.detail);
+  const EventDetailCacheUpdated(this.detail, {required this.eventId});
 
   final EventDetail? detail;
+  final String eventId;
 
   @override
-  List<Object?> get props => [detail];
+  List<Object?> get props => [detail, eventId];
 }
 
-/// The cache stream failed.
+/// The cache stream for [eventId] failed. Carries the id for the reason
+/// [EventDetailCacheUpdated] does.
 final class EventDetailCacheFailed extends EventDetailEvent {
-  const EventDetailCacheFailed();
+  const EventDetailCacheFailed({required this.eventId});
+
+  final String eventId;
+
+  @override
+  List<Object?> get props => [eventId];
 }
 
 /// The cache stream ended: how a user-session teardown arrives, since
 /// `WatchDisposal` closes vended streams rather than erroring them.
+///
+/// Carries no id, though its siblings do: only a session teardown ends a
+/// vended stream, and it ends the local id's and the server id's together.
 final class EventDetailCacheEnded extends EventDetailEvent {
   const EventDetailCacheEnded();
 }
@@ -82,19 +96,25 @@ enum EventDetailReadOutcome {
   overtaken,
 }
 
-/// A read the bloc started has ended.
+/// A read the bloc started of [eventId] has ended.
 ///
 /// [rosterWithheld] says a read that succeeded carried an empty roster, one
 /// the viewer may not see, which the cache can't keep (`EventDetailBloc`
-/// has why).
+/// has why). [eventId] is the id it read, which the bloc may have followed
+/// a move off since (#499): the answer is about that id alone.
 final class EventDetailReadSettled extends EventDetailEvent {
-  const EventDetailReadSettled(this.outcome, {this.rosterWithheld = false});
+  const EventDetailReadSettled(
+    this.outcome, {
+    required this.eventId,
+    this.rosterWithheld = false,
+  });
 
   final EventDetailReadOutcome outcome;
+  final String eventId;
   final bool rosterWithheld;
 
   @override
-  List<Object?> get props => [outcome, rosterWithheld];
+  List<Object?> get props => [outcome, eventId, rosterWithheld];
 }
 
 /// The user asked for the event to be read from the server again.

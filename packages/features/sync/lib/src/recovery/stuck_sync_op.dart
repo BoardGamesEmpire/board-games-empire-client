@@ -7,6 +7,7 @@ enum StuckSyncOpKind {
   updateCollection,
   removeFromCollection,
   createHousehold,
+  createEvent,
 
   /// A payload this build can't decode. It can only be discarded usefully:
   /// a retry is counted again without being sent.
@@ -29,8 +30,8 @@ final class StuckSyncOp extends Equatable {
   final StuckSyncOpKind kind;
 
   /// What the op names: the game's title for a collection op, the
-  /// household's name for a create. Null when it can't be told, such as
-  /// for a game the cache has no title for.
+  /// household's name or the event's title for a create. Null when it can't
+  /// be told, such as for a game the cache has no title for.
   final String? subject;
 
   @override

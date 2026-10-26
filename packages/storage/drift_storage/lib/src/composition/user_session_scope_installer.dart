@@ -181,7 +181,15 @@ class UserSessionScopeInstaller implements UserScopeInstaller {
     // Fixed-id rather than a lazy provider, as the game cache is: the
     // hydrate writes every page through it, and a page that lands before
     // the scope finishes popping belongs to the user it was fetched for.
-    final events = EventRepositoryImpl(db, userId: userId);
+    // It takes the `syncQueue` instance, over the same database, as the
+    // household repository does: a create writes its event and enqueues its
+    // op in one transaction (#499).
+    final events = EventRepositoryImpl(
+      db,
+      userId: userId,
+      syncQueue: syncQueue,
+      clock: clock,
+    );
     container.registerSingleton<EventRepository>(
       events,
       // Close-on-teardown (#138): its watch stream is tied to the per-server

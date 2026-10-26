@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import '../tables/event_access_table.dart';
 import '../tables/event_attendees_table.dart';
 import '../tables/event_generation_table.dart';
+import '../tables/event_moves_table.dart';
 import '../tables/event_occurrences_table.dart';
 import '../tables/event_policies_table.dart';
 import '../tables/event_table.dart';
@@ -43,7 +44,8 @@ part 'server_database.g.dart';
 /// Tables: games, platform_games, game_collections, households,
 /// household_members, household_moves, sync_queue, unsent_changes_users,
 /// game_access, platform_game_access, events, event_occurrences,
-/// event_attendees, event_policies, event_access, event_generation.
+/// event_attendees, event_policies, event_access, event_generation,
+/// event_moves.
 ///
 /// `game_collections` enforces uniqueness on
 /// `(user_id, platform_game_id, medium) WHERE deleted_at IS NULL` via
@@ -53,7 +55,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **9**.
+/// `schemaVersion` is **10**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -111,6 +113,10 @@ part 'server_database.g.dart';
 ///   list embeds it. Additive: three `addColumn` calls, no table rebuilt. A
 ///   row cached before it holds null names until the next hydrate writes the
 ///   ones the list carries.
+/// - **v9 → v10 (#499):** adds `event_moves` (`local_id` primary key,
+///   `server_id`), where the event reconcile records where an event created
+///   on this device went, so every tab and a reload can follow it. A new
+///   table with no foreign keys, created by one `createTable`.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -126,7 +132,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v9.json`, and
+/// `drift_schemas/server/drift_schema_v10.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -148,6 +154,7 @@ part 'server_database.g.dart';
     EventPoliciesTable,
     EventAccessTable,
     EventGenerationTable,
+    EventMovesTable,
   ],
 )
 class ServerDatabase extends _$ServerDatabase {
@@ -171,7 +178,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -296,6 +303,12 @@ class ServerDatabase extends _$ServerDatabase {
           householdMembersTable,
           householdMembersTable.avatarUrl,
         );
+      }
+      if (from < 10 && to >= 10) {
+        // v9 → v10 (#499): where reconciled events went. A new table with no
+        // FK edges and no rows to carry, so no FK-off wrapper is needed
+        // (#54 stays deferred).
+        await m.createTable(eventMovesTable);
       }
     },
   );

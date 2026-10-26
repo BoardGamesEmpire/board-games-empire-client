@@ -362,7 +362,7 @@ abstract class GameCollectionRepository {
   ///
   /// A completed or unknown entry changes nothing, and so does a payload
   /// that won't decode, beyond deleting the entry. Returns whether the entry
-  /// was deleted. Throws [ArgumentError] for a household op, and
+  /// was deleted. Throws [ArgumentError] for a household or event op, and
   /// [StateError] for an add or a removal while a later op for the entry is
   /// being sent, both before any write. That send's acknowledgement would
   /// bring back what the discard undoes, so it waits for the send to settle.
