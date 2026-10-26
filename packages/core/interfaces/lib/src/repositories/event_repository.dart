@@ -359,15 +359,18 @@ abstract class EventRepository {
   /// So a copy of [server] a hydrate cached first is written over, and the
   /// cache holds one event, under the server's id. A repeat of the create
   /// answers with the event as its creator may read it now, so one who has
-  /// left it since is not listed as attending it, and one who has lost read
+  /// left it since is not listed as attending it, even where a hydrate
+  /// cached it as attended first, and one who has lost read
   /// on it gets an empty roster and no policy, which mean what they mean to
   /// [cacheEvent]. The create's answer embeds each attendee's role and not
   /// their user, so it names no one: an attendee keeps the name a cached
   /// roster already gave them, and the rest come with the next detail read.
   ///
   /// [deleted] is for a repeat of a create whose event was deleted since:
-  /// the local event goes, nothing is cached in its place, and no move is
-  /// recorded, so a screen holding [localId] finds the event gone.
+  /// the local event goes, and so does a copy a hydrate cached under
+  /// [server]'s id, for every user, since the server deleted it for
+  /// everyone. Nothing is cached in its place, and no move is recorded, so
+  /// a screen holding [localId] finds the event gone.
   Future<void> reconcileCreatedEvent(
     EventSnapshot server, {
     required String localId,

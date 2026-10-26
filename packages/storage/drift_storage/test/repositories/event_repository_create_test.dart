@@ -331,6 +331,59 @@ void main() {
       expect((queued as CreateEventOperation).draft.householdId, 'hh-server');
     });
 
+    test('a household reconciled while the create reads it is never sent '
+        'under its local id', () async {
+      await db
+          .into(db.householdsTable)
+          .insert(
+            HouseholdsTableCompanion.insert(
+              id: 'hh-local',
+              name: 'Smiths',
+              isDirty: const Value(true),
+              isLocalOnly: const Value(true),
+              createdAt: _now,
+              updatedAt: _now,
+            ),
+          );
+
+      // The household's reconcile, which deletes the local row and records
+      // where it went in one commit, lands while the create is reading it.
+      final creating = repo.create(
+        fixedDraft().copyWith(householdId: 'hh-local'),
+      );
+      final reconciling = db.transaction(() async {
+        await (db.delete(
+          db.householdsTable,
+        )..where((t) => t.id.equals('hh-local'))).go();
+        await db
+            .into(db.householdMovesTable)
+            .insert(
+              HouseholdMovesTableCompanion.insert(
+                localId: 'hh-local',
+                serverId: 'hh-server',
+              ),
+            );
+      });
+
+      // Read before it, the household is refused as unconfirmed; read after
+      // it, it is sent under the server's id. The id the server has never
+      // heard of is never queued.
+      String? sent;
+      try {
+        sent = (await creating).operation.draft.householdId;
+      } on ArgumentError {
+        sent = null;
+      }
+      await reconciling;
+      expect(sent, isNot('hh-local'));
+      for (final e in await queue.getAllEntries()) {
+        expect(
+          (e.operation as CreateEventOperation).draft.householdId,
+          isNot('hh-local'),
+        );
+      }
+    });
+
     test('create writes nothing when the enqueue throws', () async {
       final failing = EventRepositoryImpl(
         db,
@@ -455,6 +508,35 @@ void main() {
       expect((await entry(created.syncQueueId)).status, SyncStatus.completed);
     });
 
+    test('a deleted replay removes the copy a hydrate cached under the '
+        'server\'s id, for every user', () async {
+      // The create's answer was lost, a hydrate cached the event it made,
+      // and it was deleted before the retry replayed the create.
+      final created = await repo.create(fixedDraft());
+      await repo.cacheEvent(serverCopy(), source: EventAccessSource.attending);
+      final b = repoFor(_kUserB);
+      await b.cacheEvent(serverCopy(), source: EventAccessSource.read);
+
+      await repo.reconcileCreatedEvent(
+        serverCopy(),
+        localId: created.event.id,
+        deleted: true,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      expect(await repo.getEvent('ev-server'), isNull);
+      expect(await b.getEvent('ev-server'), isNull);
+      expect(await repo.watchAttendingEvents().first, isEmpty);
+      expect(await db.select(db.eventsTable).get(), isEmpty);
+      expect(await childEventIds(), {
+        'event_occurrences': <String>{},
+        'event_attendees': <String>{},
+        'event_policies': <String>{},
+        'event_access': <String>{},
+      });
+      expect((await entry(created.syncQueueId)).status, SyncStatus.completed);
+    });
+
     test('reconcile under the local id clears the flags and records no '
         'move', () async {
       // A move to itself would have a screen follow itself forever.
@@ -521,6 +603,37 @@ void main() {
       );
 
       expect(await repo.watchAttendingEvents().first, isEmpty);
+      expect(await repo.getEvent('ev-server'), isNotNull);
+      expect(
+        (await db.select(db.eventAccessTable).get()).map(
+          (a) => (a.eventId, a.source),
+        ),
+        [('ev-server', eventAccessSourceRead)],
+      );
+    });
+
+    test('a replay whose roster leaves the creator off takes back the '
+        'attendance a hydrate cached', () async {
+      // A hydrate cached the event as attended after the create's answer
+      // was lost, and the creator left it before the retry replayed it.
+      final created = await repo.create(fixedDraft());
+      final server = serverCopy();
+      await repo.cacheEvent(server, source: EventAccessSource.attending);
+
+      await repo.reconcileCreatedEvent(
+        server.copyWith(
+          attendees: [
+            for (final a in server.attendees!)
+              if (a.userId != _kUserA) a,
+          ],
+        ),
+        localId: created.event.id,
+        deleted: false,
+        completedSyncQueueId: created.syncQueueId,
+      );
+
+      expect(await repo.watchAttendingEvents().first, isEmpty);
+      expect(await repo.watchAttendingEventListItems().first, isEmpty);
       expect(await repo.getEvent('ev-server'), isNotNull);
       expect(
         (await db.select(db.eventAccessTable).get()).map(

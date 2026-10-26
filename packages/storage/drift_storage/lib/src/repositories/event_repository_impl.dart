@@ -267,12 +267,15 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     // cache and the queue untouched.
     final title = draft.title.trim();
     _checkDraft(draft, title);
-    final householdId = switch (draft.householdId) {
-      final id? => await _sendableHousehold(id),
-      null => null,
-    };
 
     return _db.transaction(() async {
+      // Inside, so the household's move and its local row are read in one
+      // state: a reconcile committed between the two reads would leave
+      // neither, and the obsolete local id would be sent.
+      final householdId = switch (draft.householdId) {
+        final id? => await _sendableHousehold(id),
+        null => null,
+      };
       final now = _clock.nowUtc();
       // The event's id until the reconcile replaces it with the server's,
       // and the create's idempotency key, so minted once, here.
@@ -396,7 +399,8 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// heard of would be refused with a 404.
   ///
   /// Throws [ArgumentError] when [householdId] names a household created on
-  /// this device that the server has yet to confirm.
+  /// this device that the server has yet to confirm. Run inside the create's
+  /// transaction, before its writes.
   Future<String> _sendableHousehold(String householdId) async {
     final moves = _db.householdMovesTable;
     final moved =
@@ -444,8 +448,10 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       //    policy says what it says there. Then where the event went,
       //    committed with the deletion so no reader finds one without the
       //    other, in this tab or another. A second reconcile of the same
-      //    local id replaces it.
-      if (!deleted) {
+      //    local id replaces it. A deleted event's copy goes instead.
+      if (deleted) {
+        await _deleteServerCopy(serverId);
+      } else {
         final roster = server.attendees;
         // Attended, unless the roster leaves the creator off: a repeat
         // answers as they may read the event now, which may be after they
@@ -459,6 +465,18 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
           else
             server.copyWith(attendees: await _keepCachedNames(roster)),
         ], attends ? EventAccessSource.attending : EventAccessSource.read);
+        // A hydrate may have cached it as attended before they left. The
+        // repeat is the newer news, and takes that attendance back as the
+        // next purge would.
+        if (!attends) {
+          await (_db.delete(_db.eventAccessTable)..where(
+                (t) =>
+                    t.userId.equals(_userId) &
+                    t.eventId.equals(serverId) &
+                    t.source.equals(eventAccessSourceAttending),
+              ))
+              .go();
+        }
         if (moved) {
           await _db
               .into(_db.eventMovesTable)
@@ -535,6 +553,18 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       _db.eventAccessTable,
     )..where((a) => a.eventId.isInQuery(localOnly))).go();
     await _deleteUnreachable({localId});
+  }
+
+  /// Deletes the cached event [id] with its occurrences, roster, policy and
+  /// every user's access to it, unless the sync queue owns it: an event the
+  /// server says it deleted, which no user's read survives. Run inside the
+  /// caller's transaction.
+  Future<void> _deleteServerCopy(String id) async {
+    if ((await _queueOwnedIds([id])).isNotEmpty) return;
+    await (_db.delete(
+      _db.eventAccessTable,
+    )..where((a) => a.eventId.equals(id))).go();
+    await _deleteUnreachable({id});
   }
 
   /// [roster], a create's answer, with each account's name and avatar taken
