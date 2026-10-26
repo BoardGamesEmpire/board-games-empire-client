@@ -39,8 +39,7 @@ import '../sync/household_hydration_status.dart';
 ///
 /// ## What this screen does not show
 ///
-/// **No avatars** (#124, the media pipeline), and no opening a member's row
-/// yet (#540). **No membership actions** — no delete, no leave, no kick, no
+/// **No avatars** yet (#603), and no opening a member's row yet (#540). **No membership actions** — no delete, no leave, no kick, no
 /// transfer. Those stay with #246's children.
 ///
 /// ## Edit and invites are the exceptions
