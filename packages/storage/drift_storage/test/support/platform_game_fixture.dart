@@ -1,4 +1,6 @@
+import 'package:drift/drift.dart';
 import 'package:drift_storage/src/databases/server_database.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 
 /// The default ids the collection fixtures key on.
 const kFixtureGameId = 'game-1';
@@ -33,10 +35,15 @@ Future<void> seedGame(
 /// non-null column, a new FK) is a single edit here rather than five
 /// hand-maintained duplicates that fail as opaque Drift insert errors when
 /// they drift apart.
+///
+/// [readableBy] also gives that user the `collection` records a hydrate
+/// writes with the summary, on the game and the platform game, so a test
+/// can watch a removal end them (#469).
 Future<String> seedPlatformGame(
   ServerDatabase db, {
   String id = kFixturePlatformGameId,
   String gameId = kFixtureGameId,
+  String? readableBy,
 }) async {
   await seedGame(db, id: gameId);
   final now = DateTime.now().toUtc();
@@ -52,5 +59,56 @@ Future<String> seedPlatformGame(
           updatedAt: now,
         ),
       );
+  if (readableBy != null) {
+    // Ignored on conflict, as the summary write is: another platform game of
+    // the same game may have written the game's record already.
+    await db
+        .into(db.gameAccessTable)
+        .insert(
+          GameAccessTableCompanion.insert(
+            userId: readableBy,
+            gameId: gameId,
+            source: cacheAccessSourceCollection,
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+    await db
+        .into(db.platformGameAccessTable)
+        .insert(
+          PlatformGameAccessTableCompanion.insert(
+            userId: readableBy,
+            platformGameId: id,
+            source: cacheAccessSourceCollection,
+          ),
+        );
+  }
   return id;
+}
+
+/// The sources of [userId]'s records on the game [gameId].
+Future<Set<String>> gameRecords(
+  ServerDatabase db,
+  String userId, {
+  String gameId = kFixtureGameId,
+}) async {
+  final rows = await (db.select(
+    db.gameAccessTable,
+  )..where((t) => t.userId.equals(userId) & t.gameId.equals(gameId))).get();
+  return {for (final row in rows) row.source};
+}
+
+/// The sources of [userId]'s records on the platform game [platformGameId].
+Future<Set<String>> platformGameRecords(
+  ServerDatabase db,
+  String userId, {
+  String platformGameId = kFixturePlatformGameId,
+}) async {
+  final rows =
+      await (db.select(db.platformGameAccessTable)..where(
+            (t) =>
+                t.userId.equals(userId) &
+                t.platformGameId.equals(platformGameId),
+          ))
+          .get();
+  return {for (final row in rows) row.source};
 }

@@ -7,6 +7,7 @@ import 'package:drift_storage/drift_storage_native.dart'
     show inMemoryServerDatabase;
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 
 import '../support/platform_game_fixture.dart';
 import '../support/system_clock.dart';
@@ -83,7 +84,7 @@ void main() {
       clock: const SystemClockService(),
     );
     mark = await repo.removalMark();
-    await seedPlatformGame(db);
+    await seedPlatformGame(db, readableBy: _kUserId);
   });
 
   tearDown(() async => db.close());
@@ -226,6 +227,40 @@ void main() {
       await repo.mergeFromServer([_server()], removalsSince: mark);
 
       verifyNever(() => queue.markCompleted(any()));
+    });
+  });
+
+  group('the collection record (#469)', () {
+    test('a merge with a removal and a live entry for the same platform game '
+        'keeps the record and the rows', () async {
+      await repo.mergeFromServer([_server()], removalsSince: mark);
+
+      // Removed in one medium and added in the other, on another device.
+      await repo.mergeFromServer([
+        _server(deletedAt: DateTime.utc(2026, 3)),
+        _server(id: 'gc-digital').copyWith(medium: GameMedium.digital),
+      ], removalsSince: mark);
+
+      expect((await allRows()).single.id, 'gc-digital');
+      expect(await platformGameRecords(db, _kUserId), {
+        cacheAccessSourceCollection,
+      });
+      expect(await gameRecords(db, _kUserId), {cacheAccessSourceCollection});
+      expect(await db.select(db.platformGamesTable).get(), hasLength(1));
+      expect(await db.select(db.gamesTable).get(), hasLength(1));
+    });
+
+    test('a merged removal of the last entry ends the record', () async {
+      await repo.mergeFromServer([_server()], removalsSince: mark);
+
+      await repo.mergeFromServer([
+        _server(deletedAt: DateTime.utc(2026, 3)),
+      ], removalsSince: mark);
+
+      expect(await platformGameRecords(db, _kUserId), isEmpty);
+      expect(await gameRecords(db, _kUserId), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
     });
   });
 }

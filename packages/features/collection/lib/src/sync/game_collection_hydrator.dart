@@ -100,6 +100,15 @@ enum CollectionHydrateOutcome {
 /// copy of anything confirmed removed since. The next pass writes it, if the
 /// entry is live again by then.
 ///
+/// A confirmation, a discard that deletes a local-only entry, or a detail's
+/// `forgetGame` can also land between a page's summary write and its
+/// merge. If it leaves the user no entry on a platform game, it ends their
+/// `collection` record for it and deletes the rows no one reads, the
+/// summary's included (#469). A live entry the page holds for that platform
+/// game, other than a copy the mark skips, then has no row to join, so the
+/// merge fails and the pass ends [CollectionHydrateOutcome.failed]. The next
+/// pass writes it.
+///
 /// ## Nothing is purged
 ///
 /// The hydrate upserts entries and applies server tombstones. It never

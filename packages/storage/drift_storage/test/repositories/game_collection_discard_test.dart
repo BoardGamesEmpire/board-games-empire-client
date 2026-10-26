@@ -57,7 +57,7 @@ void main() {
       currentUserId: _kUserId,
       clock: clock,
     );
-    await seedPlatformGame(db);
+    await seedPlatformGame(db, readableBy: _kUserId);
   });
 
   tearDown(() async => db.close());
@@ -107,6 +107,18 @@ void main() {
 
       expect(await rows(), isEmpty);
       expect(await queue.getAllEntries(), isEmpty);
+    });
+
+    test('discarding the only local-only entry ends the record', () async {
+      await add();
+      final addOp = await parkNewest();
+
+      expect(await repo.discardQueuedOp(addOp.id), isTrue);
+
+      expect(await platformGameRecords(db, _kUserId), isEmpty);
+      expect(await gameRecords(db, _kUserId), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
     });
 
     test(

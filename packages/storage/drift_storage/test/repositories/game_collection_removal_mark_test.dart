@@ -109,6 +109,9 @@ void main() {
       final mark = await repo.removalMark();
       await repo.confirmRemoved(_kServerId, completedSyncQueueId: removal);
 
+      // A hydrate writes the page's summaries before it merges, and the
+      // confirmation pruned the rows.
+      await seedPlatformGame(db, readableBy: _kUserId);
       await repo.mergeFromServer([
         _server(),
         _server(id: 'gc-digital', medium: GameMedium.digital),
@@ -126,6 +129,9 @@ void main() {
     await repo.confirmRemoved(_kServerId, completedSyncQueueId: removal);
     final mark = await repo.removalMark();
 
+    // A hydrate writes the page's summaries before it merges, and the
+    // confirmation pruned the rows.
+    await seedPlatformGame(db, readableBy: _kUserId);
     await repo.mergeFromServer([
       _server(quantity: 3, updatedAt: DateTime.utc(2026, 11)),
     ], removalsSince: mark);
@@ -142,6 +148,9 @@ void main() {
     final mark = await repo.removalMark();
 
     await repo.mergeFromServer([_tombstone()], removalsSince: mark);
+    // A hydrate writes the page's summaries before it merges, and the
+    // tombstone's merge pruned the rows.
+    await seedPlatformGame(db, readableBy: _kUserId);
     await repo.mergeFromServer([
       _server(quantity: 2, updatedAt: DateTime.utc(2026, 4)),
     ], removalsSince: mark);
