@@ -52,8 +52,7 @@ enum EventAccessSource {
 /// now, though `household_members` is cached in the same database, so a
 /// household member who doesn't attend reads an empty roster where the
 /// server would show them the list. So do staff, who read every roster on
-/// the server through `read:public_content`. #498 and #503 widen the rule as
-/// they start caching those reads.
+/// the server through `read:public_content`. #567 widens the rule.
 ///
 /// The occurrences and the policy need no such rule: the server checks their
 /// reads apart from the event's, but grants them wherever it grants the
@@ -208,6 +207,61 @@ abstract class EventRepository {
   /// own attendance on every list row, so an event cached only from the list
   /// answers null.
   Future<EventAttendee?> getCurrentUserAttendance(String eventId);
+
+  /// Watches the cached event [id] as the detail screen shows it (#498): what
+  /// [getEvent] answers, paired with what [getCurrentUserAttendance] answers.
+  ///
+  /// Emits on listen, null where [getEvent] would answer null, and again
+  /// after any write to the event, its occurrences, its roster, its policy or
+  /// anyone's access to it: each [cacheEvent], each page [cacheEvents]
+  /// writes, and each purge or [forgetEvent] that removed something. So a
+  /// subscriber sees the event leave the cache, as null, when the user's
+  /// access to it goes.
+  ///
+  /// The two halves of an emission are read in one transaction, so a write
+  /// landing between them can't pair one state of the roster with another's
+  /// attendance. The attendance is this user's own row alone, as everywhere
+  /// else: another user's row on the same roster is never this user's.
+  ///
+  /// A write that changes nothing here, such as another user's cache of an
+  /// event of theirs, may still re-read it, and consecutive equal emissions
+  /// are dropped. After disposal the stream is already closed.
+  Stream<EventDetail?> watchEvent(String id);
+
+  /// A value naming the last write of the cached event [id], as
+  /// [purgeableAttendance] names one, which no later write repeats, or null
+  /// when it isn't cached or the current user has no access to it.
+  ///
+  /// Read it **before** sending the detail read, and pass it to
+  /// [forgetEvent] if that read answers 404.
+  Future<int?> lastWrite(String id);
+
+  /// Removes the current user's access to the cached event [id], for an
+  /// event the server no longer serves them (a 404 on its detail read), and
+  /// returns whether it did.
+  ///
+  /// [lastWrite] is a [EventRepository.lastWrite] read taken before that
+  /// read was sent. An event written since, by any read, is one a newer
+  /// answer from the server may have sent than the 404, and is left alone:
+  /// a read that outlives its screen can answer after the event was opened
+  /// again and cached, or after a hydrate cached it once the user was
+  /// invited back.
+  ///
+  /// In one transaction it removes their access rows of both sources, then
+  /// their own row on the event's roster, and then deletes the event with its
+  /// occurrences, roster and policy if no user has an access row left, as
+  /// [purgeAttendanceAbsentFrom] does. Another user's access and their row
+  /// on the roster stay, so the event keeps reading for them. The roster row
+  /// goes for the reason [purgeAttendanceAbsentFrom] gives: kept, it would
+  /// still answer with the user's old role and RSVP.
+  ///
+  /// Returns true when it removed access. Returns false, and changes
+  /// nothing, when the user had no access to the event, when it has been
+  /// written since [lastWrite], or when the event is `isDirty` or
+  /// `isLocalOnly`: the sync queue owns those until the server acknowledges
+  /// them, and an event created offline is one the server has never heard
+  /// of, so its 404 says nothing about it (#298's rule for households).
+  Future<bool> forgetEvent(String id, {required int lastWrite});
 
   /// Watches the events the current user has `attending` access to, in the
   /// list's order: newest created first, the higher id first on a tie. An
