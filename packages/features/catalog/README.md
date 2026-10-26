@@ -1,7 +1,8 @@
 # game_catalog
 
 The game catalog feature (#42): browse the server's games, search them and
-its DataGateways, and open one game.
+its DataGateways, open one game, and import a game the server doesn't hold
+from a DataGateway (#43).
 
 The directory is `features/catalog`, but the package is `game_catalog`, to
 sit beside `game_collection`.
@@ -41,6 +42,41 @@ device instead (`GameRepository.searchGames`). The cache holds no platform
 types, so a search narrowed by one finds nothing there. A 403 is a refusal,
 not a failure: the screen says the user has no access, as browse does.
 
+## Import
+
+A DataGateway result the server doesn't hold imports from the search (#43).
+The shell opens `GameImportDialog` from the search's `onImport`, and the
+dialog's `GameImportBloc` sends `POST /api/games/import`, then polls
+`GET /api/games/import/:batchId`.
+
+One import is one base game, with no expansions and no locale: several at
+once is #595, and a language is #594. The dialog polls every 2 seconds. The
+server sets no deadline, so after 90 seconds, counting the time each poll
+takes, the dialog says the import is still running. That isn't a failure: "Check again" polls the same
+batch and starts nothing. The base game's job decides how the import ended,
+not the batch's rollup. A failed job shows copy for its error code, and a
+status this client doesn't know keeps polling. A poll that got no answer
+keeps polling too, while a 403 or an unknown batch ends the import.
+
+Each attempt has its own `correlationId`, a UUID v4, the only form the server
+accepts. A start whose answer never came keeps its id, so trying again sends
+the same one. For now the server starts a second batch anyway, which does no
+harm because importing a game again updates it. Once backend#900 keys import
+jobs on the correlation id, the same id will find the batch the server may
+already have queued. A start the server answered drops its id, so trying
+again after a failure takes a new one.
+
+When the base game's job completes, the dialog closes with the game's id and
+the shell opens the game's detail in its place. Closing the dialog first
+stops the polling and opens nothing. The server finishes the import anyway,
+and the next search shows the game as one it holds. Following an import after
+its dialog closes is #596.
+
+Nothing is cached here. The detail caches the game it reads, for this user,
+as it does any game it opens. The poll's platform games are read but unused:
+adding to a collection (#45) starts from the detail, once `GET /games/:id`
+sends them (backend#791).
+
 ## Detail
 
 `GameDetailBloc` reads `GET /api/games/:id` and caches the game. It lists the
@@ -59,9 +95,9 @@ sign-out, and the lists open then may be the next user's.
 
 ## Screens
 
-`GameBrowseScreen`, `GameSearchScreen` and `GameDetailScreen` each own their
-bloc; the shell passes in the remote, the cache and the callbacks, and the
-screens resolve nothing themselves.
+`GameBrowseScreen`, `GameSearchScreen`, `GameDetailScreen` and
+`GameImportDialog` each own their bloc; the shell passes in the remote, the
+cache and the callbacks, and the screens resolve nothing themselves.
 
 The detail screen renders the description as Markdown with
 `flutter_markdown_plus` (#472): GitHub's extensions, raw HTML never rendered,

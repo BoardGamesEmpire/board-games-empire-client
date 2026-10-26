@@ -416,6 +416,58 @@
   "@catalogDetailAddToCollection": {
     "description": "Button beside one platform of a game that adds the game, on that platform, to the user's collection."
   },
+  "catalogImportStarting": "Sending the import to the server…",
+  "@catalogImportStarting": {
+    "description": "Shown and announced in the import dialog while the request to import a game from a data source is on its way to the server. The dialog's title is the game's name."
+  },
+  "catalogImportQueued": "Waiting for the server to start the import…",
+  "@catalogImportQueued": {
+    "description": "Shown and announced once the server has accepted a game's import and before it starts importing."
+  },
+  "catalogImportRunning": "Importing from the data source…",
+  "@catalogImportRunning": {
+    "description": "Shown and announced while the server imports the game from the data source (an external catalog such as BoardGameGeek)."
+  },
+  "catalogImportStillRunning": "This is taking longer than usual. The server is still importing it, so you can check again, or close this and search for it later.",
+  "@catalogImportStillRunning": {
+    "description": "Shown when an import has run for 90 seconds without finishing. Not a failure: the server keeps importing the game. Followed by the catalogImportCheckAgain and catalogImportClose buttons."
+  },
+  "catalogImportFailedNotOnDataGateway": "The data source no longer has this game.",
+  "@catalogImportFailedNotOnDataGateway": {
+    "description": "Shown when an import failed because the data source no longer has the game. Trying again can't help, so no retry is offered."
+  },
+  "catalogImportFailedDataGateway": "The data source didn't answer. Try again later.",
+  "@catalogImportFailedDataGateway": {
+    "description": "Shown when an import failed because the data source didn't answer the server."
+  },
+  "catalogImportFailedServer": "The server couldn't import this game.",
+  "@catalogImportFailedServer": {
+    "description": "Shown when the server failed to import the game, or answered in a way the app couldn't follow. Deliberately names no cause."
+  },
+  "catalogImportFailedCancelled": "The import was cancelled.",
+  "@catalogImportFailedCancelled": {
+    "description": "Shown when the import was cancelled on the server."
+  },
+  "catalogImportFailedForbidden": "You don't have permission to import games on this server.",
+  "@catalogImportFailedForbidden": {
+    "description": "Shown when the server refused the import because this user may not import games there. No retry is offered."
+  },
+  "catalogImportFailedUnreachable": "Couldn't reach the server. Check your connection and try again.",
+  "@catalogImportFailedUnreachable": {
+    "description": "Shown when the request to start the import got no answer from the server. Followed by the catalogImportTryAgain button."
+  },
+  "catalogImportCheckAgain": "Check again",
+  "@catalogImportCheckAgain": {
+    "description": "Button under catalogImportStillRunning that asks the server about the same import again. It doesn't start another import."
+  },
+  "catalogImportTryAgain": "Try again",
+  "@catalogImportTryAgain": {
+    "description": "Button in the import dialog, after a failure, that starts the import again."
+  },
+  "catalogImportClose": "Close",
+  "@catalogImportClose": {
+    "description": "Button that closes the import dialog. The server still finishes an import it has started."
+  },
   "catalogImageAlt": "Image: {alt}",
   "@catalogImageAlt": {
     "description": "Stands in for a picture in a game's description that cannot be shown, giving its description.",

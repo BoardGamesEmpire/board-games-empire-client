@@ -39,6 +39,7 @@ export 'src/domain/game/game_collection.dart';
 export 'src/domain/game/game_collection_list_item.dart';
 export 'src/domain/game/game_medium.dart';
 export 'src/domain/game/game.dart';
+export 'src/domain/game/game_import.dart';
 export 'src/domain/game/game_search_results.dart';
 export 'src/domain/game/platform_game.dart';
 export 'src/domain/game/platform_game_summary.dart';

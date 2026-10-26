@@ -28,13 +28,19 @@ final _catan = Game(
 );
 
 /// One game in the catalog, found by every search with one DataGateway
-/// result.
+/// result, which imports as `g_seafarers`.
 class _GamesRemote implements GamesRemoteDataSource {
   /// Games whose detail answers 404, as one deleted since the list loaded.
   final Set<String> gone = {};
 
   /// When set, every detail waits for it, as on a slow server.
   Completer<GameWithPlatformGames>? held;
+
+  /// The ids every detail read asked for.
+  final List<String> fetched = [];
+
+  /// Where every poll says the import's base game stands.
+  ImportJobStatus importStatus = ImportJobStatus.completed;
 
   @override
   Future<PaginatedResult<Game>> fetchPage({
@@ -53,6 +59,7 @@ class _GamesRemote implements GamesRemoteDataSource {
 
   @override
   Future<GameWithPlatformGames> fetchGame(String id) async {
+    fetched.add(id);
     final held = this.held;
     if (held != null) return held.future;
     if (gone.contains(id)) throw const GameNotFoundException('404');
@@ -84,6 +91,35 @@ class _GamesRemote implements GamesRemoteDataSource {
         ),
       ],
     },
+  );
+
+  @override
+  Future<GameImportReceipt> startImport({
+    required String gatewayId,
+    required String externalId,
+    required String correlationId,
+  }) async => GameImportReceipt(
+    batchId: '0b7c2f9e-3a41-4c8e-9d2a-5f6b7c8d9e0f',
+    baseJobId: 'job_base',
+    correlationId: correlationId,
+  );
+
+  @override
+  Future<ImportBatch> fetchImport(String batchId) async => ImportBatch(
+    batchId: batchId,
+    correlationId: '5a1e4b3c-2d6f-4a8b-9c0d-1e2f3a4b5c6d',
+    status: ImportBatchStatus.running,
+    jobs: [
+      ImportJob(
+        jobId: 'job_base',
+        status: importStatus,
+        isExpansion: false,
+        externalId: '926',
+        gameId: importStatus == ImportJobStatus.completed
+            ? 'g_seafarers'
+            : null,
+      ),
+    ],
   );
 }
 
@@ -312,5 +348,43 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('BoardGameGeek'), findsNothing);
+  });
+
+  testWidgets('a DataGateway result imports and opens the game', (
+    tester,
+  ) async {
+    access.readGranted();
+    await pumpHome(tester);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    await tester.tap(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+    );
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameImportDialog), findsNothing);
+    expect(find.byType(GameDetailScreen), findsOneWidget);
+    expect(games.fetched, contains('g_seafarers'));
+  });
+
+  testWidgets('closing the import opens nothing', (tester) async {
+    games.importStatus = ImportJobStatus.running;
+    access.readGranted();
+    await pumpHome(tester);
+    await openGames(tester);
+    await searchFor(tester, 'catan');
+
+    await tester.tap(
+      find.byKey(GameSearchScreen.sourceRowKey('dg_bgg', '926')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.byKey(GameImportDialog.closeKey));
+    await tester.pump(const Duration(seconds: 4));
+
+    expect(find.byType(GameDetailScreen), findsNothing);
+    expect(find.byType(GameSearchScreen), findsOneWidget);
   });
 }
