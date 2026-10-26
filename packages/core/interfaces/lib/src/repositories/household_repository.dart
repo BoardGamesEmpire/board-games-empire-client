@@ -242,8 +242,8 @@ abstract class HouseholdRepository {
   /// answer being how the retries ran out, the next hydrate brings it back.
   ///
   /// A completed or unknown entry changes nothing. Returns whether the entry
-  /// was deleted. Throws [ArgumentError] for a collection op, before any
-  /// write.
+  /// was deleted. Throws [ArgumentError] for a collection or event op, before
+  /// any write.
   Future<bool> discardQueuedOp(String syncQueueId);
 
   /// Upserts a [Household] from a server response. User-agnostic by

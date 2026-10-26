@@ -822,6 +822,7 @@ void main() {
                   UpdateCollectionOperation() => op.collectionId,
                   RemoveFromCollectionOperation() => op.collectionId,
                   CreateHouseholdOperation() => op.localId,
+                  CreateEventOperation() => op.localId,
                 },
               )
               .toList();
@@ -855,6 +856,7 @@ void main() {
                 UpdateCollectionOperation() => op.collectionId,
                 RemoveFromCollectionOperation() => op.collectionId,
                 CreateHouseholdOperation() => op.localId,
+                CreateEventOperation() => op.localId,
               },
             )
             .toSet();

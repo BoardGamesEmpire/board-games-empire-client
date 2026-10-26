@@ -241,6 +241,8 @@ class _StuckRow extends StatelessWidget {
       StuckSyncOpKind.createHousehold => l10n.syncStuckCreateHousehold(
         subject ?? '',
       ),
+      // So is an event's title.
+      StuckSyncOpKind.createEvent => l10n.syncStuckCreateEvent(subject ?? ''),
       StuckSyncOpKind.unreadable => l10n.syncStuckUnreadable,
     };
   }
@@ -257,6 +259,7 @@ class _StuckRow extends StatelessWidget {
         l10n.syncStuckDiscardBodyWithLater,
       StuckSyncOpKind.updateCollection ||
       StuckSyncOpKind.createHousehold ||
+      StuckSyncOpKind.createEvent ||
       StuckSyncOpKind.unreadable => l10n.syncStuckDiscardBody,
     };
     final confirmed = await showDialog<bool>(

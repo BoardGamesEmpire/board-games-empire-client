@@ -44,11 +44,13 @@ abstract class Event with _$Event {
     required EventSchedulingMode schedulingMode,
 
     /// True when this event has local changes not yet synced to the server.
-    /// Events are read-only on the device for now, so nothing sets it yet.
+    /// Only a create sets it yet, with [isLocalOnly], on the event it writes
+    /// (#499).
     @Default(false) bool isDirty,
 
-    /// True when this event was created offline and the server has not yet
-    /// confirmed it. Nothing sets it yet, for the same reason as [isDirty].
+    /// True when this event was created on this device and the server has
+    /// not yet confirmed it (#499). The reconcile replaces it with the
+    /// server's copy, which carries neither flag.
     @Default(false) bool isLocalOnly,
     required DateTime createdAt,
     required DateTime updatedAt,

@@ -127,6 +127,13 @@ void main() {
       clock: const LocalClockService(),
     );
     addTearDown(collection.onDispose);
+    final events = EventRepositoryImpl(
+      db,
+      userId: _kUserId,
+      syncQueue: syncQueue,
+      clock: const LocalClockService(),
+    );
+    addTearDown(events.onDispose);
     final drain = SyncQueueDrain(
       queue: syncQueue,
       sender: SyncOperationSenderImpl(
@@ -135,6 +142,8 @@ void main() {
         householdRemote: _ServerCreates(),
         collection: collection,
         collectionRemote: _NoCollectionWrites(),
+        events: events,
+        eventRemote: _NoEventCreates(),
       ),
       collection: collection,
     );
@@ -274,6 +283,13 @@ class _ServerCreates implements HouseholdRemoteDataSource {
 
 /// Nothing in this suite queues a collection op.
 class _NoCollectionWrites implements GameCollectionRemoteDataSource {
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} was not expected');
+}
+
+/// Nothing in this suite queues an event create.
+class _NoEventCreates implements EventRemoteDataSource {
   @override
   Object? noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} was not expected');

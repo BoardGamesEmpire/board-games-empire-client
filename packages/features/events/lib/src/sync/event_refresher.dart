@@ -12,8 +12,10 @@
 ///
 /// It needs no guard of its own: `EventHydrator.hydrate` single-flights, so a
 /// press landing on a running pass joins it. Nor does it take a callback for
-/// after a local change, as the collection's does. #496 makes no writes, so
-/// there is no change of the user's own to wait out.
+/// after a local change, as the collection's does. A discarded create (#499)
+/// is the one local change it follows, and a pass in flight cannot have merged
+/// around it: a pass never writes over a local-only event, and the server's
+/// copy of an event carries its own id.
 ///
 /// Absent from a container that runs no event hydrate at all (see
 /// `EventHydrateInstaller` for which those are), which the screens read as

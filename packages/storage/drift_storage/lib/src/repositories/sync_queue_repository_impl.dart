@@ -398,6 +398,7 @@ class SyncQueueRepositoryImpl
       UpdateCollectionOperation() => op.collectionId,
       RemoveFromCollectionOperation() => op.collectionId,
       CreateHouseholdOperation() => null,
+      CreateEventOperation() => null,
     };
     return target == collectionId;
   }
@@ -527,6 +528,7 @@ class SyncQueueRepositoryImpl
         collectionId: newId,
       ),
       CreateHouseholdOperation() => null,
+      CreateEventOperation() => null,
     };
   }
 

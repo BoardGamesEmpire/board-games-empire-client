@@ -621,7 +621,8 @@ class HouseholdRepositoryImpl
         throw ArgumentError.value(
           syncQueueId,
           'syncQueueId',
-          'names a collection op; GameCollectionRepository discards those',
+          'names a collection or event op; their own repositories discard '
+              'those',
         );
       }
       // Checked in the statement that deletes it: a create another tab

@@ -43,6 +43,58 @@ GameCollection serverEntry({
   updatedAt: updatedAt ?? DateTime.utc(2026, 10, 2),
 );
 
+/// What a person asks for when creating an event offline (#499): a Fixed
+/// event on one date, in no household.
+EventDraft eventDraft({String title = 'Game night'}) => EventDraft(
+  title: title,
+  occurrences: [EventOccurrenceDraft(startDate: DateTime.utc(2026, 11, 6, 18))],
+);
+
+/// What a server answers for an event create (#499): [eventDraft] as the
+/// event [id], with the creator on its roster as host. The create's roster
+/// embeds each attendee's role and not their user, so it names no one.
+EventSnapshot serverEvent({
+  String id = 'ev-server',
+  String title = 'Game night',
+}) {
+  final at = DateTime.utc(2026, 10);
+  return EventSnapshot(
+    event: Event(
+      id: id,
+      title: title,
+      createdById: kUserId,
+      type: EventType.casualGathering,
+      reach: Reach.friends,
+      status: EventStatus.scheduled,
+      schedulingMode: EventSchedulingMode.fixed,
+      createdAt: at,
+      updatedAt: at,
+    ),
+    occurrences: [
+      EventOccurrence(
+        id: '$id-o1',
+        eventId: id,
+        startDate: DateTime.utc(2026, 11, 6, 18),
+        status: OccurrenceStatus.confirmed,
+        sortOrder: 0,
+        createdAt: at,
+        updatedAt: at,
+      ),
+    ],
+    attendees: [
+      EventAttendee(
+        id: '$id-host',
+        eventId: id,
+        userId: kUserId,
+        status: EventParticipationStatus.attending,
+        role: EventRole.host,
+        createdAt: at,
+        updatedAt: at,
+      ),
+    ],
+  );
+}
+
 /// The real repositories over one in-memory database, fake remotes, and a
 /// sender over all of them: what a user session holds, without a network.
 ///
@@ -63,6 +115,7 @@ class Harness {
   late SyncQueueRepositoryImpl queue = _openQueue();
   late HouseholdRepositoryImpl households = _openHouseholds();
   late GameCollectionRepositoryImpl collection = _openCollection();
+  late EventRepositoryImpl events = _openEvents();
 
   SyncQueueRepositoryImpl _openQueue() => SyncQueueRepositoryImpl(
     db,
@@ -86,16 +139,25 @@ class Harness {
         clock: const LocalClockService(),
       );
 
+  EventRepositoryImpl _openEvents() => EventRepositoryImpl(
+    db,
+    userId: kUserId,
+    syncQueue: queue,
+    clock: const LocalClockService(),
+  );
+
   /// Ends this session's repositories, as a scope pop does, and opens a new
   /// session's over the same database: a sign-out and back in, or a switch
   /// away and back. The sender is rebuilt over the new ones.
   Future<void> newSession() async {
+    await events.onDispose();
     await collection.onDispose();
     await households.onDispose();
     await queue.onDispose();
     queue = _openQueue();
     households = _openHouseholds();
     collection = _openCollection();
+    events = _openEvents();
     sender = _openSender();
   }
 
@@ -104,6 +166,9 @@ class Harness {
   );
   final FakeCollectionRemote collectionRemote = FakeCollectionRemote(
     (_) => serverEntry(),
+  );
+  final FakeEventRemote eventRemote = FakeEventRemote(
+    (_) => (snapshot: serverEvent(), deletedAt: null),
   );
 
   late SyncOperationSenderImpl sender = _openSender();
@@ -114,6 +179,8 @@ class Harness {
     householdRemote: householdRemote,
     collection: collection,
     collectionRemote: collectionRemote,
+    events: events,
+    eventRemote: eventRemote,
   );
 
   static Future<Harness> open() async {

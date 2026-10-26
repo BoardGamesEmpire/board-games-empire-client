@@ -504,6 +504,7 @@ class _Snapshot {
         UpdateCollectionOperation() || RemoveFromCollectionOperation() => true,
         AddToCollectionOperation() ||
         CreateHouseholdOperation() ||
+        CreateEventOperation() ||
         null => false,
       };
       entries.add(
@@ -557,6 +558,7 @@ class _Snapshot {
     RemoveFromCollectionOperation(:final collectionId) =>
       'collection:$collectionId',
     CreateHouseholdOperation(:final localId) => 'household:$localId',
+    CreateEventOperation(:final localId) => 'event:$localId',
   };
 }
 
