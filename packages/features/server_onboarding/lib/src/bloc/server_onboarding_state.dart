@@ -75,9 +75,18 @@ final class ServerOnboardingNotBgeServer extends ServerOnboardingFailure {
   const ServerOnboardingNotBgeServer();
 }
 
-/// Non-200 or unparseable identity document.
+/// A non-200 status that is neither 404 nor 5xx, or an unparseable identity
+/// document.
 final class ServerOnboardingInvalidResponse extends ServerOnboardingFailure {
   const ServerOnboardingInvalidResponse();
+}
+
+/// The server answered discovery with a 5xx, so it is there and failing for
+/// now, usually a reverse proxy answering while the server behind it is down
+/// or starting (#389). Worth retrying; it says nothing about the address or
+/// the version.
+final class ServerOnboardingServerError extends ServerOnboardingFailure {
+  const ServerOnboardingServerError();
 }
 
 /// Version negotiation (#13): this client is older than the server's

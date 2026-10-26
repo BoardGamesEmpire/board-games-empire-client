@@ -347,6 +347,13 @@ void main() {
         'The server sent an unexpected response. It may be misconfigured '
             'or an incompatible version.',
       ),
+      // The server answered with a 5xx: there, failing for now. Nothing about
+      // the address or the version (#389).
+      (
+        'a server error tells the user to try again shortly',
+        ServerOnboardingServerError(),
+        "The server isn't responding right now. Try again in a moment.",
+      ),
       (
         'client too old',
         ServerOnboardingClientTooOld(
@@ -682,6 +689,7 @@ void _exhaustiveness(ServerOnboardingFailure failure) {
     case ServerOnboardingUnreachable():
     case ServerOnboardingNotBgeServer():
     case ServerOnboardingInvalidResponse():
+    case ServerOnboardingServerError():
     case ServerOnboardingClientTooOld():
     case ServerOnboardingClientTooNew():
     case ServerOnboardingSchemaTooNew():
