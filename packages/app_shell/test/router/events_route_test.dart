@@ -12,8 +12,10 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 /// [NotYetAvailableScreen] fallback.
 const _overviewKey = Key('events_route.overview');
 Key _groupKey(String segment) => Key('events_route.group_$segment');
+Key _detailKey(String eventId) => Key('events_route.detail_$eventId');
 
-/// The #497 routes: the overview, with a page per group beneath it.
+/// The #497 routes: the overview, with a page per group beneath it, and
+/// #498's event detail beneath that.
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -22,6 +24,7 @@ void main() {
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
     bool withBuilders = true,
+    bool withDetailBuilder = true,
   }) async {
     whenListen(
       cubit,
@@ -37,6 +40,9 @@ void main() {
           : null,
       eventGroupBuilder: withBuilders
           ? (_, segment) => Scaffold(body: SizedBox(key: _groupKey(segment)))
+          : null,
+      eventDetailBuilder: withBuilders && withDetailBuilder
+          ? (_, eventId) => Scaffold(body: SizedBox(key: _detailKey(eventId)))
           : null,
     );
     addTearDown(() {
@@ -54,7 +60,7 @@ void main() {
     return router;
   }
 
-  group('buildAppRouter — event routes (#497)', () {
+  group('buildAppRouter — event routes (#497, #498)', () {
     testWidgets('resolves the overview builder', (tester) async {
       final router = await pumpRouter(tester);
 
@@ -93,6 +99,57 @@ void main() {
       expect(find.byKey(_overviewKey), findsOneWidget);
     });
 
+    testWidgets('resolves an event id to the detail builder with that id', (
+      tester,
+    ) async {
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventDetailOf('e-1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_detailKey('e-1')), findsOneWidget);
+    });
+
+    testWidgets('the group pages still win over the detail', (tester) async {
+      // `upcoming` is a legal event id. The detail is declared after the
+      // group pages, so each segment must reach its group and never the
+      // detail.
+      final router = await pumpRouter(tester);
+
+      for (final segment in AppRoutes.eventGroupSegments) {
+        router.go(AppRoutes.eventGroupOf(segment));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(_groupKey(segment)), findsOneWidget, reason: segment);
+        expect(find.byKey(_detailKey(segment)), findsNothing, reason: segment);
+      }
+    });
+
+    testWidgets('a go straight to an event builds the overview beneath it', (
+      tester,
+    ) async {
+      // So a cold entry at an event has somewhere to go back to, as the
+      // group pages have.
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventDetailOf('e-1'));
+      await tester.pumpAndSettle();
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_overviewKey), findsOneWidget);
+      expect(find.byKey(_detailKey('e-1')), findsNothing);
+    });
+
+    testWidgets('an id with a slash is encoded', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventDetailOf('a/b'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_detailKey('a/b')), findsOneWidget);
+    });
+
     testWidgets('falls back to NotYetAvailable without builders', (
       tester,
     ) async {
@@ -107,6 +164,19 @@ void main() {
 
         expect(find.byType(NotYetAvailableScreen), findsOneWidget);
       }
+    });
+
+    testWidgets('falls back to NotYetAvailable without a detail builder', (
+      tester,
+    ) async {
+      // The other builders are supplied, so only the detail is missing.
+      final router = await pumpRouter(tester, withDetailBuilder: false);
+
+      router.go(AppRoutes.eventDetailOf('e-1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byKey(_detailKey('e-1')), findsNothing);
     });
 
     test('the segments are the EventGroup names', () {
