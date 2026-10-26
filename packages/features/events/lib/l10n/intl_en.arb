@@ -2,7 +2,7 @@
   "@@locale": "en",
   "eventsTitle": "Events",
   "@eventsTitle": {
-    "description": "Title of the screen giving an overview of the user's events, and the label of the drawer entry that opens it."
+    "description": "Title of the screen giving an overview of the user's events, and the label of the drawer entry that opens it. Also the title bar of the screen showing one event, whose own title is the heading under it."
   },
   "eventsGroupUpcoming": "Upcoming",
   "@eventsGroupUpcoming": {
@@ -70,15 +70,15 @@
   },
   "eventsRefreshRetry": "Try again",
   "@eventsRefreshRetry": {
-    "description": "Button that asks the server for the user's events again, on the couldn't-refresh banner and when the events could not be read. Kept as a plain retry: nothing here can promise the next attempt will work."
+    "description": "Button that asks the server again: for the user's events, on the couldn't-refresh banner and when the events could not be read, and for one event, on that event's screen. Kept as a plain retry: nothing here can promise the next attempt will work."
   },
   "eventsRefreshInProgress": "Refreshing…",
   "@eventsRefreshInProgress": {
-    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled. Shown ONLY for a refresh the user asked for: one started by reconnecting, by resuming the app or by opening the screen is not narrated."
+    "description": "Replaces the couldn't-refresh banner copy while a refresh the user asked for is running, and is the retry button's label while it is disabled, on the events overview and on one event's screen. Shown ONLY for a refresh the user asked for: one started by reconnecting, by resuming the app or by opening the screen is not narrated."
   },
   "eventsWhen": "{date} · {time}",
   "@eventsWhen": {
-    "description": "When an event happens, on its row: the day, then the time it starts, for a date in the current year, for example 'Fri, Nov 6 · 7:30 PM'. The time arrives already formatted, in the 12- or 24-hour form the user's device is set to. Reorder or change the punctuation as your language needs.",
+    "description": "When an event happens, on its row and in the dates on its screen: the day, then the time it starts, for a date in the current year, for example 'Fri, Nov 6 · 7:30 PM'. The time arrives already formatted, in the 12- or 24-hour form the user's device is set to. Reorder or change the punctuation as your language needs.",
     "placeholders": {
       "date": {
         "type": "DateTime",
@@ -106,38 +106,262 @@
   },
   "eventsDateBeingChosen": "Date being chosen",
   "@eventsDateBeingChosen": {
-    "description": "In place of a date on an event's row, while the people invited are voting on when it should happen."
+    "description": "In place of a date on an event's row, and in the dates on its screen, while the people invited are voting on when it should happen."
   },
   "eventsNoDateYet": "No date yet",
   "@eventsNoDateYet": {
-    "description": "In place of a date on an event's row, when the event has no date set and no vote is choosing one."
+    "description": "In place of a date on an event's row, and in the dates on its screen, when the event has no date set and no vote is choosing one."
   },
   "eventsRsvpAttending": "Going",
   "@eventsRsvpAttending": {
-    "description": "On an event's row: the user said they will attend."
+    "description": "An answer to an event's invitation, on the event's row (the user's own) and beside each person in its who's-coming list: they will attend."
   },
   "eventsRsvpMaybe": "Maybe",
   "@eventsRsvpMaybe": {
-    "description": "On an event's row: the user said they might attend."
+    "description": "An answer to an event's invitation, on the event's row (the user's own) and beside each person in its who's-coming list: they might attend."
   },
   "eventsRsvpNotAttending": "Not going",
   "@eventsRsvpNotAttending": {
-    "description": "On an event's row: the user said they will not attend."
+    "description": "An answer to an event's invitation, on the event's row (the user's own) and beside each person in its who's-coming list: they will not attend."
   },
   "eventsRsvpInvited": "Invited",
   "@eventsRsvpInvited": {
-    "description": "On an event's row: the user was invited and has not answered yet."
+    "description": "On the event's row (the user's own) and beside each person in its who's-coming list: they were invited and have not answered yet."
   },
   "eventsDetailSeparator": " · ",
   "@eventsDetailSeparator": {
-    "description": "Shown between the parts of an event row's second line, for example 'Back room · The Smiths · Going'. Keep or drop the surrounding spaces as your language's punctuation needs."
+    "description": "Shown between the parts of one line about an event, for example 'Back room · The Smiths · Going' on its row, 'Strategy night · Scheduled' on its screen, or 'Host · Going' beside a person coming to it. Keep or drop the surrounding spaces as your language's punctuation needs."
   },
   "eventsDetailSpokenSeparator": ", ",
   "@eventsDetailSpokenSeparator": {
-    "description": "Joins the same parts when a screen reader reads an event row aloud, in place of eventsDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
+    "description": "Joins the same parts when a screen reader reads such a line aloud, in place of eventsDetailSeparator, whose symbol would be read out. It should sound like a short pause between list items."
   },
   "eventsCreate": "New event",
   "@eventsCreate": {
     "description": "Button on the events overview that starts creating an event."
+  },
+  "eventsDetailLoading": "Loading this event",
+  "@eventsDetailLoading": {
+    "description": "Announced and shown on the screen for one event while it is read for the first time, before anything about it is on this device."
+  },
+  "eventsDetailDates": "Dates",
+  "@eventsDetailDates": {
+    "description": "Heading of the section of an event's screen listing when it happens: each of its dates, or the dates proposed while a vote chooses one."
+  },
+  "eventsDetailAttendees": "Who's coming",
+  "@eventsDetailAttendees": {
+    "description": "Heading of the section of an event's screen listing the people invited to it, each with their role and their answer."
+  },
+  "eventsDetailGames": "Games",
+  "@eventsDetailGames": {
+    "description": "Heading of the section of an event's screen that will list the games planned for it."
+  },
+  "eventsDetailAttendeesNotLoaded": "Not loaded yet.",
+  "@eventsDetailAttendeesNotLoaded": {
+    "description": "In the who's-coming section of an event's screen, when this device has not yet read the list of people from the server, for example because it has been offline since the event arrived."
+  },
+  "eventsDetailAttendeesHidden": "You can't see who's coming to this event.",
+  "@eventsDetailAttendeesHidden": {
+    "description": "In the who's-coming section of an event's screen, when the server said the user may not see the list of people. It does NOT mean nobody is coming."
+  },
+  "eventsDetailGamesNotYet": "This event's games will show here.",
+  "@eventsDetailGamesNotYet": {
+    "description": "In the games section of an event's screen, which this version of the app does not fill yet. Says where the games will appear, without promising when."
+  },
+  "eventsDetailRefreshFailed": "This may be out of date: we couldn't refresh it.",
+  "@eventsDetailRefreshFailed": {
+    "description": "Banner over an event's details when they could not be read again from the server, for ANY reason: the server was unreachable, or it answered with an error. The details already on this device are still shown. Deliberately does not name a cause, because the screen does not know which one it was."
+  },
+  "eventsDetailNotFoundTitle": "We couldn't find this event",
+  "@eventsDetailNotFoundTitle": {
+    "description": "Heading shown in place of an event the server no longer shows this user: it was deleted, or they may no longer see it. The server does not say which."
+  },
+  "eventsDetailNotFoundBody": "It may have been deleted, or you may no longer be able to see it.",
+  "@eventsDetailNotFoundBody": {
+    "description": "Under eventsDetailNotFoundTitle. Gives both reasons, because the app cannot tell them apart."
+  },
+  "eventsDetailNotFoundAction": "Back to events",
+  "@eventsDetailNotFoundAction": {
+    "description": "Button under eventsDetailNotFoundBody that returns to the events overview."
+  },
+  "eventsDetailError": "We couldn't load this event.",
+  "@eventsDetailError": {
+    "description": "Shown in place of an event when nothing about it is on this device and it could not be read, from the server or from the device. A retry button may follow."
+  },
+  "eventsDetailErrorBody": "Nothing about it could be shown. Trying again may work.",
+  "@eventsDetailErrorBody": {
+    "description": "Body under eventsDetailError, above a button that tries again, on the screen for one event. Deliberately names no cause: the failure may be the read from the server or the device's own copy of the event, and the screen cannot tell the user which."
+  },
+  "eventsDetailYourRole": "You're {role} at this event",
+  "@eventsDetailYourRole": {
+    "description": "On an event's screen: the user's own role at the event. The role arrives as one of the eventsRole phrases, with its article, such as 'the host' or 'a guest'. Reword as your language needs; the phrases are translated on their own.",
+    "placeholders": {
+      "role": {
+        "type": "String",
+        "example": "the host"
+      }
+    }
+  },
+  "eventsDetailUntil": "until {time}",
+  "@eventsDetailUntil": {
+    "description": "Under the start of one of an event's dates, on the event's screen: when it ends. The time arrives already formatted. It is the time of day alone ('11:00 PM') when the date ends on the day it starts, and the day and time in the eventsWhen form ('Sat, Nov 7 · 2:00 AM') when it ends on another day.",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "11:00 PM"
+      }
+    }
+  },
+  "eventsTypeAdultsOnly": "Adults only",
+  "@eventsTypeAdultsOnly": {
+    "description": "The kind of event the host chose, on the event's screen: for adults only."
+  },
+  "eventsTypeCasualGathering": "Casual gathering",
+  "@eventsTypeCasualGathering": {
+    "description": "The kind of event the host chose, on the event's screen: a relaxed get-together."
+  },
+  "eventsTypeCompetitivePlay": "Competitive play",
+  "@eventsTypeCompetitivePlay": {
+    "description": "The kind of event the host chose, on the event's screen: played to win, as in a league or tournament."
+  },
+  "eventsTypeFamilyNight": "Family night",
+  "@eventsTypeFamilyNight": {
+    "description": "The kind of event the host chose, on the event's screen: a night for the family."
+  },
+  "eventsTypeKidFriendly": "Kid friendly",
+  "@eventsTypeKidFriendly": {
+    "description": "The kind of event the host chose, on the event's screen: suitable for children."
+  },
+  "eventsTypeLearningSession": "Learning session",
+  "@eventsTypeLearningSession": {
+    "description": "The kind of event the host chose, on the event's screen: for learning or teaching games."
+  },
+  "eventsTypeLongGameDay": "Long game day",
+  "@eventsTypeLongGameDay": {
+    "description": "The kind of event the host chose, on the event's screen: a day given over to long games."
+  },
+  "eventsTypeMixedAges": "Mixed ages",
+  "@eventsTypeMixedAges": {
+    "description": "The kind of event the host chose, on the event's screen: for players of all ages together."
+  },
+  "eventsTypePartyGames": "Party games",
+  "@eventsTypePartyGames": {
+    "description": "The kind of event the host chose, on the event's screen: for party games."
+  },
+  "eventsTypeStrategyNight": "Strategy night",
+  "@eventsTypeStrategyNight": {
+    "description": "The kind of event the host chose, on the event's screen: an evening of strategy games."
+  },
+  "eventsStatusArchived": "Archived",
+  "@eventsStatusArchived": {
+    "description": "Where an event stands, on its screen: it is over and has been put away, kept for the record."
+  },
+  "eventsStatusCancelled": "Cancelled",
+  "@eventsStatusCancelled": {
+    "description": "Where an event stands, on its screen: it will not happen."
+  },
+  "eventsStatusCompleted": "Completed",
+  "@eventsStatusCompleted": {
+    "description": "Where an event stands, on its screen: it has happened."
+  },
+  "eventsStatusOngoing": "Happening now",
+  "@eventsStatusOngoing": {
+    "description": "Where an event stands, on its screen: it is under way right now."
+  },
+  "eventsStatusPlanning": "Planning",
+  "@eventsStatusPlanning": {
+    "description": "Where an event stands, on its screen: it is still being arranged."
+  },
+  "eventsStatusScheduled": "Scheduled",
+  "@eventsStatusScheduled": {
+    "description": "Where an event stands, on its screen: it is arranged and will happen."
+  },
+  "eventsReachFriends": "Friends",
+  "@eventsReachFriends": {
+    "description": "Who can see an event, on its screen: the host's friends."
+  },
+  "eventsReachFriendsOfFriends": "Friends of friends",
+  "@eventsReachFriendsOfFriends": {
+    "description": "Who can see an event, on its screen: the host's friends and their friends."
+  },
+  "eventsReachPrivate": "Private",
+  "@eventsReachPrivate": {
+    "description": "Who can see an event, on its screen: no one beyond the people it is for."
+  },
+  "eventsReachPublic": "Public",
+  "@eventsReachPublic": {
+    "description": "Who can see an event, on its screen: everyone on this server."
+  },
+  "eventsRoleHost": "the host",
+  "@eventsRoleHost": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're the host at this event'), with its article: the person hosting the event."
+  },
+  "eventsRoleCoHost": "a co-host",
+  "@eventsRoleCoHost": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're a co-host at this event'), with its article: someone hosting the event alongside its host."
+  },
+  "eventsRoleOrganizer": "an organizer",
+  "@eventsRoleOrganizer": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're an organizer at this event'), with its article: someone helping to organize the event."
+  },
+  "eventsRoleModerator": "a moderator",
+  "@eventsRoleModerator": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're a moderator at this event'), with its article: someone keeping order at the event."
+  },
+  "eventsRoleParticipant": "a participant",
+  "@eventsRoleParticipant": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're a participant at this event'), with its article: someone taking part in the event."
+  },
+  "eventsRoleGuest": "a guest",
+  "@eventsRoleGuest": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're a guest at this event'), with its article: someone invited to the event as a guest."
+  },
+  "eventsRoleSpectator": "a spectator",
+  "@eventsRoleSpectator": {
+    "description": "A role at an event, as it reads inside eventsDetailYourRole ('You're a spectator at this event'), with its article: someone coming to watch rather than play."
+  },
+  "eventsRoleLabelHost": "Host",
+  "@eventsRoleLabelHost": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: the person hosting the event."
+  },
+  "eventsRoleLabelCoHost": "Co-host",
+  "@eventsRoleLabelCoHost": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: someone hosting the event alongside its host."
+  },
+  "eventsRoleLabelOrganizer": "Organizer",
+  "@eventsRoleLabelOrganizer": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: someone helping to organize the event."
+  },
+  "eventsRoleLabelModerator": "Moderator",
+  "@eventsRoleLabelModerator": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: someone keeping order at the event."
+  },
+  "eventsRoleLabelParticipant": "Participant",
+  "@eventsRoleLabelParticipant": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: someone taking part in the event."
+  },
+  "eventsRoleLabelGuest": "Guest",
+  "@eventsRoleLabelGuest": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: someone invited to the event as a guest."
+  },
+  "eventsRoleLabelSpectator": "Spectator",
+  "@eventsRoleLabelSpectator": {
+    "description": "A person's role at an event, beside their name in the event's who's-coming list: someone coming to watch rather than play."
+  },
+  "eventsOccurrenceProposed": "Proposed",
+  "@eventsOccurrenceProposed": {
+    "description": "Where one of an event's dates stands, in the dates on the event's screen: suggested while a vote chooses the date, and not settled yet."
+  },
+  "eventsOccurrenceConfirmed": "Confirmed",
+  "@eventsOccurrenceConfirmed": {
+    "description": "Where one of an event's dates stands, in the dates on the event's screen: settled: the event happens then."
+  },
+  "eventsOccurrenceDeclined": "Declined",
+  "@eventsOccurrenceDeclined": {
+    "description": "Where one of an event's dates stands, in the dates on the event's screen: a suggested date the host did not choose."
+  },
+  "eventsOccurrenceCancelled": "Cancelled",
+  "@eventsOccurrenceCancelled": {
+    "description": "Where one of an event's dates stands, in the dates on the event's screen: a settled date that was called off."
   }
 }

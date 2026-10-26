@@ -10,6 +10,7 @@ import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
 import '../screens/event_overview_screen.dart';
+import 'event_refresh_banner.dart';
 
 /// What the overview and every group's page show around their rows (#497):
 /// the couldn't-refresh banner over whatever the cache holds, the
@@ -38,8 +39,10 @@ class EventListStatesSliver extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-                child: _RefreshBanner(
+                child: EventRefreshBanner(
                   key: EventOverviewScreen.refreshBannerKey,
+                  retryKey: EventOverviewScreen.refreshRetryKey,
+                  failedMessage: l10n.eventsRefreshFailed,
                   refreshing: refreshing,
                   onRetry: bloc.canRetry ? retry : null,
                 ),
@@ -106,63 +109,4 @@ class EventMessageSliver extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       SliverFillRemaining(hasScrollBody: false, child: Center(child: child));
-}
-
-/// The stale-data banner and its retry: the collection list's, with this
-/// feature's copy.
-///
-/// The failed copy names no cause, because the hydrate reports one
-/// undifferentiated failure. While a pass the user asked for runs, the
-/// button stays in place, disabled, with the in-progress label rather than
-/// a bare spinner: a control that disappears mid-interaction moves focus.
-class _RefreshBanner extends StatelessWidget {
-  const _RefreshBanner({required this.refreshing, this.onRetry, super.key});
-
-  final bool refreshing;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = EventsLocalizations.of(context);
-    final retry = onRetry;
-
-    return BgeInlineBanner(
-      tone: refreshing ? BgeBannerTone.info : BgeBannerTone.warning,
-      message: refreshing
-          ? l10n.eventsRefreshInProgress
-          : l10n.eventsRefreshFailed,
-      // Furniture for as long as the data stays stale, already at the top
-      // of the viewport.
-      reveal: false,
-      action: retry == null
-          ? null
-          : TextButton.icon(
-              key: EventOverviewScreen.refreshRetryKey,
-              onPressed: refreshing ? null : retry,
-              icon: refreshing
-                  ? const _RetrySpinner()
-                  : const Icon(Icons.refresh),
-              label: Text(
-                refreshing
-                    ? l10n.eventsRefreshInProgress
-                    : l10n.eventsRefreshRetry,
-              ),
-            ),
-    );
-  }
-}
-
-/// The retry button's in-flight icon, scaled with the label beside it and
-/// silent to a screen reader: the label announces the state.
-class _RetrySpinner extends StatelessWidget {
-  const _RetrySpinner();
-
-  @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-    child: SizedBox.square(
-      dimension: BgeTextScale.clampedOf(context)
-          .scale(BgeTokens.of(context).spaceMd),
-      child: const CircularProgressIndicator(strokeWidth: 2),
-    ),
-  );
 }
