@@ -293,6 +293,7 @@ void main() {
         'a local-only household': fixedDraft().copyWith(
           householdId: 'hh-local',
         ),
+        'an empty household id': fixedDraft().copyWith(householdId: ''),
       };
 
       for (final MapEntry(key: reason, value: draft) in refused.entries) {

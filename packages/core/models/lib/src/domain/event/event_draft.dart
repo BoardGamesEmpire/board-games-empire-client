@@ -49,12 +49,12 @@ abstract class EventDraft with _$EventDraft {
   static const int maxInvitees = 50;
 
   /// Throws [ArgumentError], naming the field, for what no create can send:
-  /// more than [maxInvitees] invitees, an `unknown` enum value anywhere in
-  /// the draft, which has no wire name for the server to be sent, a vote
-  /// threshold or quorum type sent without the value it takes, and a vote
-  /// threshold, quorum or window below 1. Each is a 400, which is permanent
-  /// and parks a queued create on its first attempt, so the caller hears of
-  /// it before the draft is queued or sent.
+  /// an empty [householdId], more than [maxInvitees] invitees, an `unknown`
+  /// enum value anywhere in the draft, which has no wire name for the server
+  /// to be sent, a vote threshold or quorum type sent without the value it
+  /// takes, and a vote threshold, quorum or window below 1. Each is a 400,
+  /// which is permanent and parks a queued create on its first attempt, so
+  /// the caller hears of it before the draft is queued or sent.
   ///
   /// [url] is not checked: the server's `@IsUrl` is validator.js's `isURL`,
   /// whose rules this can't mirror without either passing what it refuses or
@@ -62,6 +62,15 @@ abstract class EventDraft with _$EventDraft {
   ///
   /// A caller adds its own checks to these.
   void checkSendable() {
+    // The server's `@IsOptional` passes only null; an empty string meets its
+    // `@IsNotEmpty`. Null is the event outside any household.
+    if (householdId == '') {
+      throw ArgumentError.value(
+        householdId,
+        'draft.householdId',
+        'must not be empty (null is no household)',
+      );
+    }
     if (inviteUserIds.length > maxInvitees) {
       throw ArgumentError.value(
         inviteUserIds.length,

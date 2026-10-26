@@ -169,6 +169,18 @@ void main() {
       });
     });
 
+    test('refuses an empty household id, and accepts none', () {
+      expect(
+        _draft.copyWith(householdId: '').checkSendable,
+        _refusing('draft.householdId'),
+      );
+      expect(
+        _draft.copyWith(householdId: 'hh_1').checkSendable,
+        returnsNormally,
+      );
+      expect(_draft.checkSendable, returnsNormally);
+    });
+
     group('the invitee ceiling', () {
       List<String> invitees(int count) => [
         for (var i = 0; i < count; i++) 'user_$i',
