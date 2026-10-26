@@ -216,6 +216,31 @@ void main() {
           ServerOnboardingInvalidResponse(),
         ],
       );
+
+      blocTest<ServerOnboardingBloc, ServerOnboardingState>(
+        'a server error from discovery emits ServerOnboardingServerError',
+        build: build,
+        setUp: () => when(() => wellKnown.fetchIdentity(any())).thenThrow(
+          const WellKnownServerErrorException(
+            serverUrl: 'https://x',
+            message: 'm',
+            statusCode: 503,
+          ),
+        ),
+        act: (bloc) => bloc.add(const ServerOnboardingSubmitted(url: _kUrl)),
+        expect: () => const [
+          ServerOnboardingInProgress(),
+          ServerOnboardingServerError(),
+        ],
+        verify: (_) => verifyNever(
+          () => orchestrator.addAndActivateServer(
+            displayName: any(named: 'displayName'),
+            serverUrl: any(named: 'serverUrl'),
+            bgeServerId: any(named: 'bgeServerId'),
+            identity: any(named: 'identity'),
+          ),
+        ),
+      );
     });
 
     group('version negotiation (#13) — a mismatch never persists', () {

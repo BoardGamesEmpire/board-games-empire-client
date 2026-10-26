@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:interfaces/repositories.dart';
@@ -105,7 +106,9 @@ void main() {
         act: (b) => b.add(const AuthSessionCheckRequested()),
         expect: () => [
           const AuthSessionCheckInProgress(),
-          const AuthSessionCheckFailed(),
+          const AuthSessionCheckFailed(
+            kind: SessionCheckFailureKind.unreachable,
+          ),
         ],
         verify: (b) => expect(
           (b.state as AuthSessionCheckFailed).cause,
@@ -128,7 +131,9 @@ void main() {
         act: (b) => b.add(const AuthSessionCheckRequested()),
         expect: () => [
           const AuthSessionCheckInProgress(),
-          const AuthSessionCheckFailed(),
+          const AuthSessionCheckFailed(
+            kind: SessionCheckFailureKind.serverFault,
+          ),
         ],
       );
 
@@ -160,13 +165,85 @@ void main() {
         act: (b) => b.add(const AuthSessionCheckRequested()),
         expect: () => [
           const AuthSessionCheckInProgress(),
-          const AuthSessionCheckFailed(),
+          const AuthSessionCheckFailed(
+            kind: SessionCheckFailureKind.unexpected,
+          ),
         ],
         verify: (b) => expect(
           (b.state as AuthSessionCheckFailed).cause,
           isA<StateError>(),
         ),
       );
+
+      // What failed decides the copy (#396): only a check nothing answered
+      // tells the user to look at their connection.
+      group('the failure kind follows the cause (#396)', () {
+        blocTest<AuthBloc, AuthBlocState>(
+          'a session check that times out fails as unreachable',
+          build: () {
+            // A cached session bounds the check. The restore it would enter
+            // on then fails, so the timeout is what surfaces.
+            when(() => mockRepo.getCachedSession())
+                .thenAnswer((_) async => testSession());
+            when(() => mockRepo.restoreCachedSession())
+                .thenThrow(StateError('keychain unavailable'));
+            when(() => mockRepo.getSession())
+                .thenAnswer((_) => Completer<AuthResponse?>().future);
+            return AuthBloc(
+              authRepository: mockRepo,
+              restoreBudget: const Duration(milliseconds: 20),
+            );
+          },
+          act: (b) => b.add(const AuthSessionCheckRequested()),
+          wait: const Duration(milliseconds: 100),
+          expect: () => [
+            const AuthSessionCheckInProgress(),
+            const AuthSessionCheckFailed(
+              kind: SessionCheckFailureKind.unreachable,
+            ),
+          ],
+          verify: (b) => expect(
+            (b.state as AuthSessionCheckFailed).cause,
+            isA<TimeoutException>(),
+          ),
+        );
+
+        for (final (name, Object cause, kind) in [
+          (
+            'a network failure fails as unreachable',
+            const AuthNetworkException(message: 'offline'),
+            SessionCheckFailureKind.unreachable,
+          ),
+          (
+            'a server fault fails as serverFault',
+            const AuthServerException(message: 'm', statusCode: 502),
+            SessionCheckFailureKind.serverFault,
+          ),
+          (
+            'a local decode failure fails as unexpected',
+            const AuthLocalDecodeException(message: 'no isolate'),
+            SessionCheckFailureKind.unexpected,
+          ),
+          (
+            'a keychain fault fails as unexpected',
+            PlatformException(code: 'locked'),
+            SessionCheckFailureKind.unexpected,
+          ),
+        ]) {
+          blocTest<AuthBloc, AuthBlocState>(
+            name,
+            build: () {
+              when(() => mockRepo.getSession()).thenThrow(cause);
+              return AuthBloc(authRepository: mockRepo);
+            },
+            act: (b) => b.add(const AuthSessionCheckRequested()),
+            expect: () => [
+              const AuthSessionCheckInProgress(),
+              AuthSessionCheckFailed(kind: kind),
+            ],
+          );
+        }
+      });
 
       blocTest<AuthBloc, AuthBlocState>(
         'drops a second concurrent session check while the first is in '
@@ -285,6 +362,26 @@ void main() {
         expect: () => [
           const AuthLoading(),
           const AuthFailureSessionNotGranted(),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
+        'sign-in refused for an unverified email emits '
+        'AuthFailureEmailNotVerified',
+        build: () {
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(const AuthEmailNotVerifiedException());
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) =>
+            b.add(const AuthSignInRequested(email: 'a@b.com', password: 'p')),
+        expect: () => [
+          const AuthLoading(),
+          const AuthFailureEmailNotVerified(),
         ],
       );
 
@@ -876,7 +973,9 @@ void main() {
         wait: const Duration(milliseconds: 30),
         expect: () => [
           const AuthSessionCheckInProgress(),
-          const AuthSessionCheckFailed(),
+          const AuthSessionCheckFailed(
+            kind: SessionCheckFailureKind.unreachable,
+          ),
         ],
       );
     });

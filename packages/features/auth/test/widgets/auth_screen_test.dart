@@ -158,6 +158,77 @@ void main() {
 
         expect(find.text("Don't have an account? Register"), findsNothing);
       });
+
+      /// Pumps the screen on the register form, with the bloc's states under
+      /// the test's control. Returns the stream.
+      Future<StreamController<AuthBlocState>> pumpOnRegister(
+        WidgetTester tester,
+      ) async {
+        final states = StreamController<AuthBlocState>();
+        addTearDown(states.close);
+        whenListen(mockBloc, states.stream, initialState: const AuthInitial());
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text("Don't have an account? Register"));
+        await tester.pumpAndSettle();
+        return states;
+      }
+
+      /// Goes back to sign-in, clearing the failure as the real bloc does.
+      Future<void> switchToSignIn(
+        WidgetTester tester,
+        StreamController<AuthBlocState> states,
+      ) async {
+        // Below the fold once the failure banner is up.
+        final toggle = find.text('Already have an account? Sign in');
+        await tester.ensureVisible(toggle);
+        await tester.tap(toggle);
+        states.add(const AuthUnauthenticated());
+        await tester.pumpAndSettle();
+        expect(find.byType(LoginForm), findsOneWidget, reason: 'sanity');
+      }
+
+      // Discovery said registration was open when the form was built, and
+      // the server has closed it since. Offering the form again would only
+      // get the same refusal (#443).
+      testWidgets('a refused registration hides Create account once the user '
+          'leaves the register form', (tester) async {
+        final states = await pumpOnRegister(tester);
+
+        states.add(const AuthFailureRegistrationDisabled());
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byType(RegisterForm),
+            matching: find.text(
+              'Registration is currently disabled on this server.',
+            ),
+          ),
+          findsOneWidget,
+        );
+
+        await switchToSignIn(tester, states);
+
+        expect(
+          tester.widget<LoginForm>(find.byType(LoginForm)).onSwitchToRegister,
+          isNull,
+        );
+        expect(find.text("Don't have an account? Register"), findsNothing);
+      });
+
+      testWidgets('a server that never refused registration still offers '
+          'it', (tester) async {
+        final states = await pumpOnRegister(tester);
+
+        states.add(const AuthFailureEmailAlreadyExists());
+        await tester.pumpAndSettle();
+        await switchToSignIn(tester, states);
+
+        expect(
+          tester.widget<LoginForm>(find.byType(LoginForm)).onSwitchToRegister,
+          isNotNull,
+        );
+      });
     });
 
     group('server display', () {
@@ -251,6 +322,36 @@ void main() {
           find.text('Something went wrong on the server. Please try again.'),
           findsNothing,
         );
+      });
+
+      // The server checked the password and wants the address confirmed
+      // first, so "incorrect password" would send the user to reset a
+      // password that works (#394).
+      testWidgets('an unverified sign-in shows the confirm-your-email '
+          'message', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureEmailNotVerified(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byKey(AuthScreen.failureBannerKey),
+            matching: find.text(
+              'Confirm your email before signing in. Check your inbox for '
+              'the link, then try again.',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Incorrect email or password.'), findsNothing);
       });
 
       testWidgets('retires the failure when the user edits a field', (

@@ -22,7 +22,10 @@ abstract class WellKnownClient {
   /// Throws:
   /// - [WellKnownUnreachableException] — network failure or timeout
   /// - [WellKnownNotFoundException] — server returned 404 (not a BGE server)
-  /// - [WellKnownInvalidResponseException] — non-200 status or unparseable body
+  /// - [WellKnownServerErrorException] — server returned a 5xx (there, but
+  ///   failing for now)
+  /// - [WellKnownInvalidResponseException] — any other non-200 status, or an
+  ///   unparseable body
   Future<ServerIdentity> fetchIdentity(String serverUrl);
 }
 
@@ -61,8 +64,27 @@ final class WellKnownNotFoundException extends WellKnownException {
   });
 }
 
-/// The server responded but the body could not be parsed as a valid
-/// [ServerIdentity]. May indicate a version mismatch between client and server.
+/// The server answered with a 5xx, so it is there and failing for now. That
+/// is usually a reverse proxy answering while the server behind it is down
+/// or still starting (#389).
+///
+/// Worth retrying. It says nothing about the URL or the version, whatever the
+/// body was: a gateway's HTML error page is still this.
+final class WellKnownServerErrorException extends WellKnownException {
+  const WellKnownServerErrorException({
+    required super.serverUrl,
+    required super.message,
+    required this.statusCode,
+    super.cause,
+  });
+
+  /// The 5xx the server answered with.
+  final int statusCode;
+}
+
+/// The server responded, but with a non-200 status that is neither 404 nor
+/// 5xx, or with a body that could not be parsed as a valid [ServerIdentity].
+/// May indicate a version mismatch between client and server.
 final class WellKnownInvalidResponseException extends WellKnownException {
   const WellKnownInvalidResponseException({
     required super.serverUrl,

@@ -12,7 +12,9 @@ import 'package:models/domain.dart';
 abstract class AuthRepository {
   /// Signs in with email and password.
   ///
-  /// Throws [AuthInvalidCredentialsException] for 401/403.
+  /// Throws [AuthInvalidCredentialsException] for a 401, or a 403 whose body
+  /// carries no code it recognises.
+  /// Throws [AuthEmailNotVerifiedException] for a 403 `EMAIL_NOT_VERIFIED`.
   /// Throws [AuthNetworkException] for connectivity failures.
   /// Throws [AuthLocalDecodeException] when the server answered but this
   /// device could not decode the reply.
@@ -33,7 +35,9 @@ abstract class AuthRepository {
 
   /// Registers a new account and signs in.
   ///
-  /// Throws [AuthRegistrationDisabledException] if registration is disabled.
+  /// Throws [AuthRegistrationDisabledException] if registration is disabled:
+  /// discovery says so, or the server refuses with a 403
+  /// `REGISTRATION_DISABLED`.
   /// Throws [AuthEmailAlreadyExistsException] if the email is taken.
   /// Throws [AuthNetworkException] for connectivity failures.
   /// Throws [AuthLocalDecodeException] when the server answered but this
@@ -329,6 +333,18 @@ final class AuthRegistrationDisabledException extends AuthException {
   });
 }
 
+/// The server checked the credentials and refused the sign-in because the
+/// address isn't verified yet (#394).
+///
+/// BetterAuth sends this only on sign-in, and only after the password check
+/// passes, so it is not a wrong password. A retry gets the same answer until
+/// the user follows the link in their verification email.
+final class AuthEmailNotVerifiedException extends AuthException {
+  const AuthEmailNotVerifiedException({
+    super.message = 'The server requires a verified email before signing in.',
+  });
+}
+
 /// Nothing answered: the request failed in transport — a timeout, a refused
 /// connection, a cancellation — so there is no status to classify by.
 ///
@@ -382,7 +398,8 @@ final class AuthServerException extends AuthException {
 /// reason.
 ///
 /// Sign-in is guarded for the same envelope, but BetterAuth does not send it
-/// there: it refuses an unverified sign-in with a 403 instead (#394).
+/// there. BetterAuth refuses an unverified sign-in with a 403 instead, which
+/// is [AuthEmailNotVerifiedException] (#394).
 ///
 /// An expected outcome of the server's configuration, not a fault — and not
 /// one a retry changes, since the same request gets the same answer.

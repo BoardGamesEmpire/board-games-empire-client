@@ -21,7 +21,7 @@ void main() {
           await expectLater(
             WellKnownClientImpl.withDio(dio).fetchIdentity(_kServerUrl),
             throwsA(
-              isA<WellKnownInvalidResponseException>().having(
+              isA<WellKnownServerErrorException>().having(
                 (e) => e.statusCode,
                 'statusCode',
                 502,
@@ -33,29 +33,26 @@ void main() {
     }
 
     // The other way into `_interpret`: with `validateStatus` left at Dio's
-    // default, a 502 arrives as a thrown `DioException` and the body reaches
-    // the narrowing as `DioException.response.data`. That is the path the
-    // narrowing comment is about, and nothing exercised it before.
-    test(
-      'a thrown non-2xx still reports the server as having answered',
-      () async {
-        final dio = cannedDio(
-          body: '<html>Gateway</html>',
-          statusCode: 502,
-          permissiveStatus: false,
-        );
+    // default, a 503 arrives as a thrown `DioException`, and its response
+    // reaches `_interpret` from the catch. The server answered, so it is
+    // failing, not unreachable (#389).
+    test('a thrown 503 is a server error, not unreachable', () async {
+      final dio = cannedDio(
+        body: '<html>Service Unavailable</html>',
+        statusCode: 503,
+        permissiveStatus: false,
+      );
 
-        await expectLater(
-          WellKnownClientImpl.withDio(dio).fetchIdentity(_kServerUrl),
-          throwsA(
-            isA<WellKnownInvalidResponseException>().having(
-              (e) => e.statusCode,
-              'statusCode',
-              502,
-            ),
+      await expectLater(
+        WellKnownClientImpl.withDio(dio).fetchIdentity(_kServerUrl),
+        throwsA(
+          isA<WellKnownServerErrorException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            503,
           ),
-        );
-      },
-    );
+        ),
+      );
+    });
   });
 }

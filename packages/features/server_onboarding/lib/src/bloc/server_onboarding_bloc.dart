@@ -95,6 +95,9 @@ class ServerOnboardingBloc
     } on WellKnownUnreachableException {
       emit(const ServerOnboardingUnreachable());
       return;
+    } on WellKnownServerErrorException {
+      emit(const ServerOnboardingServerError());
+      return;
     } on WellKnownInvalidResponseException {
       emit(const ServerOnboardingInvalidResponse());
       return;

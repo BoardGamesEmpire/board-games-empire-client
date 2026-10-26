@@ -220,12 +220,37 @@ void main() {
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
-        const AuthSessionCheckFailed(),
+        const AuthSessionCheckFailed(kind: SessionCheckFailureKind.unreachable),
       ],
       verify: (b) => expect(
         (b.state as AuthSessionCheckFailed).cause,
         isA<AuthNetworkException>(),
       ),
+    );
+
+    // The failure kind (#396) only picks the retry view's copy. It must not
+    // change which outcomes reach that view at all.
+    blocTest<AuthBloc, AuthBlocState>(
+      'a restorable cache still wins over a server fault',
+      build: () {
+        when(() => repo.getSession()).thenThrow(
+          const AuthServerException(
+            message: 'Server error 502.',
+            statusCode: 502,
+          ),
+        );
+        when(() => repo.restoreCachedSession())
+            .thenAnswer((_) async => testSession());
+        return build();
+      },
+      act: (b) => b.add(const AuthSessionCheckRequested()),
+      expect: () => [
+        const AuthSessionCheckInProgress(),
+        AuthAuthenticated(
+          session: testSession(),
+          verification: SessionVerification.unverifiedOffline,
+        ),
+      ],
     );
 
     blocTest<AuthBloc, AuthBlocState>(
@@ -259,7 +284,7 @@ void main() {
       act: (b) => b.add(const AuthSessionCheckRequested()),
       expect: () => [
         const AuthSessionCheckInProgress(),
-        const AuthSessionCheckFailed(),
+        const AuthSessionCheckFailed(kind: SessionCheckFailureKind.unreachable),
       ],
       verify: (b) => expect(
         (b.state as AuthSessionCheckFailed).cause,

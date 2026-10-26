@@ -75,8 +75,8 @@ void main() {
     // The #37 retryable view, not the sign-in form (AuthScreen): the stored
     // session was not rejected, we just couldn't ask — showing the form
     // would wrongly imply the session is gone. AuthGate renders
-    // SessionUnreachableView for AuthSessionCheckFailed.
-    expect(find.byType(SessionUnreachableView), findsOneWidget);
+    // SessionCheckFailedView for AuthSessionCheckFailed.
+    expect(find.byType(SessionCheckFailedView), findsOneWidget);
     expect(find.byType(AuthScreen), findsNothing);
   });
 

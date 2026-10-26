@@ -177,6 +177,7 @@ String _failureMessage(
   ServerOnboardingUnreachable() => l10n.serverAddErrorUnreachable,
   ServerOnboardingNotBgeServer() => l10n.serverAddErrorNotBge,
   ServerOnboardingInvalidResponse() => l10n.serverAddErrorInvalidResponse,
+  ServerOnboardingServerError() => l10n.serverAddErrorServerError,
   ServerOnboardingClientTooOld(:final clientVersion, :final requiredMinimum) =>
     l10n.serverAddErrorClientTooOld(requiredMinimum, clientVersion),
   ServerOnboardingClientTooNew(:final clientVersion, :final supportedMaximum) =>

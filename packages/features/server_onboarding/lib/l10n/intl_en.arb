@@ -64,13 +64,17 @@
   "@serverAddErrorUnreachable": {
     "description": "Error for a network failure or timeout during discovery"
   },
+  "serverAddErrorServerError": "The server isn't responding right now. Try again in a moment.",
+  "@serverAddErrorServerError": {
+    "description": "Error when the server answers discovery with a 5xx: it is there but failing for now, usually while the server behind a reverse proxy is down or starting. Must not blame the address, the connection or the app version."
+  },
   "serverAddErrorNotBge": "No Board Games Empire server was found at that address.",
   "@serverAddErrorNotBge": {
     "description": "Error when the well-known document returns 404"
   },
   "serverAddErrorInvalidResponse": "The server sent an unexpected response. It may be misconfigured or an incompatible version.",
   "@serverAddErrorInvalidResponse": {
-    "description": "Error for a non-200 response or unparseable identity document"
+    "description": "Error for a non-200 response that is neither 404 nor 5xx, or an unparseable identity document"
   },
   "serverAddErrorClientTooOld": "This server requires app version {requiredMinimum} or newer (you have {clientVersion}). Please update the app.",
   "@serverAddErrorClientTooOld": {
