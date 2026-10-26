@@ -253,6 +253,36 @@ void main() {
         );
       });
 
+      // The server checked the password and wants the address confirmed
+      // first, so "incorrect password" would send the user to reset a
+      // password that works (#394).
+      testWidgets('an unverified sign-in shows the confirm-your-email '
+          'message', (tester) async {
+        whenListen(
+          mockBloc,
+          Stream.fromIterable([
+            const AuthInitial(),
+            const AuthFailureEmailNotVerified(),
+          ]),
+          initialState: const AuthInitial(),
+        );
+
+        await tester.pumpWidget(_wrap(_screen(testServerIdentity()), mockBloc));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byKey(AuthScreen.failureBannerKey),
+            matching: find.text(
+              'Confirm your email before signing in. Check your inbox for '
+              'the link, then try again.',
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Incorrect email or password.'), findsNothing);
+      });
+
       testWidgets('retires the failure when the user edits a field', (
         tester,
       ) async {

@@ -134,7 +134,7 @@
   },
   "authErrorInvalidCredentials": "Incorrect email or password.",
   "@authErrorInvalidCredentials": {
-    "description": "Submission error: sign-in rejected (401/403)"
+    "description": "Submission error: sign-in rejected for a wrong email or password (a 401, or a 403 that gives no other reason)"
   },
   "authErrorEmailExists": "An account with this email already exists.",
   "@authErrorEmailExists": {
@@ -151,6 +151,10 @@
   "authErrorSessionNotGranted": "This server accepted your details but didn't sign you in. It may need you to confirm your email first — check your inbox, then sign in.",
   "@authErrorSessionNotGranted": {
     "description": "Submission error: the server accepted the credentials but started no session, typically because it requires email verification. The server does not say why, and a duplicate sign-up gets the same answer as a new account, so the copy must not claim an account was created or that verification is certainly the reason."
+  },
+  "authErrorEmailNotVerified": "Confirm your email before signing in. Check your inbox for the link, then try again.",
+  "@authErrorEmailNotVerified": {
+    "description": "Submission error: the server checked the email and password and refuses to sign in until the email is confirmed from the link it sent. The password was right, so the copy must not suggest it was wrong."
   },
   "authErrorServer": "Something went wrong on the server. Please try again.",
   "@authErrorServer": {

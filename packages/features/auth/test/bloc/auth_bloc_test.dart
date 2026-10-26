@@ -289,6 +289,26 @@ void main() {
       );
 
       blocTest<AuthBloc, AuthBlocState>(
+        'sign-in refused for an unverified email emits '
+        'AuthFailureEmailNotVerified',
+        build: () {
+          when(
+            () => mockRepo.signIn(
+              email: any(named: 'email'),
+              password: any(named: 'password'),
+            ),
+          ).thenThrow(const AuthEmailNotVerifiedException());
+          return AuthBloc(authRepository: mockRepo);
+        },
+        act: (b) =>
+            b.add(const AuthSignInRequested(email: 'a@b.com', password: 'p')),
+        expect: () => [
+          const AuthLoading(),
+          const AuthFailureEmailNotVerified(),
+        ],
+      );
+
+      blocTest<AuthBloc, AuthBlocState>(
         'emits the server kind (cause retained) on an unexpected failure',
         build: () {
           when(

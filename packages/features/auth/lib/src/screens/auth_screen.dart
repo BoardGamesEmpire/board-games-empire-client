@@ -339,6 +339,7 @@ class _AuthScreenState extends State<AuthScreen> {
         AuthFailureNetwork() => l10n.authErrorNetwork,
         AuthFailureLocalDecode() => l10n.authErrorLocalDecode,
         AuthFailureSessionNotGranted() => l10n.authErrorSessionNotGranted,
+        AuthFailureEmailNotVerified() => l10n.authErrorEmailNotVerified,
         AuthFailureServer() => l10n.authErrorServer,
       };
 

@@ -327,6 +327,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       emit(const AuthFailureInvalidCredentials());
     } on AuthSessionNotGrantedException {
       emit(const AuthFailureSessionNotGranted());
+    } on AuthEmailNotVerifiedException {
+      emit(const AuthFailureEmailNotVerified());
     } on AuthLocalDecodeException catch (e) {
       emit(AuthFailureLocalDecode(e));
     } on AuthNetworkException {
@@ -573,6 +575,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthBlocState> {
       case AuthFailureRegistrationDisabled():
       case AuthFailureNetwork():
       case AuthFailureSessionNotGranted():
+      case AuthFailureEmailNotVerified():
         _log.warn(
           'Auth operation failed',
           context: {'event': event, 'failure': next.runtimeType.toString()},

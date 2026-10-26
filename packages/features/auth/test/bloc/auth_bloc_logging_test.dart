@@ -121,6 +121,26 @@ void main() {
   );
 
   blocTest<AuthBloc, AuthBlocState>(
+    'warns (not errors) when the server wants the email confirmed — the '
+    'user has a step to take, and nothing is broken (#394)',
+    build: () {
+      when(
+        () => repo.signIn(
+          email: any(named: 'email'),
+          password: any(named: 'password'),
+        ),
+      ).thenThrow(const AuthEmailNotVerifiedException());
+      return AuthBloc(authRepository: repo);
+    },
+    act: (b) =>
+        b.add(const AuthSignInRequested(email: 'a@b.co', password: 'x')),
+    verify: (_) {
+      expect(warns(), isNotEmpty);
+      expect(errors(), isEmpty);
+    },
+  );
+
+  blocTest<AuthBloc, AuthBlocState>(
     'errors on an unexpected server failure (AuthFailureServer)',
     build: () {
       when(

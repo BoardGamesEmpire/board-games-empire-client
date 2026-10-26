@@ -155,7 +155,8 @@ sealed class AuthOperationFailure extends AuthBlocState {
   const AuthOperationFailure();
 }
 
-/// Sign-in rejected: wrong email or password (401/403).
+/// Sign-in rejected: wrong email or password (a 401, or a 403 that gives no
+/// other reason).
 final class AuthFailureInvalidCredentials extends AuthOperationFailure {
   const AuthFailureInvalidCredentials();
 }
@@ -193,6 +194,13 @@ final class AuthFailureLocalDecode extends AuthOperationFailure {
 /// outcome of its configuration, not a fault, and one a retry cannot change.
 final class AuthFailureSessionNotGranted extends AuthOperationFailure {
   const AuthFailureSessionNotGranted();
+}
+
+/// Sign-in refused: the server checked the credentials and wants the email
+/// confirmed first (#394). Not a wrong password, so the copy must not send
+/// the user to fix one.
+final class AuthFailureEmailNotVerified extends AuthOperationFailure {
+  const AuthFailureEmailNotVerified();
 }
 
 /// Anything unanticipated (unexpected status, malformed body, …). The
