@@ -20,18 +20,21 @@ void main() {
     sent = 0;
   });
 
-  Widget harness({HouseholdRole? viewerRole = HouseholdRole.householdOwner}) =>
-      MaterialApp(
-        theme: BgeTheme.light(),
-        localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
-        supportedLocales: HouseholdLocalizations.supportedLocales,
-        home: SendHouseholdInviteScreen(
-          householdId: 'hh_1',
-          viewerRole: viewerRole,
-          remote: remote,
-          onSent: (_) => sent++,
-        ),
-      );
+  Widget harness({
+    HouseholdRole? viewerRole = HouseholdRole.householdOwner,
+    MemberInvitePolicy? policy,
+  }) => MaterialApp(
+    theme: BgeTheme.light(),
+    localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
+    supportedLocales: HouseholdLocalizations.supportedLocales,
+    home: SendHouseholdInviteScreen(
+      householdId: 'hh_1',
+      viewerRole: viewerRole,
+      memberInvitePolicy: policy,
+      remote: remote,
+      onSent: (_) => sent++,
+    ),
+  );
 
   Future<void> submit(WidgetTester tester) async {
     await tester.ensureVisible(find.byKey(SendHouseholdInviteScreen.submitKey));

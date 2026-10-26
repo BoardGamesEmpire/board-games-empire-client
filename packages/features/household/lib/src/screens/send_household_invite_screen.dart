@@ -35,6 +35,7 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   const SendHouseholdInviteScreen({
     required this.householdId,
     required this.viewerRole,
+    required this.memberInvitePolicy,
     required this.remote,
     required this.onSent,
     super.key,
@@ -58,6 +59,10 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   /// The viewer's role in the household, or null when the cache could not
   /// say.
   final HouseholdRole? viewerRole;
+
+  /// The household's cached member invite policy, or null when the cache
+  /// hasn't read its settings yet.
+  final MemberInvitePolicy? memberInvitePolicy;
   final HouseholdInviteRemoteDataSource remote;
 
   /// Called once the invite is sent, with this screen's context. A
@@ -67,7 +72,10 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
-    final roles = HouseholdInvitePermissions.offerableRoles(viewerRole);
+    final roles = HouseholdInvitePermissions.offerableRoles(
+      viewerRole,
+      memberInvitePolicy,
+    );
 
     if (roles.isEmpty) {
       return BgePage(

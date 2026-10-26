@@ -2932,6 +2932,7 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       return SendHouseholdInviteScreen(
         householdId: widget.householdId,
         viewerRole: viewer.role,
+        memberInvitePolicy: null,
         remote: widget.remote,
         onSent: (ctx) => ctx.pop(),
       );
