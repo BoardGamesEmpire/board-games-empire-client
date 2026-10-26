@@ -18,6 +18,7 @@ export 'src/domain/device/device_preferences.dart';
 export 'src/domain/event/event.dart';
 export 'src/domain/event/event_attendee.dart';
 export 'src/domain/event/event_detail.dart';
+export 'src/domain/event/event_draft.dart';
 export 'src/domain/event/event_list_item.dart';
 export 'src/domain/event/event_occurrence.dart';
 export 'src/domain/event/event_participation_status.dart';

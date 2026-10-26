@@ -6,14 +6,18 @@ import 'package:network_interface/network_interface.dart';
 /// What the hydrate asked for in one list request.
 typedef EventListRequest = ({int page, int limit});
 
-/// An event remote that answers list requests from [respond] and detail
-/// requests from [detail], and records each one. A read it has no answer
-/// for throws, as does anything else.
+/// What a create sent: the draft and the key it was sent under (#499).
+typedef EventCreateRequest = ({EventDraft draft, String clientRequestId});
+
+/// An event remote that answers list requests from [respond], detail requests
+/// from [detail] and creates from [created], and records each one. A request
+/// it has no answer for throws, as does anything else.
 class FakeEventRemote implements EventRemoteDataSource {
   FakeEventRemote(
     FutureOr<PaginatedResult<EventSnapshot>> Function(EventListRequest request)
-    this.respond,
-  ) : detail = null;
+    this.respond, {
+    this.created = _noCreate,
+  }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
   /// for [failOnPage] instead.
@@ -21,6 +25,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     List<PaginatedResult<EventSnapshot>> pages, {
     int? failOnPage,
     Object error = const EventRemoteTransientException('offline'),
+    this.created = _noCreate,
   }) : respond = ((request) {
          if (request.page == failOnPage) throw error;
          return pages[request.page - 1];
@@ -30,8 +35,12 @@ class FakeEventRemote implements EventRemoteDataSource {
   /// Answers detail reads from [detail], for the detail screen (#498),
   /// which makes no list read.
   FakeEventRemote.detail(
-    FutureOr<EventSnapshot> Function(String id) this.detail,
-  ) : respond = null;
+    FutureOr<EventSnapshot> Function(String id) this.detail, {
+    this.created = _noCreate,
+  }) : respond = null;
+
+  static Never _noCreate(EventDraft draft, String clientRequestId) =>
+      throw UnimplementedError('createEvent is not faked');
 
   final FutureOr<PaginatedResult<EventSnapshot>> Function(
     EventListRequest request,
@@ -40,10 +49,20 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   final FutureOr<EventSnapshot> Function(String id)? detail;
 
+  /// Answers each create, which throws unless a test supplies one.
+  final FutureOr<CreatedEvent> Function(
+    EventDraft draft,
+    String clientRequestId,
+  )
+  created;
+
   final List<EventListRequest> requests = [];
 
   /// The id of each detail read, in order.
   final List<String> detailRequests = [];
+
+  /// Each create, in order, recorded before it is answered.
+  final List<EventCreateRequest> createRequests = [];
 
   @override
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
@@ -67,6 +86,15 @@ class FakeEventRemote implements EventRemoteDataSource {
     }
     detailRequests.add(id);
     return detail(id);
+  }
+
+  @override
+  Future<CreatedEvent> createEvent(
+    EventDraft draft, {
+    required String clientRequestId,
+  }) async {
+    createRequests.add((draft: draft, clientRequestId: clientRequestId));
+    return created(draft, clientRequestId);
   }
 
   @override

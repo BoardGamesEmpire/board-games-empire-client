@@ -5,7 +5,7 @@ import 'package:network_interface/network_interface.dart';
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 
-/// [EventRemoteDataSource] over a **per-server** Dio instance (#496).
+/// [EventRemoteDataSource] over a **per-server** Dio instance (#496, #499).
 ///
 /// Built on the DataGateway source's request plumbing (#41), which took it
 /// from the collection source (#351): the body is asked for as a `String` with
@@ -50,7 +50,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // A list route is never absent for a caller who reached it: no events is
       // a 200 with an empty page. So a 404 here means the route is not
       // deployed, such as on a server older than the events routes.
-      rowRoute: false,
+      route: _Route.list,
     );
 
     return _parse(
@@ -75,10 +75,43 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       // The path names one event, so an application 404 is the service saying
       // it is gone, or that the caller may not read it: the server answers
       // both alike.
-      rowRoute: true,
+      route: _Route.row,
     );
     return _parse(
       () => _mapDetail(_eventObject(response.body)),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<CreatedEvent> createEvent(
+    EventDraft draft, {
+    required String clientRequestId,
+  }) async {
+    _checkClientRequestId(clientRequestId);
+    draft.checkSendable();
+
+    const action = 'Event create';
+    final response = await _send(
+      request: () => _dio.post<String>(
+        _basePath,
+        options: _plainBody,
+        data: _createBody(draft, clientRequestId),
+      ),
+      action: action,
+      route: _Route.create,
+    );
+    return _parse(
+      () {
+        final event = _eventObject(response.body);
+        return (
+          snapshot: _mapDetail(event),
+          // A repeat of a create whose event was deleted since still answers
+          // with it, and says when.
+          deletedAt: _dateOrNull(event['deletedAt']),
+        );
+      },
       action: action,
       status: response.status,
     );
@@ -95,18 +128,18 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// Sends [request] and returns its decoded body, having converted every
   /// failure into an [EventRemoteException].
   ///
-  /// [rowRoute] says whether the path names one event, which is what lets an
-  /// application 404 mean that event is gone.
+  /// [route] says what the path names, which decides what an application 403
+  /// or 404 means.
   Future<({Map<String, dynamic> body, int status})> _send({
     required Future<Response<String>> Function() request,
     required String action,
-    required bool rowRoute,
+    required _Route route,
   }) async {
     late final Response<String> response;
     try {
       response = await request();
     } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
+      throw _classifyDioException(error, action: action, route: route);
     } on Object catch (error) {
       // Nothing else should escape Dio. `Object`, not `Exception`, so an
       // `Error` cannot break the "no raw transport error" promise either.
@@ -125,7 +158,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         status,
         '$action returned $status',
         cause: null,
-        rowRoute: rowRoute,
+        route: route,
         body: response.data,
       );
     }
@@ -425,6 +458,50 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   static DateTime? _dateOrNull(Object? value) =>
       value == null ? null : DateTime.parse(value as String);
 
+  // ── Request body ────────────────────────────────────────────────────
+
+  /// The create's body. A field the draft leaves null is left out, and so is an
+  /// empty list, so the server's defaults apply.
+  ///
+  /// Runs after [EventDraft.checkSendable], which is what keeps `toWire` from
+  /// throwing on an `unknown` value.
+  static Map<String, Object?> _createBody(
+    EventDraft draft,
+    String clientRequestId,
+  ) => {
+    'title': draft.title,
+    // Sent as given: the server trims it before it stores or matches it.
+    'clientRequestId': clientRequestId,
+    'schedulingMode': draft.schedulingMode.toWire(),
+    'householdId': ?draft.householdId,
+    'description': ?draft.description,
+    'location': ?draft.location,
+    'url': ?draft.url,
+    'type': ?draft.type?.toWire(),
+    'reach': ?draft.reach?.toWire(),
+    if (draft.occurrences.isNotEmpty)
+      'occurrences': [
+        for (final (index, occurrence) in draft.occurrences.indexed)
+          {
+            'label': ?occurrence.label,
+            'startDate': ?occurrence.startDate?.toUtc().toIso8601String(),
+            'endDate': ?occurrence.endDate?.toUtc().toIso8601String(),
+            'location': ?occurrence.location,
+            'sortOrder': index,
+          },
+      ],
+    if (draft.policy case final policy?)
+      'policy': {
+        'gameAdditionMode': ?policy.gameAdditionMode?.toWire(),
+        'voteThresholdType': ?policy.voteThresholdType?.toWire(),
+        'voteThresholdValue': ?policy.voteThresholdValue,
+        'voteQuorumType': ?policy.voteQuorumType?.toWire(),
+        'voteQuorumValue': ?policy.voteQuorumValue,
+        'votingWindowHours': ?policy.votingWindowHours,
+      },
+    if (draft.inviteUserIds.isNotEmpty) 'inviteUserIds': draft.inviteUserIds,
+  };
+
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
   void _checkPaging({required int page, required int limit}) {
@@ -442,6 +519,30 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     }
   }
 
+  /// The server trims `clientRequestId`, then requires 1 to
+  /// [EventRemoteDataSource.maxClientRequestIdLength] characters, and answers a
+  /// violation with a 400. That is permanent, and a permanent create is parked
+  /// on its first attempt, so a key the caller got wrong is refused here with
+  /// an error outside the transient and permanent split (#499), as the
+  /// household create does.
+  ///
+  /// This matches the server exactly for ASCII keys, which every key this
+  /// client mints is. Past ASCII the two can disagree at the edges: Dart's
+  /// `trim` also strips U+0085, which the server's does not, and the server
+  /// counts a surrogate pair as one character where `length` counts two.
+  void _checkClientRequestId(String clientRequestId) {
+    const maxLength = EventRemoteDataSource.maxClientRequestIdLength;
+    final length = clientRequestId.trim().length;
+    if (length == 0 || length > maxLength) {
+      throw ArgumentError.value(
+        clientRequestId,
+        'clientRequestId',
+        'must be 1 to $maxLength characters after trimming (the server '
+            'rejects anything else with a 400)',
+      );
+    }
+  }
+
   /// An empty id would send `GET /api/events/`, which the server routes to
   /// the list, so its 200 would fail to parse and read as the server breaking
   /// the contract rather than the caller's mistake.
@@ -456,7 +557,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   EventRemoteException _classifyDioException(
     DioException error, {
     required String action,
-    required bool rowRoute,
+    required _Route route,
   }) {
     final status = error.response?.statusCode;
     if (status != null) {
@@ -464,7 +565,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         status,
         '$action failed with status $status',
         cause: error,
-        rowRoute: rowRoute,
+        route: route,
         body: error.response?.data,
       );
     }
@@ -475,7 +576,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     int status,
     String message, {
     required Object? cause,
-    required bool rowRoute,
+    required _Route route,
     required Object? body,
   }) {
     if (status >= 500 || _retryable4xx.contains(status)) {
@@ -490,14 +591,23 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     // row, and only the application's own envelope licenses one. A proxy or
     // WAF answers 403 and 404 too (#350, #365, #253).
     if (status == 403) {
-      return isApiErrorEnvelope(body, status)
-          ? EventRemoteForbiddenException(
+      if (!isApiErrorEnvelope(body, status)) {
+        return EventRemoteTransientException(
+          '$message; the request did not reach the API',
+          cause: cause,
+          statusCode: status,
+        );
+      }
+      // On the create the API is refusing this request, not saying the caller
+      // may not read events.
+      return route == _Route.create
+          ? EventCreateRefusedException(
               message,
               cause: cause,
               statusCode: status,
             )
-          : EventRemoteTransientException(
-              '$message; the request did not reach the API',
+          : EventRemoteForbiddenException(
+              message,
               cause: cause,
               statusCode: status,
             );
@@ -505,18 +615,33 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     if (status == 404) {
       // Nest answers an unregistered route with this same envelope, so on the
       // list route even an application 404 means "not deployed", not "no
-      // rows". On a row route it is the service saying the row is gone.
-      return rowRoute && isApiErrorEnvelope(body, status)
-          ? EventRemoteNotFoundException(
-              message,
-              cause: cause,
-              statusCode: status,
-            )
-          : EventRemoteTransientException(
-              '$message; the route was not reachable',
-              cause: cause,
-              statusCode: status,
-            );
+      // rows". On a row route it is the service saying the row is gone. On the
+      // create it is the service refusing an unknown household or invitee.
+      //
+      // That last one is read as a refusal although a server without the route
+      // answers alike. Parked, a create that was never routable is bounded and
+      // can be discarded by hand. Transient, it would retry forever.
+      if (isApiErrorEnvelope(body, status)) {
+        if (route == _Route.row) {
+          return EventRemoteNotFoundException(
+            message,
+            cause: cause,
+            statusCode: status,
+          );
+        }
+        if (route == _Route.create) {
+          return EventCreateRefusedException(
+            message,
+            cause: cause,
+            statusCode: status,
+          );
+        }
+      }
+      return EventRemoteTransientException(
+        '$message; the route was not reachable',
+        cause: cause,
+        statusCode: status,
+      );
     }
     if (status == 409 && isRetryableRefusal(body)) {
       // A deadlock that outlived the server's own retry (#431). Nothing
@@ -545,4 +670,18 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
       statusCode: status,
     );
   }
+}
+
+/// What a request's path names, which decides what an application 403 or 404
+/// from it means.
+enum _Route {
+  /// `GET /api/events`, a route that is never absent for a caller who reached
+  /// it.
+  list,
+
+  /// `GET /api/events/:id`, which names one event.
+  row,
+
+  /// `POST /api/events`, whose 403 and 404 refuse that create.
+  create,
 }

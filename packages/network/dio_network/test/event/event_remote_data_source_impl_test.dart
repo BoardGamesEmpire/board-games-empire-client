@@ -208,6 +208,11 @@ String _listBody(
 /// A `GET /api/events/:id` body.
 String _detailBody(Map<String, dynamic> event) => jsonEncode({'event': event});
 
+/// A `POST /api/events` body: the message and the event, with the parts the
+/// create reads back.
+String _createdBody(Map<String, dynamic> event) =>
+    jsonEncode({'message': 'Event created', 'event': event});
+
 /// Nest's rendering of an `HttpException` carrying a message.
 String _envelope(int status, String error, String message) =>
     jsonEncode({'statusCode': status, 'message': message, 'error': error});
@@ -1063,11 +1068,394 @@ void main() {
     );
   });
 
+  group('createEvent', () {
+    /// The create's answer for a host alone: the roster carries the role
+    /// embed and no `user`, as `POST /events` reads it back.
+    Map<String, dynamic> created() =>
+        _eventRow(attendees: [_attendeeRow(role: _roleRow('EventHost'))]);
+
+    Future<CreatedEvent> create(EventRemoteDataSource remote) =>
+        remote.createEvent(const EventDraft(title: 'T'), clientRequestId: 'k');
+
+    test('posts the draft keyed by its clientRequestId', () async {
+      final remote = answering(_createdBody(created()), status: 201);
+
+      await remote.createEvent(
+        EventDraft(
+          title: 'Game night',
+          schedulingMode: EventSchedulingMode.poll,
+          occurrences: [
+            EventOccurrenceDraft(
+              label: 'Sat',
+              startDate: DateTime.utc(2026, 11, 1, 18),
+            ),
+            EventOccurrenceDraft(startDate: DateTime.utc(2026, 11, 2, 18)),
+          ],
+          policy: const EventPolicyDraft(
+            gameAdditionMode: GameAdditionMode.requiresVote,
+            votingWindowHours: 48,
+          ),
+          inviteUserIds: const ['u-2'],
+        ),
+        clientRequestId: 'local-1',
+      );
+
+      expect(adapter.sent.single.method, 'POST');
+      expect(adapter.sent.single.path, '/api/events');
+      expect(adapter.sent.single.query, isEmpty);
+      expect(adapter.sent.single.body, {
+        'title': 'Game night',
+        'clientRequestId': 'local-1',
+        'schedulingMode': 'Poll',
+        'occurrences': [
+          {
+            'label': 'Sat',
+            'startDate': '2026-11-01T18:00:00.000Z',
+            'sortOrder': 0,
+          },
+          {'startDate': '2026-11-02T18:00:00.000Z', 'sortOrder': 1},
+        ],
+        'policy': {'gameAdditionMode': 'RequiresVote', 'votingWindowHours': 48},
+        'inviteUserIds': ['u-2'],
+      });
+    });
+
+    test('sends every field the draft sets, in UTC', () async {
+      final remote = answering(_createdBody(created()), status: 201);
+
+      await remote.createEvent(
+        EventDraft(
+          title: 'Brass',
+          householdId: 'hh_1',
+          description: 'Bring the expansions.',
+          location: "Ada's place",
+          url: 'https://example.com/brass',
+          type: EventType.familyNight,
+          reach: Reach.friendsOfFriends,
+          occurrences: [
+            EventOccurrenceDraft(
+              // An offset instant goes out as the same instant in UTC.
+              startDate: DateTime.parse('2026-11-01T20:00:00+02:00'),
+              endDate: DateTime.utc(2026, 11, 1, 22),
+              location: 'The garage',
+            ),
+          ],
+          policy: const EventPolicyDraft(
+            gameAdditionMode: GameAdditionMode.requiresVote,
+            voteThresholdType: VoteThresholdType.supermajority,
+            voteThresholdValue: 66,
+            voteQuorumType: VoteQuorumType.percentOfAttendees,
+            voteQuorumValue: 50,
+            votingWindowHours: 24,
+          ),
+        ),
+        clientRequestId: 'k',
+      );
+
+      expect(adapter.sent.single.body, {
+        'title': 'Brass',
+        'clientRequestId': 'k',
+        'schedulingMode': 'Fixed',
+        'householdId': 'hh_1',
+        'description': 'Bring the expansions.',
+        'location': "Ada's place",
+        'url': 'https://example.com/brass',
+        'type': 'FamilyNight',
+        'reach': 'FriendsOfFriends',
+        'occurrences': [
+          {
+            'startDate': '2026-11-01T18:00:00.000Z',
+            'endDate': '2026-11-01T22:00:00.000Z',
+            'location': 'The garage',
+            'sortOrder': 0,
+          },
+        ],
+        'policy': {
+          'gameAdditionMode': 'RequiresVote',
+          'voteThresholdType': 'Supermajority',
+          'voteThresholdValue': 66,
+          'voteQuorumType': 'PercentOfAttendees',
+          'voteQuorumValue': 50,
+          'votingWindowHours': 24,
+        },
+      });
+    });
+
+    test('an empty draft sends only its title, key and mode', () async {
+      final remote = answering(_createdBody(created()), status: 201);
+
+      await create(remote);
+
+      expect(adapter.sent.single.body, {
+        'title': 'T',
+        'clientRequestId': 'k',
+        'schedulingMode': 'Fixed',
+      });
+    });
+
+    test('a created event is read with its roster', () async {
+      final remote = answering(_createdBody(created()), status: 201);
+
+      final result = await create(remote);
+
+      final snapshot = result.snapshot;
+      expect(snapshot.event.id, 'ev_1');
+      expect(snapshot.occurrences.length, 2);
+      expect(snapshot.policy!.gameAdditionMode, GameAdditionMode.requiresVote);
+      expect(snapshot.attendees!.single.role, EventRole.host);
+      expect(snapshot.attendees!.single.userId, 'user_ada');
+      expect(result.deletedAt, isNull);
+    });
+
+    test('a replay of a deleted event carries deletedAt', () async {
+      final remote = answering(
+        _createdBody(created()..['deletedAt'] = '2026-10-20T12:30:00.000Z'),
+        status: 201,
+      );
+
+      final result = await create(remote);
+
+      expect(result.deletedAt, DateTime.utc(2026, 10, 20, 12, 30));
+      expect(result.snapshot.event.id, 'ev_1');
+    });
+
+    test('an enveloped 403 refuses the create', () async {
+      final remote = answering(
+        _envelope(403, 'Forbidden', 'You may not create events there.'),
+        status: 403,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(
+          isA<EventCreateRefusedException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            403,
+          ),
+        ),
+      );
+    });
+
+    test('an enveloped 404 refuses the create', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'No such household.'),
+        status: 404,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(
+          isA<EventCreateRefusedException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
+    });
+
+    test('a 403 without the envelope is transient', () async {
+      final remote = answering(
+        '<html>Blocked by corporate proxy</html>',
+        status: 403,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+
+    test('a 404 without the envelope is transient', () async {
+      final remote = answering('<html>Not Found</html>', status: 404);
+
+      await expectLater(
+        create(remote),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+
+    test('a 400 is permanent', () async {
+      final remote = answering(
+        _envelope(400, 'Bad Request', 'title must be a string'),
+        status: 400,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(
+          isA<EventRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            400,
+          ),
+        ),
+      );
+    });
+
+    test('a 5xx is transient', () async {
+      final remote = answering(
+        _envelope(503, 'Service Unavailable', 'Try again.'),
+        status: 503,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(
+          isA<EventRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            503,
+          ),
+        ),
+      );
+    });
+
+    test('a 409 asking for a retry is transient', () async {
+      final remote = answering(_deadlock(), status: 409);
+
+      await expectLater(
+        create(remote),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+
+    test('a 201 with no roster is permanent', () async {
+      final remote = answering(
+        _createdBody(_eventRow()..remove('attendees')),
+        status: 201,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(
+          isA<EventRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            201,
+          ),
+        ),
+      );
+    });
+
+    group('requests the server would refuse are never sent', () {
+      Future<void> expectRefused(
+        EventDraft draft, {
+        String clientRequestId = 'k',
+      }) async {
+        final remote = answering(_createdBody(created()), status: 201);
+
+        await expectLater(
+          remote.createEvent(draft, clientRequestId: clientRequestId),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(adapter.sent, isEmpty);
+      }
+
+      test('a blank clientRequestId', () async {
+        await expectRefused(const EventDraft(title: 'T'), clientRequestId: '');
+        await expectRefused(
+          const EventDraft(title: 'T'),
+          clientRequestId: '   ',
+        );
+      });
+
+      test('a clientRequestId of 129 characters', () async {
+        await expectRefused(
+          const EventDraft(title: 'T'),
+          clientRequestId: 'k' * 129,
+        );
+      });
+
+      test('a clientRequestId of 128 characters is sent', () async {
+        final remote = answering(_createdBody(created()), status: 201);
+
+        await remote.createEvent(
+          const EventDraft(title: 'T'),
+          clientRequestId: 'k' * 128,
+        );
+
+        expect(adapter.sent, hasLength(1));
+      });
+
+      test('51 invitees', () async {
+        await expectRefused(
+          EventDraft(
+            title: 'T',
+            inviteUserIds: [for (var i = 0; i < 51; i++) 'u-$i'],
+          ),
+        );
+      });
+
+      test('50 invitees are sent', () async {
+        final remote = answering(_createdBody(created()), status: 201);
+
+        await remote.createEvent(
+          EventDraft(
+            title: 'T',
+            inviteUserIds: [for (var i = 0; i < 50; i++) 'u-$i'],
+          ),
+          clientRequestId: 'k',
+        );
+
+        expect(adapter.sent, hasLength(1));
+      });
+
+      test('an unknown event type', () async {
+        await expectRefused(
+          const EventDraft(title: 'T', type: EventType.unknown),
+        );
+      });
+
+      test('an unknown reach', () async {
+        await expectRefused(const EventDraft(title: 'T', reach: Reach.unknown));
+      });
+
+      test('an unknown scheduling mode', () async {
+        await expectRefused(
+          const EventDraft(
+            title: 'T',
+            schedulingMode: EventSchedulingMode.unknown,
+          ),
+        );
+      });
+
+      test('an unknown game addition mode in the policy', () async {
+        await expectRefused(
+          const EventDraft(
+            title: 'T',
+            policy: EventPolicyDraft(
+              gameAdditionMode: GameAdditionMode.unknown,
+            ),
+          ),
+        );
+      });
+
+      test('an unknown vote threshold or quorum in the policy', () async {
+        await expectRefused(
+          const EventDraft(
+            title: 'T',
+            policy: EventPolicyDraft(
+              voteThresholdType: VoteThresholdType.unknown,
+            ),
+          ),
+        );
+        await expectRefused(
+          const EventDraft(
+            title: 'T',
+            policy: EventPolicyDraft(voteQuorumType: VoteQuorumType.unknown),
+          ),
+        );
+      });
+    });
+  });
+
   group('classification', () {
     test('any 2xx is a success, not only 200', () async {
       // Every event write answers 201, whatever the API's description says,
-      // so a check narrowed to 200 would fail the writes #499 and #527 add
-      // here. Pinned on a read until then.
+      // so a check narrowed to 200 would fail the create (#499) and the writes
+      // #527 adds. The create's own tests pin it there; this pins it on a read.
       final remote = answering(
         _detailBody(_eventRow(attendees: [])),
         status: 201,
