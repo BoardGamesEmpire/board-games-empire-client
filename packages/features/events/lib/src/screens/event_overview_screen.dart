@@ -46,8 +46,9 @@ import '../widgets/event_row.dart';
 /// ## Hooks for what isn't built yet
 ///
 /// Without [onOpen] a row is inert content, not a focus stop: a tap that
-/// leads nowhere is worse than no tap (#269). #498 wires it. Without
-/// [onCreate] there is no create button; #499 wires it.
+/// leads nowhere is worse than no tap (#269). The shell passes it where it
+/// has a detail route (#498). Without [onCreate] there is no create button;
+/// #499 wires it.
 class EventOverviewScreen extends StatelessWidget {
   const EventOverviewScreen({
     required this.repository,

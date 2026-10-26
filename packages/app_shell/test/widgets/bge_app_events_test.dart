@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 
@@ -19,6 +23,34 @@ class _MockStorage extends Mock implements Storage {}
 class _MockEventRepository extends Mock implements EventRepository {}
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+class _MockEventRemote extends Mock implements EventRemoteDataSource {}
+
+/// A user scope that holds whoever the shell last activated.
+class _UserSessionScope implements UserSessionScope {
+  @override
+  String? activeUserId;
+
+  @override
+  Future<void> activate(String userId) async => activeUserId = userId;
+
+  @override
+  Future<void> deactivate() async => activeUserId = null;
+}
+
+/// A session guard that gives [answer] and records whom it was asked about.
+class _RecordingGuard implements SessionIdentityGuard {
+  _RecordingGuard(this.answer);
+
+  final SessionConfirmation answer;
+  final asked = <String>[];
+
+  @override
+  Future<SessionConfirmation> confirm(String userId) async {
+    asked.add(userId);
+    return answer;
+  }
+}
 
 /// Counts passes without running any. What these tests check is who calls
 /// the seam, not what it holds.
@@ -67,6 +99,16 @@ EventListItem _upcoming(String id) {
   );
 }
 
+/// What the cache holds for an [_upcoming] event: the event and its dates,
+/// with [attendance] as the current user's own roster row, or none.
+EventDetail _detail(String id, {EventAttendee? attendance}) {
+  final item = _upcoming(id);
+  return EventDetail(
+    snapshot: EventSnapshot(event: item.event, occurrences: item.occurrences),
+    attendance: attendance,
+  );
+}
+
 /// The #497 shell wiring through the real composition: the drawer entry and
 /// its gate, the overview and group routes resolving the session's
 /// repository, households and status, the retry reaching the events' own
@@ -75,11 +117,21 @@ EventListItem _upcoming(String id) {
 /// The screens' own behaviour is pinned in `events`. What only this file can
 /// check is that they are handed what the session registered, and that a
 /// container without the optional parts still renders them.
+///
+/// The same goes for the #498 detail the rows open: the route's builder, its
+/// optional server client and its household lookups.
 void main() {
   late _MockAppBootstrapCubit cubit;
+  late _MockEventRepository repository;
+
+  setUpAll(() {
+    registerFallbackValue(_detail('e-0').snapshot);
+    registerFallbackValue(EventAccessSource.read);
+  });
 
   setUp(() {
     cubit = _MockAppBootstrapCubit();
+    repository = _MockEventRepository();
     final storage = _MockStorage();
     when(() => storage.read(any())).thenReturn(null);
     when(() => storage.write(any(), any<dynamic>())).thenAnswer((_) async {});
@@ -90,25 +142,53 @@ void main() {
   /// Pumps home with a cache holding [events] upcoming events. [withRepository]
   /// false is a signed-out session, where the user tier is gone.
   /// [failedPass] publishes a status whose last pass failed, which is where
-  /// the banner and its retry live. [withHouseholds] caches `h-1`.
+  /// the banner and its retry live. [withHouseholds] caches `h-1`, where the
+  /// user holds [householdRole]. [remote] is the server's event client, and
+  /// the user's own roster row on every detail is [attendance]. [detailCache]
+  /// replaces what every `watchEvent` emits, for a cache the test drives.
   Future<void> pumpHome(
     WidgetTester tester, {
     int events = 1,
     bool withRepository = true,
     bool withHouseholds = false,
+    HouseholdRole? householdRole,
+    EventAttendee? attendance,
+    EventRemoteDataSource? remote,
+    Stream<EventDetail?>? detailCache,
     bool failedPass = false,
     EventRefresher? refresher,
     SessionRehydrator? rehydrator,
+    SessionIdentityGuard? guard,
   }) async {
-    final repository = _MockEventRepository();
     when(repository.watchAttendingEventListItems).thenAnswer(
       (_) => Stream.value([for (var n = 0; n < events; n++) _upcoming('e-$n')]),
     );
+    when(() => repository.watchEvent(any())).thenAnswer(
+      (call) =>
+          detailCache ??
+          // Left open, as Drift's watch is: one that ends is a session
+          // teardown, after which the screen offers no retry (#498).
+          Stream.multi(
+            (cache) => cache.add(
+              _detail(
+                call.positionalArguments.first as String,
+                attendance: attendance,
+              ),
+            ),
+          ),
+    );
+    when(() => repository.cacheEvent(any(), source: any(named: 'source')))
+        .thenAnswer((_) async {});
+    when(() => repository.lastWrite(any())).thenAnswer((_) async => 7);
+    when(
+      () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
+    ).thenAnswer((_) async => true);
 
     HouseholdRepository? households;
     if (withHouseholds) {
-      households = _MockHouseholdRepository();
-      when(households.watchHouseholds).thenAnswer(
+      final mock = _MockHouseholdRepository();
+      households = mock;
+      when(mock.watchHouseholds).thenAnswer(
         (_) => Stream.value([
           Household(
             id: 'h-1',
@@ -117,6 +197,16 @@ void main() {
             updatedAt: DateTime.utc(2026),
           ),
         ]),
+      );
+      when(() => mock.getCurrentUserMember(any())).thenAnswer(
+        (_) async => HouseholdMember(
+          id: 'm-1',
+          userId: 'u1',
+          householdId: 'h-1',
+          role: householdRole,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
       );
     }
 
@@ -136,6 +226,10 @@ void main() {
           eventRepository: withRepository ? repository : null,
           eventHydrationStatus: status,
           eventRefresher: refresher,
+          eventRemoteDataSource: remote,
+          // A guard is asked about the scope's user, so it comes with one.
+          userSessionScope: guard == null ? null : _UserSessionScope(),
+          sessionIdentityGuard: guard,
           sessionRehydrator: rehydrator,
         ),
       ),
@@ -289,6 +383,236 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(rehydrator.passes, 1);
+    });
+  });
+
+  group('opening an event (#498)', () {
+    Future<void> openRow(WidgetTester tester, String id) async {
+      await tester.tap(find.byKey(EventOverviewScreen.rowKey(id)));
+      await tester.pumpAndSettle();
+    }
+
+    EventDetailScreen shown(WidgetTester tester) =>
+        tester.widget<EventDetailScreen>(find.byType(EventDetailScreen));
+
+    /// The screen's bloc. The provider is inside the screen, so the lookup
+    /// starts from a widget it builds.
+    EventDetailBloc blocOf(WidgetTester tester) => BlocProvider.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.byType(EventDetailScreen),
+              matching: find.byType(Scaffold),
+            )
+            .first,
+      ),
+    );
+
+    testWidgets("a row opens the event's detail", (tester) async {
+      await pumpHome(tester);
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      expect(shown(tester).eventId, 'e-0');
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+      expect(find.text('Game night e-0'), findsOneWidget);
+    });
+
+    testWidgets("a group page's row opens it too", (tester) async {
+      await pumpHome(tester, events: EventOverviewScreen.groupCap + 1);
+      await openTheOverview(tester);
+      await tester.tap(
+        find.byKey(EventOverviewScreen.seeAllKey(EventGroup.upcoming)),
+      );
+      await tester.pumpAndSettle();
+
+      // The sixth event, which only the group page lists.
+      final row = find.byKey(EventOverviewScreen.rowKey('e-5'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      expect(shown(tester).eventId, 'e-5');
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+    });
+
+    testWidgets(
+      "a server's session guard is asked, as the scope's user, before the "
+      'read goes out',
+      (tester) async {
+        // Web's: another tab can move the session cookie to another user
+        // under this one (#432), whose answer would be cached as this
+        // user's.
+        final remote = _MockEventRemote();
+        final guard = _RecordingGuard(SessionConfirmation.notThisUser);
+        await pumpHome(tester, remote: remote, guard: guard);
+        await openTheOverview(tester);
+
+        await openRow(tester, 'e-0');
+
+        expect(guard.asked, ['u1']);
+        verifyNever(() => remote.fetchEvent(any()));
+        expect(find.byKey(EventDetailScreen.refreshBannerKey), findsOneWidget);
+      },
+    );
+
+    testWidgets('a confirmed session reads and writes the event', (
+      tester,
+    ) async {
+      final remote = _MockEventRemote();
+      when(() => remote.fetchEvent(any()))
+          .thenAnswer((_) async => _detail('e-0').snapshot);
+      final guard = _RecordingGuard(SessionConfirmation.confirmed);
+      await pumpHome(tester, remote: remote, guard: guard);
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      // Once before the request, and once before its answer is written.
+      expect(guard.asked, ['u1', 'u1']);
+      verify(() => remote.fetchEvent('e-0')).called(1);
+      verify(() => repository.cacheEvent(any(), source: EventAccessSource.read))
+          .called(1);
+    });
+
+    testWidgets('back from the detail returns to the list', (tester) async {
+      // The app bar's back button, which pops whatever the screen's own
+      // `onBack` is. That callback is the not-found test's.
+      await pumpHome(tester);
+      await openTheOverview(tester);
+      await openRow(tester, 'e-0');
+      expect(find.byType(EventDetailScreen), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EventDetailScreen), findsNothing);
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
+      expect(find.byKey(EventOverviewScreen.rowKey('e-0')), findsOneWidget);
+    });
+
+    testWidgets('the not-found way back returns to the list, with home still '
+        'beneath it', (tester) async {
+      // The screen's `onBack` is used on this surface alone. A `go` to the
+      // events would replace the stack with the overview: no back button, no
+      // drawer, and on desktop no way out (#308's household bug, which this
+      // is the events' guard against).
+      final remote = _MockEventRemote();
+      when(() => remote.fetchEvent(any())).thenAnswer(
+        (_) async => throw const EventRemoteNotFoundException('gone'),
+      );
+      // The cache holds nothing for the event the user opened, and never
+      // closes.
+      final cache = StreamController<EventDetail?>()..add(null);
+      addTearDown(() => unawaited(cache.close()));
+      await pumpHome(tester, remote: remote, detailCache: cache.stream);
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
+      verify(
+        () => repository.forgetEvent('e-0', lastWrite: any(named: 'lastWrite')),
+      ).called(1);
+      // The list is beneath the detail, not on screen.
+      expect(find.byType(EventOverviewScreen), findsNothing);
+
+      await tester.tap(find.byKey(EventDetailScreen.notFoundBackKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
+      expect(find.byType(EventDetailScreen), findsNothing);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets(
+      'a container with no event remote still renders the cached event',
+      (tester) async {
+        await pumpHome(tester);
+        await openTheOverview(tester);
+
+        await openRow(tester, 'e-0');
+
+        expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+        // Nothing to read from, so nothing written, and nothing to retry.
+        verifyNever(
+          () => repository.cacheEvent(any(), source: any(named: 'source')),
+        );
+        expect(find.byKey(EventDetailScreen.errorKey), findsNothing);
+        expect(find.byKey(EventDetailScreen.refreshBannerKey), findsNothing);
+        expect(find.byKey(EventDetailScreen.refreshRetryKey), findsNothing);
+      },
+    );
+
+    testWidgets('a registered event remote reads the event once', (
+      tester,
+    ) async {
+      final remote = _MockEventRemote();
+      when(() => remote.fetchEvent(any()))
+          .thenAnswer((_) async => _detail('e-0').snapshot);
+      await pumpHome(tester, remote: remote);
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      verify(() => remote.fetchEvent('e-0')).called(1);
+      verify(() => repository.cacheEvent(any(), source: EventAccessSource.read))
+          .called(1);
+    });
+
+    testWidgets('a failed read leaves the cached event with a retry', (
+      tester,
+    ) async {
+      final remote = _MockEventRemote();
+      when(() => remote.fetchEvent(any()))
+          .thenThrow(const EventRemoteTransientException('offline'));
+      await pumpHome(tester, remote: remote);
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      expect(find.byKey(EventDetailScreen.datesKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.refreshBannerKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.refreshRetryKey), findsOneWidget);
+    });
+
+    testWidgets('the household role reaches the screen', (tester) async {
+      // The user doesn't attend this event: no roster row names them. Its
+      // household owner may edit it all the same.
+      await pumpHome(
+        tester,
+        withHouseholds: true,
+        householdRole: HouseholdRole.householdOwner,
+      );
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      final state = blocOf(tester).state;
+      expect(state, isA<EventDetailReady>());
+      expect((state as EventDetailReady).actions, contains(EventAction.edit));
+      expect(state.householdName, 'The Smiths');
+    });
+
+    testWidgets('a plain household member is offered nothing', (tester) async {
+      await pumpHome(
+        tester,
+        withHouseholds: true,
+        householdRole: HouseholdRole.householdMember,
+      );
+      await openTheOverview(tester);
+
+      await openRow(tester, 'e-0');
+
+      final state = blocOf(tester).state;
+      expect(state, isA<EventDetailReady>());
+      expect((state as EventDetailReady).actions, isEmpty);
     });
   });
 }

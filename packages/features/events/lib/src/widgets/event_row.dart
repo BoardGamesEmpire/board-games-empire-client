@@ -13,19 +13,15 @@ import 'event_labels.dart';
 ///
 /// ## The date is the device's
 ///
-/// The date and time are shown in device-local time. The day is an ARB
-/// `DateTime` placeholder, as the collection's last-played date is, with the
-/// year only when it isn't this year. The time comes from
-/// [MaterialLocalizations.formatTimeOfDay], told the platform's 24-hour
-/// setting, rather than from `intl`: `intl` follows the locale alone, so a
-/// user who set 24-hour time on a 12-hour locale would get the 12-hour form.
-/// The event's detail screen says its dates the same way, through the same
-/// `eventWhenLabel` (#498).
+/// The date and time are shown in device-local time, with the year only when
+/// it isn't this year, by [eventWhenLabel], through which the event's detail
+/// screen says its dates too (#498).
 ///
 /// ## A row is content until there is somewhere to go
 ///
 /// Without [onOpen] a row is inert content, not a focus stop: a tap that
-/// leads nowhere is worse than no tap (#269). #498 wires it.
+/// leads nowhere is worse than no tap (#269). The shell passes [onOpen] where
+/// it has a detail route for the event (#498), so there a row is a button.
 class EventRowTile extends StatelessWidget {
   const EventRowTile({
     required this.row,
