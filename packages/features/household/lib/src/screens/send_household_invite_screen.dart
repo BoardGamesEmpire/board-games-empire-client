@@ -38,6 +38,7 @@ class SendHouseholdInviteScreen extends StatelessWidget {
     required this.memberInvitePolicy,
     required this.remote,
     required this.onSent,
+    this.onRefresh,
     super.key,
   });
 
@@ -69,6 +70,11 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   /// confirmation SnackBar is already showing, above the route.
   final void Function(BuildContext context) onSent;
 
+  /// Reads the household again after a send is refused with 403: the
+  /// policy or the viewer's role may have changed on another device. Null
+  /// skips the read.
+  final Future<void> Function()? onRefresh;
+
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
@@ -95,8 +101,11 @@ class SendHouseholdInviteScreen extends StatelessWidget {
       key: ValueKey<String>(householdId),
       providers: [
         BlocProvider(
-          create: (_) =>
-              SendHouseholdInviteBloc(householdId: householdId, remote: remote),
+          create: (_) => SendHouseholdInviteBloc(
+            householdId: householdId,
+            remote: remote,
+            onRefresh: onRefresh,
+          ),
         ),
         BlocProvider(create: (_) => UserSearchBloc(remote: remote)),
       ],

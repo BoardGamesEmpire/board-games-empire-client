@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:network_interface/network_interface.dart';
@@ -12,11 +14,16 @@ import 'send_household_invite_state.dart';
 /// invite. Nothing is retried on its own: a send the server never answered
 /// may still have created the invite, and sending it again would be refused
 /// as a duplicate or count twice against the daily limit.
+///
+/// A send refused with 403 reads the household again (#569), and is not
+/// sent again: the household's policy or the viewer's role may have changed
+/// on another device, and what the read brings back redraws the form.
 class SendHouseholdInviteBloc
     extends Bloc<SendHouseholdInviteEvent, SendHouseholdInviteState> {
   SendHouseholdInviteBloc({
     required this._householdId,
     required this._remote,
+    this._onRefresh,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.invites.send'),
        super(const SendHouseholdInviteEditing()) {
@@ -26,6 +33,10 @@ class SendHouseholdInviteBloc
 
   final String _householdId;
   final HouseholdInviteRemoteDataSource _remote;
+
+  /// Reads the user's households again. Started, never awaited, after a
+  /// send is refused with 403.
+  final Future<void> Function()? _onRefresh;
   final BgeLogger _logger;
 
   Future<void> _onSubmitted(
@@ -49,6 +60,27 @@ class SendHouseholdInviteBloc
         );
       }
       emit(SendHouseholdInviteFailed(error));
+      if (error case HouseholdInviteRefusedException(statusCode: 403)) {
+        _refresh();
+      }
+    }
+  }
+
+  void _refresh() {
+    final onRefresh = _onRefresh;
+    if (onRefresh == null) return;
+    unawaited(_runRefresh(onRefresh));
+  }
+
+  Future<void> _runRefresh(Future<void> Function() onRefresh) async {
+    try {
+      await onRefresh();
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Household refresh after a refused invite failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
