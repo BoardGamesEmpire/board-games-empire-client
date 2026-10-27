@@ -32,6 +32,7 @@ Widget _revealHost({
   bool inHorizontalStrip = false,
   bool reverse = false,
   bool keyboardFocus = false,
+  bool fieldInFiller = false,
 }) => MediaQuery(
   data: MediaQueryData(
     size: const Size(320, 480),
@@ -83,7 +84,22 @@ Widget _revealHost({
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (bannerAboveFiller) banner,
-                  const SizedBox(height: 1200, child: Placeholder()),
+                  SizedBox(
+                    height: 1200,
+                    child: fieldInFiller
+                        // A field 200dp down the filler, for the cases that
+                        // press on one: its recognizers compete with the
+                        // page's drag for the pointer, where the placeholder's
+                        // never do.
+                        ? const Column(
+                            children: [
+                              SizedBox(height: 200),
+                              TextField(maxLines: 8),
+                              Spacer(),
+                            ],
+                          )
+                        : const Placeholder(),
+                  ),
                   if (!bannerAboveFiller) banner,
                   // Content below the banner slot, so a banner hosted low in
                   // the column can still have its top edge inside the viewport.
@@ -228,6 +244,7 @@ Future<(ValueNotifier<String?>, _RecordingScrollController)> _startReveal(
   double textScale = 1,
   String message = 'That address is not a BGE server.',
   bool keyboardFocus = false,
+  bool fieldInFiller = false,
 }) async {
   _useNarrowWindow(tester);
   final notifier = ValueNotifier<String?>(null);
@@ -242,6 +259,7 @@ Future<(ValueNotifier<String?>, _RecordingScrollController)> _startReveal(
       bannerAboveFiller: false,
       textScale: textScale,
       keyboardFocus: keyboardFocus,
+      fieldInFiller: fieldInFiller,
     ),
   );
   notifier.value = message;
@@ -1760,6 +1778,46 @@ void main() {
         2,
         reason: 'the reveal and the programmatic scroll, and no retry',
       );
+    });
+
+    testWidgets('a press held on a field after an interruption is not '
+        'retried under the finger', (tester) async {
+      // A jump cuts the reveal short, and before the retry settles the user
+      // presses on a field and holds still. The field's recognizers compete
+      // with the page's drag, so the arena stays open: the page holds, and a
+      // hold reads as not scrolling for as long as the finger is down. The
+      // retry has to wait for the finger, or it carries the page away from
+      // under it, and the field drags it back on release.
+      final (_, recording) = await _startReveal(tester, fieldInFiller: true);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      recording.jumpTo(100);
+      // y 240 is 340dp down the page at offset 100: inside the field.
+      final press = await tester.startGesture(const Offset(160, 240));
+      await tester.pump();
+      expect(
+        recording.position.isScrollingNotifier.value,
+        isFalse,
+        reason:
+            'sanity: the hold this case is about, not a drag, which reads as '
+            'scrolling and is covered elsewhere',
+      );
+      for (var i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      expect(
+        recording.offset,
+        100,
+        reason: 'the page must stay where the finger is holding it',
+      );
+      expect(pos.animateCalls, 1, reason: 'no retry while the finger is down');
+
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(pos.animateCalls, greaterThan(1), reason: 'retried on release');
+      expect(pos.overlaps, 0);
     });
 
     testWidgets('a jump during the reveal is retried once it lands', (

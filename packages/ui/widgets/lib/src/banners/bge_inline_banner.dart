@@ -1,5 +1,12 @@
 import 'package:flutter/foundation.dart'
     show clampDouble, precisionErrorTolerance;
+import 'package:flutter/gestures.dart'
+    show
+        GestureBinding,
+        PointerCancelEvent,
+        PointerDownEvent,
+        PointerEvent,
+        PointerUpEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show RenderSliverMultiBoxAdaptor, ScrollDirection;
@@ -181,6 +188,15 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
   /// watched reveal started — the one thing that turns a retry into fighting
   /// them (#233).
   bool _userScrolledSinceReveal = false;
+
+  /// The pointers down on the screen since the watched reveal started.
+  ///
+  /// A held pointer is an interaction that has not ended, whether or not the
+  /// page reads as scrolling, and a retry waits for it to lift.
+  final Set<int> _pointersDown = {};
+
+  /// Whether the watched reveal was found cut short and waits to settle.
+  bool _awaitingSettle = false;
 
   /// Whether a reveal is queued for after a frame and has not run yet.
   bool _revealQueued = false;
@@ -452,6 +468,10 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     // Without the key, a retry took a keyboard user back to the banner, away
     // from where they had scrolled or tabbed to.
     HardwareKeyboard.instance.addHandler(_onWatchedKey);
+    // Every pointer, from the start of the animation, and not only once it is
+    // found cut short: the future completes a microtask after the pointer-down
+    // that cut it, and a press that lands in that microtask would be missed.
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onWatchedPointer);
     return _watchedReveal = Object();
   }
 
@@ -469,6 +489,22 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     if (event is! KeyUpEvent) _userScrolledSinceReveal = true;
     // Watched, never handled: the key still goes on to whatever it does.
     return false;
+  }
+
+  void _onWatchedPointer(PointerEvent event) {
+    if (event is PointerDownEvent) {
+      _pointersDown.add(event.pointer);
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      // A pointer that went down before the watch began is not in the set,
+      // and its release changes nothing.
+      if (!_pointersDown.remove(event.pointer)) return;
+      // The last one lifting can end an interruption without the page ever
+      // reporting it: a hold that a field's recognizer took from the page
+      // never read as scrolling, so its end never notifies.
+      if (_pointersDown.isEmpty && _awaitingSettle) {
+        _onInterruptionScrollingChanged();
+      }
+    }
   }
 
   /// Runs when a reveal's animation ends, whether it arrived or was cut short.
@@ -514,6 +550,7 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
   }
 
   void _watchInterruption(ScrollPosition position) {
+    _awaitingSettle = true;
     // Removed before it is added: `ChangeNotifier` keeps duplicate listeners
     // and removal takes only one of each, so a second report for the same
     // watch would otherwise leak one.
@@ -567,11 +604,13 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     // else need be coming. Measured without the request, the jump case never
     // settled.
     //
-    // The limit that remains: a hold the arena has NOT resolved, because
-    // another recognizer such as a field's tap is still competing for the
-    // pointer, reads as not scrolling at the frame as well. Telling it from a
-    // page at rest takes the position's `activity`, which is protected, so a
-    // touch caught in that window still reads as settled.
+    // The frame does not settle a hold the arena has NOT resolved, because a
+    // field's recognizer is still competing with the page for the pointer.
+    // That hold reads as not scrolling at the frame and for as long as the
+    // finger stays down, so the settle check also waits for every pointer to
+    // lift. Measured before it did, a press held on a field let the retry
+    // carry the page from 100 to 1184 under the finger, and the field took it
+    // back to 196 on release.
     WidgetsBinding.instance.addPostFrameCallback((_) => _settleInterruption());
     WidgetsBinding.instance.ensureVisualUpdate();
   }
@@ -579,8 +618,13 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
   void _settleInterruption() {
     final position = _watchedOn;
     // The watch ended in the meantime, or the page is scrolling again — the
-    // touch became a drag — and the watch goes on to the next time it stops.
-    if (position == null || position.isScrollingNotifier.value) return;
+    // touch became a drag — or a finger is still down, and the watch goes on
+    // to the next time it stops or the last finger lifts.
+    if (position == null ||
+        position.isScrollingNotifier.value ||
+        _pointersDown.isNotEmpty) {
+      return;
+    }
 
     final userScrolled = _userScrolledSinceReveal;
     // Detached before the retry starts, for the reason the deferral is
@@ -603,6 +647,9 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
   void _stopWatchingReveal() {
     if (_watchedOn != null) {
       HardwareKeyboard.instance.removeHandler(_onWatchedKey);
+      GestureBinding.instance.pointerRouter.removeGlobalRoute(
+        _onWatchedPointer,
+      );
     }
     _watchedOn?.removeListener(_onWatchedMove);
     _watchedOn?.isScrollingNotifier.removeListener(
@@ -611,6 +658,8 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     _watchedOn = null;
     _watchedReveal = null;
     _userScrolledSinceReveal = false;
+    _pointersDown.clear();
+    _awaitingSettle = false;
   }
 
   void _deferUntilIdle(ScrollPosition position) {
