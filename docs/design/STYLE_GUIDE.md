@@ -203,7 +203,7 @@ Use these. They exist because the hand-rolled versions drifted.
 
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
-| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
+| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; with a `floatingActionButton`, the content ends with room for it, so the last row scrolls clear of the button (#467); `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |

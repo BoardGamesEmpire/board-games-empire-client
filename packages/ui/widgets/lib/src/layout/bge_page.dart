@@ -153,6 +153,26 @@ class BgePage extends StatelessWidget {
   final bool automaticallyImplyLeading;
 
   /// Optional [Scaffold.floatingActionButton].
+  ///
+  /// Scaffold floats it over the body, so the end of the content would scroll
+  /// to a place the button covers, and a tap on the last row's covered part
+  /// would land on the button instead (#467). The page therefore reserves the
+  /// room itself, on both constructors: whenever this is set, the bottom of
+  /// the content padding is at least [BgeTokens.spaceXxl] plus
+  /// [BgeTokens.spaceLg] plus [BgeTokens.spaceMd].
+  ///
+  /// That is the button's 56dp plus its 16dp margin, plus a 16dp gap. It is a
+  /// floor rather than an addition, so a caller's own [padding] counts towards
+  /// it, and a constant because the button's height and margin do not change
+  /// with text scale (probed 2026-10-27, see #467).
+  ///
+  /// Reserved whenever the button is there, not only when rows are. Under a
+  /// spinner or an empty state it costs no room at rest on the sliver path,
+  /// where content starts at the top and does not move, but a
+  /// `SliverFillRemaining` state can then be dragged up by the whole 88dp,
+  /// rather than the 24dp of the default padding. On the box path the room
+  /// sits inside the scroll padding that [centerVertically] already
+  /// subtracts.
   final Widget? floatingActionButton;
 
   /// Optional [Scaffold.bottomNavigationBar].
@@ -265,6 +285,16 @@ class BgePage extends StatelessWidget {
 
     final tokens = BgeTokens.of(context);
     final resolvedPadding = padding ?? EdgeInsets.all(tokens.spaceLg);
+    // The room the floating button needs at the end of the content, made up
+    // once so both scroll paths get it. The footer is not part of it: a page
+    // with a button has no footer (see `_checkBottomSlotExclusivity`). The
+    // bottom inset does not depend on the text direction, so either one
+    // reads it.
+    final fabRoom = tokens.spaceXxl + tokens.spaceLg + tokens.spaceMd;
+    final bottom = resolvedPadding.resolve(TextDirection.ltr).bottom;
+    final contentPadding = floatingActionButton == null || bottom >= fabRoom
+        ? resolvedPadding
+        : resolvedPadding.add(EdgeInsets.only(bottom: fabRoom - bottom));
 
     final maxWidth = width.resolve(tokens);
 
@@ -298,7 +328,7 @@ class BgePage extends StatelessWidget {
             // No footer is the common case — 10 of the 12 page screens. Skip
             // the flex entirely rather than make every one of them lay out a
             // Column with a single child.
-            ? _pageContent(content, resolvedPadding, maxWidth)
+            ? _pageContent(content, contentPadding, maxWidth)
             : LayoutBuilder(
                 builder: (context, constraints) => Column(
                   // Stretch so the footer's own cap decides its width. Left
@@ -307,7 +337,7 @@ class BgePage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: _pageContent(content, resolvedPadding, maxWidth),
+                      child: _pageContent(content, contentPadding, maxWidth),
                     ),
                     ConstrainedBox(
                       // The footer is not in the scroll view, so an
@@ -365,11 +395,11 @@ class BgePage extends StatelessWidget {
 
   Widget _pageContent(
     Widget content,
-    EdgeInsetsGeometry resolvedPadding,
+    EdgeInsetsGeometry contentPadding,
     double maxWidth,
   ) => slivers == null
-      ? _scrollingContent(content, resolvedPadding)
-      : _sliverContent(resolvedPadding, maxWidth);
+      ? _scrollingContent(content, contentPadding)
+      : _sliverContent(contentPadding, maxWidth);
 
   /// One real viewport over the caller's slivers.
   ///
@@ -377,10 +407,10 @@ class BgePage extends StatelessWidget {
   /// sliver, because a sliver constrained on the cross axis aligns to the
   /// leading edge — the content column has to stay centred, the way the box
   /// path centres it.
-  Widget _sliverContent(EdgeInsetsGeometry resolvedPadding, double maxWidth) =>
+  Widget _sliverContent(EdgeInsetsGeometry contentPadding, double maxWidth) =>
       LayoutBuilder(
         builder: (context, constraints) {
-          final resolved = resolvedPadding.resolve(Directionality.of(context));
+          final resolved = contentPadding.resolve(Directionality.of(context));
           final available = constraints.maxWidth - resolved.horizontal;
           final gutter = math.max(0.0, (available - maxWidth) / 2);
           return CustomScrollView(
@@ -396,32 +426,33 @@ class BgePage extends StatelessWidget {
         },
       );
 
-  Widget _scrollingContent(
-    Widget content,
-    EdgeInsetsGeometry resolvedPadding,
-  ) => LayoutBuilder(
-    builder: (context, constraints) {
-      return SingleChildScrollView(
-        controller: scrollController,
-        padding: resolvedPadding,
-        child: ConstrainedBox(
-          // Guarantees the content can fill the viewport when it is
-          // short (so `centerVertically` has room to work) without
-          // capping it when it is tall.
-          constraints: BoxConstraints(
-            minHeight: centerVertically
-                ? constraints.maxHeight -
-                      resolvedPadding.vertical.clamp(0, constraints.maxHeight)
-                : 0,
-          ),
-          child: Align(
-            alignment: centerVertically
-                ? Alignment.center
-                : Alignment.topCenter,
-            child: content,
-          ),
-        ),
+  Widget _scrollingContent(Widget content, EdgeInsetsGeometry contentPadding) =>
+      LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            controller: scrollController,
+            padding: contentPadding,
+            child: ConstrainedBox(
+              // Guarantees the content can fill the viewport when it is
+              // short (so `centerVertically` has room to work) without
+              // capping it when it is tall.
+              constraints: BoxConstraints(
+                minHeight: centerVertically
+                    ? constraints.maxHeight -
+                          contentPadding.vertical.clamp(
+                            0,
+                            constraints.maxHeight,
+                          )
+                    : 0,
+              ),
+              child: Align(
+                alignment: centerVertically
+                    ? Alignment.center
+                    : Alignment.topCenter,
+                child: content,
+              ),
+            ),
+          );
+        },
       );
-    },
-  );
 }

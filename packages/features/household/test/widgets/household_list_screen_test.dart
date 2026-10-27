@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
@@ -34,6 +35,58 @@ const _refreshFailedCopy =
 const _errorCopy = "We couldn't open your households.";
 const _retryCopy = 'Try again';
 const _refreshingCopy = 'Refreshing\u2026';
+
+/// Scrolls the list to its very end, checks the Create button leaves a 16dp
+/// gap under [lastRow], then taps [lastRow] where the button would reach over
+/// it (#467).
+///
+/// The tap lands on the middle of the horizontal stretch the row and the
+/// button share, at the row's mid-height. Aimed at the row's own centre it
+/// would miss the button at the phone-on-its-side and desktop windows, where
+/// the row is wide and the button sits at its right end, and the case would
+/// pass without the page reserving anything.
+///
+/// The tap alone does not pin the reserve either: it lands at the row's
+/// mid-height, so any reserve over about 20dp passes it while the bottom of
+/// the row is still under the button. The gap is what pins the amount.
+Future<void> _tapLastRowUnderCreate(
+  WidgetTester tester, {
+  required Finder lastRow,
+}) async {
+  // The rows are built as they come into view, so the end is known only
+  // once it is reached.
+  final position = tester
+      .state<ScrollableState>(find.byType(Scrollable).first)
+      .position;
+  double? end;
+  while (end != position.maxScrollExtent) {
+    end = position.maxScrollExtent;
+    position.jumpTo(end);
+    await tester.pumpAndSettle();
+  }
+
+  final row = tester.getRect(lastRow);
+  final create = tester.getRect(find.byKey(HouseholdListScreen.createFabKey));
+  final left = math.max(row.left, create.left);
+  final right = math.min(row.right, create.right);
+  expect(
+    left,
+    lessThan(right),
+    reason:
+        'the row $row and the button $create share no width, so a tap '
+        'could never reach the button and this case would pin nothing',
+  );
+  expect(
+    create.top - row.bottom,
+    greaterThanOrEqualTo(16),
+    reason:
+        'the button $create should sit at least 16dp clear of the last '
+        'row $row once the list is scrolled to its end',
+  );
+
+  await tester.tapAt(Offset((left + right) / 2, row.center.dy));
+  await tester.pumpAndSettle();
+}
 
 /// Pins the #269 list screen against a mocked repository and a hand-driven
 /// hydration stream — the four surfaces the decisions specify (loading,
@@ -319,6 +372,38 @@ void main() {
       expect(created, equals(1));
     });
   });
+
+  // The Create button floats over the end of the list (#467). BgePage owns
+  // the room that lets the last row scroll clear of it, and this is the
+  // screen the bug was found on.
+  for (final (label, window) in [
+    ('a phone', const Size(360, 640)),
+    ('a phone on its side', const Size(640, 360)),
+    ('a desktop window', const Size(1024, 768)),
+  ]) {
+    testWidgets('on $label, the last household opens rather than Create', (
+      tester,
+    ) async {
+      useViewSize(tester, window);
+      final opened = <String>[];
+      var created = 0;
+      await tester.pumpWidget(
+        harness(onOpen: (_, id) => opened.add(id), onCreate: (_) => created++),
+      );
+      households.add([
+        for (var i = 1; i <= 20; i++) _household('h-$i', name: 'Home $i'),
+      ]);
+      await tester.pump();
+
+      await _tapLastRowUnderCreate(
+        tester,
+        lastRow: find.byKey(HouseholdListScreen.rowKey('h-20')),
+      );
+
+      expect(created, 0, reason: 'Create took the tap');
+      expect(opened, ['h-20']);
+    });
+  }
 
   group('at the largest text scale the app honors', () {
     // BgeTextScale.maxScaleFactor — WCAG 1.4.4's 200%, which the shell

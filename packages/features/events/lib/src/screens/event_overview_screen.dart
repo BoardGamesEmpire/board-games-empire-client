@@ -177,7 +177,6 @@ class _EventOverviewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final create = onCreate;
-    final tokens = BgeTokens.of(context);
     // The rows shown, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210).
     final rowCount = context.select<EventOverviewBloc, int?>(
@@ -208,12 +207,6 @@ class _EventOverviewPage extends StatelessWidget {
           onCreate: onCreate,
           now: now,
         ),
-        // The create button floats over the end of the list; room below the
-        // rows lets the last one scroll clear of it.
-        if (create != null && rowCount != null)
-          SliverToBoxAdapter(
-            child: SizedBox(height: tokens.spaceXxl + tokens.spaceMd),
-          ),
       ],
     );
   }

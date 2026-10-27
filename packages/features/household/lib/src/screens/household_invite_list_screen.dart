@@ -211,12 +211,6 @@ class _HouseholdInviteListView extends StatelessWidget {
                   ),
                 ),
               ),
-            // The invite button floats over the end of the list; room below
-            // the rows lets the last one scroll clear of it.
-            if (showInvite)
-              SliverToBoxAdapter(
-                child: SizedBox(height: tokens.spaceXxl + tokens.spaceMd),
-              ),
           ],
         );
       },
