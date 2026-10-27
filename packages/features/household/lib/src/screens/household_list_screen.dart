@@ -124,7 +124,7 @@ class HouseholdListScreen extends StatelessWidget {
   /// What the hydrate is doing, when this composition runs one. Null where
   /// no household client exists (#125), which reads as settled rather than
   /// as forever-loading.
-  final Stream<HouseholdHydrationState>? hydration;
+  final Stream<HouseholdHydration>? hydration;
 
   /// Opens the create flow, or null where creating is not possible on this
   /// container — the create screen needs a `HouseholdRemoteDataSource` the

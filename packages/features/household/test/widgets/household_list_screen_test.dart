@@ -89,26 +89,29 @@ Future<void> _tapLastRowUnderCreate(
 }
 
 /// Pins the #269 list screen against a mocked repository and a hand-driven
-/// hydration stream — the four surfaces the decisions specify (loading,
+/// hydration status — the four surfaces the decisions specify (loading,
 /// empty, rows, error), the stale-rows banner, and the create affordance's
 /// guard.
 void main() {
   late _MockHouseholdRepository repository;
   late StreamController<List<Household>> households;
-  late StreamController<HouseholdHydrationState> hydration;
+  late HouseholdHydrationStatus status;
 
   setUp(() {
     repository = _MockHouseholdRepository();
     households = StreamController<List<Household>>.broadcast();
-    hydration = StreamController<HouseholdHydrationState>.broadcast();
+    status = HouseholdHydrationStatus();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
   });
 
   tearDown(() {
     unawaited(households.close());
-    unawaited(hydration.close());
+    unawaited(status.close());
   });
 
+  /// A status call the screen must hear before the cache's first answer
+  /// goes before this is pumped, so the reading is replayed on subscribe
+  /// rather than landing a turn after the cache event beside it.
   Widget harness({
     void Function(BuildContext context)? onCreate,
     void Function(BuildContext context, String householdId)? onOpen,
@@ -125,7 +128,7 @@ void main() {
     ),
     home: HouseholdListScreen(
       repository: repository,
-      hydration: hydration.stream,
+      hydration: status.watch(),
       onCreate: onCreate,
       onOpen: onOpen,
       onRetry: onRetry,
@@ -142,8 +145,8 @@ void main() {
 
   group('while the cache is filling', () {
     testWidgets('shows a spinner rather than an empty state', (tester) async {
+      status.started();
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.running);
       households.add(const []);
       await tester.pump();
 
@@ -153,8 +156,8 @@ void main() {
 
     testWidgets('shows rows the cache already has', (tester) async {
       // A returning user's cached rows are not hidden behind the refresh.
+      status.started();
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.running);
       households.add([_household('h-1', name: 'Sunday Crew')]);
       await tester.pump();
 
@@ -167,8 +170,8 @@ void main() {
     testWidgets('shows the empty state once the hydrate settles', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness(onCreate: (_) {}));
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pump();
 
@@ -348,8 +351,8 @@ void main() {
       // A purge removes a household the server no longer lists, or a discard
       // deletes a local-only one (#549). Only a row that opens somewhere is
       // a focus stop, so this one is given somewhere to go.
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness(onOpen: (_, _) {}));
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add([
         _household('h-1', name: 'Alpha'),
         _household('h-2', name: 'Bravo'),
@@ -375,7 +378,7 @@ void main() {
       // two streams' events, since no frame is scheduled yet to build them
       // in, and the second builds the frame.
       households.add([_household('h-2', name: 'Bravo')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
       await tester.pump();
 
@@ -505,7 +508,7 @@ void main() {
         ),
       );
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       expect(tester.takeException(), isNull);
@@ -517,7 +520,7 @@ void main() {
 
       await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(tester.takeException(), isNull);
@@ -535,7 +538,7 @@ void main() {
     testWidgets('says so above the rows it is still showing', (tester) async {
       await tester.pumpWidget(harness());
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       expect(find.text(_refreshFailedCopy), findsOneWidget);
@@ -549,13 +552,13 @@ void main() {
       // of what the household feature had to do for that issue.
       await tester.pumpWidget(harness());
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
       expect(find.text(_refreshFailedCopy), findsOneWidget);
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await tester.pump();
 
       expect(find.text(_refreshFailedCopy), findsNothing);
@@ -567,7 +570,7 @@ void main() {
     ) async {
       await tester.pumpWidget(harness(onRetry: () async {}));
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       expect(find.byKey(HouseholdListScreen.refreshRetryKey), findsOneWidget);
@@ -580,7 +583,7 @@ void main() {
       // reasoning, applied to this control).
       await tester.pumpWidget(harness());
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       expect(find.text(_refreshFailedCopy), findsOneWidget);
@@ -602,12 +605,12 @@ void main() {
         ),
       );
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(calls, 1);
@@ -620,7 +623,7 @@ void main() {
       expect(find.byKey(HouseholdListScreen.rowKey('h-1')), findsOneWidget);
 
       pass.complete();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await tester.pump();
       await tester.pump();
 
@@ -637,10 +640,10 @@ void main() {
       // ask for.
       await tester.pumpWidget(harness(onRetry: () async {}));
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(find.text(_refreshingCopy), findsNothing);
@@ -652,13 +655,13 @@ void main() {
       final pass = Completer<void>();
       await tester.pumpWidget(harness(onRetry: () => pass.future));
       households.add(const []);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
       expect(find.byKey(HouseholdListScreen.emptyKey), findsOneWidget);
 
       await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       // #269 D1: an empty cache being refilled is unknown, not empty. The
@@ -669,7 +672,7 @@ void main() {
       expect(find.text(_refreshingCopy), findsNothing);
 
       pass.complete();
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
       await tester.pump();
 
@@ -686,12 +689,12 @@ void main() {
       final pass = Completer<void>();
       await tester.pumpWidget(harness(onRetry: () => pass.future));
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(
@@ -717,19 +720,19 @@ void main() {
       final pass = Completer<void>();
       await tester.pumpWidget(harness(onRetry: () => pass.future));
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
       // Two of them: the banner's message, and the disabled button's own
       // label — it keeps a name rather than becoming a bare spinner
       // (`BgeSubmitButton`'s contract, #163).
       expect(find.text(_refreshingCopy), findsNWidgets(2));
 
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       pass.complete();
       await tester.pump();
       await tester.pump();
@@ -744,7 +747,7 @@ void main() {
     ) async {
       await tester.pumpWidget(harness());
       households.add(const []);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
       expect(find.text(_refreshFailedCopy), findsOneWidget);
@@ -783,7 +786,7 @@ void main() {
 
       households.add([_household('h-1')]);
       await tester.pump();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await tester.pump();
       await tester.pumpWidget(harness(onEnter: () => entries++));
       await tester.pump();
@@ -798,7 +801,7 @@ void main() {
       // does nothing.
       await tester.pumpWidget(harness());
       households.add(const []);
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await tester.pump();
 
       expect(find.byKey(HouseholdListScreen.emptyKey), findsOneWidget);
@@ -809,10 +812,10 @@ void main() {
       // screen says nothing while the pass it started runs.
       await tester.pumpWidget(harness(onEnter: () {}));
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pump();
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(find.text(_refreshingCopy), findsNothing);

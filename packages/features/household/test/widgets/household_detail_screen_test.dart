@@ -63,7 +63,7 @@ void main() {
   late _MockHouseholdRepository repository;
   late StreamController<List<Household>> households;
   late StreamController<List<HouseholdMember>> members;
-  late StreamController<HouseholdHydrationState> hydration;
+  late HouseholdHydrationStatus status;
 
   /// [text] inside the "Your role" block. The user's own roster row says
   /// their role too (#304).
@@ -76,7 +76,7 @@ void main() {
     repository = _MockHouseholdRepository();
     households = StreamController<List<Household>>.broadcast();
     members = StreamController<List<HouseholdMember>>.broadcast();
-    hydration = StreamController<HouseholdHydrationState>.broadcast();
+    status = HouseholdHydrationStatus();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
     when(() => repository.watchMembers(any()))
         .thenAnswer((_) => members.stream);
@@ -87,9 +87,12 @@ void main() {
   tearDown(() {
     unawaited(households.close());
     unawaited(members.close());
-    unawaited(hydration.close());
+    unawaited(status.close());
   });
 
+  /// A status call the screen must hear before the cache's first answer
+  /// goes before this is pumped, so the reading is replayed on subscribe
+  /// rather than landing a turn after the cache event beside it.
   Widget harness({
     String householdId = _id,
     void Function(BuildContext context)? onBack,
@@ -113,7 +116,7 @@ void main() {
     home: HouseholdDetailScreen(
       householdId: householdId,
       repository: repository,
-      hydration: hydration.stream,
+      hydration: status.watch(),
       onBack: onBack,
       onRetry: onRetry,
       invites: invites,
@@ -143,8 +146,8 @@ void main() {
       // A deep link can arrive before the drain has filled the cache. "We
       // couldn't find this household" shown to someone who has it is the
       // failure #267 exists to fix.
+      status.started();
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.running);
       households.add(const []);
       await tester.pump();
 
@@ -249,7 +252,7 @@ void main() {
           .thenAnswer((_) async => cached);
 
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       cached = _member('u-me', role: HouseholdRole.householdOwner);
@@ -482,8 +485,8 @@ void main() {
   ) async {
     // The household and its roster arrive on separate streams, so the
     // household can briefly be on screen with an empty roster.
+    status.started();
     await tester.pumpWidget(harness());
-    hydration.add(HouseholdHydrationState.running);
     members.add(const []);
     households.add([_household(_id)]);
     await tester.pump();
@@ -506,8 +509,8 @@ void main() {
     String? reconciledTo;
     when(() => repository.reconciledHouseholdId(_id))
         .thenAnswer((_) => reconciledTo);
+    status.finished(HydrateOutcome.complete);
     await tester.pumpWidget(harness());
-    hydration.add(HouseholdHydrationState.refreshed);
     await settleWith(tester);
     expect(find.text('Sunday Crew'), findsOneWidget);
 
@@ -534,8 +537,8 @@ void main() {
 
   group('not found', () {
     testWidgets('renders once the hydrate has settled', (tester) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -547,8 +550,8 @@ void main() {
       // The body's own button, beside the app bar's back: on this surface
       // leaving is the likely intent.
       var backs = 0;
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness(onBack: (_) => backs++));
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -561,8 +564,8 @@ void main() {
     testWidgets('drops the way back where the caller offers none', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -573,8 +576,8 @@ void main() {
     testWidgets('says it could not check when the refresh failed too', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.failed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -598,8 +601,8 @@ void main() {
 
   group('staleness', () {
     testWidgets('banners a failed refresh over the household', (tester) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
 
       expect(
@@ -612,8 +615,8 @@ void main() {
     });
 
     testWidgets('says nothing when the refresh succeeded', (tester) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.refreshed);
       await settleWith(tester);
 
       expect(find.byKey(HouseholdDetailScreen.refreshBannerKey), findsNothing);
@@ -664,7 +667,7 @@ void main() {
                       builder: (_) => HouseholdDetailScreen(
                         householdId: _id,
                         repository: repository,
-                        hydration: hydration.stream,
+                        hydration: status.watch(),
                       ),
                     ),
                   ),
@@ -767,6 +770,7 @@ void main() {
       final pass = Completer<void>();
       var calls = 0;
 
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(
         harness(
           onRetry: () {
@@ -775,13 +779,12 @@ void main() {
           },
         ),
       );
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
       expect(find.text(_retryCopy), findsOneWidget);
 
       await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(calls, 1);
@@ -794,7 +797,7 @@ void main() {
       expect(find.text('Sunday Crew'), findsOneWidget);
 
       pass.complete();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await tester.pumpAndSettle();
 
       expect(find.text(_refreshingCopy), findsNothing);
@@ -809,6 +812,7 @@ void main() {
       final pass = Completer<void>();
       var calls = 0;
 
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(
         harness(
           onRetry: () {
@@ -817,7 +821,6 @@ void main() {
           },
         ),
       );
-      hydration.add(HouseholdHydrationState.failed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -825,7 +828,7 @@ void main() {
 
       await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(calls, 1);
@@ -835,7 +838,7 @@ void main() {
       expect(find.text(_notFoundCopy), findsNothing);
 
       pass.complete();
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pumpAndSettle();
 
       expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
@@ -845,8 +848,8 @@ void main() {
     testWidgets('is not offered where the composition cannot refresh (#137)', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
 
       expect(find.text(_refreshFailedCopy), findsOneWidget);
@@ -856,11 +859,11 @@ void main() {
     testWidgets('a pass nobody asked for is not announced (#300 D6)', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness(onRetry: () async {}));
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       // Two pumps: the status event reaches the bloc on one microtask turn
       // and the rebuild lands on the next.
       await tester.pump();

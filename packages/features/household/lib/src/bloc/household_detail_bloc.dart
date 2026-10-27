@@ -98,7 +98,7 @@ class HouseholdDetailBloc
   HouseholdDetailBloc({
     required String householdId,
     required HouseholdRepository repository,
-    Stream<HouseholdHydrationState>? hydration,
+    Stream<HouseholdHydration>? hydration,
     this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.detail'),
@@ -133,7 +133,7 @@ class HouseholdDetailBloc
 
     _hasHydrationSource = hydration != null;
     _hydration = hydration?.listen(
-      (state) => add(HouseholdDetailHydrationUpdated(state)),
+      (reading) => add(HouseholdDetailHydrationUpdated(reading)),
       onError: (Object error, StackTrace stackTrace) => _logger.warn(
         'Household hydration status stream failed',
         error: error,
@@ -161,7 +161,7 @@ class HouseholdDetailBloc
 
   late final StreamSubscription<List<Household>> _households;
   late StreamSubscription<List<HouseholdMember>> _members;
-  StreamSubscription<HouseholdHydrationState>? _hydration;
+  StreamSubscription<HouseholdHydration>? _hydration;
 
   /// Null until the household stream has answered at all, which is not the
   /// same as it having answered with nothing — hence the separate flag.
@@ -456,7 +456,7 @@ class HouseholdDetailBloc
     Emitter<HouseholdDetailState> emit,
   ) {
     _hydrationSeen = true;
-    _hydrationMemory.absorb(event.hydration);
+    _hydrationMemory.absorb(event.hydration.state);
     _emitDerived(emit);
   }
 

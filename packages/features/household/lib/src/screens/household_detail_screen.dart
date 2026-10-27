@@ -185,7 +185,7 @@ class HouseholdDetailScreen extends StatelessWidget {
 
   /// What the hydrate is doing, when this composition runs one. Null reads
   /// as settled rather than as forever-loading (#269 D1).
-  final Stream<HouseholdHydrationState>? hydration;
+  final Stream<HouseholdHydration>? hydration;
 
   /// Returns to the household list from the not-found state, as that
   /// surface's primary action: with no household to show, leaving is the

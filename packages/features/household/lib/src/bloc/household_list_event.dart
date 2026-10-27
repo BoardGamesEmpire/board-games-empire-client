@@ -46,7 +46,7 @@ final class HouseholdListCacheEnded extends HouseholdListEvent {
 final class HouseholdListHydrationUpdated extends HouseholdListEvent {
   const HouseholdListHydrationUpdated(this.hydration);
 
-  final HouseholdHydrationState hydration;
+  final HouseholdHydration hydration;
 
   @override
   List<Object?> get props => [hydration];

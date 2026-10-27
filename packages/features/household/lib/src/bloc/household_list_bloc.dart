@@ -76,7 +76,7 @@ import 'household_list_state.dart';
 class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   HouseholdListBloc({
     required HouseholdRepository repository,
-    Stream<HouseholdHydrationState>? hydration,
+    Stream<HouseholdHydration>? hydration,
     this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.list'),
@@ -105,7 +105,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     );
 
     _hydration = hydration?.listen(
-      (state) => add(HouseholdListHydrationUpdated(state)),
+      (reading) => add(HouseholdListHydrationUpdated(reading)),
       // Nothing errors this stream today. If something ever does, the
       // annotation is what is lost — not the list it annotates.
       onError: (Object error, StackTrace stackTrace) => _logger.warn(
@@ -122,7 +122,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   final Future<void> Function()? _onRetry;
 
   late final StreamSubscription<List<Household>> _cache;
-  StreamSubscription<HouseholdHydrationState>? _hydration;
+  StreamSubscription<HouseholdHydration>? _hydration;
 
   /// Null until the cache has answered at all — which is not the same as
   /// having answered with nothing.
@@ -178,7 +178,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     HouseholdListHydrationUpdated event,
     Emitter<HouseholdListState> emit,
   ) {
-    _hydrationMemory.absorb(event.hydration);
+    _hydrationMemory.absorb(event.hydration.state);
     _emitDerived(emit);
   }
 

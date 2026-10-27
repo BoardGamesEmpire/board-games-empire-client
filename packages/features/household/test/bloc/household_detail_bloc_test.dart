@@ -38,13 +38,19 @@ void main() {
   late _MockHouseholdRepository repository;
   late StreamController<List<Household>> households;
   late StreamController<List<HouseholdMember>> members;
-  late StreamController<HouseholdHydrationState> hydration;
+  late HouseholdHydrationStatus status;
+
+  /// For the tests about the stream itself: one that has not spoken yet, or
+  /// that closes. A real status replays its reading the moment it is
+  /// listened to.
+  late StreamController<HouseholdHydration> hydration;
 
   setUp(() {
     repository = _MockHouseholdRepository();
     households = StreamController<List<Household>>();
     members = StreamController<List<HouseholdMember>>();
-    hydration = StreamController<HouseholdHydrationState>();
+    status = HouseholdHydrationStatus();
+    hydration = StreamController<HouseholdHydration>();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
     when(() => repository.watchMembers(_id)).thenAnswer((_) => members.stream);
     when(() => repository.getCurrentUserMember(_id)).thenAnswer(
@@ -58,13 +64,26 @@ void main() {
     // delivered, so a controller nothing listened to would hang teardown.
     unawaited(households.close());
     unawaited(members.close());
+    unawaited(status.close());
     unawaited(hydration.close());
   });
 
+  /// A status call the bloc must hear before the cache's first answer goes
+  /// before this, for the list bloc test's reason: the reading is then
+  /// replayed on subscribe. Made after, it lands a turn later than a cache
+  /// event added beside it, and the replayed `idle` answers first, which
+  /// here also counts as the status's first word.
   HouseholdDetailBloc build({bool withHydration = true}) => HouseholdDetailBloc(
     householdId: _id,
     repository: repository,
-    hydration: withHydration ? hydration.stream : null,
+    hydration: withHydration ? status.watch() : null,
+  );
+
+  /// Built on the raw [hydration] stream rather than a status.
+  HouseholdDetailBloc buildOnRawStream() => HouseholdDetailBloc(
+    householdId: _id,
+    repository: repository,
+    hydration: hydration.stream,
   );
 
   /// Drains the microtask queue so the `getCurrentUserMember` future and
@@ -140,10 +159,10 @@ void main() {
     test(
       'a list without this id, with the hydrate settled, is not found',
       () async {
+        status.finished(HydrateOutcome.complete);
         final bloc = build();
         addTearDown(bloc.close);
 
-        hydration.add(HouseholdHydrationState.refreshed);
         households.add([_household('other')]);
 
         await expectLater(
@@ -158,10 +177,10 @@ void main() {
       // a deep link can arrive while the cache is still filling, and "we
       // couldn't find this household" shown to someone who has it is the
       // failure #267 exists to fix.
+      status.started();
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.running);
       households.add([_household('other')]);
       members.add(const []);
       await settle();
@@ -172,13 +191,13 @@ void main() {
     test(
       'the same absence resolves to not-found when the hydrate settles',
       () async {
+        status.started();
         final bloc = build();
         addTearDown(bloc.close);
 
-        hydration.add(HouseholdHydrationState.running);
         households.add([_household('other')]);
         await settle();
-        hydration.add(HouseholdHydrationState.refreshed);
+        status.finished(HydrateOutcome.complete);
 
         await expectLater(
           bloc.stream,
@@ -193,10 +212,10 @@ void main() {
         // Waiting forever on a hydrate that already gave up would be a
         // spinner nothing resolves. Not-found is the honest answer the
         // repository contract gives; the banner says it could not be checked.
+        status.finished(HydrateOutcome.failed);
         final bloc = build();
         addTearDown(bloc.close);
 
-        hydration.add(HouseholdHydrationState.failed);
         households.add([_household('other')]);
 
         await expectLater(
@@ -282,7 +301,7 @@ void main() {
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await settle();
 
       // The drain lands: household, then members, and now the cache can
@@ -465,7 +484,7 @@ void main() {
       // the status stream replays its current value, `_hydrationState` is
       // still its `idle` default — which reads as settled — and the screen
       // flashes not-found on its way to the content.
-      final bloc = build();
+      final bloc = buildOnRawStream();
       addTearDown(bloc.close);
 
       households.add([_household('other')]);
@@ -475,12 +494,17 @@ void main() {
     });
 
     test('and reports it once the hydrate does speak', () async {
-      final bloc = build();
+      final bloc = buildOnRawStream();
       addTearDown(bloc.close);
 
       households.add([_household('other')]);
       await settle();
-      hydration.add(HouseholdHydrationState.refreshed);
+      hydration.add(
+        const HouseholdHydration(
+          state: HouseholdHydrationState.refreshed,
+          everRefreshed: true,
+        ),
+      );
 
       await expectLater(
         bloc.stream,
@@ -491,7 +515,7 @@ void main() {
     test('a hydration stream that closes without ever speaking still '
         'settles', () async {
       // The wait above must not become the spinner it was added to avoid.
-      final bloc = build();
+      final bloc = buildOnRawStream();
       addTearDown(bloc.close);
 
       households.add([_household('other')]);
@@ -586,10 +610,10 @@ void main() {
       // household can be visible while the roster is still `const []`.
       // Rendering "No members" there states something false about a
       // household that always has at least its owner.
+      status.started();
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.running);
       members.add(const []);
       households.add([_household(_id)]);
       await settle();
@@ -600,14 +624,14 @@ void main() {
     test('and gives up holding once the pass settles', () async {
       // Bounded by the same signal the absent-household branch uses: an
       // empty roster nothing is going to fill is rendered, not spun on.
+      status.started();
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.running);
       members.add(const []);
       households.add([_household(_id)]);
       await settle();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
 
       await expectLater(
         bloc.stream,
@@ -642,7 +666,7 @@ void main() {
         households.add([_household(_id)]);
         members.add([_member('u-me')]);
         await settle();
-        hydration.add(HouseholdHydrationState.failed);
+        status.finished(HydrateOutcome.failed);
 
         await expectLater(
           bloc.stream,
@@ -658,10 +682,10 @@ void main() {
     );
 
     test('a refreshed pass does not read as a failed one', () async {
+      status.finished(HydrateOutcome.complete);
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add([_household(_id)]);
       members.add([_member('u-me')]);
 
@@ -706,7 +730,7 @@ void main() {
 
       households.addError(StateError('unauthenticated'));
       await settle();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await settle();
 
       expect(bloc.state, isA<HouseholdDetailError>());
@@ -780,10 +804,12 @@ void main() {
       () async {
         // `running` is the last thing a closed status stream ever said, so
         // waiting for it to settle waits forever.
-        final bloc = build();
+        final bloc = buildOnRawStream();
         addTearDown(bloc.close);
 
-        hydration.add(HouseholdHydrationState.running);
+        hydration.add(
+          const HouseholdHydration(state: HouseholdHydrationState.running),
+        );
         households.add(const []);
         members.add(const []);
         await settle();
@@ -853,7 +879,7 @@ void main() {
     HouseholdDetailBloc buildWithRetry() => HouseholdDetailBloc(
       householdId: _id,
       repository: repository,
-      hydration: hydration.stream,
+      hydration: status.watch(),
       onRetry: () {
         calls++;
         return pass.future;
@@ -866,11 +892,11 @@ void main() {
 
       households.add([_household(_id)]);
       members.add([_member('u-me')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await settle();
 
       bloc.add(const HouseholdDetailRetryRequested());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await settle();
 
       expect(calls, 1);
@@ -892,10 +918,10 @@ void main() {
 
       households.add([_household(_id)]);
       members.add([_member('u-me')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await settle();
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await settle();
 
       expect(calls, isZero);
@@ -911,19 +937,21 @@ void main() {
 
     test('an unverified absence can be retried too (#300 D10)', () async {
       // The surface a retry is worth the most on: a household missing from
-      // a cache whose last pass failed may well exist on the server.
+      // a cache whose last pass failed may well exist on the server. The
+      // failure goes first: a status replays its reading on subscribe, and
+      // the replay is the first word the absence waits for.
+      status.finished(HydrateOutcome.failed);
       final bloc = buildWithRetry();
       addTearDown(bloc.close);
 
       households.add(const []);
       members.add(const []);
-      hydration.add(HouseholdHydrationState.failed);
       await settle();
 
       expect(bloc.state, isA<HouseholdDetailNotFound>());
 
       bloc.add(const HouseholdDetailRetryRequested());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await settle();
 
       expect(calls, 1);
@@ -933,7 +961,7 @@ void main() {
       // gone while it is being looked for.
       expect(bloc.state, isA<HouseholdDetailLoading>());
 
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       pass.complete();
       await settle();
 
@@ -953,7 +981,7 @@ void main() {
 
       households.add([_household(_id)]);
       members.add([_member('u-me')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await settle();
 
       bloc.add(const HouseholdDetailRetryRequested());
@@ -975,15 +1003,15 @@ void main() {
       // has confirmed it, and #300 D15 makes re-checks routine enough that
       // re-confirming a known absence must not flash a spinner over the
       // not-found page on every resume.
+      status.finished(HydrateOutcome.complete);
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add([_household('other')]);
       await settle();
       expect(bloc.state, isA<HouseholdDetailNotFound>());
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await settle();
 
       expect(bloc.state, isA<HouseholdDetailNotFound>());
@@ -992,15 +1020,15 @@ void main() {
     test('an absence only a failure has seen is still unknown', () async {
       // Unchanged from #270: a failed pass confirms nothing, so a pass over
       // an unverified absence is still the spinner.
+      status.finished(HydrateOutcome.failed);
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.failed);
       households.add([_household('other')]);
       await settle();
       expect(bloc.state, isA<HouseholdDetailNotFound>());
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await settle();
 
       expect(bloc.state, isA<HouseholdDetailLoading>());
@@ -1012,16 +1040,19 @@ void main() {
       // has been rendered, a pass in flight may be rewriting the very rows
       // this screen reads, so its disappearance mid-pass is not yet an
       // answer — #270's reasoning, unchanged.
+      status.finished(HydrateOutcome.complete);
       final bloc = build();
       addTearDown(bloc.close);
 
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add([_household(_id)]);
       members.add([_member('u-me', role: HouseholdRole.householdOwner)]);
       await settle();
       expect(bloc.state, isA<HouseholdDetailReady>());
 
-      hydration.add(HouseholdHydrationState.running);
+      // The pass is running before the household leaves. A status call lands
+      // a turn after a cache event added beside it, hence the settle.
+      status.started();
+      await settle();
       households.add([_household('other')]);
       await settle();
 
@@ -1031,14 +1062,18 @@ void main() {
     test(
       'the household arriving after a confirmed absence still renders',
       () async {
+        status.finished(HydrateOutcome.complete);
         final bloc = build();
         addTearDown(bloc.close);
 
-        hydration.add(HouseholdHydrationState.refreshed);
         households.add([_household('other')]);
         await settle();
 
-        hydration.add(HouseholdHydrationState.running);
+        // The re-check is running before the household arrives. A status
+        // call lands a turn after a cache event added beside it, hence the
+        // settle.
+        status.started();
+        await settle();
         households.add([_household(_id)]);
         members.add([_member('u-me', role: HouseholdRole.householdOwner)]);
         await settle();

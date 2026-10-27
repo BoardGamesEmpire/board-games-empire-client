@@ -358,7 +358,10 @@ void main() {
         expect(status.state, equals(HouseholdHydrationState.failed));
 
         final seen = <HouseholdHydrationState>[];
-        final subscription = status.watch().listen(seen.add);
+        final subscription = status
+            .watch()
+            .map((h) => h.state)
+            .listen(seen.add);
         addTearDown(subscription.cancel);
 
         reset(remote);
@@ -546,7 +549,7 @@ void main() {
       expect(status.state, HouseholdHydrationState.failed);
 
       final seen = <HouseholdHydrationState>[];
-      final watching = status.watch().listen(seen.add);
+      final watching = status.watch().map((h) => h.state).listen(seen.add);
       addTearDown(watching.cancel);
 
       reset(remote);

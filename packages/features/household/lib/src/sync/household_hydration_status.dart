@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:equatable/equatable.dart';
+
 import 'household_hydrator.dart';
 
 /// What the household hydrate is doing, as far as a screen needs to know
@@ -33,6 +35,48 @@ enum HouseholdHydrationState {
   failed,
 }
 
+/// One reading of [HouseholdHydrationStatus]: what the hydrate is doing,
+/// and what the passes before it established (#453).
+///
+/// The history travels with the state because a reader cannot rebuild it
+/// from the changes it happens to see. A screen is often opened while a
+/// pass is already running (entering the list starts one once the data is
+/// stale, and resume, reconnect and the sign-in drain all start one), and
+/// a replayed `running` on its own does not say whether an earlier pass
+/// confirmed the answer or failed and left stale rows.
+final class HouseholdHydration extends Equatable {
+  /// The defaults are a status no pass has touched, which is also what an
+  /// absent status means to a reader.
+  const HouseholdHydration({
+    this.state = HouseholdHydrationState.idle,
+    this.everRefreshed = false,
+    this.lastPassFailed = false,
+  });
+
+  /// What the hydrate is doing now.
+  final HouseholdHydrationState state;
+
+  /// Whether any pass has ever landed rows.
+  ///
+  /// Never goes back to false: a later failure does not un-know an answer
+  /// a successful pass already gave us.
+  ///
+  /// **Not** set by a failed pass. A failure confirms nothing, so an empty
+  /// cache only a failure has seen is still unknown, and a pass over it is
+  /// #269's spinner (#300). "Ever settled" would have been the wrong
+  /// predicate: it destroys that spinner for a first pass that failed and
+  /// was retried.
+  final bool everRefreshed;
+
+  /// Whether the last pass to finish failed. A pass starting does not clear
+  /// it: until one lands rows, the rows are still the ones that failure
+  /// left.
+  final bool lastPassFailed;
+
+  @override
+  List<Object?> get props => [state, everRefreshed, lastPassFailed];
+}
+
 /// The observable half of the household hydrate (#269 D1).
 ///
 /// `HouseholdHydrator` reports its outcome in a return value, and until
@@ -49,6 +93,10 @@ enum HouseholdHydrationState {
 /// interface and a read interface because there is exactly one writer and
 /// it lives one package away; a split would be ceremony around a single
 /// call site.
+///
+/// [watch] delivers [HouseholdHydration] readings, which carry what earlier
+/// passes established along with the state, so a screen that subscribes
+/// mid-pass is replayed the history too (#453).
 ///
 /// ## The staleness clock (#300 D8)
 ///
@@ -83,12 +131,12 @@ class HouseholdHydrationStatus {
   HouseholdHydrationStatus({DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
-  final StreamController<HouseholdHydrationState> _changes =
-      StreamController<HouseholdHydrationState>.broadcast();
+  final StreamController<HouseholdHydration> _changes =
+      StreamController<HouseholdHydration>.broadcast();
 
   final DateTime Function() _now;
 
-  HouseholdHydrationState _state = HouseholdHydrationState.idle;
+  HouseholdHydration _current = const HouseholdHydration();
 
   /// When the last pass that landed rows landed them, or null when none
   /// has — including after [markStale].
@@ -100,12 +148,30 @@ class HouseholdHydrationStatus {
   /// in-flight pass has already read from it, so that pass's result
   /// cannot be treated as current. Without this, a create racing the
   /// install-time drain would be papered over for the whole window.
+  ///
+  /// Reset only when [_passes] goes from none to one, not when [started] is
+  /// called again while a pass is out (#453). A later call may be handed
+  /// the drain in flight, which is the one that was invalidated, or start
+  /// a fresh drain after it, which is then conservatively left unstamped
+  /// too; the cost of that is one more pass.
   bool _invalidated = false;
+
+  /// How many [started] calls have yet to be [finished].
+  ///
+  /// The status reads running until all of them have. Each `pass()` calls
+  /// [started] before it awaits the session guard, so two calls can
+  /// overlap without sharing a drain: the second one's confirmation can
+  /// come back after the first one's drain has settled, and it then starts
+  /// a drain of its own. Ending the running state at the first [finished]
+  /// would show a drain in flight as settled, and a [markStale] in that
+  /// window would see nothing running and be forgiven by the next
+  /// [started].
+  int _passes = 0;
 
   bool _closed = false;
 
   /// The current state. [HouseholdHydrationState.idle] until a pass runs.
-  HouseholdHydrationState get state => _state;
+  HouseholdHydrationState get state => _current.state;
 
   /// How long since the last pass that landed rows, or null when none has.
   ///
@@ -135,6 +201,16 @@ class HouseholdHydrationStatus {
   /// Inclusive at the boundary: at exactly [window] the answer is already
   /// that many minutes old.
   ///
+  /// A negative age is stale too (#453): the device clock went back past
+  /// the stamp, so the real age is unknown. Read as fresh, it would let the
+  /// entry, reconnect and resume triggers all skip the pass until the clock
+  /// caught up; read as stale, it costs one pass, which stamps again.
+  ///
+  /// The age is wall-clock time even so, not a monotonic `Stopwatch`'s
+  /// (#453). Dart's monotonic clock on Android is `CLOCK_MONOTONIC`, which
+  /// stops while the device is suspended, so a phone left overnight would
+  /// read as fresh.
+  ///
   /// Deliberately says nothing about [state]. A pass in flight is reported
   /// against the age of the one before it, because what a running pass
   /// means to a trigger is the trigger's policy -- the installer's registry
@@ -142,23 +218,23 @@ class HouseholdHydrationStatus {
   /// the caller's too: the duration is a composition's choice.
   bool isStaleAfter(Duration window) {
     final since = sinceRefresh;
-    return since == null || since >= window;
+    return since == null || since.isNegative || since >= window;
   }
 
-  /// The current state, then every change.
+  /// The current reading, then every change.
   ///
   /// The current value is delivered from `onListen`, in the same
   /// synchronous callback that subscribes to the change stream — so a
   /// change landing between "read the current value" and "start
   /// listening" cannot be lost. That window is real here: the pass this
   /// reports on is already running when a screen subscribes.
-  Stream<HouseholdHydrationState> watch() {
-    late final StreamController<HouseholdHydrationState> out;
-    StreamSubscription<HouseholdHydrationState>? subscription;
+  Stream<HouseholdHydration> watch() {
+    late final StreamController<HouseholdHydration> out;
+    StreamSubscription<HouseholdHydration>? subscription;
 
-    out = StreamController<HouseholdHydrationState>(
+    out = StreamController<HouseholdHydration>(
       onListen: () {
-        out.add(_state);
+        out.add(_current);
         subscription = _changes.stream.listen(out.add, onDone: out.close);
       },
       onCancel: () => subscription?.cancel(),
@@ -167,18 +243,39 @@ class HouseholdHydrationStatus {
     return out.stream;
   }
 
-  /// Marks a drain as in flight.
+  /// Marks a drain as in flight. What earlier passes established carries
+  /// over.
+  ///
+  /// A start that arrives while a pass is already running joins it: the
+  /// installer calls this on every pass it is asked for, and the hydrator
+  /// hands the second caller the drain in flight, so a retry press can land
+  /// mid-pass (#453). It is the same pass, and it read the set before the
+  /// [markStale] that came since, so it must not forgive that call. Only a
+  /// start with no other pass out resets the invalidation (see [_passes]).
   void started() {
-    _invalidated = false;
-    _emit(HouseholdHydrationState.running);
+    if (_passes++ == 0) _invalidated = false;
+    _emit(
+      HouseholdHydration(
+        state: HouseholdHydrationState.running,
+        everRefreshed: _current.everRefreshed,
+        lastPassFailed: _current.lastPassFailed,
+      ),
+    );
   }
 
   /// Records how a drain ended, in the terms a screen reads.
   ///
   /// A pass that landed rows also stamps the staleness clock (#300 D8).
-  /// The stamp happens **here rather than in [_emit]**, which drops an
-  /// update whose state is unchanged — a detail that would otherwise
+  /// The stamp happens **here rather than in [_emit]**, which drops a
+  /// reading equal to the current one — a detail that would otherwise
   /// silently skip the stamp.
+  ///
+  /// A pass that [markStale] invalidated mid-flight still reads
+  /// `refreshed`, sets [HouseholdHydration.everRefreshed] and clears
+  /// [HouseholdHydration.lastPassFailed] (#453). It landed rows, so what it
+  /// read is an answer a screen can show. It goes unstamped, because the
+  /// change that invalidated the set may have reached the server after the
+  /// pass read from it, so [isStaleAfter] keeps asking for another pass.
   ///
   /// Only the refreshed arm stamps. A failed pass lands no rows, so there
   /// is nothing new to date, and a stamp there would make a failure look
@@ -191,19 +288,38 @@ class HouseholdHydrationStatus {
   /// clock: a failure un-knowing what a success established. `failed` is
   /// stale by state instead, which is how the installer's registry entry
   /// answers it.
+  ///
+  /// While another [started] call is still out, the reading keeps the
+  /// running state and takes only this pass's history: the rows it landed
+  /// are an answer a screen can show now, but the hydrate is not done.
   void finished(HydrateOutcome outcome) {
     if (_closed) return;
 
-    final next = switch (outcome) {
-      HydrateOutcome.complete ||
-      HydrateOutcome.drained => HouseholdHydrationState.refreshed,
-      HydrateOutcome.failed => HouseholdHydrationState.failed,
-    };
+    if (_passes > 0) _passes--;
+    final settled = _passes == 0;
 
-    if (next == HouseholdHydrationState.refreshed && !_invalidated) {
-      _refreshedAt = _now();
+    switch (outcome) {
+      case HydrateOutcome.complete || HydrateOutcome.drained:
+        if (!_invalidated) _refreshedAt = _now();
+        _emit(
+          HouseholdHydration(
+            state: settled
+                ? HouseholdHydrationState.refreshed
+                : HouseholdHydrationState.running,
+            everRefreshed: true,
+          ),
+        );
+      case HydrateOutcome.failed:
+        _emit(
+          HouseholdHydration(
+            state: settled
+                ? HouseholdHydrationState.failed
+                : HouseholdHydrationState.running,
+            everRefreshed: _current.everRefreshed,
+            lastPassFailed: true,
+          ),
+        );
     }
-    _emit(next);
   }
 
   /// Declares the cached set no longer current, without claiming a pass is
@@ -221,9 +337,9 @@ class HouseholdHydrationStatus {
     _invalidated = true;
   }
 
-  void _emit(HouseholdHydrationState next) {
-    if (_closed || next == _state) return;
-    _state = next;
+  void _emit(HouseholdHydration next) {
+    if (_closed || next == _current) return;
+    _current = next;
     _changes.add(next);
   }
 
@@ -257,16 +373,8 @@ class HouseholdHydrationMemory {
   /// an absent status means to a reader.
   HouseholdHydrationState get state => _state;
 
-  /// Whether any pass has ever landed rows.
-  ///
-  /// Never goes back to false: a later failure does not un-know an answer
-  /// a successful pass already gave us.
-  ///
-  /// **Not** set by a failed pass. A failure confirms nothing, so an empty
-  /// cache only a failure has seen is still unknown, and a pass over it is
-  /// #269 D1's spinner (#300 D12). "Ever settled" would have been the
-  /// wrong predicate: it destroys that spinner for a first pass that
-  /// failed and was retried.
+  /// Whether any pass has ever landed rows, by the rule
+  /// [HouseholdHydration.everRefreshed] states.
   bool get everRefreshed => _everRefreshed;
 
   /// Records what the status now reports.

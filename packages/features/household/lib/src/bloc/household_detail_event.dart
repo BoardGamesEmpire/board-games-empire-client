@@ -119,7 +119,7 @@ final class HouseholdDetailHydrationEnded extends HouseholdDetailEvent {
 final class HouseholdDetailHydrationUpdated extends HouseholdDetailEvent {
   const HouseholdDetailHydrationUpdated(this.hydration);
 
-  final HouseholdHydrationState hydration;
+  final HouseholdHydration hydration;
 
   @override
   List<Object?> get props => [hydration];
