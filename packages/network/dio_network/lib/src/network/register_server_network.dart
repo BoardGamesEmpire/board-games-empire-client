@@ -12,7 +12,8 @@ import 'package:network_interface/network_interface.dart'
         GameCollectionRemoteDataSource,
         GamesRemoteDataSource,
         HouseholdInviteRemoteDataSource,
-        HouseholdRemoteDataSource;
+        HouseholdRemoteDataSource,
+        UserRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
 import '../auth/auth_repository_impl.dart';
@@ -24,6 +25,7 @@ import '../game_collection/game_collection_remote_data_source_impl.dart';
 import '../games/games_remote_data_source_impl.dart';
 import '../household/household_invite_remote_data_source_impl.dart';
 import '../household/household_remote_data_source_impl.dart';
+import '../user/user_remote_data_source_impl.dart';
 import 'clock_skew_interceptor.dart';
 import 'dio_factory.dart';
 import 'network_log_interceptor.dart';
@@ -130,6 +132,15 @@ void registerServerNetwork({
   // container owns the Dio.
   container.registerSingleton<HouseholdInviteRemoteDataSource>(
     HouseholdInviteRemoteDataSourceImpl(dio),
+  );
+
+  // #499: the per-server user remote, for the screens that pick people by
+  // searching. Same convention and placement as the invite remote above: it
+  // shares the per-server Dio (base URL + the BetterAuth session
+  // `/api/users/search` requires) and adds no auth of its own. Const and
+  // stateless; the container owns the Dio.
+  container.registerSingleton<UserRemoteDataSource>(
+    UserRemoteDataSourceImpl(dio),
   );
 
   // #253: the per-server collection remote — the network seam the collection

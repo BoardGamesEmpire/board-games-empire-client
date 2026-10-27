@@ -24,4 +24,6 @@ export 'src/network/network_scope_installer.dart';
 export 'src/network/register_server_network.dart';
 export 'src/network/token_interceptor.dart';
 
+export 'src/user/user_remote_data_source_impl.dart';
+
 export 'src/well_known/well_known_client_impl.dart';
