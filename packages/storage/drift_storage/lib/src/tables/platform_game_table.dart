@@ -16,10 +16,11 @@ class PlatformGamesTable extends Table {
 
   IntColumn get minPlayers => integer().nullable()();
   IntColumn get maxPlayers => integer().nullable()();
+
+  /// In minutes, as the game's are (backend#869).
   IntColumn get minPlayTime => integer().nullable()();
-  TextColumn get minPlayTimeMeasure => text().nullable()();
   IntColumn get maxPlayTime => integer().nullable()();
-  TextColumn get maxPlayTimeMeasure => text().nullable()();
+
   TextColumn get image => text().nullable()();
   TextColumn get thumbnail => text().nullable()();
 

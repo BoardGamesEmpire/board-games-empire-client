@@ -12,7 +12,9 @@ import 'package:network_interface/network_interface.dart';
 // rows, `getGame` adds the includes listed there, and the search service's
 // `queryLocalGames` / `mapProtoGame` build each result. At 83e62bb0, the
 // import controller answers the start, and `GameImportStatusService`'s
-// `toBatchDto` / `toJobDto` build the poll's.
+// `toBatchDto` / `toJobDto` build the poll's. A game row's columns are the
+// `Game` model's at cb287e07: a `reach`, and play time in minutes with no
+// unit (#602).
 
 /// A catalog row: every scalar column of the Prisma `Game` model, which
 /// `findMany` returns with no `select`.
@@ -22,9 +24,8 @@ Map<String, dynamic> _gameRow({
   Object? complexity = 2.3,
   String image = 'https://cf.geekdo-images.com/catan.jpg',
   String thumbnail = 'https://cf.geekdo-images.com/catan_t.jpg',
-  String? minPlayTimeMeasure = 'Minutes',
   String contentType = 'BaseGame',
-  String visibility = 'Public',
+  Object? reach = 'Public',
 }) => {
   'id': id,
   'title': title,
@@ -35,11 +36,8 @@ Map<String, dynamic> _gameRow({
   'publishYear': 1995,
   'minPlayers': 3,
   'maxPlayers': 4,
-  'playingTime': 90,
   'minPlayTime': 60,
-  'minPlayTimeMeasure': minPlayTimeMeasure,
   'maxPlayTime': 120,
-  'maxPlayTimeMeasure': 'Minutes',
   'minAge': 10,
   'complexity': complexity,
   'totalPlayCount': 12,
@@ -50,7 +48,7 @@ Map<String, dynamic> _gameRow({
   'enrichmentSource': 'bgg',
   'frozenAt': null,
   'contentType': contentType,
-  'visibility': visibility,
+  'reach': ?reach,
   'createdById': 'user_service',
   'updatedById': null,
   'deletedAt': null,
@@ -113,11 +111,8 @@ final _catan = Game(
   publishYear: 1995,
   minPlayers: 3,
   maxPlayers: 4,
-  playingTime: 90,
   minPlayTime: 60,
-  minPlayTimeMeasure: TimeMeasure.minutes,
   maxPlayTime: 120,
-  maxPlayTimeMeasure: TimeMeasure.minutes,
   minAge: 10,
   complexity: 2.3,
   totalPlayCount: 12,
@@ -125,6 +120,7 @@ final _catan = Game(
   bayesRating: 6.9,
   ratingsCount: 120000,
   ownedByCount: 3,
+  reach: Reach.public,
   createdById: 'user_service',
   createdAt: DateTime.utc(2026, 9, 1, 10),
   updatedAt: DateTime.utc(2026, 10, 1, 12, 30),
@@ -367,23 +363,24 @@ void main() {
 
     test('degrades names it does not know rather than failing the page', () {
       final remote = answering(
-        _catalogBody([
-          _gameRow(
-            minPlayTimeMeasure: 'Fortnights',
-            contentType: 'Miniature',
-            visibility: 'Guild',
-          ),
-        ]),
+        _catalogBody([_gameRow(contentType: 'Miniature', reach: 'Guild')]),
       );
 
       return expectLater(
         remote.fetchPage().then((page) => page.items.single),
         completion(
           isA<Game>()
-              .having((g) => g.minPlayTimeMeasure, 'unit', isNull)
               .having((g) => g.contentType, 'type', ContentType.unknown)
-              .having((g) => g.visibility, 'visibility', Visibility.private),
+              .having((g) => g.reach, 'reach', Reach.unknown),
         ),
+      );
+    });
+
+    test('reads a row with no reach as unknown', () {
+      final remote = answering(_catalogBody([_gameRow(reach: null)]));
+      return expectLater(
+        remote.fetchPage().then((page) => page.items.single.reach),
+        completion(Reach.unknown),
       );
     });
 

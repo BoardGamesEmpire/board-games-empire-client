@@ -15,7 +15,7 @@ import 'package:models/domain.dart';
 /// returns only rows cached for this instance's user. A game the server
 /// sent only to another user reads as not cached, even a public one,
 /// because what decides it is what the server sent each user, not the
-/// game's visibility.
+/// game's reach.
 ///
 /// Platform games are recorded separately from their games. A user who was
 /// sent one platform game of a game reads that one, not the game's others.
@@ -45,7 +45,7 @@ import 'package:models/domain.dart';
 /// [cachePlatformGameSummaries] can insert a game the cache never held
 /// with only its title, subtitle and images. Every other column keeps its
 /// default until a full record is cached: null player counts, play time
-/// and the rest, and a `visibility` of public, which the summary never
+/// and the rest, and a `reach` of public, which the summary never
 /// stated.
 ///
 /// So every read treats such a row as not cached, the way it treats a

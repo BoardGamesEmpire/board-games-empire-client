@@ -9,7 +9,7 @@ import 'game_table.dart';
 /// to it on this device. Every game read returns only rows the reading user
 /// has a row here for, so one user can't list or look up a game the server
 /// sent only to another. Which rows exist records what the server sent, not
-/// the game's visibility: a collection summary carries no visibility.
+/// the game's reach: a collection summary carries no reach.
 ///
 /// - **[source] is part of the key.** A game cached both from a user's
 ///   collection and from a catalog fetch keeps both reasons, so removing

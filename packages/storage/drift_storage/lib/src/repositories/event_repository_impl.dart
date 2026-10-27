@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 import '../tables/event_access_table.dart';
+import 'stored_enum_name.dart';
 import 'watch_disposal.dart';
 
 /// [EventRepository] over the per-server [ServerDatabase], for one user
@@ -70,11 +71,6 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
   /// or read from `event_moves` ([reconciledEventId]). Never shrinks: a move
   /// is never undone.
   final Map<String, String> _moves = {};
-
-  /// What an enum column holds for a value this client could not read. No
-  /// enum has it as a wire name, so each one's `fromWire` reads it back as
-  /// `unknown`, as it does any other name it doesn't know.
-  static const String _unknownName = 'Unknown';
 
   @override
   String get disposedRepositoryName => 'EventRepository';
@@ -1065,16 +1061,6 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     EventAccessSource.read => eventAccessSourceRead,
   };
 
-  /// The name an enum column stores for [value]: its wire name, or
-  /// [_unknownName] for [unknown], which stands for a name this client could
-  /// not read and so has no wire name of its own. The name the server sent
-  /// is not kept.
-  static String _encode<T extends Enum>(
-    T value,
-    T unknown,
-    String Function(T) toWire,
-  ) => value == unknown ? _unknownName : toWire(value);
-
   Event _mapEvent(EventsTableData row) => Event(
     id: row.id,
     title: row.title,
@@ -1109,10 +1095,14 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         image: Value(e.image),
         location: Value(e.location),
         url: Value(e.url),
-        type: _encode(e.type, EventType.unknown, (v) => v.toWire()),
-        reach: _encode(e.reach, Reach.unknown, (v) => v.toWire()),
-        status: _encode(e.status, EventStatus.unknown, (v) => v.toWire()),
-        schedulingMode: _encode(
+        type: storedEnumName(e.type, EventType.unknown, (v) => v.toWire()),
+        reach: storedEnumName(e.reach, Reach.unknown, (v) => v.toWire()),
+        status: storedEnumName(
+          e.status,
+          EventStatus.unknown,
+          (v) => v.toWire(),
+        ),
+        schedulingMode: storedEnumName(
           e.schedulingMode,
           EventSchedulingMode.unknown,
           (v) => v.toWire(),
@@ -1146,7 +1136,11 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         startDate: Value(o.startDate),
         endDate: Value(o.endDate),
         location: Value(o.location),
-        status: _encode(o.status, OccurrenceStatus.unknown, (v) => v.toWire()),
+        status: storedEnumName(
+          o.status,
+          OccurrenceStatus.unknown,
+          (v) => v.toWire(),
+        ),
         sortOrder: o.sortOrder,
         confirmedAt: Value(o.confirmedAt),
         declinedAt: Value(o.declinedAt),
@@ -1182,7 +1176,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       displayName: Value(a.displayName),
       avatarUrl: Value(a.avatarUrl),
       notes: Value(a.notes),
-      status: _encode(
+      status: storedEnumName(
         a.status,
         EventParticipationStatus.unknown,
         (v) => v.toWire(),
@@ -1190,7 +1184,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       roleName: Value(
         role == null
             ? null
-            : _encode(role, EventRole.unknown, (v) => v.toWire()),
+            : storedEnumName(role, EventRole.unknown, (v) => v.toWire()),
       ),
       rsvpDate: Value(a.rsvpDate),
       createdAt: a.createdAt,
@@ -1235,31 +1229,31 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         allowSpectators: p.allowSpectators,
         maxTotalParticipants: Value(p.maxTotalParticipants),
         strictCapacity: p.strictCapacity,
-        gameAdditionMode: _encode(
+        gameAdditionMode: storedEnumName(
           p.gameAdditionMode,
           GameAdditionMode.unknown,
           (v) => v.toWire(),
         ),
         restrictToAttendeePool: p.restrictToAttendeePool,
         fillerMaxPlayTime: Value(p.fillerMaxPlayTime),
-        voteThresholdType: _encode(
+        voteThresholdType: storedEnumName(
           p.voteThresholdType,
           VoteThresholdType.unknown,
           (v) => v.toWire(),
         ),
         voteThresholdValue: Value(p.voteThresholdValue),
-        voteQuorumType: _encode(
+        voteQuorumType: storedEnumName(
           p.voteQuorumType,
           VoteQuorumType.unknown,
           (v) => v.toWire(),
         ),
         voteQuorumValue: Value(p.voteQuorumValue),
-        voteEligibility: _encode(
+        voteEligibility: storedEnumName(
           p.voteEligibility,
           VoteEligibility.unknown,
           (v) => v.toWire(),
         ),
-        interestedWeight: _encode(
+        interestedWeight: storedEnumName(
           p.interestedWeight,
           InterestedWeight.unknown,
           (v) => v.toWire(),

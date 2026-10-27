@@ -2,7 +2,15 @@ import 'package:drift/drift.dart';
 
 import 'platform_game_table.dart';
 
+/// Indexed on [platformGameId] as well as [userId]: SQLite checks
+/// `platform_games`' foreign key from the parent side on every full
+/// platform-game write and every delete, and scans this table without it
+/// (#471).
 @TableIndex(name: 'game_collections_user_idx', columns: {#userId})
+@TableIndex(
+  name: 'game_collections_platform_game_id_idx',
+  columns: {#platformGameId},
+)
 @TableIndex.sql(
   'CREATE UNIQUE INDEX game_collections_user_pgame_medium_unique_idx '
   'ON game_collections (user_id, platform_game_id, medium) '

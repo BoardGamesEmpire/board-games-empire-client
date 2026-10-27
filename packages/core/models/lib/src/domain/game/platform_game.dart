@@ -1,7 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-import 'time_measure.dart';
-
 part 'platform_game.freezed.dart';
 part 'platform_game.g.dart';
 
@@ -23,10 +21,9 @@ abstract class PlatformGame with _$PlatformGame {
     // Platform-specific overrides — null means use parent Game value
     int? minPlayers,
     int? maxPlayers,
+    // In minutes, as the game's are (backend#869).
     int? minPlayTime,
-    TimeMeasure? minPlayTimeMeasure,
     int? maxPlayTime,
-    TimeMeasure? maxPlayTimeMeasure,
     String? image,
     String? thumbnail,
 
