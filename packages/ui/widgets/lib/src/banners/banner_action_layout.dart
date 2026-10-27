@@ -253,14 +253,20 @@ class RenderBannerActionLayout extends RenderBox
     (child, width) => child.getMaxIntrinsicHeight(width),
   );
 
-  /// The height at [width], picking the arrangement the way [_layout] does
-  /// but with the action's max intrinsic width standing in for its laid-out
-  /// width.
+  /// The height at [width], picking the arrangement the way [_layout] does,
+  /// from the width the action would lay out at.
+  ///
+  /// Not its max intrinsic width. An action that wraps, like the invite
+  /// outcome's pair of buttons, lays out narrower than that once it has to
+  /// wrap. Measured by its max intrinsic width it stacks, where [_layout]
+  /// puts it beside, and the height reported is the wrong arrangement's.
   double _intrinsicHeight(
     double width,
     double Function(RenderBox child, double width) heightOf,
   ) {
-    final actionWidth = _action.getMaxIntrinsicWidth(double.infinity);
+    final actionWidth = _action
+        .getDryLayout(BoxConstraints(maxWidth: width))
+        .width;
     final beside = _messageWidthBeside(width, actionWidth);
     if (beside != null) {
       return math.max(

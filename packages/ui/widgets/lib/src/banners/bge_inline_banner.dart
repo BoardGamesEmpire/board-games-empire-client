@@ -182,6 +182,9 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
   /// them (#233).
   bool _userScrolledSinceReveal = false;
 
+  /// Whether a reveal is queued for after a frame and has not run yet.
+  bool _revealQueued = false;
+
   @override
   void initState() {
     super.initState();
@@ -224,18 +227,25 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     if (!widget.reveal) return;
     // Post-frame: the reveal needs this banner's laid-out geometry, and on the
     // frame it is inserted there is none yet.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _revealNow());
+    //
+    // Once per frame. Two queued reveals run back to back on the same
+    // geometry, both find the banner unreadable, and both animate: the second
+    // cuts the first short. The one that runs reads the latest copy, so
+    // nothing is lost by dropping the other.
+    if (!_revealQueued) {
+      _revealQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _revealQueued = false;
+        _revealNow();
+      });
+    }
     // A post-frame callback does not ask for the frame it waits on. From
     // `initState` and `didUpdateWidget` there is always one coming — they run
-    // inside it, and this is a no-op there. Two callers run outside any
-    // build. A retry comes from the post-frame check that settles the
-    // interaction that cut a reveal short (#233), and nothing else asks for
-    // the frame after it: measured without the request, the retry never ran
-    // after a jump or a long press, and the banner stayed wherever the
-    // interruption left it. The other is the deferral's `_onScrollingChanged`,
-    // which re-attempts when a gesture ends. It is a notifier's listener,
-    // called from outside a build (at pointer-up, for one), so it gets the
-    // same request rather than waiting on whatever draws next.
+    // inside it, and this is a no-op there. The deferral's
+    // `_onScrollingChanged` runs outside any build: it re-attempts when a
+    // gesture ends, and as a notifier's listener it is called at pointer-up,
+    // for one. So it asks for the frame rather than waiting on whatever draws
+    // next.
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
@@ -577,10 +587,17 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     // released before a scroll: the retry's own animation would flip
     // `isScrollingNotifier` and re-enter the watch.
     _stopWatchingReveal();
-    // Through the scheduler, so `_revealNow` re-checks visibility and the
-    // gesture guard on settled geometry: a banner the interruption happened
-    // to leave readable is not moved again.
-    if (!userScrolled) _scheduleReveal();
+    // New copy that arrived in this frame has a reveal queued already, and it
+    // re-checks everything the retry would. Retrying as well animates twice
+    // on the same geometry.
+    if (userScrolled || _revealQueued) return;
+    // Now, not queued for the next frame. This runs after a frame's layout,
+    // so the geometry is settled, and `_revealNow` re-checks visibility and
+    // the gesture guard on it: a banner the interruption happened to leave
+    // readable is not moved again. Queued, the retry left a frame in which
+    // nothing watched the page. A wheel tick or a key in that frame went
+    // unseen, and the retry scrolled back over it.
+    _revealNow();
   }
 
   void _stopWatchingReveal() {

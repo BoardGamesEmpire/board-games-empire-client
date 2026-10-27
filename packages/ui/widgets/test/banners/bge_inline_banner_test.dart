@@ -895,6 +895,60 @@ void main() {
       expect(layout.size.width, greaterThanOrEqualTo(layout.minMessageWidth));
     });
 
+    testWidgets('reports the height it lays out at for an action that wraps', (
+      tester,
+    ) async {
+      // A wrapping action is narrower laid out than its max intrinsic width,
+      // and here narrow enough to sit beside the message. Picking the
+      // arrangement by the max intrinsic width stacks it instead, and an
+      // IntrinsicHeight parent gets the stacked height: measured, 228 for a
+      // layout 280 tall, with the message painting past the banner's bottom.
+      const width = 290.0;
+      useViewSize(tester, const Size(800, 800));
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: width,
+              child: BannerActionLayout(
+                gap: 8,
+                minMessageWidth: 100,
+                message: Text('word ' * 40),
+                action: const Wrap(
+                  key: Key('action'),
+                  children: [
+                    SizedBox(width: 150, height: 40),
+                    SizedBox(width: 150, height: 40),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final box = tester.renderObject<RenderBox>(
+        find.byType(BannerActionLayout),
+      );
+      final action = tester.renderObject<RenderBox>(
+        find.byKey(const Key('action')),
+      );
+      expect(
+        action.getMaxIntrinsicWidth(double.infinity),
+        greaterThan(width),
+        reason: 'sanity: the action wraps',
+      );
+      expect(
+        tester.getRect(find.byKey(const Key('action'))).top,
+        lessThan(tester.getRect(find.byType(Text)).bottom),
+        reason: 'sanity: wrapped, it sits beside the message',
+      );
+      expect(box.getMinIntrinsicHeight(width), box.size.height);
+      expect(box.getMaxIntrinsicHeight(width), box.size.height);
+    });
+
     testWidgets('at its max intrinsic width a short message keeps its action '
         'beside it', (tester) async {
       // The max intrinsic width is the width past which more width never
@@ -1563,6 +1617,35 @@ void main() {
       expect(recording.offset, scrolledTo);
     });
 
+    testWidgets('a mouse-wheel scroll the moment an interrupted reveal settles '
+        'is not undone', (tester) async {
+      // The retry is decided after a frame, once the interaction that cut
+      // the reveal short is over. A retry queued for the frame after that
+      // left one in which nothing watched the page: measured, a wheel tick
+      // there moved the page to 54 and the retry took it back to 1184.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+      await tester.tapAt(const Offset(160, 240));
+      expect(pos.isScrollingWatched, isTrue, reason: 'sanity: interrupted');
+      // Frame by frame, to the first moment the interruption is settled.
+      for (var i = 0; i < 10 && pos.isScrollingWatched; i++) {
+        await tester.pump();
+      }
+      expect(pos.isScrollingWatched, isFalse, reason: 'sanity: settled');
+
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(160, 240),
+          scrollDelta: Offset(0, -300),
+        ),
+      );
+      final scrolledTo = recording.offset;
+      await tester.pumpAndSettle();
+
+      expect(recording.offset, scrolledTo);
+    });
+
     testWidgets('a keyboard scroll during the reveal leaves the user where '
         'they scrolled to', (tester) async {
       // PageUp scrolls with `moveTo`, which leaves the direction idle, so to
@@ -1841,6 +1924,32 @@ void main() {
       // The first reveal and the copy change's. A retry when the finger lifts
       // would be a third.
       expect(pos.animateCalls, 2);
+    });
+
+    testWidgets('a new message in the frame an interrupted reveal settles '
+        'reveals once', (tester) async {
+      // The settle check runs after the frame the copy change is built in,
+      // and the copy change's reveal is queued behind it. Both would find the
+      // banner unreadable on the same geometry, and the second animation
+      // would cut the first short.
+      final (message, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      recording.jumpTo(100);
+      // The frame after which the jump is found over. The settle check is
+      // queued for the next one.
+      await tester.pump();
+      expect(pos.isScrollingWatched, isTrue, reason: 'sanity: not settled');
+      message.value = 'A different failure.';
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+      expect(pos.overlaps, 0);
+      expect(pos.animateCalls, 2, reason: 'the reveal and the new copy');
     });
 
     testWidgets('a banner built as a lazy list row never asks for the '
