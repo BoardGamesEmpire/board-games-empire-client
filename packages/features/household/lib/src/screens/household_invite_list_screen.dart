@@ -47,6 +47,13 @@ class HouseholdInviteListScreen extends StatelessWidget {
   static const Key outcomeKey = Key('household_invite_list.outcome');
   static const Key confirmKey = Key('household_invite_list.confirm');
 
+  /// Per-row key: `household_invite_list.row_<inviteId>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
+  static Key rowKey(String inviteId) =>
+      Key('household_invite_list.row_$inviteId');
+
   final String householdId;
   final HouseholdInviteRemoteDataSource remote;
   final HouseholdRepository repository;
@@ -180,19 +187,19 @@ class _HouseholdInviteListView extends StatelessWidget {
                     ),
                   ),
                 ),
-              final HouseholdInviteListReady ready => SliverList.builder(
-                itemCount: ready.invites.length,
-                itemBuilder: (context, index) {
-                  final row = ready.invites[index];
-                  return HouseholdInviteTile(
-                    invite: row,
-                    actions: ready.actionsFor(row),
-                    busy: ready.busy.contains(row.id),
+              final HouseholdInviteListReady ready =>
+                BgeKeyedSliverList<HouseholdInvite>(
+                  items: ready.invites,
+                  keyOf: (invite) =>
+                      HouseholdInviteListScreen.rowKey(invite.id),
+                  itemBuilder: (context, invite) => HouseholdInviteTile(
+                    invite: invite,
+                    actions: ready.actionsFor(invite),
+                    busy: ready.busy.contains(invite.id),
                     onAction: (action) =>
-                        unawaited(_request(context, action, row)),
-                  );
-                },
-              ),
+                        unawaited(_request(context, action, invite)),
+                  ),
+                ),
             },
             if (ready != null && ready.hasMore)
               SliverToBoxAdapter(

@@ -149,14 +149,11 @@ class _EventGroupPage extends StatelessWidget {
                 ),
               );
             }
-            return SliverList.builder(
-              itemCount: rows.length,
-              itemBuilder: (context, index) => EventRowTile(
-                key: EventOverviewScreen.rowKey(rows[index].event.id),
-                row: rows[index],
-                now: clock,
-                onOpen: onOpen,
-              ),
+            return BgeKeyedSliverList<EventRow>(
+              items: rows,
+              keyOf: (row) => EventOverviewScreen.rowKey(row.event.id),
+              itemBuilder: (context, row) =>
+                  EventRowTile(row: row, now: clock, onOpen: onOpen),
             );
           },
         ),

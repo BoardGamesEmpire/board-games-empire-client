@@ -50,6 +50,9 @@ class InviteInboxScreen extends StatelessWidget {
   static const Key sentLinkKey = Key('invite_inbox.sent_link');
 
   /// Per-row keys.
+  ///
+  /// [rowKey] is held by the wrapper [BgeKeyedSliverList] puts around each
+  /// row, not by the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String inviteId) => Key('invite_inbox.row_$inviteId');
   static Key acceptKey(String inviteId) => Key('invite_inbox.accept_$inviteId');
   static Key declineKey(String inviteId) =>
@@ -182,16 +185,15 @@ class _InviteInboxView extends StatelessWidget {
                     ),
                   ),
                 ),
-              final InviteInboxReady ready => SliverList.builder(
-                itemCount: ready.invites.length,
-                itemBuilder: (context, index) {
-                  final row = ready.invites[index];
-                  return _InboxRow(
-                    invite: row,
-                    busy: ready.busy.contains(row.id),
-                  );
-                },
-              ),
+              final InviteInboxReady ready =>
+                BgeKeyedSliverList<HouseholdInvite>(
+                  items: ready.invites,
+                  keyOf: (invite) => InviteInboxScreen.rowKey(invite.id),
+                  itemBuilder: (context, invite) => _InboxRow(
+                    invite: invite,
+                    busy: ready.busy.contains(invite.id),
+                  ),
+                ),
             },
             if (ready != null && ready.hasMore)
               SliverToBoxAdapter(
@@ -266,7 +268,6 @@ class _InboxRow extends StatelessWidget {
     final expiry = inviteExpiryLine(l10n, invite);
 
     return Column(
-      key: InviteInboxScreen.rowKey(invite.id),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(

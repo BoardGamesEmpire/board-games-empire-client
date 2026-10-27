@@ -9,7 +9,9 @@ import 'event_labels.dart';
 /// happens, and where, whose and whether the user is going, as one
 /// semantics node.
 ///
-/// The caller keys it with `EventOverviewScreen.rowKey`.
+/// `EventOverviewScreen.rowKey` is held by the wrapper `BgeKeyedSliverList`
+/// puts around each row, not by the row (#549); [key] is for a caller that
+/// keys one directly.
 ///
 /// ## The date is the device's
 ///

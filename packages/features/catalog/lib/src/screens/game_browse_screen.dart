@@ -44,6 +44,9 @@ class GameBrowseScreen extends StatelessWidget {
   static const Key searchKey = Key('catalog_browse.search');
 
   /// Per-row key: `catalog_browse.row_<gameId>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String gameId) => Key('catalog_browse.row_$gameId');
 
   final GamesRemoteDataSource remote;
@@ -162,10 +165,11 @@ class _GameBrowsePage extends StatelessWidget {
                     ),
                   )
                 else ...[
-                  SliverList.builder(
-                    itemCount: games.length,
-                    itemBuilder: (context, index) =>
-                        _BrowseRow(game: games[index], onOpen: onOpen),
+                  BgeKeyedSliverList<Game>(
+                    items: games,
+                    keyOf: (game) => GameBrowseScreen.rowKey(game.id),
+                    itemBuilder: (context, game) =>
+                        _BrowseRow(game: game, onOpen: onOpen),
                   ),
                   SliverToBoxAdapter(child: _MoreFooter(state: state)),
                 ],
@@ -188,7 +192,6 @@ class _BrowseRow extends StatelessWidget {
     final l10n = GameCatalogLocalizations.of(context);
     final open = onOpen;
     return CatalogGameRow(
-      key: GameBrowseScreen.rowKey(game.id),
       title: gameTitle(l10n, game.title, game.subtitle),
       thumbnailUrl: game.thumbnail,
       facts: rowFacts(

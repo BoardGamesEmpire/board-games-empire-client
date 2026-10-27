@@ -62,6 +62,9 @@ class DataGatewayListScreen extends StatelessWidget {
   static const Key deleteConfirmKey = Key('data_gateway_list.delete_confirm');
 
   /// Per-row key: `data_gateway_list.row_<id>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String id) => Key('data_gateway_list.row_$id');
 
   /// Per-row menu button key: `data_gateway_list.menu_<id>`.
@@ -179,17 +182,17 @@ class _DataGatewayListView extends StatelessWidget {
                   ),
                 ),
               DataGatewayListReady(:final gateways, :final busy) =>
-                SliverList.builder(
-                  itemCount: gateways.length,
-                  itemBuilder: (context, index) {
-                    final row = gateways[index];
-                    return _DataGatewayRow(
-                      gateway: row,
-                      busy: busy.contains(row.id),
-                      mayChange: mayChange,
-                      onEdit: edit == null ? null : () => edit(context, row.id),
-                    );
-                  },
+                BgeKeyedSliverList<DataGateway>(
+                  items: gateways,
+                  keyOf: (gateway) => DataGatewayListScreen.rowKey(gateway.id),
+                  itemBuilder: (context, gateway) => _DataGatewayRow(
+                    gateway: gateway,
+                    busy: busy.contains(gateway.id),
+                    mayChange: mayChange,
+                    onEdit: edit == null
+                        ? null
+                        : () => edit(context, gateway.id),
+                  ),
                 ),
             },
           ],
@@ -220,7 +223,6 @@ class _DataGatewayRow extends StatelessWidget {
     final description = gateway.description;
 
     return ListTile(
-      key: DataGatewayListScreen.rowKey(gateway.id),
       title: Text(gateway.name),
       // Under the name rather than in `trailing`, for the reason the
       // household list gives: at 200% text a trailing badge takes the whole
