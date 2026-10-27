@@ -834,6 +834,91 @@ void main() {
       });
     });
 
+    group('removeCachedMember() (#480)', () {
+      test('removeCachedMember deletes only that member', () async {
+        // The same user belongs to both households: the delete is keyed on
+        // the pair, so removing them from h-1 must leave their h-2 row.
+        await _seedHousehold(db, id: 'h-1');
+        await _seedHousehold(db, id: 'h-2');
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-1',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdMember',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-2',
+          userId: _kOtherUserId,
+          householdId: 'h-2',
+          roleName: 'HouseholdMember',
+        );
+
+        await repo.removeCachedMember('h-1', _kOtherUserId);
+
+        final remaining = await db.select(db.householdMembersTable).get();
+        expect(
+          remaining.map((r) => r.id),
+          unorderedEquals(['m-me-1', 'm-other-2']),
+        );
+        final roster = await repo.getMembers('h-1');
+        expect(roster.map((m) => m.userId), equals([_kUserId]));
+      });
+
+      test('removeCachedMember on a member not cached does nothing', () async {
+        await _seedHousehold(db, id: 'h-1');
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+
+        await repo.removeCachedMember('h-1', 'user-never-cached');
+        await repo.removeCachedMember('h-unknown', _kUserId);
+
+        final remaining = await db.select(db.householdMembersTable).get();
+        expect(remaining.map((r) => r.id), equals(['m-me-1']));
+      });
+
+      test('removeCachedMember ignores the household\'s sync flags', () async {
+        // The flags guard the household's own fields against a server copy.
+        // This applies the server's answer about one member, so a household
+        // with a pending change loses the row all the same.
+        await _seedHousehold(db, id: 'h-1');
+        await (db.update(db.householdsTable)..where((t) => t.id.equals('h-1')))
+            .write(const HouseholdsTableCompanion(isDirty: Value(true)));
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-1',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdMember',
+        );
+
+        await repo.removeCachedMember('h-1', _kOtherUserId);
+
+        final remaining = await db.select(db.householdMembersTable).get();
+        expect(remaining.map((r) => r.id), equals(['m-me-1']));
+      });
+    });
+
     group('watchHouseholds()', () {
       test('emits only households the user is a member of', () async {
         await _seedHousehold(db, id: 'h-1');

@@ -25,15 +25,15 @@ enum HouseholdRosterWrite {
 /// user creating a household they own. An edit of a household's name,
 /// description or settings does not come through here: the caller sends
 /// it to the server, and caches the server's answer with [cacheHousehold]
-/// (#476). The remaining household mutations (leave, kick,
-/// transfer-ownership, delete, invite, role changes) are still deferred —
-/// they land with the membership work (#122), at which point
-/// membership-mutation sync ops join the queue.
+/// (#476). Invites go to the server the same way (#455), as do role changes
+/// and removals (#480), whose answers land through [cacheMember] and
+/// [removeCachedMember]. Leave (#479), transfer-ownership (#478) and delete
+/// (#477) are still to come, and will go direct too.
 ///
 /// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
-/// [cacheHouseholdWithRoster]) and [purgeHouseholdsAbsentFrom] are
-/// server-driven: they apply payloads the server already auth-filtered,
-/// and are not user-facing mutations.
+/// [removeCachedMember], [cacheHouseholdWithRoster]) and
+/// [purgeHouseholdsAbsentFrom] are server-driven: they apply payloads the
+/// server already auth-filtered, and are not user-facing mutations.
 ///
 /// ## Removals made elsewhere (#268)
 ///
@@ -47,13 +47,13 @@ enum HouseholdRosterWrite {
 /// exception is a whole household for a user whose list does not fit one
 /// page: nothing short of a single-page read licenses the purge.
 ///
-/// **TODO(household-mutations-phase-4)**: this device's own membership
-/// mutations (#122) will update the local member rows in the same
-/// transaction they enqueue against the sync queue. Until the server
-/// accepts one, the next hydrate still carries the old roster, so each
-/// must hold its household against both writers above: mark it dirty,
-/// which both already honour, or give member rows sync flags of their own
-/// and teach both writers about them in the same change.
+/// This device's own membership changes go straight to the server (#122).
+/// Their answers are written through [cacheMember] and [removeCachedMember].
+/// A hydrate that read the roster before such a change can write the old
+/// roster back after it. The caller therefore marks the list stale and runs
+/// another pass (`refreshAfterMembershipChange`), and that pass corrects it.
+/// Nothing is queued, so there is no pending window to hold against the two
+/// writers above.
 ///
 /// ## Access boundary (members-only by default)
 ///
@@ -75,11 +75,11 @@ enum HouseholdRosterWrite {
 ///   household happens to be tombstoned (it's a private
 ///   self-introspection method, not a content-reveal method).
 ///
-/// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers])
-/// are intentionally user-agnostic — the server has already done
-/// auth filtering on the response payload, and the local cache may
-/// legitimately contain rows for households the current user isn't a
-/// member of (populated by friend-graph queries, etc.). The boundary
+/// The cache writers ([cacheHousehold], [cacheMember], [cacheMembers],
+/// [removeCachedMember]) are intentionally user-agnostic — the server has
+/// already done auth filtering on the response payload, and the local
+/// cache may legitimately contain rows for households the current user
+/// isn't a member of (populated by friend-graph queries, etc.). The boundary
 /// enforcement happens at read time so the cache stays a faithful
 /// local mirror of what the server sent.
 ///
@@ -264,11 +264,23 @@ abstract class HouseholdRepository {
 
   /// Upserts a [HouseholdMember] from a server response. User-agnostic
   /// by design — the read-side boundary enforces visibility.
+  ///
+  /// Also applies the server's answer to a role change sent from this
+  /// device (#480).
   Future<void> cacheMember(HouseholdMember member);
 
   /// Upserts a batch of members. Same user-agnostic semantics as
   /// [cacheMember].
   Future<void> cacheMembers(List<HouseholdMember> members);
+
+  /// Deletes the cached member row for [userId] in [householdId], if there
+  /// is one (#480). A row that is not cached is not an error.
+  ///
+  /// Applies the server's answer to a removal sent from this device. It
+  /// does not look at the household's `isDirty` / `isLocalOnly` flags: they
+  /// guard the household's own fields against a server copy, and this is
+  /// the server's word about one member. User-agnostic, like [cacheMember].
+  Future<void> removeCachedMember(String householdId, String userId);
 
   /// Writes one household from a server read together with the roster
   /// that read embedded, and makes the cached roster match it (#268): a
