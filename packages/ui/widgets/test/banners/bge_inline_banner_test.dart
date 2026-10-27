@@ -1,6 +1,10 @@
+import 'dart:async' show unawaited;
+
 import 'package:bge_test_support/widgets.dart';
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsAction;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -26,6 +30,7 @@ Widget _revealHost({
   double textScale = 1,
   bool inHorizontalStrip = false,
   bool reverse = false,
+  bool keyboardFocus = false,
 }) => MediaQuery(
   data: MediaQueryData(
     size: const Size(320, 480),
@@ -42,54 +47,59 @@ Widget _revealHost({
       body: SingleChildScrollView(
         controller: controller,
         reverse: reverse,
-        child: ValueListenableBuilder<String?>(
-          valueListenable: message,
-          builder: (context, value, _) {
-            Widget banner = value == null
-                ? const SizedBox.shrink()
-                : BgeInlineBanner(
-                    tone: BgeBannerTone.error,
-                    message: value,
-                    reveal: reveal,
-                  );
-            if (inHorizontalStrip && value != null) {
-              // A nearer scrollable on the other axis. The reveal has to reach
-              // past it to the vertical page it is actually hosted in.
-              banner = SizedBox(
-                // Tall enough for the banner itself — a strip that clips it
-                // would fail on overflow before reaching the assertion.
-                height: 140,
-                // A SingleChildScrollView, not a ListView: a ListView is a
-                // lazy list, and a banner inside one is deliberately skipped,
-                // which would make this case pass for the wrong reason. The
-                // concern here is only the axis of the nearest scrollable.
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(width: 280, child: banner),
-                ),
+        // Focus inside the page, for the keyboard cases: the default PageUp
+        // and PageDown shortcuts scroll the scroll view around the focus.
+        child: Focus(
+          autofocus: keyboardFocus,
+          child: ValueListenableBuilder<String?>(
+            valueListenable: message,
+            builder: (context, value, _) {
+              Widget banner = value == null
+                  ? const SizedBox.shrink()
+                  : BgeInlineBanner(
+                      tone: BgeBannerTone.error,
+                      message: value,
+                      reveal: reveal,
+                    );
+              if (inHorizontalStrip && value != null) {
+                // A nearer scrollable on the other axis. The reveal has to reach
+                // past it to the vertical page it is actually hosted in.
+                banner = SizedBox(
+                  // Tall enough for the banner itself — a strip that clips it
+                  // would fail on overflow before reaching the assertion.
+                  height: 140,
+                  // A SingleChildScrollView, not a ListView: a ListView is a
+                  // lazy list, and a banner inside one is deliberately skipped,
+                  // which would make this case pass for the wrong reason. The
+                  // concern here is only the axis of the nearest scrollable.
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(width: 280, child: banner),
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (bannerAboveFiller) banner,
+                  const SizedBox(height: 1200, child: Placeholder()),
+                  if (!bannerAboveFiller) banner,
+                  // Content below the banner slot, so a banner hosted low in
+                  // the column can still have its top edge inside the viewport.
+                  // Without it the banner is the last child and its start is
+                  // only ever reachable at maxScrollExtent, which makes the
+                  // already-visible case impossible to construct.
+                  //
+                  // Taller than the 480dp viewport on purpose: the scroll extent
+                  // has to allow the banner's top edge to actually reach the
+                  // viewport start, or a correct reveal still lands a few dp
+                  // short and the assertions here would be measuring the
+                  // harness's geometry rather than the widget's behaviour.
+                  const SizedBox(height: 600, child: Placeholder()),
+                ],
               );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (bannerAboveFiller) banner,
-                const SizedBox(height: 1200, child: Placeholder()),
-                if (!bannerAboveFiller) banner,
-                // Content below the banner slot, so a banner hosted low in
-                // the column can still have its top edge inside the viewport.
-                // Without it the banner is the last child and its start is
-                // only ever reachable at maxScrollExtent, which makes the
-                // already-visible case impossible to construct.
-                //
-                // Taller than the 480dp viewport on purpose: the scroll extent
-                // has to allow the banner's top edge to actually reach the
-                // viewport start, or a correct reveal still lands a few dp
-                // short and the assertions here would be measuring the
-                // harness's geometry rather than the widget's behaviour.
-                const SizedBox(height: 600, child: Placeholder()),
-              ],
-            );
-          },
+            },
+          ),
         ),
       ),
     ),
@@ -110,6 +120,133 @@ double _bannerTop(WidgetTester tester) =>
 bool _bannerTopVisible(WidgetTester tester) {
   final top = _bannerTop(tester);
   return top >= 0 && top < scrollViewportOf(tester).size.height;
+}
+
+/// A scroll controller whose position counts the `animateTo` calls made on it.
+///
+/// The landing position alone cannot tell a correct retry from a widget that
+/// interrupts its own reveal: two competing animations toward the same target
+/// converge, and every geometry assertion passes (#233). These counters are
+/// the only thing in the suite that can see the difference.
+class _RecordingScrollController extends ScrollController {
+  @override
+  ScrollPosition createScrollPosition(
+    ScrollPhysics physics,
+    ScrollContext context,
+    ScrollPosition? oldPosition,
+  ) => _RecordingPosition(
+    physics: physics,
+    context: context,
+    initialPixels: initialScrollOffset,
+    keepScrollOffset: keepScrollOffset,
+    oldPosition: oldPosition,
+    debugLabel: debugLabel,
+  );
+}
+
+class _RecordingPosition extends ScrollPositionWithSingleContext {
+  _RecordingPosition({
+    required super.physics,
+    required super.context,
+    super.initialPixels,
+    super.keepScrollOffset,
+    super.oldPosition,
+    super.debugLabel,
+  });
+
+  /// Every `animateTo` issued on this position.
+  int animateCalls = 0;
+
+  /// The `animateTo` calls that began while an earlier one was still running.
+  ///
+  /// Counted at call time rather than from the returned futures: a widget that
+  /// interrupts itself calls again while the first animation is still running,
+  /// and the first future only completes a microtask after its activity is
+  /// disposed — after the second call has already been made.
+  int overlaps = 0;
+
+  int _outstanding = 0;
+
+  final List<VoidCallback> _listeners = [];
+
+  /// The listeners attached to this position right now.
+  int get listenerCount => _listeners.length;
+
+  /// Whether anything is listening to [isScrollingNotifier].
+  ///
+  /// Read from here because `hasListeners` is protected to `ChangeNotifier`
+  /// subclasses, which this position is.
+  bool get isScrollingWatched => isScrollingNotifier.hasListeners;
+
+  @override
+  void addListener(VoidCallback listener) {
+    _listeners.add(listener);
+    super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    _listeners.remove(listener);
+    super.removeListener(listener);
+  }
+
+  @override
+  Future<void> animateTo(
+    double to, {
+    required Duration duration,
+    required Curve curve,
+  }) {
+    animateCalls++;
+    if (_outstanding > 0) overlaps++;
+    _outstanding++;
+    return super
+        .animateTo(to, duration: duration, curve: curve)
+        .whenComplete(() => _outstanding--);
+  }
+}
+
+/// Mounts a banner below the fold of a page sitting at offset 0, and starts
+/// its reveal animation's clock.
+///
+/// The interruption cases below go on from here: they let the animation run
+/// for a stated time, then do something to the page while it is in flight.
+///
+/// Two frames, not one. The first lays the banner out, and its post-frame
+/// callback starts the animation. A ticker started there takes its start time
+/// from its first tick, so the frame after that is the animation at zero
+/// elapsed, whatever time the pump advanced. Without the second frame a
+/// `pump(40ms)` lands where a `pump(4ms)` does — the scroll is still at 0 —
+/// and an early and a late interruption are the same test. With it, the
+/// offsets match #233's measurements: 354 at 4ms, 1000 at 40ms.
+///
+/// [startClock] false stops after the first frame, for the one case that
+/// wants the page still at rest when the interruption comes.
+Future<(ValueNotifier<String?>, _RecordingScrollController)> _startReveal(
+  WidgetTester tester, {
+  bool startClock = true,
+  double textScale = 1,
+  String message = 'That address is not a BGE server.',
+  bool keyboardFocus = false,
+}) async {
+  _useNarrowWindow(tester);
+  final notifier = ValueNotifier<String?>(null);
+  addTearDown(notifier.dispose);
+  final recording = _RecordingScrollController();
+  addTearDown(recording.dispose);
+
+  await tester.pumpWidget(
+    _revealHost(
+      message: notifier,
+      controller: recording,
+      bannerAboveFiller: false,
+      textScale: textScale,
+      keyboardFocus: keyboardFocus,
+    ),
+  );
+  notifier.value = message;
+  await tester.pump();
+  if (startClock) await tester.pump();
+  return (notifier, recording);
 }
 
 void main() {
@@ -738,6 +875,450 @@ void main() {
         moreOrLessEquals(0, epsilon: 0.5),
         reason: 'the deferred reveal has to land once the user stops scrolling',
       );
+    });
+
+    testWidgets('a tap early in the reveal does not strand the banner (#233)', (
+      tester,
+    ) async {
+      // A bare tap anywhere in the scroll view cuts the reveal short: the drag
+      // recognizer's pointer-down holds the position, and holding it disposes
+      // the running animation. Early enough, the banner is left below the
+      // fold — an outcome the user is never shown, which is #209 again.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+
+      await tester.tapAt(const Offset(160, 240));
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+        reason: 'nothing about a tap means "leave me where I am"',
+      );
+      expect(
+        pos.animateCalls,
+        2,
+        reason: 'the reveal, then exactly one retry once the finger lifts',
+      );
+      expect(
+        pos.overlaps,
+        0,
+        reason: 'the retry must not start while the first animation runs',
+      );
+    });
+
+    testWidgets('a tap late in the reveal does not leave the banner short '
+        '(#233)', (tester) async {
+      // Late enough that the banner's top is on screen, but a banner taller
+      // than what is left below it is still cut off: the start of the
+      // message shows and the end of it does not. At 200% text a real error
+      // string does that — the shape #233's canary on create-household has.
+      final (_, recording) = await _startReveal(
+        tester,
+        textScale: 2,
+        message:
+            'Plain http is only allowed for local and private network '
+            'addresses. Use https for this server.',
+      );
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+      final top = _bannerTop(tester);
+      expect(
+        top,
+        greaterThan(BgeTokens.standard.spaceMd + 1),
+        reason: 'sanity: the reveal is still travelling when the tap lands',
+      );
+      expect(
+        top + tester.getSize(find.byType(BgeInlineBanner)).height,
+        greaterThan(scrollViewportOf(tester).size.height),
+        reason: 'sanity: the tap has to leave the banner unreadable',
+      );
+
+      await tester.tapAt(const Offset(160, 240));
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+      expect(pos.animateCalls, 2);
+      expect(pos.overlaps, 0);
+    });
+
+    testWidgets('a late tap that leaves the banner readable does not move it '
+        'again', (tester) async {
+      // The retry goes back through the same visibility check as any reveal
+      // (#233), so it never moves a viewport that was fine. A banner the tap
+      // froze wholly on screen is read where it stands.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+      final top = _bannerTop(tester);
+      expect(
+        top >= 0 &&
+            top + tester.getSize(find.byType(BgeInlineBanner)).height <=
+                scrollViewportOf(tester).size.height,
+        isTrue,
+        reason: 'sanity: the whole banner is on screen when the tap lands',
+      );
+
+      await tester.tapAt(const Offset(160, 240));
+      final frozen = _bannerTop(tester);
+      await tester.pumpAndSettle();
+
+      expect(pos.animateCalls, 1);
+      expect(_bannerTop(tester), moreOrLessEquals(frozen, epsilon: 0.5));
+    });
+
+    testWidgets('a drag during the reveal leaves the user where they scrolled '
+        'to', (tester) async {
+      // The other half of the split. A drag is the user deliberately scrolling
+      // elsewhere, and retrying after it would fight them — the behaviour the
+      // gesture guard exists to prevent. Pinned so a retry on every
+      // interruption cannot quietly replace the tap-only one.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+
+      final drag = await tester.startGesture(const Offset(160, 240));
+      for (var i = 0; i < 3; i++) {
+        await drag.moveBy(const Offset(0, 40));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await drag.up();
+      await tester.pumpAndSettle();
+
+      expect(pos.animateCalls, 1, reason: 'a drag is not retried');
+      expect(_bannerTopVisible(tester), isFalse);
+    });
+
+    testWidgets('a drag into the edge the page rests on is not retried', (
+      tester,
+    ) async {
+      // Touched before the animation has moved the page, then dragged toward
+      // the top it is already at. The page does not move — it is overscroll —
+      // so nothing that waits for the page to move sees a drag at all. It is
+      // still the user saying where they want to be.
+      final (_, recording) = await _startReveal(tester, startClock: false);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+      expect(recording.offset, 0, reason: 'sanity: the page is still at rest');
+
+      final drag = await tester.startGesture(const Offset(160, 240));
+      for (var i = 0; i < 3; i++) {
+        await drag.moveBy(const Offset(0, 40));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await drag.up();
+      await tester.pumpAndSettle();
+
+      expect(pos.animateCalls, 1, reason: 'a drag is not retried');
+      expect(_bannerTopVisible(tester), isFalse);
+    });
+
+    testWidgets('a mouse-wheel scroll during the reveal leaves the user where '
+        'they scrolled to', (tester) async {
+      // A wheel tick is a user scroll as much as a drag is, but it is over
+      // within the one event: the position takes the direction, moves, goes
+      // idle and drops the direction again before the reveal's future even
+      // completes. Only something already watching while the reveal runs can
+      // see it.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(160, 240),
+          scrollDelta: Offset(0, -300),
+        ),
+      );
+      final scrolledTo = recording.offset;
+      await tester.pumpAndSettle();
+
+      expect(pos.animateCalls, 1, reason: 'a wheel scroll is not retried');
+      expect(recording.offset, scrolledTo);
+    });
+
+    testWidgets('a keyboard scroll during the reveal leaves the user where '
+        'they scrolled to', (tester) async {
+      // PageUp scrolls with `moveTo`, which leaves the direction idle, so to
+      // the position it is a programmatic scroll like the one that follows a
+      // tap on a field, and that one is retried. Only the key itself says
+      // the user did it.
+      final (_, recording) = await _startReveal(tester, keyboardFocus: true);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
+      await tester.pumpAndSettle();
+
+      expect(
+        pos.animateCalls,
+        2,
+        reason: "the reveal and the key's own scroll; a retry would be a third",
+      );
+      expect(_bannerTopVisible(tester), isFalse);
+    });
+
+    testWidgets('a reveal superseded by a copy change does not retry under a '
+        'held finger', (tester) async {
+      // A copy change mid-animation starts a second reveal, which cuts the
+      // first one short. That shortfall is the widget's own doing, not an
+      // interaction, and only the current reveal's completion may arm a watch.
+      //
+      // A regression pin, not proof of that guard. The settle check's
+      // one-frame wait already sees a pointer-down's hold turn into a drag,
+      // and with the guard removed this case still passes. What it pins is
+      // the outcome the guard defends: the page follows the finger, and
+      // nothing is retried.
+      //
+      // The copy changes early, while the banner is still below the fold. By
+      // 40ms this banner is wholly on screen, and a copy change then finds it
+      // readable and starts no second reveal at all.
+      final (message, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+
+      message.value = 'A different failure.';
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(pos.animateCalls, 2, reason: 'sanity: a second reveal started');
+
+      final drag = await tester.startGesture(const Offset(160, 240));
+      await tester.pump();
+      await drag.moveBy(const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+      final held = recording.offset;
+      await drag.moveBy(const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(
+        recording.offset,
+        moreOrLessEquals(held - 40, epsilon: 1),
+        reason: 'the page must still follow the finger',
+      );
+
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(pos.animateCalls, 2);
+    });
+
+    testWidgets('a touch during a programmatic scroll that cut the reveal '
+        'short is not retried under the finger', (tester) async {
+      // A programmatic scroll — focusing a field scrolls it into view — cuts
+      // the reveal short, and the retry waits for it to land. The user
+      // touches before it does. That pointer-down's hold stops the scroll for
+      // an instant before the drag takes over, and the instant reads exactly
+      // like the scroll ending: a retry decided there starts under the finger
+      // and takes the page out from under it.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      unawaited(
+        recording.animateTo(
+          100,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.linear,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(
+        _bannerTopVisible(tester),
+        isFalse,
+        reason:
+            'sanity: a banner readable at the touch would not be moved, '
+            'retry or not',
+      );
+
+      final drag = await tester.startGesture(const Offset(160, 240));
+      await tester.pump();
+      await drag.moveBy(const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+      final held = recording.offset;
+      await drag.moveBy(const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(
+        recording.offset,
+        moreOrLessEquals(held - 40, epsilon: 1),
+        reason: 'the page must still follow the finger',
+      );
+
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(
+        pos.animateCalls,
+        2,
+        reason: 'the reveal and the programmatic scroll, and no retry',
+      );
+    });
+
+    testWidgets('a jump during the reveal is retried once it lands', (
+      tester,
+    ) async {
+      // A programmatic interruption that is already over by the time the
+      // reveal's future completes, so the position never reports the end of
+      // it. This is the case the settle check after the next frame exists for.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      recording.jumpTo(100);
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+      expect(pos.animateCalls, 2);
+    });
+
+    testWidgets('a programmatic scroll during the reveal is retried once it '
+        'settles (#233)', (tester) async {
+      // Focusing a field scrolls it into view, and a scroll that starts while
+      // the reveal runs cuts the reveal short. Nothing about it means "leave
+      // me where I am". Unlike a jump, it is still running when the reveal's
+      // future completes, so the retry waits for the page to stop scrolling.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 40));
+
+      unawaited(
+        recording.position.animateTo(
+          100,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.linear,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+      // The position counts this test's own `animateTo` too, and that call is
+      // the one expected overlap: it starts while the reveal runs, which is
+      // how it cuts the reveal short. The rest is what the banner issued.
+      expect(
+        pos.animateCalls - 1,
+        2,
+        reason:
+            'the reveal, then one retry once the programmatic scroll '
+            'settled',
+      );
+      expect(
+        pos.overlaps - 1,
+        0,
+        reason: 'the retry must not start while the programmatic scroll runs',
+      );
+    });
+
+    testWidgets('a long press during the reveal is retried after release', (
+      tester,
+    ) async {
+      // A press that never moves is a tap held longer, not a drag: the
+      // position reads as scrolling for as long as the finger is down, and
+      // the retry waits for it to lift rather than giving up.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+
+      final press = await tester.startGesture(const Offset(160, 240));
+      await tester.pump(const Duration(milliseconds: 600));
+      await press.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+      expect(pos.animateCalls, 2);
+      expect(pos.overlaps, 0);
+    });
+
+    testWidgets('an undisturbed reveal animates once', (tester) async {
+      // The counterpart that gives the counters meaning: a reveal nothing
+      // interrupts must not retry itself, or watch its own animation and
+      // re-enter on it.
+      final (_, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+
+      await tester.pumpAndSettle();
+
+      expect(pos.animateCalls, 1);
+      expect(pos.overlaps, 0);
+    });
+
+    testWidgets('a banner removed during an interrupted reveal does not '
+        'retry', (tester) async {
+      // The failure cleared, or the route popped, while the finger that cut
+      // the reveal short is still down. The retry is waiting on that finger,
+      // and has to go with the banner rather than fire for a widget that is no
+      // longer there — and so do its listeners, which would otherwise outlive
+      // the banner on a scroll position that does not.
+      final (message, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+
+      final press = await tester.startGesture(const Offset(160, 240));
+      expect(
+        pos.isScrollingWatched,
+        isTrue,
+        reason: 'sanity: the retry is waiting on the finger',
+      );
+      final watching = pos.listenerCount;
+
+      message.value = null;
+      await tester.pump();
+      expect(
+        pos.listenerCount,
+        watching - 1,
+        reason: 'the latch on the page moving goes with the banner',
+      );
+      expect(
+        pos.isScrollingWatched,
+        isFalse,
+        reason: 'and so does its wait for the finger to lift',
+      );
+
+      await press.up();
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(pos.animateCalls, 1);
+    });
+
+    testWidgets('a new message while an interrupted reveal waits reveals '
+        'once', (tester) async {
+      // A copy change while the finger that cut the reveal short is still
+      // down. The copy change's reveal does not wait for the finger: it starts
+      // in the next frame, under the held finger, because the gesture guard
+      // keys on the scroll direction and a finger that has not moved reads as
+      // idle. That reveal replaces the watch on the interrupted one, so
+      // lifting the finger retries nothing. One reveal for the new copy, not
+      // one from the copy change and another from the retry.
+      final (message, recording) = await _startReveal(tester);
+      final pos = recording.position as _RecordingPosition;
+      await tester.pump(const Duration(milliseconds: 4));
+
+      final press = await tester.startGesture(const Offset(160, 240));
+      message.value = 'A different failure.';
+      await tester.pump();
+      await press.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+      );
+      expect(pos.overlaps, 0);
+      // The first reveal and the copy change's. A retry when the finger lifts
+      // would be a third.
+      expect(pos.animateCalls, 2);
     });
 
     testWidgets('a banner built as a lazy list row never asks for the '
