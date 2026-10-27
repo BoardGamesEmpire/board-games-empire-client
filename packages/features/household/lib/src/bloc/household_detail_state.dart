@@ -79,25 +79,34 @@ final class HouseholdDetailReady extends HouseholdDetailState {
 /// Reached only once the hydrate has settled, so it is an answer rather
 /// than an early guess.
 ///
-/// [refreshFailed] qualifies it: the pass that would have confirmed the
-/// absence did not finish, so the screen says "we couldn't find it" and
-/// "we couldn't check" together rather than presenting an unverified
-/// absence as a settled one.
+/// [refreshFailed] qualifies it: the last pass to finish failed, so the
+/// absence is unverified or may be out of date. The screen says "we
+/// couldn't find it" and "we couldn't check" together rather than
+/// presenting it as a settled one.
 ///
 /// A retry is offered here too (#300 D10) — this is the surface where
 /// asking again is worth the most, since a household missing from a cache
-/// whose last pass failed may well be on the server. It carries no
-/// `refreshing` flag of its own: once the pass reports `running`, #270's
-/// rule above turns this state into [HouseholdDetailLoading], so the
-/// screen stops claiming the household is gone while it is being looked
-/// for. That spinner *is* the feedback.
+/// whose last pass failed may well be on the server.
+///
+/// [refreshing] says a pass **the user asked for** is running, as on
+/// [HouseholdDetailReady]. An absence no pass has confirmed seldom shows
+/// it: once the pass reports `running`, #270's rule above turns this state
+/// into [HouseholdDetailLoading], and that spinner is the feedback. An
+/// absence an earlier pass confirmed is an answer, so it stays here while
+/// the pass runs (#300), and [refreshFailed] stays with it until a pass
+/// lands (#453). Without this flag a press there would show nothing, leave
+/// the retry enabled, and drop a second press unseen.
 final class HouseholdDetailNotFound extends HouseholdDetailState {
-  const HouseholdDetailNotFound({this.refreshFailed = false});
+  const HouseholdDetailNotFound({
+    this.refreshFailed = false,
+    this.refreshing = false,
+  });
 
   final bool refreshFailed;
+  final bool refreshing;
 
   @override
-  List<Object?> get props => [refreshFailed];
+  List<Object?> get props => [refreshFailed, refreshing];
 }
 
 /// The local read failed outright.

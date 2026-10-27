@@ -132,7 +132,7 @@ class HouseholdDetailBloc
     _members = _watchMembers(_householdId);
 
     _hasHydrationSource = hydration != null;
-    _hydration = hydration?.listen(
+    _hydrationUpdates = hydration?.listen(
       (reading) => add(HouseholdDetailHydrationUpdated(reading)),
       onError: (Object error, StackTrace stackTrace) => _logger.warn(
         'Household hydration status stream failed',
@@ -161,7 +161,7 @@ class HouseholdDetailBloc
 
   late final StreamSubscription<List<Household>> _households;
   late StreamSubscription<List<HouseholdMember>> _members;
-  StreamSubscription<HouseholdHydration>? _hydration;
+  StreamSubscription<HouseholdHydration>? _hydrationUpdates;
 
   /// Null until the household stream has answered at all, which is not the
   /// same as it having answered with nothing — hence the separate flag.
@@ -214,16 +214,19 @@ class HouseholdDetailBloc
   bool _identityInFlight = false;
   bool _identityRetryWanted = false;
 
-  /// What the hydrate is doing, and whether it has ever confirmed an
-  /// answer (#300 D16) — the same memory the list screen keeps, because
-  /// the rule is the same one.
+  /// What the hydrate last reported. The default is also what an absent
+  /// hydrate means: idle, nothing confirmed, nothing failed.
   ///
-  /// The detail half of it: an absence is *unknown* only while nothing has
-  /// confirmed it. Once a pass has reached `refreshed` without producing
-  /// this household, the absence is an answer, and a later pass
-  /// re-checking it must not put the not-found page back on a spinner —
-  /// #300 D15 makes those re-checks routine.
-  final HouseholdHydrationMemory _hydrationMemory = HouseholdHydrationMemory();
+  /// The status keeps the history, not this bloc (#453), and the list
+  /// reads the same reading for the same rule. The detail half of it: an
+  /// absence is *unknown* only while nothing has confirmed it. Once a pass
+  /// has landed `refreshed` without producing this household, the absence
+  /// is an answer, and a later pass re-checking it must not put the
+  /// not-found page back on a spinner. #300 makes those re-checks routine,
+  /// so this screen is often opened while one runs, and a bloc that
+  /// remembered only the readings it saw would treat that pass as the
+  /// first.
+  HouseholdHydration _hydration = const HouseholdHydration();
 
   /// Whether a pass **this screen asked for** is still running (#300 D6).
   bool _retrying = false;
@@ -456,7 +459,7 @@ class HouseholdDetailBloc
     Emitter<HouseholdDetailState> emit,
   ) {
     _hydrationSeen = true;
-    _hydrationMemory.absorb(event.hydration.state);
+    _hydration = event.hydration;
     _emitDerived(emit);
   }
 
@@ -493,8 +496,7 @@ class HouseholdDetailBloc
   /// closed status stream can never leave `running`, so it does not count
   /// as still filling.
   bool get _filling =>
-      _hydrationMemory.state == HouseholdHydrationState.running &&
-      !_hydrationDone;
+      _hydration.state == HouseholdHydrationState.running && !_hydrationDone;
 
   /// True while the cache could still gain rows — either a pass is running,
   /// or a hydration stream exists and has not yet said what it is doing.
@@ -506,8 +508,11 @@ class HouseholdDetailBloc
   bool get _mightStillFill =>
       _filling || (_hasHydrationSource && !_hydrationSeen && !_hydrationDone);
 
-  bool get _refreshFailed =>
-      _hydrationMemory.state == HouseholdHydrationState.failed;
+  /// The last pass to finish, not the current state: a pass starting leaves
+  /// the rows exactly as stale as the failure left them, so only one that
+  /// lands clears the banner (#453). The not-found page carries it too, so
+  /// its banner and retry hold the same way.
+  bool get _refreshFailed => _hydration.lastPassFailed;
 
   void _emitDerived(Emitter<HouseholdDetailState> emit) {
     // Holds against everything except fresh rows on the stream that
@@ -541,9 +546,14 @@ class HouseholdDetailBloc
       // rewriting the very rows this screen is reading.
       final couldStillArrive = _householdEverSeen
           ? _filling
-          : _mightStillFill && !_hydrationMemory.everRefreshed;
+          : _mightStillFill && !_hydration.everRefreshed;
       if (couldStillArrive) return emit(const HouseholdDetailLoading());
-      return emit(HouseholdDetailNotFound(refreshFailed: _refreshFailed));
+      return emit(
+        HouseholdDetailNotFound(
+          refreshFailed: _refreshFailed,
+          refreshing: _retrying,
+        ),
+      );
     }
 
     // The count is load-bearing content, so it waits for a real answer
@@ -613,7 +623,7 @@ class HouseholdDetailBloc
   Future<void> close() async {
     await _households.cancel();
     await _members.cancel();
-    await _hydration?.cancel();
+    await _hydrationUpdates?.cancel();
     return super.close();
   }
 }

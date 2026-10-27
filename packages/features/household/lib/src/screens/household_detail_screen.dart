@@ -346,11 +346,13 @@ class _HouseholdDetailView extends StatelessWidget {
               message: l10n.householdDetailError,
             ),
           ),
-          HouseholdDetailNotFound(:final refreshFailed) => _NotFoundPage(
-            onBack: onBack,
-            refreshFailed: refreshFailed,
-            canRetry: canRetry,
-          ),
+          HouseholdDetailNotFound(:final refreshFailed, :final refreshing) =>
+            _NotFoundPage(
+              onBack: onBack,
+              refreshFailed: refreshFailed,
+              refreshing: refreshing,
+              canRetry: canRetry,
+            ),
           HouseholdDetailReady() => _ReadyPage(
             state: state,
             canRetry: canRetry,
@@ -1008,6 +1010,7 @@ class _NotFoundPage extends StatelessWidget {
   const _NotFoundPage({
     this.onBack,
     this.refreshFailed = false,
+    this.refreshing = false,
     this.canRetry = false,
   });
 
@@ -1018,15 +1021,22 @@ class _NotFoundPage extends StatelessWidget {
   /// failed may well be on the server, so asking again can change what is
   /// on screen rather than only how fresh it is.
   ///
-  /// It carries no in-flight copy of its own. Once the pass reports
-  /// `running`, the bloc stops asserting the absence and this page gives
-  /// way to the spinner — which is the feedback.
+  /// Once the pass reports `running`, the bloc stops asserting an absence
+  /// no pass has confirmed, and this page gives way to the spinner, which
+  /// is the feedback. An absence an earlier pass confirmed stays on this
+  /// page through the pass, so the banner narrates it — see [refreshing].
   final bool canRetry;
 
-  /// The pass that would have confirmed the absence did not finish. The
-  /// screen says both things: we could not find it, and we could not
-  /// check.
+  /// The last pass to finish failed, so the absence is unverified or may be
+  /// out of date. The screen says both things: we could not find it, and we
+  /// could not check.
   final bool refreshFailed;
+
+  /// A pass the user asked for is running. The banner shows while this or
+  /// [refreshFailed] holds, as it does over the household: in-progress
+  /// copy, and a retry that is disabled but keeps its place and its name,
+  /// so a press is answered and a second one is not invited.
+  final bool refreshing;
 
   @override
   Widget build(BuildContext context) {
@@ -1042,8 +1052,8 @@ class _NotFoundPage extends StatelessWidget {
         key: HouseholdDetailScreen.notFoundKey,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (refreshFailed) ...[
-            _refreshBanner(context, canRetry: canRetry),
+          if (refreshFailed || refreshing) ...[
+            _refreshBanner(context, canRetry: canRetry, refreshing: refreshing),
             const BgeGap.lg(),
           ],
           Text(

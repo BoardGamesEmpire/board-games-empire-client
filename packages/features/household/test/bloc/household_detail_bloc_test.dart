@@ -900,19 +900,24 @@ void main() {
       await settle();
 
       expect(calls, 1);
+      // Still failed underneath: the rows are no fresher until the pass
+      // lands (#453). The screen shows the refreshing copy over it.
       expect(
         bloc.state,
         isA<HouseholdDetailReady>()
             .having((s) => s.refreshing, 'refreshing', isTrue)
-            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
       );
 
       pass.complete();
     });
 
-    test('a pass nobody asked for is not narrated', () async {
+    test('a pass nobody asked for keeps the banner up', () async {
       // #302's triggers produce failed -> running without anyone pressing
-      // anything; the screen stays quiet for those.
+      // anything, and the screen does not narrate those. But the rows are
+      // no fresher while one runs, and a banner that vanished on start
+      // would take a focused retry with it (#453). So the warning stays,
+      // unnarrated, until a pass lands.
       final bloc = buildWithRetry();
       addTearDown(bloc.close);
 
@@ -927,11 +932,9 @@ void main() {
       expect(calls, isZero);
       expect(
         bloc.state,
-        isA<HouseholdDetailReady>().having(
-          (s) => s.refreshing,
-          'refreshing',
-          isFalse,
-        ),
+        isA<HouseholdDetailReady>()
+            .having((s) => s.refreshing, 'refreshing', isFalse)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
       );
     });
 
@@ -955,10 +958,9 @@ void main() {
       await settle();
 
       expect(calls, 1);
-      // No "refreshing" annotation on this surface, and deliberately so:
-      // #270 already rules that an absence with a pass running is unknown
-      // rather than missing, so the screen stops claiming the household is
-      // gone while it is being looked for.
+      // While the pass runs this surface is the spinner (#270): an absence
+      // no pass has confirmed is unknown rather than missing, so the screen
+      // stops claiming the household is gone while it is being looked for.
       expect(bloc.state, isA<HouseholdDetailLoading>());
 
       status.finished(HydrateOutcome.failed);
@@ -973,6 +975,93 @@ void main() {
           isTrue,
         ),
       );
+    });
+
+    group('on an absence an earlier pass confirmed', () {
+      // The pass a press runs does not put this page back on the spinner,
+      // because the absence is already an answer, and the failure the last
+      // pass left keeps the banner up through it (#453). So the not-found
+      // page has to narrate the press itself, or it shows nothing and a
+      // second press is dropped unseen. The status is driven before the
+      // bloc is built, so its history is the replayed reading.
+
+      Future<HouseholdDetailBloc> openOnTheAbsence() async {
+        status
+          ..started()
+          ..finished(HydrateOutcome.complete)
+          ..started()
+          ..finished(HydrateOutcome.failed);
+        final bloc = buildWithRetry();
+        addTearDown(bloc.close);
+
+        households.add(const []);
+        await settle();
+        expect(
+          bloc.state,
+          isA<HouseholdDetailNotFound>()
+              .having((s) => s.refreshFailed, 'refreshFailed', isTrue)
+              .having((s) => s.refreshing, 'refreshing', isFalse),
+        );
+        return bloc;
+      }
+
+      Future<void> pressDuringItsPass(HouseholdDetailBloc bloc) async {
+        bloc.add(const HouseholdDetailRetryRequested());
+        status.started();
+        await settle();
+        bloc.add(const HouseholdDetailRetryRequested());
+        await settle();
+      }
+
+      test('a retry says it is refreshing, and runs once', () async {
+        final bloc = await openOnTheAbsence();
+
+        await pressDuringItsPass(bloc);
+
+        expect(calls, 1);
+        expect(
+          bloc.state,
+          isA<HouseholdDetailNotFound>()
+              .having((s) => s.refreshFailed, 'refreshFailed', isTrue)
+              .having((s) => s.refreshing, 'refreshing', isTrue),
+        );
+
+        status.finished(HydrateOutcome.complete);
+        pass.complete();
+        await settle();
+
+        expect(
+          bloc.state,
+          isA<HouseholdDetailNotFound>()
+              .having((s) => s.refreshFailed, 'refreshFailed', isFalse)
+              .having((s) => s.refreshing, 'refreshing', isFalse),
+        );
+      });
+
+      test('a retry that fails again offers the retry again', () async {
+        final bloc = await openOnTheAbsence();
+
+        await pressDuringItsPass(bloc);
+        expect(
+          bloc.state,
+          isA<HouseholdDetailNotFound>().having(
+            (s) => s.refreshing,
+            'refreshing',
+            isTrue,
+          ),
+        );
+
+        status.finished(HydrateOutcome.failed);
+        pass.complete();
+        await settle();
+
+        expect(
+          bloc.state,
+          isA<HouseholdDetailNotFound>()
+              .having((s) => s.refreshFailed, 'refreshFailed', isTrue)
+              .having((s) => s.refreshing, 'refreshing', isFalse),
+        );
+      });
     });
 
     test('a second press while one is still running starts nothing', () async {
@@ -1081,6 +1170,57 @@ void main() {
         expect(bloc.state, isA<HouseholdDetailReady>());
       },
     );
+  });
+
+  group('a detail opened while a pass is running', () {
+    // Entering the household section starts a pass once the data is stale,
+    // and resume, reconnect and the sign-in drain all start one, so this
+    // screen often subscribes mid-pass and sees no earlier pass finish
+    // (#453). The status is driven before the bloc is built, so what it
+    // says arrives as the reading replayed on subscribe.
+
+    test('shows not-found for an absence an earlier pass confirmed', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      await settle();
+
+      expect(
+        bloc.state,
+        isA<HouseholdDetailNotFound>().having(
+          (s) => s.refreshFailed,
+          'refreshFailed',
+          isFalse,
+        ),
+      );
+    });
+
+    test('shows the stale banner when the last pass failed', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.failed)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household(_id)]);
+      members.add([_member('u-me')]);
+      await settle();
+
+      expect(
+        bloc.state,
+        isA<HouseholdDetailReady>().having(
+          (s) => s.refreshFailed,
+          'refreshFailed',
+          isTrue,
+        ),
+      );
+    });
   });
 
   group('a household reconciled onto a new id (#306)', () {

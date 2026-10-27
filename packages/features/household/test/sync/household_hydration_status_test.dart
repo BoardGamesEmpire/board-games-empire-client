@@ -102,6 +102,17 @@ void main() {
     // reading, so the history it needs has to be in it (#453).
     Future<HouseholdHydration> current() => status.watch().first;
 
+    test('a status no pass has touched has established nothing', () async {
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.idle,
+          everRefreshed: false,
+          lastPassFailed: false,
+        ),
+      );
+    });
+
     test(
       'a new listener is replayed what earlier passes established',
       () async {
@@ -130,6 +141,25 @@ void main() {
         await current(),
         const HouseholdHydration(
           state: HouseholdHydrationState.running,
+          lastPassFailed: true,
+        ),
+      );
+    });
+
+    test('a failure does not undo a completed pass', () async {
+      // A failure confirms nothing, so it leaves everRefreshed where it
+      // found it: an answer a success already gave stays an answer.
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started()
+        ..finished(HydrateOutcome.failed);
+
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.failed,
+          everRefreshed: true,
           lastPassFailed: true,
         ),
       );
@@ -488,52 +518,6 @@ void main() {
 
         expect(stamped.isStaleAfter(const Duration(minutes: 5)), isTrue);
       });
-    });
-  });
-
-  group('HouseholdHydrationMemory (#300 D16)', () {
-    late HouseholdHydrationMemory memory;
-
-    setUp(() => memory = HouseholdHydrationMemory());
-
-    test('starts idle, with nothing confirmed', () {
-      expect(memory.state, equals(HouseholdHydrationState.idle));
-      expect(memory.everRefreshed, isFalse);
-    });
-
-    test('remembers the latest state', () {
-      memory.absorb(HouseholdHydrationState.running);
-
-      expect(memory.state, equals(HouseholdHydrationState.running));
-    });
-
-    test('a refreshed pass confirms, permanently', () {
-      memory
-        ..absorb(HouseholdHydrationState.running)
-        ..absorb(HouseholdHydrationState.refreshed);
-
-      expect(memory.everRefreshed, isTrue);
-    });
-
-    test('a later failure does not un-know a confirmed answer', () {
-      memory
-        ..absorb(HouseholdHydrationState.refreshed)
-        ..absorb(HouseholdHydrationState.running)
-        ..absorb(HouseholdHydrationState.failed);
-
-      expect(memory.state, equals(HouseholdHydrationState.failed));
-      expect(memory.everRefreshed, isTrue);
-    });
-
-    test('a failed pass confirms nothing', () {
-      // Not "ever settled". A failure leaves an empty cache as unknown as
-      // it found it, which is what keeps #269 D1's spinner over a
-      // failed-then-retried first pass (#300 D12).
-      memory
-        ..absorb(HouseholdHydrationState.running)
-        ..absorb(HouseholdHydrationState.failed);
-
-      expect(memory.everRefreshed, isFalse);
     });
   });
 }

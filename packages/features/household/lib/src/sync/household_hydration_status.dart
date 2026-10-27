@@ -351,35 +351,3 @@ class HouseholdHydrationStatus {
     await _changes.close();
   }
 }
-
-/// What a screen remembers about the hydrate, beyond its latest state
-/// (#300 D16).
-///
-/// [HouseholdHydrationStatus] reports what is happening now. Two screens
-/// need one thing more: whether a pass has **ever** reached
-/// [HouseholdHydrationState.refreshed]. That is what turns an empty list
-/// or an absent household from unverified into an answer — and once
-/// re-checking a known answer is routine (#300 D1, D15), a re-check must
-/// not un-render the screen that is already showing it.
-///
-/// One type rather than a latch in each bloc, because the rule has to hold
-/// identically on both surfaces (#300 D12 binds them), and two copies of
-/// one rule is what #165 cost.
-class HouseholdHydrationMemory {
-  HouseholdHydrationState _state = HouseholdHydrationState.idle;
-  bool _everRefreshed = false;
-
-  /// The latest state reported. Idle until a pass runs, which is also what
-  /// an absent status means to a reader.
-  HouseholdHydrationState get state => _state;
-
-  /// Whether any pass has ever landed rows, by the rule
-  /// [HouseholdHydration.everRefreshed] states.
-  bool get everRefreshed => _everRefreshed;
-
-  /// Records what the status now reports.
-  void absorb(HouseholdHydrationState next) {
-    _state = next;
-    _everRefreshed |= next == HouseholdHydrationState.refreshed;
-  }
-}

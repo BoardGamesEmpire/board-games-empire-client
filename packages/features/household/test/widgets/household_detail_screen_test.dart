@@ -765,6 +765,56 @@ void main() {
     );
   });
 
+  testWidgets('lays out the not-found page under a refreshing banner at the '
+      '200% text scale (#453)', (tester) async {
+    // The banner's refreshing state swaps its copy and disables its retry,
+    // and the page it sits on is the not-found one, which keeps the banner
+    // through the press. A guard, not a fix: the ready page above is the
+    // only one that has been measured at this size.
+    useViewSize(tester, const Size(320, 640));
+    final pass = Completer<void>();
+
+    // An absence an earlier pass confirmed, and a later one failed under.
+    status
+      ..started()
+      ..finished(HydrateOutcome.complete)
+      ..started()
+      ..finished(HydrateOutcome.failed);
+    await tester.pumpWidget(
+      harness(
+        textScaler: const TextScaler.linear(2),
+        onBack: (_) {},
+        onRetry: () => pass.future,
+      ),
+    );
+    households.add(const []);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+    await tester.pump();
+    status.started();
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+    expect(find.text(_notFoundCopy), findsOneWidget);
+    // The banner's message and the disabled button's own label.
+    expect(find.text(_refreshingCopy), findsNWidgets(2));
+    final retry = find.byKey(HouseholdDetailScreen.refreshRetryKey);
+    expect(tester.widget<TextButton>(retry).onPressed, isNull);
+    // Both wholly on screen, not merely built somewhere down the scroll.
+    const window = Rect.fromLTWH(0, 0, 320, 640);
+    for (final finder in [retry, find.text(_refreshingCopy).first]) {
+      final rect = tester.getRect(finder);
+      expect(window.intersect(rect), rect);
+    }
+
+    pass.complete();
+    status.finished(HydrateOutcome.complete);
+    await tester.pumpAndSettle();
+  });
+
   group('the retry on the refresh banner (#300 D10)', () {
     testWidgets('runs a pass and says so, over the household', (tester) async {
       final pass = Completer<void>();
@@ -845,6 +895,65 @@ void main() {
       expect(find.text(_refreshFailedCopy), findsOneWidget);
     });
 
+    testWidgets('says so on an absence an earlier pass confirmed', (
+      tester,
+    ) async {
+      // That absence is an answer, so the pass does not turn the page into
+      // the spinner, and the failure keeps the banner up through it (#453).
+      // The banner is all that can say the press did something.
+      final pass = Completer<void>();
+      var calls = 0;
+
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started()
+        ..finished(HydrateOutcome.failed);
+      await tester.pumpWidget(
+        harness(
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        ),
+      );
+      households.add(const []);
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+      await tester.pump();
+      status.started();
+      await tester.pump();
+      await tester.pump();
+
+      expect(calls, 1);
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(
+        find.byKey(HouseholdDetailScreen.refreshBannerKey),
+        findsOneWidget,
+      );
+      // The banner's message and the disabled button's own label.
+      expect(find.text(_refreshingCopy), findsNWidgets(2));
+      expect(find.text(_refreshFailedCopy), findsNothing);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(HouseholdDetailScreen.refreshRetryKey),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      pass.complete();
+      status.finished(HydrateOutcome.complete);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.refreshBannerKey), findsNothing);
+    });
+
     testWidgets('is not offered where the composition cannot refresh (#137)', (
       tester,
     ) async {
@@ -864,13 +973,47 @@ void main() {
       await settleWith(tester);
 
       status.started();
-      // Two pumps: the status event reaches the bloc on one microtask turn
-      // and the rebuild lands on the next.
+      // Two pumps, so anything the pass changed is on screen: the status
+      // event reaches the bloc on one microtask turn and a rebuild would
+      // land on the next.
       await tester.pump();
       await tester.pump();
 
       expect(find.text(_refreshingCopy), findsNothing);
-      expect(find.text(_refreshFailedCopy), findsNothing);
+      // The failure it may be about to clear stays up until it does (#453).
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+    });
+
+    testWidgets('a pass nobody asked for does not take focus off the retry', (
+      tester,
+    ) async {
+      // A banner that dropped when any pass started took its retry, and a
+      // keyboard user's place, with it (#453).
+      FocusNode retryFocus() => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(HouseholdDetailScreen.refreshRetryKey),
+            matching: find.text(_retryCopy),
+          ),
+        ),
+      );
+
+      status.finished(HydrateOutcome.failed);
+      await tester.pumpWidget(harness(onRetry: () async {}));
+      await settleWith(tester);
+      retryFocus().requestFocus();
+      await tester.pump();
+      expect(retryFocus().hasPrimaryFocus, isTrue);
+
+      status.started();
+      // Two pumps, so a banner that did drop would be gone by now: the
+      // status event reaches the bloc on one microtask turn and a rebuild
+      // would land on the next.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(HouseholdDetailScreen.refreshRetryKey), findsOneWidget);
+      expect(retryFocus().hasPrimaryFocus, isTrue);
     });
   });
 
