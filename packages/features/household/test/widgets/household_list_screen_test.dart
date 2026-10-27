@@ -342,6 +342,48 @@ void main() {
       expect(opened, equals(['h-1']));
     });
 
+    testWidgets('a row keeps its focus when a row above it leaves', (
+      tester,
+    ) async {
+      // A purge removes a household the server no longer lists, or a discard
+      // deletes a local-only one (#549). Only a row that opens somewhere is
+      // a focus stop, so this one is given somewhere to go.
+      await tester.pumpWidget(harness(onOpen: (_, _) {}));
+      hydration.add(HouseholdHydrationState.refreshed);
+      households.add([
+        _household('h-1', name: 'Alpha'),
+        _household('h-2', name: 'Bravo'),
+      ]);
+      await tester.pump();
+      FocusNode focusOf(String id, String name) => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(HouseholdListScreen.rowKey(id)),
+            matching: find.text(name),
+          ),
+        ),
+      );
+      focusOf('h-2', 'Bravo').requestFocus();
+      await tester.pump();
+      expect(focusOf('h-2', 'Bravo').hasPrimaryFocus, isTrue);
+
+      // A pass that ends early after purging a household: the row above
+      // leaves and the refresh banner appears above the list, in the same
+      // frame. The banner is the one thing the status changes on a list that
+      // has rows, and it pushes the list one place down its parent, so this
+      // is the rebuild the focus has to survive. The first pump delivers the
+      // two streams' events, since no frame is scheduled yet to build them
+      // in, and the second builds the frame.
+      households.add([_household('h-2', name: 'Bravo')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Alpha'), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+      expect(focusOf('h-2', 'Bravo').hasPrimaryFocus, isTrue);
+    });
+
     testWidgets('stays inert content where no detail route is offered', (
       tester,
     ) async {

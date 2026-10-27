@@ -1394,6 +1394,36 @@ void main() {
       }
     });
 
+    testWidgets('a member row keeps its focus when a member above it leaves', (
+      tester,
+    ) async {
+      // Removal is real (#480), so a row can leave while the viewer is on
+      // the one below it. The rows are keyed by member (#609), which a
+      // multi-child element matches by key, so this pins that key (#549).
+      await tester.pumpWidget(withMembers());
+      final viewer = _member('u-me', role: HouseholdRole.householdOwner);
+      final a = _member('u-a');
+      final b = _member('u-b');
+      await settleWith(tester, roster: [viewer, a, b]);
+      FocusNode focusOf(String userId) => Focus.of(
+        tester.element(
+          find.descendant(
+            of: menuOf(userId),
+            matching: find.byIcon(Icons.more_vert),
+          ),
+        ),
+      );
+      focusOf('u-b').requestFocus();
+      await tester.pump();
+      expect(focusOf('u-b').hasPrimaryFocus, isTrue);
+
+      members.add([viewer, b]);
+      await tester.pumpAndSettle();
+
+      expect(menuOf('u-a'), findsNothing);
+      expect(focusOf('u-b').hasPrimaryFocus, isTrue);
+    });
+
     testWidgets(
       "a member's menu is a control of its own, not part of the row's "
       'label',

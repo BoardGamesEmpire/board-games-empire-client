@@ -111,6 +111,9 @@ class HouseholdListScreen extends StatelessWidget {
   static const Key errorKey = Key('household_list.error');
 
   /// Per-row key: `household_list.row_<id>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String householdId) =>
       Key('household_list.row_$householdId');
 
@@ -255,11 +258,14 @@ class _HouseholdListView extends StatelessWidget {
               ),
               HouseholdListReady(:final households) when households.isEmpty =>
                 _EmptySliver(onCreate: create),
-              HouseholdListReady(:final households) => SliverList.builder(
-                itemCount: households.length,
-                itemBuilder: (context, index) =>
-                    _HouseholdRow(household: households[index], onOpen: onOpen),
-              ),
+              HouseholdListReady(:final households) =>
+                BgeKeyedSliverList<Household>(
+                  items: households,
+                  keyOf: (household) =>
+                      HouseholdListScreen.rowKey(household.id),
+                  itemBuilder: (context, household) =>
+                      _HouseholdRow(household: household, onOpen: onOpen),
+                ),
             },
           ],
         );
@@ -305,7 +311,6 @@ class _HouseholdRow extends StatelessWidget {
     // has an `onTap`, and letting the InkWell's own semantics say so keeps
     // one source of truth instead of two that can disagree.
     return MergeSemantics(
-      key: HouseholdListScreen.rowKey(household.id),
       child: ListTile(
         // The tap target, the focus stop and the keyboard activation all
         // come from this one callback — ListTile builds an InkWell when it

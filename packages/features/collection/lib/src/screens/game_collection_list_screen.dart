@@ -64,6 +64,9 @@ class GameCollectionListScreen extends StatelessWidget {
   );
 
   /// Per-row key: `collection_list.row_<entryId>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String entryId) => Key('collection_list.row_$entryId');
 
   /// Per-row thumbnail key: `collection_list.thumbnail_<entryId>`.
@@ -189,11 +192,13 @@ class GameCollectionListSliver extends StatelessWidget {
             ),
             GameCollectionListReady(:final items) when items.isEmpty =>
               const _EmptySliver(),
-            GameCollectionListReady(:final items) => SliverList.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) =>
-                  _CollectionRow(item: items[index], onOpen: onOpen),
-            ),
+            GameCollectionListReady(:final items) =>
+              BgeKeyedSliverList<GameCollectionListItem>(
+                items: items,
+                keyOf: (item) => GameCollectionListScreen.rowKey(item.entry.id),
+                itemBuilder: (context, item) =>
+                    _CollectionRow(item: item, onOpen: onOpen),
+              ),
           },
         ],
       ),
@@ -246,7 +251,6 @@ class _CollectionRow extends StatelessWidget {
     // builds an InkWell with its own node, and merging keeps the tap action
     // and the words on one node (the household row's reasoning).
     return MergeSemantics(
-      key: GameCollectionListScreen.rowKey(entry.id),
       child: ListTile(
         // Without an onTap the tile's InkWell has no handler, so it is
         // disabled: no tap action, and not a focus stop under ordinary
