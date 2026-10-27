@@ -77,7 +77,7 @@ import '../sync/household_hydration_status.dart';
 ///
 /// ## New event (#499)
 ///
-/// To an owner, an admin or a member ([HouseholdRole.mayCreateEvents]), the
+/// To an owner, an admin or a member, as the role table allows (#483), the
 /// screen offers a New event row, after the Invite row. It opens the form for
 /// creating an event with this household picked. A guest lacks
 /// `create:event:household`, so the row is left out for a guest, and for a
@@ -477,11 +477,9 @@ class _ReadyPage extends StatelessWidget {
             ),
           ],
           // After the Invite row, for an owner, an admin or a member: a guest
-          // may not create an event here (#499). Not for a household the
-          // server does not know yet, whose id is this device's own.
+          // may not create an event here (#499).
           if (newEvent != null &&
-              !state.household.isLocalOnly &&
-              (state.role?.mayCreateEvents ?? false)) ...[
+              actions.contains(HouseholdAction.createEvent)) ...[
             const BgeGap.lg(),
             ListTile(
               key: HouseholdDetailScreen.newEventKey,

@@ -85,14 +85,20 @@ void main() {
         HouseholdAction.leave,
         HouseholdAction.manageInvites,
         HouseholdAction.sendInvite,
+        HouseholdAction.createEvent,
       },
       admin: {
         HouseholdAction.edit,
         HouseholdAction.leave,
         HouseholdAction.manageInvites,
         HouseholdAction.sendInvite,
+        HouseholdAction.createEvent,
       },
-      member: {HouseholdAction.leave, HouseholdAction.sendInvite},
+      member: {
+        HouseholdAction.leave,
+        HouseholdAction.sendInvite,
+        HouseholdAction.createEvent,
+      },
       guest: {HouseholdAction.leave},
       HouseholdRole.unknown: {},
     };
@@ -130,8 +136,12 @@ void main() {
     });
 
     test('a member sends only under Direct or NeedsApproval', () {
-      const canSend = {HouseholdAction.leave, HouseholdAction.sendInvite};
-      const cannotSend = {HouseholdAction.leave};
+      const canSend = {
+        HouseholdAction.leave,
+        HouseholdAction.sendInvite,
+        HouseholdAction.createEvent,
+      };
+      const cannotSend = {HouseholdAction.leave, HouseholdAction.createEvent};
 
       expect(
         householdRoleActions(member, policy: MemberInvitePolicy.direct),
@@ -186,6 +196,39 @@ void main() {
               : isNot(contains(HouseholdAction.edit)),
           reason: '$role',
         );
+      }
+    });
+
+    test('createEvent is for an owner, an admin or a member, whatever the '
+        'policy', () {
+      for (final role in roles) {
+        for (final policy in policies) {
+          expect(
+            householdRoleActions(role, policy: policy),
+            role == owner || role == admin || role == member
+                ? contains(HouseholdAction.createEvent)
+                : isNot(contains(HouseholdAction.createEvent)),
+            reason: '$role, $policy',
+          );
+        }
+      }
+    });
+
+    test('createEvent agrees with HouseholdRole.mayCreateEvents', () {
+      // The events package can't read this table, so its household picker
+      // reads mayCreateEvents, a second transcription of the README's
+      // "Create a household event" row (#499). This ties the two together.
+      for (final role in HouseholdRole.values) {
+        for (final policy in policies) {
+          expect(
+            householdRoleActions(
+              role,
+              policy: policy,
+            ).contains(HouseholdAction.createEvent),
+            role.mayCreateEvents,
+            reason: '$role, $policy',
+          );
+        }
       }
     });
 
