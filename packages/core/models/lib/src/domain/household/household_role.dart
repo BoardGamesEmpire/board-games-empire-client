@@ -45,4 +45,16 @@ enum HouseholdRole {
     'HouseholdGuest' => HouseholdRole.householdGuest,
     _ => HouseholdRole.unknown,
   };
+
+  /// The server's role name. [unknown] has none: it stands for a name this
+  /// client could not read, so it is never sent.
+  String toWire() => switch (this) {
+    HouseholdRole.householdOwner => 'HouseholdOwner',
+    HouseholdRole.householdAdmin => 'HouseholdAdmin',
+    HouseholdRole.householdMember => 'HouseholdMember',
+    HouseholdRole.householdGuest => 'HouseholdGuest',
+    HouseholdRole.unknown => throw StateError(
+      'HouseholdRole.unknown has no wire name',
+    ),
+  };
 }

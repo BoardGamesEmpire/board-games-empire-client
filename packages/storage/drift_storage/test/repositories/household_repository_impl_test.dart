@@ -728,8 +728,8 @@ void main() {
       test('cacheMember replaces a synthesized owner row when the server row '
           'carries a different id (#267 D4)', () async {
         // Same collision as the batch writer below, through the
-        // single-row path. `cacheMember` is the writer #122's
-        // membership sync will reach for, so it must resolve the
+        // single-row path. `cacheMember` is the writer a role change's
+        // answer goes through (#480, #122), so it must resolve the
         // (householdId, userId) index too — not the primary key.
         await _seedHousehold(db, id: 'h-1');
         final now = DateTime.now().toUtc();
@@ -831,6 +831,91 @@ void main() {
         expect(rawRows, hasLength(1));
         expect(rawRows.single.userId, equals(_kOtherUserId));
         expect(rawRows.single.roleName, equals('HouseholdOwner'));
+      });
+    });
+
+    group('removeCachedMember() (#480)', () {
+      test('removeCachedMember deletes only that member', () async {
+        // The same user belongs to both households: the delete is keyed on
+        // the pair, so removing them from h-1 must leave their h-2 row.
+        await _seedHousehold(db, id: 'h-1');
+        await _seedHousehold(db, id: 'h-2');
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-1',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdMember',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-2',
+          userId: _kOtherUserId,
+          householdId: 'h-2',
+          roleName: 'HouseholdMember',
+        );
+
+        await repo.removeCachedMember('h-1', _kOtherUserId);
+
+        final remaining = await db.select(db.householdMembersTable).get();
+        expect(
+          remaining.map((r) => r.id),
+          unorderedEquals(['m-me-1', 'm-other-2']),
+        );
+        final roster = await repo.getMembers('h-1');
+        expect(roster.map((m) => m.userId), equals([_kUserId]));
+      });
+
+      test('removeCachedMember on a member not cached does nothing', () async {
+        await _seedHousehold(db, id: 'h-1');
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+
+        await repo.removeCachedMember('h-1', 'user-never-cached');
+        await repo.removeCachedMember('h-unknown', _kUserId);
+
+        final remaining = await db.select(db.householdMembersTable).get();
+        expect(remaining.map((r) => r.id), equals(['m-me-1']));
+      });
+
+      test('removeCachedMember ignores the household\'s sync flags', () async {
+        // The flags guard the household's own fields against a server copy.
+        // This applies the server's answer about one member, so a household
+        // with a pending change loses the row all the same.
+        await _seedHousehold(db, id: 'h-1');
+        await (db.update(db.householdsTable)..where((t) => t.id.equals('h-1')))
+            .write(const HouseholdsTableCompanion(isDirty: Value(true)));
+        await _seedMember(
+          db,
+          id: 'm-me-1',
+          userId: _kUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdOwner',
+        );
+        await _seedMember(
+          db,
+          id: 'm-other-1',
+          userId: _kOtherUserId,
+          householdId: 'h-1',
+          roleName: 'HouseholdMember',
+        );
+
+        await repo.removeCachedMember('h-1', _kOtherUserId);
+
+        final remaining = await db.select(db.householdMembersTable).get();
+        expect(remaining.map((r) => r.id), equals(['m-me-1']));
       });
     });
 

@@ -228,7 +228,8 @@ void main() {
     // drops out of view. Over a server row this device already holds with
     // changes the queue has yet to send, the tombstone is skipped like any
     // other server copy (#298), and the op that owns that row settles it.
-    // No household op makes a server row dirty yet (#122), so the row is
+    // No household op makes a server row dirty: a membership change goes
+    // straight to the server and its answer is cached (#122), so the row is
     // seeded.
     for (final (flag, isDirty, isLocalOnly) in [
       ('dirty', true, false),

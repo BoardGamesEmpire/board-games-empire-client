@@ -12,6 +12,7 @@ import 'package:network_interface/network_interface.dart'
         GameCollectionRemoteDataSource,
         GamesRemoteDataSource,
         HouseholdInviteRemoteDataSource,
+        HouseholdMemberRemoteDataSource,
         HouseholdRemoteDataSource;
 import 'package:observability/observability.dart' show FeedbackTransport;
 
@@ -23,6 +24,7 @@ import '../feedback/feedback_dio_transport.dart';
 import '../game_collection/game_collection_remote_data_source_impl.dart';
 import '../games/games_remote_data_source_impl.dart';
 import '../household/household_invite_remote_data_source_impl.dart';
+import '../household/household_member_remote_data_source_impl.dart';
 import '../household/household_remote_data_source_impl.dart';
 import 'clock_skew_interceptor.dart';
 import 'dio_factory.dart';
@@ -130,6 +132,14 @@ void registerServerNetwork({
   // container owns the Dio.
   container.registerSingleton<HouseholdInviteRemoteDataSource>(
     HouseholdInviteRemoteDataSourceImpl(dio),
+  );
+
+  // #480: the per-server household member remote, for changing a member's
+  // role and removing a member. Same convention and placement as the
+  // remotes above: it shares the per-server Dio and adds no auth of its own.
+  // Const and stateless; the container owns the Dio.
+  container.registerSingleton<HouseholdMemberRemoteDataSource>(
+    HouseholdMemberRemoteDataSourceImpl(dio),
   );
 
   // #253: the per-server collection remote — the network seam the collection

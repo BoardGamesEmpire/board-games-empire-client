@@ -6,7 +6,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import '../invites/household_invite_permissions.dart';
+import '../permissions/household_actions.dart';
 import 'household_invite_list_event.dart';
 import 'household_invite_list_state.dart';
 import 'invite_pages.dart';
@@ -226,7 +226,7 @@ class HouseholdInviteListBloc
     final viewer = _viewerUserId;
     final row = _pages.rows?.where((invite) => invite.id == id).firstOrNull;
     if (row == null || viewer == null || _busy.contains(id)) return;
-    final allowed = HouseholdInvitePermissions.rowActions(
+    final allowed = householdInviteRowActions(
       viewerUserId: viewer,
       viewerRole: _viewerRole,
       invite: row,

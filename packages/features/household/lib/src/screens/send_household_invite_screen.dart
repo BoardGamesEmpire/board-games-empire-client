@@ -17,24 +17,24 @@ import '../bloc/send_household_invite_state.dart';
 import '../bloc/user_search_bloc.dart';
 import '../bloc/user_search_event.dart';
 import '../bloc/user_search_state.dart';
-import '../invites/household_invite_permissions.dart';
 import '../invites/invite_refusal_message.dart';
+import '../permissions/household_actions.dart';
 import '../widgets/household_role_label.dart';
 
 /// The form for inviting someone to a household (#455): by email address,
 /// or by picking someone who has an account through user search.
 ///
 /// The roles offered depend on [viewerRole] and, for a member, on the
-/// household's [memberInvitePolicy] (#569), through
-/// [HouseholdInvitePermissions.offerableRoles]. A member under
-/// `NeedsApproval` is told an owner or admin has to approve the invite
-/// first. A viewer who may offer none sees why instead of the form: a guest
-/// never invites, the policy lets no member invite, this version of the app
-/// doesn't recognise the policy or the viewer's role, or the cache can't
-/// say yet. Only that last one offers Try again, through [onRefresh]: a
-/// read of the household can bring a policy or a role the cache lacks, but
-/// not one the app doesn't know. Only a deep link, or a change under an
-/// open form, reaches any of these: nothing offers the form to them.
+/// household's [memberInvitePolicy] (#569), through [offerableInviteRoles].
+/// A member under `NeedsApproval` is told an owner or admin has to approve
+/// the invite first. A viewer who may offer none sees why instead of the
+/// form: a guest never invites, the policy lets no member invite, this
+/// version of the app doesn't recognise the policy or the viewer's role, or
+/// the cache can't say yet. Only that last one offers Try again, through
+/// [onRefresh]: a read of the household can bring a policy or a role the
+/// cache lacks, but not one the app doesn't know. Only a deep link, or a
+/// change under an open form, reaches any of these: nothing offers the form
+/// to them.
 ///
 /// No copy promises that a sent invite will stand. The server checks its
 /// sender again when it is approved or accepted
@@ -102,17 +102,15 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
-    final roles = HouseholdInvitePermissions.offerableRoles(
-      viewerRole,
-      memberInvitePolicy,
-    );
+    final roles = offerableInviteRoles(viewerRole, memberInvitePolicy);
 
     final member = viewerRole == HouseholdRole.householdMember;
 
     // Only a viewer who may read the household's invites goes back to them.
     // Anyone else, including a member whose role changed under a send on
     // its way, goes where their own sent invites show.
-    final manages = HouseholdInvitePermissions.mayManage(viewerRole);
+    final manages = householdRoleActions(viewerRole)
+        .contains(HouseholdAction.manageInvites);
 
     // The blocs sit above the gate, so a send on its way when the viewer
     // loses the form still lands, and the form it comes back to is still
@@ -184,8 +182,7 @@ class SendHouseholdInviteScreen extends StatelessWidget {
 }
 
 /// Why [role] may not send under [policy], or null when the cache can't say
-/// yet. Reached only when [HouseholdInvitePermissions.offerableRoles]
-/// offers nothing.
+/// yet. Reached only when [offerableInviteRoles] offers nothing.
 String? _notAllowedText(
   HouseholdLocalizations l10n,
   HouseholdRole? role,

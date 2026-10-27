@@ -91,5 +91,11 @@ All copy comes from `HouseholdLocalizations` (gitignored, regenerated —
 ## Not in scope here
 
 Sync-status indicators on the household list (#47), deferred create fields —
-language / visibility (#123), household image (#124), membership sync + owner
-member id reconciliation (#122), and the web write-path parity (#125).
+language / visibility (#123), household image (#124), and the web write-path
+parity (#125).
+
+Membership changes are not part of this flow, and nothing about them is
+queued: a role change or a removal is sent straight to the server from the
+household screen (#480, #122). The synthesized owner member row keeps its
+client-generated id until the next server write of that membership replaces
+it (#267).

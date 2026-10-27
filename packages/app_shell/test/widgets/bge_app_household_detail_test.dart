@@ -10,6 +10,7 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 
@@ -19,6 +20,9 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 class _MockStorage extends Mock implements Storage {}
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+class _MockMemberRemote extends Mock
+    implements HouseholdMemberRemoteDataSource {}
 
 const _id = 'hh_1';
 
@@ -57,8 +61,10 @@ Finder _inYourRole(String text) => find.descendant(
 ///
 /// The guard is [HouseholdRepository] **alone**, matching the list's (#269
 /// D4) and deliberately not the create route's: the detail screen reads the
-/// local cache and never calls the server, so a container without a
-/// `HouseholdRemoteDataSource` must still reach it.
+/// local cache and never calls the server to show itself, so a container
+/// without a `HouseholdRemoteDataSource` must still reach it. The member
+/// actions it offers (#480) do call the server, and are left out where the
+/// member client is not registered.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late Storage storage;
@@ -85,6 +91,9 @@ void main() {
     Stream<List<Household>>? laterCache,
     List<Household>? households,
     Map<String, List<HouseholdMember>> rosters = const {},
+    HouseholdMemberRemoteDataSource? memberRemote,
+    HouseholdRefresher? refresher,
+    HouseholdHydrationStatus? status,
   }) async {
     final repository = _MockHouseholdRepository();
     when(repository.watchHouseholds).thenAnswer((_) async* {
@@ -99,6 +108,8 @@ void main() {
         rosterOf(invocation.positionalArguments.first as String),
       ),
     );
+    when(() => repository.removeCachedMember(any(), any()))
+        .thenAnswer((_) async {});
     when(() => repository.getCurrentUserMember(any())).thenAnswer(
       (invocation) async =>
           rosterOf(invocation.positionalArguments.first as String)
@@ -109,9 +120,13 @@ void main() {
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
-          // No remote data source anywhere in this file: the detail route
-          // must not need one.
+          // No household remote anywhere in this file: the detail route
+          // must not need one. A member client is optional, and only the
+          // member-menu tests pass one.
           householdRepository: withRepository ? repository : null,
+          householdMemberRemoteDataSource: memberRemote,
+          householdRefresher: refresher,
+          householdHydrationStatus: status,
         ),
       ),
     );
@@ -131,6 +146,18 @@ void main() {
     await tester.tap(find.byKey(HomeScreen.entryKey('households')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(HouseholdListScreen.rowKey(_id)));
+    await tester.pumpAndSettle();
+  }
+
+  /// Removes [userId] through their menu, and confirms.
+  Future<void> removeThroughTheMenu(WidgetTester tester, String userId) async {
+    await tester.tap(
+      find.byKey(HouseholdDetailScreen.memberActionsKey(userId)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(HouseholdDetailScreen.removeKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(HouseholdDetailScreen.removeConfirmKey));
     await tester.pumpAndSettle();
   }
 
@@ -198,9 +225,10 @@ void main() {
     });
 
     testWidgets('reaches the detail screen with no HouseholdRemoteDataSource '
-        '— the read never calls the server (#269 D4)', (tester) async {
-      // Nothing in this file registers a remote. Reinstating that
-      // requirement in the detail guard would fail here and nowhere else.
+        '— it never calls the server to show itself (#269 D4)', (tester) async {
+      // No test in this file registers a HouseholdRemoteDataSource.
+      // Reinstating that requirement in the detail guard would fail here and
+      // nowhere else.
       await pumpHome(tester);
 
       await openDetailFromTheList(tester);
@@ -248,6 +276,110 @@ void main() {
       expect(find.text('2 members'), findsOneWidget);
       expect(_inYourRole('Member'), findsOneWidget);
       expect(_inYourRole('Owner'), findsNothing);
+    });
+
+    testWidgets('an owner sees member menus when the server has a member '
+        'client (#480)', (tester) async {
+      await pumpHome(
+        tester,
+        memberRemote: _MockMemberRemote(),
+        refresher: HouseholdRefresher(() async {}),
+        rosters: {
+          _id: [
+            _member('u-me'),
+            _member('u-guest', role: HouseholdRole.householdGuest),
+          ],
+        },
+      );
+
+      await openDetailFromTheList(tester);
+
+      // Another member's row has the menu; the viewer's own never does.
+      expect(
+        find.byKey(HouseholdDetailScreen.memberActionsKey('u-guest')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(HouseholdDetailScreen.memberActionsKey('u-me')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a removal through the menu is sent to the server, and the '
+        'households are read again (#480, #122)', (tester) async {
+      final memberRemote = _MockMemberRemote();
+      final guest = _member('u-guest', role: HouseholdRole.householdGuest);
+      when(() => memberRemote.remove(any(), any()))
+          .thenAnswer((_) async => guest);
+      var refreshes = 0;
+      await pumpHome(
+        tester,
+        memberRemote: memberRemote,
+        refresher: HouseholdRefresher(() async => refreshes++),
+        rosters: {
+          _id: [_member('u-me'), guest],
+        },
+      );
+      await openDetailFromTheList(tester);
+
+      await removeThroughTheMenu(tester, 'u-guest');
+
+      verify(() => memberRemote.remove(_id, guest.id)).called(1);
+      expect(refreshes, 1);
+    });
+
+    testWidgets('a removal answering while a hydrate pass runs reads the '
+        'households twice (#480, #122)', (tester) async {
+      // The pass in flight may have read the roster before the removal, so
+      // `refreshAfterMembershipChange` runs a second one. It knows a pass
+      // was running only from the hydration status, which the route has to
+      // hand it.
+      final memberRemote = _MockMemberRemote();
+      final guest = _member('u-guest', role: HouseholdRole.householdGuest);
+      when(() => memberRemote.remove(any(), any()))
+          .thenAnswer((_) async => guest);
+      var refreshes = 0;
+      final status = HouseholdHydrationStatus()..started();
+      addTearDown(status.close);
+      await pumpHome(
+        tester,
+        memberRemote: memberRemote,
+        refresher: HouseholdRefresher(() async => refreshes++),
+        status: status,
+        rosters: {
+          _id: [_member('u-me'), guest],
+        },
+      );
+      await openDetailFromTheList(tester);
+
+      await removeThroughTheMenu(tester, 'u-guest');
+
+      verify(() => memberRemote.remove(_id, guest.id)).called(1);
+      expect(refreshes, 2);
+    });
+
+    testWidgets('no member client, no member menus (#480)', (tester) async {
+      await pumpHome(
+        tester,
+        rosters: {
+          _id: [
+            _member('u-me'),
+            _member('u-guest', role: HouseholdRole.householdGuest),
+          ],
+        },
+      );
+
+      await openDetailFromTheList(tester);
+
+      // The roster still lists them; only the way to act on them is gone.
+      expect(
+        find.byKey(HouseholdDetailScreen.memberKey('u-guest')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(HouseholdDetailScreen.memberActionsKey('u-guest')),
+        findsNothing,
+      );
     });
 
     testWidgets('falls back to NotYetAvailable when the per-user repository '

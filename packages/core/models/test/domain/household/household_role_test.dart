@@ -116,6 +116,42 @@ void main() {
       });
     });
 
+    group('toWire', () {
+      test('names every known role as the server does', () {
+        const expectations = <HouseholdRole, String>{
+          HouseholdRole.householdOwner: 'HouseholdOwner',
+          HouseholdRole.householdAdmin: 'HouseholdAdmin',
+          HouseholdRole.householdMember: 'HouseholdMember',
+          HouseholdRole.householdGuest: 'HouseholdGuest',
+        };
+
+        for (final entry in expectations.entries) {
+          expect(entry.key.toWire(), equals(entry.value));
+          expect(HouseholdRole.fromWire(entry.value), equals(entry.key));
+        }
+      });
+
+      test('agrees with the JsonValue annotations for every role', () {
+        // toWire's switch is a THIRD transcription of the wire names, beside
+        // fromWire's and the @JsonValue annotations the JSON uses. This ties
+        // it to the annotations, so a role added without its case is caught.
+        for (final value in HouseholdRole.values) {
+          if (value == HouseholdRole.unknown) continue;
+          expect(
+            value.toWire(),
+            equals(_makeMember(role: value).toJson()['role']),
+            reason:
+                'HouseholdRole.${value.name}.toWire() should be its '
+                '@JsonValue',
+          );
+        }
+      });
+
+      test('unknown has no wire name', () {
+        expect(HouseholdRole.unknown.toWire, throwsStateError);
+      });
+    });
+
     test('every household-prefixed Prisma SystemRole has a Dart binding', () {
       // Subset of prisma/models/permissions/role.prisma SystemRole enum.
       const serverValues = <String>[

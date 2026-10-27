@@ -10,7 +10,7 @@ import 'package:household/l10n/household_localizations.dart';
 import '../bloc/edit_household_bloc.dart';
 import '../bloc/edit_household_event.dart';
 import '../bloc/edit_household_state.dart';
-import '../edit/household_edit_permissions.dart';
+import '../permissions/household_actions.dart';
 import '../widgets/edit_household_form.dart';
 
 /// The screen for editing a household's name, description and member invite
@@ -128,7 +128,10 @@ class _EditHouseholdReadsState extends State<_EditHouseholdReads> {
         if (household.isLocalOnly) {
           return _Note(l10n.editHouseholdNotYetSynced);
         }
-        if (!HouseholdEditPermissions.mayEdit(household, read.role)) {
+        if (!householdActionsFor(
+          household,
+          read.role,
+        ).contains(HouseholdAction.edit)) {
           return _Note(l10n.editHouseholdNotAllowed);
         }
         return _EditHouseholdView(household: household, screen: widget.screen);

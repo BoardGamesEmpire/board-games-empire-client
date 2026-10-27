@@ -916,7 +916,9 @@ class _BgeAppState extends State<BgeApp> {
   /// [HouseholdRepository] and optional [HouseholdHydrationStatus] as
   /// [_buildHouseholdListRoute], and guards on the repository alone for
   /// the same reason (#269 D4): the detail screen reads the local cache
-  /// and never calls the server.
+  /// and never calls the server to show itself. The invite, edit and member
+  /// actions it offers (#455, #476, #480) do, and each is left out where its
+  /// client is not registered.
   ///
   /// [householdId] arrives from the path, unvalidated. Nothing checks it
   /// here — an unreadable id is exactly what the screen's not-found state
@@ -970,7 +972,38 @@ class _BgeAppState extends State<BgeApp> {
           ? null
           : (ctx, id) =>
                 unawaited(ctx.push<void>(AppRoutes.householdInviteSendOf(id))),
+      // #480: the menu on a member's row. The screen itself decides who sees
+      // it, by the role table (#483), and for a household the server does not
+      // know yet; here it is only whether this composition can send the
+      // change and read the households again after it. The screen offers no
+      // menu without both.
+      members: _memberClient(container),
+      // A role change or a removal is sent straight to the server (#122), so
+      // the household list is read again afterwards, as after a join.
+      onMembershipChanged: _afterMembershipChange(container),
     );
+  }
+
+  /// What a screen runs once a change to a household's membership has
+  /// answered, a join (#455) or a role change or removal (#480):
+  /// `refreshAfterMembershipChange` over the [HouseholdRefresher] and the
+  /// optional [HouseholdHydrationStatus] the hydrate installer registers.
+  /// Null where no refresher is registered, which means no drain to run, and
+  /// the household list then comes with the next pass that does.
+  ///
+  /// Both are resolved here, as [_householdRetry] does, not when the change
+  /// answers. By then the session may have ended, and a lookup would throw
+  /// or reach the next user's scope.
+  Future<void> Function()? _afterMembershipChange(
+    DependencyContainer container,
+  ) {
+    if (!container.isRegistered<HouseholdRefresher>()) return null;
+
+    final refresher = container.get<HouseholdRefresher>();
+    final status = container.isRegistered<HouseholdHydrationStatus>()
+        ? container.get<HouseholdHydrationStatus>()
+        : null;
+    return () => refreshAfterMembershipChange(refresher, status);
   }
 
   /// The per-server invite client (#455), or null where this composition
@@ -979,6 +1012,15 @@ class _BgeAppState extends State<BgeApp> {
     DependencyContainer container,
   ) => container.isRegistered<HouseholdInviteRemoteDataSource>()
       ? container.get<HouseholdInviteRemoteDataSource>()
+      : null;
+
+  /// The per-server member client (#480), or null where this composition
+  /// has none. A role change or a removal is sent through it, straight to the
+  /// server and never queued (#122).
+  HouseholdMemberRemoteDataSource? _memberClient(
+    DependencyContainer container,
+  ) => container.isRegistered<HouseholdMemberRemoteDataSource>()
+      ? container.get<HouseholdMemberRemoteDataSource>()
       : null;
 
   /// The per-server household remote, or null where this composition has
@@ -1093,13 +1135,8 @@ class _BgeAppState extends State<BgeApp> {
   /// [_buildHouseholdInvitesRoute].
   ///
   /// After an accept, the household arrives through the hydrate: one pass,
-  /// or two when one was already running (see `refreshAfterJoin`). No
-  /// refresher registered means no drain to run, and the household comes
-  /// with the next pass that does.
-  ///
-  /// Both are resolved here, as [_householdRetry] does, not when the accept
-  /// answers. By then the session may have ended, and a lookup would throw
-  /// or reach the next user's scope.
+  /// or two when one was already running (see
+  /// `refreshAfterMembershipChange`, which [_afterMembershipChange] wires).
   Widget? _buildInviteInboxRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -1110,18 +1147,11 @@ class _BgeAppState extends State<BgeApp> {
       return null;
     }
 
-    final refresher = container.isRegistered<HouseholdRefresher>()
-        ? container.get<HouseholdRefresher>()
-        : null;
-    final status = container.isRegistered<HouseholdHydrationStatus>()
-        ? container.get<HouseholdHydrationStatus>()
-        : null;
+    final afterJoin = _afterMembershipChange(container);
 
     return InviteInboxScreen(
       remote: invites,
-      onJoined: refresher == null
-          ? null
-          : (_) => refreshAfterJoin(refresher, status),
+      onJoined: afterJoin == null ? null : (_) => afterJoin(),
       onOpenHousehold: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.householdDetailOf(id))),
       onOpenSent: (ctx) => unawaited(ctx.push<void>(AppRoutes.invitesSent)),
@@ -1199,8 +1229,9 @@ class _BgeAppState extends State<BgeApp> {
         // the next entry to the list re-hydrates rather than waiting out
         // the remaining window. Cleared here, before the navigation, and
         // not inside the household feature — the invalidation belongs to
-        // *mutation*, and this is where mutations are already wired, which
-        // is what gives #122's membership mutations the same hook.
+        // *mutation*, and this is where mutations are already wired. A
+        // member's role change or removal (#480, #122) does the same from
+        // the detail route, through `refreshAfterMembershipChange`.
         //
         // Absent on a composition that runs no drain (a container with no
         // household client): nothing to invalidate, and a create must not

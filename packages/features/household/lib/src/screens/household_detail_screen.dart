@@ -14,8 +14,11 @@ import '../bloc/awaiting_approval_count_cubit.dart';
 import '../bloc/household_detail_bloc.dart';
 import '../bloc/household_detail_event.dart';
 import '../bloc/household_detail_state.dart';
-import '../edit/household_edit_permissions.dart';
-import '../invites/household_invite_permissions.dart';
+import '../bloc/household_member_actions_bloc.dart';
+import '../bloc/household_member_actions_event.dart';
+import '../bloc/household_member_actions_state.dart';
+import '../members/member_action_message.dart';
+import '../permissions/household_actions.dart';
 import '../widgets/household_refresh_banner.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
@@ -37,10 +40,23 @@ import '../sync/household_hydration_status.dart';
 /// the count: the user's own reads "You", as on a household just created
 /// here, and anyone else's reads as their role alone, or "Member" with none.
 ///
+/// ## A member's menu (#480)
+///
+/// To its owners and admins, a row offers a menu beside the member's name:
+/// change their role, remove them, or both, as the role table allows the
+/// viewer on that member (#483). An admin acts only on members and guests,
+/// nobody acts on their own row, and on another owner, an owner may only
+/// remove them. Each is sent straight to the server and never queued, and
+/// how it went shows in a banner under the member count until dismissed.
+///
+/// The menu is left out for a household the server does not know yet
+/// (`isLocalOnly`), and where the composition passes no [members] client.
+///
 /// ## What this screen does not show
 ///
-/// **No avatars** yet (#603), and no opening a member's row yet (#540). **No membership actions** — no delete, no leave, no kick, no
-/// transfer. Those stay with #246's children.
+/// **No avatars** yet (#603), and no opening a member's row yet (#540).
+/// **No leaving, transferring or deleting** the household yet (#479, #478,
+/// #477).
 ///
 /// ## Edit and invites are the exceptions
 ///
@@ -78,6 +94,8 @@ class HouseholdDetailScreen extends StatelessWidget {
     this.onOpenInvites,
     this.onEdit,
     this.onInvite,
+    this.members,
+    this.onMembershipChanged,
     super.key,
   });
 
@@ -104,8 +122,33 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on the member count, which heads the roster.
   static const Key memberCountKey = Key('household_detail.member_count');
 
-  /// Key on a member's row in the roster, by their user id.
+  /// Key on a member's row in the roster, by their user id: their name over
+  /// their role, which a screen reader reads as one node. The row's menu
+  /// sits beside it, under [memberActionsKey].
   static Key memberKey(String userId) => Key('household_detail.member.$userId');
+
+  /// Key on the button that opens a member's menu, by their user id.
+  static Key memberActionsKey(String userId) =>
+      Key('household_detail.member_actions.$userId');
+
+  /// Key on the Change role item of the open member menu.
+  static const Key changeRoleKey = Key('household_detail.change_role');
+
+  /// Key on the Remove item of the open member menu.
+  static const Key removeKey = Key('household_detail.remove');
+
+  /// Key on a role's option in the change-role dialog.
+  static Key roleOptionKey(HouseholdRole role) =>
+      Key('household_detail.role_option.${role.name}');
+
+  /// Key on the change-role dialog's Save button.
+  static const Key roleSaveKey = Key('household_detail.role_save');
+
+  /// Key on the remove dialog's confirm button.
+  static const Key removeConfirmKey = Key('household_detail.remove_confirm');
+
+  /// Key on the banner saying how the last role change or removal went.
+  static const Key memberOutcomeKey = Key('household_detail.member_outcome');
 
   /// Key on the current user's role.
   static const Key roleKey = Key('household_detail.role');
@@ -164,6 +207,16 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// lets members invite. Null leaves the Invite row out.
   final void Function(BuildContext context, String householdId)? onInvite;
 
+  /// The per-server member client, for changing a member's role or removing
+  /// them (#480). Null, or a null [onMembershipChanged], leaves every row
+  /// without a menu.
+  final HouseholdMemberRemoteDataSource? members;
+
+  /// Marks the household list stale and reads it again after a role change
+  /// or removal, as `refreshAfterMembershipChange` does. Null leaves every
+  /// row without a menu, as a null [members] does.
+  final Future<void> Function()? onMembershipChanged;
+
   /// The reserved create segment. `/household/create` is a route of its
   /// own, declared first; this is the belt to that braces (#270 D6).
   static const String _reservedCreateId = 'create';
@@ -177,18 +230,43 @@ class HouseholdDetailScreen extends StatelessWidget {
       return _NotFoundPage(onBack: onBack);
     }
 
-    return BlocProvider<HouseholdDetailBloc>(
-      // go_router keeps this page when only the id changes; the key makes a
-      // new id a new bloc rather than the old household under it (#466).
-      key: ValueKey<String>(householdId),
-      create: (_) => HouseholdDetailBloc(
-        householdId: householdId,
-        repository: repository,
-        hydration: hydration,
-        onRetry: onRetry,
+    // Both or neither: without the refresh, a 404 would leave the member on
+    // the list, and the banners that say the household is being read again
+    // would be wrong.
+    final memberActions = switch ((members, onMembershipChanged)) {
+      (final remote?, final onChanged?) => (
+        remote: remote,
+        onChanged: onChanged,
       ),
-      // The callback stays with the bloc; the view only needs to know
-      // whether there is one, to decide whether to draw a button.
+      _ => null,
+    };
+
+    return MultiBlocProvider(
+      // go_router keeps this page when only the id changes; the key makes a
+      // new id new blocs rather than the old household under them (#466).
+      key: ValueKey<String>(householdId),
+      providers: [
+        BlocProvider<HouseholdDetailBloc>(
+          create: (_) => HouseholdDetailBloc(
+            householdId: householdId,
+            repository: repository,
+            hydration: hydration,
+            onRetry: onRetry,
+          ),
+        ),
+        // None without a member client and a refresh, and then no row has a
+        // menu.
+        if (memberActions != null)
+          BlocProvider<HouseholdMemberActionsBloc>(
+            create: (_) => HouseholdMemberActionsBloc(
+              remote: memberActions.remote,
+              repository: repository,
+              onChanged: memberActions.onChanged,
+            ),
+          ),
+      ],
+      // The callbacks stay with the blocs; the view only needs to know
+      // whether there is one, to decide whether to draw a control.
       child: _HouseholdDetailView(
         onBack: onBack,
         canRetry: onRetry != null,
@@ -196,6 +274,7 @@ class HouseholdDetailScreen extends StatelessWidget {
         onOpenInvites: onOpenInvites,
         onEdit: onEdit,
         onInvite: onInvite,
+        hasMemberActionsBloc: memberActions != null,
       ),
     );
   }
@@ -209,6 +288,7 @@ class _HouseholdDetailView extends StatelessWidget {
     this.onOpenInvites,
     this.onEdit,
     this.onInvite,
+    this.hasMemberActionsBloc = false,
   });
 
   final void Function(BuildContext context)? onBack;
@@ -220,6 +300,10 @@ class _HouseholdDetailView extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onOpenInvites;
   final void Function(BuildContext context, String householdId)? onEdit;
   final void Function(BuildContext context, String householdId)? onInvite;
+
+  /// Whether a [HouseholdMemberActionsBloc] is provided above, which is
+  /// whether the composition passed a member client.
+  final bool hasMemberActionsBloc;
 
   @override
   Widget build(BuildContext context) {
@@ -252,6 +336,7 @@ class _HouseholdDetailView extends StatelessWidget {
             onOpenInvites: onOpenInvites,
             onEdit: onEdit,
             onInvite: onInvite,
+            hasMemberActionsBloc: hasMemberActionsBloc,
           ),
         };
       },
@@ -268,6 +353,7 @@ class _ReadyPage extends StatelessWidget {
     this.onOpenInvites,
     this.onEdit,
     this.onInvite,
+    this.hasMemberActionsBloc = false,
   });
 
   final HouseholdDetailReady state;
@@ -280,6 +366,9 @@ class _ReadyPage extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onEdit;
   final void Function(BuildContext context, String householdId)? onInvite;
 
+  /// Whether a [HouseholdMemberActionsBloc] is provided above.
+  final bool hasMemberActionsBloc;
+
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
@@ -290,6 +379,9 @@ class _ReadyPage extends StatelessWidget {
     final openInvites = onOpenInvites;
     final edit = onEdit;
     final invite = onInvite;
+    // Empty for a household the server does not know yet, so none of the
+    // controls below is offered for one.
+    final actions = householdActionsFor(state.household, state.role);
 
     return BgePage(
       // The household's own name, not a generic one: the title is the first
@@ -297,8 +389,7 @@ class _ReadyPage extends StatelessWidget {
       // will land here without the user having walked past the list.
       title: Text(state.household.name),
       actions: [
-        if (edit != null &&
-            HouseholdEditPermissions.mayEdit(state.household, state.role))
+        if (edit != null && actions.contains(HouseholdAction.edit))
           IconButton(
             key: HouseholdDetailScreen.editKey,
             icon: const Icon(Icons.edit_outlined),
@@ -322,21 +413,7 @@ class _ReadyPage extends StatelessWidget {
             Text(description, style: theme.textTheme.bodyLarge),
             const BgeGap.lg(),
           ],
-          Semantics(
-            header: true,
-            child: Text(
-              key: HouseholdDetailScreen.memberCountKey,
-              l10n.householdDetailMembers(state.memberCount),
-              style: theme.textTheme.titleMedium,
-            ),
-          ),
-          const BgeGap.xs(),
-          for (final member in state.members)
-            _MemberRow(
-              key: HouseholdDetailScreen.memberKey(member.userId),
-              member: member,
-              isYou: member.userId == state.currentUserId,
-            ),
+          _Roster(state: state, hasMemberActionsBloc: hasMemberActionsBloc),
           // Omitted entirely when there is no role to state (#270 D4):
           // a null binding, or an identity we could not resolve. An empty
           // "Your role" label would be a question the screen asks itself.
@@ -346,8 +423,7 @@ class _ReadyPage extends StatelessWidget {
           ],
           if (invites != null &&
               openInvites != null &&
-              HouseholdInvitePermissions.mayManage(state.role) &&
-              !state.household.isLocalOnly) ...[
+              actions.contains(HouseholdAction.manageInvites)) ...[
             const BgeGap.lg(),
             _InvitesEntry(
               // Keyed on the id, which a reconcile changes (#306): the count
@@ -356,17 +432,14 @@ class _ReadyPage extends StatelessWidget {
               householdId: state.household.id,
               invites: invites,
               onOpen: openInvites,
+              hasMemberActionsBloc: hasMemberActionsBloc,
             ),
           ],
           // In the entry's place, for a member who may invite but can't
           // read the household's invites (#569).
           if (invite != null &&
-              !HouseholdInvitePermissions.mayManage(state.role) &&
-              HouseholdInvitePermissions.maySend(
-                state.role,
-                state.household.settings?.memberInvitePolicy,
-              ) &&
-              !state.household.isLocalOnly) ...[
+              actions.contains(HouseholdAction.sendInvite) &&
+              !actions.contains(HouseholdAction.manageInvites)) ...[
             const BgeGap.lg(),
             ListTile(
               key: HouseholdDetailScreen.inviteKey,
@@ -390,6 +463,7 @@ class _InvitesEntry extends StatelessWidget {
     required this.householdId,
     required this.invites,
     required this.onOpen,
+    required this.hasMemberActionsBloc,
     super.key,
   });
 
@@ -397,49 +471,171 @@ class _InvitesEntry extends StatelessWidget {
   final HouseholdInviteRemoteDataSource invites;
   final void Function(BuildContext context, String householdId) onOpen;
 
+  /// Whether a [HouseholdMemberActionsBloc] is provided above.
+  final bool hasMemberActionsBloc;
+
   @override
-  Widget build(BuildContext context) =>
-      BlocProvider<AwaitingApprovalCountCubit>(
-        create: (_) => AwaitingApprovalCountCubit(
-          householdId: householdId,
-          remote: invites,
-        )..load(),
-        child: BlocBuilder<AwaitingApprovalCountCubit, int?>(
-          builder: (context, count) {
-            final l10n = HouseholdLocalizations.of(context);
-            // Read again on the way back from the invites, or from any
-            // route above this screen: approving there changes the count.
-            return ReadAgainWhenUncovered(
-              onUncovered: () =>
+  Widget build(BuildContext context) {
+    final entry = BlocBuilder<AwaitingApprovalCountCubit, int?>(
+      builder: (context, count) {
+        final l10n = HouseholdLocalizations.of(context);
+        // Read again on the way back from the invites, or from any
+        // route above this screen: approving there changes the count.
+        return ReadAgainWhenUncovered(
+          onUncovered: () =>
+              unawaited(context.read<AwaitingApprovalCountCubit>().load()),
+          child: ListTile(
+            key: HouseholdDetailScreen.invitesKey,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.mail_outline),
+            title: Text(l10n.householdDetailInvites),
+            subtitle: count == null || count == 0
+                ? null
+                : Text(l10n.householdDetailInvitesAwaiting(count)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => onOpen(context, householdId),
+          ),
+        );
+      },
+    );
+
+    return BlocProvider<AwaitingApprovalCountCubit>(
+      create: (_) =>
+          AwaitingApprovalCountCubit(householdId: householdId, remote: invites)
+            ..load(),
+      child: !hasMemberActionsBloc
+          ? entry
+          // Removing a member revokes the invites they sent, those awaiting
+          // approval among them (backend#747), and the dialogs that start
+          // it never cover this screen. So every removal's outcome reads
+          // the count again. Only a request's end emits one.
+          : BlocListener<
+              HouseholdMemberActionsBloc,
+              HouseholdMemberActionsState
+            >(
+              listenWhen: (_, current) =>
+                  current.outcome?.action == HouseholdMemberAction.remove,
+              listener: (context, _) =>
                   unawaited(context.read<AwaitingApprovalCountCubit>().load()),
-              child: ListTile(
-                key: HouseholdDetailScreen.invitesKey,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.mail_outline),
-                title: Text(l10n.householdDetailInvites),
-                subtitle: count == null || count == 0
-                    ? null
-                    : Text(l10n.householdDetailInvitesAwaiting(count)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => onOpen(context, householdId),
-              ),
-            );
-          },
+              child: entry,
+            ),
+    );
+  }
+}
+
+/// The member actions a row's menu offers. Making someone owner has no
+/// route until #478.
+const _menuActions = {
+  HouseholdMemberAction.changeRole,
+  HouseholdMemberAction.remove,
+};
+
+/// The member count over the roster (#304), with each row's menu and the
+/// banner saying how the last member action went (#480).
+class _Roster extends StatelessWidget {
+  const _Roster({required this.state, required this.hasMemberActionsBloc});
+
+  final HouseholdDetailReady state;
+
+  /// Whether a [HouseholdMemberActionsBloc] is provided above.
+  final bool hasMemberActionsBloc;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasMemberActionsBloc) return _build(context, null);
+
+    return BlocBuilder<HouseholdMemberActionsBloc, HouseholdMemberActionsState>(
+      builder: _build,
+    );
+  }
+
+  /// [actionsState] is null where there is no member client, and then no row
+  /// has a menu.
+  Widget _build(
+    BuildContext context,
+    HouseholdMemberActionsState? actionsState,
+  ) {
+    final l10n = HouseholdLocalizations.of(context);
+    final theme = Theme.of(context);
+    final outcome = actionsState?.outcome;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            key: HouseholdDetailScreen.memberCountKey,
+            l10n.householdDetailMembers(state.memberCount),
+            style: theme.textTheme.titleMedium,
+          ),
         ),
-      );
+        const BgeGap.xs(),
+        if (outcome != null) ...[
+          _MemberOutcomeBanner(outcome: outcome),
+          const BgeGap.xs(),
+        ],
+        for (final member in state.members)
+          _MemberRow(
+            key: ValueKey<String>(member.userId),
+            member: member,
+            isYou: member.userId == state.currentUserId,
+            menu: _menuFor(member, actionsState),
+          ),
+      ],
+    );
+  }
+
+  /// [member]'s menu, with what the role table lets the viewer do to them
+  /// (#483), or null where that is nothing.
+  Widget? _menuFor(
+    HouseholdMember member,
+    HouseholdMemberActionsState? actionsState,
+  ) {
+    // A household the server does not know yet has no member ids it issued,
+    // so its rows offer nothing, as Edit and invites are left out (#476).
+    if (actionsState == null || state.household.isLocalOnly) return null;
+
+    final offered = householdMemberActionsFor(
+      viewerRole: state.role,
+      isSelf: member.userId == state.currentUserId,
+      target: member,
+    ).intersection(_menuActions);
+    if (offered.isEmpty) return null;
+
+    return _MemberMenu(
+      member: member,
+      actions: offered,
+      roles: assignableMemberRoles(state.role),
+      busy: actionsState.busy.contains(member.id),
+    );
+  }
 }
 
 /// One member of the roster: their name over their role, as one semantics
 /// node (#304). The role line is left out where the member has no role
 /// binding, and stands in for the name of anyone else no hydrate has named:
 /// "Member" over a role of member would say the same thing twice.
+///
+/// The member's menu, where the viewer has one, sits beside that node and
+/// outside it, so a screen reader reaches it as a control of its own rather
+/// than as part of the row's label (#480). Tapping the row itself does
+/// nothing yet; #540 will open the member's profile there.
 class _MemberRow extends StatelessWidget {
-  const _MemberRow({required this.member, required this.isYou, super.key});
+  const _MemberRow({
+    required this.member,
+    required this.isYou,
+    this.menu,
+    super.key,
+  });
 
   final HouseholdMember member;
 
   /// Whether this is the current user's own row.
   final bool isYou;
+
+  /// The member's menu, or null for none.
+  final Widget? menu;
 
   @override
   Widget build(BuildContext context) {
@@ -449,8 +645,10 @@ class _MemberRow extends StatelessWidget {
     final role = member.role;
     final roleLabel = role == null ? null : householdRoleLabel(l10n, role);
     final byRoleAlone = !isYou && name == null;
+    final menu = this.menu;
 
-    return MergeSemantics(
+    final details = MergeSemantics(
+      key: HouseholdDetailScreen.memberKey(member.userId),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceSm),
         child: Column(
@@ -473,7 +671,262 @@ class _MemberRow extends StatelessWidget {
         ),
       ),
     );
+
+    if (menu == null) return details;
+    return Row(
+      children: [
+        Expanded(child: details),
+        menu,
+      ],
+    );
   }
+}
+
+/// A member's menu: change their role, remove them, or both (#480).
+class _MemberMenu extends StatelessWidget {
+  const _MemberMenu({
+    required this.member,
+    required this.actions,
+    required this.roles,
+    required this.busy,
+  });
+
+  final HouseholdMember member;
+
+  /// What the menu offers, never empty.
+  final Set<HouseholdMemberAction> actions;
+
+  /// The roles the viewer may give, in the order the dialog lists them.
+  final List<HouseholdRole> roles;
+
+  /// A request for this member is on its way. The menu stays shut until it
+  /// answers.
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+    final name = member.name;
+
+    return MenuAnchor(
+      // Left unconstrained, the panel sits in a hard-clipped box as wide as
+      // its widest entry, which at 2.0 text runs past a phone's edge. Held
+      // to the screen, the entries wrap instead.
+      crossAxisUnconstrained: false,
+      menuChildren: [
+        if (actions.contains(HouseholdMemberAction.changeRole))
+          MenuItemButton(
+            key: HouseholdDetailScreen.changeRoleKey,
+            overflowAxis: Axis.vertical,
+            onPressed: () => unawaited(_changeRole(context)),
+            child: Text(l10n.householdMemberChangeRole),
+          ),
+        if (actions.contains(HouseholdMemberAction.remove))
+          MenuItemButton(
+            key: HouseholdDetailScreen.removeKey,
+            overflowAxis: Axis.vertical,
+            onPressed: () => unawaited(_remove(context)),
+            child: Text(l10n.householdMemberRemove),
+          ),
+      ],
+      builder: (context, controller, _) => MergeSemantics(
+        child: Semantics(
+          expanded: controller.isOpen,
+          child: IconButton(
+            key: HouseholdDetailScreen.memberActionsKey(member.userId),
+            icon: const Icon(Icons.more_vert),
+            // Every row has one, so the name says whose it is to a screen
+            // reader moving from button to button.
+            tooltip: name == null
+                ? l10n.householdMemberActions
+                : l10n.householdMemberActionsFor(name),
+            onPressed: busy
+                ? null
+                : controller.isOpen
+                ? controller.close
+                : controller.open,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _changeRole(BuildContext context) async {
+    // Read before the dialog opens: a refresh that lands meanwhile can take
+    // this row, and the context it was asked from, off the screen.
+    final bloc = context.read<HouseholdMemberActionsBloc>();
+    final role = await showDialog<HouseholdRole>(
+      context: context,
+      builder: (_) => _RoleDialog(roles: roles, current: member.role),
+    );
+    if (role == null || bloc.isClosed) return;
+    bloc.add(HouseholdMemberRoleChangeRequested(member, role));
+  }
+
+  Future<void> _remove(BuildContext context) async {
+    final bloc = context.read<HouseholdMemberActionsBloc>();
+    if (!await _confirmRemove(context) || bloc.isClosed) return;
+    bloc.add(HouseholdMemberRemovalRequested(member));
+  }
+
+  Future<bool> _confirmRemove(BuildContext context) async {
+    final l10n = HouseholdLocalizations.of(context);
+    final name = member.name;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        // At 2.0 text the title and body can outgrow a phone's height.
+        scrollable: true,
+        title: Text(
+          name == null
+              ? l10n.householdMemberRemoveConfirmTitleUnnamed
+              : l10n.householdMemberRemoveConfirmTitle(name),
+        ),
+        content: Text(l10n.householdMemberRemoveConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.householdMemberCancel),
+          ),
+          TextButton(
+            key: HouseholdDetailScreen.removeConfirmKey,
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(dialogContext).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.householdMemberRemoveConfirm),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+}
+
+/// Picks a member's new role from the ones the viewer may give (#480), and
+/// pops with it. Cancel pops with nothing.
+class _RoleDialog extends StatefulWidget {
+  const _RoleDialog({required this.roles, required this.current});
+
+  final List<HouseholdRole> roles;
+
+  /// The member's role now, chosen when the dialog opens. Saving it would
+  /// change nothing, so Save waits for another.
+  final HouseholdRole? current;
+
+  @override
+  State<_RoleDialog> createState() => _RoleDialogState();
+}
+
+class _RoleDialogState extends State<_RoleDialog> {
+  HouseholdRole? _chosen;
+
+  @override
+  void initState() {
+    super.initState();
+    _chosen = widget.current;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+    final chosen = _chosen;
+
+    return AlertDialog(
+      // Three options, each with a line on what the role may do, outgrow a
+      // phone's height at 2.0 text.
+      scrollable: true,
+      title: Text(l10n.householdMemberRoleDialogTitle),
+      content: RadioGroup<HouseholdRole>(
+        groupValue: chosen,
+        onChanged: (role) => setState(() => _chosen = role),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final role in widget.roles)
+              RadioListTile<HouseholdRole>(
+                key: HouseholdDetailScreen.roleOptionKey(role),
+                value: role,
+                contentPadding: EdgeInsets.zero,
+                title: Text(householdRoleLabel(l10n, role)),
+                subtitle: switch (_roleDescription(l10n, role)) {
+                  final description? => Text(description),
+                  null => null,
+                },
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.householdMemberCancel),
+        ),
+        TextButton(
+          key: HouseholdDetailScreen.roleSaveKey,
+          onPressed: chosen == null || chosen == widget.current
+              ? null
+              : () => Navigator.of(context).pop(chosen),
+          child: Text(l10n.householdMemberRoleSave),
+        ),
+      ],
+    );
+  }
+}
+
+/// What [role] may do, under its option in the change-role dialog.
+///
+/// Owner is never offered, since an owner is made only by a transfer
+/// (#478), and nor is a role this app does not recognise. Neither has one.
+String? _roleDescription(HouseholdLocalizations l10n, HouseholdRole role) =>
+    switch (role) {
+      HouseholdRole.householdAdmin => l10n.householdRoleAdminDescription,
+      HouseholdRole.householdMember => l10n.householdRoleMemberDescription,
+      HouseholdRole.householdGuest => l10n.householdRoleGuestDescription,
+      HouseholdRole.householdOwner || HouseholdRole.unknown => null,
+    };
+
+/// How the last role change or removal went (#480), under the member count
+/// until dismissed or replaced. A live region, as every [BgeInlineBanner]
+/// is.
+class _MemberOutcomeBanner extends StatelessWidget {
+  const _MemberOutcomeBanner({required this.outcome});
+
+  final HouseholdMemberOutcome outcome;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = HouseholdLocalizations.of(context);
+
+    return BgeInlineBanner(
+      key: HouseholdDetailScreen.memberOutcomeKey,
+      tone: _tone(outcome),
+      message: memberActionMessage(l10n, outcome),
+      action: TextButton(
+        onPressed: () => context.read<HouseholdMemberActionsBloc>().add(
+          const HouseholdMemberOutcomeDismissed(),
+        ),
+        child: Text(l10n.householdMemberDismiss),
+      ),
+    );
+  }
+
+  /// Success when what was asked for holds, a warning when it did not
+  /// happen, and an error when nobody can say.
+  static BgeBannerTone _tone(HouseholdMemberOutcome outcome) =>
+      switch (outcome.result) {
+        HouseholdMemberActionResult.done => BgeBannerTone.success,
+        HouseholdMemberActionResult.gone => switch (outcome.action) {
+          // They are out of the household, or it is gone, and either way
+          // that is what removing them asked for.
+          HouseholdMemberAction.remove => BgeBannerTone.success,
+          // There was no one to change.
+          HouseholdMemberAction.changeRole ||
+          HouseholdMemberAction.makeOwner => BgeBannerTone.warning,
+        },
+        HouseholdMemberActionResult.refused => BgeBannerTone.warning,
+        HouseholdMemberActionResult.failed => BgeBannerTone.error,
+      };
 }
 
 /// "Your role" over its value, as one semantics node so a screen reader

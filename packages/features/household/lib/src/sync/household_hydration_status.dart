@@ -210,7 +210,8 @@ class HouseholdHydrationStatus {
   /// running (#300 D9).
   ///
   /// Called when a mutation makes the local set stale by definition — a
-  /// create today, and the #122 membership mutations when they land. The
+  /// create, a join (#455), and a member's role change or removal (#480).
+  /// The last two call it through `refreshAfterMembershipChange`. The
   /// **state** is deliberately untouched: the rows on screen are still the
   /// rows we have, and only the claim that they are current goes away, so
   /// the next entry re-hydrates rather than waiting out the window.
