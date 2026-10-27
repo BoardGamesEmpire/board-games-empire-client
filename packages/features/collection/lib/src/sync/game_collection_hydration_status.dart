@@ -67,11 +67,10 @@ final class GameCollectionHydration extends Equatable {
 ///
 /// Modelled on `HouseholdHydrationStatus`, less `markStale`: nothing on the
 /// collection list invalidates the set, because an add (#45) writes to the
-/// cache and the list's stream shows it without a pass. It differs in two
-/// ways. Each reading carries its history ([GameCollectionHydration]), where
-/// the household's screens rebuild theirs from the changes they see, and
-/// [isStaleAfter] reads a clock that went backwards as stale. #407 is where
-/// the two would become one.
+/// cache and the list's stream shows it without a pass. Each reading carries
+/// its history ([GameCollectionHydration]), and [isStaleAfter] reads a clock
+/// that went backwards as stale; the household's status has done both since
+/// #453. #407 is where the two would become one.
 ///
 /// [started] and [finished] belong to `GameCollectionHydrateInstaller`'s
 /// pass. The list reads [watch]; the installer's `SessionRehydrator` entry

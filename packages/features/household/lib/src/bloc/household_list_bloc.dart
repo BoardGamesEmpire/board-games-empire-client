@@ -27,11 +27,11 @@ import 'household_list_state.dart';
 /// | cache | hydrate | state |
 /// |---|---|---|
 /// | nothing yet | any | loading |
-/// | empty | running | loading — unknown, not empty |
+/// | empty | running, and no pass has ever completed | loading — unknown, not empty |
 /// | empty | anything else | ready, no rows |
 /// | rows | any | ready — a populated cache is never hidden |
 /// | error | any | error, until the cache speaks again |
-/// | ended, nothing read | any | error — nothing answered, and nothing will |
+/// | ended, nothing read | any, now or later | error — nothing answered, and nothing will |
 /// | ended, rows read | any | those rows, frozen |
 ///
 /// ## Two ways the cache stops
@@ -76,7 +76,7 @@ import 'household_list_state.dart';
 class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   HouseholdListBloc({
     required HouseholdRepository repository,
-    Stream<HouseholdHydrationState>? hydration,
+    Stream<HouseholdHydration>? hydration,
     this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.list'),
@@ -104,8 +104,8 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
       onDone: () => add(const HouseholdListCacheEnded()),
     );
 
-    _hydration = hydration?.listen(
-      (state) => add(HouseholdListHydrationUpdated(state)),
+    _hydrationUpdates = hydration?.listen(
+      (reading) => add(HouseholdListHydrationUpdated(reading)),
       // Nothing errors this stream today. If something ever does, the
       // annotation is what is lost — not the list it annotates.
       onError: (Object error, StackTrace stackTrace) => _logger.warn(
@@ -122,23 +122,25 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   final Future<void> Function()? _onRetry;
 
   late final StreamSubscription<List<Household>> _cache;
-  StreamSubscription<HouseholdHydrationState>? _hydration;
+  StreamSubscription<HouseholdHydration>? _hydrationUpdates;
 
   /// Null until the cache has answered at all — which is not the same as
   /// having answered with nothing.
   List<Household>? _households;
 
-  /// Set by a failed read, cleared by the next successful one.
+  /// Set by a failed read, cleared by the next successful one. A cache that
+  /// ends with nothing read sets it too, and nothing clears it then.
   bool _readFailed = false;
 
-  /// What the hydrate is doing, and whether it has ever confirmed an
-  /// answer (#300 D16). Idle and unconfirmed until told otherwise, which
-  /// is also what an absent hydrate means.
+  /// What the hydrate last reported. The default is also what an absent
+  /// hydrate means: idle, nothing confirmed, nothing failed.
   ///
-  /// [HouseholdHydrationMemory.everRefreshed] is what makes an empty list
-  /// *confirmed* rather than merely unverified; the detail screen reads
-  /// the same memory for the same reason.
-  final HouseholdHydrationMemory _hydrationMemory = HouseholdHydrationMemory();
+  /// The status keeps the history, not this bloc (#453). The list is often
+  /// opened while a pass is already running, and a bloc that remembered
+  /// only the readings it saw would treat that pass as the first.
+  /// [HouseholdHydration.everRefreshed] is what makes an empty list
+  /// *confirmed* rather than merely unverified (#300).
+  HouseholdHydration _hydration = const HouseholdHydration();
 
   /// Whether a pass **this screen asked for** is still running (#300 D6).
   ///
@@ -170,15 +172,19 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     Emitter<HouseholdListState> emit,
   ) {
     // Rows already read stay up; the route is being popped around us.
-    // Nothing read at all is a spinner nobody will ever resolve.
-    if (_households == null) emit(const HouseholdListError());
+    if (_households != null) return;
+    // Nothing read at all is a spinner nobody will ever resolve. Held like
+    // a failed read: a closed stream will never send the rows that would
+    // clear it, so a later hydrate result must not lift it (#453).
+    _readFailed = true;
+    emit(const HouseholdListError());
   }
 
   void _onHydrationUpdated(
     HouseholdListHydrationUpdated event,
     Emitter<HouseholdListState> emit,
   ) {
-    _hydrationMemory.absorb(event.hydration);
+    _hydration = event.hydration;
     _emitDerived(emit);
   }
 
@@ -211,9 +217,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
 
     _retrying = false;
     // The pass has reported its outcome to the status by now, but that
-    // report reaches this bloc as a separate event — so this emit may
-    // land a turn before the banner comes back. That is a frame without
-    // a banner, not a frame claiming success.
+    // report reaches this bloc as a separate event, so this emit can land
+    // first and still carry the failure the press set out to clear. Both
+    // land in the same microtask drain, so no frame shows it.
     if (!isClosed) _emitDerived(emit);
   }
 
@@ -221,7 +227,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     // Order matters below, and one ordering is load-bearing: the
     // empty-and-filling check outranks [_retrying]. A retry over an empty
     // list returns the screen to its spinner rather than annotating an
-    // emptiness no pass has confirmed (#269 D1) — see the screen doc.
+    // emptiness no pass has confirmed (#269) — see the screen doc.
     // Holds the error against everything except fresh rows — see the class
     // doc. In particular a hydrate result must not lift it.
     if (_readFailed) return emit(const HouseholdListError());
@@ -230,21 +236,24 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     if (households == null) return emit(const HouseholdListLoading());
 
     // "Filling" means the emptiness has never been confirmed, not merely
-    // that a pass is running (#300 D16). #269 D1 exists to stop "no
-    // households yet" rendering over a cache about to fill for the *first*
-    // time; once a pass has landed `refreshed` the answer is known, and
-    // #300 D1 makes re-checking it routine — so re-confirming it must not
-    // un-render the screen on every entry.
+    // that a pass is running (#300). #269 exists to stop "no households
+    // yet" rendering over a cache about to fill for the *first* time; once
+    // a pass has landed `refreshed` the answer is known, and #300 makes
+    // re-checking it routine — so re-confirming it must not un-render the
+    // screen on every entry.
     final filling =
         households.isEmpty &&
-        _hydrationMemory.state == HouseholdHydrationState.running &&
-        !_hydrationMemory.everRefreshed;
+        _hydration.state == HouseholdHydrationState.running &&
+        !_hydration.everRefreshed;
     if (filling) return emit(const HouseholdListLoading());
 
     emit(
       HouseholdListReady(
         households: households,
-        refreshFailed: _hydrationMemory.state == HouseholdHydrationState.failed,
+        // The last pass to finish, not the current state: a pass starting
+        // leaves the rows exactly as stale as the failure left them, so
+        // only one that lands clears the banner (#453).
+        refreshFailed: _hydration.lastPassFailed,
         refreshing: _retrying,
       ),
     );
@@ -253,7 +262,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   @override
   Future<void> close() async {
     await _cache.cancel();
-    await _hydration?.cancel();
+    await _hydrationUpdates?.cancel();
     return super.close();
   }
 }

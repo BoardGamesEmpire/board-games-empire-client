@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,6 +40,80 @@ class _GrowingListState extends State<_GrowingList> {
       ),
     ],
   );
+}
+
+/// The windows a floating button has to leave a list's last row reachable
+/// in (#467): a phone, a phone on its side, and a desktop window.
+const _windows = <(String, Size)>[
+  ('a phone', Size(360, 640)),
+  ('a phone on its side', Size(640, 360)),
+  ('a desktop window', Size(1024, 768)),
+];
+
+/// The button every #467 case floats. Its label is what makes it wide enough
+/// to reach over a row at every window above, the desktop one included.
+Widget _createButton(VoidCallback onPressed) => FloatingActionButton.extended(
+  onPressed: onPressed,
+  icon: const Icon(Icons.group_add_outlined),
+  label: const Text('Create household'),
+);
+
+/// Scrolls the page to its very end, checks the floating button leaves a 16dp
+/// gap under the `ListTile` around [lastItem], then taps [lastItem] where the
+/// button would reach over it.
+///
+/// The tap lands on the middle of the horizontal stretch the two share, at
+/// the item's mid-height. Aimed at the item's own centre it could miss the
+/// button altogether: under the test font a label's glyphs are a full em
+/// wide, so a short row's centre sits left of a button at the right edge, and
+/// a test that taps there passes without the page reserving anything.
+///
+/// The tap alone does not pin the reserve either: it lands at the row's
+/// mid-height, so any reserve over about 20dp passes it while the bottom of
+/// the row is still under the button. The gap is what pins the amount.
+Future<void> _tapLastItemUnderTheButton(
+  WidgetTester tester, {
+  required Finder lastItem,
+}) async {
+  // The rows are built as they come into view, so the end is known only
+  // once it is reached.
+  final position = tester
+      .state<ScrollableState>(find.byType(Scrollable).first)
+      .position;
+  double? end;
+  while (end != position.maxScrollExtent) {
+    end = position.maxScrollExtent;
+    position.jumpTo(end);
+    await tester.pumpAndSettle();
+  }
+
+  final item = tester.getRect(lastItem);
+  final button = tester.getRect(find.byType(FloatingActionButton));
+  final left = math.max(item.left, button.left);
+  final right = math.min(item.right, button.right);
+  expect(
+    left,
+    lessThan(right),
+    reason:
+        'the item $item and the button $button share no width, so a tap '
+        'could never reach the button and this case would pin nothing',
+  );
+
+  // The row itself, not the text inside it: the text is only a fraction of
+  // the row's height, and it is the row whose bottom edge the button covers.
+  final tile = tester.getRect(
+    find.ancestor(of: lastItem, matching: find.byType(ListTile)).first,
+  );
+  expect(
+    button.top - tile.bottom,
+    greaterThanOrEqualTo(16),
+    reason:
+        'the button $button should sit at least 16dp clear of the last '
+        'row $tile once the page is scrolled to its end',
+  );
+
+  await tester.tapAt(Offset((left + right) / 2, item.center.dy));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -507,6 +583,136 @@ void main() {
       // Roughly mid-viewport rather than pinned to the top.
       expect(center.dy, greaterThan(200));
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('BgePage floating button room (#467)', () {
+    for (final (label, window) in _windows) {
+      testWidgets(
+        'on $label, the last item of a slivers page scrolls clear of the '
+        'button',
+        (tester) async {
+          final tapped = <int>[];
+          var pressed = 0;
+          await tester.pumpWidget(
+            hostAtSize(
+              tester,
+              BgePage.slivers(
+                width: BgePageWidth.pane,
+                floatingActionButton: _createButton(() => pressed++),
+                slivers: [
+                  SliverList.builder(
+                    itemCount: 20,
+                    itemBuilder: (context, index) => ListTile(
+                      title: Text('Row $index'),
+                      onTap: () => tapped.add(index),
+                    ),
+                  ),
+                ],
+              ),
+              size: window,
+            ),
+          );
+
+          await _tapLastItemUnderTheButton(
+            tester,
+            lastItem: find.text('Row 19'),
+          );
+
+          expect(pressed, 0, reason: 'the button took the tap');
+          expect(tapped, [19]);
+        },
+      );
+
+      testWidgets('on $label, the end of a box page scrolls clear of the '
+          'button', (tester) async {
+        final tapped = <int>[];
+        var pressed = 0;
+        await tester.pumpWidget(
+          hostAtSize(
+            tester,
+            BgePage(
+              floatingActionButton: _createButton(() => pressed++),
+              child: Column(
+                children: [
+                  for (var index = 0; index < 20; index++)
+                    ListTile(
+                      title: Text('Row $index'),
+                      onTap: () => tapped.add(index),
+                    ),
+                ],
+              ),
+            ),
+            size: window,
+          ),
+        );
+
+        await _tapLastItemUnderTheButton(tester, lastItem: find.text('Row 19'));
+
+        expect(pressed, 0, reason: 'the button took the tap');
+        expect(tapped, [19]);
+      });
+    }
+
+    testWidgets('a page with no padding of its own still scrolls the last '
+        'item clear of the button', (tester) async {
+      // The room is a floor on the bottom padding, not an amount added to
+      // the default, so a caller's own padding cannot shrink it.
+      final tapped = <int>[];
+      var pressed = 0;
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            width: BgePageWidth.pane,
+            padding: EdgeInsets.zero,
+            floatingActionButton: _createButton(() => pressed++),
+            slivers: [
+              SliverList.builder(
+                itemCount: 20,
+                itemBuilder: (context, index) => ListTile(
+                  title: Text('Row $index'),
+                  onTap: () => tapped.add(index),
+                ),
+              ),
+            ],
+          ),
+          size: const Size(360, 640),
+        ),
+      );
+
+      await _tapLastItemUnderTheButton(tester, lastItem: find.text('Row 19'));
+
+      expect(pressed, 0, reason: 'the button took the tap');
+      expect(tapped, [19]);
+    });
+
+    testWidgets('an empty slivers page keeps its content on screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            floatingActionButton: _createButton(() {}),
+            slivers: const [
+              SliverFillRemaining(child: Center(child: Text('Nothing yet'))),
+            ],
+          ),
+          size: const Size(640, 360),
+        ),
+      );
+
+      // The room is reserved whenever the button is there, rows or not, so
+      // an empty state has to survive the extra padding rather than be
+      // pushed past the fold by it.
+      final viewport = tester.getRect(find.byType(CustomScrollView));
+      final text = tester.getRect(find.text('Nothing yet'));
+      expect(
+        viewport.expandToInclude(text),
+        viewport,
+        reason: '$text should sit inside the viewport $viewport',
+      );
     });
   });
 

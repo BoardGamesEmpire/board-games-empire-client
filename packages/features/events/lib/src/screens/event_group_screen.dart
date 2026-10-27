@@ -112,7 +112,6 @@ class _EventGroupPage extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final clock = now ?? DateTime.now;
     final create = onCreate;
-    final tokens = BgeTokens.of(context);
     // The row count, for "item 3 of 9" (#210).
     final rowCount = context.select<EventOverviewBloc, int?>(
       (bloc) => switch (bloc.state) {
@@ -150,23 +149,14 @@ class _EventGroupPage extends StatelessWidget {
                 ),
               );
             }
-            return SliverList.builder(
-              itemCount: rows.length,
-              itemBuilder: (context, index) => EventRowTile(
-                key: EventOverviewScreen.rowKey(rows[index].event.id),
-                row: rows[index],
-                now: clock,
-                onOpen: onOpen,
-              ),
+            return BgeKeyedSliverList<EventRow>(
+              items: rows,
+              keyOf: (row) => EventOverviewScreen.rowKey(row.event.id),
+              itemBuilder: (context, row) =>
+                  EventRowTile(row: row, now: clock, onOpen: onOpen),
             );
           },
         ),
-        // The create button floats over the end of the list; room below the
-        // rows lets the last one scroll clear of it.
-        if (create != null && rowCount != null)
-          SliverToBoxAdapter(
-            child: SizedBox(height: tokens.spaceXxl + tokens.spaceMd),
-          ),
       ],
     );
   }

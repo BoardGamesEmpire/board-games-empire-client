@@ -63,7 +63,7 @@ void main() {
   late _MockHouseholdRepository repository;
   late StreamController<List<Household>> households;
   late StreamController<List<HouseholdMember>> members;
-  late StreamController<HouseholdHydrationState> hydration;
+  late HouseholdHydrationStatus status;
 
   /// [text] inside the "Your role" block. The user's own roster row says
   /// their role too (#304).
@@ -76,7 +76,7 @@ void main() {
     repository = _MockHouseholdRepository();
     households = StreamController<List<Household>>.broadcast();
     members = StreamController<List<HouseholdMember>>.broadcast();
-    hydration = StreamController<HouseholdHydrationState>.broadcast();
+    status = HouseholdHydrationStatus();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
     when(() => repository.watchMembers(any()))
         .thenAnswer((_) => members.stream);
@@ -87,9 +87,12 @@ void main() {
   tearDown(() {
     unawaited(households.close());
     unawaited(members.close());
-    unawaited(hydration.close());
+    unawaited(status.close());
   });
 
+  /// A status call the screen must hear before the cache's first answer
+  /// goes before this is pumped, so the reading is replayed on subscribe
+  /// rather than landing a turn after the cache event beside it.
   Widget harness({
     String householdId = _id,
     void Function(BuildContext context)? onBack,
@@ -113,7 +116,7 @@ void main() {
     home: HouseholdDetailScreen(
       householdId: householdId,
       repository: repository,
-      hydration: hydration.stream,
+      hydration: status.watch(),
       onBack: onBack,
       onRetry: onRetry,
       invites: invites,
@@ -143,8 +146,8 @@ void main() {
       // A deep link can arrive before the drain has filled the cache. "We
       // couldn't find this household" shown to someone who has it is the
       // failure #267 exists to fix.
+      status.started();
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.running);
       households.add(const []);
       await tester.pump();
 
@@ -249,7 +252,7 @@ void main() {
           .thenAnswer((_) async => cached);
 
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       cached = _member('u-me', role: HouseholdRole.householdOwner);
@@ -482,8 +485,8 @@ void main() {
   ) async {
     // The household and its roster arrive on separate streams, so the
     // household can briefly be on screen with an empty roster.
+    status.started();
     await tester.pumpWidget(harness());
-    hydration.add(HouseholdHydrationState.running);
     members.add(const []);
     households.add([_household(_id)]);
     await tester.pump();
@@ -506,8 +509,8 @@ void main() {
     String? reconciledTo;
     when(() => repository.reconciledHouseholdId(_id))
         .thenAnswer((_) => reconciledTo);
+    status.finished(HydrateOutcome.complete);
     await tester.pumpWidget(harness());
-    hydration.add(HouseholdHydrationState.refreshed);
     await settleWith(tester);
     expect(find.text('Sunday Crew'), findsOneWidget);
 
@@ -534,8 +537,8 @@ void main() {
 
   group('not found', () {
     testWidgets('renders once the hydrate has settled', (tester) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -547,8 +550,8 @@ void main() {
       // The body's own button, beside the app bar's back: on this surface
       // leaving is the likely intent.
       var backs = 0;
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness(onBack: (_) => backs++));
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -561,8 +564,8 @@ void main() {
     testWidgets('drops the way back where the caller offers none', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.refreshed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -573,8 +576,8 @@ void main() {
     testWidgets('says it could not check when the refresh failed too', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.failed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -598,8 +601,8 @@ void main() {
 
   group('staleness', () {
     testWidgets('banners a failed refresh over the household', (tester) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
 
       expect(
@@ -612,8 +615,8 @@ void main() {
     });
 
     testWidgets('says nothing when the refresh succeeded', (tester) async {
+      status.finished(HydrateOutcome.complete);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.refreshed);
       await settleWith(tester);
 
       expect(find.byKey(HouseholdDetailScreen.refreshBannerKey), findsNothing);
@@ -664,7 +667,7 @@ void main() {
                       builder: (_) => HouseholdDetailScreen(
                         householdId: _id,
                         repository: repository,
-                        hydration: hydration.stream,
+                        hydration: status.watch(),
                       ),
                     ),
                   ),
@@ -762,11 +765,62 @@ void main() {
     );
   });
 
+  testWidgets('lays out the not-found page under a refreshing banner at the '
+      '200% text scale (#453)', (tester) async {
+    // The banner's refreshing state swaps its copy and disables its retry,
+    // and the page it sits on is the not-found one, which keeps the banner
+    // through the press. A guard, not a fix: the ready page above is the
+    // only one that has been measured at this size.
+    useViewSize(tester, const Size(320, 640));
+    final pass = Completer<void>();
+
+    // An absence an earlier pass confirmed, and a later one failed under.
+    status
+      ..started()
+      ..finished(HydrateOutcome.complete)
+      ..started()
+      ..finished(HydrateOutcome.failed);
+    await tester.pumpWidget(
+      harness(
+        textScaler: const TextScaler.linear(2),
+        onBack: (_) {},
+        onRetry: () => pass.future,
+      ),
+    );
+    households.add(const []);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+    await tester.pump();
+    status.started();
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+    expect(find.text(_notFoundCopy), findsOneWidget);
+    // The banner's message and the disabled button's own label.
+    expect(find.text(_refreshingCopy), findsNWidgets(2));
+    final retry = find.byKey(HouseholdDetailScreen.refreshRetryKey);
+    expect(tester.widget<TextButton>(retry).onPressed, isNull);
+    // Both wholly on screen, not merely built somewhere down the scroll.
+    const window = Rect.fromLTWH(0, 0, 320, 640);
+    for (final finder in [retry, find.text(_refreshingCopy).first]) {
+      final rect = tester.getRect(finder);
+      expect(window.intersect(rect), rect);
+    }
+
+    pass.complete();
+    status.finished(HydrateOutcome.complete);
+    await tester.pumpAndSettle();
+  });
+
   group('the retry on the refresh banner (#300 D10)', () {
     testWidgets('runs a pass and says so, over the household', (tester) async {
       final pass = Completer<void>();
       var calls = 0;
 
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(
         harness(
           onRetry: () {
@@ -775,13 +829,12 @@ void main() {
           },
         ),
       );
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
       expect(find.text(_retryCopy), findsOneWidget);
 
       await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(calls, 1);
@@ -794,7 +847,7 @@ void main() {
       expect(find.text('Sunday Crew'), findsOneWidget);
 
       pass.complete();
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await tester.pumpAndSettle();
 
       expect(find.text(_refreshingCopy), findsNothing);
@@ -809,6 +862,7 @@ void main() {
       final pass = Completer<void>();
       var calls = 0;
 
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(
         harness(
           onRetry: () {
@@ -817,7 +871,6 @@ void main() {
           },
         ),
       );
-      hydration.add(HouseholdHydrationState.failed);
       households.add(const []);
       await tester.pumpAndSettle();
 
@@ -825,7 +878,7 @@ void main() {
 
       await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
       await tester.pump();
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await tester.pump();
 
       expect(calls, 1);
@@ -835,18 +888,77 @@ void main() {
       expect(find.text(_notFoundCopy), findsNothing);
 
       pass.complete();
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await tester.pumpAndSettle();
 
       expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
       expect(find.text(_refreshFailedCopy), findsOneWidget);
     });
 
+    testWidgets('says so on an absence an earlier pass confirmed', (
+      tester,
+    ) async {
+      // That absence is an answer, so the pass does not turn the page into
+      // the spinner, and the failure keeps the banner up through it (#453).
+      // The banner is all that can say the press did something.
+      final pass = Completer<void>();
+      var calls = 0;
+
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started()
+        ..finished(HydrateOutcome.failed);
+      await tester.pumpWidget(
+        harness(
+          onRetry: () {
+            calls++;
+            return pass.future;
+          },
+        ),
+      );
+      households.add(const []);
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.refreshRetryKey));
+      await tester.pump();
+      status.started();
+      await tester.pump();
+      await tester.pump();
+
+      expect(calls, 1);
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(
+        find.byKey(HouseholdDetailScreen.refreshBannerKey),
+        findsOneWidget,
+      );
+      // The banner's message and the disabled button's own label.
+      expect(find.text(_refreshingCopy), findsNWidgets(2));
+      expect(find.text(_refreshFailedCopy), findsNothing);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(HouseholdDetailScreen.refreshRetryKey),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      pass.complete();
+      status.finished(HydrateOutcome.complete);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(HouseholdDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.refreshBannerKey), findsNothing);
+    });
+
     testWidgets('is not offered where the composition cannot refresh (#137)', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness());
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
 
       expect(find.text(_refreshFailedCopy), findsOneWidget);
@@ -856,18 +968,52 @@ void main() {
     testWidgets('a pass nobody asked for is not announced (#300 D6)', (
       tester,
     ) async {
+      status.finished(HydrateOutcome.failed);
       await tester.pumpWidget(harness(onRetry: () async {}));
-      hydration.add(HouseholdHydrationState.failed);
       await settleWith(tester);
 
-      hydration.add(HouseholdHydrationState.running);
-      // Two pumps: the status event reaches the bloc on one microtask turn
-      // and the rebuild lands on the next.
+      status.started();
+      // Two pumps, so anything the pass changed is on screen: the status
+      // event reaches the bloc on one microtask turn and a rebuild would
+      // land on the next.
       await tester.pump();
       await tester.pump();
 
       expect(find.text(_refreshingCopy), findsNothing);
-      expect(find.text(_refreshFailedCopy), findsNothing);
+      // The failure it may be about to clear stays up until it does (#453).
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+    });
+
+    testWidgets('a pass nobody asked for does not take focus off the retry', (
+      tester,
+    ) async {
+      // A banner that dropped when any pass started took its retry, and a
+      // keyboard user's place, with it (#453).
+      FocusNode retryFocus() => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(HouseholdDetailScreen.refreshRetryKey),
+            matching: find.text(_retryCopy),
+          ),
+        ),
+      );
+
+      status.finished(HydrateOutcome.failed);
+      await tester.pumpWidget(harness(onRetry: () async {}));
+      await settleWith(tester);
+      retryFocus().requestFocus();
+      await tester.pump();
+      expect(retryFocus().hasPrimaryFocus, isTrue);
+
+      status.started();
+      // Two pumps, so a banner that did drop would be gone by now: the
+      // status event reaches the bloc on one microtask turn and a rebuild
+      // would land on the next.
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(HouseholdDetailScreen.refreshRetryKey), findsOneWidget);
+      expect(retryFocus().hasPrimaryFocus, isTrue);
     });
   });
 
@@ -1392,6 +1538,36 @@ void main() {
       for (final userId in ['u-4', 'u-5']) {
         expect(menuOf(userId), findsOneWidget, reason: userId);
       }
+    });
+
+    testWidgets('a member row keeps its focus when a member above it leaves', (
+      tester,
+    ) async {
+      // Removal is real (#480), so a row can leave while the viewer is on
+      // the one below it. The rows are keyed by member (#609), which a
+      // multi-child element matches by key, so this pins that key (#549).
+      await tester.pumpWidget(withMembers());
+      final viewer = _member('u-me', role: HouseholdRole.householdOwner);
+      final a = _member('u-a');
+      final b = _member('u-b');
+      await settleWith(tester, roster: [viewer, a, b]);
+      FocusNode focusOf(String userId) => Focus.of(
+        tester.element(
+          find.descendant(
+            of: menuOf(userId),
+            matching: find.byIcon(Icons.more_vert),
+          ),
+        ),
+      );
+      focusOf('u-b').requestFocus();
+      await tester.pump();
+      expect(focusOf('u-b').hasPrimaryFocus, isTrue);
+
+      members.add([viewer, b]);
+      await tester.pumpAndSettle();
+
+      expect(menuOf('u-a'), findsNothing);
+      expect(focusOf('u-b').hasPrimaryFocus, isTrue);
     });
 
     testWidgets(

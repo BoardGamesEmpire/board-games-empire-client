@@ -18,27 +18,32 @@ Household _household(String id, {String name = 'Game Night'}) => Household(
 void main() {
   late _MockHouseholdRepository repository;
   late StreamController<List<Household>> households;
-  late StreamController<HouseholdHydrationState> hydration;
+  late HouseholdHydrationStatus status;
 
   setUp(() {
     repository = _MockHouseholdRepository();
     households = StreamController<List<Household>>();
-    hydration = StreamController<HouseholdHydrationState>();
+    status = HouseholdHydrationStatus();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
   });
 
   tearDown(() {
     // Deliberately not awaited. `close()` on a single-subscription
-    // controller completes when its done event is *delivered*, so the
-    // no-hydration case — where nothing ever listens to `hydration` —
-    // would hang the teardown forever.
+    // controller completes when its done event is *delivered*, so a test
+    // whose bloc never listened to `households` would hang the teardown
+    // forever.
     unawaited(households.close());
-    unawaited(hydration.close());
+    unawaited(status.close());
   });
 
+  /// A status call the bloc must hear before the cache's first answer goes
+  /// before this, so the reading is replayed on subscribe, as it is to a
+  /// screen opened mid-pass. Made after, it reaches the bloc a turn later
+  /// than a cache event added beside it, and the bloc answers from the
+  /// replayed `idle` first.
   HouseholdListBloc build({bool withHydration = true}) => HouseholdListBloc(
     repository: repository,
-    hydration: withHydration ? hydration.stream : null,
+    hydration: withHydration ? status.watch() : null,
   );
 
   test('starts loading, before the cache has said anything', () {
@@ -49,10 +54,10 @@ void main() {
   });
 
   test('shows rows as soon as the cache has them', () async {
+    status.started();
     final bloc = build();
     addTearDown(bloc.close);
 
-    hydration.add(HouseholdHydrationState.running);
     households.add([_household('h-1')]);
 
     // `emitsThrough`, not `emits`: bloc replays its initial state to the
@@ -70,10 +75,10 @@ void main() {
   test('an empty cache mid-hydrate is loading, not empty', () async {
     // The distinction #269 D1 exists for: watchHouseholds() emits the same
     // empty list for "no households" and "not hydrated yet".
+    status.started();
     final bloc = build();
     addTearDown(bloc.close);
 
-    hydration.add(HouseholdHydrationState.running);
     households.add(const []);
     await Future<void>.delayed(Duration.zero);
 
@@ -81,13 +86,13 @@ void main() {
   });
 
   test('an empty cache is empty once the hydrate settles', () async {
+    status.started();
     final bloc = build();
     addTearDown(bloc.close);
 
-    hydration.add(HouseholdHydrationState.running);
     households.add(const []);
     await Future<void>.delayed(Duration.zero);
-    hydration.add(HouseholdHydrationState.refreshed);
+    status.finished(HydrateOutcome.complete);
 
     await expectLater(
       bloc.stream,
@@ -131,7 +136,7 @@ void main() {
     addTearDown(bloc.close);
 
     households.add([_household('h-1')]);
-    hydration.add(HouseholdHydrationState.running);
+    status.started();
 
     await expectLater(bloc.stream, emitsThrough(isA<HouseholdListReady>()));
     expect(bloc.state, isA<HouseholdListReady>());
@@ -143,7 +148,7 @@ void main() {
 
     households.add([_household('h-1')]);
     await Future<void>.delayed(Duration.zero);
-    hydration.add(HouseholdHydrationState.failed);
+    status.finished(HydrateOutcome.failed);
 
     await expectLater(
       bloc.stream,
@@ -166,7 +171,7 @@ void main() {
       addTearDown(bloc.close);
 
       households.add(const []);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
 
       await expectLater(
         bloc.stream,
@@ -228,7 +233,7 @@ void main() {
     households.addError(StateError('no authenticated user'));
     await expectLater(bloc.stream, emitsThrough(isA<HouseholdListError>()));
 
-    hydration.add(HouseholdHydrationState.refreshed);
+    status.finished(HydrateOutcome.complete);
     await Future<void>.delayed(Duration.zero);
 
     expect(bloc.state, isA<HouseholdListError>());
@@ -255,6 +260,21 @@ void main() {
       },
     );
 
+    test('a hydrate result does not lift an ended cache\'s error', () async {
+      // Nothing will answer on a closed stream, so a pass completing later
+      // must not put back a spinner that nothing resolves (#453).
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      await households.close();
+      await expectLater(bloc.stream, emitsThrough(isA<HouseholdListError>()));
+
+      status.finished(HydrateOutcome.complete);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state, isA<HouseholdListError>());
+    });
+
     test('a cache that ends after emitting leaves the rows up', () async {
       // The rows were real when they arrived, and the auth redirect is
       // already popping this route. Replacing them with an error would be
@@ -276,9 +296,17 @@ void main() {
     'an error on the hydration stream does not take down the screen',
     () async {
       // Nothing errors this stream today. If something ever does, the list
-      // it annotates is still readable.
-      final bloc = build();
-      addTearDown(bloc.close);
+      // it annotates is still readable. A raw controller, because a real
+      // status has no way to error.
+      final hydration = StreamController<HouseholdHydration>();
+      final bloc = HouseholdListBloc(
+        repository: repository,
+        hydration: hydration.stream,
+      );
+      addTearDown(() {
+        unawaited(hydration.close());
+        return bloc.close();
+      });
 
       households.add([_household('h-1')]);
       await expectLater(bloc.stream, emitsThrough(isA<HouseholdListReady>()));
@@ -295,7 +323,7 @@ void main() {
     await bloc.close();
 
     households.add([_household('h-1')]);
-    hydration.add(HouseholdHydrationState.refreshed);
+    status.finished(HydrateOutcome.complete);
     await Future<void>.delayed(Duration.zero);
 
     // No emit-after-close error, and the last state stands.
@@ -313,7 +341,7 @@ void main() {
 
     HouseholdListBloc buildWithRetry() => HouseholdListBloc(
       repository: repository,
-      hydration: hydration.stream,
+      hydration: status.watch(),
       onRetry: () {
         calls++;
         return pass.future;
@@ -324,7 +352,7 @@ void main() {
     /// its retry are shown in.
     Future<void> settleOnAFailedRefresh(HouseholdListBloc bloc) async {
       households.add([_household('h-1')]);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await Future<void>.delayed(Duration.zero);
     }
 
@@ -334,7 +362,57 @@ void main() {
       await settleOnAFailedRefresh(bloc);
 
       bloc.add(const HouseholdListRetryRequested());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+      // Still failed underneath: the rows are no fresher until the pass
+      // lands (#453). The screen shows the refreshing copy over it.
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isTrue)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
+      );
+
+      pass.complete();
+    });
+
+    test('a pass nobody asked for keeps the banner up', () async {
+      // The #302 triggers (a connectivity edge, an app resume) start passes
+      // nobody pressed for, and announcing them would be noise on a screen
+      // that otherwise says nothing. But the rows are no fresher while one
+      // runs, and a banner that vanished on start would take a focused
+      // retry with it (#453). So the warning stays, unnarrated, until a
+      // pass lands.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+
+      status.started();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, isZero);
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isFalse)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
+      );
+    });
+
+    test('a retry pressed during a background pass', () async {
+      // The banner is still up while a pass nobody asked for runs, so its
+      // retry can be pressed then. The press runs (the hydrator joins the
+      // pass already in flight) and is narrated over the failure the rows
+      // still carry, and only the pass landing clears both.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+      status.started();
+      await Future<void>.delayed(Duration.zero);
+
+      bloc.add(const HouseholdListRetryRequested());
       await Future<void>.delayed(Duration.zero);
 
       expect(calls, 1);
@@ -342,25 +420,13 @@ void main() {
         bloc.state,
         isA<HouseholdListReady>()
             .having((s) => s.refreshing, 'refreshing', isTrue)
-            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
       );
 
+      status.finished(HydrateOutcome.complete);
       pass.complete();
-    });
-
-    test('a pass nobody asked for is not narrated', () async {
-      // The reason `refreshing` is not simply `failed -> running`: the
-      // #302 triggers (a connectivity edge, an app resume) produce exactly
-      // that transition today, and a banner that announces work the user
-      // did not ask for is noise on a screen that otherwise says nothing.
-      final bloc = buildWithRetry();
-      addTearDown(bloc.close);
-      await settleOnAFailedRefresh(bloc);
-
-      hydration.add(HouseholdHydrationState.running);
       await Future<void>.delayed(Duration.zero);
 
-      expect(calls, isZero);
       expect(
         bloc.state,
         isA<HouseholdListReady>()
@@ -375,10 +441,10 @@ void main() {
       await settleOnAFailedRefresh(bloc);
 
       bloc.add(const HouseholdListRetryRequested());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await Future<void>.delayed(Duration.zero);
 
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       pass.complete();
       await Future<void>.delayed(Duration.zero);
 
@@ -419,18 +485,18 @@ void main() {
       addTearDown(bloc.close);
 
       households.add(const []);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await Future<void>.delayed(Duration.zero);
       expect(bloc.state, isA<HouseholdListReady>());
 
       bloc.add(const HouseholdListRetryRequested());
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await Future<void>.delayed(Duration.zero);
 
       expect(calls, 1);
       expect(bloc.state, isA<HouseholdListLoading>());
 
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       pass.complete();
       await Future<void>.delayed(Duration.zero);
 
@@ -477,11 +543,11 @@ void main() {
       addTearDown(bloc.close);
 
       households.add(const []);
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await Future<void>.delayed(Duration.zero);
       expect(bloc.state, isA<HouseholdListReady>());
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await Future<void>.delayed(Duration.zero);
 
       expect(
@@ -502,11 +568,11 @@ void main() {
       addTearDown(bloc.close);
 
       households.add(const []);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await Future<void>.delayed(Duration.zero);
       expect(bloc.state, isA<HouseholdListReady>());
 
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await Future<void>.delayed(Duration.zero);
 
       expect(bloc.state, isA<HouseholdListLoading>());
@@ -523,20 +589,20 @@ void main() {
       final pass = Completer<void>();
       final bloc = HouseholdListBloc(
         repository: repository,
-        hydration: hydration.stream,
+        hydration: status.watch(),
         onRetry: () => pass.future,
       );
       addTearDown(bloc.close);
 
       households.add(const []);
-      hydration.add(HouseholdHydrationState.refreshed);
+      status.finished(HydrateOutcome.complete);
       await Future<void>.delayed(Duration.zero);
-      hydration.add(HouseholdHydrationState.failed);
+      status.finished(HydrateOutcome.failed);
       await Future<void>.delayed(Duration.zero);
 
       bloc.add(const HouseholdListRetryRequested());
       await Future<void>.delayed(Duration.zero);
-      hydration.add(HouseholdHydrationState.running);
+      status.started();
       await Future<void>.delayed(Duration.zero);
 
       expect(
@@ -557,10 +623,13 @@ void main() {
         addTearDown(bloc.close);
 
         households.add(const []);
-        hydration.add(HouseholdHydrationState.refreshed);
+        status.finished(HydrateOutcome.complete);
         await Future<void>.delayed(Duration.zero);
 
-        hydration.add(HouseholdHydrationState.running);
+        // The re-check is running before the rows arrive. A status call
+        // lands a turn after a cache event added beside it, hence the wait.
+        status.started();
+        await Future<void>.delayed(Duration.zero);
         households.add([_household('h-1')]);
         await Future<void>.delayed(Duration.zero);
 
@@ -574,5 +643,53 @@ void main() {
         );
       },
     );
+  });
+
+  group('a list opened while a pass is running', () {
+    // Entering the list starts a pass once the data is stale, and resume,
+    // reconnect and the sign-in drain all start one, so the list often
+    // subscribes mid-pass and sees no earlier pass finish (#453). The
+    // status is driven before the bloc is built, so what it says arrives
+    // as the reading replayed on subscribe.
+
+    test('knows an earlier pass confirmed the empty list', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.households, 'households', isEmpty)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+      );
+    });
+
+    test('knows the last pass to finish failed', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.failed)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household('h-1')]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>().having(
+          (s) => s.refreshFailed,
+          'refreshFailed',
+          isTrue,
+        ),
+      );
+    });
   });
 }

@@ -47,12 +47,14 @@ import '../sync/household_hydration_status.dart';
 /// mid-interaction moves focus and loses the user's place, which is the
 /// contract `BgeSubmitButton` already holds this package to.
 ///
-/// The exception is an **empty** list, where #269 D1 outranks all of this.
-/// An empty cache with a pass running is unknown, not empty, so the whole
-/// surface goes back to the spinner rather than putting "no households
-/// yet" under a refreshing banner — the same answer the detail screen
-/// gives for an absent household (#270). The spinner is the feedback
-/// there, and the banner returns with the rows or with the failure.
+/// The exception is an empty list **no pass has confirmed**, where #269
+/// outranks all of this. An empty cache with a pass running and none ever
+/// completed is unknown, not empty, so the whole surface goes back to the
+/// spinner rather than putting "no households yet" under a refreshing
+/// banner — the same answer the detail screen gives for an absent household
+/// (#270). The spinner is the feedback there, and the banner returns with
+/// the rows or with the failure. An emptiness an earlier pass did confirm
+/// stays on its empty state while a later one runs (#453).
 ///
 /// A pass **nobody asked for** — the #302 connectivity edge, an app resume
 /// — is not narrated (#300 D6). The banner simply clears when it succeeds,
@@ -111,6 +113,9 @@ class HouseholdListScreen extends StatelessWidget {
   static const Key errorKey = Key('household_list.error');
 
   /// Per-row key: `household_list.row_<id>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String householdId) =>
       Key('household_list.row_$householdId');
 
@@ -121,7 +126,7 @@ class HouseholdListScreen extends StatelessWidget {
   /// What the hydrate is doing, when this composition runs one. Null where
   /// no household client exists (#125), which reads as settled rather than
   /// as forever-loading.
-  final Stream<HouseholdHydrationState>? hydration;
+  final Stream<HouseholdHydration>? hydration;
 
   /// Opens the create flow, or null where creating is not possible on this
   /// container — the create screen needs a `HouseholdRemoteDataSource` the
@@ -255,11 +260,14 @@ class _HouseholdListView extends StatelessWidget {
               ),
               HouseholdListReady(:final households) when households.isEmpty =>
                 _EmptySliver(onCreate: create),
-              HouseholdListReady(:final households) => SliverList.builder(
-                itemCount: households.length,
-                itemBuilder: (context, index) =>
-                    _HouseholdRow(household: households[index], onOpen: onOpen),
-              ),
+              HouseholdListReady(:final households) =>
+                BgeKeyedSliverList<Household>(
+                  items: households,
+                  keyOf: (household) =>
+                      HouseholdListScreen.rowKey(household.id),
+                  itemBuilder: (context, household) =>
+                      _HouseholdRow(household: household, onOpen: onOpen),
+                ),
             },
           ],
         );
@@ -305,7 +313,6 @@ class _HouseholdRow extends StatelessWidget {
     // has an `onTap`, and letting the InkWell's own semantics say so keeps
     // one source of truth instead of two that can disagree.
     return MergeSemantics(
-      key: HouseholdListScreen.rowKey(household.id),
       child: ListTile(
         // The tap target, the focus stop and the keyboard activation all
         // come from this one callback — ListTile builds an InkWell when it

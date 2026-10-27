@@ -203,7 +203,8 @@ Use these. They exist because the hand-rolled versions drifted.
 
 | Widget | Replaces | The thing it guarantees |
 | --- | --- | --- |
-| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
+| `BgePage` | the hand-rolled Scaffold→SafeArea→Center→Scroll→ConstrainedBox block in all 12 page screens | Always scrollable (content that fits at 1.0 does not at 200% text scale), always width-constrained; `footer:` pins an action below the scroll at the same measure; with a `floatingActionButton`, the content ends with room for it, so the last row scrolls clear of the button (#467); `BgePage.slivers` gives a list surface one real viewport, so it keeps both its collection semantics and its laziness |
+| `BgeKeyedSliverList` | a `SliverList.builder` whose rows carried their key one level in, or keyed the child with no lookup (#549) | Each row is keyed and the sliver finds it by that key, so a row keeps its state — focus included — when rows above it leave or arrive |
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
@@ -221,10 +222,16 @@ the node that still carries it cannot scroll, so a screen reader stops saying
 "item 3 of 9") as well as forfeiting per-viewport realization. `.slivers` gives
 the page one real viewport, so a `SliverList` keeps both.
 
-**A builder needs nothing extra.** `slivers:` takes a `List<Widget>` and
-`SliverList.builder` is a widget, so a paginated list goes straight through —
-including the shape a search screen actually has, with a query field above the
-results and a loading tail below them:
+**`slivers:` takes any sliver.** It is a `List<Widget>` and a sliver is a
+widget, so a paginated list goes straight through — including the shape a
+search screen actually has, with a query field above the results and a loading
+tail below them.
+
+**A list whose rows can leave or move while the user is on it** — rows from a
+cache, a purge, a discard — uses **`BgeKeyedSliverList`**, with the row's id as
+its key. A bare `SliverList.builder` matches rows by position, so a keyboard
+user on a row loses their place when a row above it leaves (#549). The key goes
+on a wrapper the list puts around each row, so the row does not carry it too:
 
 ```dart
 BgePage.slivers(
@@ -233,9 +240,10 @@ BgePage.slivers(
   semanticChildCount: results.length,
   slivers: [
     const SliverToBoxAdapter(child: SearchField()),
-    SliverList.builder(
-      itemCount: results.length,
-      itemBuilder: (context, i) => ResultRow(results[i]),
+    BgeKeyedSliverList<Result>(
+      items: results,
+      keyOf: (result) => ValueKey(result.id),
+      itemBuilder: (context, result) => ResultRow(result),
     ),
     if (loadingMore) const SliverToBoxAdapter(child: LoadingRow()),
   ],
@@ -467,6 +475,8 @@ legible body text on every surface role.
 - [ ] A breakpoint changes a layout's form, never its width
 - [ ] A list surface passes `semanticChildCount` — the count it currently
       holds, grown as pages arrive, never left null on a known list
+- [ ] A list whose rows can leave or move is a `BgeKeyedSliverList`, keyed by
+      the row's id; the row itself does not carry the key (#549)
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`

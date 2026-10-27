@@ -18,14 +18,14 @@ void main() {
     status.started();
 
     await expectLater(
-      status.watch().take(1),
+      status.watch().map((h) => h.state).take(1),
       emits(HouseholdHydrationState.running),
     );
   });
 
   test('reports a pass in flight, then its result', () async {
     final seen = <HouseholdHydrationState>[];
-    final sub = status.watch().listen(seen.add);
+    final sub = status.watch().map((h) => h.state).listen(seen.add);
     addTearDown(sub.cancel);
 
     status.started();
@@ -68,7 +68,7 @@ void main() {
     // stream.
     status.started();
     final seen = <HouseholdHydrationState>[];
-    final sub = status.watch().listen(seen.add);
+    final sub = status.watch().map((h) => h.state).listen(seen.add);
     addTearDown(sub.cancel);
 
     status.finished(HydrateOutcome.failed);
@@ -95,6 +95,194 @@ void main() {
   test('close is idempotent', () async {
     await status.close();
     await expectLater(status.close(), completes);
+  });
+
+  group('what a reading carries', () {
+    // A screen usually subscribes mid-pass and is replayed only the current
+    // reading, so the history it needs has to be in it (#453).
+    Future<HouseholdHydration> current() => status.watch().first;
+
+    test('a status no pass has touched has established nothing', () async {
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.idle,
+          everRefreshed: false,
+          lastPassFailed: false,
+        ),
+      );
+    });
+
+    test(
+      'a new listener is replayed what earlier passes established',
+      () async {
+        status
+          ..started()
+          ..finished(HydrateOutcome.complete)
+          ..started();
+
+        expect(
+          await current(),
+          const HouseholdHydration(
+            state: HouseholdHydrationState.running,
+            everRefreshed: true,
+          ),
+        );
+      },
+    );
+
+    test('a failure is remembered through the next start', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.failed)
+        ..started();
+
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.running,
+          lastPassFailed: true,
+        ),
+      );
+    });
+
+    test('a failure does not undo a completed pass', () async {
+      // A failure confirms nothing, so it leaves everRefreshed where it
+      // found it: an answer a success already gave stays an answer.
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started()
+        ..finished(HydrateOutcome.failed);
+
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.failed,
+          everRefreshed: true,
+          lastPassFailed: true,
+        ),
+      );
+    });
+
+    test(
+      'a completed pass clears the failure and keeps everRefreshed',
+      () async {
+        status
+          ..started()
+          ..finished(HydrateOutcome.complete)
+          ..started()
+          ..finished(HydrateOutcome.failed)
+          ..started()
+          ..finished(HydrateOutcome.drained);
+
+        expect(
+          await current(),
+          const HouseholdHydration(
+            state: HouseholdHydrationState.refreshed,
+            everRefreshed: true,
+          ),
+        );
+      },
+    );
+
+    test(
+      'a pass invalidated mid-flight still reads refreshed, but stale',
+      () async {
+        // It landed rows, so what it read is an answer. The change that
+        // invalidated the set may have reached the server after the pass
+        // read from it, so the answer is not current: no stamp, and another
+        // pass is wanted.
+        status
+          ..started()
+          ..markStale()
+          ..finished(HydrateOutcome.complete);
+
+        expect(
+          await current(),
+          const HouseholdHydration(
+            state: HouseholdHydrationState.refreshed,
+            everRefreshed: true,
+            lastPassFailed: false,
+          ),
+        );
+        expect(status.isStaleAfter(const Duration(minutes: 5)), isTrue);
+      },
+    );
+
+    test('a start that joins the running pass does not forgive a markStale '
+        'made during it (#453)', () async {
+      // The installer calls started() on every pass() call, and the
+      // hydrator joins a drain already in flight, so a press can start
+      // "again" mid-pass. That is the same pass, and it read the list
+      // before the create that invalidated it.
+      status
+        ..started()
+        ..markStale()
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..finished(HydrateOutcome.complete);
+
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.refreshed,
+          everRefreshed: true,
+          lastPassFailed: false,
+        ),
+      );
+      expect(status.isStaleAfter(const Duration(minutes: 5)), isTrue);
+    });
+
+    test('reads running until every overlapping start has finished '
+        '(#453)', () async {
+      // Two pass() calls whose session confirmations come back apart: the
+      // first one's drain settles while the second is still out, and the
+      // second then drains on its own. The first finish is history, not
+      // the end of the hydrate.
+      status
+        ..started()
+        ..started()
+        ..finished(HydrateOutcome.complete);
+
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.running,
+          everRefreshed: true,
+          lastPassFailed: false,
+        ),
+      );
+
+      status.finished(HydrateOutcome.failed);
+
+      expect(
+        await current(),
+        const HouseholdHydration(
+          state: HouseholdHydrationState.failed,
+          everRefreshed: true,
+          lastPassFailed: true,
+        ),
+      );
+    });
+
+    test('a markStale between overlapping finishes is not forgiven by a '
+        'start in that window (#453)', () {
+      // The membership-change path: it sees the hydrate still running,
+      // marks the set stale, and its own pass joins the drain that read the
+      // set before the change. That drain must not stamp the set fresh.
+      status
+        ..started()
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..markStale()
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..finished(HydrateOutcome.complete);
+
+      expect(status.state, HouseholdHydrationState.refreshed);
+      expect(status.isStaleAfter(const Duration(minutes: 5)), isTrue);
+    });
   });
 
   group('the staleness clock (#300 D8)', () {
@@ -319,52 +507,17 @@ void main() {
         expect(stamped.state, equals(HouseholdHydrationState.running));
         expect(stamped.isStaleAfter(window), isTrue);
       });
-    });
-  });
 
-  group('HouseholdHydrationMemory (#300 D16)', () {
-    late HouseholdHydrationMemory memory;
+      test('a clock set back since the stamp is stale', () {
+        // The age is unknown, not small (#453). Read as fresh, it would let
+        // every trigger skip the pass until the clock caught up.
+        stamped
+          ..started()
+          ..finished(HydrateOutcome.complete);
+        advance(const Duration(minutes: -1));
 
-    setUp(() => memory = HouseholdHydrationMemory());
-
-    test('starts idle, with nothing confirmed', () {
-      expect(memory.state, equals(HouseholdHydrationState.idle));
-      expect(memory.everRefreshed, isFalse);
-    });
-
-    test('remembers the latest state', () {
-      memory.absorb(HouseholdHydrationState.running);
-
-      expect(memory.state, equals(HouseholdHydrationState.running));
-    });
-
-    test('a refreshed pass confirms, permanently', () {
-      memory
-        ..absorb(HouseholdHydrationState.running)
-        ..absorb(HouseholdHydrationState.refreshed);
-
-      expect(memory.everRefreshed, isTrue);
-    });
-
-    test('a later failure does not un-know a confirmed answer', () {
-      memory
-        ..absorb(HouseholdHydrationState.refreshed)
-        ..absorb(HouseholdHydrationState.running)
-        ..absorb(HouseholdHydrationState.failed);
-
-      expect(memory.state, equals(HouseholdHydrationState.failed));
-      expect(memory.everRefreshed, isTrue);
-    });
-
-    test('a failed pass confirms nothing', () {
-      // Not "ever settled". A failure leaves an empty cache as unknown as
-      // it found it, which is what keeps #269 D1's spinner over a
-      // failed-then-retried first pass (#300 D12).
-      memory
-        ..absorb(HouseholdHydrationState.running)
-        ..absorb(HouseholdHydrationState.failed);
-
-      expect(memory.everRefreshed, isFalse);
+        expect(stamped.isStaleAfter(const Duration(minutes: 5)), isTrue);
+      });
     });
   });
 }

@@ -218,6 +218,36 @@ void main() {
       expect(find.text('Brass'), findsOneWidget);
     });
 
+    testWidgets('a row keeps its focus when a row above it leaves', (
+      tester,
+    ) async {
+      // A hydrate removes an entry deleted elsewhere, or a discard on the
+      // stuck-changes screen deletes a local-only one (#549). Only a row
+      // that opens somewhere is a focus stop, so this one is given somewhere
+      // to go.
+      await show(tester, [
+        listItem('e-1', title: 'Azul'),
+        listItem('e-2', title: 'Brass'),
+      ], onOpen: (_, _) {});
+      FocusNode focusOf(String entryId, String title) => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(GameCollectionListScreen.rowKey(entryId)),
+            matching: find.text(title),
+          ),
+        ),
+      );
+      focusOf('e-2', 'Brass').requestFocus();
+      await tester.pump();
+      expect(focusOf('e-2', 'Brass').hasPrimaryFocus, isTrue);
+
+      items.add([listItem('e-2', title: 'Brass')]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Azul'), findsNothing);
+      expect(focusOf('e-2', 'Brass').hasPrimaryFocus, isTrue);
+    });
+
     testWidgets('surfaces a failed cache read as an error', (tester) async {
       await tester.pumpWidget(harness());
       items.addError(StateError('no authenticated user'));

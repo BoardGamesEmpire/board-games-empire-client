@@ -36,6 +36,9 @@ class SentInvitesScreen extends StatelessWidget {
   static const Key filterKey = Key('sent_invites.filter');
 
   /// Per-row keys.
+  ///
+  /// [rowKey] is held by the wrapper [BgeKeyedSliverList] puts around each
+  /// row, not by the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String inviteId) => Key('sent_invites.row_$inviteId');
   static Key withdrawKey(String inviteId) =>
       Key('sent_invites.withdraw_$inviteId');
@@ -138,16 +141,15 @@ class _SentInvitesView extends StatelessWidget {
                     ),
                   ),
                 ),
-              final SentInvitesReady ready => SliverList.builder(
-                itemCount: ready.invites.length,
-                itemBuilder: (context, index) {
-                  final row = ready.invites[index];
-                  return _SentRow(
-                    invite: row,
-                    busy: ready.busy.contains(row.id),
-                  );
-                },
-              ),
+              final SentInvitesReady ready =>
+                BgeKeyedSliverList<HouseholdInvite>(
+                  items: ready.invites,
+                  keyOf: (invite) => SentInvitesScreen.rowKey(invite.id),
+                  itemBuilder: (context, invite) => _SentRow(
+                    invite: invite,
+                    busy: ready.busy.contains(invite.id),
+                  ),
+                ),
             },
             if (ready != null && ready.hasMore)
               SliverToBoxAdapter(
@@ -281,7 +283,6 @@ class _SentRow extends StatelessWidget {
         .contains(HouseholdInviteRowAction.withdraw);
 
     return Column(
-      key: SentInvitesScreen.rowKey(invite.id),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(

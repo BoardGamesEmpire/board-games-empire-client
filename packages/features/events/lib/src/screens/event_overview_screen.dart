@@ -96,6 +96,9 @@ class EventOverviewScreen extends StatelessWidget {
   static Key seeAllKey(EventGroup group) => Key('events.see_all_${group.name}');
 
   /// Per-row key, here and on a group's page: `events.row_<eventId>`.
+  ///
+  /// Held by the wrapper [BgeKeyedSliverList] puts around each row, not by
+  /// the row, so a finder by it reaches the whole row (#549).
   static Key rowKey(String eventId) => Key('events.row_$eventId');
 
   /// The user-session event repository. Read-only here.
@@ -177,7 +180,6 @@ class _EventOverviewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final create = onCreate;
-    final tokens = BgeTokens.of(context);
     // The rows shown, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210).
     final rowCount = context.select<EventOverviewBloc, int?>(
@@ -208,12 +210,6 @@ class _EventOverviewPage extends StatelessWidget {
           onCreate: onCreate,
           now: now,
         ),
-        // The create button floats over the end of the list; room below the
-        // rows lets the last one scroll clear of it.
-        if (create != null && rowCount != null)
-          SliverToBoxAdapter(
-            child: SizedBox(height: tokens.spaceXxl + tokens.spaceMd),
-          ),
       ],
     );
   }
@@ -323,15 +319,12 @@ class _GroupSliver extends StatelessWidget {
             onOpenGroup: onOpenGroup,
           ),
         ),
-        SliverList.builder(
-          itemCount: math.min(rows.length, EventOverviewScreen.groupCap),
+        BgeKeyedSliverList<EventRow>(
+          items: rows.take(EventOverviewScreen.groupCap).toList(),
+          keyOf: (row) => EventOverviewScreen.rowKey(row.event.id),
           semanticIndexOffset: semanticIndexOffset,
-          itemBuilder: (context, index) => EventRowTile(
-            key: EventOverviewScreen.rowKey(rows[index].event.id),
-            row: rows[index],
-            now: now,
-            onOpen: onOpen,
-          ),
+          itemBuilder: (context, row) =>
+              EventRowTile(row: row, now: now, onOpen: onOpen),
         ),
       ],
     );
