@@ -1,3 +1,5 @@
+import 'package:freezed_annotation/freezed_annotation.dart';
+
 /// How far past its owner something reaches: only them, their friends, friends
 /// of friends, or everyone signed in to the server.
 ///
@@ -8,13 +10,22 @@
 ///
 /// The values follow the backend's alphabetical order, not the order of the
 /// ladder, so their `index` says nothing about how far one reaches.
+///
+/// The `@JsonValue` names are the backend's, so a model's JSON keeps them, as
+/// `ContentType`'s does. [fromWire] / [toWire] must agree with them, apart
+/// from [unknown], which has a JSON name but no wire name.
 enum Reach {
+  @JsonValue('Friends')
   friends,
+  @JsonValue('FriendsOfFriends')
   friendsOfFriends,
+  @JsonValue('Private')
   private,
+  @JsonValue('Public')
   public,
 
   /// A name this client does not know. Never sent.
+  @JsonValue('Unknown')
   unknown;
 
   /// Resolves the backend's enum name, degrading to [unknown] for a name this

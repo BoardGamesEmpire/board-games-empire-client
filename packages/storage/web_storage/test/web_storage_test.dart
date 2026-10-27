@@ -65,7 +65,7 @@ Game _game({String id = 'g-1', String title = 'Web Round Trip'}) {
     designers: const [],
     publishers: const [],
     tags: const [],
-    visibility: Visibility.public,
+    reach: Reach.public,
     createdAt: now,
     updatedAt: now,
   );

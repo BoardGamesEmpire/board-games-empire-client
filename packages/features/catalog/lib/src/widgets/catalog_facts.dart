@@ -45,41 +45,28 @@ CatalogFact? playersFact(GameCatalogLocalizations l10n, int? min, int? max) =>
       (null, final int max) => sameFact(l10n.catalogPlayersUpTo('$max')),
     };
 
-/// How long a game takes to play, or null when that is not known in minutes.
+/// How long a game takes to play, or null when that is not known.
 ///
-/// The range comes first, because it is what an import fills: the server
-/// writes a DataGateway's minimum and maximum play time with no unit, and
-/// every DataGateway reports minutes, so a missing unit reads as minutes.
-/// `playingTime`, which only a game made by hand can carry, stands in where
-/// there is no range. A bound in another unit is not shown, and the other
-/// then reads as the bound it is, not as the playing time.
-CatalogFact? playTimeFact(GameCatalogLocalizations l10n, Game game) {
-  bool inMinutes(TimeMeasure? unit) =>
-      unit == null || unit == TimeMeasure.minutes;
-  final min = inMinutes(game.minPlayTimeMeasure) ? game.minPlayTime : null;
-  final max = inMinutes(game.maxPlayTimeMeasure) ? game.maxPlayTime : null;
-  final total = game.playingTime;
-
-  return switch ((min, max)) {
-    (final int min, final int max) when min != max => (
-      shown: l10n.catalogDetailPlayTimeRange('$min', '$max'),
-      spoken: l10n.catalogDetailPlayTimeRangeSpoken('$min', '$max'),
-    ),
-    // The same minimum and maximum: one playing time.
-    (final int minutes, final int _) => sameFact(
-      l10n.catalogDetailPlayingTime(minutes),
-    ),
-    (final int min, null) => (
-      shown: l10n.catalogDetailPlayTimeAtLeast('$min'),
-      spoken: l10n.catalogDetailPlayTimeAtLeastSpoken(min),
-    ),
-    (null, final int max) => sameFact(l10n.catalogDetailPlayTimeUpTo(max)),
-    (null, null) when total != null => sameFact(
-      l10n.catalogDetailPlayingTime(total),
-    ),
-    (null, null) => null,
-  };
-}
+/// Play time is minutes, and a single time is a range whose two ends are
+/// equal (backend#869). One end alone reads as the bound it is, not as the
+/// playing time.
+CatalogFact? playTimeFact(GameCatalogLocalizations l10n, Game game) =>
+    switch ((game.minPlayTime, game.maxPlayTime)) {
+      (final int min, final int max) when min != max => (
+        shown: l10n.catalogDetailPlayTimeRange('$min', '$max'),
+        spoken: l10n.catalogDetailPlayTimeRangeSpoken('$min', '$max'),
+      ),
+      // The same minimum and maximum: one playing time.
+      (final int minutes, final int _) => sameFact(
+        l10n.catalogDetailPlayingTime(minutes),
+      ),
+      (final int min, null) => (
+        shown: l10n.catalogDetailPlayTimeAtLeast('$min'),
+        spoken: l10n.catalogDetailPlayTimeAtLeastSpoken(min),
+      ),
+      (null, final int max) => sameFact(l10n.catalogDetailPlayTimeUpTo(max)),
+      (null, null) => null,
+    };
 
 /// The facts a row lists after the title: the year, the players, and the
 /// content type when the game is not a base game, which most are.
