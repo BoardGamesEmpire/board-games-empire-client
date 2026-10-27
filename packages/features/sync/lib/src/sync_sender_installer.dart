@@ -9,10 +9,11 @@ import 'session_confirming_sender.dart';
 import 'sync_operation_sender_impl.dart';
 
 /// Registers the session's [SyncOperationSender] (#121): the one delivery
-/// path the inline household create and the queue drain share.
+/// path the queue drain and the inline creates share, the household
+/// create's and the event create form's (`CreateEventBloc`, #499).
 ///
 /// Both composition roots hold it, `buildNativeUserScopeInstallers` and
-/// `buildWebUserScopeInstallers`, because the create screen sends through it
+/// `buildWebUserScopeInstallers`, because the create screens send through it
 /// on both. Only native runs a drain over it so far; the web drain is #447.
 ///
 /// It resolves the [SyncQueueRepository], [HouseholdRepository],
@@ -28,7 +29,7 @@ import 'sync_operation_sender_impl.dart';
 ///
 /// A throw from [install] aborts activation, and the shell converges that to
 /// a sign-out. A missing collaborator therefore registers nothing: the
-/// create route then reads as unavailable, which is the truth, rather than
+/// create routes then read as unavailable, which is the truth, rather than
 /// failing the sign-in. No shipping composition reaches that guard; a
 /// container assembled by hand, in a test, does.
 ///

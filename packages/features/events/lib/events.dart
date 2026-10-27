@@ -1,5 +1,8 @@
 library;
 
+export 'src/bloc/create_event_bloc.dart';
+export 'src/bloc/create_event_event.dart';
+export 'src/bloc/create_event_state.dart';
 export 'src/bloc/event_detail_bloc.dart';
 export 'src/bloc/event_detail_event.dart';
 export 'src/bloc/event_detail_state.dart';

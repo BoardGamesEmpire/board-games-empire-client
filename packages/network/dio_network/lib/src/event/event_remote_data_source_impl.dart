@@ -571,6 +571,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
               message,
               cause: cause,
               statusCode: status,
+              apiMessage: apiErrorField(body, 'message'),
             )
           : EventRemoteForbiddenException(
               message,
@@ -596,10 +597,13 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
           );
         }
         if (route == _Route.create) {
+          // The envelope's message can name an invitee the server has no
+          // account for (#499).
           return EventCreateRefusedException(
             message,
             cause: cause,
             statusCode: status,
+            apiMessage: apiErrorField(body, 'message'),
           );
         }
       }

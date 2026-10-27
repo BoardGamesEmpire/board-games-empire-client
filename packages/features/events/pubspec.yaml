@@ -35,6 +35,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  bloc_test: ^10.0.0
   # A real container for the hydrate installer's tests. Dev-only: nothing
   # under `lib/` names `di` — the installer takes the `DependencyContainer`
   # abstraction from `interfaces`. Same shape as `game_collection`'s.
