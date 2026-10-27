@@ -260,6 +260,21 @@ void main() {
       },
     );
 
+    test('a hydrate result does not lift an ended cache\'s error', () async {
+      // Nothing will answer on a closed stream, so a pass completing later
+      // must not put back a spinner that nothing resolves (#453).
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      await households.close();
+      await expectLater(bloc.stream, emitsThrough(isA<HouseholdListError>()));
+
+      status.finished(HydrateOutcome.complete);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(bloc.state, isA<HouseholdListError>());
+    });
+
     test('a cache that ends after emitting leaves the rows up', () async {
       // The rows were real when they arrived, and the auth redirect is
       // already popping this route. Replacing them with an error would be
@@ -351,21 +366,25 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(calls, 1);
+      // Still failed underneath: the rows are no fresher until the pass
+      // lands (#453). The screen shows the refreshing copy over it.
       expect(
         bloc.state,
         isA<HouseholdListReady>()
             .having((s) => s.refreshing, 'refreshing', isTrue)
-            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
       );
 
       pass.complete();
     });
 
-    test('a pass nobody asked for is not narrated', () async {
-      // The reason `refreshing` is not simply `failed -> running`: the
-      // #302 triggers (a connectivity edge, an app resume) produce exactly
-      // that transition today, and a banner that announces work the user
-      // did not ask for is noise on a screen that otherwise says nothing.
+    test('a pass nobody asked for keeps the banner up', () async {
+      // The #302 triggers (a connectivity edge, an app resume) start passes
+      // nobody pressed for, and announcing them would be noise on a screen
+      // that otherwise says nothing. But the rows are no fresher while one
+      // runs, and a banner that vanished on start would take a focused
+      // retry with it (#453). So the warning stays, unnarrated, until a
+      // pass lands.
       final bloc = buildWithRetry();
       addTearDown(bloc.close);
       await settleOnAFailedRefresh(bloc);
@@ -374,6 +393,40 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(calls, isZero);
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isFalse)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
+      );
+    });
+
+    test('a retry pressed during a background pass', () async {
+      // The banner is still up while a pass nobody asked for runs, so its
+      // retry can be pressed then. The press runs (the hydrator joins the
+      // pass already in flight) and is narrated over the failure the rows
+      // still carry, and only the pass landing clears both.
+      final bloc = buildWithRetry();
+      addTearDown(bloc.close);
+      await settleOnAFailedRefresh(bloc);
+      status.started();
+      await Future<void>.delayed(Duration.zero);
+
+      bloc.add(const HouseholdListRetryRequested());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(calls, 1);
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.refreshing, 'refreshing', isTrue)
+            .having((s) => s.refreshFailed, 'refreshFailed', isTrue),
+      );
+
+      status.finished(HydrateOutcome.complete);
+      pass.complete();
+      await Future<void>.delayed(Duration.zero);
+
       expect(
         bloc.state,
         isA<HouseholdListReady>()
@@ -590,5 +643,53 @@ void main() {
         );
       },
     );
+  });
+
+  group('a list opened while a pass is running', () {
+    // Entering the list starts a pass once the data is stale, and resume,
+    // reconnect and the sign-in drain all start one, so the list often
+    // subscribes mid-pass and sees no earlier pass finish (#453). The
+    // status is driven before the bloc is built, so what it says arrives
+    // as the reading replayed on subscribe.
+
+    test('knows an earlier pass confirmed the empty list', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.complete)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add(const []);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>()
+            .having((s) => s.households, 'households', isEmpty)
+            .having((s) => s.refreshFailed, 'refreshFailed', isFalse),
+      );
+    });
+
+    test('knows the last pass to finish failed', () async {
+      status
+        ..started()
+        ..finished(HydrateOutcome.failed)
+        ..started();
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      households.add([_household('h-1')]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        bloc.state,
+        isA<HouseholdListReady>().having(
+          (s) => s.refreshFailed,
+          'refreshFailed',
+          isTrue,
+        ),
+      );
+    });
   });
 }

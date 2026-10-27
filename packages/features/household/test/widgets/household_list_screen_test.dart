@@ -558,7 +558,16 @@ void main() {
 
       status.started();
       await tester.pump();
+      await tester.pump();
+      // The rows are no fresher while it runs, so the warning stays until
+      // the pass lands (#453).
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+
+      // Two pumps: this reading is the first change since the pass started,
+      // so no frame is scheduled to build it in. The first pump delivers it
+      // and the second builds the frame.
       status.finished(HydrateOutcome.complete);
+      await tester.pump();
       await tester.pump();
 
       expect(find.text(_refreshFailedCopy), findsNothing);
@@ -635,9 +644,9 @@ void main() {
       tester,
     ) async {
       // #302's triggers re-hydrate on a connectivity edge and on app
-      // resume. The banner clearing is all the user should see of that;
-      // narrating it would put a message on screen for work they did not
-      // ask for.
+      // resume. The banner keeps its failed copy until the pass lands, and
+      // clearing then is all the user should see of it (#453); narrating
+      // it would put a message on screen for work they did not ask for.
       await tester.pumpWidget(harness(onRetry: () async {}));
       households.add([_household('h-1')]);
       status.finished(HydrateOutcome.failed);
@@ -645,9 +654,39 @@ void main() {
 
       status.started();
       await tester.pump();
+      await tester.pump();
 
       expect(find.text(_refreshingCopy), findsNothing);
-      expect(find.text(_refreshFailedCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+    });
+
+    testWidgets('a pass nobody asked for does not take focus off the retry', (
+      tester,
+    ) async {
+      // A banner that dropped when any pass started took its retry, and a
+      // keyboard user's place, with it (#453).
+      FocusNode retryFocus() => Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byKey(HouseholdListScreen.refreshRetryKey),
+            matching: find.text(_retryCopy),
+          ),
+        ),
+      );
+
+      status.finished(HydrateOutcome.failed);
+      await tester.pumpWidget(harness(onRetry: () async {}));
+      households.add([_household('h-1')]);
+      await tester.pump();
+      retryFocus().requestFocus();
+      await tester.pump();
+      expect(retryFocus().hasPrimaryFocus, isTrue);
+
+      status.started();
+      await tester.pump();
+      await tester.pump();
+
+      expect(retryFocus().hasPrimaryFocus, isTrue);
     });
 
     testWidgets('retrying an empty list shows the spinner, not a banner over '
@@ -810,6 +849,7 @@ void main() {
     testWidgets('the pass it starts is not narrated', (tester) async {
       // #300 D6: only a press narrates. An entry is not a press, so the
       // screen says nothing while the pass it started runs.
+      // The failure it may be about to clear stays up until it does (#453).
       await tester.pumpWidget(harness(onEnter: () {}));
       households.add([_household('h-1')]);
       status.finished(HydrateOutcome.failed);
@@ -817,9 +857,10 @@ void main() {
 
       status.started();
       await tester.pump();
+      await tester.pump();
 
       expect(find.text(_refreshingCopy), findsNothing);
-      expect(find.text(_refreshFailedCopy), findsNothing);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
     });
   });
 }

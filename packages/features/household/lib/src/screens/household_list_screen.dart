@@ -47,12 +47,14 @@ import '../sync/household_hydration_status.dart';
 /// mid-interaction moves focus and loses the user's place, which is the
 /// contract `BgeSubmitButton` already holds this package to.
 ///
-/// The exception is an **empty** list, where #269 D1 outranks all of this.
-/// An empty cache with a pass running is unknown, not empty, so the whole
-/// surface goes back to the spinner rather than putting "no households
-/// yet" under a refreshing banner — the same answer the detail screen
-/// gives for an absent household (#270). The spinner is the feedback
-/// there, and the banner returns with the rows or with the failure.
+/// The exception is an empty list **no pass has confirmed**, where #269
+/// outranks all of this. An empty cache with a pass running and none ever
+/// completed is unknown, not empty, so the whole surface goes back to the
+/// spinner rather than putting "no households yet" under a refreshing
+/// banner — the same answer the detail screen gives for an absent household
+/// (#270). The spinner is the feedback there, and the banner returns with
+/// the rows or with the failure. An emptiness an earlier pass did confirm
+/// stays on its empty state while a later one runs (#453).
 ///
 /// A pass **nobody asked for** — the #302 connectivity edge, an app resume
 /// — is not narrated (#300 D6). The banner simply clears when it succeeds,

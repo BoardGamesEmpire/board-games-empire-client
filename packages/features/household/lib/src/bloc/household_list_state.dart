@@ -32,10 +32,11 @@ final class HouseholdListLoading extends HouseholdListState {
 /// [refreshing] says a pass **the user asked for** is running (#300 D6).
 /// It is not "a pass is running": the #302 triggers re-hydrate on a
 /// connectivity edge and on app resume, and a screen that announces work
-/// nobody asked for is noise. The two flags are mutually exclusive in
-/// practice — a running pass has not failed yet — but nothing here
-/// enforces that, because the state's job is to report what is true rather
-/// than to police it.
+/// nobody asked for is noise. The two flags can both be true: a retry over
+/// a failure is `refreshFailed && refreshing` by design, and the banner
+/// shows its refreshing copy over the failure it is trying to clear
+/// (#453). Nothing here ties either flag to the other, because the state's
+/// job is to report what is true rather than to police it.
 final class HouseholdListReady extends HouseholdListState {
   const HouseholdListReady({
     required this.households,
