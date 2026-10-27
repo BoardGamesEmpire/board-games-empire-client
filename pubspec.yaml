@@ -100,6 +100,7 @@ workspace:
   - packages/features/household
   - packages/features/server_onboarding
   - packages/features/sync
+  - packages/features/user_search
   - packages/storage/drift_storage
   - packages/storage/key_storage
   - packages/storage/storage_interface

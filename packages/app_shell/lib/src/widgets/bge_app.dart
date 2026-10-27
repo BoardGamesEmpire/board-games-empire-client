@@ -27,6 +27,7 @@ import 'package:server_onboarding/server_onboarding.dart';
 import 'package:sync_queue/l10n/sync_localizations.dart';
 import 'package:sync_queue/sync_queue.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+import 'package:user_search/l10n/user_search_localizations.dart';
 
 import 'package:ui/ui.dart' show BgePage, UnverifiedSessionBanner;
 
@@ -2231,6 +2232,7 @@ class _BgeAppState extends State<BgeApp> {
         EventsLocalizations.delegate,
         SyncLocalizations.delegate,
         DataGatewayLocalizations.delegate,
+        UserSearchLocalizations.delegate,
         ...widget.additionalLocalizationsDelegates,
       ],
       supportedLocales: ShellLocalizations.supportedLocales,

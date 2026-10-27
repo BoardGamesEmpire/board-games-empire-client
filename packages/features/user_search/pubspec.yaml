@@ -1,0 +1,45 @@
+name: user_search
+description: "User search — find people by name or username, shared by the household invite form and the event create form (#455, #499)"
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.1"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  models:
+    path: ../../core/models
+  network_interface:
+    path: ../../network/network_interface
+  observability:
+    path: ../../core/observability
+
+  flutter_bloc: ^9.1.1
+  # restartable() for user search (#455): a newer query replaces the one
+  # still waiting out its debounce.
+  bloc_concurrency: ^0.3.0
+  equatable: ^2.1.0
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  bloc_test: ^10.0.0
+  # The theme the result list's test pumps it in. Dev-only: nothing under
+  # `lib/` names it.
+  ui_tokens:
+    path: ../../ui/tokens
+  very_good_analysis: ^10.2.0
+  flutter_lints: ^6.0.0
+  l10n_test_support:
+    path: ../../testing/l10n
+
+flutter:
+  generate: true
+  uses-material-design: true
