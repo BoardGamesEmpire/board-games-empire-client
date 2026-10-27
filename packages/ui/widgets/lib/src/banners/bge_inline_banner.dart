@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyUpEvent;
 import 'package:ui_tokens/ui_tokens.dart';
 
+import 'banner_action_layout.dart';
+
 /// The tone of a [BgeInlineBanner], which selects its color pair and icon.
 enum BgeBannerTone {
   /// Something failed and the user needs to know. Uses the error roles.
@@ -87,6 +89,10 @@ class BgeInlineBanner extends StatefulWidget {
   final String? title;
 
   /// Optional trailing action, e.g. a retry button.
+  ///
+  /// It sits beside the message while the message's text keeps at least
+  /// [minMessageWidthEms] ems of width, and below it, at the end edge,
+  /// otherwise.
   final Widget? action;
 
   /// Whether the banner announces itself on appearance. Leave true unless the
@@ -118,6 +124,23 @@ class BgeInlineBanner extends StatefulWidget {
   ///
   /// This is the one guarantee on this widget that depends on its host.
   final bool reveal;
+
+  /// The narrowest the message's text may get beside an [action], in ems of
+  /// the body text's scaled font size. Below it the action moves under the
+  /// message (#452).
+  ///
+  /// In ems so that it scales with the text. A threshold in dp holds half as
+  /// many characters at 200% text scale as it does at 100%: the 140dp that is
+  /// ten ems at 1.0 is only five at 2.0. A rule that stacks only when the
+  /// message gets less than half the banner ignores text scale as well. At
+  /// 412dp and 2.0 the message gets about half and the action stays beside,
+  /// and #452 measured that half as a 135dp column nine lines tall.
+  ///
+  /// Ten ems is 140dp of text at 1.0 and 280dp at 2.0. By #452's real-font
+  /// measurements, that keeps a retry button beside the message at 412dp and
+  /// 1.0, and stacks it at 320 and 360dp at 1.0 and at every phone width at
+  /// 2.0.
+  static const double minMessageWidthEms = 10;
 
   @override
   State<BgeInlineBanner> createState() => _BgeInlineBannerState();
@@ -604,6 +627,13 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
     final tokens = BgeTokens.of(context);
     final (background, foreground, icon) = _resolve(theme.colorScheme);
 
+    // Shared by the message row and the threshold that keeps it readable
+    // beside an [action], so that resizing the icon, its gap or the text
+    // moves the threshold with it.
+    final iconSize = tokens.spaceLg;
+    const iconGap = BgeGap.md(axis: Axis.horizontal);
+    final bodyStyle = theme.textTheme.bodyMedium;
+
     // The merge and the live region cover the ICON + TEXT only. [action] is
     // deliberately outside both: merging a button into the banner's node
     // strips its own semantics — a retry control stops being separately
@@ -617,8 +647,8 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: foreground, size: tokens.spaceLg),
-            const BgeGap.md(axis: Axis.horizontal),
+            Icon(icon, color: foreground, size: iconSize),
+            iconGap,
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -635,9 +665,7 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
                   ],
                   Text(
                     widget.message,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: foreground,
-                    ),
+                    style: bodyStyle?.copyWith(color: foreground),
                   ),
                 ],
               ),
@@ -647,39 +675,49 @@ class _BgeInlineBannerState extends State<BgeInlineBanner> {
       ),
     );
 
-    final body = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: message),
-        if (widget.action != null) ...[
-          const BgeGap.sm(axis: Axis.horizontal),
-          // The action inherits the banner's foreground rather than the
-          // ambient one. A plain `TextButton` defaults to `colorScheme
-          // .primary`, which is electric blue — 2.92:1 against the dark
-          // error container, and it fails the same way on every toned
-          // container because each is a saturated mid-dark surface the
-          // accent was never solved against.
-          //
-          // Applied as a theme rather than a required parameter so callers
-          // keep passing an ordinary button: making legibility opt-in is how
-          // it gets missed.
-          TextButtonTheme(
-            data: TextButtonThemeData(
-              style: TextButton.styleFrom(foregroundColor: foreground),
-            ),
-            child: IconButtonTheme(
-              data: IconButtonThemeData(
-                style: IconButton.styleFrom(foregroundColor: foreground),
+    final action = widget.action;
+    final body = action == null
+        ? message
+        : BannerActionLayout(
+            message: message,
+            // The action inherits the banner's foreground rather than the
+            // ambient one. A plain `TextButton` defaults to `colorScheme
+            // .primary`, which is electric blue — 2.92:1 against the dark
+            // error container, and it fails the same way on every toned
+            // container because each is a saturated mid-dark surface the
+            // accent was never solved against.
+            //
+            // Applied as a theme rather than a required parameter so callers
+            // keep passing an ordinary button: making legibility opt-in is how
+            // it gets missed.
+            action: TextButtonTheme(
+              data: TextButtonThemeData(
+                style: TextButton.styleFrom(foregroundColor: foreground),
               ),
-              child: IconTheme.merge(
-                data: IconThemeData(color: foreground),
-                child: widget.action!,
+              child: IconButtonTheme(
+                data: IconButtonThemeData(
+                  style: IconButton.styleFrom(foregroundColor: foreground),
+                ),
+                child: IconTheme.merge(
+                  data: IconThemeData(color: foreground),
+                  child: action,
+                ),
               ),
             ),
-          ),
-        ],
-      ],
-    );
+            gap: tokens.spaceSm,
+            // The message slot holds the icon and its gap as well as the
+            // text, so the minimum counts them too. The text's share is in
+            // ems of the body text at the size it is drawn, which is scaled.
+            // `BgeTheme` always sets that size. A theme that leaves it unset
+            // draws the text at Flutter's default of 14, which is the role's
+            // token size, so the token stands in for it.
+            minMessageWidth:
+                iconSize +
+                iconGap.extentOf(context) +
+                BgeInlineBanner.minMessageWidthEms *
+                    MediaQuery.textScalerOf(context)
+                        .scale(bodyStyle?.fontSize ?? BgeTypography.bodyMedium),
+          );
 
     return Container(
       padding: EdgeInsets.all(tokens.spaceMd),

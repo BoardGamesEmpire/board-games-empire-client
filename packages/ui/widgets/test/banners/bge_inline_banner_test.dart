@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ui/src/banners/banner_action_layout.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
@@ -249,6 +250,115 @@ Future<(ValueNotifier<String?>, _RecordingScrollController)> _startReveal(
   return (notifier, recording);
 }
 
+/// The events refresh banner's copy, which #452's measurements used.
+const _refreshCopy =
+    "Couldn't refresh your events. What's shown may be out of date.";
+
+/// The refresh banners' action at rest.
+Widget _tryAgain() => TextButton.icon(
+  onPressed: () {},
+  icon: const Icon(Icons.refresh),
+  label: const Text('Try again'),
+);
+
+/// The same action while a refresh runs: disabled, with a spinner and a
+/// longer label. Pump with `pump()`, never `pumpAndSettle`: the spinner never
+/// settles.
+Widget _refreshing() => TextButton.icon(
+  onPressed: null,
+  icon: SizedBox.square(
+    dimension: BgeTokens.standard.spaceMd,
+    child: const CircularProgressIndicator(strokeWidth: 2),
+  ),
+  label: const Text('Refreshing…'),
+);
+
+/// Hosts a banner carrying [action] the way a page does: in a scroll view,
+/// inset by `BgePage`'s horizontal padding, in a window [width] wide at
+/// [textScale].
+Future<void> _actionHost(
+  WidgetTester tester, {
+  required double width,
+  required double textScale,
+  required Widget action,
+  TextDirection dir = TextDirection.ltr,
+}) async {
+  useViewSize(tester, Size(width, 800));
+  await tester.pumpWidget(
+    MediaQuery(
+      data: MediaQueryData(textScaler: TextScaler.linear(textScale)),
+      child: MaterialApp(
+        theme: BgeTheme.light(),
+        home: Directionality(
+          textDirection: dir,
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: BgeTokens.standard.spaceLg,
+                ),
+                child: BgeInlineBanner(
+                  tone: BgeBannerTone.warning,
+                  reveal: false,
+                  message: _refreshCopy,
+                  action: action,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// The banner's message: its icon and text, without the action. The merged
+/// semantics node wraps exactly that.
+Rect _messageRect(WidgetTester tester, {String text = _refreshCopy}) =>
+    tester.getRect(
+      find
+          .ancestor(of: find.text(text), matching: find.byType(MergeSemantics))
+          .first,
+    );
+
+/// Whether [action] sits below the message rather than beside it.
+bool _stacked(
+  WidgetTester tester,
+  Finder action, {
+  String text = _refreshCopy,
+}) => tester.getRect(action).top >= _messageRect(tester, text: text).bottom;
+
+/// The body text's font size, as the banner reads it from the theme.
+double _bodyFontSize(WidgetTester tester) =>
+    Theme.of(tester.element(find.byType(BgeInlineBanner)))
+        .textTheme
+        .bodyMedium!
+        .fontSize!;
+
+/// #452's rule: [action] is below the message, or the message's text keeps
+/// at least [BgeInlineBanner.minMessageWidthEms] ems beside it.
+///
+/// No exception is not enough: the common failure on a device is the
+/// squeeze, which throws nothing.
+void _expectMessageHasRoom(
+  WidgetTester tester,
+  Finder action, {
+  required double textScale,
+}) {
+  if (_stacked(tester, action)) return;
+  final textWidth =
+      _messageRect(tester).width -
+      BgeTokens.standard.spaceLg -
+      BgeTokens.standard.spaceMd;
+  expect(
+    textWidth,
+    greaterThanOrEqualTo(
+      BgeInlineBanner.minMessageWidthEms * textScale * _bodyFontSize(tester),
+    ),
+    reason: 'beside the action, the text has to keep a usable width',
+  );
+}
+
 void main() {
   group('BgeInlineBanner tone', () {
     testWidgets('each tone pairs a distinct icon with its color', (
@@ -381,6 +491,42 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a stacked action stays its own node, outside the announcing '
+        'message (#452)', (tester) async {
+      // The case above has the action beside the message. Below it, the
+      // action is still the layout's second child rather than part of the
+      // message, so the message keeps its one announcing node and the
+      // action its own.
+      final handle = tester.ensureSemantics();
+      await _actionHost(tester, width: 320, textScale: 2, action: _tryAgain());
+      expect(
+        _stacked(tester, find.byType(TextButton)),
+        isTrue,
+        reason: 'sanity: stacked',
+      );
+
+      final message = tester.getSemantics(find.text(_refreshCopy));
+      expect(
+        message.flagsCollection.isLiveRegion,
+        isTrue,
+        reason: 'the message still announces itself',
+      );
+      expect(message.label, isNot(contains('Try again')));
+
+      final button = tester.getSemantics(find.text('Try again'));
+      expect(
+        button.flagsCollection.isButton,
+        isTrue,
+        reason: 'the action must survive as its own semantics node',
+      );
+      expect(
+        button.getSemanticsData().hasAction(SemanticsAction.tap),
+        isTrue,
+        reason: 'a merged-away button is no longer activatable',
+      );
+      handle.dispose();
+    });
+
     testWidgets('an action inherits the banner tone, not the ambient accent', (
       tester,
     ) async {
@@ -487,6 +633,382 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
+    });
+
+    // Under `flutter test`'s font every glyph is one em wide, so the 'Try
+    // again' button is about 184dp at 1.0 and stacks even at 412dp, while a
+    // 48dp IconButton fits beside. Real fonts are narrower (#452's 2026-10-23
+    // table): a rule that measures its children behaves the same under both.
+    const states = {'at rest': _tryAgain, 'refreshing': _refreshing};
+    for (final width in const [320, 360, 412]) {
+      for (final scale in const [1.0, 1.5, 2.0]) {
+        for (final MapEntry(key: state, value: build) in states.entries) {
+          testWidgets(
+            'an action leaves the message room at ${width}dp, ${scale}x, '
+            '$state (#452)',
+            (tester) async {
+              await _actionHost(
+                tester,
+                width: width.toDouble(),
+                textScale: scale,
+                action: build(),
+              );
+
+              expect(tester.takeException(), isNull);
+              final banner = tester.getRect(find.byType(BgeInlineBanner));
+              final action = tester.getRect(find.byType(TextButton));
+              expect(
+                banner.contains(action.topLeft) &&
+                    banner.contains(action.bottomRight - const Offset(1, 1)),
+                isTrue,
+                reason: 'the action has to stay inside the banner',
+              );
+              _expectMessageHasRoom(
+                tester,
+                find.byType(TextButton),
+                textScale: scale,
+              );
+            },
+          );
+        }
+      }
+    }
+
+    testWidgets('a narrow action stays beside the message where there is '
+        'room', (tester) async {
+      await _actionHost(
+        tester,
+        width: 412,
+        textScale: 1,
+        action: IconButton(onPressed: () {}, icon: const Icon(Icons.close)),
+      );
+
+      expect(_stacked(tester, find.byType(IconButton)), isFalse);
+    });
+
+    testWidgets('the threshold grows with the text scale (#452)', (
+      tester,
+    ) async {
+      // A 48dp IconButton at 412dp leaves the message 276dp. The threshold is
+      // the icon and its gap plus ten ems of the body text as drawn: 250dp at
+      // 1.5, so the action stays beside, and 320dp at 2.0, so it stacks. A
+      // threshold in dp, which #452 rejected, allows 140dp of text at every
+      // scale, only five ems at 2.0, and keeps the action beside at both.
+      for (final (scale, stacks) in const [(1.5, false), (2.0, true)]) {
+        await _actionHost(
+          tester,
+          width: 412,
+          textScale: scale,
+          action: IconButton(onPressed: () {}, icon: const Icon(Icons.close)),
+        );
+
+        expect(tester.takeException(), isNull);
+        expect(
+          _stacked(tester, find.byType(IconButton)),
+          stacks,
+          reason: '${scale}x',
+        );
+      }
+    });
+
+    testWidgets('stacks the action below, at the end edge, when the message '
+        'would be squeezed', (tester) async {
+      await _actionHost(tester, width: 320, textScale: 2, action: _tryAgain());
+
+      expect(tester.takeException(), isNull);
+      expect(_stacked(tester, find.byType(TextButton)), isTrue);
+      final banner = tester.getRect(find.byType(BgeInlineBanner));
+      final action = tester.getRect(find.byType(TextButton));
+      expect(
+        action.right,
+        moreOrLessEquals(
+          banner.right - BgeTokens.standard.spaceMd,
+          epsilon: 0.5,
+        ),
+      );
+    });
+
+    testWidgets('in RTL the action keeps to the end edge in both '
+        'arrangements', (tester) async {
+      await _actionHost(
+        tester,
+        width: 320,
+        textScale: 2,
+        action: _tryAgain(),
+        dir: TextDirection.rtl,
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        _stacked(tester, find.byType(TextButton)),
+        isTrue,
+        reason: 'sanity: stacked',
+      );
+      var banner = tester.getRect(find.byType(BgeInlineBanner));
+      final stacked = tester.getRect(find.byType(TextButton));
+      expect(
+        stacked.left,
+        moreOrLessEquals(
+          banner.left + BgeTokens.standard.spaceMd,
+          epsilon: 0.5,
+        ),
+        reason: 'below the message, at the left end',
+      );
+
+      await _actionHost(
+        tester,
+        width: 412,
+        textScale: 1,
+        action: IconButton(onPressed: () {}, icon: const Icon(Icons.close)),
+        dir: TextDirection.rtl,
+      );
+      expect(
+        _stacked(tester, find.byType(IconButton)),
+        isFalse,
+        reason: 'sanity: beside',
+      );
+      banner = tester.getRect(find.byType(BgeInlineBanner));
+      final beside = tester.getRect(find.byType(IconButton));
+      expect(
+        beside.left,
+        moreOrLessEquals(
+          banner.left + BgeTokens.standard.spaceMd,
+          epsilon: 0.5,
+        ),
+      );
+      expect(
+        beside.right,
+        lessThanOrEqualTo(_messageRect(tester).left),
+        reason: 'beside the message, to its left',
+      );
+    });
+
+    testWidgets('a two-button action wraps inside the banner at 320dp and '
+        '2.0', (tester) async {
+      // The invite inbox's action, the widest one passed today.
+      await _actionHost(
+        tester,
+        width: 320,
+        textScale: 2,
+        action: Wrap(
+          children: [
+            TextButton(onPressed: () {}, child: const Text('Open household')),
+            TextButton(onPressed: () {}, child: const Text('Dismiss')),
+          ],
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      final banner = tester.getRect(find.byType(BgeInlineBanner));
+      for (final button in find.byType(TextButton).evaluate()) {
+        final rect = tester.getRect(find.byWidget(button.widget));
+        expect(
+          banner.contains(rect.topLeft) &&
+              banner.contains(rect.bottomRight - const Offset(1, 1)),
+          isTrue,
+          reason: '${button.widget} has to stay inside the banner',
+        );
+      }
+      _expectMessageHasRoom(tester, find.byType(Wrap), textScale: 2);
+    });
+
+    testWidgets('a focused action keeps focus when its label change flips '
+        'the layout', (tester) async {
+      // #452's focus trap. A label change flips the layout, and the button's
+      // element, its state and its focus all survive it. The button stays
+      // enabled throughout. Pressing a refresh banner's retry disables it,
+      // and a disabled button drops focus whatever the layout does: that
+      // loss belongs to the call site, not to the banner.
+      final label = ValueNotifier<String>('Go');
+      addTearDown(label.dispose);
+      final node = FocusNode();
+      addTearDown(node.dispose);
+
+      await _actionHost(
+        tester,
+        width: 412,
+        textScale: 1,
+        action: ValueListenableBuilder<String>(
+          valueListenable: label,
+          builder: (context, value, _) =>
+              TextButton(focusNode: node, onPressed: () {}, child: Text(value)),
+        ),
+      );
+      expect(
+        _stacked(tester, find.byType(TextButton)),
+        isFalse,
+        reason: 'sanity: starts beside',
+      );
+      node.requestFocus();
+      await tester.pump();
+      expect(node.hasFocus, isTrue, reason: 'sanity: focused');
+      final button = tester.state(find.byType(TextButton));
+
+      label.value = 'Refreshing your events…';
+      await tester.pump();
+
+      expect(
+        _stacked(tester, find.byType(TextButton)),
+        isTrue,
+        reason: 'sanity: the label change flipped the layout',
+      );
+      expect(node.hasFocus, isTrue);
+      // Focus alone can't catch a rebuilt button here. A node passed in from
+      // outside re-attaches to the new element and keeps focus: measured,
+      // swapping a Row for a Column kept it. The call sites pass no node, and
+      // a button's own node goes with its state. So the state has to survive.
+      expect(
+        tester.state(find.byType(TextButton)),
+        same(button),
+        reason: 'the flip must not rebuild the button',
+      );
+    });
+
+    testWidgets('reports intrinsic widths from its children', (tester) async {
+      // An AlertDialog sizes its content with IntrinsicWidth. RenderBox's
+      // defaults report zero, and the banner would collapse.
+      useViewSize(tester, const Size(412, 800));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          home: Scaffold(
+            body: Center(
+              child: IntrinsicWidth(
+                child: BgeInlineBanner(
+                  tone: BgeBannerTone.warning,
+                  reveal: false,
+                  message: _refreshCopy,
+                  action: _tryAgain(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      // Sized to its max intrinsic width, the layout has to have room for at
+      // least the message at its threshold. With RenderBox's zero defaults
+      // the banner is its padding alone, and the layout inside it 0dp wide.
+      final layout = tester.renderObject<RenderBannerActionLayout>(
+        find.byType(BannerActionLayout),
+      );
+      expect(layout.size.width, greaterThanOrEqualTo(layout.minMessageWidth));
+    });
+
+    testWidgets('at its max intrinsic width a short message keeps its action '
+        'beside it', (tester) async {
+      // The max intrinsic width is the width past which more width never
+      // makes the banner shorter. A message narrower than the threshold must
+      // not report a width at which the action stacks, or a parent sizing
+      // the banner to it would get the taller arrangement.
+      //
+      // 1.01 as well as 1.0: at a fractional scale the widths are fractional,
+      // and adding them up and taking them away again can land a hair under
+      // the threshold. Measured without a tolerance for it, 42 of 201 scales
+      // from 1.0 to 3.0 stacked here.
+      const short = 'Offline.';
+      useViewSize(tester, const Size(800, 800));
+      for (final scale in const [1.0, 1.01]) {
+        await tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+            child: MaterialApp(
+              theme: BgeTheme.light(),
+              home: Scaffold(
+                body: Center(
+                  child: IntrinsicWidth(
+                    child: BgeInlineBanner(
+                      tone: BgeBannerTone.warning,
+                      reveal: false,
+                      message: short,
+                      action: _tryAgain(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        expect(tester.takeException(), isNull);
+        expect(
+          _stacked(tester, find.byType(TextButton), text: short),
+          isFalse,
+          reason: '${scale}x',
+        );
+      }
+    });
+
+    testWidgets('dry layout matches layout', (tester) async {
+      // A Wrap or a dialog can size the banner by dry layout. RenderBox's
+      // default reports zero. Checked in both arrangements.
+      final cases = {
+        'stacked': (_tryAgain(), find.byType(TextButton)),
+        'beside': (
+          IconButton(onPressed: () {}, icon: const Icon(Icons.close)),
+          find.byType(IconButton),
+        ),
+      };
+      for (final MapEntry(key: arrangement, value: (action, finder))
+          in cases.entries) {
+        await _actionHost(tester, width: 412, textScale: 1, action: action);
+        expect(
+          _stacked(tester, finder),
+          arrangement == 'stacked',
+          reason: 'sanity: $arrangement',
+        );
+
+        final box = tester.renderObject<RenderBox>(
+          find.byType(BannerActionLayout),
+        );
+        expect(
+          box.getDryLayout(box.constraints),
+          box.size,
+          reason: arrangement,
+        );
+      }
+    });
+
+    testWidgets('reports its message baseline, laid out and dry', (
+      tester,
+    ) async {
+      // The Row this layout replaced reported one. Without it a
+      // baseline-aligned parent drops the banner to the top, and asking for
+      // the dry baseline asserts.
+      useViewSize(tester, const Size(412, 800));
+      const row = Key('row');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: BgeTheme.light(),
+          home: Scaffold(
+            body: Row(
+              key: row,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                const Text('Label'),
+                Expanded(
+                  child: BgeInlineBanner(
+                    tone: BgeBannerTone.warning,
+                    reveal: false,
+                    message: _refreshCopy,
+                    action: _tryAgain(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getRect(find.text('Label')).top,
+        moreOrLessEquals(tester.getRect(find.text(_refreshCopy)).top),
+        reason: "the label lines up with the message's first line",
+      );
+      final box = tester.renderObject<RenderBox>(find.byKey(row));
+      expect(box.getDryLayout(box.constraints), box.size);
     });
   });
   group('BgeInlineBanner reveal', () {
