@@ -800,9 +800,9 @@
   "@householdMemberRemoveConfirmTitleUnnamed": {
     "description": "Title of the dialog asking to confirm removing a member from the household, when the app does not know the member's name yet."
   },
-  "householdMemberRemoveConfirmBody": "They lose access to the household and its events. Only a new invite brings them back.",
+  "householdMemberRemoveConfirmBody": "They lose access to the household and its events.",
   "@householdMemberRemoveConfirmBody": {
-    "description": "Body of the dialog asking to confirm removing a member from the household: what removing them does, and that it cannot be undone except by inviting them again."
+    "description": "Body of the dialog asking to confirm removing a member from the household: what removing them does. It promises nothing about keeping them out, since an invite already sent to their address stays open."
   },
   "householdMemberRemoveConfirm": "Remove",
   "@householdMemberRemoveConfirm": {

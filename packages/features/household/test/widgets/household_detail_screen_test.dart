@@ -1409,10 +1409,7 @@ void main() {
       await choose(tester, 'u-2', HouseholdDetailScreen.removeKey);
       expect(find.text('Remove Zed?'), findsOneWidget);
       expect(
-        find.text(
-          'They lose access to the household and its events. Only a new '
-          'invite brings them back.',
-        ),
+        find.text('They lose access to the household and its events.'),
         findsOneWidget,
       );
 
