@@ -14,8 +14,7 @@ import '../bloc/awaiting_approval_count_cubit.dart';
 import '../bloc/household_detail_bloc.dart';
 import '../bloc/household_detail_event.dart';
 import '../bloc/household_detail_state.dart';
-import '../edit/household_edit_permissions.dart';
-import '../invites/household_invite_permissions.dart';
+import '../permissions/household_actions.dart';
 import '../widgets/household_refresh_banner.dart';
 import '../widgets/household_role_label.dart';
 import '../sync/household_hydration_status.dart';
@@ -290,6 +289,9 @@ class _ReadyPage extends StatelessWidget {
     final openInvites = onOpenInvites;
     final edit = onEdit;
     final invite = onInvite;
+    // Empty for a household the server does not know yet, so none of the
+    // controls below is offered for one.
+    final actions = householdActionsFor(state.household, state.role);
 
     return BgePage(
       // The household's own name, not a generic one: the title is the first
@@ -297,8 +299,7 @@ class _ReadyPage extends StatelessWidget {
       // will land here without the user having walked past the list.
       title: Text(state.household.name),
       actions: [
-        if (edit != null &&
-            HouseholdEditPermissions.mayEdit(state.household, state.role))
+        if (edit != null && actions.contains(HouseholdAction.edit))
           IconButton(
             key: HouseholdDetailScreen.editKey,
             icon: const Icon(Icons.edit_outlined),
@@ -346,8 +347,7 @@ class _ReadyPage extends StatelessWidget {
           ],
           if (invites != null &&
               openInvites != null &&
-              HouseholdInvitePermissions.mayManage(state.role) &&
-              !state.household.isLocalOnly) ...[
+              actions.contains(HouseholdAction.manageInvites)) ...[
             const BgeGap.lg(),
             _InvitesEntry(
               // Keyed on the id, which a reconcile changes (#306): the count
@@ -361,12 +361,8 @@ class _ReadyPage extends StatelessWidget {
           // In the entry's place, for a member who may invite but can't
           // read the household's invites (#569).
           if (invite != null &&
-              !HouseholdInvitePermissions.mayManage(state.role) &&
-              HouseholdInvitePermissions.maySend(
-                state.role,
-                state.household.settings?.memberInvitePolicy,
-              ) &&
-              !state.household.isLocalOnly) ...[
+              actions.contains(HouseholdAction.sendInvite) &&
+              !actions.contains(HouseholdAction.manageInvites)) ...[
             const BgeGap.lg(),
             ListTile(
               key: HouseholdDetailScreen.inviteKey,

@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../invites/household_invite_permissions.dart';
+import '../permissions/household_actions.dart';
 import 'household_invite_list_state.dart';
 
 /// Input to the household's invite list (#455).

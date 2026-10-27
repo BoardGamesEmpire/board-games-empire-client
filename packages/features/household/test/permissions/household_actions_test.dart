@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:household/src/permissions/household_actions.dart';
+import 'package:household/household.dart';
 import 'package:models/domain.dart';
 
 const _me = 'u_me';
