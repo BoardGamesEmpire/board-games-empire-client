@@ -5,6 +5,7 @@ import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
+import 'game_cache_access.dart';
 import 'watch_disposal.dart';
 
 /// Offline-first implementation of [GameCollectionRepository] backed by
@@ -111,6 +112,19 @@ import 'watch_disposal.dart';
 /// an unsynced re-add intent. See [reconcileFromServer] for the
 /// race scenario the carve-out defends against.
 ///
+/// A purge can end the user's `collection` records (#469). Their record
+/// for a platform game ends once they have no entry on it, in any medium,
+/// live, tombstoned or local-only. Their record for the game ends once
+/// they have no entry on any of its platform games. Cached `games` and
+/// `platform_games` rows that no one can read then are deleted.
+///
+/// Each transaction that purges, a merge of a server tombstone included,
+/// releases the platform games it purged in one call, after its last
+/// write to `game_collections`. So a spared re-add, or a live entry the
+/// same merge writes after a tombstone, still holds the record. A discard
+/// releases right after it deletes a local-only entry. A hydrate page in
+/// flight can lose its rows to a release: see `GameCollectionHydrator`.
+///
 /// A confirmed removal is also counted, so a hydrate page the server
 /// answered before it cannot write the entry back: see [removalMark].
 ///
@@ -192,11 +206,27 @@ class GameCollectionRepositoryImpl
     required this._syncQueue,
     required String currentUserId,
     required this._clock,
-  }) : _userId = currentUserId;
+  }) : _userId = currentUserId,
+       _access = GameCacheAccess(_db);
 
   final ServerDatabase _db;
   final SyncQueueRepository _syncQueue;
   final String _userId;
+
+  /// Ends the user's `collection` records once their last entry for a
+  /// platform game goes (#469).
+  final GameCacheAccess _access;
+
+  /// The platform games the open transaction purged entries on, and a
+  /// merge's whole page, for it to release once its other writes are done
+  /// (#469). Open only inside [_purgingTransaction], which
+  /// [reconcileFromServer], [confirmRemoved] and [mergeFromServer] run in,
+  /// and null again once they release or throw, so a purge anywhere else
+  /// throws rather than skipping its release.
+  ///
+  /// A field, not a parameter through [_writeServerEntry]: drift runs the
+  /// transactions on one database one at a time, so two never share it.
+  Set<String>? _released;
 
   /// Server-corrected time source (#12). Every consensus-relevant
   /// timestamp this repository produces — tombstone [deletedAt],
@@ -641,7 +671,7 @@ class GameCollectionRepositoryImpl
     // misrouted server response.
     _checkServerEntryUser(serverEntry, caller: 'reconcileFromServer');
 
-    return _db.transaction(() async {
+    return _purgingTransaction(() async {
       await _writeServerEntry(serverEntry);
 
       // Put back what is still queued for the entry (#429). Before the
@@ -662,6 +692,7 @@ class GameCollectionRepositoryImpl
       if (completedSyncQueueId != null) {
         await _syncQueue.markCompleted(completedSyncQueueId);
       }
+      await _releasePurged();
 
       if (serverEntry.deletedAt != null) {
         _countRemoval(
@@ -692,7 +723,7 @@ class GameCollectionRepositoryImpl
     required String completedSyncQueueId,
   }) async {
     checkNotDisposed();
-    return _db.transaction(() async {
+    return _purgingTransaction(() async {
       final local =
           await (_db.select(_db.gameCollectionsTable)..where(
                 (t) => t.id.equals(collectionId) & t.userId.equals(_userId),
@@ -705,6 +736,7 @@ class GameCollectionRepositoryImpl
         );
       }
       await _syncQueue.markCompleted(completedSyncQueueId);
+      await _releasePurged();
       if (local != null) {
         _countRemoval(
           platformGameId: local.platformGameId,
@@ -832,6 +864,10 @@ class GameCollectionRepositoryImpl
           await (_db.delete(
             _db.gameCollectionsTable,
           )..where((t) => t.id.equals(row.id))).go();
+          await _access.releaseCollection(
+            userId: _userId,
+            platformGameIds: {row.platformGameId},
+          );
           return true;
         }
         // Otherwise a later add reached the server while this one was stuck,
@@ -1009,7 +1045,7 @@ class GameCollectionRepositoryImpl
     }
     if (serverEntries.isEmpty) return;
 
-    return _db.transaction(() async {
+    return _purgingTransaction(() async {
       for (final serverEntry in serverEntries) {
         // A read made before the discard can predate an acknowledgement
         // that came before it, so it leaves the entry to a later read. The
@@ -1028,6 +1064,14 @@ class GameCollectionRepositoryImpl
         _rebuildFromServer.remove(serverEntry.id);
         await _writeServerEntry(serverEntry);
       }
+      // The page's summaries gave the user a record on every platform game
+      // it names, including one whose copy was skipped above for a removal
+      // confirmed since the read. A platform game the user has no entry on
+      // by now ends that record too.
+      _released!.addAll(serverEntries.map((entry) => entry.platformGameId));
+      // After the whole page: a live entry later in it may hold a platform
+      // game an earlier tombstone purged.
+      await _releasePurged();
     });
   }
 
@@ -1205,7 +1249,9 @@ class GameCollectionRepositoryImpl
   /// [reconcileFromServer]'s race). Runs inside the caller's transaction.
   ///
   /// Shared by the two confirmations, a tombstone the server returned and a
-  /// removal it reports as already done, so they spare the same rows.
+  /// removal it reports as already done, so they spare the same rows. The
+  /// platform game goes in [_released], for the caller to release once its
+  /// other writes are done (#469).
   Future<void> _purgeRemovedTriplet({
     required String platformGameId,
     required String wireMedium,
@@ -1218,6 +1264,34 @@ class GameCollectionRepositoryImpl
               (t.deletedAt.isNotNull() | t.isLocalOnly.equals(false)),
         ))
         .go();
+    _released!.add(platformGameId);
+  }
+
+  /// Runs [body] in a transaction with [_released] open for the platform
+  /// games it purges, and null again however [body] ends (#469). [body]
+  /// releases them itself, with [_releasePurged], once its other writes are
+  /// done.
+  Future<void> _purgingTransaction(Future<void> Function() body) =>
+      _db.transaction(() async {
+        _released = {};
+        try {
+          await body();
+          assert(
+            _released == null,
+            'A purging transaction ended without releasing what it purged',
+          );
+        } finally {
+          _released = null;
+        }
+      });
+
+  /// Releases the platform games the open transaction purged (#469), and
+  /// closes [_released]. Runs inside the caller's transaction, after its
+  /// last write to `game_collections`.
+  Future<void> _releasePurged() async {
+    final purged = _released!;
+    _released = null;
+    await _access.releaseCollection(userId: _userId, platformGameIds: purged);
   }
 
   // ── Streams ──────────────────────────────────────────────────────────────────

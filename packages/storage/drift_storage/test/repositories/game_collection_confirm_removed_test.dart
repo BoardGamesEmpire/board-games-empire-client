@@ -6,6 +6,7 @@ import 'package:drift_storage/drift_storage_native.dart'
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 
 import '../support/fixed_clock.dart';
 import '../support/platform_game_fixture.dart';
@@ -45,7 +46,7 @@ void main() {
       currentUserId: _kUserId,
       clock: clock,
     );
-    await seedPlatformGame(db);
+    await seedPlatformGame(db, readableBy: _kUserId);
   });
 
   tearDown(() async => db.close());
@@ -88,6 +89,9 @@ void main() {
       await repo.confirmRemoved(_kServerId, completedSyncQueueId: removeOp);
 
       final mark = await repo.removalMark();
+      // A hydrate writes the page's summaries before it merges, and the
+      // confirmation pruned the rows.
+      await seedPlatformGame(db, readableBy: _kUserId);
       await repo.mergeFromServer([
         _server(quantity: 3, updatedAt: DateTime.utc(2026, 11)),
       ], removalsSince: mark);
@@ -143,6 +147,110 @@ void main() {
       final row = (await rows()).single;
       expect(row.deletedAt, isNotNull);
       expect(row.isDirty, isTrue);
+    });
+  });
+
+  group('the collection record (#469)', () {
+    test("the last entry's confirmed removal ends the record and deletes the "
+        'rows', () async {
+      final removeOp = await removedEntry();
+
+      await repo.confirmRemoved(_kServerId, completedSyncQueueId: removeOp);
+
+      expect(await platformGameRecords(db, _kUserId), isEmpty);
+      expect(await gameRecords(db, _kUserId), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+    });
+
+    test('a tombstone the server returns for the last entry ends the record '
+        'and deletes the rows', () async {
+      // The drain's usual answer to a removal, rather than a 404.
+      final removeOp = await removedEntry();
+
+      await repo.reconcileFromServer(
+        _server(updatedAt: DateTime.utc(2026, 3))
+            .copyWith(deletedAt: DateTime.utc(2026, 3)),
+        completedSyncQueueId: removeOp,
+      );
+
+      expect(await platformGameRecords(db, _kUserId), isEmpty);
+      expect(await gameRecords(db, _kUserId), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+    });
+
+    test("keeps the record while another medium's entry remains", () async {
+      // A server-confirmed entry, as a hydrate writes it.
+      await repo.mergeFromServer([
+        _server().copyWith(id: 'gc-digital', medium: GameMedium.digital),
+      ], removalsSince: await repo.removalMark());
+      final removeOp = await removedEntry();
+
+      await repo.confirmRemoved(_kServerId, completedSyncQueueId: removeOp);
+
+      final digital = (await rows()).single;
+      expect(digital.id, 'gc-digital');
+      expect(digital.isDirty, isFalse);
+      expect(digital.isLocalOnly, isFalse);
+      expect(await platformGameRecords(db, _kUserId), {
+        cacheAccessSourceCollection,
+      });
+      expect(await gameRecords(db, _kUserId), {cacheAccessSourceCollection});
+      expect(await db.select(db.platformGamesTable).get(), hasLength(1));
+      expect(await db.select(db.gamesTable).get(), hasLength(1));
+    });
+
+    test('keeps the record while a local-only re-add remains', () async {
+      // As in 'keeps a re-add the queue has yet to send': the purge spares
+      // the re-add, so the user still holds an entry for the game.
+      final removeOp = await removedEntry();
+      await repo.addToCollection(
+        platformGameId: kFixturePlatformGameId,
+        medium: GameMedium.physical,
+        quantity: 2,
+      );
+
+      await repo.confirmRemoved(_kServerId, completedSyncQueueId: removeOp);
+
+      expect((await rows()).single.isLocalOnly, isTrue);
+      expect(await platformGameRecords(db, _kUserId), {
+        cacheAccessSourceCollection,
+      });
+      expect(await gameRecords(db, _kUserId), {cacheAccessSourceCollection});
+      expect(await db.select(db.platformGamesTable).get(), hasLength(1));
+      expect(await db.select(db.gamesTable).get(), hasLength(1));
+    });
+
+    test('leaves a catalog record, and the rows it reads', () async {
+      await db
+          .into(db.gameAccessTable)
+          .insert(
+            GameAccessTableCompanion.insert(
+              userId: _kUserId,
+              gameId: kFixtureGameId,
+              source: cacheAccessSourceCatalog,
+            ),
+          );
+      await db
+          .into(db.platformGameAccessTable)
+          .insert(
+            PlatformGameAccessTableCompanion.insert(
+              userId: _kUserId,
+              platformGameId: kFixturePlatformGameId,
+              source: cacheAccessSourceCatalog,
+            ),
+          );
+      final removeOp = await removedEntry();
+
+      await repo.confirmRemoved(_kServerId, completedSyncQueueId: removeOp);
+
+      expect(await platformGameRecords(db, _kUserId), {
+        cacheAccessSourceCatalog,
+      });
+      expect(await gameRecords(db, _kUserId), {cacheAccessSourceCatalog});
+      expect(await db.select(db.platformGamesTable).get(), hasLength(1));
+      expect(await db.select(db.gamesTable).get(), hasLength(1));
     });
   });
 }

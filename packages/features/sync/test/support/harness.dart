@@ -186,18 +186,21 @@ class Harness {
   static Future<Harness> open() async {
     final db = inMemoryServerDatabase();
     final harness = Harness._(db, _DeviceClock(DateTime.utc(2026, 10, 12, 9)));
-    await GameRepositoryImpl(db, userId: kUserId).cachePlatformGameSummaries(
-      const [
+    await harness._cacheSummary();
+    return harness;
+  }
+
+  /// Caches the fixture platform game's summary, which records it as read
+  /// by the user's collection, as a hydrate page does before its entries.
+  Future<void> _cacheSummary() =>
+      GameRepositoryImpl(db, userId: kUserId).cachePlatformGameSummaries(const [
         PlatformGameSummary(
           id: kPlatformGameId,
           platformId: 'plat-1',
           platformName: 'Tabletop',
           game: GameSummary(id: 'g-1', title: 'Brass'),
         ),
-      ],
-    );
-    return harness;
-  }
+      ]);
 
   Future<void> close() => db.close();
 
@@ -253,6 +256,9 @@ class Harness {
   /// public API, since reads hide a tombstone either way. Writes the copy if
   /// it can.
   Future<bool> hydrateCanWriteFixtureGame() async {
+    // A hydrate writes the page's summaries before it merges, and a
+    // confirmed removal of the last entry may have pruned the rows (#469).
+    await _cacheSummary();
     final mark = await collection.removalMark();
     await collection.mergeFromServer([
       serverEntry(id: 'gc-hydrated', quantity: 9, updatedAt: DateTime(2027)),

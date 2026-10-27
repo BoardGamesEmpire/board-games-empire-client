@@ -14,8 +14,12 @@ import 'game_table.dart';
 /// - **[source] is part of the key.** A game cached both from a user's
 ///   collection and from a catalog fetch keeps both reasons, so removing
 ///   one later (#469) can't take away the other.
-/// - **Never pruned yet.** Rows for removed entries and departed users stay
-///   until #469; each stays readable only by the user it names.
+/// - **A record ends with its reason.** Removing the user's last collection
+///   row for a game ends their `collection` record, a catalog-wide 403 ends
+///   their `catalog` records (#557), and `forgetGame` ends both. A `games`
+///   row left with no record, and no platform game, is deleted (#469).
+///   Sign-out ends none: each record outlives the session, readable only
+///   by the user it names.
 /// - **Indexed on [gameId].** The primary key leads with [userId], so it
 ///   can't find a game's rows. SQLite looks them up on every change to a
 ///   `games` key, which includes each full write's upsert, since drift

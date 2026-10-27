@@ -6,6 +6,7 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 import '../tables/game_access_table.dart';
+import 'game_cache_access.dart';
 import 'stored_enum_name.dart';
 import 'watch_disposal.dart';
 
@@ -36,10 +37,12 @@ import 'watch_disposal.dart';
 /// [WatchDisposal] contract (#138): after `onDispose()` the `Future` methods
 /// throw [StateError], and [watchGame] / [watchGames] close.
 class GameRepositoryImpl with WatchDisposal implements GameRepository {
-  GameRepositoryImpl(this._db, {required this._userId});
+  GameRepositoryImpl(this._db, {required this._userId})
+    : _access = GameCacheAccess(_db);
 
   final ServerDatabase _db;
   final String _userId;
+  final GameCacheAccess _access;
 
   /// The clock both of this repository's stamps come from: a summary
   /// insert's `createdAt` / `updatedAt`, and a full write's
@@ -115,23 +118,13 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   @override
   Future<void> forgetGame(String id) async {
     checkNotDisposed();
-    final games = _db.gameAccessTable;
-    final platformGames = _db.platformGameAccessTable;
-    await _db.transaction(() async {
-      await (_db.delete(platformGames)..where(
-            (t) =>
-                t.userId.equals(_userId) &
-                t.platformGameId.isInQuery(
-                  _db.selectOnly(_db.platformGamesTable)
-                    ..addColumns([_db.platformGamesTable.id])
-                    ..where(_db.platformGamesTable.gameId.equals(id)),
-                ),
-          ))
-          .go();
-      await (_db.delete(
-        games,
-      )..where((t) => t.userId.equals(_userId) & t.gameId.equals(id))).go();
-    });
+    await _access.forgetGame(userId: _userId, gameId: id);
+  }
+
+  @override
+  Future<void> forgetCatalog() async {
+    checkNotDisposed();
+    await _access.forgetCatalog(userId: _userId);
   }
 
   /// Matches LIKE-wildcard metacharacters: `%` and `_`.

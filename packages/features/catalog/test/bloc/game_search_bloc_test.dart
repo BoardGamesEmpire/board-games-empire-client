@@ -10,7 +10,14 @@ import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../support/catalog_app.dart';
 import '../support/fake_games_remote.dart';
+
+/// A cache that cannot forget, as a session ending mid-refusal would leave it.
+class _FailingForgetCache extends FakeGamesCache {
+  @override
+  Future<void> forgetCatalog() async => throw StateError('disposed');
+}
 
 const _expansions = GameSearchFilter(contentTypes: {ContentType.expansion});
 
@@ -423,6 +430,107 @@ void main() {
     expect: () => [const GameSearchDenied(query: 'catan', filter: _expansions)],
     verify: (_) => expect(remote.calls, ['search(catan [expansion])']),
   );
+
+  group('a refusal', () {
+    const refused = GamesForbiddenException('403');
+    late ServerDatabase db;
+    late GameRepositoryImpl cache;
+    final catan = game('g_catan', title: 'Catan');
+
+    setUp(() async {
+      db = inMemoryServerDatabase();
+      cache = GameRepositoryImpl(db, userId: 'user-a');
+      await cache.cacheGame(catan);
+    });
+    tearDown(() => db.close());
+
+    /// What a search over [cache] shows when the server can't be reached.
+    Future<GameSearchState> searchOffline() async {
+      remote.onSearch = (_, _) async => throw unreachable();
+      final search = build(cache: cache);
+      addTearDown(search.close);
+      search.add(const GameSearchQueryChanged('catan'));
+      await settle();
+      return search.state;
+    }
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'forgets the catalog, so a later failed search finds nothing cached',
+      setUp: () => remote.onSearch = (_, _) async => throw refused,
+      build: () => build(cache: cache),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        remote.onSearch = (_, _) async => throw unreachable();
+        bloc.add(const GameSearchQueryChanged('cata'));
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        const GameSearchLoading(query: 'cata'),
+        const GameSearchReady(query: 'cata', fromCache: true),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'still says the user may not search when forgetting fails',
+      setUp: () => remote.onSearch = (_, _) async => throw refused,
+      build: () => build(cache: _FailingForgetCache()),
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      expect: () => [
+        const GameSearchLoading(query: 'catan'),
+        const GameSearchDenied(query: 'catan'),
+      ],
+    );
+
+    test('in search leaves a new search nothing cached', () async {
+      remote.onSearch = (_, _) async => throw refused;
+      final first = build(cache: cache)
+        ..add(const GameSearchQueryChanged('catan'));
+      await first.stream.firstWhere((s) => s is GameSearchDenied);
+      await first.close();
+
+      expect(
+        await searchOffline(),
+        const GameSearchReady(query: 'catan', fromCache: true),
+      );
+    });
+
+    test('in search leaves browse nothing cached', () async {
+      remote.onSearch = (_, _) async => throw refused;
+      final search = build(cache: cache)
+        ..add(const GameSearchQueryChanged('catan'));
+      await search.stream.firstWhere((s) => s is GameSearchDenied);
+      await search.close();
+
+      remote.onFetchPage = (_, _) async => throw unreachable();
+      final browse = GameBrowseBloc(remote: remote, cache: cache, pageSize: 2);
+      addTearDown(browse.close);
+      final states = <GameBrowseState>[];
+      final sub = browse.stream.listen(states.add);
+      addTearDown(sub.cancel);
+      browse.add(const GameBrowseLoadRequested());
+      await pumpEventQueue();
+
+      expect(states, [const GameBrowseLoading(), const GameBrowseFailed()]);
+    });
+
+    test('in browse leaves search nothing cached', () async {
+      remote.onFetchPage = (_, _) async => throw refused;
+      final browse = GameBrowseBloc(remote: remote, cache: cache, pageSize: 2)
+        ..add(const GameBrowseLoadRequested());
+      await browse.stream.firstWhere((s) => s is GameBrowseDenied);
+      await browse.close();
+
+      expect(
+        await searchOffline(),
+        const GameSearchReady(query: 'catan', fromCache: true),
+      );
+    });
+  });
 
   group('a game found gone', () {
     final results = GameSearchResults(

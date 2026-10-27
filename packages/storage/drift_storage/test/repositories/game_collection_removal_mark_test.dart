@@ -6,6 +6,7 @@ import 'package:drift_storage/drift_storage_native.dart'
 import 'package:drift_storage/src/databases/server_database.dart';
 import 'package:drift_storage/src/repositories/game_collection_repository_impl.dart';
 import 'package:drift_storage/src/repositories/sync_queue_repository_impl.dart';
+import 'package:drift_storage/src/tables/game_access_table.dart';
 
 import '../support/fixed_clock.dart';
 import '../support/platform_game_fixture.dart';
@@ -109,12 +110,34 @@ void main() {
       final mark = await repo.removalMark();
       await repo.confirmRemoved(_kServerId, completedSyncQueueId: removal);
 
+      // A hydrate writes the page's summaries before it merges, and the
+      // confirmation pruned the rows.
+      await seedPlatformGame(db, readableBy: _kUserId);
       await repo.mergeFromServer([
         _server(),
         _server(id: 'gc-digital', medium: GameMedium.digital),
       ], removalsSince: mark);
 
       expect((await rows()).single.id, 'gc-digital');
+      expect(await platformGameRecords(db, _kUserId), {
+        cacheAccessSourceCollection,
+      });
+    });
+
+    test("ends the collection records the page's summary wrote for the "
+        'entry (#469)', () async {
+      final removal = await removedEntry();
+      final mark = await repo.removalMark();
+      await repo.confirmRemoved(_kServerId, completedSyncQueueId: removal);
+
+      // A hydrate writes the page's summaries before it merges, and the
+      // confirmation pruned the rows.
+      await seedPlatformGame(db, readableBy: _kUserId);
+      await repo.mergeFromServer([_server()], removalsSince: mark);
+
+      expect(await platformGameRecords(db, _kUserId), isEmpty);
+      expect(await gameRecords(db, _kUserId), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
     });
   });
 
@@ -126,6 +149,9 @@ void main() {
     await repo.confirmRemoved(_kServerId, completedSyncQueueId: removal);
     final mark = await repo.removalMark();
 
+    // A hydrate writes the page's summaries before it merges, and the
+    // confirmation pruned the rows.
+    await seedPlatformGame(db, readableBy: _kUserId);
     await repo.mergeFromServer([
       _server(quantity: 3, updatedAt: DateTime.utc(2026, 11)),
     ], removalsSince: mark);
@@ -142,6 +168,9 @@ void main() {
     final mark = await repo.removalMark();
 
     await repo.mergeFromServer([_tombstone()], removalsSince: mark);
+    // A hydrate writes the page's summaries before it merges, and the
+    // tombstone's merge pruned the rows.
+    await seedPlatformGame(db, readableBy: _kUserId);
     await repo.mergeFromServer([
       _server(quantity: 2, updatedAt: DateTime.utc(2026, 4)),
     ], removalsSince: mark);

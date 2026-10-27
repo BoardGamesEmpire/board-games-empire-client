@@ -580,5 +580,16 @@ void main() {
         },
       );
     });
+
+    test('a record outlives the session: a fresh repository for the same '
+        'user still reads what the disposed one cached (#469)', () async {
+      await repo.cacheGame(_makeGame(id: 'g-1', title: 'Catan'));
+
+      await repo.onDispose();
+
+      final next = GameRepositoryImpl(db, userId: 'user-abc');
+      expect((await next.getGame('g-1'))?.title, 'Catan');
+      expect(await db.select(db.gamesTable).get(), hasLength(1));
+    });
   });
 }
