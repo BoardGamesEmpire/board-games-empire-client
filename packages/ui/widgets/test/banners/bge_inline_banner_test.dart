@@ -1966,6 +1966,118 @@ void main() {
       );
     });
 
+    testWidgets('a banner taller than the viewport leaves the rest of the page '
+        'reachable (#228)', (tester) async {
+      // The banner has no height cap, so one error can fill more than the
+      // screen. That is safe only because it sits inside the page's scroll
+      // view: the page scrolls past it, to the action it carries and to
+      // whatever follows. A capped banner with a scroll view of its own would
+      // take every drag that starts on it away from the page.
+      //
+      // Run with an action: it stacks below the message at this width and
+      // scale (#452), so it is part of the banner's height and has to stay
+      // reachable.
+      _useNarrowWindow(tester);
+      final shown = ValueNotifier<bool>(false);
+      addTearDown(shown.dispose);
+      const submitKey = ValueKey('submit');
+      var retries = 0;
+      var submits = 0;
+
+      await tester.pumpWidget(
+        MediaQuery(
+          data: MediaQueryData(
+            size: const Size(320, 480),
+            textScaler: const TextScaler.linear(2),
+          ),
+          child: MaterialApp(
+            theme: BgeTheme.light(),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 600, child: Placeholder()),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: shown,
+                      builder: (context, isShown, _) => isShown
+                          ? BgeInlineBanner(
+                              tone: BgeBannerTone.error,
+                              title: 'This server is too new for this app',
+                              message:
+                                  'This server supports app versions up to '
+                                  '1.4.0 (you have 2.0.0). The server needs '
+                                  'to be updated.',
+                              action: TextButton(
+                                onPressed: () => retries++,
+                                child: const Text('Retry'),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    ElevatedButton(
+                      key: submitKey,
+                      onPressed: () => submits++,
+                      child: const Text('Submit'),
+                    ),
+                    const SizedBox(height: 600, child: Placeholder()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      shown.value = true;
+      await tester.pumpAndSettle();
+
+      final bannerHeight = tester
+          .renderObject<RenderBox>(find.byType(BgeInlineBanner))
+          .size
+          .height;
+      expect(
+        bannerHeight,
+        greaterThan(scrollViewportOf(tester).size.height),
+        reason:
+            'sanity: this case only means something while the banner is '
+            'taller than the viewport',
+      );
+      expect(
+        _bannerTop(tester),
+        moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
+        reason: 'the first line has to be the line on screen',
+      );
+
+      // A drag that starts on the banner, at the viewport's middle, which the
+      // banner covers while it is taller than the viewport. `ensureVisible`
+      // below walks out through any nested scroll view, so it cannot see a
+      // banner that swallows its own touches; only a real drag can.
+      const dragged = 100.0;
+      final page = pageScrollOf(tester).position;
+      final before = page.pixels;
+      await tester.dragFrom(
+        scrollViewportOf(tester).size.center(Offset.zero),
+        const Offset(0, -dragged),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        page.pixels - before,
+        moreOrLessEquals(dragged, epsilon: 0.5),
+        reason: 'a drag on the banner has to move the page, not the banner',
+      );
+
+      await tester.ensureVisible(find.text('Retry'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Retry'));
+      expect(retries, 1, reason: 'the action is part of the banner, reachable');
+
+      await tester.ensureVisible(find.byKey(submitKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(submitKey));
+      expect(submits, 1, reason: 'the content below the banner is reachable');
+    });
+
     testWidgets('reveals in a reverse scroll view, where increasing pixels '
         'moves content the other way', (tester) async {
       // The viewport-to-offset conversion is signed. Under AxisDirection.up a

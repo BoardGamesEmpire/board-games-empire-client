@@ -63,6 +63,17 @@ enum BgeBannerTone {
 ///   Unlike the live region, this is **not** unconditional — it acts on the
 ///   nearest enclosing vertical scroll view, and does nothing without one.
 ///   See [reveal].
+/// - **It has no height cap, on purpose** (#228). It belongs inside the
+///   page's scroll view, where even a banner taller than the viewport never
+///   makes anything unreachable: the page scrolls past it, to its [action]
+///   and to whatever follows. A cap with a scroll view of its own, the way
+///   [BgePage.footer] does it, would stop every page drag that starts on the
+///   banner. The footer's cap-and-scroll pair works only because the footer
+///   sits *outside* the page's scroll view; inside it, the capped region
+///   becomes a dead zone for touch. Truncating instead would hide part of the
+///   message from the sighted user, who needs it most: an error is the one
+///   text they have to read, and scrolling the page at 200% text scale is
+///   ordinary.
 /// - **The icon is not decorative.** Tone here is conveyed by color *and*
 ///   icon, which is the project's stated answer to color-vision deficiency.
 ///   A banner that signalled failure by being red alone would be unusable for

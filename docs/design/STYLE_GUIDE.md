@@ -368,7 +368,9 @@ bar, reading as clipped. Three consequences worth knowing:
 - **The top edge, not the whole banner.** At 200% text scale a single error
   string can be taller than the viewport — measured, `serverAddErrorClientTooNew`
   is 816dp against a 480dp one. Centring the reveal would show the middle of a
-  wrapped sentence. (That the banner can be that tall at all is #228.)
+  wrapped sentence. (It may be that tall on purpose: it sits inside the
+  page's scroll view, which scrolls past a tall banner like any other
+  content, so #228 decided against a height cap.)
 - **Pass `reveal: false` for a *persistent* banner** — an offline indicator is
   furniture, not news, and one that scrolls itself into view on every mount
   fights a restored scroll position. A banner built **lazily inside a list**
