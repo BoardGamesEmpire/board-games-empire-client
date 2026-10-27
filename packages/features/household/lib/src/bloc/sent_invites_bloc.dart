@@ -3,8 +3,8 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import '../invites/household_invite_permissions.dart';
 import '../invites/sent_invite_filter.dart';
+import '../permissions/household_actions.dart';
 import 'household_invite_list_state.dart';
 import 'invite_pages.dart';
 import 'sent_invites_event.dart';
@@ -106,7 +106,7 @@ class SentInvitesBloc extends Bloc<SentInvitesEvent, SentInvitesState> {
     final id = event.inviteId;
     final row = _pages.rows?.where((invite) => invite.id == id).firstOrNull;
     if (row == null || _busy.contains(id)) return;
-    final allowed = HouseholdInvitePermissions.sentRowActions(row);
+    final allowed = sentInviteRowActions(row);
     if (!allowed.contains(HouseholdInviteRowAction.withdraw)) return;
 
     _busy.add(id);

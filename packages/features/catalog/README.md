@@ -13,11 +13,13 @@ sit beside `game_collection`.
 by id. Every page is written to the games cache as it arrives.
 
 A 403 says this user may not read the server's games at all, and the screen
-says so rather than showing the cache. On a later page it takes down the
-pages already shown, too. When the first page cannot be fetched
-for any other reason, the bloc reads the cache a page at a time in that same
-order (`GameRepository.getGamesPage`) and says the list came from this device.
-A retry keeps those rows up while it asks the server again, and keeps them if
+says so rather than showing the cache. The bloc also forgets this user's
+catalog on this device, so offline browse and search show only games their
+collection reaches (#557). On a later page it takes down the pages already
+shown, too. When the first page cannot be fetched for any other reason, the
+bloc reads the cache a page at a time in that same order
+(`GameRepository.getGamesPage`) and says the list came from this device. A
+retry keeps those rows up while it asks the server again, and keeps them if
 it fails.
 
 ## Search
@@ -40,7 +42,9 @@ platform types too; offering them on screen is #474.
 When the server's search fails, the bloc searches the games cached on this
 device instead (`GameRepository.searchGames`). The cache holds no platform
 types, so a search narrowed by one finds nothing there. A 403 is a refusal,
-not a failure: the screen says the user has no access, as browse does.
+not a failure: the screen says the user has no access, as browse does. The
+refusal forgets this user's catalog on this device, and offline search then
+shows only games their collection reaches (#557).
 
 ## Import
 

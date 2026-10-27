@@ -27,7 +27,9 @@ void main() {
     publishYear: 1995,
     minPlayers: 3,
     maxPlayers: 4,
-    playingTime: 90,
+    // One playing time is a range whose two ends are equal.
+    minPlayTime: 90,
+    maxPlayTime: 90,
     minAge: 10,
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
@@ -94,10 +96,10 @@ void main() {
     );
   });
 
-  testWidgets('reads an imported game\'s play time from its range, which has '
-      'no unit', (tester) async {
-    // What the server's import writes: minimum and maximum, in minutes, with
-    // no unit and no playingTime.
+  testWidgets('reads an imported game\'s play time from its range', (
+    tester,
+  ) async {
+    // What the server's import writes: a minimum and a maximum, in minutes.
     final imported = Game(
       id: 'g_brass',
       title: 'Brass',
@@ -127,13 +129,12 @@ void main() {
   for (final (bound, game, facts) in [
     (
       'a lone minimum',
-      // The maximum is in hours, which the screen does not show.
-      (minPlayTime: 30, maxPlayTime: 2, maxUnit: TimeMeasure.hours),
+      (minPlayTime: 30, maxPlayTime: null),
       'Base game · 30+ minutes',
     ),
     (
       'a lone maximum',
-      (minPlayTime: null, maxPlayTime: 120, maxUnit: null),
+      (minPlayTime: null, maxPlayTime: 120),
       'Base game · Up to 120 minutes',
     ),
   ]) {
@@ -145,7 +146,6 @@ void main() {
         title: 'Bounded',
         minPlayTime: game.minPlayTime,
         maxPlayTime: game.maxPlayTime,
-        maxPlayTimeMeasure: game.maxUnit,
         createdAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
       );

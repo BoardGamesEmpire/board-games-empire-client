@@ -178,11 +178,70 @@ void main() {
       expect(await a.getGame('g-1'), isNotNull);
     });
 
+    test('deletes the rows once no user can read them', () async {
+      final a = repoFor(_kUserA);
+      await a.cacheGame(_game());
+      await a.cachePlatformGame(_platformGame());
+
+      await a.forgetGame('g-1');
+
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+      expect(await db.select(db.platformGamesTable).get(), isEmpty);
+    });
+
     test('throws once the session has ended', () async {
       final a = repoFor(_kUserA);
       await a.onDispose();
 
       expect(() => a.forgetGame('g-1'), throwsStateError);
+    });
+  });
+
+  group('forgetCatalog', () {
+    test('hides what the catalog cached for the user', () async {
+      final a = repoFor(_kUserA);
+      await a.cacheGame(_game());
+
+      await a.forgetCatalog();
+
+      expect(await _everyRead(a), _seesNothing);
+    });
+
+    test('keeps a game the user reaches through their collection', () async {
+      final a = repoFor(_kUserA);
+      await a.cachePlatformGameSummaries([_summary()]);
+      await a.cacheGame(_game());
+
+      await a.forgetCatalog();
+
+      expect(await a.getGame('g-1'), isNotNull);
+    });
+
+    test("leaves another user's catalog records", () async {
+      final a = repoFor(_kUserA);
+      final b = repoFor(_kUserB);
+      await a.cacheGame(_game());
+      await b.cacheGame(_game());
+
+      await a.forgetCatalog();
+
+      expect(await b.getGame('g-1'), isNotNull);
+    });
+
+    test('deletes the rows once no user can read them', () async {
+      final a = repoFor(_kUserA);
+      await a.cacheGame(_game());
+
+      await a.forgetCatalog();
+
+      expect(await db.select(db.gamesTable).get(), isEmpty);
+    });
+
+    test('throws once the session has ended', () async {
+      final a = repoFor(_kUserA);
+      await a.onDispose();
+
+      expect(a.forgetCatalog, throwsStateError);
     });
   });
 }

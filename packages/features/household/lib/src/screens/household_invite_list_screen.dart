@@ -13,8 +13,8 @@ import 'package:household/l10n/household_localizations.dart';
 import '../bloc/household_invite_list_bloc.dart';
 import '../bloc/household_invite_list_event.dart';
 import '../bloc/household_invite_list_state.dart';
-import '../invites/household_invite_permissions.dart';
 import '../invites/invite_refusal_message.dart';
+import '../permissions/household_actions.dart';
 import '../widgets/household_invite_tile.dart';
 
 /// A household's open invites, for its owners and admins (#455, #454,
@@ -92,7 +92,8 @@ class _HouseholdInviteListView extends StatelessWidget {
         final showInvite =
             invite != null &&
             ready != null &&
-            HouseholdInvitePermissions.mayManage(ready.viewerRole);
+            householdRoleActions(ready.viewerRole)
+                .contains(HouseholdAction.manageInvites);
         final tokens = BgeTokens.of(context);
 
         return BgePage.slivers(

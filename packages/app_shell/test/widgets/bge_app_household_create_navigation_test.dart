@@ -355,7 +355,8 @@ void main() {
       // the next entry re-hydrates rather than waiting out the remaining
       // minutes. The invalidation belongs to *mutation*, and the
       // composition root is where mutations are already wired (#300 D9) —
-      // which is what gives #122's membership mutations the same hook.
+      // which is the hook a membership change reaches too, through
+      // `refreshAfterMembershipChange` (#480, #122).
       final status = freshlyRefreshed();
       expect(status.sinceRefresh, isNotNull);
 

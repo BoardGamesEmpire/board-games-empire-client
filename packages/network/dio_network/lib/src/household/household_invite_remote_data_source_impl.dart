@@ -49,7 +49,7 @@ class HouseholdInviteRemoteDataSourceImpl
             InviteeEmail(:final email) => {'inviteeEmail': email},
           },
           'inviteeName': ?draft.inviteeName,
-          'role': _roleName(draft.role),
+          'role': draft.role.toWire(),
           'message': ?draft.message,
         },
       ),
@@ -255,16 +255,6 @@ class HouseholdInviteRemoteDataSourceImpl
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
-
-  /// The server's role name for an offerable role. The draft has already
-  /// refused any other.
-  static String _roleName(HouseholdRole role) => switch (role) {
-    HouseholdRole.householdAdmin => 'HouseholdAdmin',
-    HouseholdRole.householdMember => 'HouseholdMember',
-    HouseholdRole.householdGuest => 'HouseholdGuest',
-    HouseholdRole.householdOwner ||
-    HouseholdRole.unknown => throw StateError('an invite cannot offer $role'),
-  };
 
   // ── Request plumbing ────────────────────────────────────────────────
 

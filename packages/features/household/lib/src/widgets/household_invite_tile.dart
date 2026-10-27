@@ -4,8 +4,8 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:household/l10n/household_localizations.dart';
 
-import '../invites/household_invite_permissions.dart';
 import '../invites/invite_expiry_line.dart';
+import '../permissions/household_actions.dart';
 import 'household_invite_awaiting_badge.dart';
 import 'household_invite_busy_indicator.dart';
 import 'household_role_label.dart';
@@ -31,7 +31,7 @@ class HouseholdInviteTile extends StatelessWidget {
 
   final HouseholdInvite invite;
 
-  /// The actions to offer, from `HouseholdInvitePermissions.rowActions`.
+  /// The actions to offer, from [householdInviteRowActions].
   final Set<HouseholdInviteRowAction> actions;
 
   /// An action on this invite is running. Its buttons are disabled meanwhile

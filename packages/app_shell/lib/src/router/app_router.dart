@@ -333,7 +333,10 @@ typedef HouseholdListScreenBuilder = Widget? Function(BuildContext context);
 ///
 /// Guarded on the repository **alone**, like the list and unlike create
 /// (#269 D4): this screen reads the local cache and never calls the
-/// server, so a missing `HouseholdRemoteDataSource` costs it nothing.
+/// server to show itself, so a missing `HouseholdRemoteDataSource` costs it
+/// nothing. The invite, edit and member actions it offers (#455, #476, #480)
+/// do call the server, and each is left out where its client is not
+/// registered.
 ///
 /// The id reaches the builder unvalidated — any string that fits one path
 /// segment. The screen answers an unreadable id with its not-found state,

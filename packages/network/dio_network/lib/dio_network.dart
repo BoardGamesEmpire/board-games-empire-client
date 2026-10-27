@@ -14,6 +14,7 @@ export 'src/game_collection/game_collection_remote_data_source_impl.dart';
 export 'src/games/games_remote_data_source_impl.dart';
 
 export 'src/household/household_invite_remote_data_source_impl.dart';
+export 'src/household/household_member_remote_data_source_impl.dart';
 export 'src/household/household_remote_data_source_impl.dart';
 
 export 'src/network/clock_skew_interceptor.dart';

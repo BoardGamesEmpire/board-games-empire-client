@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 10`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 11`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -73,10 +73,20 @@ Server schema history:
   every tab and a reload can follow an event created on this device. A new
   table with no FK edges, created by one `createTable`, so #54 stays
   deferred.
+- **v10 → v11 (#602, #471):** renames `games.visibility` to `reach`, drops
+  `games.playing_time` and the `min_play_time_measure` /
+  `max_play_time_measure` columns on `games` and `platform_games`, and adds
+  `game_collections_platform_game_id_idx`, which backs `game_collections`'
+  foreign key to `platform_games`. `renameColumn`, five `dropColumn` calls
+  (`ALTER TABLE … DROP COLUMN`, SQLite 3.35+) and one `createIndex`, all in
+  place, so #54 stays deferred. A reach cached before it is kept as written,
+  and so is a bound: none is converted from its unit or filled from
+  `playing_time`, since the server's own step converted nothing
+  (backend#869).
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v10.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v11.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live
@@ -98,11 +108,12 @@ schema.
    definitions (the `to` bound matters: the schema verifier runs
    *intermediate* migrations, and an unbounded block would over-migrate past
    the requested target)
-   (sufficient for additive columns, new tables and FK-free table
-   rebuilds); switching
+   (sufficient for additive columns, new tables, in-place `ALTER TABLE`
+   renames and drops, and FK-free table rebuilds); switching
    to the generated `stepByStep(...)` dispatcher remains an open option under
-   #54 and becomes compelling with the first destructive migration of an
-   FK-referenced table:
+   #54 and becomes compelling with the first rebuild of an FK-referenced
+   table. An in-place rename or drop, as v11 makes, copies no table, so it
+   doesn't count (#602):
 
    ```dart
    @override
@@ -165,9 +176,10 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 ## Deferred items
 
 - **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
-  the FK-off + transaction wrapper decision above. Nine additive or FK-free
-  migrations have shipped without them; the trigger is the first destructive
-  migration of an FK-referenced table (see "Adding a schema change"). The
+  the FK-off + transaction wrapper decision above. Ten migrations have
+  shipped without them: additive ones, one FK-free rebuild (v3) and v11's
+  in-place renames and drops. The trigger is the first rebuild of an
+  FK-referenced table (see "Adding a schema change"). The
   generated `test/drift/**` migration tests already exist and are committed.
 - **#55 — app-layer downgrade handling.** Catching `SchemaDowngradeError`,
   refusing to open the affected database, and rendering the localized

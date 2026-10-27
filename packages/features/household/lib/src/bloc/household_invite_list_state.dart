@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-import '../invites/household_invite_permissions.dart';
+import '../permissions/household_actions.dart';
 
 /// Which of the household's invites the list shows.
 enum HouseholdInviteFilter {
@@ -78,7 +78,7 @@ final class HouseholdInviteListReady extends HouseholdInviteListState {
   Set<HouseholdInviteRowAction> actionsFor(HouseholdInvite invite) {
     final viewer = viewerUserId;
     if (viewer == null) return const {};
-    return HouseholdInvitePermissions.rowActions(
+    return householdInviteRowActions(
       viewerUserId: viewer,
       viewerRole: viewerRole,
       invite: invite,

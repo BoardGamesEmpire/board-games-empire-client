@@ -6,6 +6,8 @@ import 'package:models/domain.dart';
 
 import '../databases/server_database.dart';
 import '../tables/game_access_table.dart';
+import 'game_cache_access.dart';
+import 'stored_enum_name.dart';
 import 'watch_disposal.dart';
 
 /// [GameRepository] over the per-server [ServerDatabase], for one user
@@ -35,10 +37,12 @@ import 'watch_disposal.dart';
 /// [WatchDisposal] contract (#138): after `onDispose()` the `Future` methods
 /// throw [StateError], and [watchGame] / [watchGames] close.
 class GameRepositoryImpl with WatchDisposal implements GameRepository {
-  GameRepositoryImpl(this._db, {required this._userId});
+  GameRepositoryImpl(this._db, {required this._userId})
+    : _access = GameCacheAccess(_db);
 
   final ServerDatabase _db;
   final String _userId;
+  final GameCacheAccess _access;
 
   /// The clock both of this repository's stamps come from: a summary
   /// insert's `createdAt` / `updatedAt`, and a full write's
@@ -114,23 +118,13 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   @override
   Future<void> forgetGame(String id) async {
     checkNotDisposed();
-    final games = _db.gameAccessTable;
-    final platformGames = _db.platformGameAccessTable;
-    await _db.transaction(() async {
-      await (_db.delete(platformGames)..where(
-            (t) =>
-                t.userId.equals(_userId) &
-                t.platformGameId.isInQuery(
-                  _db.selectOnly(_db.platformGamesTable)
-                    ..addColumns([_db.platformGamesTable.id])
-                    ..where(_db.platformGamesTable.gameId.equals(id)),
-                ),
-          ))
-          .go();
-      await (_db.delete(
-        games,
-      )..where((t) => t.userId.equals(_userId) & t.gameId.equals(id))).go();
-    });
+    await _access.forgetGame(userId: _userId, gameId: id);
+  }
+
+  @override
+  Future<void> forgetCatalog() async {
+    checkNotDisposed();
+    await _access.forgetCatalog(userId: _userId);
   }
 
   /// Matches LIKE-wildcard metacharacters: `%` and `_`.
@@ -430,15 +424,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     publishYear: row.publishYear,
     minPlayers: row.minPlayers,
     maxPlayers: row.maxPlayers,
-    playingTime: row.playingTime,
     minPlayTime: row.minPlayTime,
-    minPlayTimeMeasure: row.minPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
-        : null,
     maxPlayTime: row.maxPlayTime,
-    maxPlayTimeMeasure: row.maxPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.maxPlayTimeMeasure!)
-        : null,
     minAge: row.minAge,
     complexity: row.complexity,
     contentType: ContentType.fromWire(row.contentType),
@@ -452,7 +439,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     designers: _decodeStringList(row.designersJson),
     publishers: _decodeStringList(row.publishersJson),
     tags: _decodeStringList(row.tagsJson),
-    visibility: Visibility.fromWire(row.visibility),
+    reach: Reach.fromWire(row.reach),
     createdById: row.createdById,
     deletedAt: row.deletedAt,
     createdAt: row.createdAt,
@@ -471,11 +458,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
         publishYear: Value(g.publishYear),
         minPlayers: Value(g.minPlayers),
         maxPlayers: Value(g.maxPlayers),
-        playingTime: Value(g.playingTime),
         minPlayTime: Value(g.minPlayTime),
-        minPlayTimeMeasure: Value(g.minPlayTimeMeasure?.toWire()),
         maxPlayTime: Value(g.maxPlayTime),
-        maxPlayTimeMeasure: Value(g.maxPlayTimeMeasure?.toWire()),
         minAge: Value(g.minAge),
         complexity: Value(g.complexity),
         contentType: Value(g.contentType.toWire()),
@@ -489,7 +473,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
         designersJson: Value(jsonEncode(g.designers)),
         publishersJson: Value(jsonEncode(g.publishers)),
         tagsJson: Value(jsonEncode(g.tags)),
-        visibility: Value(g.visibility.toWire()),
+        reach: Value(storedEnumName(g.reach, Reach.unknown, (v) => v.toWire())),
         createdById: Value(g.createdById),
         deletedAt: Value(g.deletedAt),
         createdAt: g.createdAt,
@@ -505,13 +489,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     minPlayers: row.minPlayers,
     maxPlayers: row.maxPlayers,
     minPlayTime: row.minPlayTime,
-    minPlayTimeMeasure: row.minPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.minPlayTimeMeasure!)
-        : null,
     maxPlayTime: row.maxPlayTime,
-    maxPlayTimeMeasure: row.maxPlayTimeMeasure != null
-        ? TimeMeasure.fromWire(row.maxPlayTimeMeasure!)
-        : null,
     image: row.image,
     thumbnail: row.thumbnail,
     supportsSolo: row.supportsSolo,
@@ -536,9 +514,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     minPlayers: Value(pg.minPlayers),
     maxPlayers: Value(pg.maxPlayers),
     minPlayTime: Value(pg.minPlayTime),
-    minPlayTimeMeasure: Value(pg.minPlayTimeMeasure?.toWire()),
     maxPlayTime: Value(pg.maxPlayTime),
-    maxPlayTimeMeasure: Value(pg.maxPlayTimeMeasure?.toWire()),
     image: Value(pg.image),
     thumbnail: Value(pg.thumbnail),
     supportsSolo: Value(pg.supportsSolo),

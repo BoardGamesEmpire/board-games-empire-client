@@ -38,7 +38,10 @@ import 'game_browse_state.dart';
 /// checks that before it reads a row. So the screen says so,
 /// [GameBrowseDenied], rather than showing the cache: the server's answer
 /// wins over an old copy, as it does on the detail. A later page refused
-/// takes down the pages already shown, for the same reason.
+/// takes down the pages already shown, for the same reason. The refusal also
+/// forgets this user's catalog on this device, so offline browse and search
+/// show only the games their collection reaches (#557). A failed forget is
+/// logged and otherwise ignored.
 ///
 /// ## When the server fails, the cache in the catalog's order
 ///
@@ -129,6 +132,8 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
     try {
       page = await _remote.fetchPage(limit: pageSize);
     } on GamesForbiddenException {
+      await _forgetCatalog();
+      if (isClosed) return;
       _games = const [];
       return emit(const GameBrowseDenied());
     } on Object catch (error, stackTrace) {
@@ -179,6 +184,8 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
     try {
       page = await _remote.fetchPage(page: _nextPage, limit: pageSize);
     } on GamesForbiddenException {
+      await _forgetCatalog();
+      if (isClosed) return;
       _games = const [];
       _hasMore = false;
       return emit(const GameBrowseDenied());
@@ -266,6 +273,21 @@ class GameBrowseBloc extends Bloc<GameBrowseEvent, GameBrowseState> {
       // A session ending mid-read lands here, as a disposed cache.
       _logger.warn(
         'Caching a catalog page failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void> _forgetCatalog() async {
+    final cache = _cache;
+    if (cache == null) return;
+    try {
+      await cache.forgetCatalog();
+    } on Object catch (error, stackTrace) {
+      // The forget fails on a cache the ended session disposed.
+      _logger.warn(
+        'Forgetting the refused catalog failed',
         error: error,
         stackTrace: stackTrace,
       );

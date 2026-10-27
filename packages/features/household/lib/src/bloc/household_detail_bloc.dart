@@ -68,7 +68,8 @@ import 'household_detail_state.dart';
 /// read off the roster on every emission. That is one query rather than
 /// one per change, and it keeps the displayed role reactive — a role
 /// changed on the server reaches this screen through the same rows the
-/// count does, once the membership work (#122) makes that possible.
+/// count does: from a change made on this device, cached from the server's
+/// answer (#480, #122), or from another device's with the next hydrate.
 ///
 /// A failure to resolve identity is not a failure of the screen: the role
 /// line is omitted and everything else renders. Losing the answer to "what

@@ -55,11 +55,11 @@ import 'watch_disposal.dart';
 /// [create] is the one user-initiated mutation (P4, #39): it writes an
 /// optimistic household + a synthesized owner member row and enqueues a
 /// `CreateHouseholdOperation`, all in a single transaction, then
-/// [reconcileCreatedHousehold] applies the server's confirmed row. The
-/// remaining household mutations (`leaveHousehold`, `removeMember`,
-/// `transferOwnership`, …) are deferred to the membership work (#122).
-/// The "cache-writer" methods ([cacheHousehold], [cacheMember],
-/// [cacheMembers], [cacheHouseholdWithRoster]) are server-driven
+/// [reconcileCreatedHousehold] applies the server's confirmed row. Every
+/// other household mutation goes to the server directly, or will (#122), and
+/// reaches this cache only as the server's answer. The "cache-writer"
+/// methods ([cacheHousehold], [cacheMember], [cacheMembers],
+/// [removeCachedMember], [cacheHouseholdWithRoster]) are server-driven
 /// populators that accept payloads the server already auth-filtered.
 ///
 /// The [Household.isDirty] / [Household.isLocalOnly] columns are set on
@@ -84,12 +84,13 @@ import 'watch_disposal.dart';
 /// anything this repository remembers, so it holds for any writer,
 /// including a repository in another tab over the same storage.
 ///
-/// **TODO(household-mutations-phase-4)**: this device's own membership
-/// mutations (#122) — leave, kick, role swaps — will update the local
-/// member rows in the same Drift transaction they enqueue against the sync
-/// queue. Until the server accepts one, the next hydrate still carries the
-/// old roster, so each must hold its household against the two writers
-/// above (see [HouseholdRepository]).
+/// This device's own membership changes go straight to the server (#122).
+/// Their answers are written through [cacheMember] and [removeCachedMember].
+/// A hydrate that read the roster before such a change can write the old
+/// roster back after it. The caller therefore marks the list stale and runs
+/// another pass (`refreshAfterMembershipChange`), and that pass corrects it.
+/// Nothing is queued, so there is no pending window to hold against the two
+/// writers above (see [HouseholdRepository]).
 ///
 /// ## Future: per-household visibility
 ///
@@ -236,7 +237,9 @@ class HouseholdRepositoryImpl
   /// [cacheHouseholdWithRoster] and [purgeHouseholdsAbsentFrom] leave it
   /// alone, roster included, save for the members' names; only the
   /// acknowledgement settles it.
-  /// [cacheMember] and [cacheMembers] do not check it yet (#122).
+  /// [cacheMember], [cacheMembers] and [removeCachedMember] do not check it:
+  /// they apply the server's word about a member, and the flags guard the
+  /// household's own fields (#122).
   static bool _isQueueOwned(HouseholdsTableData row) =>
       row.isDirty || row.isLocalOnly;
 
@@ -295,6 +298,15 @@ class HouseholdRepositoryImpl
   Future<void> cacheMembers(List<HouseholdMember> members) async {
     checkNotDisposed();
     await _upsertMembers(members);
+  }
+
+  @override
+  Future<void> removeCachedMember(String householdId, String userId) async {
+    checkNotDisposed();
+    await (_db.delete(_db.householdMembersTable)..where(
+          (t) => t.householdId.equals(householdId) & t.userId.equals(userId),
+        ))
+        .go();
   }
 
   Future<void> _upsertMembers(List<HouseholdMember> members) async {
@@ -487,8 +499,8 @@ class HouseholdRepositoryImpl
 
       // Synthesized owner member so the read gate surfaces the household
       // immediately. The server makes the creator a `HouseholdOwner` but
-      // doesn't return the member row; this row's id is client-generated
-      // and reconciled later by the membership sync (#122).
+      // doesn't return the member row; this row's id is client-generated,
+      // and the next server write of that membership replaces it (#267).
       await _db
           .into(_db.householdMembersTable)
           .insert(

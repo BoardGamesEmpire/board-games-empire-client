@@ -11,10 +11,10 @@ import '../bloc/household_invite_list_state.dart';
 import '../bloc/sent_invites_bloc.dart';
 import '../bloc/sent_invites_event.dart';
 import '../bloc/sent_invites_state.dart';
-import '../invites/household_invite_permissions.dart';
 import '../invites/invite_expiry_line.dart';
 import '../invites/invite_refusal_message.dart';
 import '../invites/sent_invite_filter.dart';
+import '../permissions/household_actions.dart';
 import '../widgets/household_invite_awaiting_badge.dart';
 import '../widgets/household_invite_busy_indicator.dart';
 import '../widgets/household_role_label.dart';
@@ -277,7 +277,7 @@ class _SentRow extends StatelessWidget {
         inviteExpiryLine(l10n, invite) ??
         inviteSettledLabel(l10n, invite.status);
     // As on the household list, withdrawing your own invite does not ask.
-    final mayWithdraw = HouseholdInvitePermissions.sentRowActions(invite)
+    final mayWithdraw = sentInviteRowActions(invite)
         .contains(HouseholdInviteRowAction.withdraw);
 
     return Column(

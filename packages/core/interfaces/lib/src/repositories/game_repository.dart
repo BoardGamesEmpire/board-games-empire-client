@@ -15,7 +15,7 @@ import 'package:models/domain.dart';
 /// returns only rows cached for this instance's user. A game the server
 /// sent only to another user reads as not cached, even a public one,
 /// because what decides it is what the server sent each user, not the
-/// game's visibility.
+/// game's reach.
 ///
 /// Platform games are recorded separately from their games. A user who was
 /// sent one platform game of a game reads that one, not the game's others.
@@ -45,7 +45,7 @@ import 'package:models/domain.dart';
 /// [cachePlatformGameSummaries] can insert a game the cache never held
 /// with only its title, subtitle and images. Every other column keeps its
 /// default until a full record is cached: null player counts, play time
-/// and the rest, and a `visibility` of public, which the summary never
+/// and the rest, and a `reach` of public, which the summary never
 /// stated.
 ///
 /// So every read treats such a row as not cached, the way it treats a
@@ -89,10 +89,24 @@ abstract class GameRepository {
   /// user, whatever cached them: for when the server answers that this user
   /// can't read the game, as `GET /games/:id`'s 404 and 403 do (#42).
   ///
-  /// Other users' records are left alone, and so are the rows themselves:
-  /// removing rows no user can read is #469's. Caching the game again makes
-  /// it readable again.
+  /// Other users' records are left alone. The game and platform game rows
+  /// left with no record, and no collection row or platform game pointing at
+  /// them, are deleted (#469). Caching the game again makes it readable
+  /// again.
   Future<void> forgetGame(String id);
+
+  /// Stops reading as cached for this user whatever the catalog cached: for
+  /// when the server answers that this user can read none of its games, as
+  /// `GET /games` and `GET /games/search` do with a 403 (#557).
+  ///
+  /// Deletes this user's `catalog` records. Their `collection` records and
+  /// other users' records are left alone, so a game the server sent with
+  /// this user's collection still reads. A game added on this device gets
+  /// its `collection` record only when a collection sync sends it back, so
+  /// until then it stops reading too. The game and platform game rows left
+  /// with no record, and nothing pointing at them, are deleted. Throws once
+  /// the session has ended, like every other method.
+  Future<void> forgetCatalog();
 
   /// Upserts [platformGame]'s full record into the local cache, and records
   /// it for this user. Its game must already be cached.

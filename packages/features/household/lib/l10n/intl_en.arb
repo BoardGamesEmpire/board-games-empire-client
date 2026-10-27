@@ -695,5 +695,109 @@
   "editHouseholdNotFound": "We couldn't find this household.",
   "@editHouseholdNotFound": {
     "description": "Shown on the household edit screen instead of the form when the household is not cached, or the user is no longer a member."
+  },
+  "householdMemberDoneRole": "Role changed.",
+  "@householdMemberDoneRole": {
+    "description": "Banner on the household screen after an owner or admin changed another member's role and the server accepted it."
+  },
+  "householdMemberDoneRemove": "Removed from the household.",
+  "@householdMemberDoneRemove": {
+    "description": "Banner on the household screen after an owner or admin removed another member and the server accepted it."
+  },
+  "householdMemberGoneRemove": "They had already left the household, or it no longer exists.",
+  "@householdMemberGoneRemove": {
+    "description": "Banner on the household screen when removing a member found them already gone: they left, someone else removed them first, or the household itself was deleted. The server's answer does not say which, so the text must name both. The household is being read again, which takes them off the list."
+  },
+  "householdMemberGoneRole": "That member is no longer in the household, or it no longer exists.",
+  "@householdMemberGoneRole": {
+    "description": "Banner on the household screen when changing a member's role found them no longer in the household, or the household itself deleted. The server's answer does not say which, so the text must name both. The role was not changed, and the household is being read again."
+  },
+  "householdMemberErrorRoleChanged": "You can't do that here any more. Your role in this household may have changed.",
+  "@householdMemberErrorRoleChanged": {
+    "description": "Banner on the household screen when the server refused a role change or removal as not allowed (403): the user's own role may have changed, for instance on another device. The household is being read again."
+  },
+  "householdMemberErrorRejected": "The server didn't accept that change. The household is being read again.",
+  "@householdMemberErrorRejected": {
+    "description": "Banner on the household screen when the server turned down a role change or removal (400 or 409), for instance because the household no longer stands as the screen showed it. The household is being read again."
+  },
+  "householdMemberErrorOffline": "Couldn't reach the server. Try again.",
+  "@householdMemberErrorOffline": {
+    "description": "Banner on the household screen when a role change or removal got no usable answer from the server: no connection, a timeout, a server error or an expired session. Nothing on the device was changed, but the server may or may not have made the change, so the text must not say either way. Must not say the device is offline."
+  },
+  "householdMemberErrorUnexpected": "Something went wrong. The household is being read again to show where things stand.",
+  "@householdMemberErrorUnexpected": {
+    "description": "Banner on the household screen when a role change or removal failed in a way the app could not read, including an answer it could not understand. The change may or may not have been made, so the household is being read again."
+  },
+  "householdMemberActions": "Member actions",
+  "@householdMemberActions": {
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, when the app does not know the member's name yet. Opens a menu of what the user may do to that member: change their role, or remove them. Shown to owners and admins only."
+  },
+  "householdMemberActionsFor": "Actions for {name}",
+  "@householdMemberActionsFor": {
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, by the member's display name or username. Opens a menu of what the user may do to that member: change their role, or remove them. Every row has one, so the name tells a screen-reader user which member's menu it is. Shown to owners and admins only.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "householdMemberChangeRole": "Change role",
+  "@householdMemberChangeRole": {
+    "description": "Menu item on a member's row on the household screen. Opens a dialog to give the member another role."
+  },
+  "householdMemberRemove": "Remove from household",
+  "@householdMemberRemove": {
+    "description": "Menu item on a member's row on the household screen. Asks for confirmation, then takes the member out of the household."
+  },
+  "householdMemberRoleDialogTitle": "Change role",
+  "@householdMemberRoleDialogTitle": {
+    "description": "Title of the dialog where an owner or admin picks another member's new role."
+  },
+  "householdRoleAdminDescription": "Edits the household, manages its invites, and manages members and guests.",
+  "@householdRoleAdminDescription": {
+    "description": "Under the Admin option in the change-role dialog: what a household admin may do."
+  },
+  "householdRoleMemberDescription": "Sees the household and its events, creates events, and invites others when the household allows it.",
+  "@householdRoleMemberDescription": {
+    "description": "Under the Member option in the change-role dialog: what a household member may do. Whether members may invite is a household setting."
+  },
+  "householdRoleGuestDescription": "Sees the household and its events.",
+  "@householdRoleGuestDescription": {
+    "description": "Under the Guest option in the change-role dialog: what a household guest may do."
+  },
+  "householdMemberRoleSave": "Save",
+  "@householdMemberRoleSave": {
+    "description": "Button in the change-role dialog that gives the member the chosen role. Disabled until a role other than the member's current one is chosen."
+  },
+  "householdMemberCancel": "Cancel",
+  "@householdMemberCancel": {
+    "description": "Button in the change-role and remove-member dialogs that closes the dialog without changing anything."
+  },
+  "householdMemberRemoveConfirmTitle": "Remove {name}?",
+  "@householdMemberRemoveConfirmTitle": {
+    "description": "Title of the dialog asking an owner or admin to confirm removing a member from the household, by the member's display name or username.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "householdMemberRemoveConfirmTitleUnnamed": "Remove this member?",
+  "@householdMemberRemoveConfirmTitleUnnamed": {
+    "description": "Title of the dialog asking to confirm removing a member from the household, when the app does not know the member's name yet."
+  },
+  "householdMemberRemoveConfirmBody": "They lose access to the household and its events.",
+  "@householdMemberRemoveConfirmBody": {
+    "description": "Body of the dialog asking to confirm removing a member from the household: what removing them does. It promises nothing about keeping them out, since an invite already sent to their address stays open."
+  },
+  "householdMemberRemoveConfirm": "Remove",
+  "@householdMemberRemoveConfirm": {
+    "description": "Confirm button of the remove-member dialog, shown in the error colour. Takes the member out of the household."
+  },
+  "householdMemberDismiss": "Dismiss",
+  "@householdMemberDismiss": {
+    "description": "Button on the banner that reports how a role change or removal went, on the household screen. Closes the banner."
   }
 }

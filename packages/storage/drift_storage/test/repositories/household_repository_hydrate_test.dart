@@ -80,8 +80,9 @@ void main() {
 
     test('leaves a dirty household and its roster alone', () async {
       // The queue owns a dirty row until the server acknowledges it (#298),
-      // and #122's membership ops will lean on that to hold a local leave
-      // or kick against the next hydrate.
+      // so a hydrate leaves it and its roster as they are. A membership
+      // change is not among what the queue holds: it goes straight to the
+      // server, and the answer is cached (#122).
       await _seedHousehold(db, id: 'h-1', name: 'Local edit', isDirty: true);
       await _seedMember(db, householdId: 'h-1', userId: _kUserId);
       await _seedMember(db, householdId: 'h-1', userId: _kOtherUserId);

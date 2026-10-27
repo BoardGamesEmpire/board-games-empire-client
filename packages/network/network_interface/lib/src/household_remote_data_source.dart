@@ -27,8 +27,8 @@ typedef HouseholdWithMembers = ({
 /// ## Scope today: create + list + update
 ///
 /// [createHousehold] (#39), [fetchHouseholds] (#266) and [updateHousehold]
-/// (#476). The remaining household calls — delete, and every membership
-/// mutation — land with the membership work (#122) and #246.
+/// (#476). Membership changes have their own online-only source,
+/// [HouseholdMemberRemoteDataSource] (#122). Delete is still to come (#477).
 ///
 /// ## Failure classification
 ///

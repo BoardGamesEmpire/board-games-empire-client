@@ -23,7 +23,7 @@ void main() {
     final status = HouseholdHydrationStatus();
     addTearDown(status.close);
 
-    final done = refreshAfterJoin(refresher, status);
+    final done = refreshAfterMembershipChange(refresher, status);
     await Future<void>.delayed(Duration.zero);
     running.single.complete();
     await done;
@@ -32,7 +32,7 @@ void main() {
   });
 
   test('one pass with no status to read', () async {
-    final done = refreshAfterJoin(refresher, null);
+    final done = refreshAfterMembershipChange(refresher, null);
     await Future<void>.delayed(Duration.zero);
     running.single.complete();
     await done;
@@ -41,11 +41,11 @@ void main() {
   });
 
   test('a second pass, after the first, when one was running: it may have '
-      'read the list before the join', () async {
+      'read the list before the membership change', () async {
     final status = HouseholdHydrationStatus()..started();
     addTearDown(status.close);
 
-    final done = refreshAfterJoin(refresher, status);
+    final done = refreshAfterMembershipChange(refresher, status);
     await Future<void>.delayed(Duration.zero);
     expect(passes, 1);
 
@@ -66,7 +66,7 @@ void main() {
     addTearDown(status.close);
     expect(status.sinceRefresh, isNotNull);
 
-    unawaited(refreshAfterJoin(refresher, status));
+    unawaited(refreshAfterMembershipChange(refresher, status));
     await Future<void>.delayed(Duration.zero);
 
     expect(status.sinceRefresh, isNull);
