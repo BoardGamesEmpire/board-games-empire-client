@@ -742,7 +742,17 @@
   },
   "householdMemberActions": "Member actions",
   "@householdMemberActions": {
-    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, which opens a menu of what the user may do to that member: change their role, or remove them. Shown to owners and admins only."
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, when the app does not know the member's name yet. Opens a menu of what the user may do to that member: change their role, or remove them. Shown to owners and admins only."
+  },
+  "householdMemberActionsFor": "Actions for {name}",
+  "@householdMemberActionsFor": {
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, by the member's display name or username. Opens a menu of what the user may do to that member: change their role, or remove them. Every row has one, so the name tells a screen-reader user which member's menu it is. Shown to owners and admins only.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
   },
   "householdMemberChangeRole": "Change role",
   "@householdMemberChangeRole": {

@@ -432,6 +432,7 @@ class _ReadyPage extends StatelessWidget {
               householdId: state.household.id,
               invites: invites,
               onOpen: openInvites,
+              hasMemberActionsBloc: hasMemberActionsBloc,
             ),
           ],
           // In the entry's place, for a member who may invite but can't
@@ -462,6 +463,7 @@ class _InvitesEntry extends StatelessWidget {
     required this.householdId,
     required this.invites,
     required this.onOpen,
+    required this.hasMemberActionsBloc,
     super.key,
   });
 
@@ -469,36 +471,56 @@ class _InvitesEntry extends StatelessWidget {
   final HouseholdInviteRemoteDataSource invites;
   final void Function(BuildContext context, String householdId) onOpen;
 
+  /// Whether a [HouseholdMemberActionsBloc] is provided above.
+  final bool hasMemberActionsBloc;
+
   @override
-  Widget build(BuildContext context) =>
-      BlocProvider<AwaitingApprovalCountCubit>(
-        create: (_) => AwaitingApprovalCountCubit(
-          householdId: householdId,
-          remote: invites,
-        )..load(),
-        child: BlocBuilder<AwaitingApprovalCountCubit, int?>(
-          builder: (context, count) {
-            final l10n = HouseholdLocalizations.of(context);
-            // Read again on the way back from the invites, or from any
-            // route above this screen: approving there changes the count.
-            return ReadAgainWhenUncovered(
-              onUncovered: () =>
+  Widget build(BuildContext context) {
+    final entry = BlocBuilder<AwaitingApprovalCountCubit, int?>(
+      builder: (context, count) {
+        final l10n = HouseholdLocalizations.of(context);
+        // Read again on the way back from the invites, or from any
+        // route above this screen: approving there changes the count.
+        return ReadAgainWhenUncovered(
+          onUncovered: () =>
+              unawaited(context.read<AwaitingApprovalCountCubit>().load()),
+          child: ListTile(
+            key: HouseholdDetailScreen.invitesKey,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.mail_outline),
+            title: Text(l10n.householdDetailInvites),
+            subtitle: count == null || count == 0
+                ? null
+                : Text(l10n.householdDetailInvitesAwaiting(count)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => onOpen(context, householdId),
+          ),
+        );
+      },
+    );
+
+    return BlocProvider<AwaitingApprovalCountCubit>(
+      create: (_) =>
+          AwaitingApprovalCountCubit(householdId: householdId, remote: invites)
+            ..load(),
+      child: !hasMemberActionsBloc
+          ? entry
+          // Removing a member revokes the invites they sent, those awaiting
+          // approval among them (backend#747), and the dialogs that start
+          // it never cover this screen. So every removal's outcome reads
+          // the count again. Only a request's end emits one.
+          : BlocListener<
+              HouseholdMemberActionsBloc,
+              HouseholdMemberActionsState
+            >(
+              listenWhen: (_, current) =>
+                  current.outcome?.action == HouseholdMemberAction.remove,
+              listener: (context, _) =>
                   unawaited(context.read<AwaitingApprovalCountCubit>().load()),
-              child: ListTile(
-                key: HouseholdDetailScreen.invitesKey,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.mail_outline),
-                title: Text(l10n.householdDetailInvites),
-                subtitle: count == null || count == 0
-                    ? null
-                    : Text(l10n.householdDetailInvitesAwaiting(count)),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => onOpen(context, householdId),
-              ),
-            );
-          },
-        ),
-      );
+              child: entry,
+            ),
+    );
+  }
 }
 
 /// The member actions a row's menu offers. Making someone owner has no
@@ -684,6 +706,7 @@ class _MemberMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
+    final name = member.name;
 
     return MenuAnchor(
       // Left unconstrained, the panel sits in a hard-clipped box as wide as
@@ -712,7 +735,11 @@ class _MemberMenu extends StatelessWidget {
           child: IconButton(
             key: HouseholdDetailScreen.memberActionsKey(member.userId),
             icon: const Icon(Icons.more_vert),
-            tooltip: l10n.householdMemberActions,
+            // Every row has one, so the name says whose it is to a screen
+            // reader moving from button to button.
+            tooltip: name == null
+                ? l10n.householdMemberActions
+                : l10n.householdMemberActionsFor(name),
             onPressed: busy
                 ? null
                 : controller.isOpen

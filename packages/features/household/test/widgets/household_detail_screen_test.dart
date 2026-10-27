@@ -1286,13 +1286,26 @@ void main() {
         // row's merged node may carry it.
         final merged = row.getSemanticsData();
         expect(merged.label, contains('Zed'));
-        expect(merged.label, isNot(contains('Member actions')));
-        expect(merged.tooltip, isNot(contains('Member actions')));
-        // The button is a node beside it, a button named for what it opens.
+        expect(merged.label, isNot(contains('Actions for')));
+        expect(merged.tooltip, isNot(contains('Actions for')));
+        // The button is a node beside it, a button named for whose menu it
+        // opens.
         expect(button.id, isNot(row.id));
-        expect(button, isSemantics(tooltip: 'Member actions', isButton: true));
+        expect(button, isSemantics(tooltip: 'Actions for Zed', isButton: true));
       },
     );
+
+    testWidgets('a member with no name has a menu named for no one', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester, zed: null);
+
+      expect(
+        tester.semantics.find(menuOf('u-2')),
+        isSemantics(tooltip: 'Member actions', isButton: true),
+      );
+    });
 
     testWidgets('no member client, no menus', (tester) async {
       await tester.pumpWidget(harness());
@@ -1441,6 +1454,41 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(outcome(), findsNothing);
+    });
+
+    testWidgets('a removal counts the invites awaiting approval again', (
+      tester,
+    ) async {
+      // The server revokes a removed member's invites, those awaiting
+      // approval among them. A role change leaves them be.
+      var awaiting = 2;
+      final invites = FakeHouseholdInviteRemote()
+        ..onFetchHouseholdInvites = (_, _, _, limit) async =>
+            pageOf(const [], limit: limit, total: awaiting);
+      when(() => remote.changeRole(any(), any(), any())).thenAnswer(
+        (_) async => _member('u-2', role: HouseholdRole.householdGuest),
+      );
+      when(() => remote.remove(any(), any()))
+          .thenAnswer((_) async => _member('u-2'));
+      await tester.pumpWidget(
+        harness(
+          invites: invites,
+          onOpenInvites: (_, _) {},
+          members: remote,
+          onMembershipChanged: () async => refreshes++,
+        ),
+      );
+      await settleAsOwner(tester);
+      expect(find.text('2 awaiting approval'), findsOneWidget);
+
+      await changeRoleOfZed(tester, HouseholdRole.householdGuest);
+      expect(invites.calls, hasLength(1));
+
+      awaiting = 1;
+      await removeZed(tester);
+
+      expect(invites.calls, hasLength(2));
+      expect(find.text('1 awaiting approval'), findsOneWidget);
     });
 
     testWidgets("a busy member's menu is disabled", (tester) async {
