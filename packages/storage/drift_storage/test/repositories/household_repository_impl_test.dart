@@ -728,8 +728,8 @@ void main() {
       test('cacheMember replaces a synthesized owner row when the server row '
           'carries a different id (#267 D4)', () async {
         // Same collision as the batch writer below, through the
-        // single-row path. `cacheMember` is the writer #122's
-        // membership sync will reach for, so it must resolve the
+        // single-row path. `cacheMember` is the writer a role change's
+        // answer goes through (#480, #122), so it must resolve the
         // (householdId, userId) index too — not the primary key.
         await _seedHousehold(db, id: 'h-1');
         final now = DateTime.now().toUtc();

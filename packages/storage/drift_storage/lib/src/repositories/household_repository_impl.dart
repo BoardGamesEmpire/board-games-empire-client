@@ -499,8 +499,8 @@ class HouseholdRepositoryImpl
 
       // Synthesized owner member so the read gate surfaces the household
       // immediately. The server makes the creator a `HouseholdOwner` but
-      // doesn't return the member row; this row's id is client-generated
-      // and reconciled later by the membership sync (#122).
+      // doesn't return the member row; this row's id is client-generated,
+      // and the next server write of that membership replaces it (#267).
       await _db
           .into(_db.householdMembersTable)
           .insert(

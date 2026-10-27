@@ -45,9 +45,9 @@ import '../sync/household_hydration_status.dart';
 /// To its owners and admins, a row offers a menu beside the member's name:
 /// change their role, remove them, or both, as the role table allows the
 /// viewer on that member (#483). An admin acts only on members and guests,
-/// nobody acts on their own row, and another owner is removed and nothing
-/// else. Each is sent straight to the server and never queued, and how it
-/// went shows in a banner under the member count until dismissed.
+/// nobody acts on their own row, and on another owner, an owner may only
+/// remove them. Each is sent straight to the server and never queued, and
+/// how it went shows in a banner under the member count until dismissed.
 ///
 /// The menu is left out for a household the server does not know yet
 /// (`isLocalOnly`), and where the composition passes no [members] client.
