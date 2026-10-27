@@ -44,7 +44,7 @@ export 'src/sync/household_hydrate_installer.dart';
 export 'src/sync/household_hydration_status.dart';
 export 'src/sync/household_hydrator.dart';
 export 'src/sync/household_refresher.dart';
-export 'src/sync/refresh_after_join.dart';
+export 'src/sync/refresh_after_membership_change.dart';
 export 'src/widgets/create_household_form.dart';
 export 'src/widgets/edit_household_form.dart';
 export 'src/widgets/household_invite_tile.dart';
