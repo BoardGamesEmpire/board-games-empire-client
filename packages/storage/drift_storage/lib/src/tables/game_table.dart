@@ -38,7 +38,7 @@ class GamesTable extends Table {
   TextColumn get tagsJson => text().withDefault(const Constant('[]'))();
 
   /// `Reach`, as the backend's enum name; a name this client can't read is
-  /// stored as 'Unknown'. A row cached before v10 keeps the visibility name it
+  /// stored as 'Unknown'. A row cached before v11 keeps the visibility name it
   /// had, so an old 'Household' reads as unknown too. Default 'Public', the
   /// server's default (#602).
   TextColumn get reach => text().withDefault(const Constant('Public'))();
