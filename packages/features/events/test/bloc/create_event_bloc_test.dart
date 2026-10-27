@@ -458,33 +458,199 @@ void main() {
       },
     );
 
-    // The discard declines: another tab retried the parked op since, or
-    // discarded it. The bloc can't tell which, and a fresh create after a
-    // retry that landed would make the event twice, so it creates nothing
-    // and answers queued under the local id it kept, either way.
-    blocTest<CreateEventBloc, CreateEventState>(
-      'a refusal another tab retried since is not created twice',
-      setUp: () {
-        stubDeliveries([_unknownInvitee('u2')]);
+    // The discard declines: another tab retried the parked create since, or
+    // discarded it. The bloc reads what became of it before it answers: a
+    // retry stands as the event, and only a discard lets this submit create.
+    group('a discard another tab got to first', () {
+      setUp(() {
         when(() => repo.discardQueuedOp(any())).thenAnswer((_) async => false);
-      },
-      build: build,
-      act: (bloc) async {
-        await refuse(bloc, _draft);
-        bloc.add(const CreateEventSubmitted(_edited));
-      },
-      expect: () => const [
-        CreateEventSubmitting(),
-        CreateEventRefused(inviteeId: 'u2'),
-        CreateEventSubmitting(),
-        CreateEventSuccess(eventId: 'ev_local_1', sync: CreateEventSync.queued),
-      ],
-      verify: (_) {
-        verify(() => repo.discardQueuedOp('q1')).called(1);
-        verify(() => repo.create(any())).called(1);
-        verify(() => sender.deliver(any(), any())).called(1);
-      },
-    );
+        when(() => repo.reconciledEventId(any())).thenReturn(null);
+      });
+
+      /// Has the watch of the parked event's local id emit [detail] first.
+      void watchShows(EventDetail? detail) =>
+          when(() => repo.watchEvent(any()))
+              .thenAnswer((_) => Stream.value(detail));
+
+      EventDetail detailOf(Event event) => EventDetail(
+        snapshot: EventSnapshot(event: event, occurrences: const []),
+      );
+
+      blocTest<CreateEventBloc, CreateEventState>(
+        'a retry still on its way -> queued under the local id, nothing '
+        'created',
+        setUp: () {
+          stubDeliveries([_unknownInvitee('u2')]);
+          watchShows(detailOf(_localEvent('ev_local_1')));
+        },
+        build: build,
+        act: (bloc) async {
+          await refuse(bloc, _draft);
+          bloc.add(const CreateEventSubmitted(_edited));
+        },
+        expect: () => const [
+          CreateEventSubmitting(),
+          CreateEventRefused(inviteeId: 'u2'),
+          CreateEventSubmitting(),
+          CreateEventSuccess(
+            eventId: 'ev_local_1',
+            sync: CreateEventSync.queued,
+          ),
+        ],
+        verify: (_) {
+          verify(() => repo.discardQueuedOp('q1')).called(1);
+          verify(() => repo.watchEvent('ev_local_1')).called(1);
+          verify(() => repo.create(any())).called(1);
+          verify(() => sender.deliver(any(), any())).called(1);
+        },
+      );
+
+      blocTest<CreateEventBloc, CreateEventState>(
+        'a retry that landed under the local id -> synced, nothing created',
+        setUp: () {
+          stubDeliveries([_unknownInvitee('u2')]);
+          watchShows(
+            detailOf(
+              _localEvent('ev_local_1')
+                  .copyWith(isLocalOnly: false, isDirty: false),
+            ),
+          );
+        },
+        build: build,
+        act: (bloc) async {
+          await refuse(bloc, _draft);
+          bloc.add(const CreateEventSubmitted(_edited));
+        },
+        expect: () => const [
+          CreateEventSubmitting(),
+          CreateEventRefused(inviteeId: 'u2'),
+          CreateEventSubmitting(),
+          CreateEventSuccess(
+            eventId: 'ev_local_1',
+            sync: CreateEventSync.synced,
+          ),
+        ],
+        verify: (_) => verify(() => repo.create(any())).called(1),
+      );
+
+      blocTest<CreateEventBloc, CreateEventState>(
+        "a retry that landed under the server's id -> synced under it, "
+        'nothing created',
+        setUp: () {
+          stubDeliveries([_unknownInvitee('u2')]);
+          watchShows(null);
+          when(() => repo.reconciledEventId('ev_local_1'))
+              .thenReturn('ev_server');
+        },
+        build: build,
+        act: (bloc) async {
+          await refuse(bloc, _draft);
+          bloc.add(const CreateEventSubmitted(_edited));
+        },
+        expect: () => const [
+          CreateEventSubmitting(),
+          CreateEventRefused(inviteeId: 'u2'),
+          CreateEventSubmitting(),
+          CreateEventSuccess(
+            eventId: 'ev_server',
+            sync: CreateEventSync.synced,
+          ),
+        ],
+        verify: (_) {
+          // The move is asked after the watch has emitted, which is when the
+          // repository has read another tab's.
+          verifyInOrder([
+            () => repo.watchEvent('ev_local_1'),
+            () => repo.reconciledEventId('ev_local_1'),
+          ]);
+          verify(() => repo.create(any())).called(1);
+        },
+      );
+
+      blocTest<CreateEventBloc, CreateEventState>(
+        'a discard elsewhere -> this submit creates the draft',
+        setUp: () {
+          stubDeliveries([
+            _unknownInvitee('u2'),
+            const SyncDelivered(eventId: 'ev_server'),
+          ]);
+          watchShows(null);
+        },
+        build: build,
+        act: (bloc) async {
+          await refuse(bloc, _draft);
+          bloc.add(const CreateEventSubmitted(_edited));
+        },
+        expect: () => const [
+          CreateEventSubmitting(),
+          CreateEventRefused(inviteeId: 'u2'),
+          CreateEventSubmitting(),
+          CreateEventSuccess(
+            eventId: 'ev_server',
+            sync: CreateEventSync.synced,
+          ),
+        ],
+        verify: (_) {
+          verifyInOrder([
+            () => repo.create(_draft),
+            () => repo.discardQueuedOp('q1'),
+            () => repo.watchEvent('ev_local_1'),
+            () => repo.reconciledEventId('ev_local_1'),
+            () => repo.create(_edited),
+          ]);
+          verify(() => sender.deliver(any(), any())).called(2);
+        },
+      );
+
+      // Without the read, the bloc can't tell a retry from a discard, so it
+      // creates nothing and keeps the parked create for the next submit.
+      final watchError = StateError('session ended');
+      blocTest<CreateEventBloc, CreateEventState>(
+        'a watch that fails -> Failure, nothing created, the next submit '
+        'reads again',
+        setUp: () {
+          stubDeliveries([
+            _unknownInvitee('u2'),
+            const SyncDelivered(eventId: 'ev_server'),
+          ]);
+          var watches = 0;
+          when(() => repo.watchEvent(any())).thenAnswer(
+            (_) =>
+                ++watches == 1 ? Stream.error(watchError) : Stream.value(null),
+          );
+        },
+        build: build,
+        act: (bloc) async {
+          await refuse(bloc, _draft);
+          bloc.add(const CreateEventSubmitted(_edited));
+          await bloc.stream.firstWhere((s) => s is CreateEventFailure);
+          bloc.add(const CreateEventSubmitted(_edited));
+        },
+        expect: () => const [
+          CreateEventSubmitting(),
+          CreateEventRefused(inviteeId: 'u2'),
+          CreateEventSubmitting(),
+          CreateEventFailure(),
+          CreateEventSubmitting(),
+          CreateEventSuccess(
+            eventId: 'ev_server',
+            sync: CreateEventSync.synced,
+          ),
+        ],
+        verify: (_) {
+          verify(() => repo.discardQueuedOp('q1')).called(2);
+          verify(() => repo.watchEvent('ev_local_1')).called(2);
+          verify(() => repo.create(_edited)).called(1);
+          verify(
+            () => logger.error(
+              any(),
+              error: watchError,
+              stackTrace: any(named: 'stackTrace'),
+            ),
+          ).called(1);
+        },
+      );
+    });
 
     // The op may still be parked, so the bloc keeps it, and creates nothing
     // beside it.

@@ -53,23 +53,27 @@ import 'create_event_state.dart';
 /// - discarded → the bloc forgets them, and the submit goes on as any other.
 ///   Another refusal keeps the new create in their place.
 /// - declined → another tab has retried the parked create since, or
-///   discarded it from the sync queue's surface (#190). The bloc forgets it,
-///   creates nothing, and answers [CreateEventSuccess] with
-///   [CreateEventSync.queued] under the kept local id, whichever it was.
+///   discarded it from the sync queue's surface (#190). The bloc reads the
+///   event under the kept local id ([EventRepository.watchEvent]), and then
+///   the move a reconcile recorded for it
+///   ([EventRepository.reconciledEventId]):
+///   - the event is there → a retry stands, on its way or landed under the
+///     local id → [CreateEventSuccess] under that id, queued or synced as
+///     the event is still local-only or not. Nothing new is created.
+///   - it moved → a retry landed under the server's id →
+///     [CreateEventSuccess] with [CreateEventSync.synced] under that id.
+///     Nothing new is created.
+///   - neither → it was discarded, and the submit goes on as any other.
+///   - the read throws → [CreateEventFailure], and nothing is created. The
+///     bloc keeps the parked create, and the next submit tries again.
 /// - throws → [CreateEventFailure], and nothing is created. The create may
 ///   still be parked, so the bloc keeps it, and the next submit tries the
 ///   discard again.
 ///
-/// A declined discard is a race with another tab. After a retry the event
-/// stands: under the kept local id while it is queued, and under the
-/// server's id once the retry lands, which the detail follows. After a
-/// discard the local id names nothing, and this submit's draft is dropped,
-/// though the bloc answers success. The bloc can't tell a discard from a
-/// retry that landed: neither leaves an event under the local id, and only
-/// the move the reconcile persisted tells them apart, which
-/// [EventRepository.reconciledEventId] answers only once this repository
-/// has read it. Taking a landed retry for a discard would create the event
-/// twice, so the bloc doesn't guess.
+/// The move is read only after the watch has emitted: the repository reads
+/// a move another tab recorded before it delivers each emission, and not
+/// before. Asked any earlier, a retry that landed would read as a discard,
+/// and the draft would become a second event.
 ///
 /// [CreateEventFailureCleared] keeps the parked create too: the screen sends
 /// it on every edit, and an edit is what a refusal asks for before the next
@@ -132,20 +136,35 @@ class CreateEventBloc extends Bloc<CreateEventEvent, CreateEventState> {
         emit(const CreateEventFailure());
         return;
       }
-      _parked = null;
       if (!discarded) {
+        final CreateEventSuccess? retried;
+        try {
+          retried = await _retriedElsewhere(parked.localId);
+        } on Object catch (error, stackTrace) {
+          _logger.error(
+            'Could not read what became of the refused event create; kept '
+            'for the next submit',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          emit(const CreateEventFailure());
+          return;
+        }
+        if (retried != null) {
+          _parked = null;
+          _logger.info(
+            'Discard of the refused event create declined: retried '
+            'elsewhere since; nothing new created',
+          );
+          emit(retried);
+          return;
+        }
         _logger.info(
-          'Discard of the refused event create declined: retried or '
-          'discarded elsewhere since; nothing new created',
+          'Discard of the refused event create declined: discarded '
+          'elsewhere since; creating the draft',
         );
-        emit(
-          CreateEventSuccess(
-            eventId: parked.localId,
-            sync: CreateEventSync.queued,
-          ),
-        );
-        return;
       }
+      _parked = null;
     }
 
     final ({Event event, String syncQueueId, CreateEventOperation operation})
@@ -208,6 +227,27 @@ class CreateEventBloc extends Bloc<CreateEventEvent, CreateEventState> {
       case SyncNotClaimed() || SyncFailed():
         emit(queued);
     }
+  }
+
+  /// What a retry made of the parked create under [localId], as success,
+  /// or null if nothing did: it was discarded.
+  ///
+  /// The watch's first emission comes after the repository has read the
+  /// event's move, so [EventRepository.reconciledEventId] answers for a
+  /// reconcile another tab made too.
+  Future<CreateEventSuccess?> _retriedElsewhere(String localId) async {
+    final detail = await _repository.watchEvent(localId).first;
+    if (detail != null) {
+      return CreateEventSuccess(
+        eventId: localId,
+        sync: detail.snapshot.event.isLocalOnly
+            ? CreateEventSync.queued
+            : CreateEventSync.synced,
+      );
+    }
+    final movedTo = _repository.reconciledEventId(localId);
+    if (movedTo == null) return null;
+    return CreateEventSuccess(eventId: movedTo, sync: CreateEventSync.synced);
   }
 
   void _refresh() {

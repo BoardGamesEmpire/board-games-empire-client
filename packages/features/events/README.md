@@ -204,8 +204,9 @@ send fails stays queued there. One the server refuses keeps the user on the
 form under a banner, which names the invitee or the household when it can. A
 403 for a create in a household also reads the user's households again, since
 their role there may have changed elsewhere. The refused create stays parked:
-the next submit discards it and creates afresh, and one the user leaves
-behind waits on the sync queue's own surface (#190).
+the next submit discards it and creates afresh, unless another tab has
+retried it since, whose event then stands and is the one the user is taken
+to. One the user leaves behind waits on the sync queue's own surface (#190).
 
 The shell routes the form at `/events/create`, where `?household=` names the
 household to start in, and offers every way in to it: New event beside the
