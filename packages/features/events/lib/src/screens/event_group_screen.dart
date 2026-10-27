@@ -37,6 +37,7 @@ class EventGroupScreen extends StatelessWidget {
     this.households,
     this.hydration,
     this.onOpen,
+    this.onCreate,
     this.onRetry,
     this.now,
     super.key,
@@ -44,6 +45,9 @@ class EventGroupScreen extends StatelessWidget {
 
   /// Key on the group's empty state.
   static const Key emptyKey = Key('events.group_empty');
+
+  /// Key on the create button.
+  static const Key createKey = Key('events.group_create');
 
   /// The group this page lists.
   final EventGroup group;
@@ -59,6 +63,10 @@ class EventGroupScreen extends StatelessWidget {
 
   /// See [EventOverviewScreen.onOpen].
   final void Function(BuildContext context, String eventId)? onOpen;
+
+  /// Starts creating an event (#499), or null for no create button. See
+  /// [EventOverviewScreen.onCreate].
+  final void Function(BuildContext context)? onCreate;
 
   /// See [EventOverviewScreen.onRetry].
   final Future<void> Function()? onRetry;
@@ -76,22 +84,35 @@ class EventGroupScreen extends StatelessWidget {
         onRetry: onRetry,
         now: now,
       ),
-      child: _EventGroupPage(group: group, onOpen: onOpen, now: now),
+      child: _EventGroupPage(
+        group: group,
+        onOpen: onOpen,
+        onCreate: onCreate,
+        now: now,
+      ),
     );
   }
 }
 
 class _EventGroupPage extends StatelessWidget {
-  const _EventGroupPage({required this.group, this.onOpen, this.now});
+  const _EventGroupPage({
+    required this.group,
+    this.onOpen,
+    this.onCreate,
+    this.now,
+  });
 
   final EventGroup group;
   final void Function(BuildContext context, String eventId)? onOpen;
+  final void Function(BuildContext context)? onCreate;
   final DateTime Function()? now;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final clock = now ?? DateTime.now;
+    final create = onCreate;
+    final tokens = BgeTokens.of(context);
     // The row count, for "item 3 of 9" (#210).
     final rowCount = context.select<EventOverviewBloc, int?>(
       (bloc) => switch (bloc.state) {
@@ -105,6 +126,16 @@ class _EventGroupPage extends StatelessWidget {
       title: Text(eventGroupName(l10n, group)),
       width: BgePageWidth.pane,
       semanticChildCount: rowCount,
+      // The overview's button, so a group that has emptied still has a way
+      // to make the next event.
+      floatingActionButton: create == null
+          ? null
+          : FloatingActionButton.extended(
+              key: EventGroupScreen.createKey,
+              onPressed: () => create(context),
+              icon: const Icon(Icons.add),
+              label: Text(l10n.eventsCreate),
+            ),
       slivers: [
         EventListStatesSliver(
           ready: (context, groups) {
@@ -130,6 +161,12 @@ class _EventGroupPage extends StatelessWidget {
             );
           },
         ),
+        // The create button floats over the end of the list; room below the
+        // rows lets the last one scroll clear of it.
+        if (create != null && rowCount != null)
+          SliverToBoxAdapter(
+            child: SizedBox(height: tokens.spaceXxl + tokens.spaceMd),
+          ),
       ],
     );
   }

@@ -596,6 +596,10 @@
   "@householdDetailEdit": {
     "description": "Tooltip and accessible name of the button on the household screen that opens the edit form. Shown to its owners and admins."
   },
+  "householdNewEvent": "New event",
+  "@householdNewEvent": {
+    "description": "Row on the household screen that opens the form for creating an event in this household. Shown to its owners, admins and members, not to guests."
+  },
   "editHouseholdTitle": "Edit household",
   "@editHouseholdTitle": {
     "description": "Title of the screen for editing a household."

@@ -16,5 +16,14 @@
   as Upcoming, Planning and Past by their confirmed dates, five to a group,
   and `EventGroupScreen` lists a whole group. Rows show the date in local time
   with the platform's 24-hour setting, the venue, the household and the
-  user's RSVP where known. Its `onOpen` and `onCreate` hooks are optional and
-  unwired: #498 wires opening an event, and #499 creating one.
+  user's RSVP where known. Its `onOpen` and `onCreate` hooks are optional:
+  without them a row opens nothing, and there is no New event button.
+* Creating an event (#499): `CreateEventScreen`, a form for an event's
+  basics, dates, invitees and rules, checked before anything is written.
+  `CreateEventBloc` writes the event on this device, queuing its create, then
+  sends it once straight away through `SyncOperationSender`. A refusal stays
+  on the form, under a banner that names the invitee or the household where
+  it can. `eventCreateHouseholds` keeps, for the form's household picker, the
+  households where the user's role may create one. The overview and group
+  pages offer New event through `onCreate`, and the empty overview offers it
+  under its message.

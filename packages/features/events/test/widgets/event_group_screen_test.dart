@@ -39,6 +39,7 @@ void main() {
     WidgetTester tester,
     EventGroup group, {
     Future<void> Function()? onRetry,
+    void Function(BuildContext context)? onCreate,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -50,6 +51,7 @@ void main() {
           repository: repository,
           hydration: status.watch(),
           onRetry: onRetry,
+          onCreate: onCreate,
           now: () => now,
         ),
       ),
@@ -144,5 +146,64 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(EventOverviewScreen.loadingKey), findsOneWidget);
+  });
+
+  group('the create button', () {
+    testWidgets('is absent without onCreate', (tester) async {
+      await pumpGroup(tester, EventGroup.past);
+      items.add(past(1));
+      await tester.pump();
+
+      expect(find.byKey(EventGroupScreen.createKey), findsNothing);
+      expect(find.byType(FloatingActionButton), findsNothing);
+    });
+
+    testWidgets('calls onCreate with it', (tester) async {
+      var created = 0;
+      await pumpGroup(tester, EventGroup.past, onCreate: (_) => created++);
+      items.add(past(1));
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byKey(EventGroupScreen.createKey),
+          matching: find.text('New event'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(EventGroupScreen.createKey));
+
+      expect(created, 1);
+    });
+
+    testWidgets('stays on a group that has emptied', (tester) async {
+      // The page stays when its group empties, and so does the way to make
+      // the next event.
+      await pumpGroup(tester, EventGroup.past, onCreate: (_) {});
+      items.add(const []);
+      await tester.pump();
+
+      expect(find.byKey(EventGroupScreen.emptyKey), findsOneWidget);
+      expect(find.byKey(EventGroupScreen.createKey), findsOneWidget);
+    });
+
+    testWidgets('leaves the last row room to scroll clear of it', (
+      tester,
+    ) async {
+      await pumpGroup(tester, EventGroup.past, onCreate: (_) {});
+      items.add(past(12));
+      await tester.pump();
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -5000));
+      await tester.pumpAndSettle();
+
+      final last = find.byKey(EventOverviewScreen.rowKey('e-past-11'));
+      final button = find.byKey(EventGroupScreen.createKey);
+      expect(
+        tester.getRect(last).bottom,
+        lessThanOrEqualTo(tester.getRect(button).top),
+      );
+    });
   });
 }

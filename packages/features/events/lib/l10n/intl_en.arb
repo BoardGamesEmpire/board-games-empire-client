@@ -54,7 +54,7 @@
   },
   "eventsEmptyBody": "Events you're hosting or invited to show up here.",
   "@eventsEmptyBody": {
-    "description": "Body of the empty state shown when the user has no events at all. Says where events come from; offers no action."
+    "description": "Body of the empty state shown when the user has no events at all. Says where events come from. The New event button, where there is one, sits under it."
   },
   "eventsError": "Your events couldn't be read.",
   "@eventsError": {
@@ -138,7 +138,7 @@
   },
   "eventsCreate": "New event",
   "@eventsCreate": {
-    "description": "Button on the events overview that starts creating an event."
+    "description": "Label of the buttons that start creating an event: on the events overview, in its empty state, and on the page of each group of events."
   },
   "eventsDetailLoading": "Loading this event",
   "@eventsDetailLoading": {

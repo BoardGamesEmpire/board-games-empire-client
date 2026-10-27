@@ -95,6 +95,7 @@ void main() {
     void Function(BuildContext context, String householdId)? onOpenInvites,
     void Function(BuildContext context, String householdId)? onEdit,
     void Function(BuildContext context, String householdId)? onInvite,
+    void Function(BuildContext context, String householdId)? onNewEvent,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -113,6 +114,7 @@ void main() {
       onOpenInvites: onOpenInvites,
       onEdit: onEdit,
       onInvite: onInvite,
+      onNewEvent: onNewEvent,
     ),
   );
 
@@ -718,7 +720,9 @@ void main() {
     // worth pinning rather than assuming.
     useViewSize(tester, const Size(320, 800));
 
-    await tester.pumpWidget(harness(textScaler: const TextScaler.linear(2)));
+    await tester.pumpWidget(
+      harness(textScaler: const TextScaler.linear(2), onNewEvent: (_, _) {}),
+    );
     await settleWith(
       tester,
       household: _household(_id, description: 'Board games, every Sunday.'),
@@ -736,6 +740,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byKey(HouseholdDetailScreen.memberCountKey), findsOneWidget);
     expect(find.byKey(HouseholdDetailScreen.memberKey('u-2')), findsOneWidget);
+    expect(find.byKey(HouseholdDetailScreen.newEventKey), findsOneWidget);
   });
 
   group('the retry on the refresh banner (#300 D10)', () {
@@ -1066,6 +1071,127 @@ void main() {
       await tester.pump();
 
       expect(invited, [_id]);
+    });
+  });
+
+  group('the New event row (#499)', () {
+    late List<String> created;
+
+    setUp(() => created = []);
+
+    Widget withNewEvent() =>
+        harness(onNewEvent: (_, householdId) => created.add(householdId));
+
+    /// Opens the household as someone holding [role].
+    Future<void> openAs(WidgetTester tester, HouseholdRole? role) async {
+      await tester.pumpWidget(withNewEvent());
+      await settleWith(tester, roster: [_member('u-me', role: role)]);
+    }
+
+    testWidgets('New event shows for a member and calls onNewEvent with the '
+        'household id', (tester) async {
+      await tester.pumpWidget(withNewEvent());
+      await settleWith(tester);
+
+      expect(
+        find.descendant(
+          of: find.byKey(HouseholdDetailScreen.newEventKey),
+          matching: find.text('New event'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(HouseholdDetailScreen.newEventKey));
+      await tester.pump();
+
+      expect(created, [_id]);
+    });
+
+    testWidgets('New event shows for an owner and an admin too', (
+      tester,
+    ) async {
+      for (final role in [
+        HouseholdRole.householdOwner,
+        HouseholdRole.householdAdmin,
+      ]) {
+        await tester.pumpWidget(const SizedBox());
+        await openAs(tester, role);
+
+        expect(
+          find.byKey(HouseholdDetailScreen.newEventKey),
+          findsOneWidget,
+          reason: '$role',
+        );
+      }
+    });
+
+    testWidgets('New event is hidden for a guest', (tester) async {
+      // A guest lacks `create:event:household`: the server would refuse.
+      await openAs(tester, HouseholdRole.householdGuest);
+
+      expect(find.byKey(HouseholdDetailScreen.newEventKey), findsNothing);
+    });
+
+    testWidgets('New event is hidden for an unrecognised role, or none', (
+      tester,
+    ) async {
+      for (final role in [null, HouseholdRole.unknown]) {
+        await tester.pumpWidget(const SizedBox());
+        await openAs(tester, role);
+
+        expect(
+          find.byKey(HouseholdDetailScreen.newEventKey),
+          findsNothing,
+          reason: '$role',
+        );
+      }
+    });
+
+    testWidgets('New event is hidden on a local-only household', (
+      tester,
+    ) async {
+      // The server has never heard of its id, so a create would name one it
+      // can't resolve.
+      await tester.pumpWidget(withNewEvent());
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(isLocalOnly: true),
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.newEventKey), findsNothing);
+    });
+
+    testWidgets('no onNewEvent, no New event row', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleWith(
+        tester,
+        roster: [_member('u-me', role: HouseholdRole.householdOwner)],
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.newEventKey), findsNothing);
+    });
+
+    testWidgets('New event comes after the Invite row', (tester) async {
+      await tester.pumpWidget(
+        harness(onInvite: (_, _) {}, onNewEvent: (_, _) {}),
+      );
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(
+          settings: const HouseholdSettings(
+            memberInvitePolicy: MemberInvitePolicy.direct,
+          ),
+        ),
+      );
+
+      expect(find.byKey(HouseholdDetailScreen.inviteKey), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(HouseholdDetailScreen.newEventKey)).dy,
+        greaterThan(
+          tester.getBottomLeft(find.byKey(HouseholdDetailScreen.inviteKey)).dy,
+        ),
+      );
     });
   });
 
