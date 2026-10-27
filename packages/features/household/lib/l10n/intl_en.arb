@@ -377,22 +377,6 @@
   "@inviteSendEmailInvalid": {
     "description": "Shown under the email field when its value is not an email address."
   },
-  "inviteSendSearchLabel": "Search by name or username",
-  "@inviteSendSearchLabel": {
-    "description": "Label of the field that searches for someone to invite."
-  },
-  "inviteSendSearchHint": "Type at least 2 characters",
-  "@inviteSendSearchHint": {
-    "description": "Hint under the search field: the server searches only on 2 or more characters."
-  },
-  "inviteSendSearchEmpty": "No one found.",
-  "@inviteSendSearchEmpty": {
-    "description": "Shown when a search for someone to invite matched no one."
-  },
-  "inviteSendSearchFailed": "Couldn't search. Check your connection and keep typing to try again.",
-  "@inviteSendSearchFailed": {
-    "description": "Shown when a search for someone to invite failed."
-  },
   "inviteSendPickRequired": "Pick someone to invite.",
   "@inviteSendPickRequired": {
     "description": "Shown when the invite form is submitted in person mode with no one picked."

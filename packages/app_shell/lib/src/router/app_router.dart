@@ -344,7 +344,8 @@ typedef HouseholdInvitesScreenBuilder = Widget? Function(
 
 /// Builds the send-invite form for one household (#455) for the
 /// [AppRoutes.householdInviteSend] route. Same null contract as
-/// [HouseholdInvitesScreenBuilder].
+/// [HouseholdInvitesScreenBuilder], and also null without the
+/// `UserRemoteDataSource` the form's person search asks (#499).
 typedef SendHouseholdInviteScreenBuilder = Widget? Function(
   BuildContext context,
   String householdId,
@@ -352,7 +353,7 @@ typedef SendHouseholdInviteScreenBuilder = Widget? Function(
 
 /// Builds the edit form for one household (#476) for the
 /// [AppRoutes.householdEdit] route. Same null contract as
-/// [SendHouseholdInviteScreenBuilder], with the per-server
+/// [HouseholdInvitesScreenBuilder], with the per-server
 /// `HouseholdRemoteDataSource` the save is sent through in place of the
 /// invite client.
 ///

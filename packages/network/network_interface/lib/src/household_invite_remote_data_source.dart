@@ -146,8 +146,7 @@ final class InviteQuota {
 ///
 /// ## Wire contract
 ///
-/// Backend `libs/api/household` and `libs/api/user`, all under the `api`
-/// global prefix:
+/// Backend `libs/api/household`, under the `api` global prefix:
 ///
 /// | Method | Path | Answer |
 /// |---|---|---|
@@ -160,7 +159,6 @@ final class InviteQuota {
 /// | [withdraw] | `POST /api/invites/:id/withdraw` | `{ message, invite }` |
 /// | [revoke] | `POST /api/households/:hid/invites/:id/revoke` | `{ message, invite }` |
 /// | [approve] | `POST /api/households/:hid/invites/:id/approve` | `{ message, invite }` |
-/// | [searchUsers] | `GET /api/users/search` | `{ users, pagination }` |
 ///
 /// The household list holds only open invites unless asked otherwise:
 /// pending or awaiting approval, and not yet expired. It takes a `status`
@@ -190,12 +188,11 @@ final class InviteQuota {
 /// - [HouseholdInviteTransientException]: no response at all, 401, 407, 408,
 ///   429, every 5xx, a 409 saying `retryable: true`, a 403 or 404 without the
 ///   envelope (a proxy answered, not the API), and a 404 with the envelope
-///   from the inbox, the sent list, the household list or user search. A
-///   list route is never absent, and Nest's unmatched-route 404 carries the
-///   same envelope, so there it may mean a server without the route. The
-///   household list names a household, and a deleted one answers it with an
-///   enveloped 404 too; the two cannot be told apart, so it is read the
-///   cautious way.
+///   from the inbox, the sent list or the household list. A list route is
+///   never absent, and Nest's unmatched-route 404 carries the same envelope,
+///   so there it may mean a server without the route. The household list
+///   names a household, and a deleted one answers it with an enveloped 404
+///   too; the two cannot be told apart, so it is read the cautious way.
 /// - [HouseholdInvitePermanentException]: any other 4xx, and a 2xx whose body
 ///   cannot be read as the contract above.
 ///
@@ -206,9 +203,8 @@ final class InviteQuota {
 /// server translates.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: a page below 1, a limit out of range, a status filter of
-/// [HouseholdInviteStatus.unknown], or a search shorter than
-/// [minSearchLength] after trimming.
+/// unwrapped: a page below 1, a limit out of range, or a status filter of
+/// [HouseholdInviteStatus.unknown].
 abstract class HouseholdInviteRemoteDataSource {
   /// The page size the screens ask for.
   static const int defaultPageSize = 25;
@@ -216,13 +212,6 @@ abstract class HouseholdInviteRemoteDataSource {
   /// The backend's `limit` ceiling for invite lists. A larger limit is a 400,
   /// not clamped.
   static const int maxPageSize = 100;
-
-  /// The backend's `limit` ceiling for user search. A larger limit is a 400,
-  /// not clamped.
-  static const int maxSearchPageSize = 20;
-
-  /// The fewest characters user search accepts, after trimming.
-  static const int minSearchLength = 2;
 
   /// Invites [draft]'s invitee to the household.
   ///
@@ -274,16 +263,6 @@ abstract class HouseholdInviteRemoteDataSource {
   /// restarts its expiry from the approval. An owner or admin may approve
   /// one they sent themselves, as a member promoted since.
   Future<HouseholdInvite> approve(String householdId, String inviteId);
-
-  /// Users whose username or name matches [query], to invite by account.
-  ///
-  /// [query] is trimmed, and must then be at least [minSearchLength]
-  /// characters. [limit] is in `1..maxSearchPageSize`.
-  Future<PaginatedResult<UserSummary>> searchUsers(
-    String query, {
-    int page = 1,
-    int limit = maxSearchPageSize,
-  });
 }
 
 /// Base class for every household invite remote failure.

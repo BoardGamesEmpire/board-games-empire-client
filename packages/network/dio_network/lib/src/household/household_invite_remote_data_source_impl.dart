@@ -201,48 +201,6 @@ class HouseholdInviteRemoteDataSourceImpl
         'Household invite approve',
       );
 
-  @override
-  Future<PaginatedResult<UserSummary>> searchUsers(
-    String query, {
-    int page = 1,
-    int limit = HouseholdInviteRemoteDataSource.maxSearchPageSize,
-  }) async {
-    final q = query.trim();
-    const minLength = HouseholdInviteRemoteDataSource.minSearchLength;
-    if (q.length < minLength) {
-      throw ArgumentError.value(
-        query,
-        'query',
-        'must be at least $minLength characters after trimming',
-      );
-    }
-    _checkPaging(
-      page: page,
-      limit: limit,
-      max: HouseholdInviteRemoteDataSource.maxSearchPageSize,
-    );
-
-    const action = 'User search';
-    final response = await _send(
-      request: () => _dio.get<String>(
-        '/api/users/search',
-        options: _plainBody,
-        queryParameters: {'q': q, 'page': page, 'limit': limit},
-      ),
-      action: action,
-      rowRoute: false,
-    );
-    return _parse(
-      () => PaginatedResult.fromEnvelope(
-        response.body,
-        key: 'users',
-        item: userSummaryFromJson,
-      ),
-      action: action,
-      status: response.status,
-    );
-  }
-
   static String _householdInvites(String householdId) =>
       '/api/households/${Uri.encodeComponent(householdId)}/invites';
 

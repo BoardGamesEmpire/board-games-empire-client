@@ -8,20 +8,24 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+import 'package:user_search/user_search.dart';
 
 import '../support/fake_household_invite_remote.dart';
+import '../support/fake_user_remote.dart';
 
 const _unknownCopy =
     "Can't tell yet whether you can invite people to this household.";
 
 void main() {
   late FakeHouseholdInviteRemote remote;
+  late FakeUserRemote users;
   late int sent;
   late int memberSent;
   late int refreshes;
 
   setUp(() {
     remote = FakeHouseholdInviteRemote();
+    users = FakeUserRemote();
     sent = 0;
     memberSent = 0;
     refreshes = 0;
@@ -33,13 +37,17 @@ void main() {
     Future<void> Function()? onRefresh,
   }) => MaterialApp(
     theme: BgeTheme.light(),
-    localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
+    localizationsDelegates: [
+      ...HouseholdLocalizations.localizationsDelegates,
+      UserSearchLocalizations.delegate,
+    ],
     supportedLocales: HouseholdLocalizations.supportedLocales,
     home: SendHouseholdInviteScreen(
       householdId: 'hh_1',
       viewerRole: viewerRole,
       memberInvitePolicy: policy,
       remote: remote,
+      users: users,
       onSent: (_) => sent++,
       onMemberSent: (_) => memberSent++,
       onRefresh: onRefresh,
@@ -568,11 +576,10 @@ void main() {
   testWidgets('picking someone from the search invites their account', (
     tester,
   ) async {
-    remote
-      ..onSearchUsers = ((_, _, _) async => pageOf(const [
-        UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B'),
-      ]))
-      ..onSend = (_, _) async => invite('i_1');
+    users.onSearchUsers = (_, _, _) async => pageOf(const [
+      UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B'),
+    ]);
+    remote.onSend = (_, _) async => invite('i_1');
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
 
@@ -584,7 +591,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pumpAndSettle();
-    expect(remote.calls, ['searchUsers(ana)']);
+    expect(users.calls, ['searchUsers(ana)']);
 
     await tester.tap(find.byKey(SendHouseholdInviteScreen.resultKey('u_2')));
     await tester.pumpAndSettle();
@@ -596,7 +603,7 @@ void main() {
 
   testWidgets("the last query's results cannot be picked while a new one "
       'waits out its pause', (tester) async {
-    remote.onSearchUsers = (query, _, _) async => pageOf([
+    users.onSearchUsers = (query, _, _) async => pageOf([
       if (query == 'ana')
         const UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B')
       else
@@ -641,6 +648,57 @@ void main() {
 
     expect(remote.sentDrafts, isEmpty);
     expect(find.text('Pick someone to invite.'), findsOneWidget);
+  });
+
+  testWidgets("person mode's search field takes its label and hint from the "
+      'shared user search', (tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Person'));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byKey(SendHouseholdInviteScreen.searchKey),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(field.decoration!.labelText, 'Search by name or username');
+    expect(field.decoration!.helperText, 'Type at least 2 characters');
+  });
+
+  testWidgets('only the person picked is marked in the results', (
+    tester,
+  ) async {
+    users.onSearchUsers = (_, _, _) async => pageOf(const [
+      UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B'),
+      UserSummary(id: 'u_3', username: 'anna'),
+    ]);
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Person'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(SendHouseholdInviteScreen.searchKey),
+      'an',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    bool marked(String userId) => tester
+        .widget<ListTile>(
+          find.byKey(SendHouseholdInviteScreen.resultKey(userId)),
+        )
+        .selected;
+    expect([marked('u_2'), marked('u_3')], [false, false]);
+
+    await tester.tap(find.byKey(SendHouseholdInviteScreen.resultKey('u_2')));
+    await tester.pumpAndSettle();
+    expect([marked('u_2'), marked('u_3')], [true, false]);
+
+    await tester.tap(find.byKey(SendHouseholdInviteScreen.resultKey('u_3')));
+    await tester.pumpAndSettle();
+    expect([marked('u_2'), marked('u_3')], [false, true]);
   });
 
   testWidgets('a refusal says why, and the form stays filled in', (

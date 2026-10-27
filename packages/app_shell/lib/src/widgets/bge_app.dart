@@ -1050,7 +1050,8 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// The #455 send-invite wiring. Same null contract as
-  /// [_buildHouseholdInvitesRoute].
+  /// [_buildHouseholdInvitesRoute], and also null without the per-server
+  /// [UserRemoteDataSource] that person mode searches through (#499).
   ///
   /// The form offers roles by who is looking and, for a member, by the
   /// household's member invite policy (#569). Both are cache reads; the
@@ -1074,7 +1075,9 @@ class _BgeAppState extends State<BgeApp> {
 
     final container = active.container;
     final invites = _inviteClient(container);
-    if (invites == null || !container.isRegistered<HouseholdRepository>()) {
+    if (invites == null ||
+        !container.isRegistered<HouseholdRepository>() ||
+        !container.isRegistered<UserRemoteDataSource>()) {
       return null;
     }
 
@@ -1086,6 +1089,7 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
       remote: invites,
+      users: container.get<UserRemoteDataSource>(),
       onRefresh: _householdRetry(container),
     );
   }
@@ -2989,6 +2993,7 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
     required this.householdId,
     required this.repository,
     required this.remote,
+    required this.users,
     this.onRefresh,
     super.key,
   });
@@ -2996,6 +3001,7 @@ class _SendHouseholdInviteRoute extends StatefulWidget {
   final String householdId;
   final HouseholdRepository repository;
   final HouseholdInviteRemoteDataSource remote;
+  final UserRemoteDataSource users;
 
   /// Runs the households' own pass after a send refused with 403.
   final Future<void> Function()? onRefresh;
@@ -3100,6 +3106,7 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       viewerRole: viewer.role,
       memberInvitePolicy: viewer.policy,
       remote: widget.remote,
+      users: widget.users,
       onRefresh: widget.onRefresh,
       onSent: (ctx) => ctx.pop(),
       // Back from Sent returns to the household, even under a form opened
