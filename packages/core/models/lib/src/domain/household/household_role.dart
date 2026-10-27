@@ -45,4 +45,16 @@ enum HouseholdRole {
     'HouseholdGuest' => HouseholdRole.householdGuest,
     _ => HouseholdRole.unknown,
   };
+
+  /// Whether this role may create an event in its household (#499). An
+  /// owner, an admin or a member may. A guest lacks
+  /// `create:event:household`, and the server answers its create with 403.
+  /// [unknown] may not either: a role this client can't read is not one it
+  /// can vouch for.
+  bool get mayCreateEvents => switch (this) {
+    HouseholdRole.householdOwner ||
+    HouseholdRole.householdAdmin ||
+    HouseholdRole.householdMember => true,
+    HouseholdRole.householdGuest || HouseholdRole.unknown => false,
+  };
 }
