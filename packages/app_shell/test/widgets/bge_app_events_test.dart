@@ -6,9 +6,12 @@ import 'package:events/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:household/household.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -25,6 +28,25 @@ class _MockEventRepository extends Mock implements EventRepository {}
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 class _MockEventRemote extends Mock implements EventRemoteDataSource {}
+
+class _MockUserRemote extends Mock implements UserRemoteDataSource {}
+
+/// Answers every send as delivered under the server's [eventId], as the
+/// real sender does once the server has made the event and the cache holds
+/// it.
+class _DeliveringSender implements SyncOperationSender {
+  _DeliveringSender(this.eventId);
+
+  final String eventId;
+
+  @override
+  Future<SyncDelivery> deliver(String entryId, SyncOperation operation) async =>
+      SyncDelivered(eventId: eventId);
+
+  @override
+  Future<SyncDelivery> deliverEntry(SyncQueueEntry entry) =>
+      deliver(entry.id, entry.operation);
+}
 
 /// A user scope that holds whoever the shell last activated.
 class _UserSessionScope implements UserSessionScope {
@@ -119,7 +141,9 @@ EventDetail _detail(String id, {EventAttendee? attendance}) {
 /// container without the optional parts still renders them.
 ///
 /// The same goes for the #498 detail the rows open: the route's builder, its
-/// optional server client and its household lookups.
+/// optional server client and its household lookups. And for the #499 create
+/// form: the ways in, its gate, the households it may pick, and where a
+/// created event is shown.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late _MockEventRepository repository;
@@ -127,6 +151,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(_detail('e-0').snapshot);
     registerFallbackValue(EventAccessSource.read);
+    registerFallbackValue(const EventDraft(title: 'x'));
   });
 
   setUp(() {
@@ -142,15 +167,19 @@ void main() {
   /// Pumps home with a cache holding [events] upcoming events. [withRepository]
   /// false is a signed-out session, where the user tier is gone.
   /// [failedPass] publishes a status whose last pass failed, which is where
-  /// the banner and its retry live. [withHouseholds] caches `h-1`, where the
-  /// user holds [householdRole]. [remote] is the server's event client, and
+  /// the banner and its retry live. [withHouseholds] caches `h-1`, and
+  /// [moreHouseholds] after it, in each of which the user holds
+  /// [householdRole]. [remote] is the server's event client, and
   /// the user's own roster row on every detail is [attendance]. [detailCache]
   /// replaces what every `watchEvent` emits, for a cache the test drives.
+  /// [sender] and [users] are what the create form sends through and finds
+  /// invitees with, and a create writes the event here as `ev_local`.
   Future<void> pumpHome(
     WidgetTester tester, {
     int events = 1,
     bool withRepository = true,
     bool withHouseholds = false,
+    List<Household> moreHouseholds = const [],
     HouseholdRole? householdRole,
     EventAttendee? attendance,
     EventRemoteDataSource? remote,
@@ -159,6 +188,8 @@ void main() {
     EventRefresher? refresher,
     SessionRehydrator? rehydrator,
     SessionIdentityGuard? guard,
+    SyncOperationSender? sender,
+    UserRemoteDataSource? users,
   }) async {
     when(repository.watchAttendingEventListItems).thenAnswer(
       (_) => Stream.value([for (var n = 0; n < events; n++) _upcoming('e-$n')]),
@@ -183,6 +214,16 @@ void main() {
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
     ).thenAnswer((_) async => true);
+    when(() => repository.create(any())).thenAnswer(
+      (call) async => (
+        event: _upcoming('ev_local').event,
+        syncQueueId: 'q1',
+        operation: CreateEventOperation(
+          localId: 'ev_local',
+          draft: call.positionalArguments.single as EventDraft,
+        ),
+      ),
+    );
 
     HouseholdRepository? households;
     if (withHouseholds) {
@@ -196,18 +237,21 @@ void main() {
             createdAt: DateTime.utc(2026),
             updatedAt: DateTime.utc(2026),
           ),
+          ...moreHouseholds,
         ]),
       );
-      when(() => mock.getCurrentUserMember(any())).thenAnswer(
-        (_) async => HouseholdMember(
-          id: 'm-1',
-          userId: 'u1',
-          householdId: 'h-1',
-          role: householdRole,
-          createdAt: DateTime.utc(2026),
-          updatedAt: DateTime.utc(2026),
-        ),
+      final me = HouseholdMember(
+        id: 'm-1',
+        userId: 'u1',
+        householdId: 'h-1',
+        role: householdRole,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
       );
+      when(() => mock.getCurrentUserMember(any())).thenAnswer((_) async => me);
+      // The roster, for the household's own screen.
+      when(() => mock.watchMembers(any()))
+          .thenAnswer((_) => Stream.value([me]));
     }
 
     EventHydrationStatus? status;
@@ -231,6 +275,8 @@ void main() {
           userSessionScope: guard == null ? null : _UserSessionScope(),
           sessionIdentityGuard: guard,
           sessionRehydrator: rehydrator,
+          syncOperationSender: sender,
+          userRemoteDataSource: users,
         ),
       ),
     );
@@ -613,6 +659,234 @@ void main() {
       final state = blocOf(tester).state;
       expect(state, isA<EventDetailReady>());
       expect((state as EventDetailReady).actions, isEmpty);
+    });
+  });
+
+  group('creating an event (#499)', () {
+    GoRouter routerOf(WidgetTester tester) =>
+        tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+            as GoRouter;
+
+    /// Pumps home with all a create needs: a sender that delivers each one
+    /// as `srv1`, and the person search.
+    Future<void> pumpCreatable(
+      WidgetTester tester, {
+      int events = 1,
+      bool withHouseholds = false,
+      List<Household> moreHouseholds = const [],
+      HouseholdRole? householdRole,
+    }) => pumpHome(
+      tester,
+      events: events,
+      withHouseholds: withHouseholds,
+      moreHouseholds: moreHouseholds,
+      householdRole: householdRole,
+      sender: _DeliveringSender('srv1'),
+      users: _MockUserRemote(),
+    );
+
+    Future<void> reveal(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+    }
+
+    /// [text] as what the form's household picker shows.
+    Finder pickerShows(String text) => find.descendant(
+      of: find.byKey(CreateEventScreen.householdKey),
+      matching: find.text(text),
+    );
+
+    testWidgets('New event on the overview opens the create form', (
+      tester,
+    ) async {
+      await pumpCreatable(tester);
+      await openTheOverview(tester);
+
+      await tester.tap(find.byKey(EventOverviewScreen.createKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateEventScreen), findsOneWidget);
+      // This session caches no households, so there are none to pick.
+      expect(find.byKey(CreateEventScreen.householdKey), findsNothing);
+
+      // Pushed above the overview, so back returns there.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
+    });
+
+    testWidgets("a group page's New event opens it too", (tester) async {
+      await pumpCreatable(tester, events: EventOverviewScreen.groupCap + 1);
+      await openTheOverview(tester);
+      await tester.tap(
+        find.byKey(EventOverviewScreen.seeAllKey(EventGroup.upcoming)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(EventGroupScreen.createKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateEventScreen), findsOneWidget);
+    });
+
+    testWidgets('a created event replaces the form with its detail', (
+      tester,
+    ) async {
+      await pumpCreatable(tester);
+      await openTheOverview(tester);
+      await tester.tap(find.byKey(EventOverviewScreen.createKey));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(CreateEventScreen.titleKey),
+        'Game night',
+      );
+      // The title brings its caret into view on the next frame, which would
+      // undo a reveal made before it.
+      await tester.pumpAndSettle();
+      // When it starts: the day and the time the pickers open on.
+      final starts = find.widgetWithText(InkWell, 'Starts');
+      await reveal(tester, starts);
+      await tester.tap(starts);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await reveal(tester, find.byKey(CreateEventScreen.submitKey));
+      await tester.tap(find.byKey(CreateEventScreen.submitKey));
+      await tester.pumpAndSettle();
+
+      // The event the server made, under its id.
+      expect(find.byType(CreateEventScreen), findsNothing);
+      expect(
+        tester
+            .widget<EventDetailScreen>(find.byType(EventDetailScreen))
+            .eventId,
+        'srv1',
+      );
+      expect(
+        routerOf(tester).state.matchedLocation,
+        AppRoutes.eventDetailOf('srv1'),
+      );
+
+      // Back is the overview the form was opened from. The spent form was
+      // replaced, not pushed over, so back can't land on it (#162).
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
+      expect(find.byType(CreateEventScreen), findsNothing);
+    });
+
+    testWidgets("a household's New event opens the form with it picked", (
+      tester,
+    ) async {
+      await pumpCreatable(
+        tester,
+        withHouseholds: true,
+        householdRole: HouseholdRole.householdMember,
+      );
+      routerOf(tester).go(AppRoutes.householdDetailOf('h-1'));
+      await tester.pumpAndSettle();
+
+      await reveal(tester, find.byKey(HouseholdDetailScreen.newEventKey));
+      await tester.tap(find.byKey(HouseholdDetailScreen.newEventKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<CreateEventScreen>(find.byType(CreateEventScreen))
+            .householdId,
+        'h-1',
+      );
+      // A member may create one there, so the form starts in it.
+      expect(pickerShows('The Smiths'), findsOneWidget);
+    });
+
+    testWidgets('a household the user may not create in is not picked', (
+      tester,
+    ) async {
+      // A guest lacks create:event:household, so the server would refuse
+      // the create there.
+      await pumpCreatable(
+        tester,
+        withHouseholds: true,
+        householdRole: HouseholdRole.householdGuest,
+      );
+
+      routerOf(tester).go(AppRoutes.eventCreateOf(householdId: 'h-1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateEventScreen), findsOneWidget);
+      expect(pickerShows('No household'), findsOneWidget);
+      expect(pickerShows('The Smiths'), findsNothing);
+    });
+
+    testWidgets("going from one household's form straight to another's starts "
+        'it in the second (#466)', (tester) async {
+      await pumpCreatable(
+        tester,
+        withHouseholds: true,
+        moreHouseholds: [
+          Household(
+            id: 'h-2',
+            name: 'The Joneses',
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        ],
+        householdRole: HouseholdRole.householdMember,
+      );
+      routerOf(tester).go(AppRoutes.eventCreateOf(householdId: 'h-1'));
+      await tester.pumpAndSettle();
+      expect(pickerShows('The Smiths'), findsOneWidget);
+
+      // The same page: go_router keys it by its path, which leaves the
+      // household out.
+      routerOf(tester).go(AppRoutes.eventCreateOf(householdId: 'h-2'));
+      await tester.pumpAndSettle();
+
+      expect(pickerShows('The Joneses'), findsOneWidget);
+      expect(pickerShows('The Smiths'), findsNothing);
+    });
+
+    testWidgets('without a sync sender there is no New event', (tester) async {
+      // The form sends the create straight away, through the sender, as the
+      // household create does (#121). A session without one has no form.
+      await pumpHome(
+        tester,
+        withHouseholds: true,
+        householdRole: HouseholdRole.householdMember,
+        users: _MockUserRemote(),
+      );
+      await openTheOverview(tester);
+      expect(find.byKey(EventOverviewScreen.createKey), findsNothing);
+
+      // Nor does a household offer one, though its role would allow it.
+      routerOf(tester).go(AppRoutes.householdDetailOf('h-1'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(HouseholdDetailScreen.roleKey), findsOneWidget);
+      expect(find.byKey(HouseholdDetailScreen.newEventKey), findsNothing);
+
+      // And a link to the form falls back.
+      routerOf(tester).go(AppRoutes.eventCreate);
+      await tester.pumpAndSettle();
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byType(CreateEventScreen), findsNothing);
+    });
+
+    testWidgets('without a person search there is no New event', (
+      tester,
+    ) async {
+      // The form's invitee search reads it.
+      await pumpHome(tester, sender: _DeliveringSender('srv1'));
+      await openTheOverview(tester);
+      expect(find.byKey(EventOverviewScreen.createKey), findsNothing);
+
+      routerOf(tester).go(AppRoutes.eventCreate);
+      await tester.pumpAndSettle();
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byType(CreateEventScreen), findsNothing);
     });
   });
 }

@@ -616,4 +616,34 @@ void main() {
     expect(find.byType(NotYetAvailableScreen), findsOneWidget);
     expect(find.byType(SendHouseholdInviteScreen), findsNothing);
   });
+
+  // Every way in shares the form's gate, so none leads to the fallback.
+  testWidgets('without a user search client the household screen offers no '
+      'Invite row', (tester) async {
+    // A member under Direct, who is offered the row where the form builds.
+    final router = await pumpApp(
+      tester,
+      withUsers: false,
+      stub: asMember(MemberInvitePolicy.direct),
+    );
+
+    router.go(AppRoutes.householdDetailOf('hh_a'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+    expect(find.byKey(HouseholdDetailScreen.roleKey), findsOneWidget);
+    expect(find.byKey(HouseholdDetailScreen.inviteKey), findsNothing);
+  });
+
+  testWidgets('without a user search client the invites offer no Invite '
+      'button', (tester) async {
+    // An owner, who is offered the button where the form builds.
+    final router = await pumpApp(tester, withUsers: false);
+
+    router.go(AppRoutes.householdInvitesOf('hh_a'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('For hh_a'), findsOneWidget);
+    expect(find.byKey(HouseholdInviteListScreen.inviteKey), findsNothing);
+  });
 }

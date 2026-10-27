@@ -397,6 +397,7 @@ class _BgeAppState extends State<BgeApp> {
       gameDetailBuilder: _buildGameDetailRoute,
       eventOverviewBuilder: _buildEventOverviewRoute,
       eventGroupBuilder: _buildEventGroupRoute,
+      eventCreateBuilder: _buildEventCreateRoute,
       eventDetailBuilder: _buildEventDetailRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
@@ -966,11 +967,20 @@ class _BgeAppState extends State<BgeApp> {
                 unawaited(ctx.push<void>(AppRoutes.householdEditOf(id))),
       // #569: a member's Invite row. The screen itself offers it only to a
       // member whose household's policy lets members invite; here it is
-      // only whether this composition can send one.
-      onInvite: _inviteClient(container) == null
-          ? null
-          : (ctx, id) =>
-                unawaited(ctx.push<void>(AppRoutes.householdInviteSendOf(id))),
+      // only whether this composition can build the send form.
+      onInvite: _canSendInvites(container)
+          ? (ctx, id) =>
+                unawaited(ctx.push<void>(AppRoutes.householdInviteSendOf(id)))
+          : null,
+      // #499: New event, opening the create form in this household. The
+      // screen itself offers it only to a viewer whose role may create one,
+      // and not for a household the server does not know yet; here it is
+      // only whether this composition can create one.
+      onNewEvent: _canCreateEvents(container)
+          ? (ctx, id) => unawaited(
+              ctx.push<void>(AppRoutes.eventCreateOf(householdId: id)),
+            )
+          : null,
     );
   }
 
@@ -981,6 +991,20 @@ class _BgeAppState extends State<BgeApp> {
   ) => container.isRegistered<HouseholdInviteRemoteDataSource>()
       ? container.get<HouseholdInviteRemoteDataSource>()
       : null;
+
+  /// Whether [container] holds what the #455 send-invite form needs: the
+  /// per-server invite client the invite is sent through, the user-session
+  /// [HouseholdRepository] that says who is looking, and the per-server
+  /// [UserRemoteDataSource] person mode searches through (#499). A session
+  /// holds all three on either platform.
+  ///
+  /// The one gate for the form's route and every way in to it, the
+  /// household screen's Invite row and the invites' Invite button, so
+  /// nothing offers a way to a placeholder.
+  static bool _canSendInvites(DependencyContainer container) =>
+      container.isRegistered<HouseholdInviteRemoteDataSource>() &&
+      container.isRegistered<HouseholdRepository>() &&
+      container.isRegistered<UserRemoteDataSource>();
 
   /// The per-server household remote, or null where this composition has
   /// none. An edit is sent through it (#476).
@@ -1021,7 +1045,8 @@ class _BgeAppState extends State<BgeApp> {
 
   /// The #455 household-invites wiring. Null (→ [NotYetAvailableScreen])
   /// without an active server, the invite client, or the user-session
-  /// [HouseholdRepository] that says who is looking.
+  /// [HouseholdRepository] that says who is looking. Its Invite button opens
+  /// the send form where [_canSendInvites] says it builds.
   ///
   /// Not gated on the viewer's role: a deep link by someone the server
   /// refuses reaches the screen, which says only owners and admins can see
@@ -1043,15 +1068,17 @@ class _BgeAppState extends State<BgeApp> {
       householdId: householdId,
       remote: invites,
       repository: container.get<HouseholdRepository>(),
-      onInvite: (ctx) => unawaited(
-        ctx.push<void>(AppRoutes.householdInviteSendOf(householdId)),
-      ),
+      onInvite: _canSendInvites(container)
+          ? (ctx) => unawaited(
+              ctx.push<void>(AppRoutes.householdInviteSendOf(householdId)),
+            )
+          : null,
     );
   }
 
-  /// The #455 send-invite wiring. Same null contract as
-  /// [_buildHouseholdInvitesRoute], and also null without the per-server
-  /// [UserRemoteDataSource] that person mode searches through (#499).
+  /// The #455 send-invite wiring. Null (→ [NotYetAvailableScreen]) without
+  /// an active server, or where [_canSendInvites] says this composition
+  /// can't build it.
   ///
   /// The form offers roles by who is looking and, for a member, by the
   /// household's member invite policy (#569). Both are cache reads; the
@@ -1074,12 +1101,7 @@ class _BgeAppState extends State<BgeApp> {
     if (active == null) return null;
 
     final container = active.container;
-    final invites = _inviteClient(container);
-    if (invites == null ||
-        !container.isRegistered<HouseholdRepository>() ||
-        !container.isRegistered<UserRemoteDataSource>()) {
-      return null;
-    }
+    if (!_canSendInvites(container)) return null;
 
     return _SendHouseholdInviteRoute(
       // A new household is a new read of who is looking. Without the key, a
@@ -1088,7 +1110,7 @@ class _BgeAppState extends State<BgeApp> {
       key: ValueKey<String>(householdId),
       householdId: householdId,
       repository: container.get<HouseholdRepository>(),
-      remote: invites,
+      remote: container.get<HouseholdInviteRemoteDataSource>(),
       users: container.get<UserRemoteDataSource>(),
       onRefresh: _householdRetry(container),
     );
@@ -1439,8 +1461,9 @@ class _BgeAppState extends State<BgeApp> {
     return container;
   }
 
-  /// The cached households, for each event row's household name (#497), or
-  /// null where the session has no household cache.
+  /// The cached households, for each event row's household name (#497) and
+  /// the households the create form offers (#499), or null where the session
+  /// has no household cache.
   static Stream<List<Household>>? _eventHouseholds(
     DependencyContainer container,
   ) => container.isRegistered<HouseholdRepository>()
@@ -1460,11 +1483,33 @@ class _BgeAppState extends State<BgeApp> {
   static void _openEvent(BuildContext context, String eventId) =>
       unawaited(context.push<void>(AppRoutes.eventDetailOf(eventId)));
 
+  /// Whether [container] holds what the #499 create form needs: the
+  /// user-session [EventRepository] the event is written to, the
+  /// [SyncOperationSender] the create is sent through, and the per-server
+  /// [UserRemoteDataSource] its invitee search reads. A session holds all
+  /// three on either platform.
+  ///
+  /// The one gate for the form's route and every way in to it, so nothing
+  /// offers a way to a placeholder.
+  static bool _canCreateEvents(DependencyContainer container) =>
+      container.isRegistered<EventRepository>() &&
+      container.isRegistered<SyncOperationSender>() &&
+      container.isRegistered<UserRemoteDataSource>();
+
+  /// Opens the create form (#499), pushed above the list it was opened from
+  /// so that back returns there, or null where [_canCreateEvents] says no.
+  /// One callback for the overview and the group pages.
+  static void Function(BuildContext context)? _eventCreate(
+    DependencyContainer container,
+  ) => _canCreateEvents(container)
+      ? (ctx) => unawaited(ctx.push<void>(AppRoutes.eventCreate))
+      : null;
+
   /// The #497 events overview, behind [_eventsContainer]'s gate, with the
   /// optional households, status, retry and entry trigger.
   ///
-  /// Rows open the event's detail (#498). No `onCreate`: there is no create
-  /// button until #499.
+  /// Rows open the event's detail (#498), and New event opens the create
+  /// form where this composition can create one (#499).
   Widget? _buildEventOverviewRoute(BuildContext context) {
     final container = _eventsContainer();
     if (container == null) return null;
@@ -1476,6 +1521,7 @@ class _BgeAppState extends State<BgeApp> {
       onOpen: _openEvent,
       onOpenGroup: (ctx, group) =>
           unawaited(ctx.push<void>(AppRoutes.eventGroupOf(group.name))),
+      onCreate: _eventCreate(container),
       onRetry: _eventsRetry(container),
       onEnter: _eventsEntryRefresh(container),
     );
@@ -1497,7 +1543,49 @@ class _BgeAppState extends State<BgeApp> {
       households: _eventHouseholds(container),
       hydration: _eventHydration(container),
       onOpen: _openEvent,
+      onCreate: _eventCreate(container),
       onRetry: _eventsRetry(container),
+    );
+  }
+
+  /// The #499 create form, behind [_canCreateEvents]'s gate. [householdId]
+  /// is the household a link to the form names, unchecked: the form starts
+  /// in it only if it is offered.
+  ///
+  /// The form offers the cached households the user may create an event in,
+  /// as [eventCreateHouseholds] filters them. The cache emits again on every
+  /// membership change, so a role that changes while the form is open
+  /// changes what it offers. Where the session has no household cache it
+  /// offers none, and the event joins no household. A 403 for a create in a
+  /// household runs the household pass, as a refused household edit does,
+  /// so the picker learns of a role that changed elsewhere.
+  ///
+  /// A created event's detail takes the place of the spent form, as a
+  /// created household's does, so back can never land on the form again
+  /// (#162): `pushReplacement` for the household create's reason (#271).
+  /// Back from the detail returns to what the form was opened over: the
+  /// list it was pushed from, the household whose New event opened it, or
+  /// the overview go_router builds beneath it for a `go` straight here.
+  Widget? _buildEventCreateRoute(BuildContext context, String? householdId) {
+    final container =
+        widget.bootstrapCubit.activeServerScope?.active?.container;
+    if (container == null || !_canCreateEvents(container)) return null;
+
+    final households = _eventHouseholds(container);
+    final roleOf = _eventHouseholdRole(container);
+    return CreateEventScreen(
+      // A new household is a new form, which reads its household once (#466).
+      key: ValueKey<String?>(householdId),
+      repository: container.get<EventRepository>(),
+      sender: container.get<SyncOperationSender>(),
+      users: container.get<UserRemoteDataSource>(),
+      households: households == null || roleOf == null
+          ? null
+          : eventCreateHouseholds(households, roleOf),
+      householdId: householdId,
+      onRefresh: _householdRetry(container),
+      onCreated: (ctx, eventId) =>
+          ctx.pushReplacement(AppRoutes.eventDetailOf(eventId)),
     );
   }
 
