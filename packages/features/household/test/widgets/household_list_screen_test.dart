@@ -362,6 +362,46 @@ void main() {
 
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('the refresh banner lays out at 320dp and 200%, failed and '
+        'refreshing (#452)', (tester) async {
+      // Before #452 the banner's message and its retry shared a row, and at
+      // 200% on this window the retry ran off the window's right edge. So
+      // that edge is what shows whether the banner made room for it.
+      const width = 320.0;
+      final pass = Completer<void>();
+      useNarrowWindow(tester, width: width);
+      await tester.pumpWidget(
+        harness(
+          onRetry: () => pass.future,
+          textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+        ),
+      );
+      households.add([_household('h-1')]);
+      hydration.add(HouseholdHydrationState.failed);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(_refreshFailedCopy), findsOneWidget);
+      expect(
+        tester.getRect(find.byKey(HouseholdListScreen.refreshRetryKey)).right,
+        lessThanOrEqualTo(width),
+      );
+
+      await tester.tap(find.byKey(HouseholdListScreen.refreshRetryKey));
+      await tester.pump();
+      hydration.add(HouseholdHydrationState.running);
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(_refreshingCopy), findsNWidgets(2));
+      expect(
+        tester.getRect(find.byKey(HouseholdListScreen.refreshRetryKey)).right,
+        lessThanOrEqualTo(width),
+      );
+
+      pass.complete();
+    });
   });
 
   group('when the refresh failed', () {

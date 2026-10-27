@@ -211,9 +211,11 @@ String? _notAllowedText(
 /// or a reason; one that doesn't leaves it as it was, to try again.
 ///
 /// Try again is worded as the household screens' refresh banner words its
-/// retry (#300), but sits under the text rather than in a banner: the
-/// banner squeezes its message beside the action on a narrow screen
-/// (#452).
+/// retry (#300), but this is not a banner. It is the whole page, centred
+/// like the reasons the viewer may not invite, which take its place once
+/// the read answers. A banner is an outcome arriving on a page that has
+/// other content, and its live region and reveal would have nothing to do
+/// here.
 class _CantTellYet extends StatefulWidget {
   const _CantTellYet({required this.onRefresh});
 

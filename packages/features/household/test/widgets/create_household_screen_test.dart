@@ -101,10 +101,6 @@ void main() {
   // to it, the tap on submit cut that scroll short (#233), and the banner
   // stopped at -227. The banner now sits above the submit (#211), so a tap
   // there has its answer in place and the case passes themed.
-  //
-  // That does NOT mean #233 is fixed. What still reproduces it is the
-  // skipped case below: submit from the description field's "done" action at
-  // the top of the page, then tap a field while the banner is being revealed.
   Widget harness({required void Function(String) onCreated}) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -434,12 +430,11 @@ void main() {
         'not strand the banner (#233)', (tester) async {
       // #233's repro, and this file's only one since the banner moved above
       // the submit (#211). The tap's pointer-down holds the page's scroll
-      // position, which cancels the running reveal, and nothing retries it.
-      // Measured: the banner is left at 224 in a 344dp viewport, its top on
-      // screen and the rest below.
-      //
-      // Skipped because it fails until #233 lands. Un-skip it there; it is
-      // the canary the unthemed harness used to be.
+      // position, which cancels the running reveal. Before #233 nothing
+      // retried it: measured then, the banner was left at 224 in a 344dp
+      // viewport, its top on screen and the rest below. The banner now waits
+      // for the tap to end and, since the finger never moved, reveals itself
+      // again. This case is the canary the unthemed harness used to be.
       useNarrowWindow(tester);
       when(
         () => repo.create(
@@ -479,7 +474,7 @@ void main() {
         bannerTop(tester),
         moreOrLessEquals(BgeTokens.standard.spaceMd, epsilon: 0.5),
       );
-    }, skip: true);
+    });
 
     testWidgets('after a failure the form keeps its input and a retry reaches '
         'the repository again', (tester) async {

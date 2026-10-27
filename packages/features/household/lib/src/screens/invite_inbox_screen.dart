@@ -364,6 +364,9 @@ class _OutcomeBanner extends StatelessWidget {
       tone: tone,
       message: message,
       action: Wrap(
+        // The banner puts its action at the end edge. Once the two buttons
+        // no longer fit on one line, this keeps the second one there too.
+        alignment: WrapAlignment.end,
         children: [
           if (joined != null && open != null)
             TextButton(

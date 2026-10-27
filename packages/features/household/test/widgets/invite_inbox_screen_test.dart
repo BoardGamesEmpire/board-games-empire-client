@@ -1,3 +1,4 @@
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
@@ -26,18 +27,24 @@ void main() {
     opened = [];
   });
 
-  Widget harness({void Function(BuildContext context)? onOpenSent}) =>
-      MaterialApp(
-        theme: BgeTheme.light(),
-        localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
-        supportedLocales: HouseholdLocalizations.supportedLocales,
-        home: InviteInboxScreen(
-          remote: remote,
-          onJoined: (_) async {},
-          onOpenHousehold: (_, householdId) => opened.add(householdId),
-          onOpenSent: onOpenSent,
-        ),
-      );
+  Widget harness({
+    void Function(BuildContext context)? onOpenSent,
+    TextScaler textScaler = TextScaler.noScaling,
+  }) => MaterialApp(
+    theme: BgeTheme.light(),
+    localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
+    supportedLocales: HouseholdLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: InviteInboxScreen(
+      remote: remote,
+      onJoined: (_) async {},
+      onOpenHousehold: (_, householdId) => opened.add(householdId),
+      onOpenSent: onOpenSent,
+    ),
+  );
 
   testWidgets('a row names the household and who sent it', (tester) async {
     remote.onFetchInbox = (_, _) async => pageOf([_received('i_1')]);
@@ -70,6 +77,53 @@ void main() {
 
     await tester.tap(find.byKey(InviteInboxScreen.openHouseholdKey));
     expect(opened, ['hh_9']);
+  });
+
+  testWidgets("the joined outcome's two actions lay out at 320dp and 200% "
+      '(#452)', (tester) async {
+    // The outcome's action is two buttons, the widest action any banner
+    // carries. At 200% on this window both together are wider than the
+    // banner, so their right edges are what show whether they wrap inside
+    // it or run off the window.
+    const width = 320.0;
+    remote
+      ..onFetchInbox = ((_, _) async => pageOf([_received('i_1')]))
+      ..onAccept = (id) async => (
+        invite: _received(id, status: HouseholdInviteStatus.accepted),
+        householdId: 'hh_9',
+      );
+    useViewSize(tester, const Size(width, 800));
+    await tester.pumpWidget(
+      harness(textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(InviteInboxScreen.acceptKey('i_1')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('You joined Sunday Crew.'), findsOneWidget);
+    final dismiss = find.descendant(
+      of: find.byKey(InviteInboxScreen.outcomeKey),
+      matching: find.widgetWithText(TextButton, 'Dismiss'),
+    );
+    expect(dismiss, findsOneWidget);
+    final open = find.byKey(InviteInboxScreen.openHouseholdKey);
+    for (final button in [open, dismiss]) {
+      expect(tester.getRect(button).right, lessThanOrEqualTo(width));
+    }
+
+    // On two lines, both buttons keep to the end edge, where the banner
+    // puts its action.
+    expect(
+      tester.getRect(dismiss).top,
+      greaterThanOrEqualTo(tester.getRect(open).bottom),
+      reason: 'sanity: the buttons are on separate lines',
+    );
+    expect(
+      tester.getRect(dismiss).right,
+      moreOrLessEquals(tester.getRect(open).right),
+    );
   });
 
   testWidgets('Decline asks first', (tester) async {
