@@ -9,11 +9,15 @@ import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_household_invite_remote.dart';
 
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
+
+class _MockMemberRemote extends Mock
+    implements HouseholdMemberRemoteDataSource {}
 
 const _id = 'h-1';
 
@@ -95,6 +99,8 @@ void main() {
     void Function(BuildContext context, String householdId)? onOpenInvites,
     void Function(BuildContext context, String householdId)? onEdit,
     void Function(BuildContext context, String householdId)? onInvite,
+    HouseholdMemberRemoteDataSource? members,
+    Future<void> Function()? onMembershipChanged,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     localizationsDelegates: HouseholdLocalizations.localizationsDelegates,
@@ -113,6 +119,8 @@ void main() {
       onOpenInvites: onOpenInvites,
       onEdit: onEdit,
       onInvite: onInvite,
+      members: members,
+      onMembershipChanged: onMembershipChanged,
     ),
   );
 
@@ -718,7 +726,15 @@ void main() {
     // worth pinning rather than assuming.
     useViewSize(tester, const Size(320, 800));
 
-    await tester.pumpWidget(harness(textScaler: const TextScaler.linear(2)));
+    await tester.pumpWidget(
+      harness(
+        textScaler: const TextScaler.linear(2),
+        // The owner gets a menu beside the long name, which has to wrap
+        // around it (#480).
+        members: _MockMemberRemote(),
+        onMembershipChanged: () async {},
+      ),
+    );
     await settleWith(
       tester,
       household: _household(_id, description: 'Board games, every Sunday.'),
@@ -736,6 +752,10 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byKey(HouseholdDetailScreen.memberCountKey), findsOneWidget);
     expect(find.byKey(HouseholdDetailScreen.memberKey('u-2')), findsOneWidget);
+    expect(
+      find.byKey(HouseholdDetailScreen.memberActionsKey('u-2')),
+      findsOneWidget,
+    );
   });
 
   group('the retry on the refresh banner (#300 D10)', () {
@@ -1137,6 +1157,353 @@ void main() {
       await tester.pump();
 
       expect(edited, [_id]);
+    });
+  });
+
+  group("a member's menu (#480, #483)", () {
+    late _MockMemberRemote remote;
+    late int refreshes;
+
+    setUpAll(() {
+      registerFallbackValue(_member('u-fallback'));
+      registerFallbackValue(HouseholdRole.householdMember);
+    });
+
+    setUp(() {
+      remote = _MockMemberRemote();
+      refreshes = 0;
+      when(() => repository.cacheMember(any())).thenAnswer((_) async {});
+      when(() => repository.removeCachedMember(any(), any()))
+          .thenAnswer((_) async {});
+    });
+
+    Widget withMembers() =>
+        harness(members: remote, onMembershipChanged: () async => refreshes++);
+
+    Finder menuOf(String userId) =>
+        find.byKey(HouseholdDetailScreen.memberActionsKey(userId));
+
+    Finder outcome() => find.byKey(HouseholdDetailScreen.memberOutcomeKey);
+
+    Finder inOutcome(String text) =>
+        find.descendant(of: outcome(), matching: find.text(text));
+
+    /// An owner, looking at Zed, a member.
+    Future<void> settleAsOwner(WidgetTester tester, {String? zed = 'Zed'}) =>
+        settleWith(
+          tester,
+          roster: [
+            _member('u-me', role: HouseholdRole.householdOwner),
+            _member('u-2', displayName: zed),
+          ],
+        );
+
+    Future<void> choose(WidgetTester tester, String userId, Key item) async {
+      await tester.tap(menuOf(userId));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(item));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> changeRoleOfZed(WidgetTester tester, HouseholdRole to) async {
+      await choose(tester, 'u-2', HouseholdDetailScreen.changeRoleKey);
+      await tester.tap(find.byKey(HouseholdDetailScreen.roleOptionKey(to)));
+      await tester.pump();
+      await tester.tap(find.byKey(HouseholdDetailScreen.roleSaveKey));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> removeZed(WidgetTester tester) async {
+      await choose(tester, 'u-2', HouseholdDetailScreen.removeKey);
+      await tester.tap(find.byKey(HouseholdDetailScreen.removeConfirmKey));
+      await tester.pumpAndSettle();
+    }
+
+    TextButton saveButton(WidgetTester tester) =>
+        tester.widget(find.byKey(HouseholdDetailScreen.roleSaveKey));
+
+    BgeBannerTone toneOf(WidgetTester tester) =>
+        tester.widget<BgeInlineBanner>(outcome()).tone;
+
+    testWidgets('an owner gets a menu on every row but their own', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withMembers());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', role: HouseholdRole.householdOwner),
+          // Removed and nothing else: an owner's role changes only through
+          // a transfer (#478).
+          _member('u-2', role: HouseholdRole.householdOwner),
+          _member('u-3', role: HouseholdRole.householdAdmin),
+          _member('u-4'),
+          _member('u-5', role: HouseholdRole.householdGuest),
+        ],
+      );
+
+      expect(menuOf('u-me'), findsNothing);
+      for (final userId in ['u-2', 'u-3', 'u-4', 'u-5']) {
+        expect(menuOf(userId), findsOneWidget, reason: userId);
+      }
+    });
+
+    testWidgets('rows the viewer may not act on have no menu', (tester) async {
+      await tester.pumpWidget(withMembers());
+      await settleWith(
+        tester,
+        roster: [
+          _member('u-me', role: HouseholdRole.householdAdmin),
+          _member('u-2', role: HouseholdRole.householdAdmin),
+          _member('u-3', role: HouseholdRole.householdOwner),
+          _member('u-4'),
+          _member('u-5', role: HouseholdRole.householdGuest),
+        ],
+      );
+
+      for (final userId in ['u-me', 'u-2', 'u-3']) {
+        expect(menuOf(userId), findsNothing, reason: userId);
+      }
+      for (final userId in ['u-4', 'u-5']) {
+        expect(menuOf(userId), findsOneWidget, reason: userId);
+      }
+    });
+
+    testWidgets(
+      "a member's menu is a control of its own, not part of the row's "
+      'label',
+      (tester) async {
+        await tester.pumpWidget(withMembers());
+        await settleAsOwner(tester);
+
+        final row = tester.semantics.find(
+          find.byKey(HouseholdDetailScreen.memberKey('u-2')),
+        );
+        final button = tester.semantics.find(menuOf('u-2'));
+
+        // The row reads as the member's name and role alone. The button's
+        // name is its tooltip, so neither the label nor the tooltip of the
+        // row's merged node may carry it.
+        final merged = row.getSemanticsData();
+        expect(merged.label, contains('Zed'));
+        expect(merged.label, isNot(contains('Member actions')));
+        expect(merged.tooltip, isNot(contains('Member actions')));
+        // The button is a node beside it, a button named for what it opens.
+        expect(button.id, isNot(row.id));
+        expect(button, isSemantics(tooltip: 'Member actions', isButton: true));
+      },
+    );
+
+    testWidgets('no member client, no menus', (tester) async {
+      await tester.pumpWidget(harness());
+      await settleAsOwner(tester);
+
+      expect(menuOf('u-2'), findsNothing);
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+    });
+
+    testWidgets('a member client without a refresh, no menus', (tester) async {
+      // A 404 relies on the refresh to take the member off the list, and
+      // the banners promise it.
+      await tester.pumpWidget(harness(members: remote));
+      await settleAsOwner(tester);
+
+      expect(menuOf('u-2'), findsNothing);
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+    });
+
+    testWidgets('a household the server does not know yet has no menus', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withMembers());
+      await settleWith(
+        tester,
+        household: _household(_id).copyWith(isLocalOnly: true),
+        roster: [
+          _member('u-me', role: HouseholdRole.householdOwner),
+          _member('u-2', displayName: 'Zed'),
+        ],
+      );
+
+      expect(menuOf('u-2'), findsNothing);
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+    });
+
+    testWidgets(
+      "change role offers the viewer's assignable roles, current one chosen, "
+      'Save disabled until it changes',
+      (tester) async {
+        await tester.pumpWidget(withMembers());
+        await settleWith(
+          tester,
+          roster: [
+            _member('u-me', role: HouseholdRole.householdAdmin),
+            _member('u-2', displayName: 'Zed'),
+          ],
+        );
+
+        await choose(tester, 'u-2', HouseholdDetailScreen.changeRoleKey);
+
+        Finder option(HouseholdRole role) =>
+            find.byKey(HouseholdDetailScreen.roleOptionKey(role));
+        expect(option(HouseholdRole.householdMember), findsOneWidget);
+        expect(option(HouseholdRole.householdGuest), findsOneWidget);
+        expect(option(HouseholdRole.householdAdmin), findsNothing);
+        expect(option(HouseholdRole.householdOwner), findsNothing);
+        // Each option says what the role may do.
+        expect(find.text('Sees the household and its events.'), findsOneWidget);
+        expect(
+          tester
+              .widget<RadioGroup<HouseholdRole>>(
+                find.byType(RadioGroup<HouseholdRole>),
+              )
+              .groupValue,
+          HouseholdRole.householdMember,
+        );
+        expect(saveButton(tester).onPressed, isNull);
+
+        await tester.tap(option(HouseholdRole.householdGuest));
+        await tester.pump();
+        expect(saveButton(tester).onPressed, isNotNull);
+
+        await tester.tap(option(HouseholdRole.householdMember));
+        await tester.pump();
+        expect(saveButton(tester).onPressed, isNull);
+      },
+    );
+
+    testWidgets('saving a new role sends it', (tester) async {
+      when(() => remote.changeRole(any(), any(), any())).thenAnswer(
+        (_) async => _member('u-2', role: HouseholdRole.householdGuest),
+      );
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await changeRoleOfZed(tester, HouseholdRole.householdGuest);
+
+      // The member's own id, which the route names, not their user id.
+      verify(
+        () => remote.changeRole(_id, 'm-u-2', HouseholdRole.householdGuest),
+      ).called(1);
+      expect(inOutcome('Role changed.'), findsOneWidget);
+      expect(refreshes, 1);
+    });
+
+    testWidgets('remove asks first; cancelling sends nothing', (tester) async {
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await choose(tester, 'u-2', HouseholdDetailScreen.removeKey);
+      expect(find.text('Remove Zed?'), findsOneWidget);
+      expect(
+        find.text(
+          'They lose access to the household and its events. Only a new '
+          'invite brings them back.',
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Remove Zed?'), findsNothing);
+      verifyNever(() => remote.remove(any(), any()));
+      expect(outcome(), findsNothing);
+    });
+
+    testWidgets('removing someone with no name asks about "this member"', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester, zed: null);
+
+      await choose(tester, 'u-2', HouseholdDetailScreen.removeKey);
+
+      expect(find.text('Remove this member?'), findsOneWidget);
+    });
+
+    testWidgets('confirming remove sends it and shows the outcome', (
+      tester,
+    ) async {
+      when(() => remote.remove(any(), any()))
+          .thenAnswer((_) async => _member('u-2'));
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await removeZed(tester);
+
+      verify(() => remote.remove(_id, 'm-u-2')).called(1);
+      expect(inOutcome('Removed from the household.'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      expect(refreshes, 1);
+
+      await tester.tap(inOutcome('Dismiss'));
+      await tester.pumpAndSettle();
+
+      expect(outcome(), findsNothing);
+    });
+
+    testWidgets("a busy member's menu is disabled", (tester) async {
+      final reply = Completer<HouseholdMember>();
+      when(() => remote.remove(any(), any())).thenAnswer((_) => reply.future);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await removeZed(tester);
+
+      expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNull);
+
+      reply.complete(_member('u-2'));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<IconButton>(menuOf('u-2')).onPressed, isNotNull);
+    });
+
+    testWidgets('a member already gone: a removal holds, so it reads as done; '
+        'a role change did not happen, so it warns', (tester) async {
+      const gone = HouseholdMemberRefusedException('gone', statusCode: 404);
+      when(() => remote.remove(any(), any())).thenThrow(gone);
+      when(() => remote.changeRole(any(), any(), any())).thenThrow(gone);
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await removeZed(tester);
+      expect(
+        inOutcome(
+          'They had already left the household, or it no longer exists.',
+        ),
+        findsOneWidget,
+      );
+      expect(toneOf(tester), BgeBannerTone.success);
+
+      await changeRoleOfZed(tester, HouseholdRole.householdGuest);
+      expect(
+        inOutcome(
+          'That member is no longer in the household, or it no longer exists.',
+        ),
+        findsOneWidget,
+      );
+      expect(toneOf(tester), BgeBannerTone.warning);
+    });
+
+    testWidgets('a refusal warns and a failure is an error', (tester) async {
+      when(
+        () => remote.changeRole(any(), any(), any()),
+      ).thenThrow(const HouseholdMemberRefusedException('no', statusCode: 409));
+      when(() => remote.remove(any(), any()))
+          .thenThrow(const HouseholdMemberTransientException('down'));
+      await tester.pumpWidget(withMembers());
+      await settleAsOwner(tester);
+
+      await changeRoleOfZed(tester, HouseholdRole.householdGuest);
+      expect(toneOf(tester), BgeBannerTone.warning);
+
+      await removeZed(tester);
+      expect(
+        inOutcome("Couldn't reach the server. Try again."),
+        findsOneWidget,
+      );
+      expect(toneOf(tester), BgeBannerTone.error);
     });
   });
 }

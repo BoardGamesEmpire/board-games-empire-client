@@ -739,5 +739,67 @@
   "householdMemberErrorUnexpected": "Something went wrong. The household is being read again to show where things stand.",
   "@householdMemberErrorUnexpected": {
     "description": "Banner on the household screen when a role change or removal failed in a way the app could not read, including an answer it could not understand. The change may or may not have been made, so the household is being read again."
+  },
+  "householdMemberActions": "Member actions",
+  "@householdMemberActions": {
+    "description": "Tooltip and accessible name of the button beside a member's row on the household screen, which opens a menu of what the user may do to that member: change their role, or remove them. Shown to owners and admins only."
+  },
+  "householdMemberChangeRole": "Change role",
+  "@householdMemberChangeRole": {
+    "description": "Menu item on a member's row on the household screen. Opens a dialog to give the member another role."
+  },
+  "householdMemberRemove": "Remove from household",
+  "@householdMemberRemove": {
+    "description": "Menu item on a member's row on the household screen. Asks for confirmation, then takes the member out of the household."
+  },
+  "householdMemberRoleDialogTitle": "Change role",
+  "@householdMemberRoleDialogTitle": {
+    "description": "Title of the dialog where an owner or admin picks another member's new role."
+  },
+  "householdRoleAdminDescription": "Edits the household, manages its invites, and manages members and guests.",
+  "@householdRoleAdminDescription": {
+    "description": "Under the Admin option in the change-role dialog: what a household admin may do."
+  },
+  "householdRoleMemberDescription": "Sees the household and its events, creates events, and invites others when the household allows it.",
+  "@householdRoleMemberDescription": {
+    "description": "Under the Member option in the change-role dialog: what a household member may do. Whether members may invite is a household setting."
+  },
+  "householdRoleGuestDescription": "Sees the household and its events.",
+  "@householdRoleGuestDescription": {
+    "description": "Under the Guest option in the change-role dialog: what a household guest may do."
+  },
+  "householdMemberRoleSave": "Save",
+  "@householdMemberRoleSave": {
+    "description": "Button in the change-role dialog that gives the member the chosen role. Disabled until a role other than the member's current one is chosen."
+  },
+  "householdMemberCancel": "Cancel",
+  "@householdMemberCancel": {
+    "description": "Button in the change-role and remove-member dialogs that closes the dialog without changing anything."
+  },
+  "householdMemberRemoveConfirmTitle": "Remove {name}?",
+  "@householdMemberRemoveConfirmTitle": {
+    "description": "Title of the dialog asking an owner or admin to confirm removing a member from the household, by the member's display name or username.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "householdMemberRemoveConfirmTitleUnnamed": "Remove this member?",
+  "@householdMemberRemoveConfirmTitleUnnamed": {
+    "description": "Title of the dialog asking to confirm removing a member from the household, when the app does not know the member's name yet."
+  },
+  "householdMemberRemoveConfirmBody": "They lose access to the household and its events. Only a new invite brings them back.",
+  "@householdMemberRemoveConfirmBody": {
+    "description": "Body of the dialog asking to confirm removing a member from the household: what removing them does, and that it cannot be undone except by inviting them again."
+  },
+  "householdMemberRemoveConfirm": "Remove",
+  "@householdMemberRemoveConfirm": {
+    "description": "Confirm button of the remove-member dialog, shown in the error colour. Takes the member out of the household."
+  },
+  "householdMemberDismiss": "Dismiss",
+  "@householdMemberDismiss": {
+    "description": "Button on the banner that reports how a role change or removal went, on the household screen. Closes the banner."
   }
 }
