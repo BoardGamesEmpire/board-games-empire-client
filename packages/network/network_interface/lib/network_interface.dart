@@ -5,6 +5,7 @@ export 'src/event_remote_data_source.dart';
 export 'src/game_collection_remote_data_source.dart';
 export 'src/games_remote_data_source.dart';
 export 'src/household_invite_remote_data_source.dart';
+export 'src/household_member_remote_data_source.dart';
 export 'src/household_remote_data_source.dart';
 export 'src/http_date.dart';
 export 'src/paginated_result.dart';

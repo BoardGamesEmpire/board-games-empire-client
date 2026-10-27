@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 
 const _me = 'u_me';
 const _other = 'u_other';
@@ -355,6 +356,20 @@ void main() {
         expect(() => offered.add(admin), throwsUnsupportedError);
       }
     });
+
+    // The picker and the invite draft each list the roles. If they drift,
+    // the picker offers a role the draft refuses.
+    test('offers only roles an invite draft accepts', () {
+      for (final role in roles) {
+        for (final policy in policies) {
+          expect(
+            HouseholdInviteDraft.offerableRoles,
+            containsAll(offerableInviteRoles(role, policy)),
+            reason: '$role, $policy',
+          );
+        }
+      }
+    });
   });
 
   group('householdInviteRowActions', () {
@@ -649,6 +664,18 @@ void main() {
         expect(
           () => assignableMemberRoles(role).add(admin),
           throwsUnsupportedError,
+        );
+      }
+    });
+
+    // The picker and the member client each list the roles. If they drift,
+    // the picker offers a role the client refuses.
+    test('offers only roles the member client accepts', () {
+      for (final role in roles) {
+        expect(
+          HouseholdMemberRemoteDataSource.assignableRoles,
+          containsAll(assignableMemberRoles(role)),
+          reason: '$role',
         );
       }
     });
