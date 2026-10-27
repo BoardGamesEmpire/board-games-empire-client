@@ -377,22 +377,6 @@
   "@inviteSendEmailInvalid": {
     "description": "Shown under the email field when its value is not an email address."
   },
-  "inviteSendSearchLabel": "Search by name or username",
-  "@inviteSendSearchLabel": {
-    "description": "Label of the field that searches for someone to invite."
-  },
-  "inviteSendSearchHint": "Type at least 2 characters",
-  "@inviteSendSearchHint": {
-    "description": "Hint under the search field: the server searches only on 2 or more characters."
-  },
-  "inviteSendSearchEmpty": "No one found.",
-  "@inviteSendSearchEmpty": {
-    "description": "Shown when a search for someone to invite matched no one."
-  },
-  "inviteSendSearchFailed": "Couldn't search. Check your connection and keep typing to try again.",
-  "@inviteSendSearchFailed": {
-    "description": "Shown when a search for someone to invite failed."
-  },
   "inviteSendPickRequired": "Pick someone to invite.",
   "@inviteSendPickRequired": {
     "description": "Shown when the invite form is submitted in person mode with no one picked."
@@ -611,6 +595,10 @@
   "householdDetailEdit": "Edit household",
   "@householdDetailEdit": {
     "description": "Tooltip and accessible name of the button on the household screen that opens the edit form. Shown to its owners and admins."
+  },
+  "householdNewEvent": "New event",
+  "@householdNewEvent": {
+    "description": "Row on the household screen that opens the form for creating an event in this household. Shown to its owners, admins and members, not to guests."
   },
   "editHouseholdTitle": "Edit household",
   "@editHouseholdTitle": {

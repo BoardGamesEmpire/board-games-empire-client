@@ -57,4 +57,21 @@ enum HouseholdRole {
       'HouseholdRole.unknown has no wire name',
     ),
   };
+
+  /// Whether this role may create an event in its household (#499). An
+  /// owner, an admin or a member may. A guest lacks
+  /// `create:event:household`, and the server answers its create with 403.
+  /// [unknown] may not either: a role this client can't read is not one it
+  /// can vouch for.
+  ///
+  /// The household screens read `HouseholdAction.createEvent` from the
+  /// household package's role table (#483). This is for a package that
+  /// can't depend on that one, such as the event form's household picker,
+  /// and the table's test holds the two to the same answer.
+  bool get mayCreateEvents => switch (this) {
+    HouseholdRole.householdOwner ||
+    HouseholdRole.householdAdmin ||
+    HouseholdRole.householdMember => true,
+    HouseholdRole.householdGuest || HouseholdRole.unknown => false,
+  };
 }

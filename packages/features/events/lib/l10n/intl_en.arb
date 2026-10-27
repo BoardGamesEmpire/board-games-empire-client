@@ -54,7 +54,7 @@
   },
   "eventsEmptyBody": "Events you're hosting or invited to show up here.",
   "@eventsEmptyBody": {
-    "description": "Body of the empty state shown when the user has no events at all. Says where events come from; offers no action."
+    "description": "Body of the empty state shown when the user has no events at all. Says where events come from. The New event button, where there is one, sits under it."
   },
   "eventsError": "Your events couldn't be read.",
   "@eventsError": {
@@ -138,7 +138,7 @@
   },
   "eventsCreate": "New event",
   "@eventsCreate": {
-    "description": "Button on the events overview that starts creating an event."
+    "description": "Label of the buttons that start creating an event: on the events overview, in its empty state, and on the page of each group of events."
   },
   "eventsDetailLoading": "Loading this event",
   "@eventsDetailLoading": {
@@ -363,5 +363,301 @@
   "eventsOccurrenceCancelled": "Cancelled",
   "@eventsOccurrenceCancelled": {
     "description": "Where one of an event's dates stands, in the dates on the event's screen: a settled date that was called off."
+  },
+  "eventCreateTitle": "New event",
+  "@eventCreateTitle": {
+    "description": "Title in the app bar of the form for creating an event."
+  },
+  "eventCreateBasicsTitle": "Basics",
+  "@eventCreateBasicsTitle": {
+    "description": "Heading of the first section of the new-event form: the event's title, its household, its type, who can see it, and its description, place and link."
+  },
+  "eventCreateName": "Title",
+  "@eventCreateName": {
+    "description": "Label of the text field where the person names a new event, such as 'Game night'. Required."
+  },
+  "eventCreateNameRequired": "Give the event a title.",
+  "@eventCreateNameRequired": {
+    "description": "Error under the title field of the new-event form when it is empty, or holds only spaces."
+  },
+  "eventCreateHousehold": "Household",
+  "@eventCreateHousehold": {
+    "description": "Label of the menu in the new-event form that picks the household the event belongs to. Its members can see the event. Only households where the person may create events are offered."
+  },
+  "eventCreateNoHousehold": "No household",
+  "@eventCreateNoHousehold": {
+    "description": "First choice in the Household menu of the new-event form, and what it shows at first: the event belongs to no household."
+  },
+  "eventCreateType": "Type",
+  "@eventCreateType": {
+    "description": "Label of the menu in the new-event form that picks what kind of event it is, such as Casual gathering or Strategy night."
+  },
+  "eventCreateReach": "Who can see it",
+  "@eventCreateReach": {
+    "description": "Label of the menu in the new-event form that picks who besides the people invited can see the event, such as Friends or Public."
+  },
+  "eventCreateDescription": "Description (optional)",
+  "@eventCreateDescription": {
+    "description": "Label of the text field where the person may describe a new event. It can be left empty."
+  },
+  "eventCreateLocation": "Location (optional)",
+  "@eventCreateLocation": {
+    "description": "Label of the text field where the person may say where a new event happens, such as an address or 'Ana's place'. It can be left empty."
+  },
+  "eventCreateUrl": "Link (optional)",
+  "@eventCreateUrl": {
+    "description": "Label of the text field where the person may add a web link for a new event, such as its page on another site. It can be left empty."
+  },
+  "eventCreateUrlInvalid": "Enter a full link, starting with https://",
+  "@eventCreateUrlInvalid": {
+    "description": "Error under the link field of the new-event form when what is typed isn't a full web link the server takes, such as one missing 'https://' or with a space in it. Keep 'https://' as it is."
+  },
+  "eventCreateSubmit": "Create event",
+  "@eventCreateSubmit": {
+    "description": "Button at the end of the new-event form that creates the event."
+  },
+  "eventCreateSubmitting": "Creating…",
+  "@eventCreateSubmitting": {
+    "description": "Shown in place of Create event, beside a spinner, while the new event is being created. Also what screen readers announce."
+  },
+  "eventCreateSynced": "Event created.",
+  "@eventCreateSynced": {
+    "description": "Brief message at the bottom of the screen once a new event is created and the server has it."
+  },
+  "eventCreateQueued": "Event saved. It'll be sent when you're back online.",
+  "@eventCreateQueued": {
+    "description": "Brief message at the bottom of the screen once a new event is saved on this device but couldn't reach the server yet: it is sent once the device is online again."
+  },
+  "eventCreateFailedTitle": "Couldn't create the event",
+  "@eventCreateFailedTitle": {
+    "description": "Heading of the error above the Create event button when the event wasn't created: the server refused it, or it couldn't be saved on this device. Names what failed, because the messages under it give only the reason, such as a person who can't be invited. Must be true of each of them."
+  },
+  "eventCreateRefused": "Someone you invited may not accept invites from you. Change who's invited and try again.",
+  "@eventCreateRefused": {
+    "description": "Error above the Create event button, under the heading Couldn't create the event, when the server refused to create the event without saying why. The likely reason is someone invited whose settings refuse invites from the person. Gives only the reason: the heading says the event wasn't created. The form stays filled in."
+  },
+  "eventCreateRefusedInvitee": "{name} can't be invited. Take them off and try again.",
+  "@eventCreateRefusedInvitee": {
+    "description": "Error above the Create event button, under the heading Couldn't create the event, when the server refused to create the event because of one person invited: it has no account for them. The form stays filled in, and that person can be taken off the list.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ana B"
+      }
+    }
+  },
+  "eventCreateRefusedHousehold": "You may no longer be allowed to create events in this household. Pick another household, or none, and try again.",
+  "@eventCreateRefusedHousehold": {
+    "description": "Error above the Create event button, under the heading Couldn't create the event, when the server refused to create the event in the household picked, and no one is invited: the person may no longer be allowed to create events there. Gives only the likely reason: the heading says the event wasn't created. The form stays filled in."
+  },
+  "eventCreateRefusedOther": "The server didn't accept it as it stands. Check the details and try again.",
+  "@eventCreateRefusedOther": {
+    "description": "Error above the Create event button, under the heading Couldn't create the event, when the server refused to create an event that has no household and invites no one, without saying why. Gives only the reason: the heading says the event wasn't created. The form stays filled in."
+  },
+  "eventCreateError": "It couldn't be saved on this device. Try again.",
+  "@eventCreateError": {
+    "description": "Error above the Create event button, under the heading Couldn't create the event, when the new event couldn't be saved on this device, so nothing was created or sent. Gives only the reason: the heading says the event wasn't created."
+  },
+  "eventCreateWhenTitle": "When",
+  "@eventCreateWhenTitle": {
+    "description": "Heading of the section of the new-event form where the person sets when the event happens: how its date is settled, and its dates."
+  },
+  "eventCreateModeFixed": "One date",
+  "@eventCreateModeFixed": {
+    "description": "One of three choices for how a new event's date is settled, in the When section of the new-event form: the event happens once, on a date the host sets."
+  },
+  "eventCreateModeMultiDay": "Several days",
+  "@eventCreateModeMultiDay": {
+    "description": "One of three choices for how a new event's date is settled, in the When section of the new-event form: the event runs over several days, each with a date of its own, such as a weekend convention."
+  },
+  "eventCreateModePoll": "Poll",
+  "@eventCreateModePoll": {
+    "description": "One of three choices for how a new event's date is settled, in the When section of the new-event form: the host proposes dates, and the people invited say which ones work for them."
+  },
+  "eventCreatePollHint": "Propose dates. Invitees say which work for them.",
+  "@eventCreatePollHint": {
+    "description": "Explains the Poll choice, under it in the When section of the new-event form: the dates the host adds are proposals, and the people invited say which suit them."
+  },
+  "eventCreateStart": "Starts",
+  "@eventCreateStart": {
+    "description": "Label of the field where the person picks the day and time one of a new event's dates starts. Tapping it opens a date picker, then a time picker."
+  },
+  "eventCreateEnd": "Ends (optional)",
+  "@eventCreateEnd": {
+    "description": "Label of the field where the person may pick the day and time one of a new event's dates ends. It can be left empty."
+  },
+  "eventCreateDayLabel": "Label (optional)",
+  "@eventCreateDayLabel": {
+    "description": "Label of the text field that names one day of a new event running over several days, for example 'Day 1' or 'Finals'. It can be left empty."
+  },
+  "eventCreateAddDate": "Add a date",
+  "@eventCreateAddDate": {
+    "description": "Button that adds another day to a new event running over several days, or another proposed date to a poll."
+  },
+  "eventCreateRemoveDate": "Remove this date",
+  "@eventCreateRemoveDate": {
+    "description": "Button under one of a new event's dates that takes that date off the list."
+  },
+  "eventCreateDateRequired": "Pick when it starts.",
+  "@eventCreateDateRequired": {
+    "description": "Error under one of a new event's dates when no start has been picked for it."
+  },
+  "eventCreateDatesTooFew": "Add at least two dates.",
+  "@eventCreateDatesTooFew": {
+    "description": "Error under the Add a date button when a new event running over several days, or a poll, has fewer than two dates."
+  },
+  "eventCreateEndBeforeStart": "Ends before it starts.",
+  "@eventCreateEndBeforeStart": {
+    "description": "Error under the end of one of a new event's dates when the end picked is earlier than the start."
+  },
+  "eventCreateClearEnd": "Clear the end time",
+  "@eventCreateClearEnd": {
+    "description": "Tooltip and screen-reader name of the button beside the end of one of a new event's dates, which removes the end picked and leaves the date with no end."
+  },
+  "eventCreateInviteesTitle": "Who's invited",
+  "@eventCreateInviteesTitle": {
+    "description": "Heading of the section of the new-event form where the person picks people to invite to the event, by searching for them."
+  },
+  "eventCreateInviteesCount": "{count, plural, =0{No one yet} one{1 person} other{{count} people}}",
+  "@eventCreateInviteesCount": {
+    "description": "How many people have been picked to invite, under the Who's invited heading of the new-event form.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "eventCreateInviteesFull": "That's the most an event can invite at once ({max}).",
+  "@eventCreateInviteesFull": {
+    "description": "Shown in the Who's invited section of the new-event form once the most people the server takes with one new event are picked: picking another adds no one until someone is taken off. max is that most, 50 today.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "50"
+      }
+    }
+  },
+  "eventCreateInviteeRemove": "Remove {name}",
+  "@eventCreateInviteeRemove": {
+    "description": "Tooltip and screen-reader name of the button on a person picked to invite to a new event, which takes them off the list.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ana B"
+      }
+    }
+  },
+  "eventCreateRulesTitle": "Advanced: rules",
+  "@eventCreateRulesTitle": {
+    "description": "Title of the collapsed section at the end of the new-event form that sets the event's rules, such as how games get added to it. Tapping it opens the section."
+  },
+  "eventCreateRulesLocked": "Rules can't be changed after the event is created.",
+  "@eventCreateRulesLocked": {
+    "description": "Note at the top of the rules section of the new-event form: the rules picked here are final once the event exists."
+  },
+  "eventCreateGameAddition": "How games get added",
+  "@eventCreateGameAddition": {
+    "description": "Label of the menu in the rules section of the new-event form that sets how games get onto the event's list of games to play."
+  },
+  "gameAdditionDirect": "Anyone attending adds them",
+  "@gameAdditionDirect": {
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: anyone attending adds a game straight to the list. Also what the menu shows before anything is picked, since it is the default."
+  },
+  "gameAdditionRequiresVote": "Attendees vote",
+  "@gameAdditionRequiresVote": {
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: a game someone suggests joins the list only if the people attending vote for it."
+  },
+  "gameAdditionHostApproval": "The host approves them",
+  "@gameAdditionHostApproval": {
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: a game someone suggests joins the list once the host approves it."
+  },
+  "gameAdditionHostOnly": "Only hosts add them",
+  "@gameAdditionHostOnly": {
+    "description": "One way games get onto an event's list of games to play, in the menu of the rules section of the new-event form: only the event's hosts can add games."
+  },
+  "eventCreateThreshold": "Votes needed",
+  "@eventCreateThreshold": {
+    "description": "Label of the menu in the rules section of the new-event form that sets how many votes in favour a suggested game needs to join the event's list, when attendees vote on games."
+  },
+  "voteThresholdSimpleMajority": "More than half",
+  "@voteThresholdSimpleMajority": {
+    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list when more than half of the votes cast are in favour."
+  },
+  "voteThresholdSupermajority": "A set share",
+  "@voteThresholdSupermajority": {
+    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list when a share of the votes cast that the host sets, such as 66%, are in favour."
+  },
+  "voteThresholdUnanimous": "Everyone",
+  "@voteThresholdUnanimous": {
+    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list only when every eligible voter is in favour."
+  },
+  "voteThresholdFixedCount": "A set number",
+  "@voteThresholdFixedCount": {
+    "description": "One choice in the Votes needed menu of the new-event form: a game joins the list when a number of votes in favour that the host sets is reached, however many people vote."
+  },
+  "eventCreateThresholdPercent": "Share (%)",
+  "@eventCreateThresholdPercent": {
+    "description": "Label of the number field under the Votes needed menu of the new-event form, for A set share: the percentage of the votes cast that must be in favour."
+  },
+  "eventCreateThresholdCount": "Number of votes",
+  "@eventCreateThresholdCount": {
+    "description": "Label of the number field under the Votes needed menu of the new-event form, for A set number: how many votes in favour a game needs."
+  },
+  "eventCreateQuorum": "Turnout needed",
+  "@eventCreateQuorum": {
+    "description": "Label of the menu in the rules section of the new-event form that sets how many people must vote on a suggested game before the result counts."
+  },
+  "voteQuorumNone": "None",
+  "@voteQuorumNone": {
+    "description": "One choice in the Turnout needed menu of the new-event form: a vote's result counts however few people vote."
+  },
+  "voteQuorumPercent": "A share of attendees",
+  "@voteQuorumPercent": {
+    "description": "One choice in the Turnout needed menu of the new-event form: a vote's result counts once a percentage of the eligible voters, set by the host, have voted."
+  },
+  "voteQuorumFixedCount": "A set number",
+  "@voteQuorumFixedCount": {
+    "description": "One choice in the Turnout needed menu of the new-event form: a vote's result counts once a number of votes set by the host have been cast."
+  },
+  "eventCreateQuorumPercent": "Share of attendees (%)",
+  "@eventCreateQuorumPercent": {
+    "description": "Label of the number field under the Turnout needed menu of the new-event form, for A share of attendees: the percentage of eligible voters who must vote."
+  },
+  "eventCreateQuorumCount": "Number of voters",
+  "@eventCreateQuorumCount": {
+    "description": "Label of the number field under the Turnout needed menu of the new-event form, for A set number: how many votes must be cast."
+  },
+  "eventCreateWindow": "Voting stays open for (hours)",
+  "@eventCreateWindow": {
+    "description": "Label of the number field in the rules section of the new-event form that sets how many hours a vote on a suggested game stays open."
+  },
+  "eventCreateWindowHint": "Leave empty to close voting yourself",
+  "@eventCreateWindowHint": {
+    "description": "Helper text under the Voting stays open for (hours) field of the new-event form: with no number, votes stay open until the host closes them."
+  },
+  "eventCreateNumberRange": "Enter a whole number from {min} to {max}.",
+  "@eventCreateNumberRange": {
+    "description": "Error under one of the number fields in the rules section of the new-event form when what is typed isn't a whole number between the two limits.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "51"
+      },
+      "max": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "eventCreateNumberMin": "Enter a whole number of at least {min}.",
+  "@eventCreateNumberMin": {
+    "description": "Error under one of the number fields in the rules section of the new-event form when what is typed isn't a whole number, or is smaller than the least it may be.",
+    "placeholders": {
+      "min": {
+        "type": "int",
+        "example": "1"
+      }
+    }
   }
 }

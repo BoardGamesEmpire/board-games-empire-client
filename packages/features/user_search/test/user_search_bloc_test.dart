@@ -1,18 +1,21 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:household/household.dart';
 import 'package:models/domain.dart';
+import 'package:user_search/user_search.dart';
 
-import '../support/fake_household_invite_remote.dart';
+import 'support/fake_user_remote.dart';
 
 const _debounce = Duration(milliseconds: 20);
 const _ana = UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B');
 
+/// The search both the household invite form (#455) and the event create
+/// form's invitees (#499) type into: when it asks the server, and what it
+/// shows while it waits and after.
 void main() {
-  late FakeHouseholdInviteRemote remote;
+  late FakeUserRemote remote;
 
   setUp(() {
-    remote = FakeHouseholdInviteRemote()
+    remote = FakeUserRemote()
       ..onSearchUsers = (_, _, _) async => pageOf([_ana]);
   });
 

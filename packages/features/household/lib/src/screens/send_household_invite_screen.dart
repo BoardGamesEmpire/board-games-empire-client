@@ -8,15 +8,13 @@ import 'package:observability/observability.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
+import 'package:user_search/user_search.dart';
 
 import 'package:household/l10n/household_localizations.dart';
 
 import '../bloc/send_household_invite_bloc.dart';
 import '../bloc/send_household_invite_event.dart';
 import '../bloc/send_household_invite_state.dart';
-import '../bloc/user_search_bloc.dart';
-import '../bloc/user_search_event.dart';
-import '../bloc/user_search_state.dart';
 import '../invites/invite_refusal_message.dart';
 import '../permissions/household_actions.dart';
 import '../widgets/household_role_label.dart';
@@ -42,14 +40,19 @@ import '../widgets/household_role_label.dart';
 ///
 /// Decoupled from DI like the other household screens: the caller resolves
 /// [viewerRole], [memberInvitePolicy] and the per-server
-/// [HouseholdInviteRemoteDataSource], and leaves the screen in [onSent] or,
-/// for a member, [onMemberSent].
+/// [HouseholdInviteRemoteDataSource] and [UserRemoteDataSource], and leaves
+/// the screen in [onSent] or, for a member, [onMemberSent].
+///
+/// The search is the shared user search (#499). Its copy comes from
+/// `UserSearchLocalizations`, so the caller registers that delegate beside
+/// this package's.
 class SendHouseholdInviteScreen extends StatelessWidget {
   const SendHouseholdInviteScreen({
     required this.householdId,
     required this.viewerRole,
     required this.memberInvitePolicy,
     required this.remote,
+    required this.users,
     required this.onSent,
     required this.onMemberSent,
     this.onRefresh,
@@ -82,6 +85,9 @@ class SendHouseholdInviteScreen extends StatelessWidget {
   /// hasn't read its settings yet.
   final MemberInvitePolicy? memberInvitePolicy;
   final HouseholdInviteRemoteDataSource remote;
+
+  /// What person mode searches through for someone who has an account.
+  final UserRemoteDataSource users;
 
   /// Called once an owner's or admin's invite is sent, with this screen's
   /// context. A confirmation SnackBar is already showing, above the route.
@@ -126,7 +132,7 @@ class SendHouseholdInviteScreen extends StatelessWidget {
             onRefresh: onRefresh,
           ),
         ),
-        BlocProvider(create: (_) => UserSearchBloc(remote: remote)),
+        BlocProvider(create: (_) => UserSearchBloc(remote: users)),
       ],
       child: BlocListener<SendHouseholdInviteBloc, SendHouseholdInviteState>(
         listenWhen: (_, state) => state is SendHouseholdInviteSent,
@@ -429,6 +435,7 @@ class _SendFormState extends State<_SendForm> {
   @override
   Widget build(BuildContext context) {
     final l10n = HouseholdLocalizations.of(context);
+    final searchL10n = UserSearchLocalizations.of(context);
 
     return BlocBuilder<SendHouseholdInviteBloc, SendHouseholdInviteState>(
       builder: (context, state) {
@@ -484,15 +491,17 @@ class _SendFormState extends State<_SendForm> {
                 BgeTextField(
                   key: SendHouseholdInviteScreen.searchKey,
                   formControlName: 'search',
-                  label: l10n.inviteSendSearchLabel,
-                  helper: l10n.inviteSendSearchHint,
+                  label: searchL10n.userSearchLabel,
+                  helper: searchL10n.userSearchHint,
                   autocorrect: false,
                   readOnly: submitting,
                 ),
                 const BgeGap.sm(),
-                _SearchResults(
-                  picked: _picked,
+                UserSearchResultList(
+                  isPicked: (user) => user.id == _picked?.id,
+                  // Null while sending: the pick is fixed.
                   onPick: submitting ? null : _pick,
+                  resultKey: SendHouseholdInviteScreen.resultKey,
                 ),
                 // Not a field, so it has no field's error line: announced
                 // the way BgeTextField announces one.
@@ -584,53 +593,6 @@ class _SendFormState extends State<_SendForm> {
             ],
           ),
         );
-      },
-    );
-  }
-}
-
-/// What the search found, as rows to pick one from.
-class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.picked, required this.onPick});
-
-  final UserSummary? picked;
-
-  /// Null while sending: the pick is fixed.
-  final void Function(UserSummary user)? onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = HouseholdLocalizations.of(context);
-    final theme = Theme.of(context);
-
-    return BlocBuilder<UserSearchBloc, UserSearchState>(
-      builder: (context, state) => switch (state) {
-        UserSearchIdle() => const SizedBox.shrink(),
-        UserSearchLoading() => const LinearProgressIndicator(),
-        UserSearchFailed() => Text(
-          l10n.inviteSendSearchFailed,
-          style: theme.textTheme.bodyMedium,
-        ),
-        UserSearchResults(:final users) when users.isEmpty => Text(
-          l10n.inviteSendSearchEmpty,
-          style: theme.textTheme.bodyMedium,
-        ),
-        UserSearchResults(:final users) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final user in users)
-              ListTile(
-                key: SendHouseholdInviteScreen.resultKey(user.id),
-                title: Text(user.label),
-                subtitle: user.displayName == null ? null : Text(user.username),
-                selected: picked?.id == user.id,
-                trailing: picked?.id == user.id
-                    ? const Icon(Icons.check_circle)
-                    : null,
-                onTap: onPick == null ? null : () => onPick!(user),
-              ),
-          ],
-        ),
       },
     );
   }

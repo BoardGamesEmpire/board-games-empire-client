@@ -46,6 +46,8 @@ dependencies:
     path: ../ui/widgets
   ui_tokens:
     path: ../ui/tokens
+  user_search:
+    path: ../features/user_search
 
   # State management
   flutter_bloc: ^9.1.1

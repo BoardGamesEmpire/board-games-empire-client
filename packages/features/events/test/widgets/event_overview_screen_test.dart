@@ -17,6 +17,7 @@ import '../support/event_list_items.dart';
 class _MockEventRepository extends Mock implements EventRepository {}
 
 const _emptyTitleCopy = 'No events yet';
+const _emptyBodyCopy = "Events you're hosting or invited to show up here.";
 const _refreshFailedCopy =
     "Couldn't refresh your events. What's shown may be out of date.";
 const _errorCopy = "Your events couldn't be read.";
@@ -85,8 +86,16 @@ void main() {
     WidgetTester tester,
     List<EventListItem> rows, {
     void Function(BuildContext context, EventGroup group)? onOpenGroup,
+    void Function(BuildContext context)? onCreate,
+    TextScaler textScaler = TextScaler.noScaling,
   }) async {
-    await tester.pumpWidget(harness(onOpenGroup: onOpenGroup));
+    await tester.pumpWidget(
+      harness(
+        onOpenGroup: onOpenGroup,
+        onCreate: onCreate,
+        textScaler: textScaler,
+      ),
+    );
     status.finished(EventHydrateOutcome.complete);
     items.add(rows);
     await tester.pump();
@@ -229,6 +238,61 @@ void main() {
     expect(find.text(_emptyTitleCopy), findsOneWidget);
   });
 
+  group('the empty state', () {
+    testWidgets('offers New event when onCreate is given, and calls it', (
+      tester,
+    ) async {
+      var created = 0;
+      await show(tester, const [], onCreate: (_) => created++);
+
+      final button = find.descendant(
+        of: find.byKey(EventOverviewScreen.emptyKey),
+        matching: find.byKey(EventOverviewScreen.emptyCreateKey),
+      );
+      expect(button, findsOneWidget);
+      expect(
+        find.descendant(of: button, matching: find.text('New event')),
+        findsOneWidget,
+      );
+      // Under the body, which says where events come from.
+      expect(
+        tester.getTopLeft(button).dy,
+        greaterThan(tester.getBottomLeft(find.text(_emptyBodyCopy)).dy),
+      );
+
+      await tester.tap(button);
+
+      expect(created, 1);
+    });
+
+    testWidgets('offers nothing without onCreate', (tester) async {
+      await show(tester, const []);
+
+      expect(find.byKey(EventOverviewScreen.emptyKey), findsOneWidget);
+      expect(find.byKey(EventOverviewScreen.emptyCreateKey), findsNothing);
+      expect(find.byType(ButtonStyleButton), findsNothing);
+    });
+
+    testWidgets('keeps its button in the window at 200% text, 320dp wide', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 800));
+      await show(
+        tester,
+        const [],
+        onCreate: (_) {},
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+
+      expect(tester.takeException(), isNull);
+      final rect = tester.getRect(
+        find.byKey(EventOverviewScreen.emptyCreateKey),
+      );
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(320));
+    });
+  });
+
   group('a failed read', () {
     testWidgets('offers a retry that runs a pass', (tester) async {
       var calls = 0;
@@ -357,8 +421,33 @@ void main() {
 
       await tester.tap(find.byKey(EventOverviewScreen.createKey));
 
-      expect(find.text('New event'), findsOneWidget);
+      // Scoped to the button: the empty state this list shows has a New
+      // event button too.
+      expect(
+        find.descendant(
+          of: find.byKey(EventOverviewScreen.createKey),
+          matching: find.text('New event'),
+        ),
+        findsOneWidget,
+      );
       expect(created, 1);
+    });
+
+    testWidgets('leaves the last row room to scroll clear of it', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(400, 400));
+      await show(tester, upcoming(4), onCreate: (_) {});
+
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -5000));
+      await tester.pumpAndSettle();
+
+      final last = find.byKey(EventOverviewScreen.rowKey('e-up-3'));
+      final button = find.byKey(EventOverviewScreen.createKey);
+      expect(
+        tester.getRect(last).bottom,
+        lessThanOrEqualTo(tester.getRect(button).top),
+      );
     });
   });
 

@@ -24,6 +24,8 @@ class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 class _MockInviteRemote extends Mock
     implements HouseholdInviteRemoteDataSource {}
 
+class _MockUserRemote extends Mock implements UserRemoteDataSource {}
+
 Household _household(String id, String name, {MemberInvitePolicy? policy}) =>
     Household(
       id: id,
@@ -87,6 +89,7 @@ PaginatedResult<HouseholdInvite> _page(List<HouseholdInvite> rows) =>
 void main() {
   late _MockAppBootstrapCubit cubit;
   late _MockInviteRemote remote;
+  late _MockUserRemote users;
   late int refreshes;
 
   /// Tears down the session scope [pumpApp] built, as a sign-out does.
@@ -100,6 +103,7 @@ void main() {
   setUp(() {
     cubit = _MockAppBootstrapCubit();
     remote = _MockInviteRemote();
+    users = _MockUserRemote();
     refreshes = 0;
     final storage = _MockStorage();
     when(() => storage.read(any())).thenReturn(null);
@@ -135,6 +139,7 @@ void main() {
   Future<GoRouter> pumpApp(
     WidgetTester tester, {
     bool withInvites = true,
+    bool withUsers = true,
     void Function(HouseholdRepository repository)? stub,
   }) async {
     final repository = _MockHouseholdRepository();
@@ -158,6 +163,7 @@ void main() {
       FakeAuthRepository(initialSession: sampleSession()),
       householdRepository: repository,
       householdInviteRemoteDataSource: withInvites ? remote : null,
+      userRemoteDataSource: withUsers ? users : null,
       householdRefresher: HouseholdRefresher(() async => refreshes++),
     );
     endSession = server.container.dispose;
@@ -230,6 +236,14 @@ void main() {
 
       expect(find.byKey(HomeScreen.entryKey('invites')), findsNothing);
       expect(find.byKey(HomeScreen.entryKey('households')), findsOneWidget);
+    });
+
+    testWidgets('does not need a user search client, which only the send '
+        'form uses', (tester) async {
+      await pumpApp(tester, withUsers: false);
+      await openDrawer(tester);
+
+      expect(find.byKey(HomeScreen.entryKey('invites')), findsOneWidget);
     });
   });
 
@@ -589,5 +603,47 @@ void main() {
     router.go(AppRoutes.invitesSent);
     await tester.pumpAndSettle();
     expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+  });
+
+  testWidgets('the send form falls back without a user search client', (
+    tester,
+  ) async {
+    final router = await pumpApp(tester, withUsers: false);
+
+    router.go(AppRoutes.householdInviteSendOf('hh_a'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    expect(find.byType(SendHouseholdInviteScreen), findsNothing);
+  });
+
+  // Every way in shares the form's gate, so none leads to the fallback.
+  testWidgets('without a user search client the household screen offers no '
+      'Invite row', (tester) async {
+    // A member under Direct, who is offered the row where the form builds.
+    final router = await pumpApp(
+      tester,
+      withUsers: false,
+      stub: asMember(MemberInvitePolicy.direct),
+    );
+
+    router.go(AppRoutes.householdDetailOf('hh_a'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+    expect(find.byKey(HouseholdDetailScreen.roleKey), findsOneWidget);
+    expect(find.byKey(HouseholdDetailScreen.inviteKey), findsNothing);
+  });
+
+  testWidgets('without a user search client the invites offer no Invite '
+      'button', (tester) async {
+    // An owner, who is offered the button where the form builds.
+    final router = await pumpApp(tester, withUsers: false);
+
+    router.go(AppRoutes.householdInvitesOf('hh_a'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('For hh_a'), findsOneWidget);
+    expect(find.byKey(HouseholdInviteListScreen.inviteKey), findsNothing);
   });
 }

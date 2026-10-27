@@ -6,11 +6,16 @@ import 'package:observability/observability.dart';
 import 'user_search_event.dart';
 import 'user_search_state.dart';
 
-/// Finds users to invite by account, as the person types (#455).
+/// Finds users by name or username, as the person types (#455, #499).
+///
+/// Shared by every form that picks people by searching: the household invite
+/// form (#455) and the event create form's invitees (#499). It turns the query
+/// typed so far into a search and its answer. The search field, and what is
+/// done with a user found, are each form's own.
 ///
 /// A query is sent once typing pauses for [debounce], and only when it is
-/// at least [HouseholdInviteRemoteDataSource.minSearchLength] characters
-/// after trimming: the server refuses a shorter one. Each new query replaces
+/// at least [UserRemoteDataSource.minSearchLength] characters after
+/// trimming: the server refuses a shorter one. Each new query replaces
 /// the one before it, whether that one is still waiting out its pause or
 /// already asking, so the results shown are always for the latest query.
 class UserSearchBloc extends Bloc<UserSearchEvent, UserSearchState> {
@@ -18,7 +23,7 @@ class UserSearchBloc extends Bloc<UserSearchEvent, UserSearchState> {
     required this._remote,
     this.debounce = const Duration(milliseconds: 300),
     BgeLogger? logger,
-  }) : _logger = logger ?? BgeLogger('bge.household.invites.search'),
+  }) : _logger = logger ?? BgeLogger('bge.user_search'),
        super(const UserSearchIdle()) {
     on<UserSearchQueryChanged>(_onQueryChanged, transformer: restartable());
   }
@@ -26,7 +31,7 @@ class UserSearchBloc extends Bloc<UserSearchEvent, UserSearchState> {
   /// How long typing must pause before a query is sent.
   final Duration debounce;
 
-  final HouseholdInviteRemoteDataSource _remote;
+  final UserRemoteDataSource _remote;
   final BgeLogger _logger;
 
   Future<void> _onQueryChanged(
@@ -34,7 +39,7 @@ class UserSearchBloc extends Bloc<UserSearchEvent, UserSearchState> {
     Emitter<UserSearchState> emit,
   ) async {
     final query = event.query.trim();
-    if (query.length < HouseholdInviteRemoteDataSource.minSearchLength) {
+    if (query.length < UserRemoteDataSource.minSearchLength) {
       emit(const UserSearchIdle());
       return;
     }

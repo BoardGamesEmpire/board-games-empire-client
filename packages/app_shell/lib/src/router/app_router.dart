@@ -145,6 +145,32 @@ abstract final class AppRoutes {
   /// [eventGroupSegments].
   static String eventGroupOf(String segment) => '$events/$segment';
 
+  /// The form for creating an event (#499), beneath [events]. Build a
+  /// location that starts it in a household with [eventCreateOf].
+  ///
+  /// This pattern and [eventDetail] **overlap** too: `create` is a legal
+  /// event id, so the form is declared before the detail, as the group pages
+  /// are.
+  static const eventCreate = '$events/$_eventCreateSegment';
+
+  /// The query parameter of [eventCreate] naming the household the form
+  /// starts in. An empty value names none.
+  static const eventCreateHouseholdParam = 'household';
+
+  static const _eventCreateSegment = 'create';
+
+  /// The location of the create form, starting in [householdId] where one is
+  /// given.
+  ///
+  /// A household id is a query value here, not a path segment, so it is
+  /// encoded as one.
+  static String eventCreateOf({String? householdId}) => householdId == null
+      ? eventCreate
+      : Uri(
+          path: eventCreate,
+          queryParameters: {eventCreateHouseholdParam: householdId},
+        ).toString();
+
   /// One event, beneath [events] (#498). Build a concrete location with
   /// [eventDetailOf].
   static const eventDetail = '$events/$_eventDetailSegment';
@@ -347,7 +373,8 @@ typedef HouseholdInvitesScreenBuilder = Widget? Function(
 
 /// Builds the send-invite form for one household (#455) for the
 /// [AppRoutes.householdInviteSend] route. Same null contract as
-/// [HouseholdInvitesScreenBuilder].
+/// [HouseholdInvitesScreenBuilder], and also null without the
+/// `UserRemoteDataSource` the form's person search asks (#499).
 typedef SendHouseholdInviteScreenBuilder = Widget? Function(
   BuildContext context,
   String householdId,
@@ -355,7 +382,7 @@ typedef SendHouseholdInviteScreenBuilder = Widget? Function(
 
 /// Builds the edit form for one household (#476) for the
 /// [AppRoutes.householdEdit] route. Same null contract as
-/// [SendHouseholdInviteScreenBuilder], with the per-server
+/// [HouseholdInvitesScreenBuilder], with the per-server
 /// `HouseholdRemoteDataSource` the save is sent through in place of the
 /// invite client.
 ///
@@ -420,6 +447,21 @@ typedef EventOverviewScreenBuilder = Widget? Function(BuildContext context);
 typedef EventGroupScreenBuilder = Widget? Function(
   BuildContext context,
   String segment,
+);
+
+/// Builds the create form (#499) for the [AppRoutes.eventCreate] route,
+/// given the household its `?household=` query names, or null where it names
+/// none. Supplied by [BgeApp]; returns null at navigation time when no active
+/// server is resolvable or its container lacks the `EventRepository`, the
+/// `SyncOperationSender` the create is sent through, or the
+/// `UserRemoteDataSource` its invitee search reads, in which case the route
+/// falls back to [NotYetAvailableScreen].
+///
+/// The household reaches the builder unchecked. The form starts in it only
+/// if it is among the households the user may create an event in.
+typedef EventCreateScreenBuilder = Widget? Function(
+  BuildContext context,
+  String? householdId,
 );
 
 /// Builds one event's detail screen (#498) for the [AppRoutes.eventDetail]
@@ -496,6 +538,7 @@ GoRouter buildAppRouter({
   GameDetailScreenBuilder? gameDetailBuilder,
   EventOverviewScreenBuilder? eventOverviewBuilder,
   EventGroupScreenBuilder? eventGroupBuilder,
+  EventCreateScreenBuilder? eventCreateBuilder,
   EventDetailScreenBuilder? eventDetailBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
@@ -740,10 +783,15 @@ GoRouter buildAppRouter({
       // household children are of their list (#308), so a `go` straight to
       // one builds the overview beneath it.
       //
+      // #499: the create form is a child of the overview too, beside the
+      // group pages, so a `go` straight to it builds the overview beneath it,
+      // which back from the event that replaces the form returns to.
+      //
       // #498: one event is a child of the overview too, so a `go` straight to
       // it builds the overview beneath it. It MUST be declared after the
-      // group pages: `upcoming` is a legal `:eventId`, and go_router takes
-      // the first declared match, as with game search and the game detail.
+      // group pages and the create form: `upcoming` is a legal `:eventId`,
+      // and so is `create`, and go_router takes the first declared match, as
+      // with game search and the game detail.
       GoRoute(
         path: AppRoutes.events,
         builder: (context, _) =>
@@ -757,6 +805,19 @@ GoRouter buildAppRouter({
                   eventGroupBuilder?.call(context, segment) ??
                   const NotYetAvailableScreen(),
             ),
+          GoRoute(
+            path: AppRoutes._eventCreateSegment,
+            builder: (context, state) {
+              final query = state.uri.queryParameters;
+              final household = query[AppRoutes.eventCreateHouseholdParam];
+              // An empty value names no household, as an absent one does.
+              final householdId = household == null || household.isEmpty
+                  ? null
+                  : household;
+              return eventCreateBuilder?.call(context, householdId) ??
+                  const NotYetAvailableScreen();
+            },
+          ),
           GoRoute(
             path: AppRoutes._eventDetailSegment,
             builder: (context, state) {

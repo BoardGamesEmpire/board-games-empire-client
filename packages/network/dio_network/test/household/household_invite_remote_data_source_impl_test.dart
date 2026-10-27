@@ -388,55 +388,6 @@ void main() {
     }
   });
 
-  group('searchUsers', () {
-    String users() => _list('users', [
-      {
-        'id': 'u_2',
-        'username': 'ana',
-        'firstName': 'Ana',
-        'lastName': 'B',
-        'image': null,
-        'profile': {'displayName': 'Ana B', 'avatarUrl': null},
-      },
-      {
-        'id': 'u_3',
-        'username': 'anna',
-        'firstName': null,
-        'lastName': null,
-        'image': null,
-        'profile': null,
-      },
-    ]);
-
-    test('sends the trimmed query at the search page size', () async {
-      final remote = answering(users());
-
-      final page = await remote.searchUsers('  an ');
-
-      expect(adapter.sent.single.method, 'GET');
-      expect(adapter.sent.single.path, '/api/users/search');
-      expect(adapter.sent.single.query, {'q': 'an', 'page': 1, 'limit': 20});
-      expect(page.items, const [
-        UserSummary(id: 'u_2', username: 'ana', displayName: 'Ana B'),
-        UserSummary(id: 'u_3', username: 'anna'),
-      ]);
-    });
-
-    test('refuses a query under 2 characters before any request', () {
-      final remote = answering(users());
-
-      expect(() => remote.searchUsers(' a '), throwsArgumentError);
-      expect(adapter.sent, isEmpty);
-    });
-
-    test('refuses a limit over 20 before any request', () {
-      final remote = answering(users());
-
-      expect(() => remote.searchUsers('ana', limit: 21), throwsArgumentError);
-      expect(adapter.sent, isEmpty);
-    });
-  });
-
   group('paging guards', () {
     test('refuses page 0 before any request', () {
       final remote = answering(_list('invites', const [], total: 0));
@@ -504,15 +455,11 @@ void main() {
       });
     }
 
-    test('an enveloped 404 from a list or search route is transient', () {
+    test('an enveloped 404 from a list route is transient', () {
       expect(answering(_envelope(404), status: 404).fetchInbox(), transient);
       expect(answering(_envelope(404), status: 404).fetchSent(), transient);
       expect(
         answering(_envelope(404), status: 404).fetchHouseholdInvites('hh_1'),
-        transient,
-      );
-      expect(
-        answering(_envelope(404), status: 404).searchUsers('ana'),
         transient,
       );
     });

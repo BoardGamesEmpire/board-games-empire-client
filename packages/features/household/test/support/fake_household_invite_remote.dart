@@ -39,12 +39,6 @@ class FakeHouseholdInviteRemote implements HouseholdInviteRemoteDataSource {
   onRevoke;
   Future<HouseholdInvite> Function(String householdId, String inviteId)?
   onApprove;
-  Future<PaginatedResult<UserSummary>> Function(
-    String query,
-    int page,
-    int limit,
-  )?
-  onSearchUsers;
 
   /// Answers every household list read with [rows] on one page.
   void listing(List<HouseholdInvite> rows) =>
@@ -122,16 +116,6 @@ class FakeHouseholdInviteRemote implements HouseholdInviteRemoteDataSource {
   Future<HouseholdInvite> approve(String householdId, String inviteId) {
     calls.add('approve($householdId, $inviteId)');
     return _run(onApprove, 'approve')(householdId, inviteId);
-  }
-
-  @override
-  Future<PaginatedResult<UserSummary>> searchUsers(
-    String query, {
-    int page = 1,
-    int limit = HouseholdInviteRemoteDataSource.maxSearchPageSize,
-  }) {
-    calls.add('searchUsers($query)');
-    return _run(onSearchUsers, 'searchUsers')(query, page, limit);
   }
 
   static T _run<T extends Function>(T? handler, String name) =>

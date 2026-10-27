@@ -251,7 +251,16 @@ final class EventCreateRefusedException extends EventRemoteException {
     super.message, {
     super.statusCode,
     super.cause,
+    this.apiMessage,
   });
+
+  /// The `message` of the API's error envelope, when it is a string. The
+  /// server's 404 for an invitee it has no account for names their id there
+  /// (#499), where [message] is this client's own and names no one.
+  ///
+  /// The server translates it into the request's locale, so it is for
+  /// finding an id it names, never for showing.
+  final String? apiMessage;
 }
 
 /// The server refused the request, and sending it again will not change that.

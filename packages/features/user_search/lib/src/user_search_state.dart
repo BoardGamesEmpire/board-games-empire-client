@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-/// What the send form's user search is showing (#455).
+/// What a user search is showing (#455, #499).
 sealed class UserSearchState extends Equatable {
   const UserSearchState();
 

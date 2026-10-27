@@ -43,12 +43,13 @@ import '../widgets/event_row.dart';
 /// (#44), so a host can put the sliver in its own scroll view without this
 /// page's app bar.
 ///
-/// ## Hooks for what isn't built yet
+/// ## Hooks a composition may leave out
 ///
 /// Without [onOpen] a row is inert content, not a focus stop: a tap that
 /// leads nowhere is worse than no tap (#269). The shell passes it where it
-/// has a detail route (#498). Without [onCreate] there is no create button;
-/// #499 wires it.
+/// has a detail route (#498). Without [onCreate] there is no create button,
+/// neither the one beside the list nor the one the empty state offers
+/// (#499).
 class EventOverviewScreen extends StatelessWidget {
   const EventOverviewScreen({
     required this.repository,
@@ -72,6 +73,9 @@ class EventOverviewScreen extends StatelessWidget {
   /// Key on the empty state.
   static const Key emptyKey = Key('events.empty');
 
+  /// Key on the empty state's create button.
+  static const Key emptyCreateKey = Key('events.empty_create');
+
   /// Key on the failed-read surface, here and on a group's page.
   static const Key errorKey = Key('events.error');
 
@@ -81,7 +85,8 @@ class EventOverviewScreen extends StatelessWidget {
   /// Key on the banner's retry button.
   static const Key refreshRetryKey = Key('events.refresh_retry');
 
-  /// Key on the create button.
+  /// Key on the floating create button, beside the list. The empty state's
+  /// own is [emptyCreateKey].
   static const Key createKey = Key('events.create');
 
   /// Key on one group: `events.group_<name>`.
@@ -110,7 +115,9 @@ class EventOverviewScreen extends StatelessWidget {
   /// Opens one group's page, or null where there is none to open.
   final void Function(BuildContext context, EventGroup group)? onOpenGroup;
 
-  /// Starts creating an event, or null where there is no way to yet.
+  /// Starts creating an event (#499), or null where this composition has no
+  /// create form to open. Null draws no create button, here or in the empty
+  /// state.
   final void Function(BuildContext context)? onCreate;
 
   /// Runs one more hydrate pass, or null where this composition has none.
@@ -170,6 +177,7 @@ class _EventOverviewPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final create = onCreate;
+    final tokens = BgeTokens.of(context);
     // The rows shown, for "item 3 of 9". The page owns the scroll view, so
     // the page passes it (#210).
     final rowCount = context.select<EventOverviewBloc, int?>(
@@ -194,7 +202,18 @@ class _EventOverviewPage extends StatelessWidget {
               label: Text(l10n.eventsCreate),
             ),
       slivers: [
-        EventOverviewSliver(onOpen: onOpen, onOpenGroup: onOpenGroup, now: now),
+        EventOverviewSliver(
+          onOpen: onOpen,
+          onOpenGroup: onOpenGroup,
+          onCreate: onCreate,
+          now: now,
+        ),
+        // The create button floats over the end of the list; room below the
+        // rows lets the last one scroll clear of it.
+        if (create != null && rowCount != null)
+          SliverToBoxAdapter(
+            child: SizedBox(height: tokens.spaceXxl + tokens.spaceMd),
+          ),
       ],
     );
   }
@@ -210,6 +229,7 @@ class EventOverviewSliver extends StatelessWidget {
   const EventOverviewSliver({
     this.onOpen,
     this.onOpenGroup,
+    this.onCreate,
     this.now,
     super.key,
   });
@@ -219,6 +239,11 @@ class EventOverviewSliver extends StatelessWidget {
 
   /// See [EventOverviewScreen.onOpenGroup].
   final void Function(BuildContext context, EventGroup group)? onOpenGroup;
+
+  /// Starts creating an event from the empty state's button, or null for no
+  /// button there (#499). The button beside the list is the page's, so a
+  /// host draws its own.
+  final void Function(BuildContext context)? onCreate;
 
   /// See [EventOverviewScreen.now].
   final DateTime Function()? now;
@@ -237,7 +262,7 @@ class EventOverviewSliver extends StatelessWidget {
 
     return EventListStatesSliver(
       ready: (context, groups) {
-        if (groups.isEmpty) return const _EmptySliver();
+        if (groups.isEmpty) return _EmptySliver(onCreate: onCreate);
 
         // Numbered across the groups, so a screen reader's "item 7 of 12"
         // counts every row on the overview, not each group's afresh.
@@ -367,14 +392,19 @@ class _GroupHeader extends StatelessWidget {
   }
 }
 
-/// No events at all. Offers nothing to press: creating one is #499's.
+/// No events at all, with a New event button where [onCreate] is given
+/// (#499). The page's own button sits in a corner, and the empty state is
+/// where the user is looking.
 class _EmptySliver extends StatelessWidget {
-  const _EmptySliver();
+  const _EmptySliver({this.onCreate});
+
+  final void Function(BuildContext context)? onCreate;
 
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
     final theme = Theme.of(context);
+    final create = onCreate;
 
     return EventMessageSliver(
       child: Column(
@@ -392,6 +422,15 @@ class _EmptySliver extends StatelessWidget {
             style: theme.textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
+          if (create != null) ...[
+            const BgeGap.lg(),
+            FilledButton.icon(
+              key: EventOverviewScreen.emptyCreateKey,
+              onPressed: () => create(context),
+              icon: const Icon(Icons.add),
+              label: Text(l10n.eventsCreate),
+            ),
+          ],
         ],
       ),
     );

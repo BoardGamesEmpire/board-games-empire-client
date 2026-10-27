@@ -116,6 +116,22 @@ void main() {
       });
     });
 
+    test('owner, admin and member may create events; guest and unknown may '
+        'not', () {
+      // A guest lacks `create:event:household` (#499). A role this client
+      // can't read is one it can't vouch for either.
+      expect(
+        {for (final role in HouseholdRole.values) role: role.mayCreateEvents},
+        {
+          HouseholdRole.householdOwner: true,
+          HouseholdRole.householdAdmin: true,
+          HouseholdRole.householdMember: true,
+          HouseholdRole.householdGuest: false,
+          HouseholdRole.unknown: false,
+        },
+      );
+    });
+
     group('toWire', () {
       test('names every known role as the server does', () {
         const expectations = <HouseholdRole, String>{

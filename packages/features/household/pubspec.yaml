@@ -21,10 +21,14 @@ dependencies:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
+  # The shared user search the invite form searches with (#499): the one
+  # feature package another may depend on.
+  user_search:
+    path: ../user_search
 
   flutter_bloc: ^9.1.1
-  # restartable() for user search (#455): a newer query replaces the one
-  # still waiting out its debounce.
+  # droppable() for the invite send (#455) and the household edit (#476): a
+  # submit while one is on its way is dropped, so a double tap sends once.
   bloc_concurrency: ^0.3.0
   equatable: ^2.1.0
   reactive_forms: ^18.1.1

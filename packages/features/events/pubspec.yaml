@@ -21,9 +21,14 @@ dependencies:
     path: ../../network/network_interface
   observability:
     path: ../../core/observability
+  # The shared user search the create form picks invitees with (#499): the
+  # one feature package another may depend on.
+  user_search:
+    path: ../user_search
 
   flutter_bloc: ^9.1.1
   equatable: ^2.1.0
+  reactive_forms: ^18.1.1
   intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
   # scale; both declared directly because this package imports from both.
@@ -35,6 +40,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  bloc_test: ^10.0.0
   # A real container for the hydrate installer's tests. Dev-only: nothing
   # under `lib/` names `di` — the installer takes the `DependencyContainer`
   # abstraction from `interfaces`. Same shape as `game_collection`'s.

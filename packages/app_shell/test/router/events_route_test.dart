@@ -14,8 +14,16 @@ const _overviewKey = Key('events_route.overview');
 Key _groupKey(String segment) => Key('events_route.group_$segment');
 Key _detailKey(String eventId) => Key('events_route.detail_$eventId');
 
-/// The #497 routes: the overview, with a page per group beneath it, and
-/// #498's event detail beneath that.
+/// The create form's marker, naming the household its builder was handed,
+/// if any.
+Key _createKey([String? householdId]) => Key(
+  householdId == null
+      ? 'events_route.create'
+      : 'events_route.create_$householdId',
+);
+
+/// The #497 routes: the overview, with a page per group beneath it, #498's
+/// event detail beneath that, and #499's create form beside the groups.
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -41,6 +49,10 @@ void main() {
       eventGroupBuilder: withBuilders
           ? (_, segment) => Scaffold(body: SizedBox(key: _groupKey(segment)))
           : null,
+      eventCreateBuilder: withBuilders
+          ? (_, householdId) =>
+                Scaffold(body: SizedBox(key: _createKey(householdId)))
+          : null,
       eventDetailBuilder: withBuilders && withDetailBuilder
           ? (_, eventId) => Scaffold(body: SizedBox(key: _detailKey(eventId)))
           : null,
@@ -60,7 +72,7 @@ void main() {
     return router;
   }
 
-  group('buildAppRouter — event routes (#497, #498)', () {
+  group('buildAppRouter — event routes (#497, #498, #499)', () {
     testWidgets('resolves the overview builder', (tester) async {
       final router = await pumpRouter(tester);
 
@@ -150,6 +162,70 @@ void main() {
       expect(find.byKey(_detailKey('a/b')), findsOneWidget);
     });
 
+    testWidgets('/events/create is the form, not an event called create', (
+      tester,
+    ) async {
+      // `create` is a legal event id. The form is declared before the
+      // detail, so the path must reach the form and never the detail.
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventCreate);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_createKey()), findsOneWidget);
+      expect(find.byKey(_detailKey('create')), findsNothing);
+    });
+
+    testWidgets('/events/create?household=h1 prefills the household', (
+      tester,
+    ) async {
+      final router = await pumpRouter(tester);
+
+      router.go('/events/create?household=h1');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_createKey('h1')), findsOneWidget);
+    });
+
+    testWidgets('an empty household is none', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go('/events/create?household=');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_createKey()), findsOneWidget);
+    });
+
+    testWidgets('eventCreateOf encodes the household id', (tester) async {
+      final router = await pumpRouter(tester);
+
+      // Unencoded, `&` and `#` would end the value early, and `+` would read
+      // back as a space.
+      const id = 'a b&c=d#e+f';
+      router.go(AppRoutes.eventCreateOf(householdId: id));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_createKey(id)), findsOneWidget);
+      // Without one it is the form's own location.
+      expect(AppRoutes.eventCreateOf(), AppRoutes.eventCreate);
+    });
+
+    testWidgets('a go straight to the form builds the overview beneath it', (
+      tester,
+    ) async {
+      // So back from the form, or from the event that replaces it, is the
+      // overview.
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventCreate);
+      await tester.pumpAndSettle();
+      router.pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_overviewKey), findsOneWidget);
+      expect(find.byKey(_createKey()), findsNothing);
+    });
+
     testWidgets('falls back to NotYetAvailable without builders', (
       tester,
     ) async {
@@ -158,6 +234,7 @@ void main() {
       for (final location in [
         AppRoutes.events,
         AppRoutes.eventGroupOf('upcoming'),
+        AppRoutes.eventCreate,
       ]) {
         router.go(location);
         await tester.pumpAndSettle();

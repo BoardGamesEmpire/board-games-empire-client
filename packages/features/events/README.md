@@ -1,10 +1,11 @@
 # events
 
-The events feature: the hydrate (#496), the overview (#497) and the detail
-(#498). The hydrate is the pass that keeps a per-user cache of the events the
-signed-in user attends, which every event screen reads, and what the screens
-can learn from it and ask of it. The overview is the first screen to read it,
-and the detail shows one event from it.
+The events feature: the hydrate (#496), the overview (#497), the detail
+(#498) and creating an event (#499). The hydrate is the pass that keeps a
+per-user cache of the events the signed-in user attends, which every event
+screen reads, and what the screens can learn from it and ask of it. The
+overview is the first screen to read it, the detail shows one event from it,
+and the create form writes a new one to it and sends it to the server.
 
 ## The hydrate
 
@@ -144,11 +145,13 @@ the next one. A group holding more than five has a *See all* button that opens
 row shows its title, its date in device-local time with the platform's
 24-hour setting, its venue, its household's name from the cached households,
 and the user's RSVP where their row is cached, which until backend#867 is
-only after a detail read. The screens take optional hooks for what isn't
-built yet: without `onOpen` a row is inert, and without `onCreate` there is
-no create button. The shell wires `onOpen` to the detail, and #499 wires
-`onCreate`. The shell opens the overview from the home drawer at `/events`,
-and each group at `/events/upcoming`, `/events/planning` and `/events/past`.
+only after a detail read. The screens take hooks a composition may leave
+out: without `onOpen` a row is inert, and without `onCreate` there is no New
+event button, neither the one beside the list nor the one the empty overview
+offers under its message. The shell wires `onOpen` to the detail and
+`onCreate` to the create form. It opens the overview from the home drawer at
+`/events`, and each group at `/events/upcoming`, `/events/planning` and
+`/events/past`.
 
 ## The detail
 
@@ -177,11 +180,48 @@ failed read. Native has no guard and is always confirmed.
 household event, to what they may do to it. The screen shows no buttons yet:
 each action's issue (#500 to #518) adds its own and reads that table.
 
+## Creating an event
+
+`CreateEventScreen` is the form for a new event (#499): its basics, *When*
+(one date, several days or a poll, and its dates), *Who's invited*, found
+through the shared `user_search` package, and *Advanced: rules*, then the
+submit. The form checks what it can before anything is written: a title, a
+start for each date shown, two dates or more for a poll or several days,
+each end at or after its start, a link the server's `@IsUrl()` takes, and
+each rule's number in its range. What the user leaves untouched is not sent,
+so the server's defaults apply. The household picker offers the cached
+households the user may create an event in, as `eventCreateHouseholds`
+filters them by role. It starts in the household a link names once a list
+offers it, unless the user has picked a household or submitted first.
+
+`CreateEventBloc` writes the event on this device first, through
+`EventRepository.create`, which queues its create in the same transaction.
+It then sends that queued create once, straight away, through the session's
+`SyncOperationSender`, the delivery path the queue drain takes too. A create
+the server took, or one that stays queued for the drain to send, takes the
+user to the event. On web no drain runs yet (#447), so a create whose first
+send fails stays queued there. One the server refuses keeps the user on the
+form under a banner, which names the invitee or the household when it can. A
+403 for a create in a household also reads the user's households again, since
+their role there may have changed elsewhere. The refused create stays parked:
+the next submit discards it and creates afresh, unless another tab has
+retried it since, whose event then stands and is the one the user is taken
+to. One the user leaves behind waits on the sync queue's own surface (#190).
+
+The shell routes the form at `/events/create`, where `?household=` names the
+household to start in, and offers every way in to it: New event beside the
+overview and each group's list, and on the empty overview, and the New event
+row on a household's page, which starts in that household. It offers them
+only where the session holds what the form needs, the event repository, the
+sync sender and the person search, and the route falls back without them. A
+created event's detail takes the form's place, so back never lands on it.
+
 Run `melos run generate` once after checkout: the localizations under
 `lib/l10n/` are generated and gitignored.
 
 ## Not here yet
 
-- **Writes.** Creating an event is #499, and answering an invitation or voting
-  is #527. Nothing here queues or sends anything.
+- **Other writes.** Editing an event is #500, and answering an invitation or
+  voting is #527. Fixing a refused create from the sync queue's surface is
+  #590.
 - **Invitations.** Whether invited events get a group of their own is #568.

@@ -9,4 +9,5 @@ export 'src/household_member_remote_data_source.dart';
 export 'src/household_remote_data_source.dart';
 export 'src/http_date.dart';
 export 'src/paginated_result.dart';
+export 'src/user_remote_data_source.dart';
 export 'src/well_known_client.dart';

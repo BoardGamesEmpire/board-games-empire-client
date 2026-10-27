@@ -1,0 +1,19 @@
+{
+  "@@locale": "en",
+  "userSearchLabel": "Search by name or username",
+  "@userSearchLabel": {
+    "description": "Label of the field that searches for people, such as someone to invite to a household or to an event."
+  },
+  "userSearchHint": "Type at least 2 characters",
+  "@userSearchHint": {
+    "description": "Hint under the search field: the server searches only on 2 or more characters."
+  },
+  "userSearchEmpty": "No one found.",
+  "@userSearchEmpty": {
+    "description": "Shown when a search for people matched no one."
+  },
+  "userSearchFailed": "Couldn't search. Check your connection and keep typing to try again.",
+  "@userSearchFailed": {
+    "description": "Shown when a search for people failed."
+  }
+}

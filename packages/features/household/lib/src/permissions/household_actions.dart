@@ -40,6 +40,9 @@ enum HouseholdAction {
 
   /// Send an invite, under the household's member invite policy (#569).
   sendInvite,
+
+  /// Create an event in the household (#499).
+  createEvent,
 }
 
 /// What a viewer may do to another member of a household, one per action a
@@ -104,8 +107,8 @@ Set<HouseholdAction> householdActionsFor(
 
 // The sets below are the README's role columns, one per role, read down the
 // rows that match a [HouseholdAction]: editing and deleting the household,
-// leaving it, listing its invites, and inviting. The test asserts each one in
-// full.
+// leaving it, listing its invites, inviting, and creating a household event.
+// The test asserts each one in full.
 
 /// The Owner column: every household action.
 const _owner = <HouseholdAction>{
@@ -114,6 +117,7 @@ const _owner = <HouseholdAction>{
   HouseholdAction.leave,
   HouseholdAction.manageInvites,
   HouseholdAction.sendInvite,
+  HouseholdAction.createEvent,
 };
 
 /// The Admin column: every household action but `delete`, which is the owner's
@@ -123,18 +127,23 @@ const _admin = <HouseholdAction>{
   HouseholdAction.leave,
   HouseholdAction.manageInvites,
   HouseholdAction.sendInvite,
+  HouseholdAction.createEvent,
 };
 
 /// The Member column where the household's policy keeps members from sending
-/// (the invite rows under `Off`): they leave and nothing else.
-const _member = <HouseholdAction>{HouseholdAction.leave};
+/// (the invite rows under `Off`): they leave and create events.
+const _member = <HouseholdAction>{
+  HouseholdAction.leave,
+  HouseholdAction.createEvent,
+};
 
-/// The Member column under `Direct` or `NeedsApproval`: they leave and send
-/// invites. Under `NeedsApproval` an owner or admin approves each one first,
+/// The Member column under `Direct` or `NeedsApproval`: they leave, send
+/// invites and create events. Under `NeedsApproval` an owner or admin approves each one first,
 /// which is the invite row's business and not this table's.
 const _memberWhoMaySend = <HouseholdAction>{
   HouseholdAction.leave,
   HouseholdAction.sendInvite,
+  HouseholdAction.createEvent,
 };
 
 /// The Guest column: they leave and nothing else, whatever the policy.

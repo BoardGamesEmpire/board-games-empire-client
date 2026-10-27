@@ -4,6 +4,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
+import '../user/user_summary_json.dart';
 
 /// [HouseholdInviteRemoteDataSource] over a **per-server** Dio instance
 /// (#455).
@@ -200,48 +201,6 @@ class HouseholdInviteRemoteDataSourceImpl
         'Household invite approve',
       );
 
-  @override
-  Future<PaginatedResult<UserSummary>> searchUsers(
-    String query, {
-    int page = 1,
-    int limit = HouseholdInviteRemoteDataSource.maxSearchPageSize,
-  }) async {
-    final q = query.trim();
-    const minLength = HouseholdInviteRemoteDataSource.minSearchLength;
-    if (q.length < minLength) {
-      throw ArgumentError.value(
-        query,
-        'query',
-        'must be at least $minLength characters after trimming',
-      );
-    }
-    _checkPaging(
-      page: page,
-      limit: limit,
-      max: HouseholdInviteRemoteDataSource.maxSearchPageSize,
-    );
-
-    const action = 'User search';
-    final response = await _send(
-      request: () => _dio.get<String>(
-        '/api/users/search',
-        options: _plainBody,
-        queryParameters: {'q': q, 'page': page, 'limit': limit},
-      ),
-      action: action,
-      rowRoute: false,
-    );
-    return _parse(
-      () => PaginatedResult.fromEnvelope(
-        response.body,
-        key: 'users',
-        item: _mapUser,
-      ),
-      action: action,
-      status: response.status,
-    );
-  }
-
   static String _householdInvites(String householdId) =>
       '/api/households/${Uri.encodeComponent(householdId)}/invites';
 
@@ -283,7 +242,7 @@ class HouseholdInviteRemoteDataSourceImpl
     return HouseholdInvite(
       id: json['id'] as String,
       status: HouseholdInviteStatus.fromWire(json['status'] as String),
-      inviter: _mapUser(json['inviter'] as Map<String, dynamic>),
+      inviter: userSummaryFromJson(json['inviter'] as Map<String, dynamic>),
       role: role == null
           ? null
           : HouseholdRole.fromWire(role['name'] as String),
@@ -294,17 +253,6 @@ class HouseholdInviteRemoteDataSourceImpl
       householdName: household?['name'] as String?,
       expiresAt: DateTime.parse(json['expiresAt'] as String),
       createdAt: DateTime.parse(json['createdAt'] as String),
-    );
-  }
-
-  /// An embedded user: an inviter, or a search result. The display name is
-  /// on the profile, which may be absent.
-  static UserSummary _mapUser(Map<String, dynamic> json) {
-    final profile = json['profile'] as Map<String, dynamic>?;
-    return UserSummary(
-      id: json['id'] as String,
-      username: json['username'] as String,
-      displayName: profile?['displayName'] as String?,
     );
   }
 

@@ -1228,11 +1228,13 @@ void main() {
       await expectLater(
         create(remote),
         throwsA(
-          isA<EventCreateRefusedException>().having(
-            (e) => e.statusCode,
-            'statusCode',
-            403,
-          ),
+          isA<EventCreateRefusedException>()
+              .having((e) => e.statusCode, 'statusCode', 403)
+              .having(
+                (e) => e.apiMessage,
+                'apiMessage',
+                'You may not create events there.',
+              ),
         ),
       );
     });
@@ -1251,6 +1253,29 @@ void main() {
             'statusCode',
             404,
           ),
+        ),
+      );
+    });
+
+    // The server's own words, which name an invitee it has no account for
+    // (#499). The exception's message is this client's, and names no one.
+    test("an enveloped 404 on the create carries the envelope's message as "
+        'apiMessage', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'User with ID u-2 not found'),
+        status: 404,
+      );
+
+      await expectLater(
+        create(remote),
+        throwsA(
+          isA<EventCreateRefusedException>()
+              .having((e) => e.statusCode, 'statusCode', 404)
+              .having(
+                (e) => e.apiMessage,
+                'apiMessage',
+                'User with ID u-2 not found',
+              ),
         ),
       );
     });

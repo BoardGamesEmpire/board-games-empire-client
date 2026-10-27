@@ -23,6 +23,16 @@ import 'package:ui_tokens/src/bge_typography.dart';
 /// through every later literal width in this file.
 const double _dialogMinWidth = 280;
 
+/// The most lines a field's helper or error takes before it is ellipsized
+/// (#499).
+///
+/// Five lines fit the app's longest two-sentence field error ("Plain http is
+/// only allowed for local and private network addresses. Use https for this
+/// server.") at 320dp and 2.0 text, measured with real fonts. The sixth is
+/// room for a translation that runs longer. Capped rather than unlimited, so a
+/// runaway message can't push the rest of a form out of reach.
+const int _fieldMessageMaxLines = 6;
+
 /// The four application themes (#32), built from a [BgePalette] with the
 /// theme-level accessibility baseline applied uniformly.
 ///
@@ -52,6 +62,9 @@ const double _dialogMinWidth = 280;
 ///   insets, up to 2480dp on a 2560 monitor. The one Flutter dialog the cap
 ///   is wrong for is `showDateRangePicker` in its calendar form, which is
 ///   built to fill the window; the style guide says how it lifts the cap.
+/// - **Field messages that wrap** — a field's helper and error take up to
+///   six lines rather than Flutter's one ellipsized line, which cut even
+///   short messages at 2.0 text on a narrow phone (#499).
 /// - **Dimensional tokens** — [BgeTokens.standard] and [BgeStatusColors] are
 ///   installed as `ThemeExtension`s on every theme.
 ///
@@ -120,6 +133,12 @@ abstract final class BgeTheme {
             width: tokens.focusOutlineWidth,
           ),
         ),
+        // #499: a field's helper and error wrap. Left unset, each is one
+        // ellipsized line, Flutter's default, and at 320dp and 2.0 text even
+        // "Type at least 2 characters" was cut short. Capped rather than
+        // unlimited: see [_fieldMessageMaxLines].
+        helperMaxLines: _fieldMessageMaxLines,
+        errorMaxLines: _fieldMessageMaxLines,
       ),
       // #322: authored rather than inherited. Left unset, Material
       // substitutes `primary` at 40% opacity, which drops selected text

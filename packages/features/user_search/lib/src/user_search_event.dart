@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// Input to the send form's user search (#455).
+/// Input to a user search (#455, #499).
 sealed class UserSearchEvent extends Equatable {
   const UserSearchEvent();
 

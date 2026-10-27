@@ -75,6 +75,16 @@ import '../sync/household_hydration_status.dart';
 /// It is left out for a household the server does not know yet, and where
 /// the composition passes no [onInvite].
 ///
+/// ## New event (#499)
+///
+/// To an owner, an admin or a member, as the role table allows (#483), the
+/// screen offers a New event row, after the Invite row. It opens the form for
+/// creating an event with this household picked. A guest lacks
+/// `create:event:household`, so the row is left out for a guest, and for a
+/// role this app does not recognise. It is left out for a household the
+/// server does not know yet, whose id it would not recognise, and where the
+/// composition passes no [onNewEvent].
+///
 /// ## Not-found is an answer, not an error
 ///
 /// An id the current user cannot read renders the not-found state, and it
@@ -94,6 +104,7 @@ class HouseholdDetailScreen extends StatelessWidget {
     this.onOpenInvites,
     this.onEdit,
     this.onInvite,
+    this.onNewEvent,
     this.members,
     this.onMembershipChanged,
     super.key,
@@ -162,6 +173,9 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// Key on a member's Invite row.
   static const Key inviteKey = Key('household_detail.invite');
 
+  /// Key on the New event row.
+  static const Key newEventKey = Key('household_detail.new_event');
+
   /// The household to show. A literal `create` never reaches the
   /// repository — see the class doc.
   final String householdId;
@@ -206,6 +220,11 @@ class HouseholdDetailScreen extends StatelessWidget {
   /// household's current id. Offered to a member whose household's policy
   /// lets members invite. Null leaves the Invite row out.
   final void Function(BuildContext context, String householdId)? onInvite;
+
+  /// Opens the form for a new event in this household, with this screen's
+  /// context and the household's current id. Offered to an owner, an admin
+  /// or a member. Null leaves the New event row out (#499).
+  final void Function(BuildContext context, String householdId)? onNewEvent;
 
   /// The per-server member client, for changing a member's role or removing
   /// them (#480). Null, or a null [onMembershipChanged], leaves every row
@@ -274,6 +293,7 @@ class HouseholdDetailScreen extends StatelessWidget {
         onOpenInvites: onOpenInvites,
         onEdit: onEdit,
         onInvite: onInvite,
+        onNewEvent: onNewEvent,
         hasMemberActionsBloc: memberActions != null,
       ),
     );
@@ -288,6 +308,7 @@ class _HouseholdDetailView extends StatelessWidget {
     this.onOpenInvites,
     this.onEdit,
     this.onInvite,
+    this.onNewEvent,
     this.hasMemberActionsBloc = false,
   });
 
@@ -300,6 +321,7 @@ class _HouseholdDetailView extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onOpenInvites;
   final void Function(BuildContext context, String householdId)? onEdit;
   final void Function(BuildContext context, String householdId)? onInvite;
+  final void Function(BuildContext context, String householdId)? onNewEvent;
 
   /// Whether a [HouseholdMemberActionsBloc] is provided above, which is
   /// whether the composition passed a member client.
@@ -336,6 +358,7 @@ class _HouseholdDetailView extends StatelessWidget {
             onOpenInvites: onOpenInvites,
             onEdit: onEdit,
             onInvite: onInvite,
+            onNewEvent: onNewEvent,
             hasMemberActionsBloc: hasMemberActionsBloc,
           ),
         };
@@ -353,6 +376,7 @@ class _ReadyPage extends StatelessWidget {
     this.onOpenInvites,
     this.onEdit,
     this.onInvite,
+    this.onNewEvent,
     this.hasMemberActionsBloc = false,
   });
 
@@ -365,6 +389,7 @@ class _ReadyPage extends StatelessWidget {
   final void Function(BuildContext context, String householdId)? onOpenInvites;
   final void Function(BuildContext context, String householdId)? onEdit;
   final void Function(BuildContext context, String householdId)? onInvite;
+  final void Function(BuildContext context, String householdId)? onNewEvent;
 
   /// Whether a [HouseholdMemberActionsBloc] is provided above.
   final bool hasMemberActionsBloc;
@@ -379,6 +404,7 @@ class _ReadyPage extends StatelessWidget {
     final openInvites = onOpenInvites;
     final edit = onEdit;
     final invite = onInvite;
+    final newEvent = onNewEvent;
     // Empty for a household the server does not know yet, so none of the
     // controls below is offered for one.
     final actions = householdActionsFor(state.household, state.role);
@@ -448,6 +474,20 @@ class _ReadyPage extends StatelessWidget {
               title: Text(l10n.householdDetailInvite),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => invite(context, state.household.id),
+            ),
+          ],
+          // After the Invite row, for an owner, an admin or a member: a guest
+          // may not create an event here (#499).
+          if (newEvent != null &&
+              actions.contains(HouseholdAction.createEvent)) ...[
+            const BgeGap.lg(),
+            ListTile(
+              key: HouseholdDetailScreen.newEventKey,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.event_outlined),
+              title: Text(l10n.householdNewEvent),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => newEvent(context, state.household.id),
             ),
           ],
         ],

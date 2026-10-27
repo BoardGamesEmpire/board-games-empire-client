@@ -59,6 +59,15 @@ void main() {
         expect(border!.borderSide.width, BgeTokens.standard.focusOutlineWidth);
         expect(border.borderSide.color, scheme.primary);
       });
+
+      test('${entry.key}: a field helper or error wraps rather than being '
+          'cut to one line (#499)', () {
+        // Left unset, both are one ellipsized line, Flutter's default. Five
+        // lines fit the app's longest two-sentence field error at 320dp and
+        // 2.0 text (measured); the sixth is room for a longer translation.
+        expect(theme.inputDecorationTheme.helperMaxLines, 6);
+        expect(theme.inputDecorationTheme.errorMaxLines, 6);
+      });
     }
   });
 
