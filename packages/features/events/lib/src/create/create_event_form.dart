@@ -43,7 +43,9 @@ import 'event_rules_section.dart';
 /// A later list can drop a household, as when the user's role in it, read
 /// again, no longer may create events. A household picked that it drops is
 /// unpicked. Otherwise the picker would show *No household* for it, while
-/// the form went on sending it.
+/// the form went on sending it. The unpick is no edit of the user's, so a
+/// refusal the drop follows, as a 403's read of the households does, stays
+/// up.
 ///
 /// The picker is drawn anew whenever a list changes which households it
 /// offers, a household added as much as one dropped, though not for a
@@ -182,8 +184,13 @@ class _CreateEventFormState extends State<CreateEventForm> {
       _household.value = prefill;
     } else if (picked != null && !offered.contains(picked)) {
       // In the same turn as the list below, so the picker is never drawn
-      // without the household the form would send.
-      _household.value = null;
+      // without the household the form would send. Silently: the unpick is
+      // the form's, not an edit, so it must not take a refusal down, and
+      // the list no longer offers what it did, so the picker is drawn anew
+      // from the control. The form is updated apart, as a control's update
+      // emits on its parent whatever its own emitEvent says.
+      _household.updateValue(null, updateParent: false, emitEvent: false);
+      _form.updateValueAndValidity(emitEvent: false);
     }
     setState(() {
       if (!setEquals(offered, before)) _offerVersion++;

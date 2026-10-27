@@ -850,6 +850,31 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('a refusal stays up when the list read after it drops the '
+        'household', (tester) async {
+      stubDeliveries([_refusedQuietly]);
+      final households = StreamController<List<Household>>.broadcast();
+      addTearDown(households.close);
+      await open(tester, households: households.stream, householdId: 'h_1');
+      households.add([_home]);
+      await tester.pumpAndSettle();
+      await fill(tester);
+      await submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(CreateEventScreen.refusedKey), findsOneWidget);
+
+      // The 403 reads the households again, and that list drops it. The
+      // unpick is the form's, not an edit of the user's.
+      households.add(const []);
+      await tester.pumpAndSettle();
+
+      expect(pickerShows('No household'), findsOneWidget);
+      expect(
+        inBanner(CreateEventScreen.refusedKey, _refusedHouseholdCopy),
+        findsOneWidget,
+      );
+    });
   });
 
   testWidgets('the form fits at 320dp wide at 2.0 text scale', (tester) async {
