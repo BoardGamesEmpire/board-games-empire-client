@@ -31,9 +31,11 @@ final class EventDetailLoading extends EventDetailState {
 /// household event, in its household.
 ///
 /// [refreshing] says a read **the user asked for** is running. The read
-/// every open makes is not narrated. [refreshFailed] says the last read to
-/// finish failed, so this is the cache, possibly stale. A read starting
-/// does not clear it; one succeeding does.
+/// every open makes is not narrated. [reading] says a read is running
+/// whoever asked for it, which is what the screen holds Delete on (#501).
+/// [refreshFailed] says the last read to finish failed, so this is the
+/// cache, possibly stale. A read starting does not clear it; one succeeding
+/// does.
 ///
 /// [canRetry] says a retry would read anything, for the screen to decide
 /// whether to draw its button at all (`EventDetailBloc` has when). It is
@@ -45,6 +47,7 @@ final class EventDetailReady extends EventDetailState {
     required this.actions,
     this.householdName,
     this.refreshing = false,
+    this.reading = false,
     this.refreshFailed = false,
     this.canRetry = false,
   });
@@ -53,6 +56,12 @@ final class EventDetailReady extends EventDetailState {
   final String? householdName;
   final Set<EventAction> actions;
   final bool refreshing;
+
+  /// Whether a read of this event is running, the open's or a retry's, until
+  /// it settles: for a read that succeeds, after its answer has been written
+  /// to the cache. Delete waits on it, because a read's 200 landing after a
+  /// delete would cache the event again (#501).
+  final bool reading;
   final bool refreshFailed;
   final bool canRetry;
 
@@ -62,6 +71,7 @@ final class EventDetailReady extends EventDetailState {
     householdName,
     actions,
     refreshing,
+    reading,
     refreshFailed,
     canRetry,
   ];

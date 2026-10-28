@@ -389,6 +389,96 @@ void main() {
     });
   });
 
+  group('removeDeletedEvent', () {
+    test('removes the event for every user on the device', () async {
+      final roster = [
+        testAttendee('att-a', userId: _kUserA),
+        testAttendee('att-b', userId: _kUserB),
+      ];
+      await a.cacheEvent(
+        testSnapshot('e-1', policy: testPolicy(), attendees: roster),
+        source: EventAccessSource.attending,
+      );
+      await b.cacheEvent(
+        testSnapshot('e-1', policy: testPolicy(), attendees: roster),
+        source: EventAccessSource.read,
+      );
+
+      expect(await a.removeDeletedEvent('e-1'), isTrue);
+
+      expect(await a.getEvent('e-1'), isNull);
+      expect(await b.getEvent('e-1'), isNull);
+      expect(await db.select(db.eventsTable).get(), isEmpty);
+      expect(await db.select(db.eventAttendeesTable).get(), isEmpty);
+      expect(await db.select(db.eventOccurrencesTable).get(), isEmpty);
+      expect(await db.select(db.eventPoliciesTable).get(), isEmpty);
+      expect(await db.select(db.eventAccessTable).get(), isEmpty);
+    });
+
+    test('takes no mark: an event written since is removed too', () async {
+      await a.cacheEvent(
+        testSnapshot('e-1'),
+        source: EventAccessSource.attending,
+      );
+      final lastWrite = (await a.lastWrite('e-1'))!;
+
+      // Written again since, as a hydrate landing mid-request does. The
+      // marked forget would decline here, and the delete is already
+      // accepted.
+      await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);
+      expect(await a.lastWrite('e-1'), isNot(lastWrite));
+
+      expect(await a.removeDeletedEvent('e-1'), isTrue);
+
+      expect(await a.getEvent('e-1'), isNull);
+    });
+
+    test('the watch and the attending list see it go', () async {
+      await a.cacheEvent(
+        testSnapshot('e-1'),
+        source: EventAccessSource.attending,
+      );
+      final detail = a.watchEvent('e-1').take(2).toList();
+      final list = a.watchAttendingEventListItems().take(2).toList();
+      await pumpEventQueue();
+
+      await a.removeDeletedEvent('e-1');
+
+      final seenDetail = await detail.timeout(const Duration(seconds: 5));
+      expect(seenDetail.map((d) => d == null), [false, true]);
+      final seenList = await list.timeout(const Duration(seconds: 5));
+      expect(seenList.map((l) => l.length), [1, 0]);
+    });
+
+    test('leaves an event the sync queue owns', () async {
+      await a.cacheEvent(
+        testSnapshot('e-1'),
+        source: EventAccessSource.attending,
+      );
+      await markDirty('e-1');
+      expect(await a.removeDeletedEvent('e-1'), isFalse);
+      expect(await a.getEvent('e-1'), isNotNull);
+
+      await a.cacheEvent(
+        testSnapshot('e-2'),
+        source: EventAccessSource.attending,
+      );
+      await markLocalOnly('e-2');
+      expect(await a.removeDeletedEvent('e-2'), isFalse);
+      expect(await a.getEvent('e-2'), isNotNull);
+    });
+
+    test('an event never cached answers false', () async {
+      expect(await a.removeDeletedEvent('e-never-cached'), isFalse);
+    });
+
+    test('throws once the session has ended', () async {
+      await a.onDispose();
+
+      expect(() => a.removeDeletedEvent('e-1'), throwsStateError);
+    });
+  });
+
   group('lastWrite', () {
     test('moves with every write of the event', () async {
       await a.cacheEvent(testSnapshot('e-1'), source: EventAccessSource.read);

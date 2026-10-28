@@ -131,6 +131,17 @@ EventDetail _detail(String id, {EventAttendee? attendance}) {
   );
 }
 
+/// The current user's own roster row on event [id], as its host.
+EventAttendee _hosting(String id) => EventAttendee(
+  id: 'att-$id',
+  eventId: id,
+  userId: 'u1',
+  status: EventParticipationStatus.attending,
+  role: EventRole.host,
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
 /// The #497 shell wiring through the real composition: the drawer entry and
 /// its gate, the overview and group routes resolving the session's
 /// repository, households and status, the retry reaching the events' own
@@ -214,6 +225,8 @@ void main() {
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
     ).thenAnswer((_) async => true);
+    when(() => repository.removeDeletedEvent(any()))
+        .thenAnswer((_) async => true);
     when(() => repository.create(any())).thenAnswer(
       (call) async => (
         event: _upcoming('ev_local').event,
@@ -659,6 +672,69 @@ void main() {
       final state = blocOf(tester).state;
       expect(state, isA<EventDetailReady>());
       expect((state as EventDetailReady).actions, isEmpty);
+    });
+
+    group('deleting it (#501)', () {
+      /// A server that reads the event and accepts its delete.
+      _MockEventRemote deletable() {
+        final remote = _MockEventRemote();
+        when(() => remote.fetchEvent(any()))
+            .thenAnswer((_) async => _detail('e-0').snapshot);
+        when(() => remote.deleteEvent(any())).thenAnswer((_) async {});
+        return remote;
+      }
+
+      /// From the open detail, through the menu and the dialog, to the
+      /// delete's end. A menu item's press lands a frame after its tap, so
+      /// the dialog is looked for after one.
+      Future<void> deleteIt(WidgetTester tester) async {
+        await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(EventDetailScreen.deleteKey));
+        await tester.pump();
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(EventDetailScreen.deleteConfirmKey));
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets("a host's delete returns to the list", (tester) async {
+        final remote = deletable();
+        await pumpHome(tester, remote: remote, attendance: _hosting('e-0'));
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+
+        await deleteIt(tester);
+
+        verify(() => remote.deleteEvent('e-0')).called(1);
+        verify(() => repository.removeDeletedEvent('e-0')).called(1);
+        expect(find.byType(EventDetailScreen), findsNothing);
+        expect(find.byType(EventOverviewScreen), findsOneWidget);
+        // The app's messenger holds the snackbar past the route it came from.
+        expect(find.text('Event deleted'), findsOneWidget);
+      });
+
+      testWidgets('the session guard is asked around the delete too', (
+        tester,
+      ) async {
+        final guard = _RecordingGuard(SessionConfirmation.confirmed);
+        await pumpHome(
+          tester,
+          remote: deletable(),
+          attendance: _hosting('e-0'),
+          guard: guard,
+        );
+        await openTheOverview(tester);
+        await openRow(tester, 'e-0');
+
+        // The read's two: before the request, and before its write.
+        expect(guard.asked, ['u1', 'u1']);
+
+        await deleteIt(tester);
+
+        // The delete's one, before the request: its removal is every
+        // user's, so nothing is asked before it.
+        expect(guard.asked, ['u1', 'u1', 'u1']);
+      });
     });
   });
 

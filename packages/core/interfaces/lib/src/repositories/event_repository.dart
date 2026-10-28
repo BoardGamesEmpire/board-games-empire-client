@@ -226,9 +226,9 @@ abstract class EventRepository {
   /// Emits on listen, null where [getEvent] would answer null, and again
   /// after any write to the event, its occurrences, its roster, its policy or
   /// anyone's access to it: each [cacheEvent], each page [cacheEvents]
-  /// writes, and each purge or [forgetEvent] that removed something. So a
-  /// subscriber sees the event leave the cache, as null, when the user's
-  /// access to it goes.
+  /// writes, each purge or [forgetEvent] that removed something, and each
+  /// [removeDeletedEvent] that did. So a subscriber sees the event leave the
+  /// cache, as null, when the user's access to it goes.
   ///
   /// The two halves of an emission are read in one transaction, so a write
   /// landing between them can't pair one state of the roster with another's
@@ -275,6 +275,32 @@ abstract class EventRepository {
   /// of, so its 404 says nothing about it (#298's rule for households).
   Future<bool> forgetEvent(String id, {required int lastWrite});
 
+  /// Removes the cached event [id] for every user on this device, for an
+  /// event the server has deleted, and returns whether it did: one it
+  /// accepted a delete of, or answered a delete's 404 for, which says no
+  /// live event has the id for anyone (#501).
+  ///
+  /// The server deleted it for everyone, so unlike [forgetEvent] this goes
+  /// past the current user: in one transaction it deletes every user's
+  /// access rows, and the event with its occurrences, roster and policy. And
+  /// it takes no [lastWrite] mark. A mark guards a read's 404 against a newer
+  /// answer the server may have sent, and nothing restores a deleted event,
+  /// so an event written since is removed too (#501). A hydrate page
+  /// already in flight can still cache it again: that is the cache's
+  /// last-write-wins (#589), not this method's.
+  ///
+  /// It writes the event, its occurrences, its roster, its policy and
+  /// everyone's access to it, so [watchEvent] emits null and
+  /// [watchAttendingEvents] and [watchAttendingEventListItems] emit their
+  /// list without it, when it removed something.
+  ///
+  /// Returns true when it removed the event. Returns false, and changes
+  /// nothing, when nothing is cached under [id], or when the event is
+  /// `isDirty` or `isLocalOnly`: the sync queue owns those until the server
+  /// acknowledges them, as [forgetEvent] leaves them. A delete never reaches
+  /// a local-only event, since the server has never heard of it.
+  Future<bool> removeDeletedEvent(String id);
+
   /// Watches the events the current user has `attending` access to, in the
   /// list's order: newest created first, the higher id first on a tie. An
   /// event they only read is left out, and one they declined or haven't
@@ -282,9 +308,10 @@ abstract class EventRepository {
   ///
   /// Emits a fresh list when a write changes this user's attending events:
   /// each [cacheEvent], each page [cacheEvents] writes, once for the whole
-  /// page, and each purge that removed something. A purge that removes
-  /// nothing writes nothing and emits nothing. A write that leaves the list
-  /// as it was, such as another user's, may still emit it unchanged.
+  /// page, each purge that removed something, and each [removeDeletedEvent]
+  /// that did. A purge that removes nothing writes nothing and emits nothing.
+  /// A write that leaves the list as it was, such as another user's, may
+  /// still emit it unchanged.
   Stream<List<Event>> watchAttendingEvents();
 
   /// Watches the same events as [watchAttendingEvents], in the same order,
@@ -325,8 +352,8 @@ abstract class EventRepository {
   ///
   /// This does not contact the server. The sync queue sends the op and calls
   /// [reconcileCreatedEvent] with the answer. Until then the event belongs to
-  /// the queue: no read writes over it, and neither a purge nor
-  /// [forgetEvent] removes it.
+  /// the queue: no read writes over it, and no purge, [forgetEvent] or
+  /// [removeDeletedEvent] removes it.
   ///
   /// Returns the local event, the `syncQueueId` of its op, which the caller
   /// passes to [reconcileCreatedEvent] so the op closes with it, and the

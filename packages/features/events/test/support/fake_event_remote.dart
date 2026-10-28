@@ -10,13 +10,15 @@ typedef EventListRequest = ({int page, int limit});
 typedef EventCreateRequest = ({EventDraft draft, String clientRequestId});
 
 /// An event remote that answers list requests from [respond], detail requests
-/// from [detail] and creates from [created], and records each one. A request
-/// it has no answer for throws, as does anything else.
+/// from [detail], creates from [created] and deletes from [deleted], and
+/// records each one. A request it has no answer for throws, as does anything
+/// else.
 class FakeEventRemote implements EventRemoteDataSource {
   FakeEventRemote(
     FutureOr<PaginatedResult<EventSnapshot>> Function(EventListRequest request)
     this.respond, {
     this.created = _noCreate,
+    this.deleted = _noDelete,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -26,6 +28,7 @@ class FakeEventRemote implements EventRemoteDataSource {
     int? failOnPage,
     Object error = const EventRemoteTransientException('offline'),
     this.created = _noCreate,
+    this.deleted = _noDelete,
   }) : respond = ((request) {
          if (request.page == failOnPage) throw error;
          return pages[request.page - 1];
@@ -37,10 +40,14 @@ class FakeEventRemote implements EventRemoteDataSource {
   FakeEventRemote.detail(
     FutureOr<EventSnapshot> Function(String id) this.detail, {
     this.created = _noCreate,
+    this.deleted = _noDelete,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
       throw UnimplementedError('createEvent is not faked');
+
+  static Never _noDelete(String id) =>
+      throw UnimplementedError('deleteEvent is not faked');
 
   final FutureOr<PaginatedResult<EventSnapshot>> Function(
     EventListRequest request,
@@ -56,6 +63,9 @@ class FakeEventRemote implements EventRemoteDataSource {
   )
   created;
 
+  /// Answers each delete, which throws unless a test supplies one.
+  final FutureOr<void> Function(String id) deleted;
+
   final List<EventListRequest> requests = [];
 
   /// The id of each detail read, in order.
@@ -63,6 +73,9 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each create, in order, recorded before it is answered.
   final List<EventCreateRequest> createRequests = [];
+
+  /// The id of each delete, in order, recorded before it is answered.
+  final List<String> deleteRequests = [];
 
   @override
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
@@ -95,6 +108,12 @@ class FakeEventRemote implements EventRemoteDataSource {
   }) async {
     createRequests.add((draft: draft, clientRequestId: clientRequestId));
     return created(draft, clientRequestId);
+  }
+
+  @override
+  Future<void> deleteEvent(String id) async {
+    deleteRequests.add(id);
+    return deleted(id);
   }
 
   @override

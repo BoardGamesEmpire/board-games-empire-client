@@ -212,6 +212,60 @@
       }
     }
   },
+  "eventsDetailMoreActions": "More actions",
+  "@eventsDetailMoreActions": {
+    "description": "Tooltip and accessible name of the three-dot button in the top bar of an event's screen. Opens a menu of what the user may do to the event, such as deleting it. Shown only to someone who may do one of those things."
+  },
+  "eventsDetailDelete": "Delete event",
+  "@eventsDetailDelete": {
+    "description": "Item in the More actions menu of an event's screen. Asks for confirmation, then deletes the event for everyone on it. Offered to the event's host alone."
+  },
+  "eventsDeleteConfirmTitle": "Delete {title}?",
+  "@eventsDeleteConfirmTitle": {
+    "description": "Title of the dialog asking the host to confirm deleting an event, by the event's own title, which the host chose and may be long.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Catan night"
+      }
+    }
+  },
+  "eventsDeleteConfirmBody": "This can't be undone. Everyone on the event loses it, and they won't be told.",
+  "@eventsDeleteConfirmBody": {
+    "description": "Body of the dialog asking to confirm deleting an event. Says three things, and a translation must keep all three: the delete is permanent, every person on the event loses it, and nobody is notified that it happened."
+  },
+  "eventsDeleteConfirmKeep": "Keep event",
+  "@eventsDeleteConfirmKeep": {
+    "description": "Button in the delete-event dialog that closes it and deletes nothing. Deliberately not 'Cancel': cancelling an event, calling it off while keeping it, is a different action in this app."
+  },
+  "eventsDeleteConfirm": "Delete",
+  "@eventsDeleteConfirm": {
+    "description": "Confirm button of the delete-event dialog, shown in the error colour. Deletes the event for everyone on it."
+  },
+  "eventsDeleted": "Event deleted",
+  "@eventsDeleted": {
+    "description": "Brief message at the foot of the screen once the server has deleted an event, as the app leaves that event's screen."
+  },
+  "eventsDeleteGone": "This event was already deleted.",
+  "@eventsDeleteGone": {
+    "description": "Banner on an event's screen after trying to delete it, when the server has no live event by that id: perhaps an earlier delete went through and its answer was lost on the way back. Either way the event is gone, so this is not an error."
+  },
+  "eventsDeleteRefused": "You can't delete this event.",
+  "@eventsDeleteRefused": {
+    "description": "Banner on an event's screen when the server refused to delete it: the user is not allowed to, for example because they are no longer its host after a change made on another device."
+  },
+  "eventsDeleteFailed": "An error occurred while deleting this event. You may need to try again.",
+  "@eventsDeleteFailed": {
+    "description": "Banner on an event's screen when deleting it ended without an answer that says what happened, most often because there was no connection. The delete may or may not have gone through, so the copy must not say the event wasn't deleted. Trying again is safe: if the first delete did go through, the second finds the event already deleted."
+  },
+  "eventsDeleteFailedUnexpected": "Something went wrong, and the event wasn't deleted.",
+  "@eventsDeleteFailedUnexpected": {
+    "description": "Banner on an event's screen when deleting it failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. The event is still there. Unlike the connection failure it does not suggest trying again, since the same press would most likely fail the same way."
+  },
+  "eventsActionDismiss": "Dismiss",
+  "@eventsActionDismiss": {
+    "description": "Button on the banner that says how deleting an event went, on the event's screen. Closes the banner."
+  },
   "eventsTypeAdultsOnly": "Adults only",
   "@eventsTypeAdultsOnly": {
     "description": "The kind of event the host chose, on the event's screen: for adults only."
