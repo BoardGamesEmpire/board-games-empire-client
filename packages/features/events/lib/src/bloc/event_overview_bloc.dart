@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
 import '../overview/event_groups.dart';
-import '../sync/event_hydration_status.dart';
 import 'event_overview_event.dart';
 import 'event_overview_state.dart';
 
@@ -65,7 +65,7 @@ import 'event_overview_state.dart';
 /// failed pass confirms nothing. This is the household's #300 rule.
 ///
 /// The status remembers which passes completed, not this bloc
-/// ([EventHydration]). The overview is often opened while a pass is already
+/// ([Hydration]). The overview is often opened while a pass is already
 /// running, and a bloc that remembered only what it saw would treat that
 /// pass as the first.
 ///
@@ -94,7 +94,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
   EventOverviewBloc({
     required this._repository,
     Stream<List<Household>>? households,
-    Stream<EventHydration>? hydration,
+    Stream<Hydration>? hydration,
     this._onRetry,
     DateTime Function()? now,
     BgeLogger? logger,
@@ -148,7 +148,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
 
   late StreamSubscription<List<EventListItem>> _cache;
   StreamSubscription<List<Household>>? _householdUpdates;
-  StreamSubscription<EventHydration>? _hydrationUpdates;
+  StreamSubscription<Hydration>? _hydrationUpdates;
 
   /// Null until the cache has answered at all, which is not the same as
   /// having answered with nothing.
@@ -167,7 +167,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
 
   /// What the hydrate last reported. The default is also what an absent
   /// hydrate means: idle, nothing confirmed, nothing failed.
-  EventHydration _hydration = const EventHydration();
+  Hydration _hydration = const Hydration();
 
   /// Whether a pass this screen asked for is still running.
   bool _retrying = false;
@@ -298,7 +298,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     // to the spinner rather than annotating an emptiness no pass confirmed.
     final filling =
         items.isEmpty &&
-        _hydration.state == EventHydrationState.running &&
+        _hydration.state == HydrationState.running &&
         !_hydration.everRefreshed;
     if (filling) return emit(const EventOverviewLoading());
 

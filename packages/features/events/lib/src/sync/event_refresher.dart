@@ -10,20 +10,20 @@
 /// resolved from a container by type, and every feature's callback would
 /// share that type.
 ///
-/// It needs no guard of its own: `EventHydrator.hydrate` single-flights, so a
-/// press landing on a running pass joins it. Nor does it take a callback for
-/// after a local change, as the collection's does. A discarded create (#499)
-/// is the one local change it follows, and a pass in flight cannot have merged
-/// around it: a pass never writes over a local-only event, and the server's
-/// copy of an event carries its own id.
+/// It needs no guard of its own: `HydratePass` single-flights (#302), so a
+/// press landing on a running pass joins it and waits for it. Nor does it take
+/// a callback for after a local change, as the collection's does. A discarded
+/// create (#499) is the one local change it follows, and a pass in flight
+/// cannot have merged around it: a pass never writes over a local-only event,
+/// and the server's copy of an event carries its own id.
 ///
 /// Absent from a container that runs no event hydrate at all (see
 /// `EventHydrateInstaller` for which those are), which the screens read as
 /// "no retry to offer" rather than offering a button that does nothing.
 class EventRefresher {
-  /// Wraps [pass], the same closure the installer registers with the
-  /// `SessionRehydrator`, so a pressed refresh and a triggered one report the
-  /// same way.
+  /// Wraps [pass], the shared pass's `run`, which the installer also
+  /// registers with the `SessionRehydrator`, so a pressed refresh and a
+  /// triggered one report the same way.
   const EventRefresher(this._pass);
 
   final Future<void> Function() _pass;

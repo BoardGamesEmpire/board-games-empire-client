@@ -21,10 +21,16 @@ class _FakeIdentityGuard implements SessionIdentityGuard {
   final List<SessionConfirmation> answers;
   final askedFor = <String>[];
 
+  /// When set, what every later question is answered with, whatever [answers]
+  /// says, so a test can change its mind between questions (#563).
+  SessionConfirmation? answer;
+
   @override
   Future<SessionConfirmation> confirm(String userId) async {
     final asked = askedFor.length;
     askedFor.add(userId);
+    final fixed = answer;
+    if (fixed != null) return fixed;
     return answers[asked < answers.length ? asked : answers.length - 1];
   }
 }
@@ -164,10 +170,10 @@ void main() {
   }
 
   /// The reading the status settles on once no pass is in flight.
-  Future<EventHydration> settled() => container
+  Future<Hydration> settled() => container
       .get<EventHydrationStatus>()
       .watch()
-      .firstWhere((h) => h.state != EventHydrationState.running)
+      .firstWhere((h) => h.state != HydrationState.running)
       .timeout(const Duration(seconds: 5));
 
   test('skips without a remote or repository and registers nothing', () async {
@@ -218,7 +224,7 @@ void main() {
       // say the user has no events while the cache is about to fill.
       expect(
         container.get<EventHydrationStatus>().state,
-        EventHydrationState.running,
+        HydrationState.running,
       );
 
       // Activation is the bootstrap gate: awaiting the network here would put
@@ -231,7 +237,7 @@ void main() {
       held.release.complete(_page([_row('e-1', 10)]));
       final reading = await settled();
 
-      expect(reading.state, EventHydrationState.refreshed);
+      expect(reading.state, HydrationState.refreshed);
       expect(await events.getEvent('e-1'), isNotNull);
     },
   );
@@ -288,7 +294,7 @@ void main() {
     await install();
     final reading = await settled();
 
-    expect(reading.state, EventHydrationState.failed);
+    expect(reading.state, HydrationState.failed);
     expect(guard.askedFor, [_kUserId]);
     expect(remote.requests, isEmpty);
   });
@@ -304,7 +310,7 @@ void main() {
       final reading = await settled();
 
       expect(remote.requests, hasLength(1));
-      expect(reading.state, EventHydrationState.failed);
+      expect(reading.state, HydrationState.failed);
     },
   );
 
@@ -323,7 +329,7 @@ void main() {
     await refresher.refresh();
 
     // Closed by the teardown, so the late outcome is dropped.
-    expect(status.state, EventHydrationState.running);
+    expect(status.state, HydrationState.running);
   });
 
   test('a pass that could purge nothing still reads as refreshed', () async {
@@ -338,7 +344,7 @@ void main() {
     final reading = await settled();
     await rehydrator.rehydrateStale();
 
-    expect(reading.state, EventHydrationState.refreshed);
+    expect(reading.state, HydrationState.refreshed);
     expect(remote.requests, hasLength(1));
   });
 
@@ -348,7 +354,7 @@ void main() {
       answer = _offline;
       await install();
       await settled();
-      final seen = <EventHydrationState>[];
+      final seen = <HydrationState>[];
       final watching = container
           .get<EventHydrationStatus>()
           .watch()
@@ -361,9 +367,9 @@ void main() {
       await pumpEventQueue();
 
       expect(seen, [
-        EventHydrationState.failed,
-        EventHydrationState.running,
-        EventHydrationState.refreshed,
+        HydrationState.failed,
+        HydrationState.running,
+        HydrationState.refreshed,
       ]);
     });
 
@@ -379,7 +385,7 @@ void main() {
       expect(remote.requests, hasLength(1));
       expect(
         container.get<EventHydrationStatus>().state,
-        EventHydrationState.refreshed,
+        HydrationState.refreshed,
       );
     });
   });
@@ -472,7 +478,7 @@ void main() {
 
       expect(guard.askedFor, [_kUserId, _kUserId]);
       expect(remote.requests, hasLength(1));
-      expect(reading.state, EventHydrationState.refreshed);
+      expect(reading.state, HydrationState.refreshed);
       expect(await events.getEvent('e-1'), isNotNull);
     });
 
@@ -491,7 +497,7 @@ void main() {
       final reading = await settled();
 
       expect(remote.requests, hasLength(1));
-      expect(reading.state, EventHydrationState.failed);
+      expect(reading.state, HydrationState.failed);
       // The page was read as whoever holds the session now.
       expect(await events.getEvent('e-1'), isNull);
     });
@@ -507,9 +513,46 @@ void main() {
       final reading = await settled();
       await rehydrator.rehydrateStale();
 
-      expect(reading.state, EventHydrationState.failed);
+      expect(reading.state, HydrationState.failed);
       expect(guard.askedFor, [_kUserId, _kUserId]);
       expect(remote.requests, isEmpty);
+    });
+
+    test('a retry pressed while a pass runs reports nothing before that pass '
+        'finishes, whatever the guard answers (#563)', () async {
+      register();
+      final guard = _FakeIdentityGuard([SessionConfirmation.confirmed]);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+      final held = hold();
+
+      await install();
+      await held.arrived.timeout(const Duration(seconds: 5));
+      final status = container.get<EventHydrationStatus>();
+      Hydration? latest;
+      final subscription = status.watch().listen((r) => latest = r);
+      addTearDown(subscription.cancel);
+
+      guard.answer = SessionConfirmation.notThisUser;
+      var refreshed = false;
+      unawaited(
+        container.get<EventRefresher>().refresh().then((_) {
+          refreshed = true;
+        }),
+      );
+      await pumpEventQueue();
+
+      expect(latest, const Hydration(state: HydrationState.running));
+      expect(refreshed, isFalse);
+
+      // The hydrator asks again before it writes the page it was handed, so
+      // the session is back before the page is released; the press is what
+      // the refusal above was aimed at.
+      guard.answer = SessionConfirmation.confirmed;
+      held.release.complete(_empty());
+      await pumpEventQueue();
+
+      expect(refreshed, isTrue);
+      expect(status.state, HydrationState.refreshed);
     });
   });
 }

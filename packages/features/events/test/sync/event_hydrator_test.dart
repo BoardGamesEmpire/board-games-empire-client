@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:di/di.dart' show LocalClockService;
 import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart'
@@ -682,34 +680,6 @@ void main() {
 
       expect(await build(remote).hydrate(), EventHydrateOutcome.failed);
       expect(await repository.getEvent('e-stale'), isNotNull);
-    });
-  });
-
-  group('one pass at a time', () {
-    test('a call during a pass returns the same pass', () async {
-      final answer = Completer<PaginatedResult<EventSnapshot>>();
-      final remote = FakeEventRemote((_) => answer.future);
-      final hydrator = build(remote);
-
-      final first = hydrator.hydrate();
-      final second = hydrator.hydrate();
-      answer.complete(_page([_row('e-1', 10)]));
-
-      expect(identical(first, second), isTrue);
-      expect(await first, EventHydrateOutcome.complete);
-      expect(remote.requests, [(page: 1, limit: 100)]);
-    });
-
-    test('a call after a pass settles asks the server again', () async {
-      final remote = FakeEventRemote.pages([
-        _page([_row('e-1', 10)]),
-      ]);
-      final hydrator = build(remote);
-
-      await hydrator.hydrate();
-      await hydrator.hydrate();
-
-      expect(remote.requests, hasLength(2));
     });
   });
 }

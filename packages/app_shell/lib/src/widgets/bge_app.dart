@@ -1502,9 +1502,8 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// What the event hydrate is doing, or null where none runs.
-  static Stream<EventHydration>? _eventHydration(
-    DependencyContainer container,
-  ) => container.isRegistered<EventHydrationStatus>()
+  static Stream<Hydration>? _eventHydration(DependencyContainer container) =>
+      container.isRegistered<EventHydrationStatus>()
       ? container.get<EventHydrationStatus>().watch()
       : null;
 
