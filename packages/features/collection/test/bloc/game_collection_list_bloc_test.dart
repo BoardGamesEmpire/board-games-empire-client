@@ -133,7 +133,7 @@ void main() {
 
   test('a failing status stream leaves the rows up', () async {
     // The status annotates the list; losing it must not lose the list.
-    final hydration = StreamController<GameCollectionHydration>();
+    final hydration = StreamController<Hydration>();
     final bloc = GameCollectionListBloc(
       repository: repository,
       hydration: hydration.stream,
@@ -568,7 +568,7 @@ void main() {
 
     test('events compare by value', () {
       final rows = [listItem('e-1')];
-      const reading = GameCollectionHydration();
+      const reading = Hydration();
 
       expect(
         GameCollectionListCacheUpdated(rows),

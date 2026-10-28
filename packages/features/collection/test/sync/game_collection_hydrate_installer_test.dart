@@ -21,7 +21,7 @@ class _MockGameRepository extends Mock implements GameRepository {}
 class _FakeIdentityGuard implements SessionIdentityGuard {
   _FakeIdentityGuard({required this.answer});
 
-  final SessionConfirmation answer;
+  SessionConfirmation answer;
   final askedFor = <String>[];
 
   @override
@@ -163,12 +163,12 @@ void main() {
       // Before the drain's first turn: the list can be built in that window,
       // and an idle status there would say the collection is empty while
       // the cache is about to fill.
-      expect(status.state, GameCollectionHydrationState.running);
+      expect(status.state, HydrationState.running);
 
       blocked.complete(_empty());
       await Future<void>.delayed(Duration.zero);
 
-      expect(status.state, GameCollectionHydrationState.refreshed);
+      expect(status.state, HydrationState.refreshed);
     });
 
     test('reports a failed pass as failed', () async {
@@ -180,7 +180,7 @@ void main() {
 
       expect(
         container.get<GameCollectionHydrationStatus>().state,
-        GameCollectionHydrationState.failed,
+        HydrationState.failed,
       );
     });
 
@@ -197,7 +197,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // Closed by the teardown, so the late outcome is dropped.
-      expect(status.state, GameCollectionHydrationState.running);
+      expect(status.state, HydrationState.running);
     });
   });
 
@@ -218,7 +218,7 @@ void main() {
       remote.respond = (_) => _offline();
       await install();
       await Future<void>.delayed(Duration.zero);
-      final seen = <GameCollectionHydrationState>[];
+      final seen = <HydrationState>[];
       final watching = container
           .get<GameCollectionHydrationStatus>()
           .watch()
@@ -231,9 +231,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(seen, [
-        GameCollectionHydrationState.failed,
-        GameCollectionHydrationState.running,
-        GameCollectionHydrationState.refreshed,
+        HydrationState.failed,
+        HydrationState.running,
+        HydrationState.refreshed,
       ]);
     });
 
@@ -250,32 +250,37 @@ void main() {
       expect(remote.requests.length, 1);
       expect(
         container.get<GameCollectionHydrationStatus>().state,
-        GameCollectionHydrationState.refreshed,
+        HydrationState.refreshed,
       );
     });
 
-    test('after a change (#190), waits out the install-time pass and then '
-        'runs its own', () async {
+    test('refreshAfterChange waits out a running pass, then starts one of its '
+        'own (#190)', () async {
       register();
-      final blocked = Completer<PaginatedResult<GameCollectionWithSummary>>();
-      remote.respond = (_) => blocked.future;
+      final first = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => first.future;
       await install();
 
+      var done = false;
       final refresh = container
           .get<GameCollectionRefresher>()
-          .refreshAfterChange();
-      await Future<void>.delayed(Duration.zero);
+          .refreshAfterChange()
+          .then((_) => done = true);
+      await pumpEventQueue();
+
+      // The pass in flight may have merged the changed row's page already,
+      // so nothing is sent for the change until that pass is released.
       expect(remote.requests.length, 1);
+      expect(done, isFalse);
 
       remote.respond = (_) => _empty();
-      blocked.complete(_empty());
+      first.complete(_empty());
       await refresh;
 
-      // The pass in flight may have merged the changed row's page already.
       expect(remote.requests.length, 2);
       expect(
         container.get<GameCollectionHydrationStatus>().state,
-        GameCollectionHydrationState.refreshed,
+        HydrationState.refreshed,
       );
     });
   });
@@ -405,8 +410,45 @@ void main() {
       expect(remote.requests.length, 0);
       expect(
         container.get<GameCollectionHydrationStatus>().state,
-        GameCollectionHydrationState.failed,
+        HydrationState.failed,
       );
+    });
+
+    test('a retry pressed while a pass runs reports nothing before that pass '
+        'finishes, whatever the guard answers (#563)', () async {
+      register();
+      final guard = _FakeIdentityGuard(answer: SessionConfirmation.confirmed);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+      final page = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => page.future;
+
+      await install();
+      await pumpEventQueue();
+      final status = container.get<GameCollectionHydrationStatus>();
+      Hydration? latest;
+      final subscription = status.watch().listen((r) => latest = r);
+      addTearDown(subscription.cancel);
+
+      guard.answer = SessionConfirmation.notThisUser;
+      var refreshed = false;
+      unawaited(
+        container.get<GameCollectionRefresher>().refresh().then((_) {
+          refreshed = true;
+        }),
+      );
+      await pumpEventQueue();
+
+      expect(latest, const Hydration(state: HydrationState.running));
+      expect(refreshed, isFalse);
+
+      // The collection hydrator has no per-page session check, so the guard
+      // may stay refused: the press joined the running pass, which ends
+      // refreshed.
+      page.complete(await _empty());
+      await pumpEventQueue();
+
+      expect(refreshed, isTrue);
+      expect(status.state, HydrationState.refreshed);
     });
   });
 }

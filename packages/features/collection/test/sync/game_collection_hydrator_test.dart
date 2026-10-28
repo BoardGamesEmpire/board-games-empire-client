@@ -403,30 +403,4 @@ void main() {
       expect(await listedTitles(), ['Game 1', 'Game 2']);
     });
   });
-
-  group('one pass at a time', () {
-    test('a call made while a pass is in flight joins it', () async {
-      final gate = Completer<PaginatedResult<GameCollectionWithSummary>>();
-      final remote = FakeCollectionRemote((_) => gate.future);
-      final hydrator = build(remote);
-
-      final first = hydrator.hydrate();
-      final second = hydrator.hydrate();
-      gate.complete(_page([_row(1)]));
-
-      expect(await first, CollectionHydrateOutcome.complete);
-      expect(await second, CollectionHydrateOutcome.complete);
-      expect(remote.requests, hasLength(1));
-    });
-
-    test('a call after a pass settles asks the server again', () async {
-      final remote = FakeCollectionRemote((_) => _page([_row(1)]));
-      final hydrator = build(remote);
-
-      await hydrator.hydrate();
-      await hydrator.hydrate();
-
-      expect(remote.requests, hasLength(2));
-    });
-  });
 }

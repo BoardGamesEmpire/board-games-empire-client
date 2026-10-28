@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -39,47 +40,38 @@ import 'game_collection_refresher.dart';
 /// `HouseholdHydrateInstaller` records which compositions can reach that
 /// guard; since #125 and #368 no shipping one does.
 ///
-/// ## Re-run when it did not finish, or has aged
+/// ## What the pass does, and what this decides (#302, #563)
 ///
-/// The install-time pass is otherwise the only one a session gets. One that
-/// started offline would leave the collection unhydrated until the next
-/// sign-in, which is the problem the [SessionRehydrator] exists for (#302).
-/// So the pass is registered with it, and a later trigger (a connectivity
-/// edge, an app resume) re-runs it.
+/// `HydratePass` is the one place a drain is single-flighted, checked
+/// against the session and registered to be re-run; its class doc gives the
+/// reasoning. This installer decides only what is the collection's:
 ///
-/// It reports itself stale until a pass completes, after one fails, and
-/// once a completed pass is [staleAfter] old. Without that window a session
-/// that hydrated at sign-in never saw another device's changes however long
-/// it ran, which #300 fixed for households. Each re-run is a full drain, as
-/// the household's is (#450 is the delta pass). A trigger arriving while a
-/// pass is running is dropped rather than joined, as the household entry
-/// does.
+/// - the pass is registered with the [SessionRehydrator] as `'collection'`,
+///   and again as a [GameCollectionRefresher] for the list's retry (#44). The
+///   refresher's `refreshAfterChange` waits out a running pass and then runs
+///   one that starts after it, for a local write the running pass may have
+///   merged the page of already (#190);
+/// - the window a completed pass ages out of is [staleAfter]. Without it a
+///   session that hydrated at sign-in never saw another device's changes
+///   however long it ran, which #300 fixed for households. Each re-run is a
+///   full drain, as the household's is (#450 is the delta pass);
+/// - the status is [GameCollectionHydrationStatus], registered in the
+///   session scope;
+/// - the hydrator is deliberately not registered. Nothing resolves one by
+///   type; the pass closes over it.
 ///
-/// ## Publishing what the pass is doing (#44)
-///
-/// The list has to tell a cache that is filling from one that is empty, and
-/// show when the last pass failed. So this registers a
-/// [GameCollectionHydrationStatus] in the session scope and drives it around
-/// every pass. The rehydrator entry answers `isStale` from that same status,
-/// so the registry holds no staleness of its own to drift from what the
-/// list reads (#302).
-///
-/// It also registers a [GameCollectionRefresher] over the same pass, for the
-/// list's retry. A press is not a trigger: it is not filtered by staleness,
-/// and it is not dropped while a pass runs. Overlap is safe because the
-/// hydrator single-flights.
-///
-/// Where a collaborator is missing, neither is registered. The list reads an
-/// absent status as idle and an absent refresher as no retry to offer, which
-/// is the truth; a registered pair would claim a hydrate that cannot run.
+/// Where a collaborator is missing, neither the status nor the refresher is
+/// registered. The list reads an absent status as idle and an absent
+/// refresher as no retry to offer, which is the truth; a registered pair
+/// would claim a hydrate that cannot run.
 ///
 /// ## Whose session a pass reads as (#432)
 ///
-/// Every pass first asks the [SessionIdentityGuard] whether the session is
-/// still this scope's user, as the household's does, for the same reason:
-/// on web another tab can move the shared cookie to another user, and a
-/// pass read then would be that user's collection. A refused pass reads as
-/// `failed`. No guard, as on native, is a confirmed session.
+/// The pass asks the [SessionIdentityGuard] once per drain, before its first
+/// request, for the household's reason: on web another tab can move the
+/// shared cookie to another user, and a pass read then would be that user's
+/// collection. A refused pass reads as `failed`. No guard, as on native, is
+/// a confirmed session.
 class GameCollectionHydrateInstaller implements UserScopeInstaller {
   /// [now] overrides the clock [staleAfter] is measured on. Production
   /// leaves it null, which is the device clock; a test drives it so a
@@ -133,71 +125,25 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
       dispose: (s) => s.close(),
     );
 
-    /// One pass, shared by the install-time call, every re-run and the
-    /// retry. Never throws.
-    Future<void> pass() async {
-      status.started();
-      final answer = await guard?.confirm(userId);
-      if (answer != null && answer != SessionConfirmation.confirmed) {
-        _log.info(
-          'Collection hydrate held off: the session could not be confirmed '
-          'as this scope\'s user',
-          context: {'serverId': server.serverId, 'answer': answer.name},
-        );
-        status.finished(CollectionHydrateOutcome.failed);
-        return;
-      }
-      final outcome = await hydrator.hydrate().catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        // Unreachable by contract: hydrate() reports failure in its return
-        // value. Kept because the cost of being wrong is a sign-out.
-        _log.error(
-          'Collection hydrate escaped its own error handling',
-          error: error,
-          stackTrace: stackTrace,
-          context: {'serverId': server.serverId},
-        );
-        return CollectionHydrateOutcome.failed;
-      });
-      status.finished(outcome);
-    }
-
-    if (container.isRegistered<SessionRehydrator>()) {
-      container.get<SessionRehydrator>().register(
-        'collection',
-        isStale: () => switch (status.state) {
-          GameCollectionHydrationState.idle ||
-          GameCollectionHydrationState.failed => true,
-          GameCollectionHydrationState.running => false,
-          GameCollectionHydrationState.refreshed => status.isStaleAfter(
-            staleAfter,
-          ),
-        },
-        run: pass,
-      );
-    }
-
-    container.registerSingleton<GameCollectionRefresher>(
-      GameCollectionRefresher(
-        pass,
-        afterChange: () async {
-          await hydrator.settled;
-          await pass();
-        },
-      ),
+    final pass = HydratePass<CollectionHydrateOutcome>(
+      feature: 'Collection',
+      drain: hydrator.hydrate,
+      status: status,
+      failed: CollectionHydrateOutcome.failed,
+      userId: userId,
+      logger: _log,
+      guard: guard,
+      context: {'serverId': server.serverId},
     );
 
-    // The hydrator is deliberately not registered: nothing resolves one by
-    // type. The re-hydrate entry and the refresher close over this instance,
-    // which keeps its single-flight guard meaningful. Once the session pops,
-    // the repositories it writes through are disposed and the next write
-    // ends the pass.
-    //
-    // `pass()` marks the status running before its first await, so the
-    // status reads running before this method returns. A list built in that
-    // window must not read idle.
-    unawaited(pass());
+    pass.registerRehydrate(container, 'collection', staleAfter: staleAfter);
+
+    container.registerSingleton<GameCollectionRefresher>(
+      GameCollectionRefresher(pass.run, afterChange: pass.runAfterSettled),
+    );
+
+    // Unawaited, and the status is running before this returns: a list built
+    // in that window must not read idle.
+    unawaited(pass.run());
   }
 }

@@ -8,10 +8,10 @@
 /// resolved from a container by type, and every feature's callback would
 /// share that type.
 ///
-/// It needs no guard of its own: `GameCollectionHydrator.hydrate`
-/// single-flights, so a press landing on a running pass joins it.
+/// It needs no guard of its own: `HydratePass` single-flights (#302), so a
+/// press landing on a running pass joins it and waits for it.
 class GameCollectionRefresher {
-  /// Wraps [pass], the same closure the installer registers with the
+  /// Wraps [pass], the same pass the installer registers with the
   /// `SessionRehydrator`, so a pressed refresh and a triggered one report
   /// the same way.
   ///

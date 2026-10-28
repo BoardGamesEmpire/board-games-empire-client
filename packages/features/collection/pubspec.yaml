@@ -16,6 +16,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
+  hydration:
+    path: ../../core/hydration
   interfaces:
     path: ../../core/interfaces
   models:

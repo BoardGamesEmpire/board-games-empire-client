@@ -142,34 +142,8 @@ class GameCollectionHydrator {
   ///
   /// Never throws — see the class doc.
   ///
-  /// **Single-flight:** a call made while a pass is in flight joins that
-  /// pass and receives its outcome, as `HouseholdHydrator.hydrate` does.
-  /// Once a pass settles, the next call asks the server again.
-  Future<CollectionHydrateOutcome> hydrate() {
-    final inFlight = _inFlight;
-    if (inFlight != null) return inFlight;
-
-    final pass = _pass();
-    _inFlight = pass;
-    return pass.whenComplete(() {
-      if (identical(_inFlight, pass)) _inFlight = null;
-    });
-  }
-
-  /// Completes once no pass is in flight: at once when none is, else when
-  /// the running one ends. Never throws.
-  ///
-  /// For a caller that must start a pass of its own after a local write
-  /// (#190): [hydrate] joins the running pass, which may have merged the
-  /// written row's page already.
-  Future<void> get settled async {
-    await _inFlight;
-  }
-
-  /// The pass currently running, or null when none is.
-  Future<CollectionHydrateOutcome>? _inFlight;
-
-  Future<CollectionHydrateOutcome> _pass() async {
+  /// Not single-flight: the caller, `HydratePass`, runs one at a time (#302).
+  Future<CollectionHydrateOutcome> hydrate() async {
     final int mark;
     try {
       mark = await _collection.removalMark();
