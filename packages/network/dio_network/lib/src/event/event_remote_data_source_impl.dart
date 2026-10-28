@@ -6,7 +6,8 @@ import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 import '../network/user_projection.dart';
 
-/// [EventRemoteDataSource] over a **per-server** Dio instance (#496, #499).
+/// [EventRemoteDataSource] over a **per-server** Dio instance (#496, #499,
+/// #501).
 ///
 /// Built on the DataGateway source's request plumbing (#41), which took it
 /// from the collection source (#351): the body is asked for as a `String` with
@@ -118,6 +119,24 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
   }
 
+  @override
+  Future<void> deleteEvent(String id) async {
+    _checkId(id);
+
+    await _send(
+      request: () => _dio.delete<String>(_pathOf(id), options: _plainBody),
+      action: 'Event delete',
+      // The path names one event, and the delete is a write to it: an
+      // application 404 is the event being gone, and an application 403 is
+      // the API refusing this write.
+      route: _Route.write,
+      // The answer is `{ message, event }`, which the delete has no use for. A
+      // 2xx is a delete that happened, so a body this client could not read
+      // must not turn it into a failure.
+      readBody: false,
+    );
+  }
+
   static String _pathOf(String id) => '$_basePath/${Uri.encodeComponent(id)}';
 
   // ── Request plumbing ────────────────────────────────────────────────
@@ -131,10 +150,14 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   ///
   /// [route] says what the path names, which decides what an application 403
   /// or 404 means.
+  ///
+  /// With [readBody] false the body is neither required nor decoded: a 2xx
+  /// returns an empty one, whatever the response carried.
   Future<({Map<String, dynamic> body, int status})> _send({
     required Future<Response<String>> Function() request,
     required String action,
     required _Route route,
+    bool readBody = true,
   }) async {
     late final Response<String> response;
     try {
@@ -162,6 +185,10 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         route: route,
         body: response.data,
       );
+    }
+
+    if (!readBody) {
+      return (body: const <String, dynamic>{}, status: status);
     }
 
     final raw = response.data;
@@ -511,7 +538,8 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
 
   /// An empty id would send `GET /api/events/`, which the server routes to
   /// the list, so its 200 would fail to parse and read as the server breaking
-  /// the contract rather than the caller's mistake.
+  /// the contract rather than the caller's mistake. A `DELETE /api/events/`
+  /// has no route, and its 404 would read as the event being gone.
   void _checkId(String id) {
     if (id.isEmpty) {
       throw ArgumentError.value(id, 'id', 'must not be empty');
@@ -564,32 +592,40 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
           statusCode: status,
         );
       }
-      // On the create the API is refusing this request, not saying the caller
-      // may not read events.
-      return route == _Route.create
-          ? EventCreateRefusedException(
-              message,
-              cause: cause,
-              statusCode: status,
-              apiMessage: apiErrorField(body, 'message'),
-            )
-          : EventRemoteForbiddenException(
-              message,
-              cause: cause,
-              statusCode: status,
-            );
+      // On a write the API is refusing this request, not saying the caller may
+      // not read events.
+      return switch (route) {
+        _Route.create => EventCreateRefusedException(
+          message,
+          cause: cause,
+          statusCode: status,
+          apiMessage: apiErrorField(body, 'message'),
+        ),
+        _Route.write => EventWriteRefusedException(
+          message,
+          cause: cause,
+          statusCode: status,
+          apiMessage: apiErrorField(body, 'message'),
+        ),
+        _Route.list || _Route.row => EventRemoteForbiddenException(
+          message,
+          cause: cause,
+          statusCode: status,
+        ),
+      };
     }
     if (status == 404) {
       // Nest answers an unregistered route with this same envelope, so on the
       // list route even an application 404 means "not deployed", not "no
-      // rows". On a row route it is the service saying the row is gone. On the
-      // create it is the service refusing an unknown household or invitee.
+      // rows". On a row route, and on a write to one, it is the service saying
+      // the row is gone. On the create it is the service refusing an unknown
+      // household or invitee.
       //
       // That last one is read as a refusal although a server without the route
       // answers alike. Parked, a create that was never routable is bounded and
       // can be discarded by hand. Transient, it would retry forever.
       if (isApiErrorEnvelope(body, status)) {
-        if (route == _Route.row) {
+        if (route == _Route.row || route == _Route.write) {
           return EventRemoteNotFoundException(
             message,
             cause: cause,
@@ -654,4 +690,8 @@ enum _Route {
 
   /// `POST /api/events`, whose 403 and 404 refuse that create.
   create,
+
+  /// `DELETE /api/events/:id`, a write to one event: its 403 refuses that
+  /// write, and its 404 says the event is gone.
+  write,
 }

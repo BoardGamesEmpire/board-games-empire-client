@@ -1476,6 +1476,156 @@ void main() {
     });
   });
 
+  group('deleteEvent', () {
+    /// The body `DELETE /api/events/:id` answers with, `{ message, event }`,
+    /// which the delete does not read (#501).
+    String deletedBody() => jsonEncode({
+      'message': 'Event deleted',
+      'event': _eventRow()..['deletedAt'] = '2026-10-20T12:30:00.000Z',
+    });
+
+    test('sends DELETE to the encoded id', () async {
+      final remote = answering(deletedBody());
+
+      await remote.deleteEvent('ev 1');
+
+      expect(adapter.sent.single.method, 'DELETE');
+      expect(adapter.sent.single.path, '/api/events/ev%201');
+      expect(adapter.sent.single.query, isEmpty);
+      expect(adapter.sent.single.body, isNull);
+    });
+
+    test('a 200 is a delete, whatever its body', () async {
+      // The body is not read, so one this client could not map is still a
+      // delete that happened.
+      await answering(deletedBody()).deleteEvent('ev_1');
+      await answering(jsonEncode({'message': 'x', 'event': 'not an event'}))
+          .deleteEvent('ev_1');
+      await answering('').deleteEvent('ev_1');
+      await answering('<html>not json</html>').deleteEvent('ev_1');
+      await answering('[]').deleteEvent('ev_1');
+    });
+
+    test('any 2xx is a delete, not only 200', () async {
+      await answering('', status: 204).deleteEvent('ev_1');
+    });
+
+    test('refuses an empty id before sending', () async {
+      final remote = answering(deletedBody());
+
+      await expectLater(remote.deleteEvent(''), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('an enveloped 404 means the event is gone', () async {
+      // A second delete of one event answers this too, and so does an event
+      // the caller may not read: the server does not say which.
+      final remote = answering(
+        _envelope(404, 'Not Found', 'Event not found'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.deleteEvent('ev_1'),
+        throwsA(
+          isA<EventRemoteNotFoundException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
+    });
+
+    test('an enveloped 403 is a refused write', () async {
+      final remote = answering(
+        _envelope(403, 'Forbidden', 'You may not delete this event.'),
+        status: 403,
+      );
+
+      await expectLater(
+        remote.deleteEvent('ev_1'),
+        throwsA(
+          isA<EventWriteRefusedException>()
+              .having((e) => e.statusCode, 'statusCode', 403)
+              .having(
+                (e) => e.apiMessage,
+                'apiMessage',
+                'You may not delete this event.',
+              ),
+        ),
+      );
+    });
+
+    test('a 403 or 404 without the envelope is transient', () async {
+      for (final status in [403, 404]) {
+        final remote = answering(
+          '<html>Blocked by a proxy</html>',
+          status: status,
+        );
+
+        await expectLater(
+          remote.deleteEvent('ev_1'),
+          throwsA(
+            isA<EventRemoteTransientException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              status,
+            ),
+          ),
+          reason: 'status $status',
+        );
+      }
+    });
+
+    test('a 5xx is transient', () async {
+      final remote = answering(
+        _envelope(503, 'Service Unavailable', 'Try again.'),
+        status: 503,
+      );
+
+      await expectLater(
+        remote.deleteEvent('ev_1'),
+        throwsA(
+          isA<EventRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            503,
+          ),
+        ),
+      );
+    });
+
+    test('a 400 is permanent', () async {
+      final remote = answering(
+        _envelope(400, 'Bad Request', 'id must be a string'),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.deleteEvent('ev_1'),
+        throwsA(
+          isA<EventRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            400,
+          ),
+        ),
+      );
+    });
+
+    test('an unreachable server is transient', () async {
+      final remote = EventRemoteDataSourceImpl(
+        unreachableDio(DioExceptionType.connectionError),
+      );
+
+      await expectLater(
+        remote.deleteEvent('ev_1'),
+        throwsA(isA<EventRemoteTransientException>()),
+      );
+    });
+  });
+
   group('classification', () {
     test('any 2xx is a success, not only 200', () async {
       // Every event write answers 201, whatever the API's description says,

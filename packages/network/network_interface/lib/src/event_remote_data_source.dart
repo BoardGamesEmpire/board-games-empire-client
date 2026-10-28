@@ -9,13 +9,13 @@ import 'paginated_result.dart';
 /// deleted since returns that event with the time it was deleted (#499).
 typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 
-/// Remote data source for the events the signed-in user attends (#496), and
-/// for creating one (#499).
+/// Remote data source for the events the signed-in user attends (#496), for
+/// creating one (#499) and for deleting one (#501).
 ///
 /// The event hydrate pages through [fetchEvents] to cache the user's events,
 /// and [fetchEvent] reads one event whole, roster included, which the list
-/// does not carry. [createEvent] sends a new event. Answering an invitation or
-/// voting is #527.
+/// does not carry. [createEvent] sends a new event and [deleteEvent] removes
+/// one. Answering an invitation or voting is #527.
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -30,6 +30,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [fetchEvents] | `GET /api/events` | `{ events: [...], pagination }` |
 /// | [fetchEvent] | `GET /api/events/:id` | `{ event }` |
 /// | [createEvent] | `POST /api/events` | `{ message, event }` |
+/// | [deleteEvent] | `DELETE /api/events/:id` | `{ message, event }`, not read |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
 /// which it got:
@@ -89,9 +90,13 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
-///   [fetchEvent]. The event is gone, or the caller may not read it.
+///   [fetchEvent] or [deleteEvent]. From [fetchEvent] the event is gone, or
+///   the caller may not read it. From [deleteEvent] no live event has the id.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
+/// - [EventWriteRefusedException]: a 403 carrying the envelope, from
+///   [deleteEvent], which says the API refused that write to an existing event
+///   (below).
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, and a 409 that is not
 ///   asking for a retry), and a 2xx whose body cannot be read as the contract
@@ -123,6 +128,24 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// path with the same envelope, so a server without the route is misread as
 /// refusing. That is accepted: a refusal is parked, which is bounded and can
 /// be discarded by hand, where a transient failure would be retried forever.
+///
+/// ### The delete's answers
+///
+/// [deleteEvent] names one event, and a 404 carrying the envelope says the
+/// server has no live event with that id. It looks among every live event,
+/// not only those the caller may read, so a caller who may not delete a live
+/// event is refused (below) rather than told it is gone. A second DELETE of
+/// one event answers 404 too, so a caller whose first answer was lost reads
+/// the repeat as gone.
+///
+/// Its body is not read, so any 2xx is a delete, and neither rule above for a
+/// 2xx body this client could not read applies to it.
+///
+/// A 403 carrying the envelope is the API refusing this write, and it is
+/// refused again on every attempt, so it surfaces as
+/// [EventWriteRefusedException], not as the reads'
+/// [EventRemoteForbiddenException] (the caller may not read events). Without
+/// the envelope a 403 or 404 stays transient, as everywhere else.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: an out-of-range page or limit, an empty id, or a create that
@@ -203,6 +226,22 @@ abstract class EventRemoteDataSource {
     EventDraft draft, {
     required String clientRequestId,
   });
+
+  /// `DELETE /api/events/:id`: deletes the event, and completes once the
+  /// server has. Answers 200 `{ message, event }`, and the body is not read: a
+  /// delete is whole once the status says so, so one this client could not map
+  /// is still one that happened.
+  ///
+  /// Throws [EventRemoteNotFoundException] when the server has no live event
+  /// with this id. That is also what a second DELETE of one event answers, so
+  /// a caller cannot tell its own earlier delete from someone else's.
+  /// Throws [EventWriteRefusedException] when the API refuses the delete, such
+  /// as for a caller who may not delete this event, and otherwise
+  /// [EventRemoteException] per the class doc.
+  ///
+  /// An empty [id] throws [ArgumentError] before the request, as for
+  /// [fetchEvent].
+  Future<void> deleteEvent(String id);
 }
 
 /// Base class for every event remote failure.
@@ -260,6 +299,26 @@ final class EventCreateRefusedException extends EventRemoteException {
   ///
   /// The server translates it into the request's locale, so it is for
   /// finding an id it names, never for showing.
+  final String? apiMessage;
+}
+
+/// The API refused this write to an existing event, and the same request will
+/// be refused again: a 403 carrying its error envelope (#501).
+///
+/// Not [EventRemoteForbiddenException], which is about reading events.
+final class EventWriteRefusedException extends EventRemoteException {
+  const EventWriteRefusedException(
+    super.message, {
+    super.statusCode,
+    super.cause,
+    this.apiMessage,
+  });
+
+  /// The `message` of the API's error envelope, when it is a string, where
+  /// [message] is this client's own.
+  ///
+  /// The server translates it into the request's locale, so it is for finding
+  /// an id it names, never for showing.
   final String? apiMessage;
 }
 
