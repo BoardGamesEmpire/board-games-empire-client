@@ -144,9 +144,12 @@ enum CollectionHydrateOutcome {
 ///   re-run did before the delta read. It moves too when
 ///   [GameCollectionRepository.discardQueuedOp] leaves a row for a merge to
 ///   rebuild (#190): the row holds the discarded op's values, the server's
-///   copy did not change, and no delta would read it. Every completed pass
-///   records the one it read, whether or not the delta mark moved, so each
-///   move costs one full drain rather than every pass after it.
+///   copy did not change, and no delta would read it. That holds for a
+///   discard through another browser tab too, which may close before its
+///   own hydrate rebuilds the row: the mark moves for it at this pass's
+///   read. Every completed pass records the one it read, whether or not the
+///   delta mark moved, so each move costs one full drain rather than every
+///   pass after it.
 ///
 /// The delta mark is the server's timestamp, for the catch-up's reason. It
 /// has an overlap because the server stamps `updatedAt` before the write

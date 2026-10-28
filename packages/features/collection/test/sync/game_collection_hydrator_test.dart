@@ -679,6 +679,36 @@ void main() {
       expect(third.requests.single.updatedSince, markAtT);
     });
 
+    // Another tab over the same database can discard the op, and close
+    // before its own hydrate rebuilds the row.
+    test('after another tab discards a stuck op, the next is a full drain '
+        'that rebuilds its row, and the one after a delta', () async {
+      // Older than the mark, so only a full drain reads it again.
+      final rows = [
+        _row(1, updatedAt: t.subtract(const Duration(hours: 1))),
+        _row(2, updatedAt: t),
+      ];
+      final remote = FakeCollectionRemote((r) => serverPage(rows, r));
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      final otherTab = openCollection();
+      await otherTab.updateCollectionEntry(id: 'gc-1', quantity: 4);
+      final update = (await queue.getOutstandingEntries()).single;
+      await queue.park(update.id, error: 'rejected: 400');
+      expect(await otherTab.discardQueuedOp(update.id), isTrue);
+      await otherTab.onDispose();
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests.single.updatedSince, isNull);
+      final items = await collection.watchCollectionListItems().first;
+      expect(items.firstWhere((i) => i.entry.id == 'gc-1').entry.quantity, 1);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(third.requests.single.updatedSince, markAtT);
+    });
+
     // The pass records the removal mark it read before its first request,
     // not one read when it ends: a confirmation mid-pass can make the merge
     // skip a live copy, which the next pass must read again.

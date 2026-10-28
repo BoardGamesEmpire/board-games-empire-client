@@ -240,8 +240,15 @@ class GameCollectionRepositoryImpl
 
   /// What [removalMark] reads. It moves on each removal
   /// [reconcileFromServer] and [confirmRemoved] confirm through this
-  /// instance, and on each discard that leaves a row to rebuild (#190).
+  /// instance, on each discard through it that leaves a row to rebuild
+  /// (#190), and on [removalMark]'s read of a row another instance's discard
+  /// left.
   int _mark = 0;
+
+  /// The rows stamped [_olderThanAnyServerCopy] that the last [removalMark]
+  /// read found, less any whose server copy a merge has seen since. A row
+  /// [removalMark] finds outside it moves the mark.
+  Set<String> _counted = {};
 
   /// Where [_mark] stood after each triplet's latest confirmed removal,
   /// keyed by `(platformGameId, wire medium)`.
@@ -1022,9 +1029,32 @@ class GameCollectionRepositoryImpl
         );
   }
 
+  /// Also moves the mark for a row a discard through another instance over
+  /// this database left to rebuild, such as another browser tab's. That
+  /// discard moved only its own instance's mark, and its stamp is all it
+  /// leaves here.
+  ///
+  /// A row is counted once, until a merge sees its server copy. The pass
+  /// after the mark moves reads everything, so it sees the copy of every
+  /// row the server holds and rewrites it. A row stamped again after that
+  /// is a later discard, and moves the mark again.
   @override
   Future<int> removalMark() async {
     checkNotDisposed();
+    final t = _db.gameCollectionsTable;
+    final rows =
+        await (_db.selectOnly(t)
+              ..addColumns([t.id])
+              ..where(
+                t.userId.equals(_userId) &
+                    t.isDirty.equals(false) &
+                    t.isLocalOnly.equals(false) &
+                    t.updatedAt.equals(_olderThanAnyServerCopy),
+              ))
+            .get();
+    final awaiting = {for (final row in rows) row.read(t.id)!};
+    if (!_counted.containsAll(awaiting)) _mark++;
+    _counted = awaiting;
     return _mark;
   }
 
@@ -1044,6 +1074,9 @@ class GameCollectionRepositoryImpl
       _checkServerEntryUser(serverEntry, caller: 'mergeFromServer');
     }
     if (serverEntries.isEmpty) return;
+    // Seen, whether or not the merge writes it. A row it keeps stamped is
+    // counted again, at a cost of one more full read.
+    _counted.removeAll(serverEntries.map((entry) => entry.id));
 
     return _purgingTransaction(() async {
       for (final serverEntry in serverEntries) {
