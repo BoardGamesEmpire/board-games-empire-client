@@ -46,6 +46,12 @@ import 'event_detail_state.dart';
 /// so the detail is the cache's. A read starting does not clear it; one
 /// succeeding does.
 ///
+/// [EventDetailReady.reading] says a read is running, the open's included,
+/// which `refreshing` leaves out. A read runs until it settles, and one that
+/// succeeds settles after its write has reached the cache. The screen holds
+/// Delete on it, so that a read's answer cannot cache the event again after
+/// the delete (#501).
+///
 /// ## The read on open
 ///
 /// Every open reads the event (#498), on the cache's first answer. Waiting
@@ -671,6 +677,7 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
             : _householdRoles[householdId],
       ),
       refreshing: _refreshing,
+      reading: _reading,
       refreshFailed: _outcome == EventDetailReadOutcome.failed,
       canRetry: _canRetry,
     );

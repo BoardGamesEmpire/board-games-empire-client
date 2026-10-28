@@ -120,6 +120,7 @@ void main() {
     Object? householdName = anything,
     Object? actions = anything,
     Object? refreshing = anything,
+    Object? reading = anything,
     Object? refreshFailed = anything,
     Object? canRetry = anything,
   }) => isA<EventDetailReady>()
@@ -127,6 +128,7 @@ void main() {
       .having((s) => s.householdName, 'householdName', householdName)
       .having((s) => s.actions, 'actions', actions)
       .having((s) => s.refreshing, 'refreshing', refreshing)
+      .having((s) => s.reading, 'reading', reading)
       .having((s) => s.refreshFailed, 'refreshFailed', refreshFailed)
       .having((s) => s.canRetry, 'canRetry', canRetry);
 
@@ -435,7 +437,13 @@ void main() {
       await settle();
 
       expect(bloc.state, const EventDetailNotFound());
-      expect(states, [isA<EventDetailReady>(), const EventDetailNotFound()]);
+      // The read is out when the detail shows, and settles on the 404 before
+      // the forget's null arrives.
+      expect(states, [
+        readyWith(reading: true),
+        readyWith(reading: false),
+        const EventDetailNotFound(),
+      ]);
     });
 
     test('a detail the cache gains later does not lift it', () async {
@@ -1173,6 +1181,104 @@ void main() {
     });
   });
 
+  group('reading (#501)', () {
+    // A delete that lands while a read is out would be undone by the read's
+    // 200, which caches the event again. The screen holds Delete on this
+    // until the read has settled, whoever asked for it.
+    test('the open\'s read is reading, not refreshing', () async {
+      final read = Completer<EventSnapshot>();
+      final bloc = build(remote: FakeEventRemote.detail((_) => read.future));
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+
+      expect(
+        bloc.state,
+        readyWith(detail: _detail(), reading: true, refreshing: false),
+      );
+
+      read.complete(_snapshot());
+      await settle();
+
+      expect(bloc.state, readyWith(reading: false, refreshing: false));
+    });
+
+    test('keeps reading until the read has been written', () async {
+      // The 200 that undoes a delete is the cache write, not the response.
+      final write = Completer<void>();
+      when(() => repository.cacheEvent(any(), source: any(named: 'source')))
+          .thenAnswer((_) => write.future);
+      final bloc = build(remote: FakeEventRemote.detail((_) => _snapshot()));
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+
+      verify(() => repository.cacheEvent(any(), source: EventAccessSource.read))
+          .called(1);
+      expect(bloc.state, readyWith(reading: true));
+
+      write.complete();
+      await settle();
+
+      expect(bloc.state, readyWith(reading: false));
+    });
+
+    test('a retry is both', () async {
+      final reads = <Completer<EventSnapshot>>[];
+      final bloc = build(
+        remote: FakeEventRemote.detail((_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        }),
+      );
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+      reads.single.completeError(
+        const EventRemoteTransientException('offline'),
+      );
+      await settle();
+
+      expect(bloc.state, readyWith(reading: false, refreshing: false));
+
+      bloc.add(const EventDetailRetryRequested());
+      await settle();
+
+      expect(bloc.state, readyWith(reading: true, refreshing: true));
+
+      reads.last.complete(_snapshot());
+      await settle();
+
+      expect(bloc.state, readyWith(reading: false, refreshing: false));
+    });
+
+    test('a failed read stops reading', () async {
+      final bloc = build(
+        remote: failing(const EventRemoteTransientException('offline')),
+      );
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+
+      expect(bloc.state, readyWith(reading: false, refreshFailed: true));
+    });
+
+    test('no remote never reads', () async {
+      final bloc = build();
+      addTearDown(bloc.close);
+
+      cache.add(_detail());
+      await settle();
+
+      expect(bloc.state, readyWith(detail: _detail(), reading: false));
+    });
+  });
+
   group('the actions', () {
     test('the actions follow the attendance', () async {
       final bloc = build();
@@ -1587,6 +1693,12 @@ void main() {
             actions: const {},
             canRetry: true,
           ),
+        ),
+      );
+      expect(
+        EventDetailReady(detail: _detail(), actions: const {}),
+        isNot(
+          EventDetailReady(detail: _detail(), actions: const {}, reading: true),
         ),
       );
     });
