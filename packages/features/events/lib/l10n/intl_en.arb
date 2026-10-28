@@ -266,6 +266,14 @@
   "@eventsActionDismiss": {
     "description": "Button on the banner that says how deleting an event went, on the event's screen. Closes the banner."
   },
+  "eventsDateChanged": "This date changed meanwhile. Here it is as it stands now.",
+  "@eventsDateChanged": {
+    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. The screen has just been refreshed and shows the date as it is now. A warning, not an error."
+  },
+  "eventsDateCancelledNotRemoved": "The date was cancelled, but not removed. You can remove it now.",
+  "@eventsDateCancelledNotRemoved": {
+    "description": "Banner on an event's screen after trying to remove a confirmed date, which happens in two steps: the date is cancelled first, then removed. The cancel went through and the removal did not, so the date now shows as cancelled, and removing it again is offered on the date itself."
+  },
   "eventsTypeAdultsOnly": "Adults only",
   "@eventsTypeAdultsOnly": {
     "description": "The kind of event the host chose, on the event's screen: for adults only."

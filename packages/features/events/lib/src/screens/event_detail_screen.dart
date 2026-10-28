@@ -493,14 +493,19 @@ class _ActionOutcomeBanner extends StatelessWidget {
         // Gone is what deleting asked for.
         EventActionResult.done ||
         EventActionResult.gone => BgeBannerTone.success,
-        EventActionResult.refused => BgeBannerTone.warning,
+        EventActionResult.refused ||
+        EventActionResult.changed ||
+        EventActionResult.partlyDone => BgeBannerTone.warning,
         EventActionResult.failed => BgeBannerTone.error,
       },
-      // Delete is the only action yet. #502's add their own copy.
+      // Delete is the only action the screen sends yet. #502's add their own
+      // copy. Only a date write (#506) ends changed or partlyDone.
       message: switch (outcome.result) {
         EventActionResult.done => l10n.eventsDeleted,
         EventActionResult.gone => l10n.eventsDeleteGone,
         EventActionResult.refused => l10n.eventsDeleteRefused,
+        EventActionResult.changed => l10n.eventsDateChanged,
+        EventActionResult.partlyDone => l10n.eventsDateCancelledNotRemoved,
         // Only a transient failure is worth pressing again (#501). A session
         // that moved and a cache that couldn't be read sent nothing, and a
         // 4xx was refused: the same press would end the same way.
