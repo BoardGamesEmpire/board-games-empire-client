@@ -14,12 +14,14 @@ void main() {
   const organizer = {
     EventAction.edit,
     EventAction.addDate,
+    EventAction.editDate,
     EventAction.rsvp,
     EventAction.manageAttendees,
   };
 
   const moderator = {
     EventAction.edit,
+    EventAction.editDate,
     EventAction.cancelDate,
     EventAction.rsvp,
     EventAction.manageAttendees,
@@ -29,6 +31,7 @@ void main() {
   const household = {
     EventAction.edit,
     EventAction.addDate,
+    EventAction.editDate,
     EventAction.confirmDate,
     EventAction.declineDate,
     EventAction.cancelDate,
@@ -113,6 +116,31 @@ void main() {
       ];
 
       expect(who, [EventRole.host]);
+    });
+
+    test('is the host and co-host who may remove a date', () {
+      final who = [
+        for (final role in EventRole.values)
+          if (eventActionsFor(
+            plain,
+            eventRole: role,
+          ).contains(EventAction.removeDate))
+            role,
+      ];
+
+      expect(who, [EventRole.host, EventRole.coHost]);
+    });
+
+    test('a household owner or admin may edit a date but not remove one', () {
+      for (final role in [
+        HouseholdRole.householdOwner,
+        HouseholdRole.householdAdmin,
+      ]) {
+        final actions = eventActionsFor(inHousehold, householdRole: role);
+
+        expect(actions, contains(EventAction.editDate));
+        expect(actions, isNot(contains(EventAction.removeDate)));
+      }
     });
 
     test('is the host alone who may archive', () {
