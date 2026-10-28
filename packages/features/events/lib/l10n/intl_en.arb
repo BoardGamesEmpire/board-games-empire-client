@@ -254,9 +254,9 @@
   "@eventsDeleteRefused": {
     "description": "Banner on an event's screen when the server refused to delete it: the user is not allowed to, for example because they are no longer its host after a change made on another device."
   },
-  "eventsDeleteFailed": "We couldn't delete this event. Check your connection and try again.",
+  "eventsDeleteFailed": "An error occurred while deleting this event. You may need to try again.",
   "@eventsDeleteFailed": {
-    "description": "Banner on an event's screen when deleting it ended without an answer that says what happened, most often because there was no connection. Trying again is safe: if the first delete did go through, the second finds the event already deleted."
+    "description": "Banner on an event's screen when deleting it ended without an answer that says what happened, most often because there was no connection. The delete may or may not have gone through, so the copy must not say the event wasn't deleted. Trying again is safe: if the first delete did go through, the second finds the event already deleted."
   },
   "eventsDeleteFailedUnexpected": "Something went wrong, and the event wasn't deleted.",
   "@eventsDeleteFailedUnexpected": {

@@ -32,7 +32,7 @@ const _deletedCopy = 'Event deleted';
 const _goneCopy = 'This event was already deleted.';
 const _refusedCopy = "You can't delete this event.";
 const _failedCopy =
-    "We couldn't delete this event. Check your connection and try again.";
+    'An error occurred while deleting this event. You may need to try again.';
 const _failedUnexpectedCopy =
     "Something went wrong, and the event wasn't deleted.";
 
