@@ -1238,6 +1238,29 @@ void main() {
       expect(backs, 0);
     });
 
+    testWidgets('a gone delete the cache keeps still shows its updates', (
+      tester,
+    ) async {
+      // The sync queue owns the event, so the removal is declined and the
+      // cache goes on emitting it. The gone outcome alone is no not found.
+      when(() => repository.removeDeletedEvent(any()))
+          .thenAnswer((_) async => false);
+      final remote = answering(
+        deleted: (_) => throw const EventRemoteNotFoundException('gone'),
+      );
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+      expect(inOutcome(_goneCopy), findsOneWidget);
+
+      cache.add(hosted(title: 'Catan night, moved'));
+      await settle(tester);
+
+      expect(find.text(_notFoundCopy), findsNothing);
+      expect(find.text('Catan night, moved'), findsOneWidget);
+      expect(backs, 0);
+    });
+
     testWidgets('a gone delete after a failed read falls to not found', (
       tester,
     ) async {
