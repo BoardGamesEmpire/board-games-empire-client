@@ -137,7 +137,167 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
   }
 
+  @override
+  Future<EventOccurrence> addOccurrence(
+    String eventId,
+    EventOccurrenceDraft draft, {
+    required int sortOrder,
+  }) async {
+    _checkId(eventId, name: 'eventId');
+
+    return _writeOccurrence(
+      'Date add',
+      _occurrencesPath(eventId),
+      (path) => _dio.post<String>(
+        path,
+        options: _plainBody,
+        data: {
+          'label': ?draft.label,
+          'startDate': ?draft.startDate?.toUtc().toIso8601String(),
+          'endDate': ?draft.endDate?.toUtc().toIso8601String(),
+          'location': ?draft.location,
+          'sortOrder': sortOrder,
+        },
+      ),
+    );
+  }
+
+  @override
+  Future<EventOccurrence> updateOccurrence(
+    String eventId,
+    String occurrenceId,
+    OccurrenceUpdate update,
+  ) async {
+    _checkOccurrenceIds(eventId, occurrenceId);
+    if (update.isEmpty) {
+      throw ArgumentError.value(update, 'update', 'must change something');
+    }
+
+    return _writeOccurrence(
+      'Date update',
+      _occurrencePath(eventId, occurrenceId),
+      (path) => _dio.patch<String>(
+        path,
+        options: _plainBody,
+        data: {
+          // A cleared field goes as null, which the server writes as NULL.
+          if (update.clearLabel) 'label': null else 'label': ?update.label,
+          'startDate': ?update.startDate?.toUtc().toIso8601String(),
+          if (update.clearEndDate)
+            'endDate': null
+          else
+            'endDate': ?update.endDate?.toUtc().toIso8601String(),
+          if (update.clearLocation)
+            'location': null
+          else
+            'location': ?update.location,
+        },
+      ),
+    );
+  }
+
+  @override
+  Future<EventOccurrence> confirmOccurrence(
+    String eventId,
+    String occurrenceId,
+  ) => _postStatus('Date confirm', 'confirm', eventId, occurrenceId);
+
+  @override
+  Future<EventOccurrence> declineOccurrence(
+    String eventId,
+    String occurrenceId,
+  ) => _postStatus('Date decline', 'decline', eventId, occurrenceId);
+
+  @override
+  Future<EventOccurrence> cancelOccurrence(
+    String eventId,
+    String occurrenceId, {
+    String? reason,
+  }) async {
+    _checkOccurrenceIds(eventId, occurrenceId);
+    final trimmed = reason?.trim();
+    if (trimmed != null &&
+        trimmed.length > EventRemoteDataSource.maxCancelReasonLength) {
+      // The server's 400 for this is permanent, so it is not sent.
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'must be at most ${EventRemoteDataSource.maxCancelReasonLength} '
+            'characters after trimming (the server rejects anything longer '
+            'with a 400)',
+      );
+    }
+
+    return _writeOccurrence(
+      'Date cancel',
+      '${_occurrencePath(eventId, occurrenceId)}/cancel',
+      (path) => _dio.post<String>(
+        path,
+        options: _plainBody,
+        data: {if (trimmed != null && trimmed.isNotEmpty) 'reason': trimmed},
+      ),
+    );
+  }
+
+  @override
+  Future<void> removeOccurrence(String eventId, String occurrenceId) async {
+    _checkOccurrenceIds(eventId, occurrenceId);
+
+    await _send(
+      request: () => _dio.delete<String>(
+        _occurrencePath(eventId, occurrenceId),
+        options: _plainBody,
+      ),
+      action: 'Date remove',
+      route: _Route.write,
+      // As for the event delete: a 2xx is a removal that happened, whatever
+      // the body says.
+      readBody: false,
+    );
+  }
+
+  Future<EventOccurrence> _postStatus(
+    String action,
+    String suffix,
+    String eventId,
+    String occurrenceId,
+  ) async {
+    _checkOccurrenceIds(eventId, occurrenceId);
+
+    return _writeOccurrence(
+      action,
+      '${_occurrencePath(eventId, occurrenceId)}/$suffix',
+      (path) => _dio.post<String>(path, options: _plainBody),
+    );
+  }
+
+  /// Sends one date write to [path] and reads the date out of its answer,
+  /// `{ message, occurrence }`.
+  Future<EventOccurrence> _writeOccurrence(
+    String action,
+    String path,
+    Future<Response<String>> Function(String path) request,
+  ) async {
+    final response = await _send(
+      request: () => request(path),
+      action: action,
+      // The path names one date of one event, and the call is a write to it.
+      route: _Route.write,
+    );
+    return _parse(
+      () => _mapOccurrence(_occurrenceObject(response.body)),
+      action: action,
+      status: response.status,
+    );
+  }
+
   static String _pathOf(String id) => '$_basePath/${Uri.encodeComponent(id)}';
+
+  static String _occurrencesPath(String eventId) =>
+      '${_pathOf(eventId)}/occurrences';
+
+  static String _occurrencePath(String eventId, String occurrenceId) =>
+      '${_occurrencesPath(eventId)}/${Uri.encodeComponent(occurrenceId)}';
 
   // ── Request plumbing ────────────────────────────────────────────────
   //
@@ -285,6 +445,15 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return event;
   }
 
+  /// Reads the date out of a date write's body, `{ "occurrence": { ... } }`.
+  static Map<String, dynamic> _occurrenceObject(Map<String, dynamic> body) {
+    final occurrence = body['occurrence'];
+    if (occurrence is! Map<String, dynamic>) {
+      throw const FormatException('response is missing an "occurrence" object');
+    }
+    return occurrence;
+  }
+
   static Event _mapEvent(Map<String, dynamic> json) => Event(
     id: json['id'] as String,
     title: json['title'] as String,
@@ -320,6 +489,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         confirmedAt: _dateOrNull(json['confirmedAt']),
         declinedAt: _dateOrNull(json['declinedAt']),
         cancelledAt: _dateOrNull(json['cancelledAt']),
+        cancelReason: json['cancelReason'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
       );
@@ -540,10 +710,17 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   /// the list, so its 200 would fail to parse and read as the server breaking
   /// the contract rather than the caller's mistake. A `DELETE /api/events/`
   /// has no route, and its 404 would read as the event being gone.
-  void _checkId(String id) {
+  void _checkId(String id, {String name = 'id'}) {
     if (id.isEmpty) {
-      throw ArgumentError.value(id, 'id', 'must not be empty');
+      throw ArgumentError.value(id, name, 'must not be empty');
     }
+  }
+
+  /// An empty occurrence id would send the request to the event's dates
+  /// route, and read the answer as if it were about one date.
+  void _checkOccurrenceIds(String eventId, String occurrenceId) {
+    _checkId(eventId, name: 'eventId');
+    _checkId(occurrenceId, name: 'occurrenceId');
   }
 
   // ── Failure classification ──────────────────────────────────────────
@@ -649,6 +826,21 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
         statusCode: status,
       );
     }
+    if (status == 400 &&
+        route == _Route.write &&
+        isApiErrorEnvelope(body, status) &&
+        apiErrorField(body, 'message') != null) {
+      // The server judged a write against the row as it stands now, in one
+      // message. The validation pipe's 400 lists one per value it refused,
+      // and falls to permanent below: the same request is refused again. The
+      // event delete shares this route, but the server never answers it 400.
+      return EventWriteConflictException(
+        message,
+        cause: cause,
+        statusCode: status,
+        apiMessage: apiErrorField(body, 'message'),
+      );
+    }
     if (status == 409 && isRetryableRefusal(body)) {
       // A deadlock that outlived the server's own retry (#431). Nothing
       // about the request was wrong, so the same read is expected to
@@ -691,7 +883,9 @@ enum _Route {
   /// `POST /api/events`, whose 403 and 404 refuse that create.
   create,
 
-  /// `DELETE /api/events/:id`, a write to one event: its 403 refuses that
-  /// write, and its 404 says the event is gone.
+  /// A write to one event or to one of its dates: `DELETE /api/events/:id`
+  /// and the date routes under it. Its 403 refuses that write, its 404 says
+  /// the event or date is gone, and its enveloped 400 with one message is a
+  /// conflict with the row as it stands (#506). The event delete is never answered 400.
   write,
 }

@@ -393,6 +393,7 @@ void main() {
             sortOrder: 2,
             confirmedAt: DateTime.utc(2026, 10, 1, 10, 31),
             cancelledAt: DateTime.utc(2026, 10, 5, 9),
+            cancelReason: 'Venue closed',
             createdAt: DateTime.utc(2026, 10, 1, 10, 30),
             updatedAt: DateTime.utc(2026, 10, 1, 10, 45),
           ),
@@ -1596,11 +1597,10 @@ void main() {
       );
     });
 
-    test('a 400 is permanent', () async {
-      final remote = answering(
-        _envelope(400, 'Bad Request', 'id must be a string'),
-        status: 400,
-      );
+    test('a 400 without the envelope is permanent', () async {
+      // With it a 400 on this route reads as a write conflict (#506), which
+      // the server never answers a delete with.
+      final remote = answering('<html>Bad Request</html>', status: 400);
 
       await expectLater(
         remote.deleteEvent('ev_1'),
@@ -1623,6 +1623,352 @@ void main() {
         remote.deleteEvent('ev_1'),
         throwsA(isA<EventRemoteTransientException>()),
       );
+    });
+  });
+
+  group('occurrence writes (#506)', () {
+    String occurrenceBody({
+      String? cancelReason,
+      String status = 'Confirmed',
+    }) => jsonEncode({
+      'message': 'Done',
+      'occurrence': _occurrenceRow(
+        id: 'o1',
+        eventId: 'e1',
+        status: status,
+        cancelReason: cancelReason,
+      ),
+    });
+
+    test('addOccurrence posts the draft in UTC with its sortOrder', () async {
+      final remote = answering(occurrenceBody(), status: 201);
+
+      final added = await remote.addOccurrence(
+        'e1',
+        EventOccurrenceDraft(
+          label: 'Day 2',
+          startDate: DateTime.parse('2026-11-07T20:00:00+02:00'),
+          location: 'Hall',
+        ),
+        sortOrder: 3,
+      );
+
+      expect(adapter.sent.single.method, 'POST');
+      expect(adapter.sent.single.path, '/api/events/e1/occurrences');
+      expect(adapter.sent.single.body, {
+        'label': 'Day 2',
+        'startDate': '2026-11-07T18:00:00.000Z',
+        'location': 'Hall',
+        'sortOrder': 3,
+      });
+      expect(added.id, 'o1');
+      expect(added.eventId, 'e1');
+    });
+
+    test(
+      'updateOccurrence sends only what changed, and null to clear',
+      () async {
+        final remote = answering(occurrenceBody());
+
+        await remote.updateOccurrence(
+          'e1',
+          'o1',
+          OccurrenceUpdate(clearLocation: true),
+        );
+
+        expect(adapter.sent.single.method, 'PATCH');
+        expect(adapter.sent.single.path, '/api/events/e1/occurrences/o1');
+        expect(adapter.sent.single.body, {'location': null});
+      },
+    );
+
+    test('updateOccurrence sends a trimmed value, and every clear', () async {
+      final remote = answering(occurrenceBody());
+
+      await remote.updateOccurrence(
+        'e1',
+        'o1',
+        OccurrenceUpdate(
+          label: ' Day 3 ',
+          startDate: DateTime.utc(2026, 11, 9, 18),
+          clearEndDate: true,
+          clearLocation: true,
+        ),
+      );
+      await remote.updateOccurrence(
+        'e1',
+        'o1',
+        OccurrenceUpdate(clearLabel: true, endDate: DateTime.utc(2026, 11, 9)),
+      );
+
+      expect(adapter.sent.first.body, {
+        'label': 'Day 3',
+        'startDate': '2026-11-09T18:00:00.000Z',
+        'endDate': null,
+        'location': null,
+      });
+      expect(adapter.sent.last.body, {
+        'label': null,
+        'endDate': '2026-11-09T00:00:00.000Z',
+      });
+    });
+
+    test('updateOccurrence refuses an empty update before sending', () async {
+      final remote = answering(occurrenceBody());
+
+      expect(OccurrenceUpdate().isEmpty, isTrue);
+      expect(OccurrenceUpdate(clearLabel: true).isEmpty, isFalse);
+      await expectLater(
+        remote.updateOccurrence('e1', 'o1', OccurrenceUpdate()),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('an OccurrenceUpdate refuses a blank value', () {
+      expect(() => OccurrenceUpdate(label: '  '), throwsArgumentError);
+      expect(() => OccurrenceUpdate(location: ''), throwsArgumentError);
+    });
+
+    test('an OccurrenceUpdate refuses a value and its own clear flag', () {
+      expect(
+        () => OccurrenceUpdate(label: 'Day 1', clearLabel: true),
+        throwsArgumentError,
+      );
+      expect(
+        () => OccurrenceUpdate(endDate: DateTime.utc(2026), clearEndDate: true),
+        throwsArgumentError,
+      );
+      expect(
+        () => OccurrenceUpdate(location: 'Hall', clearLocation: true),
+        throwsArgumentError,
+      );
+    });
+
+    test('confirmOccurrence, declineOccurrence and cancelOccurrence post to '
+        'their routes and take a 201', () async {
+      final remote = answering(occurrenceBody(), status: 201);
+
+      final confirmed = await remote.confirmOccurrence('e1', 'o1');
+      expect(adapter.sent.last.method, 'POST');
+      expect(adapter.sent.last.path, '/api/events/e1/occurrences/o1/confirm');
+      expect(confirmed.id, 'o1');
+
+      await remote.declineOccurrence('e1', 'o1');
+      expect(adapter.sent.last.method, 'POST');
+      expect(adapter.sent.last.path, '/api/events/e1/occurrences/o1/decline');
+
+      await remote.cancelOccurrence('e1', 'o1');
+      expect(adapter.sent.last.method, 'POST');
+      expect(adapter.sent.last.path, '/api/events/e1/occurrences/o1/cancel');
+      expect(adapter.sent, hasLength(3));
+    });
+
+    test('cancelOccurrence sends a trimmed reason, and none when it is '
+        'blank', () async {
+      final remote = answering(occurrenceBody(), status: 201);
+
+      await remote.cancelOccurrence('e1', 'o1', reason: '  rain ');
+      await remote.cancelOccurrence('e1', 'o1', reason: '   ');
+      await remote.cancelOccurrence('e1', 'o1');
+
+      expect(adapter.sent[0].body, {'reason': 'rain'});
+      expect(adapter.sent[1].body, <String, dynamic>{});
+      expect(adapter.sent[2].body, <String, dynamic>{});
+    });
+
+    test(
+      'cancelOccurrence takes a reason of exactly 1000 characters',
+      () async {
+        final remote = answering(occurrenceBody(), status: 201);
+
+        await remote.cancelOccurrence('e1', 'o1', reason: ' ${'a' * 1000} ');
+
+        expect(adapter.sent.single.body, {'reason': 'a' * 1000});
+      },
+    );
+
+    test('cancelOccurrence refuses a reason past 1000 characters before '
+        'sending', () async {
+      final remote = answering(occurrenceBody(), status: 201);
+
+      await expectLater(
+        remote.cancelOccurrence('e1', 'o1', reason: 'a' * 1001),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('removeOccurrence deletes and reads no body', () async {
+      final remote = answering('not json');
+
+      await remote.removeOccurrence('e1', 'o1');
+
+      expect(adapter.sent.single.method, 'DELETE');
+      expect(adapter.sent.single.path, '/api/events/e1/occurrences/o1');
+      expect(adapter.sent.single.body, isNull);
+    });
+
+    test('encodes the ids into the path', () async {
+      final remote = answering(occurrenceBody());
+
+      await remote.confirmOccurrence('a/b', 'c d');
+
+      expect(
+        adapter.sent.single.path,
+        '/api/events/a%2Fb/occurrences/c%20d/confirm',
+      );
+    });
+
+    test('an enveloped 400 on a date write is a conflict', () async {
+      final remote = answering(
+        _envelope(400, 'Bad Request', 'Occurrence is already cancelled'),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.cancelOccurrence('e1', 'o1'),
+        throwsA(
+          isA<EventWriteConflictException>()
+              .having((e) => e.statusCode, 'statusCode', 400)
+              .having(
+                (e) => e.apiMessage,
+                'apiMessage',
+                'Occurrence is already cancelled',
+              ),
+        ),
+      );
+    });
+
+    test("the validation pipe's 400 stays permanent", () async {
+      // Its envelope lists a message per value refused, where the service's
+      // judgement of the row has one. The same request is refused again.
+      final remote = answering(
+        jsonEncode({
+          'statusCode': 400,
+          'message': ['sortOrder must not be less than 0'],
+          'error': 'Bad Request',
+        }),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.addOccurrence('e1', const EventOccurrenceDraft(), sortOrder: 0),
+        throwsA(
+          isA<EventRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            400,
+          ),
+        ),
+      );
+    });
+
+    test('a 400 without the envelope stays permanent', () async {
+      final remote = answering('<html>Bad</html>', status: 400);
+
+      await expectLater(
+        remote.confirmOccurrence('e1', 'o1'),
+        throwsA(
+          isA<EventRemotePermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            400,
+          ),
+        ),
+      );
+    });
+
+    test(
+      'an enveloped 404 is not found, an enveloped 403 is refused',
+      () async {
+        await expectLater(
+          answering(
+            _envelope(404, 'Not Found', 'Occurrence not found'),
+            status: 404,
+          ).confirmOccurrence('e1', 'o1'),
+          throwsA(isA<EventRemoteNotFoundException>()),
+        );
+        await expectLater(
+          answering(
+            _envelope(403, 'Forbidden', 'Not a host'),
+            status: 403,
+          ).confirmOccurrence('e1', 'o1'),
+          throwsA(
+            isA<EventWriteRefusedException>().having(
+              (e) => e.apiMessage,
+              'apiMessage',
+              'Not a host',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a 2xx with no occurrence is permanent', () async {
+      for (final body in [
+        jsonEncode({'message': 'Done'}),
+        jsonEncode({'message': 'Done', 'occurrence': 'nope'}),
+      ]) {
+        await expectLater(
+          answering(body, status: 201).confirmOccurrence('e1', 'o1'),
+          throwsA(
+            isA<EventRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              201,
+            ),
+          ),
+        );
+      }
+    });
+
+    test("the occurrence's cancelReason is read", () async {
+      final fetched = await answering(
+        _detailBody(
+          _eventRow(
+            occurrences: [
+              _occurrenceRow(
+                status: 'Cancelled',
+                cancelledAt: '2026-10-05T10:00:00.000Z',
+                cancelReason: 'Venue flooded',
+              ),
+            ],
+            attendees: [],
+          ),
+        ),
+      ).fetchEvent('ev_1');
+      expect(fetched.occurrences.single.cancelReason, 'Venue flooded');
+
+      final cancelled = await answering(
+        occurrenceBody(cancelReason: 'rain', status: 'Cancelled'),
+        status: 201,
+      ).cancelOccurrence('e1', 'o1', reason: 'rain');
+      expect(cancelled.cancelReason, 'rain');
+    });
+
+    test('every method refuses an empty id before sending', () async {
+      final remote = answering(occurrenceBody());
+      final draft = EventOccurrenceDraft(label: 'x');
+      final update = OccurrenceUpdate(clearLabel: true);
+      final calls = <Future<Object?> Function()>[
+        () => remote.addOccurrence('', draft, sortOrder: 0),
+        () => remote.updateOccurrence('', 'o1', update),
+        () => remote.updateOccurrence('e1', '', update),
+        () => remote.confirmOccurrence('', 'o1'),
+        () => remote.confirmOccurrence('e1', ''),
+        () => remote.declineOccurrence('', 'o1'),
+        () => remote.declineOccurrence('e1', ''),
+        () => remote.cancelOccurrence('', 'o1'),
+        () => remote.cancelOccurrence('e1', ''),
+        () => remote.removeOccurrence('', 'o1'),
+        () => remote.removeOccurrence('e1', ''),
+      ];
+
+      for (final (index, call) in calls.indexed) {
+        await expectLater(call(), throwsArgumentError, reason: 'call $index');
+      }
+      expect(adapter.sent, isEmpty);
     });
   });
 

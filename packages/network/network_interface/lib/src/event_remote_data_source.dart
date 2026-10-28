@@ -31,6 +31,12 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [fetchEvent] | `GET /api/events/:id` | `{ event }` |
 /// | [createEvent] | `POST /api/events` | `{ message, event }` |
 /// | [deleteEvent] | `DELETE /api/events/:id` | `{ message, event }`, not read |
+/// | [addOccurrence] | `POST /api/events/:id/occurrences` | `{ message, occurrence }` |
+/// | [updateOccurrence] | `PATCH /api/events/:id/occurrences/:oid` | `{ message, occurrence }` |
+/// | [confirmOccurrence] | `POST /api/events/:id/occurrences/:oid/confirm` | `{ message, occurrence }` |
+/// | [declineOccurrence] | `POST /api/events/:id/occurrences/:oid/decline` | `{ message, occurrence }` |
+/// | [cancelOccurrence] | `POST /api/events/:id/occurrences/:oid/cancel` | `{ message, occurrence }` |
+/// | [removeOccurrence] | `DELETE /api/events/:id/occurrences/:oid` | `{ message, ... }`, not read |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
 /// which it got:
@@ -95,10 +101,13 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
-///   [deleteEvent], which says the API refused that write to an existing event
-///   (below).
+///   [deleteEvent] and from each date write below, which says the API refused
+///   that write to an existing event (below).
+/// - [EventWriteConflictException]: a 400 carrying the envelope with one
+///   message, from a write to an existing event's dates (below).
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
-///   leaves out (a 400 for a value the server rejects, and a 409 that is not
+///   leaves out (a 400 for a value the server rejects, a date write's
+///   included, and a 409 that is not
 ///   asking for a retry), and a 2xx whose body cannot be read as the contract
 ///   above, such as a detail or a create with no roster.
 /// - [EventRemoteTransientException]: no response at all, 401, 407, 408, 429,
@@ -147,9 +156,28 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// [EventRemoteForbiddenException] (the caller may not read events). Without
 /// the envelope a 403 or 404 stays transient, as everywhere else.
 ///
+/// ### The date writes' answers
+///
+/// The six date calls name one date of one event, and each is a write to it
+/// (#506). A 404 carrying the envelope says the event or the date is gone, and
+/// a 403 carrying it is the API refusing the write
+/// ([EventWriteRefusedException]). A 400 carrying it with one message is
+/// [EventWriteConflictException]: the server judged the write against the row
+/// as it stands now, and said no. That can be a date that moved since the
+/// caller read it, a retry of a write that already landed (backend#901), a
+/// cancelled event, or a Fixed event's second date. The same request can be
+/// accepted after a re-read, so unlike [EventRemotePermanentException] it
+/// says the caller's picture is stale. A 400 without the envelope stays
+/// permanent, and so does the validation pipe's, whose message lists each
+/// value it refused: the same request is refused again. [deleteEvent] shares the classification, but the server never
+/// answers it 400.
+///
+/// The status routes answer 201 (backend#620), and any 2xx is a success.
+///
 /// A call that cannot produce a valid request throws [ArgumentError]
-/// unwrapped: an out-of-range page or limit, an empty id, or a create that
-/// could not be sent (what [createEvent] never sends).
+/// unwrapped: an out-of-range page or limit, an empty id, an update that
+/// changes nothing, a cancel reason past [maxCancelReasonLength], or a create
+/// that could not be sent (what [createEvent] never sends).
 abstract class EventRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is
   /// a 400, not clamped.
@@ -158,6 +186,10 @@ abstract class EventRemoteDataSource {
   /// The server's length ceiling for [createEvent]'s `clientRequestId`,
   /// measured after it trims the key. A longer key is a 400.
   static const int maxClientRequestIdLength = 128;
+
+  /// The server's length ceiling for [cancelOccurrence]'s `reason`. A longer
+  /// one is a 400, which is permanent.
+  static const int maxCancelReasonLength = 1000;
 
   /// `GET /api/events`: one page of the events the caller attends, newest
   /// first. Each snapshot has `attendees: null`, because the list carries no
@@ -242,6 +274,170 @@ abstract class EventRemoteDataSource {
   /// An empty [id] throws [ArgumentError] before the request, as for
   /// [fetchEvent].
   Future<void> deleteEvent(String id);
+
+  /// `POST /api/events/:eventId/occurrences`: adds [draft] as a date of the
+  /// event, at position [sortOrder], and returns it as the server holds it.
+  ///
+  /// Answers 201 `{ message, occurrence }`. A field the draft leaves null is
+  /// left out, and times go out in UTC. No status is sent: the server decides
+  /// it from the event.
+  ///
+  /// A 400 ([EventWriteConflictException]) can mean a cancelled event, or a
+  /// Fixed event's second date. A retried add creates a second date
+  /// (backend#902), so a caller whose first answer was lost reads the event
+  /// before it adds again.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<EventOccurrence> addOccurrence(
+    String eventId,
+    EventOccurrenceDraft draft, {
+    required int sortOrder,
+  });
+
+  /// `PATCH /api/events/:eventId/occurrences/:occurrenceId`: changes the date
+  /// as [update] says, and returns it as the server holds it.
+  ///
+  /// Only what [update] names is sent, and a cleared field goes as `null`.
+  /// Throws [ArgumentError] before the request for an empty id or an
+  /// [OccurrenceUpdate.isEmpty] one.
+  ///
+  /// A 400 ([EventWriteConflictException]) can mean a date that moved since it
+  /// was read, such as one cancelled elsewhere.
+  Future<EventOccurrence> updateOccurrence(
+    String eventId,
+    String occurrenceId,
+    OccurrenceUpdate update,
+  );
+
+  /// `POST /api/events/:eventId/occurrences/:occurrenceId/confirm`: confirms a
+  /// proposed date, and returns it. Answers 201.
+  ///
+  /// A 400 ([EventWriteConflictException]) can mean the date is no longer
+  /// proposed, or a retry of a confirm that landed (backend#901).
+  Future<EventOccurrence> confirmOccurrence(
+    String eventId,
+    String occurrenceId,
+  );
+
+  /// `POST /api/events/:eventId/occurrences/:occurrenceId/decline`: declines a
+  /// proposed date, and returns it. Answers 201.
+  ///
+  /// A 400 ([EventWriteConflictException]) reads as for [confirmOccurrence].
+  Future<EventOccurrence> declineOccurrence(
+    String eventId,
+    String occurrenceId,
+  );
+
+  /// `POST /api/events/:eventId/occurrences/:occurrenceId/cancel`: cancels a
+  /// date, and returns it with its [EventOccurrence.cancelReason]. Answers 201.
+  ///
+  /// [reason] is trimmed, and one that is empty after trimming is not sent: the
+  /// body is `{}`. A reason longer than [maxCancelReasonLength] after trimming
+  /// throws [ArgumentError] before the request, because the server's 400 for it
+  /// is permanent.
+  ///
+  /// A 400 ([EventWriteConflictException]) can mean the date was cancelled
+  /// elsewhere, or a retry of a cancel that landed (backend#901).
+  Future<EventOccurrence> cancelOccurrence(
+    String eventId,
+    String occurrenceId, {
+    String? reason,
+  });
+
+  /// `DELETE /api/events/:eventId/occurrences/:occurrenceId`: removes a date,
+  /// and completes once the server has. The body is not read, so any 2xx is a
+  /// removal.
+  ///
+  /// A Confirmed date is cancelled first, so a 400
+  /// ([EventWriteConflictException]) can mean it is Confirmed.
+  Future<void> removeOccurrence(String eventId, String occurrenceId);
+}
+
+/// A change to one date of an event, for
+/// [EventRemoteDataSource.updateOccurrence] (#506).
+///
+/// A field left out stays as it is. To clear [label], [endDate] or [location]
+/// set its `clear` flag instead of a value: the PATCH can't send both, so a
+/// value with its own flag throws [ArgumentError]. A blank [label] or
+/// [location] throws too, because the server rejects it. The start date can't
+/// be cleared.
+///
+/// Equal by its fields, as the bloc event carrying it is compared.
+final class OccurrenceUpdate {
+  OccurrenceUpdate({
+    String? label,
+    this.clearLabel = false,
+    this.startDate,
+    this.endDate,
+    this.clearEndDate = false,
+    String? location,
+    this.clearLocation = false,
+  }) : label = _trimmed(label, 'label', clearLabel),
+       location = _trimmed(location, 'location', clearLocation) {
+    if (endDate != null && clearEndDate) {
+      throw ArgumentError.value(
+        endDate,
+        'endDate',
+        'cannot be given with clearEndDate',
+      );
+    }
+  }
+
+  /// The new label, trimmed.
+  final String? label;
+  final bool clearLabel;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final bool clearEndDate;
+
+  /// The new place, trimmed.
+  final String? location;
+  final bool clearLocation;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OccurrenceUpdate &&
+      other.label == label &&
+      other.clearLabel == clearLabel &&
+      other.startDate == startDate &&
+      other.endDate == endDate &&
+      other.clearEndDate == clearEndDate &&
+      other.location == location &&
+      other.clearLocation == clearLocation;
+
+  @override
+  int get hashCode => Object.hash(
+    label,
+    clearLabel,
+    startDate,
+    endDate,
+    clearEndDate,
+    location,
+    clearLocation,
+  );
+
+  /// Whether this changes nothing, which the remote refuses to send.
+  bool get isEmpty =>
+      label == null &&
+      !clearLabel &&
+      startDate == null &&
+      endDate == null &&
+      !clearEndDate &&
+      location == null &&
+      !clearLocation;
+
+  static String? _trimmed(String? value, String name, bool clear) {
+    if (value == null) return null;
+    if (clear) {
+      throw ArgumentError.value(value, name, 'cannot be given with its clear');
+    }
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(value, name, 'must not be blank');
+    }
+    return trimmed;
+  }
 }
 
 /// Base class for every event remote failure.
@@ -308,6 +504,30 @@ final class EventCreateRefusedException extends EventRemoteException {
 /// Not [EventRemoteForbiddenException], which is about reading events.
 final class EventWriteRefusedException extends EventRemoteException {
   const EventWriteRefusedException(
+    super.message, {
+    super.statusCode,
+    super.cause,
+    this.apiMessage,
+  });
+
+  /// The `message` of the API's error envelope, when it is a string, where
+  /// [message] is this client's own.
+  ///
+  /// The server translates it into the request's locale, so it is for finding
+  /// an id it names, never for showing.
+  final String? apiMessage;
+}
+
+/// A 400 carrying the API's envelope with one message, from a write to an
+/// existing event or date: the server judged it against the row as it stands
+/// now (#506). The validation pipe's 400 lists its messages, and is
+/// [EventRemotePermanentException].
+///
+/// A date that moved, a retry of a write that landed, a cancelled event and a
+/// Fixed event's second date all read this way. Not
+/// [EventRemotePermanentException]: a re-read can change the answer.
+final class EventWriteConflictException extends EventRemoteException {
+  const EventWriteConflictException(
     super.message, {
     super.statusCode,
     super.cause,

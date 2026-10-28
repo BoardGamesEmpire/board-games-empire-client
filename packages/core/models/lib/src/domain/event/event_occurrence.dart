@@ -39,6 +39,10 @@ abstract class EventOccurrence with _$EventOccurrence {
     DateTime? confirmedAt,
     DateTime? declinedAt,
     DateTime? cancelledAt,
+
+    /// Why a cancelled date was cancelled, when the canceller gave a reason
+    /// (backend#795).
+    String? cancelReason,
     required DateTime createdAt,
     required DateTime updatedAt,
   }) = _EventOccurrence;
