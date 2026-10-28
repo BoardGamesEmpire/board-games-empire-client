@@ -32,10 +32,10 @@ import 'watch_disposal.dart';
 /// [create] is the one local write. In one transaction it writes the event
 /// with `isLocalOnly` and `isDirty` set, its dates, the creator's row on its
 /// roster and their `attending` access, and enqueues the op. The flags hand
-/// the event to the sync queue: a read writes nothing of it, and neither a
-/// purge nor [forgetEvent] removes it. [reconcileCreatedEvent] deletes it,
-/// writes the server's copy in its place by a read's rules, and records in
-/// `event_moves` where it went, for [reconciledEventId].
+/// the event to the sync queue: a read writes nothing of it, and no purge,
+/// [forgetEvent] or [removeDeletedEvent] removes it. [reconcileCreatedEvent]
+/// deletes it, writes the server's copy in its place by a read's rules, and
+/// records in `event_moves` where it went, for [reconciledEventId].
 ///
 /// ## Disposal
 ///
@@ -694,6 +694,25 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
       )..where((t) => t.userId.equals(_userId) & t.eventId.equals(id))).go();
 
       await _deleteUnreachable({id});
+      return true;
+    });
+  }
+
+  @override
+  Future<bool> removeDeletedEvent(String id) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      // Any user's copy, and with no mark: the server deleted the event for
+      // everyone, so it needn't be one this user can read, and nothing
+      // written since can say otherwise. The queue still keeps what it
+      // owns: a delete never reaches a local-only event, and a dirty one
+      // carries an edit the queue has yet to send.
+      final cached = await (_db.select(
+        _db.eventsTable,
+      )..where((t) => t.id.equals(id))).getSingleOrNull();
+      if (cached == null || cached.isDirty || cached.isLocalOnly) return false;
+
+      await _deleteServerCopy(id);
       return true;
     });
   }
