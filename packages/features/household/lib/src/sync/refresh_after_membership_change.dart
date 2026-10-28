@@ -15,16 +15,15 @@ import 'household_refresher.dart';
 ///
 /// Both mark the cached set stale (#300) and run a pass.
 ///
-/// Two passes when one was already running. [HouseholdRefresher.refresh]
-/// joins a running pass rather than starting another, and that pass may
-/// have read the list before the change. The stale mark stops it from
-/// stamping the set fresh; the second pass reads it again.
+/// The pass starts after any drain in flight ends, through
+/// [HouseholdRefresher.refreshAfterChange], because that drain may have
+/// read the list before the change. The stale mark stops it from stamping
+/// the set fresh, and holds until the next drain starts; the pass run here
+/// is that drain, and reads the set again.
 Future<void> refreshAfterMembershipChange(
   HouseholdRefresher refresher,
   HouseholdHydrationStatus? status,
 ) async {
-  final wasRunning = status?.state == HouseholdHydrationState.running;
   status?.markStale();
-  await refresher.refresh();
-  if (wasRunning) await refresher.refresh();
+  await refresher.refreshAfterChange();
 }

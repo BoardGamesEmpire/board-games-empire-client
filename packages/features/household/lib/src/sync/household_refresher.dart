@@ -23,23 +23,35 @@
 ///
 /// ## What it does not need
 ///
-/// A guard of its own. [HouseholdHydrator.hydrate] single-flights (#302
-/// D3), so a press landing on top of the unawaited install-time pass joins
-/// it rather than starting a second drain — the question #300 asked to
+/// A guard of its own. `HydratePass` single-flights (#302), so a press
+/// landing on top of the unawaited install-time pass joins it rather than
+/// starting a second drain, and waits for it — the question #300 asked to
 /// have answered rather than assumed.
 ///
 /// Absent from a container that runs no drain at all (see
 /// `HouseholdHydrateInstaller` for which those are), which the screens read as
 /// "no retry to offer" rather than offering a button that does nothing.
 class HouseholdRefresher {
-  /// Wraps [pass] — the same closure the installer hands the
+  /// Wraps [pass] — the same pass the installer hands the
   /// `SessionRehydrator`, so a pressed refresh and a triggered one cannot
   /// report differently.
-  const HouseholdRefresher(this._pass);
+  ///
+  /// [afterChange] backs [refreshAfterChange]; without it, that is
+  /// [refresh].
+  const HouseholdRefresher(this._pass, {this._afterChange});
 
   final Future<void> Function() _pass;
+  final Future<void> Function()? _afterChange;
 
   /// Runs one pass, driving the shared `HouseholdHydrationStatus` around
   /// it. Never throws: the pass reports failure through that status.
   Future<void> refresh() => _pass();
+
+  /// Runs a pass that starts after this call, waiting out one in flight.
+  /// Never throws.
+  ///
+  /// For a membership change the screen is waiting to see (#455, #480).
+  /// [refresh] joins a running pass, which may have read the list before
+  /// the change.
+  Future<void> refreshAfterChange() => (_afterChange ?? _pass)();
 }

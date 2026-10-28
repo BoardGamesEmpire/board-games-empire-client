@@ -390,7 +390,7 @@ void main() {
 
       // Not `running` and not `failed`: nothing is in flight and nothing
       // failed. Only the claim that the set is current went away.
-      expect(status.state, equals(HouseholdHydrationState.refreshed));
+      expect(status.state, equals(HydrationState.refreshed));
     });
 
     testWidgets('a composition with no hydration status still creates', (

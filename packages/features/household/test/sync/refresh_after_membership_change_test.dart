@@ -4,58 +4,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:household/household.dart';
 
 void main() {
-  late int passes;
-  late List<Completer<void>> running;
+  late int refreshes;
+  late int afterChanges;
   late HouseholdRefresher refresher;
 
   setUp(() {
-    passes = 0;
-    running = [];
-    refresher = HouseholdRefresher(() {
-      passes++;
-      final pass = Completer<void>();
-      running.add(pass);
-      return pass.future;
-    });
+    refreshes = 0;
+    afterChanges = 0;
+    refresher = HouseholdRefresher(
+      () async => refreshes++,
+      afterChange: () async => afterChanges++,
+    );
   });
 
-  test('one pass when none was running', () async {
-    final status = HouseholdHydrationStatus();
-    addTearDown(status.close);
-
-    final done = refreshAfterMembershipChange(refresher, status);
-    await Future<void>.delayed(Duration.zero);
-    running.single.complete();
-    await done;
-
-    expect(passes, 1);
-  });
-
-  test('one pass with no status to read', () async {
-    final done = refreshAfterMembershipChange(refresher, null);
-    await Future<void>.delayed(Duration.zero);
-    running.single.complete();
-    await done;
-
-    expect(passes, 1);
-  });
-
-  test('a second pass, after the first, when one was running: it may have '
-      'read the list before the membership change', () async {
+  test('runs the pass that starts after any in flight, not one that joins '
+      'it: a running pass may have read the list before the change', () async {
     final status = HouseholdHydrationStatus()..started();
     addTearDown(status.close);
 
-    final done = refreshAfterMembershipChange(refresher, status);
-    await Future<void>.delayed(Duration.zero);
-    expect(passes, 1);
+    await refreshAfterMembershipChange(refresher, status);
 
-    running.first.complete();
-    await Future<void>.delayed(Duration.zero);
-    expect(passes, 2);
-    running.last.complete();
-    await done;
+    expect(afterChanges, 1);
+    expect(refreshes, 0);
+  });
 
-    expect(passes, 2);
+  test('one pass with no status to read', () async {
+    await refreshAfterMembershipChange(refresher, null);
+
+    expect(afterChanges, 1);
+    expect(refreshes, 0);
   });
 
   test('marks the cached set stale, so a pass already running cannot stamp '

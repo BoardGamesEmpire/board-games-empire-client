@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import '../sync/household_hydration_status.dart';
 import 'household_detail_event.dart';
 import 'household_detail_state.dart';
 
@@ -98,7 +98,7 @@ class HouseholdDetailBloc
   HouseholdDetailBloc({
     required String householdId,
     required HouseholdRepository repository,
-    Stream<HouseholdHydration>? hydration,
+    Stream<Hydration>? hydration,
     this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.detail'),
@@ -161,7 +161,7 @@ class HouseholdDetailBloc
 
   late final StreamSubscription<List<Household>> _households;
   late StreamSubscription<List<HouseholdMember>> _members;
-  StreamSubscription<HouseholdHydration>? _hydrationUpdates;
+  StreamSubscription<Hydration>? _hydrationUpdates;
 
   /// Null until the household stream has answered at all, which is not the
   /// same as it having answered with nothing — hence the separate flag.
@@ -226,7 +226,7 @@ class HouseholdDetailBloc
   /// so this screen is often opened while one runs, and a bloc that
   /// remembered only the readings it saw would treat that pass as the
   /// first.
-  HouseholdHydration _hydration = const HouseholdHydration();
+  Hydration _hydration = const Hydration();
 
   /// Whether a pass **this screen asked for** is still running (#300 D6).
   bool _retrying = false;
@@ -468,9 +468,9 @@ class HouseholdDetailBloc
     Emitter<HouseholdDetailState> emit,
   ) async {
     final retry = _onRetry;
-    // The hydrator single-flights (#302 D3), so a second call would join
-    // the drain rather than duplicate it — but the button should not queue
-    // passes either.
+    // `HydratePass` single-flights (#302), so a second call would join the
+    // drain in flight rather than duplicate it — but the button should not
+    // queue passes either.
     if (retry == null || _retrying) return;
 
     _retrying = true;
@@ -496,7 +496,7 @@ class HouseholdDetailBloc
   /// closed status stream can never leave `running`, so it does not count
   /// as still filling.
   bool get _filling =>
-      _hydration.state == HouseholdHydrationState.running && !_hydrationDone;
+      _hydration.state == HydrationState.running && !_hydrationDone;
 
   /// True while the cache could still gain rows — either a pass is running,
   /// or a hydration stream exists and has not yet said what it is doing.

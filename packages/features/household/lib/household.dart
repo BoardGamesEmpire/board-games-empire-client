@@ -1,5 +1,7 @@
 library;
 
+export 'package:hydration/hydration.dart' show Hydration, HydrationState;
+
 export 'src/bloc/awaiting_approval_count_cubit.dart';
 export 'src/bloc/create_household_bloc.dart';
 export 'src/bloc/create_household_event.dart';

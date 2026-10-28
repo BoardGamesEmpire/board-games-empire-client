@@ -298,7 +298,7 @@ void main() {
       // Nothing errors this stream today. If something ever does, the list
       // it annotates is still readable. A raw controller, because a real
       // status has no way to error.
-      final hydration = StreamController<HouseholdHydration>();
+      final hydration = StreamController<Hydration>();
       final bloc = HouseholdListBloc(
         repository: repository,
         hydration: hydration.stream,
@@ -403,8 +403,8 @@ void main() {
 
     test('a retry pressed during a background pass', () async {
       // The banner is still up while a pass nobody asked for runs, so its
-      // retry can be pressed then. The press runs (the hydrator joins the
-      // pass already in flight) and is narrated over the failure the rows
+      // retry can be pressed then. The press runs (the shared pass joins the
+      // drain already in flight) and is narrated over the failure the rows
       // still carry, and only the pass landing clears both.
       final bloc = buildWithRetry();
       addTearDown(bloc.close);
@@ -457,9 +457,9 @@ void main() {
     });
 
     test('a second press while one is still running starts nothing', () async {
-      // `HouseholdHydrator.hydrate()` single-flights (#302 D3), so a second
-      // call would join rather than duplicate the drain — but the button
-      // should not be a way to queue passes either.
+      // `HydratePass` single-flights (#302), so a second call would join the
+      // drain in flight rather than duplicate it — but the button should not
+      // be a way to queue passes either.
       final bloc = buildWithRetry();
       addTearDown(bloc.close);
       await settleOnAFailedRefresh(bloc);

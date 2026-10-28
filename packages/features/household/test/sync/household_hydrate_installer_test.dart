@@ -19,7 +19,7 @@ class _MockHouseholdRemoteDataSource extends Mock
 class _FakeIdentityGuard implements SessionIdentityGuard {
   _FakeIdentityGuard({required this.answer});
 
-  final SessionConfirmation answer;
+  SessionConfirmation answer;
   final askedFor = <String>[];
 
   @override
@@ -202,12 +202,12 @@ void main() {
       // the screen can be built before the fetch has been issued, and an
       // idle status there would render "no households" over a cache that
       // is about to fill.
-      expect(status.state, equals(HouseholdHydrationState.running));
+      expect(status.state, equals(HydrationState.running));
 
       blocked.complete(_emptyPage());
       await Future<void>.delayed(Duration.zero);
 
-      expect(status.state, equals(HouseholdHydrationState.refreshed));
+      expect(status.state, equals(HydrationState.refreshed));
     });
 
     test('reports a failed drain as failed', () async {
@@ -229,7 +229,7 @@ void main() {
 
       expect(
         container.get<HouseholdHydrationStatus>().state,
-        equals(HouseholdHydrationState.failed),
+        equals(HydrationState.failed),
       );
     });
 
@@ -273,7 +273,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       // Closed by the scope teardown, so the late outcome is dropped.
-      expect(status.state, equals(HouseholdHydrationState.running));
+      expect(status.state, equals(HydrationState.running));
     });
   });
 
@@ -355,9 +355,9 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
         final status = container.get<HouseholdHydrationStatus>();
-        expect(status.state, equals(HouseholdHydrationState.failed));
+        expect(status.state, equals(HydrationState.failed));
 
-        final seen = <HouseholdHydrationState>[];
+        final seen = <HydrationState>[];
         final subscription = status
             .watch()
             .map((h) => h.state)
@@ -374,15 +374,15 @@ void main() {
         await rehydrator.rehydrateStale();
         await Future<void>.delayed(Duration.zero);
 
-        expect(status.state, equals(HouseholdHydrationState.refreshed));
+        expect(status.state, equals(HydrationState.refreshed));
         // The banner clears because the same holder moved, with no second
         // status and nothing for the screen to re-subscribe to (#270 D5).
         expect(
           seen,
-          containsAllInOrder(<HouseholdHydrationState>[
-            HouseholdHydrationState.failed,
-            HouseholdHydrationState.running,
-            HouseholdHydrationState.refreshed,
+          containsAllInOrder(<HydrationState>[
+            HydrationState.failed,
+            HydrationState.running,
+            HydrationState.refreshed,
           ]),
         );
       },
@@ -420,9 +420,9 @@ void main() {
         'drain', () async {
       // Pinned here at the seam that actually decides it: `running` is not
       // stale (#302 D4), so the entry is skipped and the trigger is
-      // dropped rather than joined. The hydrator's own single-flight
-      // (#302 D3) is the backstop for callers that do reach it, and is
-      // pinned in the household package's hydrator tests.
+      // dropped rather than joined. `HydratePass`'s own single-flight
+      // (#302) is the backstop for callers that do reach it, and is pinned
+      // in the hydration package's tests.
       final rehydrator = await withRehydrator();
       final blocked = Completer<PaginatedResult<HouseholdWithMembers>>();
       when(
@@ -546,9 +546,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       final status = container.get<HouseholdHydrationStatus>();
-      expect(status.state, HouseholdHydrationState.failed);
+      expect(status.state, HydrationState.failed);
 
-      final seen = <HouseholdHydrationState>[];
+      final seen = <HydrationState>[];
       final watching = status.watch().map((h) => h.state).listen(seen.add);
       addTearDown(watching.cancel);
 
@@ -566,9 +566,9 @@ void main() {
       // The retry is not a second status: the banner the screens are
       // already watching is what clears (#302 D2's reasoning, and #270 D5).
       expect(seen, [
-        HouseholdHydrationState.failed,
-        HouseholdHydrationState.running,
-        HouseholdHydrationState.refreshed,
+        HydrationState.failed,
+        HydrationState.running,
+        HydrationState.refreshed,
       ]);
     });
 
@@ -588,42 +588,39 @@ void main() {
       expect(bare.isRegistered<HouseholdRefresher>(), isFalse);
     });
 
-    test(
-      'a retry racing the install-time pass drains once (#302 D3)',
-      () async {
-        // The re-entrancy question #300 asked to have recorded rather than
-        // assumed. It is answered by the hydrator's single-flight, and this
-        // is the household-side proof of it: the install-time pass is still
-        // in flight when the retry arrives.
-        final firstPage = Completer<PaginatedResult<HouseholdWithMembers>>();
-        var calls = 0;
-        when(
-          () => remote.fetchHouseholds(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-          ),
-        ).thenAnswer((_) {
-          calls++;
-          return firstPage.future;
-        });
+    test('a retry racing the install-time pass drains once (#302)', () async {
+      // The re-entrancy question #300 asked to have recorded rather than
+      // assumed. It is answered by `HydratePass`'s single-flight, and this
+      // is the household-side proof of it: the install-time drain is still
+      // in flight when the retry arrives, and the retry joins it.
+      final firstPage = Completer<PaginatedResult<HouseholdWithMembers>>();
+      var calls = 0;
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) {
+        calls++;
+        return firstPage.future;
+      });
 
-        await const HouseholdHydrateInstaller().install(
-          container,
-          _server(),
-          'user-1',
-        );
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _server(),
+        'user-1',
+      );
 
-        final retry = container.get<HouseholdRefresher>().refresh();
-        firstPage.complete(_emptyPage());
-        await retry;
+      final retry = container.get<HouseholdRefresher>().refresh();
+      firstPage.complete(_emptyPage());
+      await retry;
 
-        expect(calls, 1);
-        expect(
-          container.get<HouseholdHydrationStatus>().state,
-          HouseholdHydrationState.refreshed,
-        );
-      },
-    );
+      expect(calls, 1);
+      expect(
+        container.get<HouseholdHydrationStatus>().state,
+        HydrationState.refreshed,
+      );
+    });
   });
 
   group('the staleness window (#300 D1, D2, D8, D15)', () {
@@ -757,7 +754,7 @@ void main() {
 
       expect(
         container.get<HouseholdHydrationStatus>().state,
-        HouseholdHydrationState.failed,
+        HydrationState.failed,
       );
       expect(
         container.get<HouseholdHydrationStatus>().sinceRefresh,
@@ -847,7 +844,93 @@ void main() {
       );
       expect(
         container.get<HouseholdHydrationStatus>().state,
-        equals(HouseholdHydrationState.failed),
+        equals(HydrationState.failed),
+      );
+    });
+
+    test('a retry pressed while a pass runs reports nothing before that pass '
+        'finishes, whatever the guard answers (#563)', () async {
+      final guard = _FakeIdentityGuard(answer: SessionConfirmation.confirmed);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+      final page = Completer<PaginatedResult<HouseholdWithMembers>>();
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) => page.future);
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _server(),
+        'user-1',
+      );
+      await pumpEventQueue();
+      final status = container.get<HouseholdHydrationStatus>();
+      Hydration? latest;
+      final subscription = status.watch().listen((r) => latest = r);
+      addTearDown(subscription.cancel);
+
+      guard.answer = SessionConfirmation.notThisUser;
+      var refreshed = false;
+      unawaited(
+        container.get<HouseholdRefresher>().refresh().then((_) {
+          refreshed = true;
+        }),
+      );
+      await pumpEventQueue();
+
+      expect(latest, const Hydration(state: HydrationState.running));
+      expect(refreshed, isFalse);
+
+      // The hydrator asks again before it writes the page it was handed, so
+      // the session is back before the page is released; the press is what
+      // the refusal above was aimed at.
+      guard.answer = SessionConfirmation.confirmed;
+      page.complete(_emptyPage());
+      await pumpEventQueue();
+
+      expect(refreshed, isTrue);
+      expect(status.state, HydrationState.refreshed);
+    });
+
+    test('a membership change during a pass leaves it unstamped, and '
+        'refreshes again', () async {
+      final pages = <Completer<PaginatedResult<HouseholdWithMembers>>>[];
+      when(
+        () => remote.fetchHouseholds(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) {
+        final page = Completer<PaginatedResult<HouseholdWithMembers>>();
+        pages.add(page);
+        return page.future;
+      });
+
+      await const HouseholdHydrateInstaller().install(
+        container,
+        _server(),
+        'user-1',
+      );
+      await pumpEventQueue();
+      final status = container.get<HouseholdHydrationStatus>();
+
+      final change = refreshAfterMembershipChange(
+        container.get<HouseholdRefresher>(),
+        status,
+      );
+      pages.single.complete(_emptyPage());
+      await pumpEventQueue();
+      expect(pages, hasLength(2));
+      pages.last.complete(_emptyPage());
+      await change;
+
+      expect(pages, hasLength(2));
+      expect(status.state, HydrationState.refreshed);
+      expect(
+        status.isStaleAfter(HouseholdHydrateInstaller.staleAfter),
+        isFalse,
       );
     });
   });

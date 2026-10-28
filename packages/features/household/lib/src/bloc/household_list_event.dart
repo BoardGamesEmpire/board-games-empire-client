@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:hydration/hydration.dart';
 import 'package:models/domain.dart';
-
-import '../sync/household_hydration_status.dart';
 
 /// Events of `HouseholdListBloc`.
 ///
@@ -46,7 +45,7 @@ final class HouseholdListCacheEnded extends HouseholdListEvent {
 final class HouseholdListHydrationUpdated extends HouseholdListEvent {
   const HouseholdListHydrationUpdated(this.hydration);
 
-  final HouseholdHydration hydration;
+  final Hydration hydration;
 
   @override
   List<Object?> get props => [hydration];
