@@ -53,6 +53,7 @@ EventOccurrence testOccurrence(
   confirmedAt: kFixtureEventInstant.add(const Duration(days: 1)),
   declinedAt: kFixtureEventInstant.add(const Duration(days: 2)),
   cancelledAt: kFixtureEventInstant.add(const Duration(days: 3)),
+  cancelReason: 'Venue flooded',
   createdAt: kFixtureEventInstant,
   updatedAt: kFixtureEventInstant.add(const Duration(hours: 2)),
 );

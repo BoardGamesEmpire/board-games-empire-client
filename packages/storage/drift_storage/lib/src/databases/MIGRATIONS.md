@@ -7,7 +7,7 @@ bespoke migration registry.
 
 ## Current state
 
-`ServerDatabase` is at `schemaVersion == 11`; `MetaDatabase` is at
+`ServerDatabase` is at `schemaVersion == 12`; `MetaDatabase` is at
 `schemaVersion == 1`. The server database has real forward migrations, so the
 generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
 (schema helpers + migration tests) exist and are **committed** — regenerate
@@ -83,10 +83,17 @@ Server schema history:
   and so is a bound: none is converted from its unit or filled from
   `playing_time`, since the server's own step converted nothing
   (backend#869).
+- **v11 → v12 (#506):** adds a nullable `event_occurrences.cancel_reason`,
+  why the host cancelled a date, by one `addColumn`. A row cached before it
+  holds null, as does a date cancelled without a reason. Additive (nullable
+  column, no rebuild), so #54 stays deferred. The v6 → v7 step creates
+  `event_occurrences` from the live table, which now has the column, so it
+  drops `cancel_reason` again right after, from the empty table, and this
+  step adds it back.
 
 Committed, generated artefacts (never hand-edited):
 
-- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v11.json`
+- `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v12.json`
 - `drift_schemas/meta/drift_schema_v1.json`
 
 CI fails if the latest snapshot of either database drifts from the live

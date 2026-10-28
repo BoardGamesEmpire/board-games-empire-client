@@ -40,6 +40,10 @@ class EventOccurrencesTable extends Table {
   DateTimeColumn get confirmedAt => dateTime().nullable()();
   DateTimeColumn get declinedAt => dateTime().nullable()();
   DateTimeColumn get cancelledAt => dateTime().nullable()();
+
+  /// Why the host cancelled it, when they said (#506).
+  TextColumn get cancelReason => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

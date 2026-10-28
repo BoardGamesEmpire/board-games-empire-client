@@ -717,6 +717,55 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
     });
   }
 
+  @override
+  Future<bool> cacheOccurrence(EventOccurrence occurrence) async {
+    checkNotDisposed();
+    final eventId = occurrence.eventId;
+    return _db.transaction(() async {
+      // The event row and the queue's mark are checked inside the
+      // transaction, which starts after the lock, so they hold for the write.
+      if (!await _isCachedAndServerOwned(eventId)) return false;
+
+      await _db
+          .into(_db.eventOccurrencesTable)
+          .insertOnConflictUpdate(_occurrenceToCompanion(occurrence));
+      await _db.batch((b) => _stampGeneration(b, [eventId]));
+      return true;
+    });
+  }
+
+  @override
+  Future<bool> removeCachedOccurrence({
+    required String eventId,
+    required String occurrenceId,
+  }) async {
+    checkNotDisposed();
+    return _db.transaction(() async {
+      if (!await _isCachedAndServerOwned(eventId)) return false;
+
+      final removed =
+          await (_db.delete(_db.eventOccurrencesTable)..where(
+                (t) => t.id.equals(occurrenceId) & t.eventId.equals(eventId),
+              ))
+              .go();
+      if (removed == 0) return false;
+
+      await _db.batch((b) => _stampGeneration(b, [eventId]));
+      return true;
+    });
+  }
+
+  /// Whether [eventId] is cached, by any user's read, and the server's to
+  /// write: neither `isDirty` nor `isLocalOnly`. Run inside the transaction
+  /// that writes. One query, which on web is one message to the worker.
+  Future<bool> _isCachedAndServerOwned(String eventId) async {
+    final t = _db.eventsTable;
+    final query = _db.selectOnly(t)
+      ..addColumns([t.id])
+      ..where(t.id.equals(eventId) & t.isDirty.not() & t.isLocalOnly.not());
+    return await query.getSingleOrNull() != null;
+  }
+
   /// Deletes each of [eventIds] that no user, by any source, has an access
   /// row for any longer, with its occurrences, roster and policy: an event
   /// no read can reach.
@@ -1143,6 +1192,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         confirmedAt: row.confirmedAt,
         declinedAt: row.declinedAt,
         cancelledAt: row.cancelledAt,
+        cancelReason: row.cancelReason,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       );
@@ -1164,6 +1214,7 @@ class EventRepositoryImpl with WatchDisposal implements EventRepository {
         confirmedAt: Value(o.confirmedAt),
         declinedAt: Value(o.declinedAt),
         cancelledAt: Value(o.cancelledAt),
+        cancelReason: Value(o.cancelReason),
         createdAt: o.createdAt,
         updatedAt: o.updatedAt,
       );
