@@ -4,11 +4,13 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/event_list_items.dart';
@@ -22,6 +24,17 @@ const _errorBodyCopy =
     'Nothing about it could be shown. Trying again may work.';
 const _inProgressCopy = 'Refreshing…';
 const _offline = EventRemoteTransientException('offline');
+const _notFoundCopy = "We couldn't find this event";
+const _deleteBodyCopy =
+    "This can't be undone. Everyone on the event loses it, and they won't be "
+    'told.';
+const _deletedCopy = 'Event deleted';
+const _goneCopy = 'This event was already deleted.';
+const _refusedCopy = "You can't delete this event.";
+const _failedCopy =
+    "We couldn't delete this event. Check your connection and try again.";
+const _failedUnexpectedCopy =
+    "Something went wrong, and the event wasn't deleted.";
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -108,7 +121,8 @@ EventAttendee _attending(EventRole? role) =>
 
 /// The event detail screen (#498): the four states of `EventDetailBloc`, the
 /// header, the dates, who's coming and the games, and the refresh banner it
-/// shares with the overview.
+/// shares with the overview. Then Delete (#501), from the menu to the screen
+/// leaving.
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -131,6 +145,8 @@ void main() {
     when(
       () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
     ).thenAnswer((_) async => true);
+    when(() => repository.removeDeletedEvent(any()))
+        .thenAnswer((_) async => true);
   });
 
   tearDown(() {
@@ -141,6 +157,7 @@ void main() {
     String eventId = 'e-1',
     EventRemoteDataSource? remote,
     Stream<List<Household>>? households,
+    Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
@@ -157,6 +174,7 @@ void main() {
       repository: repository,
       remote: remote,
       households: households,
+      householdRole: householdRole,
       onBack: onBack,
       now: () => now,
     ),
@@ -168,26 +186,41 @@ void main() {
     await tester.pump();
   }
 
-  /// Shows [detail] as the cache's answer. No server, unless [remote] says.
+  /// Shows [detail] as the cache's answer. No server, unless [remote] says,
+  /// and no way back, unless [onBack] does.
   Future<void> show(
     WidgetTester tester,
     EventDetail detail, {
     EventRemoteDataSource? remote,
     Stream<List<Household>>? households,
+    Future<HouseholdRole?> Function(String householdId)? householdRole,
+    void Function(BuildContext context)? onBack,
+    TextScaler textScaler = TextScaler.noScaling,
   }) async {
-    await tester.pumpWidget(harness(remote: remote, households: households));
+    await tester.pumpWidget(
+      harness(
+        remote: remote,
+        households: households,
+        householdRole: householdRole,
+        onBack: onBack,
+        textScaler: textScaler,
+      ),
+    );
     cache.add(detail);
     await settle(tester);
   }
 
   /// Answers each read from the completer it adds to [reads], so a test
-  /// decides when, and how, each one ends.
-  FakeEventRemote scripted(List<Completer<EventSnapshot>> reads) =>
-      FakeEventRemote.detail((_) {
-        final read = Completer<EventSnapshot>();
-        reads.add(read);
-        return read.future;
-      });
+  /// decides when, and how, each one ends. Deletes answer from [deleted],
+  /// and succeed without one.
+  FakeEventRemote scripted(
+    List<Completer<EventSnapshot>> reads, {
+    FutureOr<void> Function(String id)? deleted,
+  }) => FakeEventRemote.detail((_) {
+    final read = Completer<EventSnapshot>();
+    reads.add(read);
+    return read.future;
+  }, deleted: deleted ?? (_) {});
 
   /// The text [finder] shows, for a `Text` with a key.
   String? textOf(WidgetTester tester, Finder finder) =>
@@ -758,6 +791,586 @@ void main() {
       expect(reads, hasLength(1));
       expect(find.byKey(EventDetailScreen.refreshBannerKey), findsNothing);
       expect(find.text(_inProgressCopy), findsNothing);
+    });
+  });
+
+  group('delete (#501)', () {
+    var backs = 0;
+
+    setUp(() => backs = 0);
+
+    /// The way back the screen leaves by. It records the call and doesn't
+    /// pop, so the page stays up for the test to look at.
+    void back(BuildContext _) => backs++;
+
+    /// Event `e-1`, which the viewer hosts.
+    EventDetail hosted({String title = 'Catan night'}) => _detail(
+      event: _event(title: title),
+      attendance: _attending(EventRole.host),
+    );
+
+    /// A server whose reads answer at once, and whose deletes answer from
+    /// [deleted] and succeed without one.
+    FakeEventRemote answering({FutureOr<void> Function(String id)? deleted}) =>
+        FakeEventRemote.detail(
+          (_) => _detail().snapshot,
+          deleted: deleted ?? (_) {},
+        );
+
+    /// Fixed pumps, not pumpAndSettle: a retry's spinner never settles. A
+    /// menu item's press lands after the frame its tap ends in, so a frame
+    /// for that, then long enough for a dialog or a snackbar to finish
+    /// moving.
+    Future<void> animate(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    Future<void> openMenu(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+      await animate(tester);
+    }
+
+    MenuItemButton deleteItem(WidgetTester tester) =>
+        tester.widget(find.byKey(EventDetailScreen.deleteKey));
+
+    Future<void> openDialog(WidgetTester tester) async {
+      await openMenu(tester);
+      await tester.tap(find.byKey(EventDetailScreen.deleteKey));
+      await animate(tester);
+    }
+
+    Future<void> confirm(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDetailScreen.deleteConfirmKey));
+      await animate(tester);
+    }
+
+    Finder outcome() => find.byKey(EventDetailScreen.actionOutcomeKey);
+
+    Finder inOutcome(String text) =>
+        find.descendant(of: outcome(), matching: find.text(text));
+
+    BgeBannerTone toneOf(WidgetTester tester) =>
+        tester.widget<BgeInlineBanner>(outcome()).tone;
+
+    /// The screen's detail bloc. The provider is inside the screen, so the
+    /// lookup starts from a widget it builds.
+    EventDetailBloc blocOf(WidgetTester tester) => BlocProvider.of(
+      tester.element(
+        find
+            .descendant(
+              of: find.byType(EventDetailScreen),
+              matching: find.byType(Scaffold),
+            )
+            .first,
+      ),
+    );
+
+    testWidgets('the host gets a More actions menu holding Delete', (
+      tester,
+    ) async {
+      await show(tester, hosted(), remote: answering(), onBack: back);
+
+      expect(find.byTooltip('More actions'), findsOneWidget);
+      await openMenu(tester);
+
+      expect(find.byKey(EventDetailScreen.deleteKey), findsOneWidget);
+      expect(find.text('Delete event'), findsOneWidget);
+    });
+
+    testWidgets('a participant gets no menu', (tester) async {
+      await show(
+        tester,
+        _detail(attendance: _attending(EventRole.participant)),
+        remote: answering(),
+        onBack: back,
+      );
+
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+    });
+
+    testWidgets("a household admin who doesn't host gets no menu", (
+      tester,
+    ) async {
+      // An owner or admin deletes only an event they host.
+      await show(
+        tester,
+        _detail(
+          event: _event(householdId: 'h-1'),
+          attendance: _attending(EventRole.participant),
+        ),
+        remote: answering(),
+        householdRole: (_) async => HouseholdRole.householdAdmin,
+        onBack: back,
+      );
+      await settle(tester);
+
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+    });
+
+    testWidgets('no remote, no menu', (tester) async {
+      // The delete goes straight to the server, never through the queue.
+      await show(tester, hosted(), onBack: back);
+
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+    });
+
+    testWidgets('no way back, no menu', (tester) async {
+      // Once the event is gone, a screen that can't leave has nowhere to go.
+      await show(tester, hosted(), remote: answering());
+
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+    });
+
+    testWidgets('Delete waits for the read', (tester) async {
+      // The read's answer, landing after the delete, would cache the event
+      // again.
+      final reads = <Completer<EventSnapshot>>[];
+      await show(tester, hosted(), remote: scripted(reads), onBack: back);
+      await openMenu(tester);
+
+      expect(deleteItem(tester).onPressed, isNull);
+
+      reads.single.complete(_detail().snapshot);
+      await settle(tester);
+
+      expect(deleteItem(tester).onPressed, isNotNull);
+    });
+
+    testWidgets("the dialog says it can't be undone and nobody is told", (
+      tester,
+    ) async {
+      final remote = answering();
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+
+      expect(find.text('Delete Catan night?'), findsOneWidget);
+      expect(find.text(_deleteBodyCopy), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(EventDetailScreen.deleteConfirmKey))
+            .style
+            ?.foregroundColor
+            ?.resolve(const {}),
+        BgeTheme.light().colorScheme.error,
+      );
+
+      await tester.tap(find.text('Keep event'));
+      await animate(tester);
+
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.deleteRequests, isEmpty);
+      expect(backs, 0);
+    });
+
+    testWidgets('confirming deletes, shows Event deleted and leaves', (
+      tester,
+    ) async {
+      final remote = answering();
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+
+      expect(remote.deleteRequests, ['e-1']);
+      expect(backs, 1);
+      expect(find.text(_deletedCopy), findsOneWidget);
+      verify(() => repository.removeDeletedEvent('e-1')).called(1);
+    });
+
+    testWidgets('a done after the user has left pops nothing more', (
+      tester,
+    ) async {
+      // Busy shows nothing, so a user waiting on a slow DELETE may press
+      // back first. The route stays mounted for its exit, and a done landing
+      // then must not leave again, which would pop the route below.
+      final deleting = Completer<void>();
+      final remote = answering(deleted: (_) => deleting.future);
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          theme: BgeTheme.light(),
+          localizationsDelegates: EventsLocalizations.localizationsDelegates,
+          supportedLocales: EventsLocalizations.supportedLocales,
+          home: const Scaffold(body: Text('Home')),
+        ),
+      );
+      unawaited(
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => EventDetailScreen(
+              eventId: 'e-1',
+              repository: repository,
+              remote: remote,
+              // The app's pops too.
+              onBack: (context) {
+                back(context);
+                Navigator.of(context).pop();
+              },
+              now: () => now,
+            ),
+          ),
+        ),
+      );
+      await animate(tester);
+      cache.add(hosted());
+      await settle(tester);
+      await openDialog(tester);
+      await confirm(tester);
+      expect(remote.deleteRequests, ['e-1']);
+
+      navigator.currentState!.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(EventDetailScreen), findsOneWidget, reason: 'exiting');
+
+      deleting.complete();
+      await animate(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(backs, 0);
+      expect(find.text('Home'), findsOneWidget);
+      // The event is deleted all the same, and the snackbar says so.
+      expect(find.text(_deletedCopy), findsOneWidget);
+    });
+
+    testWidgets('a done under another route stays, and falls to not found', (
+      tester,
+    ) async {
+      // The screen is still in the stack, not leaving: active, though not
+      // current. The app's way back pops whichever route is on top, which
+      // here is another screen's, so the screen doesn't ask for it.
+      final deleting = Completer<void>();
+      await show(
+        tester,
+        hosted(),
+        remote: answering(deleted: (_) => deleting.future),
+        onBack: back,
+      );
+      await openDialog(tester);
+      await confirm(tester);
+
+      unawaited(
+        tester
+            .state<NavigatorState>(find.byType(Navigator))
+            .push(
+              MaterialPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text('Above')),
+              ),
+            ),
+      );
+      await animate(tester);
+      deleting.complete();
+      await animate(tester);
+
+      expect(backs, 0);
+      expect(find.text('Above'), findsOneWidget);
+      // The event is deleted all the same, and the snackbar says so.
+      expect(find.text(_deletedCopy), findsOneWidget);
+
+      // The removal's null, which a covered screen doesn't hold off.
+      cache.add(null);
+      await settle(tester);
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await animate(tester);
+
+      expect(find.text(_notFoundCopy), findsOneWidget);
+      expect(find.text('Catan night'), findsNothing);
+    });
+
+    testWidgets('a done under another route falls to not found after a failed '
+        'read', (tester) async {
+      // The detail derives the couldn't-load page from the removal's null
+      // where its last read failed, and its retry would read an event the
+      // server has just deleted.
+      final reads = <Completer<EventSnapshot>>[];
+      final deleting = Completer<void>();
+      await show(
+        tester,
+        hosted(),
+        remote: scripted(reads, deleted: (_) => deleting.future),
+        onBack: back,
+      );
+      reads.single.completeError(_offline);
+      await settle(tester);
+      await openDialog(tester);
+      await confirm(tester);
+      unawaited(
+        tester
+            .state<NavigatorState>(find.byType(Navigator))
+            .push(
+              MaterialPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text('Above')),
+              ),
+            ),
+      );
+      await animate(tester);
+      deleting.complete();
+      await animate(tester);
+
+      cache.add(null);
+      await settle(tester);
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await animate(tester);
+
+      expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.errorKey), findsNothing);
+      expect(backs, 0);
+    });
+
+    testWidgets('the page holds its last frame while it leaves', (
+      tester,
+    ) async {
+      // The route's exit keeps the page mounted, and the removal's null
+      // would otherwise draw not found under it.
+      await show(tester, hosted(), remote: answering(), onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+
+      cache.add(null);
+      await settle(tester);
+
+      expect(find.text('Catan night'), findsOneWidget);
+      expect(find.text(_notFoundCopy), findsNothing);
+    });
+
+    testWidgets('Delete stays disabled once the delete is done', (
+      tester,
+    ) async {
+      // The page is still up after done, under the exit or an onBack that
+      // didn't pop, and a second press would send a second DELETE.
+      final remote = answering();
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+
+      await openMenu(tester);
+
+      expect(deleteItem(tester).onPressed, isNull);
+      expect(remote.deleteRequests, hasLength(1));
+    });
+
+    testWidgets('a refusal shows a banner and reads the detail again', (
+      tester,
+    ) async {
+      // The viewer's role may have changed on another device.
+      final remote = answering(
+        deleted: (_) =>
+            throw const EventWriteRefusedException('no', statusCode: 403),
+      );
+      await show(tester, hosted(), remote: remote, onBack: back);
+      expect(remote.detailRequests, ['e-1']);
+      await openDialog(tester);
+      await confirm(tester);
+
+      expect(inOutcome(_refusedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+      expect(backs, 0);
+      expect(
+        tester.getTopLeft(outcome()).dy,
+        lessThan(tester.getTopLeft(find.text('Catan night')).dy),
+      );
+
+      await tester.tap(inOutcome('Dismiss'));
+      await settle(tester);
+
+      expect(outcome(), findsNothing);
+    });
+
+    testWidgets('a transient failure shows the failure banner and reads '
+        'nothing', (tester) async {
+      final remote = answering(deleted: (_) => throw _offline);
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+
+      expect(inOutcome(_failedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.error);
+      expect(remote.detailRequests, ['e-1']);
+      expect(backs, 0);
+      // Pressing Delete again is safe: a second DELETE of a deleted event
+      // answers 404.
+      await openMenu(tester);
+      expect(deleteItem(tester).onPressed, isNotNull);
+    });
+
+    testWidgets('any other failure says something went wrong', (tester) async {
+      // Not the connection: the server answered, and refused the request.
+      // The same press would be refused again.
+      final remote = answering(
+        deleted: (_) => throw const EventRemotePermanentException(
+          'bad request',
+          statusCode: 400,
+        ),
+      );
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+
+      expect(inOutcome(_failedUnexpectedCopy), findsOneWidget);
+      expect(find.text(_failedCopy), findsNothing);
+      expect(toneOf(tester), BgeBannerTone.error);
+      expect(backs, 0);
+    });
+
+    testWidgets('a gone delete falls to not found', (tester) async {
+      final remote = answering(
+        deleted: (_) => throw const EventRemoteNotFoundException('gone'),
+      );
+      await show(tester, hosted(), remote: remote, onBack: back);
+      await openDialog(tester);
+      await confirm(tester);
+
+      // Until the removal's null reaches the screen.
+      expect(inOutcome(_goneCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      verify(() => repository.removeDeletedEvent('e-1')).called(1);
+      verifyNever(
+        () => repository.forgetEvent(any(), lastWrite: any(named: 'lastWrite')),
+      );
+
+      cache.add(null);
+      await settle(tester);
+
+      expect(find.text(_notFoundCopy), findsOneWidget);
+      expect(backs, 0);
+    });
+
+    testWidgets('a gone delete after a failed read falls to not found', (
+      tester,
+    ) async {
+      // The detail derives the couldn't-load page from the removal's null
+      // where its last read failed, and its retry would read an event the
+      // server has just said is gone.
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = scripted(
+        reads,
+        deleted: (_) => throw const EventRemoteNotFoundException('gone'),
+      );
+      await show(tester, hosted(), remote: remote, onBack: back);
+      reads.single.completeError(_offline);
+      await settle(tester);
+      await openDialog(tester);
+      await confirm(tester);
+      expect(inOutcome(_goneCopy), findsOneWidget);
+
+      cache.add(null);
+      await settle(tester);
+
+      expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.errorKey), findsNothing);
+      expect(reads, hasLength(1));
+      expect(backs, 0);
+    });
+
+    testWidgets('nothing is sent if a read started while the dialog was '
+        'open', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = scripted(reads);
+      await show(tester, hosted(), remote: remote, onBack: back);
+      // A failed read leaves a retry to offer, and Delete enabled.
+      reads.single.completeError(_offline);
+      await settle(tester);
+      await openDialog(tester);
+
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      expect(reads, hasLength(2));
+
+      await confirm(tester);
+
+      expect(remote.deleteRequests, isEmpty);
+    });
+
+    testWidgets("the refresh banner's retry waits for the delete", (
+      tester,
+    ) async {
+      // A retry pressed while the DELETE is out starts the read that Delete
+      // waits for, from the other side.
+      final reads = <Completer<EventSnapshot>>[];
+      final deleting = Completer<void>();
+      final remote = scripted(reads, deleted: (_) => deleting.future);
+      await show(tester, hosted(), remote: remote, onBack: back);
+      reads.single.completeError(_offline);
+      await settle(tester);
+      expect(find.byKey(EventDetailScreen.refreshRetryKey), findsOneWidget);
+
+      await openDialog(tester);
+      await confirm(tester);
+
+      expect(remote.deleteRequests, ['e-1']);
+      expect(find.byKey(EventDetailScreen.refreshBannerKey), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.refreshRetryKey), findsNothing);
+
+      deleting.complete();
+      await animate(tester);
+
+      expect(backs, 1);
+      expect(find.byKey(EventDetailScreen.refreshRetryKey), findsNothing);
+      expect(reads, hasLength(1));
+    });
+
+    testWidgets('sends the id of the event it shows', (tester) async {
+      // An event created here opens on its local id, and the detail follows
+      // the reconcile to the server's (#499). Only the followed copy offers
+      // Delete, and the server knows it by the server's id.
+      final moved = StreamController<EventDetail?>.broadcast();
+      addTearDown(moved.close);
+      when(() => repository.watchEvent('srv-1'))
+          .thenAnswer((_) => moved.stream);
+      final remote = answering();
+      await show(
+        tester,
+        _detail(
+          event: _event().copyWith(isLocalOnly: true),
+          attendance: _attending(EventRole.host),
+        ),
+        remote: remote,
+        onBack: back,
+      );
+      expect(find.byKey(EventDetailScreen.moreActionsKey), findsNothing);
+
+      when(() => repository.reconciledEventId('e-1')).thenReturn('srv-1');
+      cache.add(null);
+      await settle(tester);
+      moved.add(
+        _detail(
+          event: _event().copyWith(id: 'srv-1'),
+          attendance: _attending(EventRole.host),
+        ),
+      );
+      await settle(tester);
+      await openDialog(tester);
+      await confirm(tester);
+
+      // Not e-1, the id the screen was opened on.
+      expect(remote.deleteRequests, ['srv-1']);
+    });
+
+    testWidgets('the dialog fits a long title at 2.0', (tester) async {
+      useViewSize(tester, const Size(320, 640));
+      const title =
+          'The very long annual strategy night with every expansion we own, '
+          'snacks, and a tournament bracket for all of you to join';
+      expect(title, hasLength(120));
+      await show(
+        tester,
+        hosted(title: title),
+        remote: answering(),
+        onBack: back,
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      await openDialog(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Delete $title?'), findsOneWidget);
+      // The title and body scroll, and the buttons stay on screen.
+      expect(
+        tester.getRect(find.byKey(EventDetailScreen.deleteConfirmKey)).bottom,
+        lessThanOrEqualTo(640),
+      );
     });
   });
 
