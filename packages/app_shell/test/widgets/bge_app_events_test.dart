@@ -731,8 +731,9 @@ void main() {
 
         await deleteIt(tester);
 
-        // The delete's two, the same way.
-        expect(guard.asked, ['u1', 'u1', 'u1', 'u1']);
+        // The delete's one, before the request: its removal is every
+        // user's, so nothing is asked before it.
+        expect(guard.asked, ['u1', 'u1', 'u1']);
       });
     });
   });

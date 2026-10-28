@@ -224,12 +224,11 @@ void main() {
 
   group('the session', () {
     blocTest<EventActionsBloc, EventActionsState>(
-      'the session is asked before sending, and again before writing',
-      build: () =>
-          build(serving((_) {}), confirmSession: answering([true, true])),
+      'the session is asked before sending, and not before writing',
+      build: () => build(serving((_) {}), confirmSession: answering([true])),
       act: (bloc) => bloc.add(const EventDeleteRequested('e-1')),
       expect: () => [busy, settled(EventActionResult.done)],
-      verify: (_) => expect(calls, ['session', 'delete', 'session', 'remove']),
+      verify: (_) => expect(calls, ['session', 'delete', 'remove']),
     );
 
     for (final (name, guard) in <(String, Future<bool> Function())>[
@@ -273,15 +272,19 @@ void main() {
           ('404', (_) => throw _gone, EventActionResult.gone, _gone),
         ]) {
       blocTest<EventActionsBloc, EventActionsState>(
-        'a session that moved while the request was out writes nothing '
-        '($answer)',
+        'a session that moved while the request was out still removes the '
+        'event ($answer)',
+        // Were it asked again, the guard would say no.
         build: () =>
             build(serving(deleted), confirmSession: answering([true, false])),
         act: (bloc) => bloc.add(const EventDeleteRequested('e-1')),
-        // The server answered, and the outcome says what it answered. Only
-        // the cache, now another user's, is left alone.
+        // The server deleted the event for everyone, so the removal holds
+        // whoever is signed in now.
         expect: () => [busy, settled(result, error: error)],
-        verify: (_) => verifyNoWrite(),
+        verify: (_) {
+          expect(calls, ['session', 'delete', 'remove']);
+          verify(() => repository.removeDeletedEvent('e-1')).called(1);
+        },
       );
     }
   });
@@ -352,19 +355,16 @@ void main() {
 
     test('a bloc that starts closing as the answer is settled emits nothing '
         'more', () async {
-      // Close starts while the second session ask is out, so the outcome is
-      // ready before bloc's own close has cancelled the handler, which it
-      // does only after the event stream has closed. The bloc's own check is
-      // what keeps the outcome off a closing stream.
+      // Close starts as the server answers, so the outcome is ready before
+      // bloc's own close has cancelled the handler, which it does only after
+      // the event stream has closed. The bloc's own check is what keeps the
+      // outcome off a closing stream.
       late EventActionsBloc bloc;
       Future<void>? closing;
-      var asked = 0;
       bloc = build(
-        serving((_) {}),
-        confirmSession: () async {
-          if (++asked == 2) closing = bloc.close();
-          return true;
-        },
+        serving((_) {
+          closing = bloc.close();
+        }),
       );
       final states = record(bloc);
 

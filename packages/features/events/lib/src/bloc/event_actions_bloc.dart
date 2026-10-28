@@ -75,15 +75,19 @@ typedef _Write = Future<void> Function();
 ///
 /// On web every tab shares one session cookie, and a sign-in in another tab
 /// moves it to another user under this screen (#432). So [confirmSession] is
-/// asked before the DELETE goes out and again before its answer is written,
-/// as the detail read asks it. A null [confirmSession], as on native, is
-/// always yes.
+/// asked before the DELETE goes out, as the detail read asks it. A null
+/// [confirmSession], as on native, is always yes.
 ///
-/// A no, or a throw, before sending is failed with no error, and isn't read
-/// again: nothing reached the server, and a read would ask the same session.
-/// A no after the answer never turns it into a failure. The outcome
-/// says what the server answered, and only the cache, now another user's, is
-/// left alone.
+/// A no, or a throw, is failed with no error, and isn't read again: nothing
+/// reached the server, and a read would ask the same session.
+///
+/// It isn't asked again before the answer is written, as the detail read's
+/// is. That read writes what one user may see, which another user's cache
+/// must not take. The removal is every user's: the server deleted the event
+/// for everyone, so it holds whoever is signed in now. Skipping it would
+/// leave the event cached for each user who could read it, until they open
+/// it and are answered 404. A session that has ended takes its repository
+/// with it, and the removal's throw is logged as any other.
 ///
 /// ## One at a time
 ///
@@ -154,8 +158,8 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
       return (_outcome(EventActionResult.failed, error), null);
     }
 
-    // Done and gone alike: the server has no live event with this id.
-    if (!await _confirmedForWrite()) return (outcome, null);
+    // Done and gone alike: the server has no live event with this id, for
+    // any user, so the session isn't asked again (above).
     return (outcome, () => _remove(eventId));
   }
 
@@ -165,11 +169,6 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
         result: result,
         error: error,
       );
-
-  /// Whether the session is still the cache's user's, now that the server
-  /// has answered.
-  Future<bool> _confirmedForWrite() =>
-      _confirmed('Event delete answered, but not written to the cache');
 
   /// Whether the session is still this cache's user's: [confirmSession] said
   /// yes, or there is none to ask. A no is logged, as is a throw, each

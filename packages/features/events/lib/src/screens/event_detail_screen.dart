@@ -132,8 +132,8 @@ class EventDetailScreen extends StatelessWidget {
   final EventRemoteDataSource? remote;
 
   /// Whether the session is still the user [repository] belongs to, asked
-  /// before the read or the delete goes out and before its answer is written
-  /// (#432). Null, as on native, is always yes.
+  /// before the read or the delete goes out and before the read's answer is
+  /// written (#432). Null, as on native, is always yes.
   final Future<bool> Function()? confirmSession;
 
   /// The cached households, for the header's household name. Null names
