@@ -203,9 +203,10 @@ class HydrationStatus<O extends Object> {
   ///
   /// Deliberately says nothing about [state]. A pass in flight is reported
   /// against the age of the one before it, because what a running pass
-  /// means to a trigger is the trigger's policy — the installer's registry
-  /// entry skips one (#302) without asking about age at all. [window] is
-  /// the caller's too: the duration is a composition's choice.
+  /// means to a trigger is the trigger's policy —
+  /// `HydratePass.registerRehydrate` skips one (#302) without asking about age
+  /// at all. [window] is the caller's too: the duration is a composition's
+  /// choice.
   bool isStaleAfter(Duration window) {
     final since = sinceRefresh;
     return since == null || since.isNegative || since >= window;
@@ -272,7 +273,7 @@ class HydrationStatus<O extends Object> {
   /// their age has not changed — so [sinceRefresh] keeps reporting it.
   /// Clearing it would be #300's mistake moved from the latch to the
   /// clock: a failure un-knowing what a success established. `failed` is
-  /// stale by state instead, which is how the installer's registry entry
+  /// stale by state instead, which is how `HydratePass.registerRehydrate`
   /// answers it.
   void finished(O outcome) {
     if (_closed) return;
@@ -296,11 +297,12 @@ class HydrationStatus<O extends Object> {
   /// Declares the cached set no longer current, without claiming a pass is
   /// running (#300).
   ///
-  /// Called when a mutation makes the local set stale by definition — a
-  /// create, a join (#455), and a member's role change or removal (#480).
-  /// The **state** is deliberately untouched: the rows on screen are still
-  /// the rows we have, and only the claim that they are current goes away,
-  /// so the next entry re-hydrates rather than waiting out the window.
+  /// Called when a mutation makes the local set stale by definition: the
+  /// rows we hold predate it, however recently they landed. It holds until
+  /// the next drain starts. The **state** is deliberately untouched: the
+  /// rows on screen are still the rows we have, and only the claim that
+  /// they are current goes away, so the next entry re-hydrates rather than
+  /// waiting out the window.
   void markStale() {
     if (_closed) return;
     _refreshedAt = null;
