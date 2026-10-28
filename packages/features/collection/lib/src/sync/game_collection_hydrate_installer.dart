@@ -53,8 +53,10 @@ import 'game_collection_refresher.dart';
 ///   merged the page of already (#190);
 /// - the window a completed pass ages out of is [staleAfter]. Without it a
 ///   session that hydrated at sign-in never saw another device's changes
-///   however long it ran, which #300 fixed for households. Each re-run is a
-///   full drain, as the household's is (#450 is the delta pass);
+///   however long it ran, which #300 fixed for households. A re-run after a
+///   completed pass usually reads only what changed since, where the
+///   household's drains in full (#450); [GameCollectionHydrator] says when
+///   it reads everything;
 /// - the status is [GameCollectionHydrationStatus], registered in the
 ///   session scope;
 /// - the hydrator is deliberately not registered. Nothing resolves one by
@@ -81,8 +83,10 @@ class GameCollectionHydrateInstaller implements UserScopeInstaller {
   /// How long a completed pass stays current.
   ///
   /// The household's window (#300), taken as the same guess rather than a
-  /// measurement. #44 kept it: a collection under one page costs one request
-  /// to re-run, and the cost for larger ones is #450's to remove.
+  /// measurement. #44 kept it, and so did #450, which made a re-run after a
+  /// completed pass usually ask only for what changed since: one request,
+  /// unless more than a page has. [GameCollectionHydrator] says when a
+  /// re-run reads everything instead.
   static const Duration staleAfter = Duration(minutes: 5);
 
   static final BgeLogger _log = BgeLogger('bge.collection.hydrate.install');

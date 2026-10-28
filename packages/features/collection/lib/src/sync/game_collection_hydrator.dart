@@ -65,8 +65,10 @@ enum CollectionHydrateOutcome {
 ///
 /// The drain asks for [limit] rows with `includeDeleted`, so it learns about
 /// server-side removals too, and follows [PaginationMeta.hasMore], never a
-/// short page. Like the household's, it is a deliberate full drain rather
-/// than scroll paging: the list renders from the cache.
+/// short page. Like the household's, it reads every page rather than scroll
+/// paging: the list renders from the cache. A session's first pass reads
+/// the whole list this way; a re-run after a completed pass reads only what
+/// changed since (below).
 ///
 /// A page is a position in a list sorted newest-updated first. So a row
 /// changed while the drain is paging moves onto page 1, which was already
@@ -97,25 +99,88 @@ enum CollectionHydrateOutcome {
 /// purged the rows the merge compares against. So a pass reads
 /// [GameCollectionRepository.removalMark] before requesting page 1 and passes
 /// it with every page, the catch-up's included, and the merge skips a live
-/// copy of anything confirmed removed since. The next pass writes it, if the
-/// entry is live again by then. The merge still ends the `collection` record
-/// the page's summary wrote for a skipped copy, unless the user has another
-/// entry on that platform game (#469).
+/// copy of anything confirmed removed since. The confirmation moved the
+/// removal mark, so the next pass reads the whole list (below), and writes
+/// the entry if it is live again by then. The merge still ends the
+/// `collection` record the page's summary wrote for a skipped copy, unless
+/// the user has another entry on that platform game (#469).
 ///
 /// A confirmation, a discard that deletes a local-only entry, or a detail's
 /// `forgetGame` can also land between a page's summary write and its
 /// merge. If it leaves the user no entry on a platform game, it ends their
 /// `collection` record for it and deletes the rows no one reads, the
 /// summary's included (#469). A live entry the page holds for that platform
-/// game, other than a copy the mark skips, then has no row to join, so the
-/// merge fails and the pass ends [CollectionHydrateOutcome.failed]. The next
-/// pass writes it.
+/// game, other than a copy the removal mark skips, then has no row to join,
+/// so the merge fails and the pass ends [CollectionHydrateOutcome.failed].
+/// The next pass, which reads the whole list after a failed one (below),
+/// writes it.
+///
+/// ## A re-run reads only what changed (#450)
+///
+/// A session's first pass is a full drain. A pass that completes leaves a
+/// delta mark: the newest `updatedAt` it saw on any page, the catch-up's and
+/// tombstones included, less [deltaOverlap]. The next pass is then a delta
+/// read: it asks only for rows updated since the delta mark, and otherwise runs
+/// as the drain does. It sends `includeDeleted`, so a removal on the server
+/// reaches the cache as a tombstone; it passes the removal mark with every
+/// page; and when it spans more than one page it runs the same catch-up,
+/// from its own page 1.
+///
+/// The next pass is a full drain instead whenever the delta mark may not
+/// describe what the cache holds:
+///
+/// - after a pass that ended [CollectionHydrateOutcome.failed]. The
+///   sections above promise that the next pass writes what a failed one
+///   could not, and reading everything keeps that true without working out
+///   what the failed pass reached. A failed pass clears the delta mark. A pass
+///   the session check holds off never reaches [hydrate], so it leaves the
+///   delta mark as it was: it read and wrote nothing;
+/// - when [GameCollectionRepository.removalMark] has moved since the last
+///   completed pass read it before its first request. It moves when a
+///   removal is confirmed, after which a merge may have skipped a live copy
+///   that the next pass is meant to write (above). Every removal this
+///   device syncs is confirmed that way, so in practice the re-run after
+///   one drains in full. That is accepted: it costs no more than every
+///   re-run did before the delta read. It moves too when
+///   [GameCollectionRepository.discardQueuedOp] leaves a row for a merge to
+///   rebuild (#190): the row holds the discarded op's values, the server's
+///   copy did not change, and no delta would read it. Every completed pass
+///   records the one it read, whether or not the delta mark moved, so each
+///   move costs one full drain rather than every pass after it.
+///
+/// The delta mark is the server's timestamp, for the catch-up's reason. It
+/// has an overlap because the server stamps `updatedAt` before the write
+/// commits, possibly on another instance, so a row can land with a stamp a
+/// little older than one a pass already read. The overlap covers that and
+/// ordinary clock drift between instances, nothing larger: an instance
+/// whose clock runs behind another's by more than [deltaOverlap] stamps
+/// rows below a mark the other set, and no delta reads them until the next
+/// session's full drain. It only moves forward. A delta returns only rows
+/// at or after the mark, and their newest can be older than the newest the
+/// last pass saw, for a pass that re-read only the overlap or met a skewed
+/// server clock's older stamps. Taken less the overlap, it would pull the
+/// delta mark back, and each such pass would widen the window again. So a
+/// completed pass that saw no rows, or only older ones, keeps the delta
+/// mark it had.
+///
+/// It lives in memory, not the database. The installer builds one hydrator
+/// per user session, so the mark lasts as long as the session, and each
+/// session starts with a full drain. A saved mark could outlive the cache it
+/// describes, after a reinstall or a cleared cache, and skip rows that cache
+/// never held.
+///
+/// A known limit, accepted: a server change that does not move the entry's
+/// `updatedAt` is read by no delta. A change to a game's title or thumbnail
+/// is one. Deleting a game release is another: the database's `SET NULL`
+/// clears the entry's release without the ORM restamping it. The next
+/// session's full drain reads both.
 ///
 /// ## Nothing is purged
 ///
 /// The hydrate upserts entries and applies server tombstones. It never
 /// deletes a local row the server did not mention, so the drain's
-/// completeness is never load-bearing.
+/// completeness is never load-bearing, and a delta can leave out every row
+/// that did not change.
 class GameCollectionHydrator {
   GameCollectionHydrator({
     required this._collection,
@@ -138,15 +203,37 @@ class GameCollectionHydrator {
   /// Rows per request. Defaults to the server's own page-size cap.
   final int limit;
 
-  /// Drains the user's collection into the cache.
+  /// How far before the newest `updatedAt` a completed pass saw, the next
+  /// pass's delta read starts (#450).
+  ///
+  /// The server stamps `updatedAt` from its own process clock before the
+  /// write commits, and there may be more than one server instance. So a
+  /// row can commit with a stamp slightly older than one a pass has already
+  /// read. A delta that re-reads a minute of rows costs little, and the
+  /// merge is safe to repeat.
+  static const Duration deltaOverlap = Duration(minutes: 1);
+
+  /// Where the next pass's delta read starts: the newest `updatedAt` a
+  /// completed pass saw, less [deltaOverlap] (the delta mark). Null until a
+  /// pass completes having seen a row, and again once one fails. See the
+  /// class doc.
+  DateTime? _deltaSince;
+
+  /// The [GameCollectionRepository.removalMark] the last completed pass
+  /// read before its first request. A pass that reads another drains in
+  /// full. See the class doc.
+  int? _lastRemovalMark;
+
+  /// Drains the user's collection into the cache: all of it, or after a
+  /// completed pass only what changed since. See the class doc.
   ///
   /// Never throws — see the class doc.
   ///
   /// Not single-flight: the caller, `HydratePass`, runs one at a time (#302).
   Future<CollectionHydrateOutcome> hydrate() async {
-    final int mark;
+    final int removalMark;
     try {
-      mark = await _collection.removalMark();
+      removalMark = await _collection.removalMark();
     } on Object catch (error, stackTrace) {
       // A disposed repository, in practice; every write after it would fail
       // the same way. See the class doc.
@@ -155,33 +242,58 @@ class GameCollectionHydrator {
         error: error,
         stackTrace: stackTrace,
       );
-      return CollectionHydrateOutcome.failed;
+      return _failed();
     }
 
-    final drain = await _drain(removalsSince: mark);
-    if (drain == null) return CollectionHydrateOutcome.failed;
+    // A delta only while the removal mark has not moved since the last
+    // completed pass read it. See the class doc.
+    final since = removalMark == _lastRemovalMark ? _deltaSince : null;
+    final drain = await _drain(
+      query: since == null ? 'drain' : 'delta',
+      updatedSince: since,
+      removalsSince: removalMark,
+    );
+    if (drain == null) return _failed();
 
-    final since = drain.newestOnPageOne;
-    if (drain.pages == 1 || since == null) {
-      return CollectionHydrateOutcome.complete;
+    var newest = drain.newest;
+    final onPageOne = drain.newestOnPageOne;
+    if (drain.pages > 1 && onPageOne != null) {
+      final catchUp = await _drain(
+        query: 'catch-up',
+        updatedSince: onPageOne,
+        removalsSince: removalMark,
+      );
+      if (catchUp == null) return _failed();
+      newest = _later(newest, catchUp.newest);
     }
 
-    final catchUp = await _drain(updatedSince: since, removalsSince: mark);
-    return catchUp == null
-        ? CollectionHydrateOutcome.failed
-        : CollectionHydrateOutcome.complete;
+    // Recorded whether or not the delta mark moves, so each move of the removal
+    // mark costs one full drain rather than every pass after it.
+    _lastRemovalMark = removalMark;
+    _deltaSince = _later(_deltaSince, newest?.subtract(deltaOverlap));
+    return CollectionHydrateOutcome.complete;
   }
 
-  /// Reads every page of one query and writes each row.
+  /// Ends a pass as failed, and leaves the next to read everything. See the
+  /// class doc.
+  CollectionHydrateOutcome _failed() {
+    _deltaSince = null;
+    return CollectionHydrateOutcome.failed;
+  }
+
+  /// Reads every page of one query and writes each row. [query] names the
+  /// query in the log: `'drain'`, `'delta'` or `'catch-up'`.
   ///
-  /// Returns how many pages it read and the newest `updatedAt` on page 1, or
-  /// null when it ended on a failure.
-  Future<({int pages, DateTime? newestOnPageOne})?> _drain({
+  /// Returns how many pages it read, the newest `updatedAt` on page 1, and
+  /// the newest on any page, tombstones included; or null when it ended on a
+  /// failure.
+  Future<({int pages, DateTime? newestOnPageOne, DateTime? newest})?> _drain({
+    required String query,
     DateTime? updatedSince,
     required int removalsSince,
   }) async {
-    final pass = updatedSince == null ? 'drain' : 'catch-up';
     DateTime? newestOnPageOne;
+    DateTime? newest;
     var page = 1;
 
     while (true) {
@@ -201,7 +313,7 @@ class GameCollectionHydrator {
           'Collection hydrate stopped on a failed page',
           error: error,
           stackTrace: stackTrace,
-          context: {'pass': pass, 'page': page, 'limit': limit},
+          context: {'pass': query, 'page': page, 'limit': limit},
         );
         return null;
       }
@@ -215,7 +327,7 @@ class GameCollectionHydrator {
           "Collection hydrate stopped on a page holding another user's "
           'entries',
           context: {
-            'pass': pass,
+            'pass': query,
             'page': page,
             'limit': limit,
             'foreignEntries': foreign,
@@ -224,7 +336,9 @@ class GameCollectionHydrator {
         return null;
       }
 
-      if (page == 1) newestOnPageOne = _newest(result.items);
+      final newestOnPage = _newest(result.items);
+      if (page == 1) newestOnPageOne = newestOnPage;
+      newest = _later(newest, newestOnPage);
 
       try {
         await _cache(result.items, removalsSince: removalsSince);
@@ -235,13 +349,13 @@ class GameCollectionHydrator {
           'Collection hydrate stopped on a failed cache write',
           error: error,
           stackTrace: stackTrace,
-          context: {'pass': pass, 'page': page, 'limit': limit},
+          context: {'pass': query, 'page': page, 'limit': limit},
         );
         return null;
       }
 
       if (!result.meta.hasMore) {
-        return (pages: page, newestOnPageOne: newestOnPageOne);
+        return (pages: page, newestOnPageOne: newestOnPageOne, newest: newest);
       }
 
       // `hasMore` past the server's own last page is an envelope that
@@ -252,7 +366,7 @@ class GameCollectionHydrator {
           'Collection list reports another page past its own last page; '
           'ending the hydrate.',
           context: {
-            'pass': pass,
+            'pass': query,
             'page': page,
             'totalPages': result.meta.totalPages,
             'total': result.meta.total,
@@ -295,5 +409,13 @@ class GameCollectionHydrator {
       if (newest == null || at.isAfter(newest)) newest = at;
     }
     return newest;
+  }
+
+  /// The later of [a] and [b], or whichever is set, or null when neither
+  /// is.
+  static DateTime? _later(DateTime? a, DateTime? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return b.isAfter(a) ? b : a;
   }
 }

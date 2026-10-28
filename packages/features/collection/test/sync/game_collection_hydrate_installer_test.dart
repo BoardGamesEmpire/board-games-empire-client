@@ -46,6 +46,25 @@ Future<PaginatedResult<GameCollectionWithSummary>> _empty() async =>
 Future<PaginatedResult<GameCollectionWithSummary>> _offline() async =>
     throw const GameCollectionRemoteTransientException('offline');
 
+/// One server row whose entry was last updated at [updatedAt].
+GameCollectionWithSummary _row(DateTime updatedAt) => (
+  entry: GameCollection(
+    id: 'gc-1',
+    userId: 'user-1',
+    platformGameId: 'pg-1',
+    medium: GameMedium.physical,
+    quantity: 1,
+    createdAt: DateTime.utc(2026),
+    updatedAt: updatedAt,
+  ),
+  summary: PlatformGameSummary(
+    id: 'pg-1',
+    platformId: 'plat-1',
+    platformName: 'Tabletop',
+    game: GameSummary(id: 'g-1', title: 'Game 1'),
+  ),
+);
+
 const _server = ScopedServer(serverId: 'server-1', displayName: 'My Server');
 
 void main() {
@@ -411,6 +430,41 @@ void main() {
       expect(
         container.get<GameCollectionHydrationStatus>().state,
         HydrationState.failed,
+      );
+    });
+
+    test('a pass it refuses leaves the delta mark alone (#450)', () async {
+      register();
+      final guard = _FakeIdentityGuard(answer: SessionConfirmation.confirmed);
+      container.registerSingleton<SessionIdentityGuard>(guard);
+      final t = DateTime.utc(2026, 5, 1, 12);
+      remote.respond = (_) async => PaginatedResult(
+        items: [_row(t)],
+        meta: const PaginationMeta(
+          page: 1,
+          limit: 100,
+          total: 1,
+          totalPages: 1,
+          hasMore: false,
+        ),
+      );
+
+      await install();
+      await pumpEventQueue();
+      expect(remote.requests.length, 1);
+      final refresher = container.get<GameCollectionRefresher>();
+
+      guard.answer = SessionConfirmation.notThisUser;
+      await refresher.refresh();
+      expect(remote.requests.length, 1);
+
+      guard.answer = SessionConfirmation.confirmed;
+      await refresher.refresh();
+
+      expect(remote.requests.length, 2);
+      expect(
+        remote.requests.last.updatedSince,
+        t.subtract(GameCollectionHydrator.deltaOverlap),
       );
     });
 
