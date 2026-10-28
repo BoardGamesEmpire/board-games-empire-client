@@ -93,14 +93,18 @@ class EventWhenField extends StatelessWidget {
     final today = DateUtils.dateOnly(now);
     // Today through two years ahead: a game night is planned weeks out,
     // and next year's convention can be more than a year out. The server
-    // takes any date; this only bounds the calendar.
+    // takes any date; this only bounds the calendar. A date already past,
+    // being edited (#506), keeps its day: the calendar starts there.
+    final firstDate = [control.value, opensOn?.value].nonNulls
+        .map(DateUtils.dateOnly)
+        .fold(today, (first, day) => day.isBefore(first) ? day : first);
     final lastDate = DateTime(today.year + 2, today.month, today.day);
     final from = control.value ?? opensOn?.value ?? now;
 
     final date = await showDatePicker(
       context: context,
-      initialDate: _within(DateUtils.dateOnly(from), today, lastDate),
-      firstDate: today,
+      initialDate: _within(DateUtils.dateOnly(from), firstDate, lastDate),
+      firstDate: firstDate,
       lastDate: lastDate,
       currentDate: now,
       initialEntryMode: _dateEntryMode(context),

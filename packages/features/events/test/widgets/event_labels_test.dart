@@ -1,8 +1,10 @@
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_labels.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
+
+import '../support/event_list_items.dart';
 
 /// The words for each of an event's enums (#498), and none for a value this
 /// client can't read: a newer server's value is not a guess at one.
@@ -99,5 +101,41 @@ void main() {
       EventParticipationStatus.notAttending: 'Not going',
     });
     expect(eventRsvpLabel(l10n, null), isNull);
+  });
+
+  testWidgets("a date's name is its label, else its when, else none yet", (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en', 'US'),
+        localizationsDelegates: EventsLocalizations.localizationsDelegates,
+        supportedLocales: EventsLocalizations.supportedLocales,
+        home: Builder(
+          builder: (built) {
+            context = built;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    // Local, as the pickers give it: Monday 26 October 2026, 6 PM.
+    final now = DateTime(2026, 10, 26, 18);
+    final start = DateTime(2026, 11, 6, 19, 30);
+    final date = confirmed('o-1', start);
+
+    expect(
+      eventDateName(context, date.copyWith(label: ' Day 1 '), now: now),
+      'Day 1',
+    );
+    expect(
+      eventDateName(context, date.copyWith(label: '  '), now: now),
+      'Fri, Nov 6 · 7:30 PM',
+    );
+    expect(
+      eventDateName(context, date.copyWith(startDate: null), now: now),
+      'No date yet',
+    );
   });
 }

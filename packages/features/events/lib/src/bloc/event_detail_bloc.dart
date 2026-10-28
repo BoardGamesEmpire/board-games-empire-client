@@ -48,9 +48,11 @@ import 'event_detail_state.dart';
 ///
 /// [EventDetailReady.reading] says a read is running, the open's included,
 /// which `refreshing` leaves out. A read runs until it settles, and one that
-/// succeeds settles after its write has reached the cache. The screen holds
-/// Delete on it, so that a read's answer cannot cache the event again after
-/// the delete (#501).
+/// succeeds settles after its write has reached the cache. One answered 404
+/// runs until its forget has ended, in not found or overtaken. The screen
+/// holds Delete and the date writes on it, so that a read's answer cannot
+/// cache the event again after the write (#501), and a write waiting on it
+/// is never sent to an event the forget is taking away (#506).
 ///
 /// ## The read on open
 ///
@@ -677,7 +679,9 @@ class EventDetailBloc extends Bloc<EventDetailEvent, EventDetailState> {
             : _householdRoles[householdId],
       ),
       refreshing: _refreshing,
-      reading: _reading,
+      // A 404's forget is still the read: until it ends, the screen can't
+      // tell a gone event from one a newer write kept (#506).
+      reading: _reading || _outcome == EventDetailReadOutcome.forgetting,
       refreshFailed: _outcome == EventDetailReadOutcome.failed,
       canRetry: _canRetry,
     );

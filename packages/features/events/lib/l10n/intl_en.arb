@@ -264,15 +264,212 @@
   },
   "eventsActionDismiss": "Dismiss",
   "@eventsActionDismiss": {
-    "description": "Button on the banner that says how deleting an event went, on the event's screen. Closes the banner."
+    "description": "Button on the banner that says how the last change made on an event's screen went, such as deleting the event or confirming one of its dates. Closes the banner."
   },
   "eventsDateChanged": "This date changed meanwhile. Here it is as it stands now.",
   "@eventsDateChanged": {
     "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. The screen has just been refreshed and shows the date as it is now. A warning, not an error."
   },
-  "eventsDateCancelledNotRemoved": "The date was cancelled, but not removed. You can remove it now.",
-  "@eventsDateCancelledNotRemoved": {
-    "description": "Banner on an event's screen after trying to remove a confirmed date, which happens in two steps: the date is cancelled first, then removed. The cancel went through and the removal did not, so the date now shows as cancelled, and removing it again is offered on the date itself."
+  "eventsDateCancelledRemoveUnconfirmed": "The date was cancelled. If it's still below, you can remove it now.",
+  "@eventsDateCancelledRemoveUnconfirmed": {
+    "description": "Banner on an event's screen after trying to remove a confirmed date, which happens in two steps: the date is cancelled first, then removed. The cancel went through and the removal did not come back done, so whether the date is still there is for the re-read of the event to say. It may have been removed after all. If it is still listed it shows as cancelled, and removing it again is offered on the date itself."
+  },
+  "eventsDateActions": "Actions for {date}",
+  "@eventsDateActions": {
+    "description": "Tooltip and accessible name of the three-dot button beside one of the dates on an event's screen. Opens a menu of what the user may do to that date, such as confirm or remove it. Every date has one, so it names its date: by the date's label, or when it starts where it has none.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsDateAdd": "Add a date",
+  "@eventsDateAdd": {
+    "description": "Button under the dates on an event's screen. Opens a dialog that adds another date to the event. Shown only to someone who may add one, and on a one-date event only while it has none."
+  },
+  "eventsDateEdit": "Edit",
+  "@eventsDateEdit": {
+    "description": "Item in a date's menu on an event's screen. Opens a dialog that changes the date's label, when it starts and ends, or its place."
+  },
+  "eventsDateConfirm": "Confirm",
+  "@eventsDateConfirm": {
+    "description": "Item in a proposed date's menu on an event's screen, and the confirm button of the dialog it opens. Settles on that date for the event. A verb."
+  },
+  "eventsDateDecline": "Decline",
+  "@eventsDateDecline": {
+    "description": "Item in a proposed date's menu on an event's screen, and the confirm button of the dialog it opens. Turns the proposed date down for good. A verb."
+  },
+  "eventsDateCancel": "Cancel date",
+  "@eventsDateCancel": {
+    "description": "Item in a confirmed date's menu on an event's screen, and the confirm button of the dialog it opens. Calls that date off, and tells everyone who answered it. Names the date so it is not read as closing the dialog."
+  },
+  "eventsDateRemove": "Remove",
+  "@eventsDateRemove": {
+    "description": "Item in a date's menu on an event's screen, and the confirm button of the dialog it opens. Takes the date off the event for good. A verb."
+  },
+  "eventsDateAddTitle": "Add a date",
+  "@eventsDateAddTitle": {
+    "description": "Title of the dialog that adds a date to an event: its label, when it starts and ends, and its place."
+  },
+  "eventsDateEditTitle": "Edit {date}",
+  "@eventsDateEditTitle": {
+    "description": "Title of the dialog that changes one of an event's dates, which it names by the date's label, or when it starts where it has none.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Opening night"
+      }
+    }
+  },
+  "eventsDateSave": "Save",
+  "@eventsDateSave": {
+    "description": "Confirm button of the dialog that changes one of an event's dates. Disabled until something in the dialog changes."
+  },
+  "eventsDateAddConfirm": "Add",
+  "@eventsDateAddConfirm": {
+    "description": "Confirm button of the dialog that adds a date to an event. A verb."
+  },
+  "eventsDateDiscard": "Discard",
+  "@eventsDateDiscard": {
+    "description": "Button in the dialogs that add a date to an event or change one. Closes the dialog and keeps nothing typed or picked in it."
+  },
+  "eventsDateEditConfirmedNote": "Attendees aren't told when a confirmed date changes.",
+  "@eventsDateEditConfirmedNote": {
+    "description": "Note at the top of the dialog that changes one of an event's dates, shown when that date is confirmed. Nobody on the event is notified of the change, so the host may want to tell them."
+  },
+  "eventsDateConfirmTitle": "Confirm {date}?",
+  "@eventsDateConfirmTitle": {
+    "description": "Title of the dialog asking to confirm one of an event's proposed dates, which it names by the date's label, or when it starts where it has none.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsDateConfirmBody": "A confirmed date can be cancelled, but not set back to proposed.",
+  "@eventsDateConfirmBody": {
+    "description": "Body of the dialog asking to confirm one of an event's proposed dates. Says what can't be undone: once confirmed, the date can be called off but never made a proposal again."
+  },
+  "eventsDateDeclineTitle": "Decline {date}?",
+  "@eventsDateDeclineTitle": {
+    "description": "Title of the dialog asking to decline one of an event's proposed dates, which it names by the date's label, or when it starts where it has none.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsDateDeclineBody": "A declined date can't be proposed again.",
+  "@eventsDateDeclineBody": {
+    "description": "Body of the dialog asking to decline one of an event's proposed dates. Declining is permanent: the date can't be made a proposal again."
+  },
+  "eventsDateCancelTitle": "Cancel {date}?",
+  "@eventsDateCancelTitle": {
+    "description": "Title of the dialog asking to call off one of an event's confirmed dates, which it names by the date's label, or when it starts where it has none. Cancel here means call off, not close the dialog.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsDateCancelBody": "Everyone who answered this date is told. It can't be confirmed again.",
+  "@eventsDateCancelBody": {
+    "description": "Body of the dialog asking to call off one of an event's confirmed dates. Says two things, and a translation must keep both: everyone who said whether they could come on that date is notified, and the date can never be confirmed again."
+  },
+  "eventsDateCancelRemoveBody": "It's cancelled first, so everyone who answered is told, then removed. This can't be undone.",
+  "@eventsDateCancelRemoveBody": {
+    "description": "Body of the dialog asking to remove one of an event's confirmed dates. A confirmed date is removed in two steps: it is called off first, which notifies everyone who said whether they could come on it, and then taken off the event. Neither can be undone."
+  },
+  "eventsDateRemoveTitle": "Remove {date}?",
+  "@eventsDateRemoveTitle": {
+    "description": "Title of the dialog asking to take one of an event's dates off it, which it names by the date's label, or when it starts where it has none.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsDateRemoveBody": "This can't be undone.",
+  "@eventsDateRemoveBody": {
+    "description": "Body of the dialog asking to take a date that isn't confirmed off an event. The removal is permanent."
+  },
+  "eventsDateReason": "Reason (optional)",
+  "@eventsDateReason": {
+    "description": "Label of the text field in the dialog that calls off one of an event's dates, for why it is called off. It may be left empty. The reason shows under the date on the event's screen."
+  },
+  "eventsDateReasonTooLong": "Keep the reason to {max} characters or fewer.",
+  "@eventsDateReasonTooLong": {
+    "description": "Error under the reason field in the dialog that calls off one of an event's dates, when the reason is longer than the server takes. max is the most it takes, 1,000 today, and a reason of exactly max is accepted.",
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1000"
+      }
+    }
+  },
+  "eventsDateKeep": "Keep date",
+  "@eventsDateKeep": {
+    "description": "Button in the dialogs that confirm, decline, call off or remove one of an event's dates. Closes the dialog and changes nothing. Deliberately not 'Cancel': calling a date off is one of the actions these dialogs ask about."
+  },
+  "eventsDateCancelReason": "Reason: {reason}",
+  "@eventsDateCancelReason": {
+    "description": "Under a called-off date on an event's screen, below its status: why it was called off, as the person who called it off wrote it.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "The venue flooded."
+      }
+    }
+  },
+  "eventsDateAdded": "Date added",
+  "@eventsDateAdded": {
+    "description": "Banner on an event's screen once the server has added the date the user asked for."
+  },
+  "eventsDateSaved": "Date saved",
+  "@eventsDateSaved": {
+    "description": "Banner on an event's screen once the server has saved the user's changes to one of its dates."
+  },
+  "eventsDateConfirmed": "Date confirmed",
+  "@eventsDateConfirmed": {
+    "description": "Banner on an event's screen once the server has confirmed one of its proposed dates."
+  },
+  "eventsDateDeclined": "Date declined",
+  "@eventsDateDeclined": {
+    "description": "Banner on an event's screen once the server has declined one of its proposed dates."
+  },
+  "eventsDateCancelled": "Date cancelled",
+  "@eventsDateCancelled": {
+    "description": "Banner on an event's screen once the server has called off one of its dates."
+  },
+  "eventsDateRemoved": "Date removed",
+  "@eventsDateRemoved": {
+    "description": "Banner on an event's screen once the server has taken one of its dates off it."
+  },
+  "eventsDateGone": "This date isn't on the event any more.",
+  "@eventsDateGone": {
+    "description": "Banner on an event's screen when a change to one of its dates found the date gone: someone removed it, or deleted the event, since the screen showed it. The screen has just been refreshed. A warning, not an error, except after removing the date, when it is what was asked."
+  },
+  "eventsDateRefused": "You can't change this date.",
+  "@eventsDateRefused": {
+    "description": "Banner on an event's screen when the server refused a change to one of its dates: the user is not allowed to make it, for example because their role on the event changed on another device."
+  },
+  "eventsDateFailed": "An error occurred while saving this change. You may need to try again.",
+  "@eventsDateFailed": {
+    "description": "Banner on an event's screen when a change to one of its dates ended without an answer that says what happened, most often because there was no connection. The change may or may not have gone through, so the copy must not say it didn't."
+  },
+  "eventsDateAddFailed": "An error occurred while adding this date. Check the dates below before adding it again.",
+  "@eventsDateAddFailed": {
+    "description": "Banner on an event's screen when adding a date ended without an answer that says what happened. The date may have been added all the same, and adding it again would add it twice, so the copy asks the user to look at the dates first, which have just been refreshed. It must not say the date wasn't added."
+  },
+  "eventsDateFailedUnexpected": "Something went wrong. Check the date below before trying again.",
+  "@eventsDateFailedUnexpected": {
+    "description": "Banner on an event's screen when a change to one of its dates failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. Unlike the connection failure it does not invite a retry straight away."
   },
   "eventsTypeAdultsOnly": "Adults only",
   "@eventsTypeAdultsOnly": {

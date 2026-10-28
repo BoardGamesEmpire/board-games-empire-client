@@ -152,7 +152,7 @@ List<EventOccurrenceDraft> occurrencesOf(FormGroup form) {
     for (final row in showsEveryEventDate(mode) ? rows : rows.take(1))
       EventOccurrenceDraft(
         label: labelled
-            ? _trimmedOrNull(row.control(EventCreateControls.label).value)
+            ? trimmedOrNull(row.control(EventCreateControls.label).value)
             : null,
         startDate: (row.control(EventCreateControls.start).value as DateTime?)
             ?.toUtc(),
@@ -235,7 +235,7 @@ EventPolicyDraft? policyOf(FormGroup form) {
 /// Read it from a valid form, as those are.
 EventDraft draftOf(FormGroup form) {
   String? text(String name) =>
-      _trimmedOrNull(_controlOf<String>(form, name).value);
+      trimmedOrNull(_controlOf<String>(form, name).value);
 
   return EventDraft(
     title: text(EventCreateControls.title) ?? '',
@@ -262,7 +262,9 @@ FormControl<T> _controlOf<T>(FormGroup form, String name) =>
 FormArray<Map<String, Object?>> _datesOf(FormGroup form) =>
     form.control(EventCreateControls.dates) as FormArray<Map<String, Object?>>;
 
-String? _trimmedOrNull(Object? value) {
+/// [value] trimmed, or null where it is not text or blank once trimmed: a
+/// field's value as the form and the date dialog (#506) send it.
+String? trimmedOrNull(Object? value) {
   final trimmed = value is String ? value.trim() : '';
   return trimmed.isEmpty ? null : trimmed;
 }
@@ -278,19 +280,30 @@ Map<String, dynamic>? _checkDates(AbstractControl<dynamic> control) {
     final shown = several || index == 0;
     final start = row.control(EventCreateControls.start);
     final end = row.control(EventCreateControls.end);
-    final startsAt = start.value as DateTime?;
-    final endsAt = end.value as DateTime?;
-    _flag(start, ValidationMessage.required, shown && startsAt == null);
-    _flag(
-      end,
-      EventCreateErrors.endBeforeStart,
-      shown && startsAt != null && endsAt != null && endsAt.isBefore(startsAt),
-    );
+    _flag(start, ValidationMessage.required, shown && start.value == null);
+    checkEndBeforeStart(start, end, shown: shown);
   }
 
   final tooFew = rows.length < (several ? 2 : 1);
   _flag(mode, EventCreateErrors.tooFewDates, tooFew);
   return tooFew ? const {EventCreateErrors.tooFewDates: true} : null;
+}
+
+/// Sets [EventCreateErrors.endBeforeStart] on [end] while it comes before
+/// [start], both set and [shown], and clears it once it doesn't. The dates
+/// check runs it on each row, and the date dialog (#506) on its one.
+void checkEndBeforeStart(
+  AbstractControl<dynamic> start,
+  AbstractControl<dynamic> end, {
+  bool shown = true,
+}) {
+  final startsAt = start.value as DateTime?;
+  final endsAt = end.value as DateTime?;
+  _flag(
+    end,
+    EventCreateErrors.endBeforeStart,
+    shown && startsAt != null && endsAt != null && endsAt.isBefore(startsAt),
+  );
 }
 
 /// Sets or clears [error] on [control], leaving its other errors as they
@@ -310,14 +323,14 @@ void _flag(AbstractControl<dynamic> control, String error, bool on) {
 
 /// [ValidationMessage.required] unless [control] holds more than whitespace.
 Map<String, dynamic>? _checkTitle(AbstractControl<dynamic> control) =>
-    _trimmedOrNull(control.value) == null
+    trimmedOrNull(control.value) == null
     ? const {ValidationMessage.required: true}
     : null;
 
 /// [EventCreateErrors.fullLink] unless [control] is empty or holds a full
 /// link ([isFullLink]) once trimmed, as it is sent.
 Map<String, dynamic>? _checkLink(AbstractControl<dynamic> control) {
-  final link = _trimmedOrNull(control.value);
+  final link = trimmedOrNull(control.value);
   return link == null || isFullLink(link)
       ? null
       : const {EventCreateErrors.fullLink: true};

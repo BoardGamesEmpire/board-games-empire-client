@@ -119,6 +119,21 @@ String eventWhenLabel(
       : l10n.eventsWhenWithYear(local, time);
 }
 
+/// What the dialogs and a date's menu call [occurrence]: its label, else
+/// when it starts, as its entry on the detail says it, else that it has no
+/// date yet.
+String eventDateName(
+  BuildContext context,
+  EventOccurrence occurrence, {
+  required DateTime now,
+}) {
+  final label = occurrence.label?.trim();
+  if (label != null && label.isNotEmpty) return label;
+  final start = occurrence.startDate;
+  if (start != null) return eventWhenLabel(context, start, now: now);
+  return EventsLocalizations.of(context).eventsNoDateYet;
+}
+
 /// The device-local time of day of [instant].
 ///
 /// From [MaterialLocalizations.formatTimeOfDay], told the platform's 24-hour

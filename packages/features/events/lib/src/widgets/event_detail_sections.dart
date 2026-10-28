@@ -4,6 +4,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:events/l10n/events_localizations.dart';
 
+import '../detail/event_actions.dart';
 import '../screens/event_detail_screen.dart';
 import 'event_labels.dart';
 
@@ -98,15 +99,25 @@ class EventDetailHeader extends StatelessWidget {
 }
 
 /// When the event happens: each cached date in the server's order, with its
-/// end, its status and its own place where it has one (#498).
+/// end, its status and its own place where it has one (#498), and why a
+/// cancelled one was called off where it says (#506).
 ///
 /// With no dates, the row's copy for an undated event: a poll is choosing
 /// one, and any other event has none set.
+///
+/// The controls (#506) are the caller's to offer: a menu beside each date
+/// that [actionsFor] gives any action, and *Add a date* under the dates
+/// where there is an [onAdd]. A date with nothing to offer has no menu, not
+/// an empty one.
 class EventDatesSection extends StatelessWidget {
   const EventDatesSection({
     required this.occurrences,
     required this.schedulingMode,
     required this.now,
+    this.actionsFor,
+    this.onAdd,
+    this.onAction,
+    this.enabled = true,
     super.key,
   });
 
@@ -116,35 +127,153 @@ class EventDatesSection extends StatelessWidget {
   /// The clock, which decides whether a date is this year's.
   final DateTime Function() now;
 
+  /// What a date's menu offers. Null shows no menus.
+  final Set<EventAction> Function(EventOccurrence occurrence)? actionsFor;
+
+  /// Opens *Add a date*. Null shows no button.
+  final VoidCallback? onAdd;
+
+  /// Runs what was picked from a date's menu. Null shows no menus.
+  final void Function(EventOccurrence occurrence, EventAction action)? onAction;
+
+  /// Whether the controls may be pressed now. While they may not, they stay
+  /// in place, disabled, as Delete does in the app bar's menu.
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    final at = now();
+    final onAdd = this.onAdd;
 
     return _Section(
       key: EventDetailScreen.datesKey,
       title: l10n.eventsDetailDates,
-      children: occurrences.isEmpty
-          ? [
-              _Note(
-                schedulingMode == EventSchedulingMode.poll
-                    ? l10n.eventsDateBeingChosen
-                    : l10n.eventsNoDateYet,
-              ),
-            ]
-          : [
-              for (final occurrence in occurrences)
-                _OccurrenceEntry(occurrence: occurrence, now: now()),
-            ],
+      children: [
+        if (occurrences.isEmpty)
+          _Note(
+            schedulingMode == EventSchedulingMode.poll
+                ? l10n.eventsDateBeingChosen
+                : l10n.eventsNoDateYet,
+          ),
+        for (final occurrence in occurrences) _entryFor(occurrence, at),
+        if (onAdd != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: EventDetailScreen.addDateKey,
+              onPressed: enabled ? onAdd : null,
+              icon: const Icon(Icons.add),
+              label: Text(l10n.eventsDateAdd),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _entryFor(EventOccurrence occurrence, DateTime now) {
+    final actions = actionsFor?.call(occurrence) ?? const <EventAction>{};
+    final onAction = this.onAction;
+
+    return _OccurrenceEntry(
+      occurrence: occurrence,
+      now: now,
+      menu: onAction == null || actions.isEmpty
+          ? null
+          : _DateMenu(
+              occurrence: occurrence,
+              actions: actions,
+              onAction: onAction,
+              enabled: enabled,
+              now: now,
+            ),
+    );
+  }
+}
+
+/// A date's menu (#506): what [actions] offers of it, in a fixed order, the
+/// changes that can't be undone last. Never empty: a date with nothing to
+/// offer has no menu.
+class _DateMenu extends StatelessWidget {
+  const _DateMenu({
+    required this.occurrence,
+    required this.actions,
+    required this.onAction,
+    required this.enabled,
+    required this.now,
+  });
+
+  final EventOccurrence occurrence;
+  final Set<EventAction> actions;
+  final void Function(EventOccurrence occurrence, EventAction action) onAction;
+
+  /// Whether an item may be pressed now. When it may not, it stays in the
+  /// menu, disabled, as Delete does.
+  final bool enabled;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final items = {
+      EventAction.confirmDate: l10n.eventsDateConfirm,
+      EventAction.editDate: l10n.eventsDateEdit,
+      EventAction.declineDate: l10n.eventsDateDecline,
+      EventAction.cancelDate: l10n.eventsDateCancel,
+      EventAction.removeDate: l10n.eventsDateRemove,
+    };
+
+    return MenuAnchor(
+      // Left unconstrained, the panel sits in a hard-clipped box as wide as
+      // its widest entry, which at 2.0 text runs past a phone's edge. Held
+      // to the screen, the entries wrap instead.
+      crossAxisUnconstrained: false,
+      menuChildren: [
+        for (final MapEntry(key: action, value: label) in items.entries)
+          if (actions.contains(action))
+            MenuItemButton(
+              key: EventDetailScreen.dateActionKey(occurrence.id, action),
+              overflowAxis: Axis.vertical,
+              onPressed: enabled ? () => onAction(occurrence, action) : null,
+              child: Text(label),
+            ),
+      ],
+      builder: (context, controller, _) => MergeSemantics(
+        child: Semantics(
+          expanded: controller.isOpen,
+          child: IconButton(
+            key: EventDetailScreen.dateMenuKey(occurrence.id),
+            icon: const Icon(Icons.more_vert),
+            // Every date has one, so the name says whose it is to a screen
+            // reader moving from button to button.
+            tooltip: l10n.eventsDateActions(
+              eventDateName(context, occurrence, now: now),
+            ),
+            onPressed: controller.isOpen ? controller.close : controller.open,
+          ),
+        ),
+      ),
     );
   }
 }
 
 /// One date, as one semantics node.
+///
+/// Its menu, where it has one, sits beside that node and outside it, so a
+/// screen reader reaches it as a control of its own rather than as part of
+/// the date's label, as a household member's does (#480).
 class _OccurrenceEntry extends StatelessWidget {
-  const _OccurrenceEntry({required this.occurrence, required this.now});
+  const _OccurrenceEntry({
+    required this.occurrence,
+    required this.now,
+    this.menu,
+  });
 
   final EventOccurrence occurrence;
   final DateTime now;
+
+  /// The date's menu, or null for none.
+  final Widget? menu;
 
   @override
   Widget build(BuildContext context) {
@@ -154,10 +283,14 @@ class _OccurrenceEntry extends StatelessWidget {
     final start = occurrence.startDate;
     final end = occurrence.endDate;
     final status = occurrenceStatusLabel(l10n, occurrence.status);
+    final reason = occurrence.status == OccurrenceStatus.cancelled
+        ? _present(occurrence.cancelReason)
+        : null;
     final location = _present(occurrence.location);
     final quiet = _quiet(theme);
+    final menu = this.menu;
 
-    return _Entry(
+    final entry = _Entry(
       children: [
         // Not a title role: those are the display face, which here would
         // read as one more section heading.
@@ -170,7 +303,18 @@ class _OccurrenceEntry extends StatelessWidget {
         ),
         if (end != null) Text(_until(context, l10n, start, end)),
         if (status != null) Text(status, style: quiet),
+        if (reason != null)
+          Text(l10n.eventsDateCancelReason(reason), style: quiet),
         if (location != null) Text(location, style: quiet),
+      ],
+    );
+
+    if (menu == null) return entry;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: entry),
+        menu,
       ],
     );
   }
