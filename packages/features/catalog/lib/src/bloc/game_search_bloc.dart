@@ -256,7 +256,10 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       // A stale 403 still says the catalog is refused.
       await _forgetCatalog();
       if (search != _sequence) return;
-      emit(GameSearchDenied(query: query, filter: filter));
+      // [_filter], not the filter searched with: one that narrows no
+      // differently may have come in since, and the controls read it here,
+      // as they do from [_ready].
+      emit(GameSearchDenied(query: query, filter: _filter));
     } on Object catch (error, stackTrace) {
       if (search != _sequence) return;
       _logger.warn(
@@ -290,7 +293,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   }) async {
     final cache = _cache;
     if (cache == null) {
-      emit(GameSearchFailed(query: query, filter: filter));
+      emit(GameSearchFailed(query: query, filter: _filter));
       return;
     }
 
@@ -313,7 +316,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         error: error,
         stackTrace: stackTrace,
       );
-      emit(GameSearchFailed(query: query, filter: filter));
+      emit(GameSearchFailed(query: query, filter: _filter));
     }
   }
 

@@ -19,6 +19,16 @@ class _FailingForgetCache extends FakeGamesCache {
   Future<void> forgetCatalog() async => throw StateError('disposed');
 }
 
+/// A cache that cannot be searched, as a corrupt database would leave it.
+class _FailingSearchCache extends FakeGamesCache {
+  @override
+  Future<List<Game>> searchGames(
+    String query, {
+    int limit = 20,
+    GameSearchFilter filter = const GameSearchFilter(),
+  }) async => throw StateError('corrupt');
+}
+
 const _expansions = GameSearchFilter(contentTypes: {ContentType.expansion});
 
 void main() {
@@ -445,6 +455,54 @@ void main() {
         ),
       ],
     );
+
+    group('a change that narrows nothing new, made while a search is out, is '
+        'kept when that search', () {
+      /// Types, keeps undated games while the search is out, then has it
+      /// end in [error].
+      Future<void> changeWhilePending(GameSearchBloc bloc, Object error) async {
+        // Made inside the test's zone: an error can't cross into another.
+        final pending = Completer<GameSearchResults>();
+        remote.onSearch = (_, _) => pending.future;
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+        pending.completeError(error);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      blocTest<GameSearchBloc, GameSearchState>(
+        'fails',
+        build: build,
+        act: (bloc) => changeWhilePending(bloc, unreachable()),
+        skip: 2,
+        expect: () => [
+          const GameSearchFailed(query: 'catan', filter: keepUndated),
+        ],
+      );
+
+      blocTest<GameSearchBloc, GameSearchState>(
+        'is refused',
+        build: build,
+        act: (bloc) =>
+            changeWhilePending(bloc, const GamesForbiddenException('403')),
+        skip: 2,
+        expect: () => [
+          const GameSearchDenied(query: 'catan', filter: keepUndated),
+        ],
+      );
+
+      blocTest<GameSearchBloc, GameSearchState>(
+        'falls back to a cache that fails too',
+        build: () => build(cache: _FailingSearchCache()),
+        act: (bloc) => changeWhilePending(bloc, unreachable()),
+        skip: 2,
+        expect: () => [
+          const GameSearchFailed(query: 'catan', filter: keepUndated),
+        ],
+      );
+    });
 
     blocTest<GameSearchBloc, GameSearchState>(
       'with nothing typed, is only remembered',
