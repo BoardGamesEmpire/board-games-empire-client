@@ -50,9 +50,11 @@ abstract class GameSearchHit with _$GameSearchHit {
 
 /// What one search answered (#42), by source, as the server groups it.
 ///
-/// Every DataGateway that did not answer is named in exactly one of the
-/// three sets, by how it failed, so a source that dropped out does not read
-/// as one that found nothing.
+/// Every DataGateway that found nothing to show for a reason other than
+/// having no matches is named in exactly one of four sets: the three ways it
+/// can fail to answer, and [unfilterableDataGateways] for one the search's
+/// filter skipped (#580). So a source that dropped out, or wasn't asked,
+/// does not read as one that found nothing.
 @freezed
 abstract class GameSearchResults with _$GameSearchResults {
   const factory GameSearchResults({
@@ -72,5 +74,9 @@ abstract class GameSearchResults with _$GameSearchResults {
 
     /// DataGateways the server could not reach.
     @Default(<String>{}) Set<String> unavailableDataGateways,
+
+    /// DataGateways the search's filter skipped: they can't apply a player
+    /// count or play time it names (#580).
+    @Default(<String>{}) Set<String> unfilterableDataGateways,
   }) = _GameSearchResults;
 }

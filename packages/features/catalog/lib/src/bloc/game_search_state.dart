@@ -1,36 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-/// What a search is narrowed to (#42). An empty set does not narrow; one
-/// that names a type keeps only games of it.
-///
-/// The screen offers content types. Platform types are taken here and sent
-/// to the server, and the screen's control for them is #474.
-final class GameSearchFilter extends Equatable {
-  const GameSearchFilter({
-    this.contentTypes = const {},
-    this.platformTypes = const {},
-  });
-
-  final Set<ContentType> contentTypes;
-  final Set<PlatformType> platformTypes;
-
-  GameSearchFilter withContentTypes(Set<ContentType> contentTypes) =>
-      GameSearchFilter(
-        contentTypes: contentTypes,
-        platformTypes: platformTypes,
-      );
-
-  GameSearchFilter withPlatformTypes(Set<PlatformType> platformTypes) =>
-      GameSearchFilter(
-        contentTypes: contentTypes,
-        platformTypes: platformTypes,
-      );
-
-  @override
-  List<Object?> get props => [contentTypes, platformTypes];
-}
-
 /// What the search screen is showing (#42).
 ///
 /// Every state carries the filter, so the filter's controls read the same

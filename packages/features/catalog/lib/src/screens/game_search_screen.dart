@@ -384,8 +384,10 @@ class _Filter extends StatelessWidget {
     void toggle(ContentType type, bool on) =>
         context.read<GameSearchBloc>().add(
           GameSearchFilterChanged(
-            filter.withContentTypes(
-              on ? {...selected, type} : ({...selected}..remove(type)),
+            filter.copyWith(
+              contentTypes: on
+                  ? {...selected, type}
+                  : ({...selected}..remove(type)),
             ),
           ),
         );
