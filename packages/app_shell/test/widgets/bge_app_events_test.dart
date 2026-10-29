@@ -161,6 +161,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(_detail('e-0').snapshot);
+    registerFallbackValue(_upcoming('e-0').occurrences.single);
     registerFallbackValue(EventAccessSource.read);
     registerFallbackValue(const EventDraft(title: 'x'));
   });
@@ -182,7 +183,8 @@ void main() {
   /// [moreHouseholds] after it, in each of which the user holds
   /// [householdRole]. [remote] is the server's event client, and
   /// the user's own roster row on every detail is [attendance]. [detailCache]
-  /// replaces what every `watchEvent` emits, for a cache the test drives.
+  /// replaces what every `watchEvent` emits, and [listCache] what the list
+  /// watch emits, for a cache the test drives.
   /// [sender] and [users] are what the create form sends through and finds
   /// invitees with, and a create writes the event here as `ev_local`.
   Future<void> pumpHome(
@@ -195,6 +197,7 @@ void main() {
     EventAttendee? attendance,
     EventRemoteDataSource? remote,
     Stream<EventDetail?>? detailCache,
+    Stream<List<EventListItem>>? listCache,
     bool failedPass = false,
     EventRefresher? refresher,
     SessionRehydrator? rehydrator,
@@ -203,7 +206,9 @@ void main() {
     UserRemoteDataSource? users,
   }) async {
     when(repository.watchAttendingEventListItems).thenAnswer(
-      (_) => Stream.value([for (var n = 0; n < events; n++) _upcoming('e-$n')]),
+      (_) =>
+          listCache ??
+          Stream.value([for (var n = 0; n < events; n++) _upcoming('e-$n')]),
     );
     when(() => repository.watchEvent(any())).thenAnswer(
       (call) =>
@@ -735,6 +740,148 @@ void main() {
         // user's, so nothing is asked before it.
         expect(guard.asked, ['u1', 'u1', 'u1']);
       });
+    });
+
+    group('confirming a date (#506)', () {
+      testWidgets(
+        'a host confirms a date, and the overview moves the event to upcoming',
+        (tester) async {
+          final at = DateTime.utc(2026);
+          final proposed = EventOccurrence(
+            id: 'o-e-0',
+            eventId: 'e-0',
+            startDate: DateTime.utc(2099, 1, 1, 19),
+            status: OccurrenceStatus.proposed,
+            sortOrder: 0,
+            createdAt: at,
+            updatedAt: at,
+          );
+          final confirmed = proposed.copyWith(
+            status: OccurrenceStatus.confirmed,
+          );
+          final planning = EventSnapshot(
+            event: _upcoming('e-0').event
+                .copyWith(status: EventStatus.planning),
+            occurrences: [proposed],
+          );
+          final scheduled = EventSnapshot(
+            event: _upcoming('e-0').event,
+            occurrences: [confirmed],
+          );
+
+          // The cache the mock repository stands for: what it holds, and
+          // the watches that follow it.
+          var cached = planning;
+          final detailWatches = <MultiStreamController<EventDetail?>>[];
+          final listWatches = <MultiStreamController<List<EventListItem>>>[];
+          EventDetail detailOf(EventSnapshot snapshot) =>
+              EventDetail(snapshot: snapshot, attendance: _hosting('e-0'));
+          List<EventListItem> listOf(EventSnapshot snapshot) => [
+            EventListItem(
+              event: snapshot.event,
+              occurrences: snapshot.occurrences,
+            ),
+          ];
+          void publish(EventSnapshot snapshot) {
+            cached = snapshot;
+            for (final watch in detailWatches) {
+              watch.add(detailOf(snapshot));
+            }
+            for (final watch in listWatches) {
+              watch.add(listOf(snapshot));
+            }
+          }
+
+          final remote = _MockEventRemote();
+          var reads = 0;
+          when(() => remote.fetchEvent(any()))
+              .thenAnswer((_) async => reads++ == 0 ? planning : scheduled);
+          when(() => remote.confirmOccurrence(any(), any()))
+              .thenAnswer((_) async => confirmed);
+
+          await pumpHome(
+            tester,
+            remote: remote,
+            detailCache: Stream.multi((watch) {
+              detailWatches.add(watch);
+              watch.add(detailOf(cached));
+            }),
+            listCache: Stream.multi((watch) {
+              listWatches.add(watch);
+              watch.add(listOf(cached));
+            }),
+          );
+          when(() => repository.cacheEvent(any(), source: any(named: 'source')))
+              .thenAnswer((call) async {
+                publish(call.positionalArguments.first as EventSnapshot);
+              });
+          when(() => repository.cacheOccurrence(any()))
+              .thenAnswer((call) async {
+                final date = call.positionalArguments.first as EventOccurrence;
+                publish(cached.copyWith(occurrences: [date]));
+                return true;
+              });
+
+          await openTheOverview(tester);
+
+          // Without a confirmed date the event is planned, not upcoming.
+          expect(
+            find.descendant(
+              of: find.byKey(EventOverviewScreen.groupKey(EventGroup.planning)),
+              matching: find.byKey(EventOverviewScreen.rowKey('e-0')),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(EventOverviewScreen.groupKey(EventGroup.upcoming)),
+            findsNothing,
+          );
+
+          await openRow(tester, 'e-0');
+
+          // The date's menu, then its Confirm entry. A menu item's press
+          // lands a frame after its tap, so the dialog is looked for after
+          // one.
+          await tester.tap(find.byKey(EventDetailScreen.dateMenuKey('o-e-0')));
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(
+              EventDetailScreen.dateActionKey('o-e-0', EventAction.confirmDate),
+            ),
+          );
+          await tester.pump();
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.descendant(
+              of: find.byType(AlertDialog),
+              matching: find.text('Confirm'),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          verify(() => remote.confirmOccurrence('e-0', 'o-e-0')).called(1);
+          verify(() => repository.cacheOccurrence(confirmed)).called(1);
+          // The screen read the event again for its new status.
+          verify(() => remote.fetchEvent('e-0')).called(2);
+          expect(find.text('Date confirmed'), findsOneWidget);
+
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+
+          expect(find.byType(EventOverviewScreen), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byKey(EventOverviewScreen.groupKey(EventGroup.upcoming)),
+              matching: find.byKey(EventOverviewScreen.rowKey('e-0')),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.byKey(EventOverviewScreen.groupKey(EventGroup.planning)),
+            findsNothing,
+          );
+        },
+      );
     });
   });
 

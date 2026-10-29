@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
+import 'package:events/src/widgets/event_date_dialogs.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,6 +36,24 @@ const _failedCopy =
     'An error occurred while deleting this event. You may need to try again.';
 const _failedUnexpectedCopy =
     "Something went wrong, and the event wasn't deleted.";
+const _confirmBodyCopy =
+    'A confirmed date can be cancelled, but not set back to proposed.';
+const _cancelRemoveBodyCopy =
+    "It's cancelled first, so everyone who answered is told, then removed. "
+    "This can't be undone.";
+const _dateChangedCopy =
+    'This date changed meanwhile. Check it below before trying again.';
+const _dateGoneCopy = "This date isn't on the event any more.";
+const _dateRefusedCopy = "You can't change this date.";
+const _dateCancelledRemoveUnconfirmedCopy =
+    "The date was cancelled. If it's still below, you can remove it now.";
+const _dateFailedCopy =
+    'An error occurred while saving this change. You may need to try again.';
+const _dateAddFailedCopy =
+    'An error occurred while adding this date. Check the dates below before '
+    'adding it again.';
+const _dateFailedUnexpectedCopy =
+    'Something went wrong. Check the date below before trying again.';
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -122,7 +141,7 @@ EventAttendee _attending(EventRole? role) =>
 /// The event detail screen (#498): the four states of `EventDetailBloc`, the
 /// header, the dates, who's coming and the games, and the refresh banner it
 /// shares with the overview. Then Delete (#501), from the menu to the screen
-/// leaving.
+/// leaving, and the dates' menus and dialogs (#506).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -159,6 +178,7 @@ void main() {
     Stream<List<Household>>? households,
     Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
+    Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
     theme: BgeTheme.light(),
@@ -176,6 +196,7 @@ void main() {
       households: households,
       householdRole: householdRole,
       onBack: onBack,
+      confirmSession: confirmSession,
       now: () => now,
     ),
   );
@@ -195,6 +216,7 @@ void main() {
     Stream<List<Household>>? households,
     Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
+    Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
   }) async {
     await tester.pumpWidget(
@@ -203,6 +225,7 @@ void main() {
         households: households,
         householdRole: householdRole,
         onBack: onBack,
+        confirmSession: confirmSession,
         textScaler: textScaler,
       ),
     );
@@ -228,6 +251,37 @@ void main() {
 
   Finder inSection(Key section, String text) =>
       find.descendant(of: find.byKey(section), matching: find.text(text));
+
+  /// Fixed pumps, not pumpAndSettle: a retry's spinner never settles. A
+  /// menu item's press lands after the frame its tap ends in, so a frame
+  /// for that, then long enough for a dialog or a snackbar to finish
+  /// moving.
+  Future<void> animate(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+  }
+
+  Finder outcome() => find.byKey(EventDetailScreen.actionOutcomeKey);
+
+  Finder inOutcome(String text) =>
+      find.descendant(of: outcome(), matching: find.text(text));
+
+  BgeBannerTone toneOf(WidgetTester tester) =>
+      tester.widget<BgeInlineBanner>(outcome()).tone;
+
+  /// The screen's detail bloc. The provider is inside the screen, so the
+  /// lookup starts from a widget it builds.
+  EventDetailBloc blocOf(WidgetTester tester) => BlocProvider.of(
+    tester.element(
+      find
+          .descendant(
+            of: find.byType(EventDetailScreen),
+            matching: find.byType(Scaffold),
+          )
+          .first,
+    ),
+  );
 
   testWidgets('shows a spinner until the cache answers', (tester) async {
     await tester.pumpWidget(harness());
@@ -817,16 +871,6 @@ void main() {
           deleted: deleted ?? (_) {},
         );
 
-    /// Fixed pumps, not pumpAndSettle: a retry's spinner never settles. A
-    /// menu item's press lands after the frame its tap ends in, so a frame
-    /// for that, then long enough for a dialog or a snackbar to finish
-    /// moving.
-    Future<void> animate(WidgetTester tester) async {
-      await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-    }
-
     Future<void> openMenu(WidgetTester tester) async {
       await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
       await animate(tester);
@@ -845,27 +889,6 @@ void main() {
       await tester.tap(find.byKey(EventDetailScreen.deleteConfirmKey));
       await animate(tester);
     }
-
-    Finder outcome() => find.byKey(EventDetailScreen.actionOutcomeKey);
-
-    Finder inOutcome(String text) =>
-        find.descendant(of: outcome(), matching: find.text(text));
-
-    BgeBannerTone toneOf(WidgetTester tester) =>
-        tester.widget<BgeInlineBanner>(outcome()).tone;
-
-    /// The screen's detail bloc. The provider is inside the screen, so the
-    /// lookup starts from a widget it builds.
-    EventDetailBloc blocOf(WidgetTester tester) => BlocProvider.of(
-      tester.element(
-        find
-            .descendant(
-              of: find.byType(EventDetailScreen),
-              matching: find.byType(Scaffold),
-            )
-            .first,
-      ),
-    );
 
     testWidgets('the host gets a More actions menu holding Delete', (
       tester,
@@ -1288,8 +1311,8 @@ void main() {
       expect(backs, 0);
     });
 
-    testWidgets('nothing is sent if a read started while the dialog was '
-        'open', (tester) async {
+    testWidgets('a read started while the dialog was open holds the delete '
+        'back until it ends', (tester) async {
       final reads = <Completer<EventSnapshot>>[];
       final remote = scripted(reads);
       await show(tester, hosted(), remote: remote, onBack: back);
@@ -1303,8 +1326,30 @@ void main() {
       expect(reads, hasLength(2));
 
       await confirm(tester);
+      expect(remote.deleteRequests, isEmpty);
+
+      reads[1].complete(hosted().snapshot);
+      await settle(tester);
+      expect(remote.deleteRequests, ['e-1']);
+    });
+
+    testWidgets('a delete held back for a read that finds the event gone is '
+        'not sent', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = scripted(reads);
+      await show(tester, hosted(), remote: remote, onBack: back);
+      reads.single.completeError(_offline);
+      await settle(tester);
+      await openDialog(tester);
+
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      await confirm(tester);
+      reads[1].completeError(const EventRemoteNotFoundException('gone'));
+      await settle(tester);
 
       expect(remote.deleteRequests, isEmpty);
+      expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
     });
 
     testWidgets("the refresh banner's retry waits for the delete", (
@@ -1394,6 +1439,779 @@ void main() {
         tester.getRect(find.byKey(EventDetailScreen.deleteConfirmKey)).bottom,
         lessThanOrEqualTo(640),
       );
+    });
+  });
+
+  group('dates (#506)', () {
+    setUpAll(() {
+      registerFallbackValue(confirmed('o-fallback', kItemInstant));
+    });
+
+    setUp(() {
+      when(() => repository.cacheOccurrence(any()))
+          .thenAnswer((_) async => true);
+      when(
+        () => repository.removeCachedOccurrence(
+          eventId: any(named: 'eventId'),
+          occurrenceId: any(named: 'occurrenceId'),
+        ),
+      ).thenAnswer((_) async => true);
+    });
+
+    /// Event `e-1`, a poll the viewer hosts unless a test says otherwise,
+    /// holding [occurrences].
+    EventDetail hosted(
+      List<EventOccurrence> occurrences, {
+      EventSchedulingMode schedulingMode = EventSchedulingMode.poll,
+      EventRole role = EventRole.host,
+    }) => _detail(
+      event: _event(schedulingMode: schedulingMode),
+      occurrences: occurrences,
+      attendance: _attending(role),
+    );
+
+    /// Date [id] of `e-1`, Proposed unless [status] says otherwise, on the
+    /// evening of November [day].
+    EventOccurrence date(
+      String id, {
+      int day = 6,
+      OccurrenceStatus status = OccurrenceStatus.proposed,
+      String? label,
+      int sortOrder = 0,
+    }) => confirmed(
+      id,
+      DateTime(2026, 11, day, 19),
+      sortOrder: sortOrder,
+    ).copyWith(eventId: 'e-1', status: status, label: label);
+
+    /// A server whose reads answer at once, and whose date writes answer
+    /// from [written]: by default with the date they named, or a new one.
+    FakeEventRemote answering({
+      FutureOr<EventOccurrence?> Function(EventDateRequest request)? written,
+    }) => FakeEventRemote.detail(
+      (_) => _detail().snapshot,
+      dateWritten: written ?? (request) => date(request.occurrenceId ?? 'o-9'),
+    );
+
+    void back(BuildContext _) {}
+
+    Finder menuOf(String id) => find.byKey(EventDetailScreen.dateMenuKey(id));
+
+    Finder itemOf(String id, EventAction action) =>
+        find.byKey(EventDetailScreen.dateActionKey(id, action));
+
+    VoidCallback? addOf(WidgetTester tester) => tester
+        .widget<ButtonStyleButton>(find.byKey(EventDetailScreen.addDateKey))
+        .onPressed;
+
+    Future<void> toggleMenu(WidgetTester tester, String id) async {
+      await tester.tap(menuOf(id));
+      await animate(tester);
+    }
+
+    /// Picks [action] from date [id]'s menu, and lets its dialog open.
+    Future<void> choose(
+      WidgetTester tester,
+      String id,
+      EventAction action,
+    ) async {
+      await toggleMenu(tester, id);
+      await tester.tap(itemOf(id, action));
+      await animate(tester);
+    }
+
+    Future<void> submit(WidgetTester tester) async {
+      await tester.tap(find.byKey(EventDateDialogKeys.submit));
+      await animate(tester);
+    }
+
+    /// Asks for [action] through its dialog: on date [id], or a date added to
+    /// start when the pickers open, today at the clock's time.
+    Future<void> perform(
+      WidgetTester tester,
+      EventAction action, {
+      String id = 'o-1',
+    }) async {
+      if (action == EventAction.addDate) {
+        await tester.tap(find.byKey(EventDetailScreen.addDateKey));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(EventDateDialogKeys.start));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+      } else {
+        await choose(tester, id, action);
+        // Save waits for a change.
+        if (action == EventAction.editDate) {
+          await tester.enterText(
+            find.byKey(EventDateDialogKeys.label),
+            'Saturday',
+          );
+          await tester.pump();
+        }
+      }
+      await submit(tester);
+    }
+
+    testWidgets("a host sees each date's menu with the actions its status "
+        'allows', (tester) async {
+      await show(
+        tester,
+        hosted([
+          date('o-1'),
+          date('o-2', day: 13, status: OccurrenceStatus.confirmed),
+          date('o-3', day: 20, status: OccurrenceStatus.cancelled),
+        ]),
+        remote: answering(),
+        onBack: back,
+      );
+
+      // Every date has one, so it names its date.
+      expect(
+        find.byTooltip('Actions for Fri, Nov 6 · 7:00 PM'),
+        findsOneWidget,
+      );
+      final offered = {
+        'o-1': ['Confirm', 'Edit', 'Decline', 'Remove'],
+        'o-2': ['Edit', 'Cancel date', 'Remove'],
+        'o-3': ['Edit', 'Remove'],
+      };
+      for (final MapEntry(key: id, value: items) in offered.entries) {
+        await toggleMenu(tester, id);
+        // Only the open menu builds its items.
+        final shown = tester.widgetList<MenuItemButton>(
+          find.byType(MenuItemButton),
+        );
+        expect(
+          [for (final item in shown) (item.child! as Text).data],
+          items,
+          reason: id,
+        );
+        expect(shown.every((item) => item.onPressed != null), isTrue);
+        await toggleMenu(tester, id);
+      }
+      expect(itemOf('o-1', EventAction.confirmDate), findsNothing);
+
+      // A poll takes as many dates as the host likes.
+      expect(find.byKey(EventDetailScreen.addDateKey), findsOneWidget);
+      expect(find.text('Add a date'), findsOneWidget);
+      expect(addOf(tester), isNotNull);
+
+      // A fixed event holds one.
+      cache.add(
+        hosted([
+          date('o-1', status: OccurrenceStatus.confirmed),
+        ], schedulingMode: EventSchedulingMode.fixed),
+      );
+      await settle(tester);
+      expect(find.byKey(EventDetailScreen.addDateKey), findsNothing);
+      expect(menuOf('o-1'), findsOneWidget);
+    });
+
+    testWidgets('a participant sees no menu and no Add a date', (tester) async {
+      await show(
+        tester,
+        hosted([date('o-1')], role: EventRole.participant),
+        remote: answering(),
+        onBack: back,
+      );
+
+      expect(find.text('Fri, Nov 6 · 7:00 PM'), findsOneWidget);
+      expect(menuOf('o-1'), findsNothing);
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+      expect(find.byKey(EventDetailScreen.addDateKey), findsNothing);
+    });
+
+    testWidgets('a host with no server sees no date controls', (tester) async {
+      // A date write goes straight to the server, never through the queue.
+      await show(tester, hosted([date('o-1')]), onBack: back);
+
+      expect(find.text('Fri, Nov 6 · 7:00 PM'), findsOneWidget);
+      expect(menuOf('o-1'), findsNothing);
+      expect(find.byKey(EventDetailScreen.addDateKey), findsNothing);
+    });
+
+    testWidgets('Add a date adds through the bloc and shows Date added', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(400, 800));
+      final remote = answering();
+      await show(
+        tester,
+        hosted([date('o-1', sortOrder: 3)]),
+        remote: remote,
+        onBack: back,
+      );
+
+      await perform(tester, EventAction.addDate);
+
+      expect(remote.dateRequests, [
+        (
+          call: 'add',
+          eventId: 'e-1',
+          occurrenceId: null,
+          draft: EventOccurrenceDraft(startDate: now.toUtc()),
+          // After the event's last date.
+          sortOrder: 4,
+          update: null,
+          reason: null,
+        ),
+      ]);
+      verify(() => repository.cacheOccurrence(any())).called(1);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(inOutcome('Date added'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+      // The server derives the event's status from its dates.
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+    });
+
+    testWidgets('confirming asks first, then confirms', (tester) async {
+      final remote = answering();
+      await show(
+        tester,
+        hosted([date('o-1', label: 'Saturday')]),
+        remote: remote,
+        onBack: back,
+      );
+      await choose(tester, 'o-1', EventAction.confirmDate);
+
+      expect(find.text('Confirm Saturday?'), findsOneWidget);
+      expect(find.text(_confirmBodyCopy), findsOneWidget);
+
+      await tester.tap(find.byKey(EventDateDialogKeys.dismiss));
+      await animate(tester);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(remote.dateRequests, isEmpty);
+
+      await choose(tester, 'o-1', EventAction.confirmDate);
+      await submit(tester);
+
+      expect(
+        remote.dateRequests.map((r) => (r.call, r.eventId, r.occurrenceId)),
+        [('confirm', 'e-1', 'o-1')],
+      );
+      expect(inOutcome('Date confirmed'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+    });
+
+    testWidgets('removing a confirmed date asks once and cancels then '
+        'removes', (tester) async {
+      final remote = answering();
+      await show(
+        tester,
+        hosted([
+          date('o-1', status: OccurrenceStatus.confirmed, label: 'Saturday'),
+        ]),
+        remote: remote,
+        onBack: back,
+      );
+      await choose(tester, 'o-1', EventAction.removeDate);
+
+      expect(find.text('Remove Saturday?'), findsOneWidget);
+      expect(find.text(_cancelRemoveBodyCopy), findsOneWidget);
+      await tester.enterText(
+        find.byKey(EventDateDialogKeys.reason),
+        '  The venue flooded.  ',
+      );
+      await submit(tester);
+
+      // The server removes a Confirmed date only once it is cancelled
+      // (#446), and the reason goes with the cancel.
+      expect(
+        remote.dateRequests.map((r) => (r.call, r.occurrenceId, r.reason)),
+        [('cancel', 'o-1', 'The venue flooded.'), ('remove', 'o-1', null)],
+      );
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(inOutcome('Date removed'), findsOneWidget);
+      verify(
+        () => repository.removeCachedOccurrence(
+          eventId: 'e-1',
+          occurrenceId: 'o-1',
+        ),
+      ).called(1);
+    });
+
+    testWidgets('a cancel with no reason sends none', (tester) async {
+      final remote = answering();
+      await show(
+        tester,
+        hosted([date('o-1', status: OccurrenceStatus.confirmed)]),
+        remote: remote,
+        onBack: back,
+      );
+      await choose(tester, 'o-1', EventAction.cancelDate);
+      await tester.enterText(find.byKey(EventDateDialogKeys.reason), '   ');
+      await submit(tester);
+
+      // Blank, which the remote leaves out of the body (#506).
+      expect(
+        remote.dateRequests.map((r) => (r.call, r.occurrenceId, r.reason)),
+        [('cancel', 'o-1', '')],
+      );
+      expect(inOutcome('Date cancelled'), findsOneWidget);
+    });
+
+    testWidgets('a changed answer shows its banner and re-reads', (
+      tester,
+    ) async {
+      final remote = answering(
+        written: (_) =>
+            throw const EventWriteConflictException('moved', statusCode: 400),
+      );
+      await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
+      expect(remote.detailRequests, ['e-1']);
+      await perform(tester, EventAction.confirmDate);
+
+      expect(inOutcome(_dateChangedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+      verifyNever(() => repository.cacheOccurrence(any()));
+    });
+
+    group('each end has its copy and tone', () {
+      const transient = EventRemoteTransientException('offline');
+      const permanent = EventRemotePermanentException(
+        'broken',
+        statusCode: 500,
+      );
+      final ends = [
+        (
+          name: 'an edit done',
+          action: EventAction.editDate,
+          status: OccurrenceStatus.proposed,
+          thrown: null as Object?,
+          on: null as String?,
+          session: true,
+          copy: 'Date saved',
+          tone: BgeBannerTone.success,
+        ),
+        (
+          name: 'a decline done',
+          action: EventAction.declineDate,
+          status: OccurrenceStatus.proposed,
+          thrown: null,
+          on: null,
+          session: true,
+          copy: 'Date declined',
+          tone: BgeBannerTone.success,
+        ),
+        (
+          name: 'a cancel done',
+          action: EventAction.cancelDate,
+          status: OccurrenceStatus.confirmed,
+          thrown: null,
+          on: null,
+          session: true,
+          copy: 'Date cancelled',
+          tone: BgeBannerTone.success,
+        ),
+        (
+          name: "a proposed date's remove done",
+          action: EventAction.removeDate,
+          status: OccurrenceStatus.proposed,
+          thrown: null,
+          on: null,
+          session: true,
+          copy: 'Date removed',
+          tone: BgeBannerTone.success,
+        ),
+        (
+          name: 'a gone date',
+          action: EventAction.confirmDate,
+          status: OccurrenceStatus.proposed,
+          thrown: const EventRemoteNotFoundException('gone') as Object?,
+          on: null,
+          session: true,
+          copy: _dateGoneCopy,
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          // What the remove asked for, as a second press after a lost
+          // answer finds it.
+          name: 'a gone remove',
+          action: EventAction.removeDate,
+          status: OccurrenceStatus.proposed,
+          thrown: const EventRemoteNotFoundException('gone') as Object?,
+          on: null,
+          session: true,
+          copy: _dateGoneCopy,
+          tone: BgeBannerTone.success,
+        ),
+        (
+          name: 'a refusal',
+          action: EventAction.confirmDate,
+          status: OccurrenceStatus.proposed,
+          thrown: const EventWriteRefusedException('no', statusCode: 403),
+          on: null,
+          session: true,
+          copy: _dateRefusedCopy,
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          name: 'a cancel then remove whose remove failed',
+          action: EventAction.removeDate,
+          status: OccurrenceStatus.confirmed,
+          thrown: transient,
+          on: 'remove',
+          session: true,
+          copy: _dateCancelledRemoveUnconfirmedCopy,
+          tone: BgeBannerTone.warning,
+        ),
+        (
+          name: 'a transient failure',
+          action: EventAction.confirmDate,
+          status: OccurrenceStatus.proposed,
+          thrown: transient,
+          on: null,
+          session: true,
+          copy: _dateFailedCopy,
+          tone: BgeBannerTone.error,
+        ),
+        (
+          name: 'any other failure',
+          action: EventAction.confirmDate,
+          status: OccurrenceStatus.proposed,
+          thrown: permanent,
+          on: null,
+          session: true,
+          copy: _dateFailedUnexpectedCopy,
+          tone: BgeBannerTone.error,
+        ),
+        (
+          name: 'a transient failure of an add',
+          action: EventAction.addDate,
+          status: OccurrenceStatus.proposed,
+          thrown: transient,
+          on: null,
+          session: true,
+          copy: _dateAddFailedCopy,
+          tone: BgeBannerTone.error,
+        ),
+        (
+          name: 'any other failure of an add',
+          action: EventAction.addDate,
+          status: OccurrenceStatus.proposed,
+          thrown: permanent,
+          on: null,
+          session: true,
+          copy: _dateAddFailedCopy,
+          tone: BgeBannerTone.error,
+        ),
+        (
+          // Nothing was sent, so there is no date to check.
+          name: 'an add the session stopped',
+          action: EventAction.addDate,
+          status: OccurrenceStatus.proposed,
+          thrown: null,
+          on: null,
+          session: false,
+          copy: _dateFailedUnexpectedCopy,
+          tone: BgeBannerTone.error,
+        ),
+      ];
+
+      for (final end in ends) {
+        testWidgets('${end.name}: ${end.copy}', (tester) async {
+          useViewSize(tester, const Size(400, 800));
+          var session = true;
+          final remote = answering(
+            written: (request) {
+              final thrown = end.thrown;
+              if (thrown != null && (end.on ?? request.call) == request.call) {
+                throw thrown;
+              }
+              return date(request.occurrenceId ?? 'o-9');
+            },
+          );
+          await show(
+            tester,
+            hosted([date('o-1', status: end.status)]),
+            remote: remote,
+            onBack: back,
+            confirmSession: () async => session,
+          );
+          session = end.session;
+
+          await perform(tester, end.action);
+
+          expect(inOutcome(end.copy), findsOneWidget);
+          expect(toneOf(tester), end.tone);
+        });
+      }
+    });
+
+    testWidgets('a date action waits for a running read', (tester) async {
+      // The read's answer, landing after the write, would put the date back
+      // as it was (#589).
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = FakeEventRemote.detail((_) {
+        final read = Completer<EventSnapshot>();
+        reads.add(read);
+        return read.future;
+      }, dateWritten: (request) => date('o-1'));
+      await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
+
+      // The open's read is running.
+      expect(addOf(tester), isNull);
+      await toggleMenu(tester, 'o-1');
+      expect(
+        tester
+            .widget<MenuItemButton>(itemOf('o-1', EventAction.confirmDate))
+            .onPressed,
+        isNull,
+      );
+      await toggleMenu(tester, 'o-1');
+
+      // A failed read leaves a retry to offer, and the dates enabled.
+      reads.single.completeError(_offline);
+      await settle(tester);
+      expect(addOf(tester), isNotNull);
+      await choose(tester, 'o-1', EventAction.confirmDate);
+
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      expect(reads, hasLength(2));
+      await submit(tester);
+
+      expect(remote.dateRequests, isEmpty);
+
+      // Held back for the read to end, not dropped: an add or edit would
+      // lose what was typed.
+      reads[1].complete(hosted([date('o-1')]).snapshot);
+      await settle(tester);
+      expect(remote.dateRequests.map((r) => r.call), ['confirm']);
+    });
+
+    testWidgets('a date action held back for a read that finds the event '
+        'gone is not sent', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = FakeEventRemote.detail((_) {
+        final read = Completer<EventSnapshot>();
+        reads.add(read);
+        return read.future;
+      }, dateWritten: (request) => date('o-1'));
+      await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
+      reads.single.completeError(_offline);
+      await settle(tester);
+      await choose(tester, 'o-1', EventAction.confirmDate);
+
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      await submit(tester);
+      reads[1].completeError(const EventRemoteNotFoundException('gone'));
+      await settle(tester);
+
+      expect(remote.dateRequests, isEmpty);
+      expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
+    });
+
+    for (final action in [EventAction.editDate, EventAction.removeDate]) {
+      testWidgets('${action.name} is not sent for an event cancelled while '
+          'its dialog was open', (tester) async {
+        // The server still takes both on a cancelled event (backend#956).
+        final remote = answering();
+        await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
+        await choose(tester, 'o-1', action);
+        if (action == EventAction.editDate) {
+          await tester.enterText(
+            find.byKey(EventDateDialogKeys.label),
+            'Saturday',
+          );
+          await tester.pump();
+        }
+
+        // A sync lands the event cancelled under the dialog.
+        cache.add(
+          _detail(
+            event: _event(
+              schedulingMode: EventSchedulingMode.poll,
+              status: EventStatus.cancelled,
+            ),
+            occurrences: [date('o-1')],
+            attendance: _attending(EventRole.host),
+          ),
+        );
+        await settle(tester);
+        await submit(tester);
+
+        expect(remote.dateRequests, isEmpty);
+        expect(menuOf('o-1'), findsNothing);
+      });
+    }
+
+    for (final action in [
+      EventAction.confirmDate,
+      EventAction.declineDate,
+      EventAction.cancelDate,
+    ]) {
+      testWidgets('${action.name} is not sent for a host made an organizer '
+          'while its dialog was open', (tester) async {
+        // The server still takes all three from an organizer
+        // (backend#979).
+        final status = action == EventAction.cancelDate
+            ? OccurrenceStatus.confirmed
+            : OccurrenceStatus.proposed;
+        final remote = answering();
+        await show(
+          tester,
+          hosted([date('o-1', status: status)]),
+          remote: remote,
+          onBack: back,
+        );
+        await choose(tester, 'o-1', action);
+
+        // A sync lands the viewer's new role under the dialog.
+        cache.add(
+          hosted([date('o-1', status: status)], role: EventRole.organizer),
+        );
+        await settle(tester);
+        await submit(tester);
+
+        expect(remote.dateRequests, isEmpty);
+      });
+    }
+
+    testWidgets('nothing on the dates may be pressed while a write is out', (
+      tester,
+    ) async {
+      final writing = Completer<EventOccurrence?>();
+      final remote = answering(written: (_) => writing.future);
+      await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
+      await perform(tester, EventAction.confirmDate);
+      expect(remote.dateRequests, hasLength(1));
+
+      expect(addOf(tester), isNull);
+      await toggleMenu(tester, 'o-1');
+      expect(
+        tester
+            .widget<MenuItemButton>(itemOf('o-1', EventAction.removeDate))
+            .onPressed,
+        isNull,
+      );
+      await toggleMenu(tester, 'o-1');
+
+      writing.complete(date('o-1', status: OccurrenceStatus.confirmed));
+      await animate(tester);
+
+      expect(inOutcome('Date confirmed'), findsOneWidget);
+      expect(addOf(tester), isNotNull);
+    });
+
+    testWidgets('a date action after a reconcile sends the server id', (
+      tester,
+    ) async {
+      // An event created here opens on its local id, and the detail follows
+      // the reconcile to the server's (#499). Only the followed copy offers
+      // the dates' actions, and the server knows it by the server's id.
+      final moved = StreamController<EventDetail?>.broadcast();
+      addTearDown(moved.close);
+      when(() => repository.watchEvent('srv-1'))
+          .thenAnswer((_) => moved.stream);
+      final remote = answering();
+      await show(
+        tester,
+        _detail(
+          event: _event(schedulingMode: EventSchedulingMode.poll)
+              .copyWith(isLocalOnly: true),
+          occurrences: [date('o-1')],
+          attendance: _attending(EventRole.host),
+        ),
+        remote: remote,
+        onBack: back,
+      );
+      expect(menuOf('o-1'), findsNothing);
+      expect(find.byKey(EventDetailScreen.addDateKey), findsNothing);
+
+      when(() => repository.reconciledEventId('e-1')).thenReturn('srv-1');
+      cache.add(null);
+      await settle(tester);
+      moved.add(
+        _detail(
+          event: _event(schedulingMode: EventSchedulingMode.poll)
+              .copyWith(id: 'srv-1'),
+          occurrences: [date('o-2').copyWith(eventId: 'srv-1')],
+          attendance: _attending(EventRole.host),
+        ),
+      );
+      await settle(tester);
+      await perform(tester, EventAction.confirmDate, id: 'o-2');
+
+      // Not e-1, the id the screen was opened on.
+      expect(
+        remote.dateRequests.map((r) => (r.call, r.eventId, r.occurrenceId)),
+        [('confirm', 'srv-1', 'o-2')],
+      );
+    });
+
+    testWidgets('a cancelled date shows its reason', (tester) async {
+      await show(
+        tester,
+        _detail(
+          occurrences: [
+            date('o-1', status: OccurrenceStatus.cancelled).copyWith(
+              cancelReason: 'The venue flooded.',
+              location: 'The back room',
+            ),
+          ],
+        ),
+      );
+
+      final reason = inSection(
+        EventDetailScreen.datesKey,
+        'Reason: The venue flooded.',
+      );
+      expect(reason, findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Cancelled')).dy,
+        lessThan(tester.getTopLeft(reason).dy),
+      );
+      // Quiet, as its venue is.
+      expect(
+        tester.widget<Text>(reason).style?.color,
+        BgeTheme.light().colorScheme.onSurfaceVariant,
+      );
+      // Read with the rest of the date.
+      expect(
+        tester.getSemantics(find.text('Cancelled')).label,
+        contains('Reason: The venue flooded.'),
+      );
+    });
+
+    testWidgets('the menu is held to the screen at 320dp and 2.0 text', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(320, 640));
+      await show(
+        tester,
+        hosted([
+          date(
+            'o-1',
+            status: OccurrenceStatus.confirmed,
+            label: 'The first and longest evening of the whole tournament',
+          ),
+        ]),
+        remote: answering(),
+        onBack: back,
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      expect(tester.takeException(), isNull);
+      // At this size the page scrolls to reach the date.
+      await tester.ensureVisible(menuOf('o-1'));
+      await tester.pump();
+      await toggleMenu(tester, 'o-1');
+
+      expect(tester.takeException(), isNull);
+      const window = Rect.fromLTWH(0, 0, 320, 640);
+      for (final action in [
+        EventAction.editDate,
+        EventAction.cancelDate,
+        EventAction.removeDate,
+      ]) {
+        final rect = tester.getRect(itemOf('o-1', action));
+        expect(window.intersect(rect), rect, reason: action.name);
+      }
     });
   });
 

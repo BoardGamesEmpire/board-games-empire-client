@@ -437,13 +437,10 @@ void main() {
       await settle();
 
       expect(bloc.state, const EventDetailNotFound());
-      // The read is out when the detail shows, and settles on the 404 before
-      // the forget's null arrives.
-      expect(states, [
-        readyWith(reading: true),
-        readyWith(reading: false),
-        const EventDetailNotFound(),
-      ]);
+      // The read is out when the detail shows, and is still reading through
+      // the forget: a write waiting on it must not go out to an event the
+      // forget is taking away (#506).
+      expect(states, [readyWith(reading: true), const EventDetailNotFound()]);
     });
 
     test('a detail the cache gains later does not lift it', () async {
@@ -540,7 +537,11 @@ void main() {
       read.completeError(const EventRemoteNotFoundException('gone'));
       await settle();
 
-      expect(bloc.state, readyWith(detail: newer, refreshFailed: isFalse));
+      // Reading until the forget says the newer write stands.
+      expect(
+        bloc.state,
+        readyWith(detail: newer, refreshFailed: isFalse, reading: false),
+      );
       expect(states, everyElement(isA<EventDetailReady>()));
     });
 

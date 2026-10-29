@@ -32,7 +32,8 @@ final class EventDetailLoading extends EventDetailState {
 ///
 /// [refreshing] says a read **the user asked for** is running. The read
 /// every open makes is not narrated. [reading] says a read is running
-/// whoever asked for it, which is what the screen holds Delete on (#501).
+/// whoever asked for it, which is what the screen holds Delete and the date
+/// writes on (#501, #506).
 /// [refreshFailed] says the last read to finish failed, so this is the
 /// cache, possibly stale. A read starting does not clear it; one succeeding
 /// does.
@@ -59,8 +60,9 @@ final class EventDetailReady extends EventDetailState {
 
   /// Whether a read of this event is running, the open's or a retry's, until
   /// it settles: for a read that succeeds, after its answer has been written
-  /// to the cache. Delete waits on it, because a read's 200 landing after a
-  /// delete would cache the event again (#501).
+  /// to the cache; for one answered 404, after its forget. Delete and the
+  /// date writes wait on it, because a read's 200 landing after a write
+  /// would cache the event as it was (#501, #506).
   final bool reading;
   final bool refreshFailed;
   final bool canRetry;

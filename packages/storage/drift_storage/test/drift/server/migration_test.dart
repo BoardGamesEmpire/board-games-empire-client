@@ -16,6 +16,7 @@ import 'generated/schema_v8.dart' as v8;
 import 'generated/schema_v9.dart' as v9;
 import 'generated/schema_v10.dart' as v10;
 import 'generated/schema_v11.dart' as v11;
+import 'generated/schema_v12.dart' as v12;
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -1108,6 +1109,78 @@ void main() {
             )
             .get();
         expect(index, hasLength(1));
+      },
+    );
+  });
+
+  // Data-integrity coverage for v11 → v12 (#506): the step adds a nullable
+  // `event_occurrences.cancel_reason`. A date cached before it, with its
+  // event, must come through unchanged and read the new column as null.
+  test('migration from v11 to v12 adds an empty cancel_reason', () async {
+    const at = '2024-01-15T10:30:00.000Z';
+
+    await verifier.testWithDataIntegrity(
+      oldVersion: 11,
+      newVersion: 12,
+      createOld: v11.DatabaseAtV11.new,
+      createNew: v12.DatabaseAtV12.new,
+      openTestedDatabase: ServerDatabase.new,
+      createItems: (batch, oldDb) {
+        batch.insert(
+          oldDb.events,
+          const v11.EventsData(
+            id: 'e_v11_1',
+            title: 'Game night',
+            createdById: 'user_v11_1',
+            householdId: 'hh_v11_1',
+            description: 'Bring snacks.',
+            location: 'Kitchen table',
+            type: 'StrategyNight',
+            reach: 'FriendsOfFriends',
+            status: 'Ongoing',
+            schedulingMode: 'Fixed',
+            isDirty: 0,
+            isLocalOnly: 0,
+            generation: 4,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+        batch.insert(
+          oldDb.eventOccurrences,
+          const v11.EventOccurrencesData(
+            id: 'o_v11_1',
+            eventId: 'e_v11_1',
+            label: 'Day 1',
+            startDate: at,
+            endDate: at,
+            location: 'Back room',
+            status: 'Cancelled',
+            sortOrder: 0,
+            cancelledAt: at,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      },
+      validateItems: (newDb) async {
+        expect(await newDb.select(newDb.eventOccurrences).get(), const [
+          v12.EventOccurrencesData(
+            id: 'o_v11_1',
+            eventId: 'e_v11_1',
+            label: 'Day 1',
+            startDate: at,
+            endDate: at,
+            location: 'Back room',
+            status: 'Cancelled',
+            sortOrder: 0,
+            cancelledAt: at,
+            cancelReason: null,
+            createdAt: at,
+            updatedAt: at,
+          ),
+        ]);
+        expect(await newDb.select(newDb.events).get(), hasLength(1));
       },
     );
   });

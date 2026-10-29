@@ -301,6 +301,30 @@ abstract class EventRepository {
   /// a local-only event, since the server has never heard of it.
   Future<bool> removeDeletedEvent(String id);
 
+  /// Writes [occurrence], which a date write returned, over the cached one
+  /// with its id, or beside its event's others when none is cached (#506).
+  ///
+  /// Returns false, writing nothing, when its event isn't cached, or is
+  /// `isDirty` or `isLocalOnly`: the sync queue owns those, as
+  /// [removeDeletedEvent] leaves them. Stamps the event's generation, as every
+  /// event write does, and [watchEvent] emits.
+  ///
+  /// Like the other writes of a server answer, this is last-write-wins
+  /// (#589): a detail read in flight may still write the event over it.
+  Future<bool> cacheOccurrence(EventOccurrence occurrence);
+
+  /// Removes the cached date [occurrenceId] of [eventId], which the server
+  /// removed (#506).
+  ///
+  /// Returns false, changing nothing, when it wasn't cached, or the event is
+  /// `isDirty` or `isLocalOnly`. Stamps the event's generation when it
+  /// removes one, and [watchEvent] emits. Last-write-wins, as
+  /// [cacheOccurrence] is (#589).
+  Future<bool> removeCachedOccurrence({
+    required String eventId,
+    required String occurrenceId,
+  });
+
   /// Watches the events the current user has `attending` access to, in the
   /// list's order: newest created first, the higher id first on a tie. An
   /// event they only read is left out, and one they declined or haven't

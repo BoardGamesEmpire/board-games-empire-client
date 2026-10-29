@@ -7,26 +7,28 @@ import '../detail/event_actions.dart';
 import 'event_actions_event.dart';
 import 'event_actions_state.dart';
 
-/// A cache write an answer calls for, run after its outcome is emitted.
+/// A cache write a delete's answer calls for, run after its outcome is
+/// emitted.
 typedef _Write = Future<void> Function();
 
-/// Deletes an event from its detail screen (#501), beside the
-/// `EventDetailBloc` that reads it.
+/// Deletes an event from its detail screen (#501), and adds, changes and
+/// removes its dates (#506), beside the `EventDetailBloc` that reads it.
 ///
-/// The request goes straight to the server, never through the sync queue
-/// (#122): nothing is queued and nothing is retried on its own. An action
-/// that can't be undone, firing whenever the device next connects, would
-/// surprise the user. So the bloc takes a remote, and the screen offers
-/// Delete only when there is one.
+/// Each request goes straight to the server, never through the sync queue
+/// (#122, #527): nothing is queued and nothing is retried on its own. An
+/// action that can't be undone, firing whenever the device next connects,
+/// would surprise the user. So the bloc takes a remote, and the screen
+/// offers these actions only when there is one.
 ///
 /// The event's id travels with each request rather than with the bloc. An
 /// event created on this device opens on its local id, and the detail bloc
 /// follows the sync queue's reconcile to the server's id (#499). By then the
 /// screen shows the server's copy and offers Delete, and a bloc fixed to the
 /// id it was opened on would send the local id, be answered 404 and report a
-/// live event as gone. So the screen sends the id of the detail it shows.
+/// live event as gone. So the screen sends the id of the detail it shows,
+/// for a date write as for the delete.
 ///
-/// ## Answers
+/// ## The delete's answers
 ///
 /// | Answer | Cache | Outcome | Detail read again |
 /// |---|---|---|---|
@@ -71,15 +73,87 @@ typedef _Write = Future<void> Function();
 /// fails is logged, and the outcome stands: the server
 /// has answered.
 ///
+/// ## Dates
+///
+/// The six date writes (#506) share one runner. Each asks the session,
+/// sends one request, writes what the server answered into the cache, and
+/// emits how it ended. The screen shows that as a banner, and reads the
+/// event again where [EventActionOutcome.rereads] says so. The server
+/// derives the event's status from its dates, so the read is how the
+/// status follows a write.
+///
+/// | Answer | Outcome | Detail read again |
+/// |---|---|---|
+/// | 2xx | done: the answer written, then read | yes |
+/// | An enveloped 400, one message | changed: the date as it is now | yes |
+/// | An enveloped 404 | gone: the date or the event | yes |
+/// | An enveloped 403 | refused, as for the delete | yes |
+/// | A sent add that failed | failed | yes, before Add is pressed again |
+/// | Other transient | failed: press again | no |
+/// | Anything else | failed | yes |
+///
+/// Done writes the cache: the date the server answered with, or, for a
+/// remove, the cached date removed. A cancel-then-remove writes the cancelled
+/// date before its remove goes out, so its partlyDone, or a remove's gone,
+/// follows a cache write. Every other end leaves the cache to the read.
+/// After a 404 that read is answered 404 too when the event is gone, and
+/// forgets it (#498).
+///
+/// A 400 isn't read for its code. A date that moved since it was read, a
+/// retry of a write that landed (backend#901), a cancelled event
+/// (backend#795) and a Fixed event's second date all answer it, and each
+/// has the same fix: show the date as it now stands. A 400 for a value the
+/// server's validation refused is failed, not changed: the remote reads it
+/// as permanent, since the same request is refused again.
+///
+/// A failed add is read again even when the failure is transient, because a
+/// retried add creates a second date (backend#902). An add whose answer was
+/// lost may have landed, and the read shows it before Add can be pressed
+/// again.
+///
+/// ### Written before the outcome
+///
+/// Unlike the delete's removal, a date's answer is written before its
+/// outcome is emitted. The outcome starts the screen's read, and a write
+/// that landed after the read's newer copy would put the older date back.
+/// The screen stays, so there is no flash to avoid.
+///
+/// The session isn't asked again before the write. The returned date is the
+/// server's, the same for every user who can read the event, and
+/// [EventRepository.cacheOccurrence] grants no access: it writes beside an
+/// event already cached, or not at all. A write that declines or throws is
+/// logged, and the outcome stands, as for the delete's removal.
+///
+/// Closing works as for the delete: a request is sent, and an answer that
+/// lands once [close] has started is still written, but emits nothing.
+///
+/// ### Cancel, then remove
+///
+/// The server removes a Confirmed date only once it is cancelled (#446), so
+/// [EventDateRemoveRequested.cancelFirst] sends two requests under one busy
+/// state. It asks the session, sends the cancel, and writes the Cancelled
+/// date it is answered with. Then it asks the session again, since each
+/// write goes out with the session checked first (#432), and sends the
+/// remove.
+///
+/// A cancel that isn't done ends there with its own outcome, and the remove
+/// isn't sent. A 400 there is changed, as anywhere: the date may have been
+/// cancelled elsewhere, and the read shows it offering a plain Remove. A
+/// remove answered 404 is gone, since no date is left to remove. Any other
+/// end to the remove, a session that said no included, is partlyDone: the
+/// date stays Cancelled, and the read offers Remove again. Both requests
+/// report as [EventAction.removeDate].
+///
 /// ## The session
 ///
 /// On web every tab shares one session cookie, and a sign-in in another tab
 /// moves it to another user under this screen (#432). So [confirmSession] is
-/// asked before the DELETE goes out, as the detail read asks it. A null
+/// asked before each request goes out, as the detail read asks it. A null
 /// [confirmSession], as on native, is always yes.
 ///
 /// A no, or a throw, is failed with no error, and isn't read again: nothing
-/// reached the server, and a read would ask the same session.
+/// reached the server, and a read would ask the same session. A cancel then
+/// remove whose cancel was done is the exception, above.
 ///
 /// It isn't asked again before the answer is written, as the detail read's
 /// is. That read writes what one user may see, which another user's cache
@@ -87,14 +161,16 @@ typedef _Write = Future<void> Function();
 /// for everyone, so it holds whoever is signed in now. Skipping it would
 /// leave the event cached for each user who could read it, until they open
 /// it and are answered 404. A session that has ended takes its repository
-/// with it, and the removal's throw is logged as any other.
+/// with it, and the removal's throw is logged as any other. A date's answer
+/// is every user's in the same way, above.
 ///
 /// ## One at a time
 ///
 /// [EventActionsState.busy] is set before anything is awaited and cleared
-/// with the outcome. A request that finds it set is dropped, whatever event
-/// it names, so a double tap on the dialog or two quick confirms send one
-/// DELETE.
+/// with the outcome. A request that finds it set is dropped, whatever it
+/// asks for and whichever event it names, so a double tap on a dialog or two
+/// quick confirms send one request. A cancel then remove holds it through
+/// both of its requests.
 class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   EventActionsBloc({
     required this._repository,
@@ -106,6 +182,12 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
     // The default transformer, which runs requests concurrently. The busy
     // check drops the second of two, so nothing more is needed.
     on<EventDeleteRequested>(_onDeleteRequested);
+    on<EventDateAddRequested>(_onDateAddRequested);
+    on<EventDateEditRequested>(_onDateEditRequested);
+    on<EventDateConfirmRequested>(_onDateConfirmRequested);
+    on<EventDateDeclineRequested>(_onDateDeclineRequested);
+    on<EventDateCancelRequested>(_onDateCancelRequested);
+    on<EventDateRemoveRequested>(_onDateRemoveRequested);
     on<EventActionOutcomeDismissed>(_onOutcomeDismissed);
   }
 
@@ -210,6 +292,217 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
       // or a read finds it gone.
       _logger.warn(
         'Event deleted, but not removed from the cache',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void> _onDateAddRequested(
+    EventDateAddRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runDate(
+    emit,
+    () => _sendDate(
+      EventAction.addDate,
+      'Date add',
+      () => _remote.addOccurrence(
+        event.eventId,
+        event.draft,
+        sortOrder: event.sortOrder,
+      ),
+      _repository.cacheOccurrence,
+    ),
+  );
+
+  Future<void> _onDateEditRequested(
+    EventDateEditRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runDate(
+    emit,
+    () => _sendDate(
+      EventAction.editDate,
+      'Date edit',
+      () => _remote.updateOccurrence(
+        event.eventId,
+        event.occurrenceId,
+        event.update,
+      ),
+      _repository.cacheOccurrence,
+    ),
+  );
+
+  Future<void> _onDateConfirmRequested(
+    EventDateConfirmRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runDate(
+    emit,
+    () => _sendDate(
+      EventAction.confirmDate,
+      'Date confirm',
+      () => _remote.confirmOccurrence(event.eventId, event.occurrenceId),
+      _repository.cacheOccurrence,
+    ),
+  );
+
+  Future<void> _onDateDeclineRequested(
+    EventDateDeclineRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runDate(
+    emit,
+    () => _sendDate(
+      EventAction.declineDate,
+      'Date decline',
+      () => _remote.declineOccurrence(event.eventId, event.occurrenceId),
+      _repository.cacheOccurrence,
+    ),
+  );
+
+  Future<void> _onDateCancelRequested(
+    EventDateCancelRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runDate(
+    emit,
+    () => _sendDate(
+      EventAction.cancelDate,
+      'Date cancel',
+      () => _remote.cancelOccurrence(
+        event.eventId,
+        event.occurrenceId,
+        reason: event.reason,
+      ),
+      _repository.cacheOccurrence,
+    ),
+  );
+
+  Future<void> _onDateRemoveRequested(
+    EventDateRemoveRequested event,
+    Emitter<EventActionsState> emit,
+  ) => _runDate(
+    emit,
+    () => event.cancelFirst ? _cancelThenRemove(event) : _removeDate(event),
+  );
+
+  /// Runs [write], which sends a date's requests and never throws, and
+  /// emits the outcome it answers. The busy check and closing work as for
+  /// the delete.
+  Future<void> _runDate(
+    Emitter<EventActionsState> emit,
+    Future<EventActionOutcome> Function() write,
+  ) async {
+    // Checked and marked before anything is awaited, as for the delete.
+    if (state.busy) return;
+    emit(const EventActionsState(busy: true));
+
+    final outcome = await write();
+
+    // After the cache write, which must land before the read the outcome
+    // starts.
+    if (!_closing) emit(EventActionsState(outcome: outcome));
+  }
+
+  /// Cancels the Confirmed date [event] names, then removes it if the
+  /// cancel was done (#446). Never throws.
+  Future<EventActionOutcome> _cancelThenRemove(
+    EventDateRemoveRequested event,
+  ) async {
+    final cancelled = await _sendDate(
+      EventAction.removeDate,
+      'Date cancel before its remove',
+      () => _remote.cancelOccurrence(
+        event.eventId,
+        event.occurrenceId,
+        reason: event.reason,
+      ),
+      _repository.cacheOccurrence,
+    );
+    if (cancelled.result != EventActionResult.done) return cancelled;
+
+    final removed = await _removeDate(event);
+    return switch (removed.result) {
+      EventActionResult.done || EventActionResult.gone => removed,
+      // The cancel landed and the remove didn't come back done: a remove
+      // lost in transit may have landed, so the read says whether the date
+      // is still there. If it is, it stays Cancelled, which offers Remove
+      // again.
+      EventActionResult.refused ||
+      EventActionResult.failed ||
+      EventActionResult.changed ||
+      EventActionResult.partlyDone => EventActionOutcome(
+        action: EventAction.removeDate,
+        result: EventActionResult.partlyDone,
+        error: removed.error,
+      ),
+    };
+  }
+
+  /// Removes the date [event] names, as it stands. Never throws.
+  Future<EventActionOutcome> _removeDate(EventDateRemoveRequested event) =>
+      _sendDate(
+        EventAction.removeDate,
+        'Date remove',
+        () => _remote.removeOccurrence(event.eventId, event.occurrenceId),
+        (_) => _repository.removeCachedOccurrence(
+          eventId: event.eventId,
+          occurrenceId: event.occurrenceId,
+        ),
+      );
+
+  /// Sends one date write with [send], once the session says yes, and
+  /// writes what it answered to the cache with [cache]. Answers how it
+  /// ended, as [action], and logs it under [request]. Never throws.
+  Future<EventActionOutcome> _sendDate<T>(
+    EventAction action,
+    String request,
+    Future<T> Function() send,
+    Future<bool> Function(T answer) cache,
+  ) async {
+    EventActionOutcome ended(EventActionResult result, [Object? error]) =>
+        EventActionOutcome(action: action, result: result, error: error);
+
+    if (!await _confirmed('$request not sent')) {
+      return ended(EventActionResult.failed);
+    }
+
+    final T answer;
+    try {
+      answer = await send();
+    } on EventWriteConflictException catch (error) {
+      _logger.info('$request refused for the date as it is now', error: error);
+      return ended(EventActionResult.changed, error);
+    } on EventRemoteNotFoundException catch (error) {
+      _logger.info('$request found the date or its event gone', error: error);
+      return ended(EventActionResult.gone, error);
+    } on EventWriteRefusedException catch (error) {
+      _logger.info('$request refused', error: error);
+      return ended(EventActionResult.refused, error);
+    } on Object catch (error, stackTrace) {
+      _logger.warn('$request failed', error: error, stackTrace: stackTrace);
+      return ended(EventActionResult.failed, error);
+    }
+
+    // Before the outcome, and without asking the session again: the date is
+    // the server's for everyone who can read the event (above).
+    await _cacheDate(request, () => cache(answer));
+    return ended(EventActionResult.done);
+  }
+
+  /// Runs [write], the cache write a date write's answer calls for. One that
+  /// declines or throws is logged, and the outcome stands: the server has
+  /// answered.
+  Future<void> _cacheDate(String request, Future<bool> Function() write) async {
+    try {
+      if (!await write()) {
+        _logger.info(
+          '$request done, but not written to the cache: the event or the '
+          'date is not cached, or the sync queue owns the event',
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      // The server has it all the same, and the read the outcome starts
+      // brings it, if the cache can take it.
+      _logger.warn(
+        '$request done, but not written to the cache',
         error: error,
         stackTrace: stackTrace,
       );

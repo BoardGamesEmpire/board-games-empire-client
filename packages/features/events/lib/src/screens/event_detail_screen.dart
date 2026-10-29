@@ -17,7 +17,10 @@ import '../bloc/event_detail_bloc.dart';
 import '../bloc/event_detail_event.dart';
 import '../bloc/event_detail_state.dart';
 import '../detail/event_actions.dart';
+import '../detail/event_date_actions.dart';
+import '../widgets/event_date_dialogs.dart';
 import '../widgets/event_detail_sections.dart';
+import '../widgets/event_labels.dart';
 import '../widgets/event_refresh_banner.dart';
 
 /// One event (#498): its header, its dates, who's coming and its games, read
@@ -34,9 +37,10 @@ import '../widgets/event_refresh_banner.dart';
 /// ## What it doesn't show yet
 ///
 /// Most actions. The bloc works out what the viewer may do, and the app
-/// bar's menu offers Delete (#501) to a viewer the role table gives it. The
-/// other actions' issues (#500, #502–#518) add theirs. The games section says
-/// the event's games will show there, until #519 has something to show.
+/// bar's menu offers Delete (#501), and the dates their own (#506), to a
+/// viewer the role table gives them. The other actions' issues (#500,
+/// #502–#518) add theirs. The games section says the event's games will
+/// show there, until #519 has something to show.
 ///
 /// ## Delete
 ///
@@ -44,17 +48,39 @@ import '../widgets/event_refresh_banner.dart';
 /// server, after a dialog that says it can't be undone and that nobody on the
 /// event is told. It is offered only with a [remote] and an [onBack]: the
 /// delete is never queued, and once the event is gone a screen that can't
-/// leave has nowhere to go.
+/// leave has nowhere to go. The dates' actions share the bloc, so they are
+/// offered only there too.
 ///
 /// Delete waits for the detail read, and the refresh banner's retry waits
 /// for the delete: a read's answer landing after the delete would cache the
-/// event again. Done leaves with a snackbar, and the page holds its last
+/// event again. A read that starts while the dialog is open holds the
+/// delete back until it ends, and the delete is then sent if the event is
+/// still there to delete. Done leaves with a snackbar, and the page holds its last
 /// frame while the route leaves, since the removal's null would otherwise
 /// draw not found under the exit. A done that lands under another route
 /// stays, and falls to not found for the user to find on their way back.
 /// Gone, refused and failed each show a
 /// banner over the event, and the screen reads the event again where
 /// [EventActionOutcome.rereads] says to.
+///
+/// ## Dates
+///
+/// Each date has a menu of what its status and the viewer's role allow, and
+/// *Add a date* sits under the dates where the event takes another (#506).
+/// Each choice opens its dialog. If a read started while it was open, the
+/// request waits for that read to end, as Delete's does, since the read's
+/// answer landing after the write would put the date back as it was
+/// (#589). Dropped, an add or edit would take what the user typed with it.
+/// It is sent with the id of the event the screen shows then, and not at
+/// all if that event was cancelled or archived meanwhile, which the server
+/// would still let a date be edited or removed on (backend#956), or if the
+/// viewer's role no longer allows it, which for a confirm, decline or
+/// cancel the server doesn't check (backend#979). Removing a
+/// Confirmed date asks once, and is a cancel and then a remove (#446).
+///
+/// Every end shows a banner, done included, since the screen stays, and
+/// each is read again as [EventActionOutcome.rereads] says: the server
+/// derives the event's status from its dates.
 ///
 /// ## Not found is an answer
 ///
@@ -118,6 +144,17 @@ class EventDetailScreen extends StatelessWidget {
 
   /// Key on the banner saying how the last action went.
   static const Key actionOutcomeKey = Key('event_detail.action_outcome');
+
+  /// Key on a date's menu button (#506), by the date's id.
+  static Key dateMenuKey(String occurrenceId) =>
+      Key('event_detail.date_menu_$occurrenceId');
+
+  /// Key on one item of a date's menu.
+  static Key dateActionKey(String occurrenceId, EventAction action) =>
+      Key('event_detail.date_${action.name}_$occurrenceId');
+
+  /// Key on the dates' *Add a date* button.
+  static const Key addDateKey = Key('event_detail.add_date');
 
   /// The event to show.
   final String eventId;
@@ -362,8 +399,10 @@ class _ReadyPage extends StatelessWidget {
             ),
             const BgeGap.lg(),
           ],
-          // Done has no banner: the screen leaves with a snackbar.
-          if (outcome != null && outcome.result != EventActionResult.done) ...[
+          // A delete's done has no banner: the screen leaves with a snackbar.
+          if (actionsState != null &&
+              outcome != null &&
+              !_deleted(actionsState)) ...[
             _ActionOutcomeBanner(outcome: outcome),
             const BgeGap.lg(),
           ],
@@ -373,10 +412,14 @@ class _ReadyPage extends StatelessWidget {
             role: state.detail.attendance?.role,
           ),
           const BgeGap.xl(),
-          EventDatesSection(
-            occurrences: snapshot.occurrences,
-            schedulingMode: event.schedulingMode,
+          _Dates(
+            state: state,
             now: now,
+            hasActions: actionsState != null,
+            // Not while a read runs, whose answer landing after the write
+            // would put the date back as it was (#589). Nor while a request
+            // is out or once the delete is done.
+            enabled: !state.reading && !acting,
           ),
           const BgeGap.lg(),
           EventAttendeesSection(attendees: snapshot.attendees),
@@ -439,10 +482,10 @@ class _ActionsMenu extends StatelessWidget {
     if (!await _confirmDelete(context) || actions.isClosed) return;
 
     // A read can have started while the dialog was open, and Delete waits
-    // for it (#501). The id is the detail's, not the one the screen was
-    // opened on, which a reconcile can have moved (#499).
-    final state = detail.state;
-    if (state is! EventDetailReady || state.reading) return;
+    // for it to end (#501). The id is the detail's then, not the one the
+    // screen was opened on, which a reconcile can have moved (#499).
+    final state = await _readEnded(detail);
+    if (state is! EventDetailReady || actions.isClosed) return;
     actions.add(EventDeleteRequested(state.detail.snapshot.event.id));
   }
 
@@ -475,9 +518,170 @@ class _ActionsMenu extends StatelessWidget {
   }
 }
 
-/// How the last action went (#501), over the event until dismissed or
-/// replaced. A live region, as every [BgeInlineBanner] is. Done has none:
-/// the screen leaves.
+/// The dates section (#498), with each date's menu and *Add a date* where
+/// the viewer may use them (#506). See [EventDetailScreen] on how a choice
+/// is sent.
+class _Dates extends StatelessWidget {
+  const _Dates({
+    required this.state,
+    required this.now,
+    required this.hasActions,
+    required this.enabled,
+  });
+
+  final EventDetailReady state;
+  final DateTime Function() now;
+
+  /// Whether an [EventActionsBloc] is provided above. Without one the dates
+  /// offer nothing.
+  final bool hasActions;
+
+  /// Whether the controls may be pressed now.
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = state.detail.snapshot;
+    final event = snapshot.event;
+    return EventDatesSection(
+      occurrences: snapshot.occurrences,
+      schedulingMode: event.schedulingMode,
+      now: now,
+      actionsFor: hasActions
+          ? (occurrence) => dateActionsFor(event, occurrence, state.actions)
+          : null,
+      onAdd:
+          hasActions && canAddDate(event, snapshot.occurrences, state.actions)
+          ? () => unawaited(
+              _send(context, EventAction.addDate, () => _askAdd(context)),
+            )
+          : null,
+      onAction: hasActions
+          ? (occurrence, action) => unawaited(
+              _send(context, action, () => _ask(context, occurrence, action)),
+            )
+          : null,
+      enabled: enabled,
+    );
+  }
+
+  /// Asks through [ask]'s dialog, then sends the request it answers for
+  /// [action], as Delete does.
+  Future<void> _send(
+    BuildContext context,
+    EventAction action,
+    Future<_DateRequest?> Function() ask,
+  ) async {
+    // Read before the dialog opens: the page under it can rebuild without
+    // these dates, and take the context they were asked from with it.
+    final actions = context.read<EventActionsBloc>();
+    final detail = context.read<EventDetailBloc>();
+    final request = await ask();
+    if (request == null || actions.isClosed) return;
+
+    // A read can have started while the dialog was open, and the write
+    // waits for it to end (#589). The event is the detail's as it is then,
+    // whose id a reconcile can have moved (#499).
+    final state = await _readEnded(detail);
+    if (state is! EventDetailReady || actions.isClosed) return;
+
+    // A sync can have cancelled the event while the dialog was open, and
+    // the server still takes an edit or a removal on a cancelled event
+    // (backend#956). Or taken the action from the viewer, and the server
+    // still takes a confirm, decline or cancel from an organizer
+    // (backend#979). The page already shows either, without the control.
+    // A date's own change goes on to the server, whose 400 says so.
+    final shown = state.detail.snapshot;
+    if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
+      return;
+    }
+    actions.add(request(shown));
+  }
+
+  Future<_DateRequest?> _askAdd(BuildContext context) async {
+    final draft = await showAddDateDialog(context, now: now);
+    if (draft == null) return null;
+    // After the event's last date, as the dates stand once it is sent.
+    return (shown) => EventDateAddRequested(
+      shown.event.id,
+      draft,
+      sortOrder: nextSortOrder(shown.occurrences),
+    );
+  }
+
+  Future<_DateRequest?> _ask(
+    BuildContext context,
+    EventOccurrence occurrence,
+    EventAction action,
+  ) async {
+    final name = eventDateName(context, occurrence, now: now());
+    final id = occurrence.id;
+
+    switch (action) {
+      case EventAction.editDate:
+        final update = await showEditDateDialog(context, occurrence, now: now);
+        if (update == null) return null;
+        return (shown) => EventDateEditRequested(shown.event.id, id, update);
+      case EventAction.confirmDate:
+        if (!await showConfirmDateDialog(context, name)) return null;
+        return (shown) => EventDateConfirmRequested(shown.event.id, id);
+      case EventAction.declineDate:
+        if (!await showDeclineDateDialog(context, name)) return null;
+        return (shown) => EventDateDeclineRequested(shown.event.id, id);
+      case EventAction.cancelDate:
+        final reason = await showCancelDateDialog(
+          context,
+          name,
+          removing: false,
+        );
+        if (reason == null) return null;
+        return (shown) =>
+            EventDateCancelRequested(shown.event.id, id, reason: reason);
+      // The server removes a Confirmed date only once it is cancelled
+      // (#446), so one dialog asks for both, and its reason goes with the
+      // cancel.
+      case EventAction.removeDate
+          when occurrence.status == OccurrenceStatus.confirmed:
+        final reason = await showCancelDateDialog(
+          context,
+          name,
+          removing: true,
+        );
+        if (reason == null) return null;
+        return (shown) => EventDateRemoveRequested(
+          shown.event.id,
+          id,
+          cancelFirst: true,
+          reason: reason,
+        );
+      case EventAction.removeDate:
+        if (!await showRemoveDateDialog(context, name)) return null;
+        return (shown) => EventDateRemoveRequested(shown.event.id, id);
+      // A date's menu offers only the date actions above.
+      default:
+        return null;
+    }
+  }
+}
+
+/// [detail]'s state once no read is running: now, or when the running one
+/// ends. Its last state if it closes first. A write asked for through a
+/// dialog waits on it, Delete's and the dates' alike.
+Future<EventDetailState> _readEnded(EventDetailBloc detail) {
+  bool ended(EventDetailState state) =>
+      state is! EventDetailReady || !state.reading;
+
+  if (ended(detail.state)) return Future.value(detail.state);
+  return detail.stream.firstWhere(ended, orElse: () => detail.state);
+}
+
+/// A date's request, built from the event as the detail shows it once the
+/// dialog closes.
+typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
+
+/// How the last action went (#501, #506), over the event until dismissed
+/// or replaced. A live region, as every [BgeInlineBanner] is. A delete's
+/// done has none: the screen leaves.
 class _ActionOutcomeBanner extends StatelessWidget {
   const _ActionOutcomeBanner({required this.outcome});
 
@@ -486,28 +690,46 @@ class _ActionOutcomeBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
+    final action = outcome.action;
 
     return BgeInlineBanner(
       key: EventDetailScreen.actionOutcomeKey,
       tone: switch (outcome.result) {
-        // Gone is what deleting asked for.
-        EventActionResult.done ||
-        EventActionResult.gone => BgeBannerTone.success,
-        EventActionResult.refused => BgeBannerTone.warning,
+        EventActionResult.done => BgeBannerTone.success,
+        // Gone is what deleting and removing a date asked for: a second
+        // press after an answer was lost finds it so. Any other date write's
+        // is the date it named gone from under it.
+        EventActionResult.gone =>
+          action == EventAction.delete || action == EventAction.removeDate
+              ? BgeBannerTone.success
+              : BgeBannerTone.warning,
+        EventActionResult.refused ||
+        EventActionResult.changed ||
+        EventActionResult.partlyDone => BgeBannerTone.warning,
         EventActionResult.failed => BgeBannerTone.error,
       },
-      // Delete is the only action yet. #502's add their own copy.
-      message: switch (outcome.result) {
-        EventActionResult.done => l10n.eventsDeleted,
-        EventActionResult.gone => l10n.eventsDeleteGone,
-        EventActionResult.refused => l10n.eventsDeleteRefused,
-        // Only a transient failure is worth pressing again (#501). A session
-        // that moved and a cache that couldn't be read sent nothing, and a
-        // 4xx was refused: the same press would end the same way.
-        EventActionResult.failed =>
-          outcome.error is EventRemoteTransientException
-              ? l10n.eventsDeleteFailed
-              : l10n.eventsDeleteFailedUnexpected,
+      message: switch (outcome.action) {
+        EventAction.addDate => _dateMessage(l10n, done: l10n.eventsDateAdded),
+        EventAction.editDate => _dateMessage(l10n, done: l10n.eventsDateSaved),
+        EventAction.confirmDate => _dateMessage(
+          l10n,
+          done: l10n.eventsDateConfirmed,
+        ),
+        EventAction.declineDate => _dateMessage(
+          l10n,
+          done: l10n.eventsDateDeclined,
+        ),
+        EventAction.cancelDate => _dateMessage(
+          l10n,
+          done: l10n.eventsDateCancelled,
+        ),
+        EventAction.removeDate => _dateMessage(
+          l10n,
+          done: l10n.eventsDateRemoved,
+        ),
+        // Delete is the only other action the screen sends yet. #500's and
+        // #502's add their own copy.
+        _ => _deleteMessage(l10n),
       },
       action: TextButton(
         onPressed: () => context.read<EventActionsBloc>().add(
@@ -517,6 +739,46 @@ class _ActionOutcomeBanner extends StatelessWidget {
       ),
     );
   }
+
+  String _deleteMessage(EventsLocalizations l10n) => switch (outcome.result) {
+    EventActionResult.done => l10n.eventsDeleted,
+    EventActionResult.gone => l10n.eventsDeleteGone,
+    EventActionResult.refused => l10n.eventsDeleteRefused,
+    // Only a date write (#506) ends changed or partlyDone.
+    EventActionResult.changed => l10n.eventsDateChanged,
+    EventActionResult.partlyDone => l10n.eventsDateCancelledRemoveUnconfirmed,
+    // Only a transient failure is worth pressing again (#501). A session
+    // that moved and a cache that couldn't be read sent nothing, and a 4xx
+    // was refused: the same press would end the same way.
+    EventActionResult.failed =>
+      outcome.error is EventRemoteTransientException
+          ? l10n.eventsDeleteFailed
+          : l10n.eventsDeleteFailedUnexpected,
+  };
+
+  /// A date write's copy (#506), saying [done] where it was.
+  ///
+  /// A failure never says the change didn't happen: a write whose answer
+  /// was lost may have landed. An add that went out is read again before
+  /// Add can be pressed twice, since a second add is a second date
+  /// (backend#902), so it asks the user to look first. Any other failure
+  /// that was transient may be pressed again. One that wasn't, or that sent
+  /// nothing, would end the same way.
+  String _dateMessage(EventsLocalizations l10n, {required String done}) =>
+      switch (outcome.result) {
+        EventActionResult.done => done,
+        EventActionResult.gone => l10n.eventsDateGone,
+        EventActionResult.refused => l10n.eventsDateRefused,
+        EventActionResult.changed => l10n.eventsDateChanged,
+        EventActionResult.partlyDone =>
+          l10n.eventsDateCancelledRemoveUnconfirmed,
+        EventActionResult.failed =>
+          outcome.action == EventAction.addDate && outcome.error != null
+              ? l10n.eventsDateAddFailed
+              : outcome.error is EventRemoteTransientException
+              ? l10n.eventsDateFailed
+              : l10n.eventsDateFailedUnexpected,
+      };
 }
 
 /// Nothing cached to show and nothing that will answer: the overview's two

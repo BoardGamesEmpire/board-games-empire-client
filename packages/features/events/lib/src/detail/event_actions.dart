@@ -37,6 +37,9 @@ enum EventAction {
   /// Propose another date (#506).
   addDate,
 
+  /// Change a date's time, label or place (#506).
+  editDate,
+
   /// Settle on a proposed date (#506).
   confirmDate,
 
@@ -45,6 +48,10 @@ enum EventAction {
 
   /// Call off a confirmed date (#506).
   cancelDate,
+
+  /// Take a date off the event (#506). The household roles don't hold it: an
+  /// owner or admin who doesn't host asks for a removal instead (#513).
+  removeDate,
 
   /// Answer whether the viewer is coming (#508).
   rsvp,
@@ -121,12 +128,16 @@ const _host = <EventAction>{
   EventAction.archive,
   // `create:event_occurrence`
   EventAction.addDate,
+  // `update:event_occurrence`
+  EventAction.editDate,
   // `update:event_occurrence:confirm`
   EventAction.confirmDate,
   // `update:event_occurrence:decline`
   EventAction.declineDate,
   // `update:event_occurrence:cancel`
   EventAction.cancelDate,
+  // `delete:event_occurrence`
+  EventAction.removeDate,
   // `update:event_attendee:status`, bound to the event rather than the
   // actor's own row, so it covers the host's row too. A participant, guest or
   // spectator holds only the `:self` variant.
@@ -154,9 +165,11 @@ const _coHost = <EventAction>{
   EventAction.edit,
   EventAction.cancel,
   EventAction.addDate,
+  EventAction.editDate,
   EventAction.confirmDate,
   EventAction.declineDate,
   EventAction.cancelDate,
+  EventAction.removeDate,
   EventAction.rsvp,
   EventAction.manageAttendees,
   EventAction.approveGame,
@@ -171,6 +184,8 @@ const _organizer = <EventAction>{
   // `create:event_occurrence`. Not the confirm, decline or cancel slugs, which
   // the organizer's list leaves out.
   EventAction.addDate,
+  // `update:event_occurrence`
+  EventAction.editDate,
   // `update:event_attendee:status`
   EventAction.rsvp,
   // `create:event_attendee:attending-role` and
@@ -184,6 +199,8 @@ const _organizer = <EventAction>{
 const _moderator = <EventAction>{
   // `update:event`
   EventAction.edit,
+  // `update:event_occurrence`
+  EventAction.editDate,
   // `update:event_occurrence:cancel`
   EventAction.cancelDate,
   // `update:event_attendee:status`
@@ -207,14 +224,18 @@ const _attending = <EventAction>{
 /// event's household.
 ///
 /// No `rsvp`: answering is for someone on the roster, and an owner who attends
-/// takes it from their event role. No `delete`, because an owner or admin
-/// deletes only an event they host (#168). No `cancel` or `archive` either:
-/// the household's list holds no event status slug.
+/// takes it from their event role. No `removeDate`, which has no household
+/// variant (an owner or admin asks for a removal instead, #513). No
+/// `delete`, because an owner or admin deletes only an event they host
+/// (#168). No `cancel` or `archive` either: the household's list holds no
+/// event status slug.
 const _householdOwnerOrAdmin = <EventAction>{
   // `update:event:household`
   EventAction.edit,
   // `create:event_occurrence:household`
   EventAction.addDate,
+  // `update:event_occurrence:household`
+  EventAction.editDate,
   // `update:event_occurrence:confirm:household`
   EventAction.confirmDate,
   // `update:event_occurrence:decline:household`

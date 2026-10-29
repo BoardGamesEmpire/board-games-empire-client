@@ -55,7 +55,7 @@ part 'server_database.g.dart';
 ///
 /// ## Migrations
 ///
-/// `schemaVersion` is **11**.
+/// `schemaVersion` is **12**.
 ///
 /// - **v1 → v2 (#39):** adds `households.is_dirty` and
 ///   `households.is_local_only`, the optimistic-write flags the household
@@ -130,6 +130,10 @@ part 'server_database.g.dart';
 ///   converted from its unit or filled from `playing_time`: the server's own
 ///   step converted nothing (backend#869), and the cache mirrors it.
 ///   `DROP COLUMN` needs SQLite 3.35.
+/// - **v11 → v12 (#506):** adds a nullable `event_occurrences.cancel_reason`,
+///   why the host cancelled a date. Additive: one `addColumn`, no table
+///   rebuilt. A row cached before it holds null, which is also what a date
+///   cancelled without a reason holds.
 ///
 /// The [migration] strategy is built by `bgeMigrationStrategy()` (see
 /// `migration_policy.dart`), which refuses schema *downgrades* by throwing a
@@ -146,7 +150,7 @@ part 'server_database.g.dart';
 /// closure below for the generated `stepByStep(...)` dispatcher. Either
 /// way, the committed schema snapshot must be refreshed:
 /// `melos run schema:dump` writes
-/// `drift_schemas/server/drift_schema_v11.json`, and
+/// `drift_schemas/server/drift_schema_v12.json`, and
 /// `melos run schema:migrations` regenerates `server_database.steps.dart`
 /// plus the `test/drift/` scaffold; the CI schema freshness job
 /// byte-compares the snapshot against a fresh dump.
@@ -192,7 +196,7 @@ class ServerDatabase extends _$ServerDatabase {
   // `web_storage` (#288).
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => bgeMigrationStrategy(
@@ -285,6 +289,10 @@ class ServerDatabase extends _$ServerDatabase {
         // `events` goes first because four of the others reference it.
         await m.createTable(eventsTable);
         await m.createTable(eventOccurrencesTable);
+        // The live table has the column v12 adds (#506), and adding it again
+        // would fail, so it goes here and v12 puts it back. Dropped in place
+        // from a table that is empty.
+        await m.dropColumn(eventOccurrencesTable, 'cancel_reason');
         await m.createTable(eventAttendeesTable);
         await m.createTable(eventPoliciesTable);
         await m.createTable(eventAccessTable);
@@ -342,6 +350,15 @@ class ServerDatabase extends _$ServerDatabase {
         // The index backs game_collections' foreign key to platform_games
         // (#471).
         await m.createIndex(gameCollectionsPlatformGameIdIdx);
+      }
+      if (from < 12 && to >= 12) {
+        // v11 → v12 (#506): why a date was cancelled. Additive and nullable:
+        // every existing row holds null until the next read writes it, so
+        // there is nothing to backfill.
+        await m.addColumn(
+          eventOccurrencesTable,
+          eventOccurrencesTable.cancelReason,
+        );
       }
     },
   );
