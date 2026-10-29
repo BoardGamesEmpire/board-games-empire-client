@@ -529,6 +529,11 @@ void main() {
       await tester.tap(find.byType(BackButton));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byType(SendHouseholdInviteScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'the form is still on its way out',
+      );
 
       sent.complete(_invite('i_new'));
       await tester.pumpAndSettle();

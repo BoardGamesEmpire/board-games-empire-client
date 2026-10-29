@@ -14,6 +14,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/fake_browser_history.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -319,6 +320,31 @@ void main() {
       expect(find.byType(CreateHouseholdScreen), findsNothing);
       expect(find.byType(HouseholdDetailScreen), findsNothing);
       expect(find.byType(HouseholdListScreen), findsOneWidget);
+    });
+
+    // #321: on web the form has a browser history entry of its own, which
+    // the detail must take over rather than follow.
+    testWidgets('browser Back from the new household goes to the list', (
+      tester,
+    ) async {
+      final history = FakeBrowserHistory.install(tester);
+      await pumpApp(tester);
+      routerOf(tester).go(AppRoutes.household);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
+      await tester.pumpAndSettle();
+
+      await submitTheForm(tester);
+      expect(history.locations, [
+        AppRoutes.home,
+        AppRoutes.household,
+        AppRoutes.householdDetailOf(_serverId),
+      ]);
+
+      await history.back();
+
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
+      expect(find.byType(CreateHouseholdScreen), findsNothing);
     });
 
     testWidgets('direct entry lands on the detail screen, and back goes to '

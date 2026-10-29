@@ -17,6 +17,7 @@ import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
+import '../support/fake_browser_history.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -901,6 +902,41 @@ void main() {
       expect(find.byType(CreateEventScreen), findsNothing);
       expect(find.byType(EventDetailScreen), findsNothing);
       expect(find.byType(EventOverviewScreen), findsOneWidget);
+    });
+
+    // #321: on web the form has a browser history entry of its own, which
+    // the detail must take over rather than follow.
+    testWidgets('browser Back from the created event goes to the overview', (
+      tester,
+    ) async {
+      final history = FakeBrowserHistory.install(tester);
+      await pumpCreatable(tester);
+      await openTheOverview(tester);
+      await tester.tap(find.byKey(EventOverviewScreen.createKey));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(CreateEventScreen.titleKey),
+        'Game night',
+      );
+      await tester.pumpAndSettle();
+      final starts = find.widgetWithText(InkWell, 'Starts');
+      await reveal(tester, starts);
+      await tester.tap(starts);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await reveal(tester, find.byKey(CreateEventScreen.submitKey));
+      await tester.tap(find.byKey(CreateEventScreen.submitKey));
+      await tester.pumpAndSettle();
+      expect(history.locations.last, AppRoutes.eventDetailOf('srv1'));
+
+      await history.back();
+
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
+      expect(find.byType(CreateEventScreen), findsNothing);
     });
 
     testWidgets("a household's New event opens the form with it picked", (

@@ -1281,7 +1281,8 @@ class _BgeAppState extends State<BgeApp> {
         }
         _leaveIfCurrent(
           ctx,
-          () => ctx.pushReplacement(AppRoutes.householdDetailOf(householdId)),
+          () =>
+              _replaceSpentForm(ctx, AppRoutes.householdDetailOf(householdId)),
         );
       },
     );
@@ -1632,7 +1633,7 @@ class _BgeAppState extends State<BgeApp> {
       onRefresh: _householdRetry(container),
       onCreated: (ctx, eventId) => _leaveIfCurrent(
         ctx,
-        () => ctx.pushReplacement(AppRoutes.eventDetailOf(eventId)),
+        () => _replaceSpentForm(ctx, AppRoutes.eventDetailOf(eventId)),
       ),
     );
   }
@@ -3281,3 +3282,14 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
 void _leaveIfCurrent(BuildContext context, VoidCallback leave) {
   if (ModalRoute.isCurrentOf(context) ?? true) leave();
 }
+
+/// Puts [location], what a create made, in place of the spent create form
+/// at [context], so back can never land on the form again (#162, #271).
+///
+/// Under [Router.neglect] because on web a pushed route reaches the address
+/// bar (#321), and the replacement would otherwise be a new browser history
+/// entry after the form's, which browser Back returns to. Neglected, it
+/// takes the form's entry instead. Native keeps no browser history, so it
+/// changes nothing there.
+void _replaceSpentForm(BuildContext context, String location) =>
+    Router.neglect(context, () => context.pushReplacement(location));
