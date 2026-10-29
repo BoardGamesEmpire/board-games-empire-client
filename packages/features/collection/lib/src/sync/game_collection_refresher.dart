@@ -8,10 +8,10 @@
 /// resolved from a container by type, and every feature's callback would
 /// share that type.
 ///
-/// It needs no guard of its own: `GameCollectionHydrator.hydrate`
-/// single-flights, so a press landing on a running pass joins it.
+/// It needs no guard of its own: `HydratePass` single-flights (#302), so a
+/// press landing on a running pass joins it and waits for it.
 class GameCollectionRefresher {
-  /// Wraps [pass], the same closure the installer registers with the
+  /// Wraps [pass], the same pass the installer registers with the
   /// `SessionRehydrator`, so a pressed refresh and a triggered one report
   /// the same way.
   ///
@@ -33,5 +33,11 @@ class GameCollectionRefresher {
   /// discarded sync op (#190). [refresh] joins a running pass, which may
   /// have merged that row's page before the write, and its catch-up asks
   /// only for rows the server changed since.
+  ///
+  /// A discard that leaves a row for a merge to rebuild also moves the
+  /// repository's removal mark, so the first pass to start after it, this
+  /// one or one a trigger started first, reads the whole list rather than
+  /// only what changed (#450). The server's copy of that row did not
+  /// change, so a delta read would not include it.
   Future<void> refreshAfterChange() => (_afterChange ?? _pass)();
 }

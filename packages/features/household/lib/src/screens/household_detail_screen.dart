@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -185,7 +186,7 @@ class HouseholdDetailScreen extends StatelessWidget {
 
   /// What the hydrate is doing, when this composition runs one. Null reads
   /// as settled rather than as forever-loading (#269 D1).
-  final Stream<HouseholdHydration>? hydration;
+  final Stream<Hydration>? hydration;
 
   /// Returns to the household list from the not-found state, as that
   /// surface's primary action: with no household to show, leaving is the

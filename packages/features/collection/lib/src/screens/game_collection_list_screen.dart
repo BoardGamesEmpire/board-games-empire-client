@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -10,7 +11,6 @@ import 'package:game_collection/l10n/game_collection_localizations.dart';
 import '../bloc/game_collection_list_bloc.dart';
 import '../bloc/game_collection_list_event.dart';
 import '../bloc/game_collection_list_state.dart';
-import '../sync/game_collection_hydration_status.dart';
 
 /// The collection list (#44): every game the signed-in user owns, read
 /// reactively from the local cache.
@@ -78,7 +78,7 @@ class GameCollectionListScreen extends StatelessWidget {
 
   /// What the hydrate is doing, when this composition runs one. Null reads
   /// as settled rather than as loading forever.
-  final Stream<GameCollectionHydration>? hydration;
+  final Stream<Hydration>? hydration;
 
   /// Opens one entry, or null where there is nowhere to open it. Takes the
   /// id rather than the row, because the destination re-reads the cache.

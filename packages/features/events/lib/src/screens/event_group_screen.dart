@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -10,7 +11,6 @@ import 'package:events/l10n/events_localizations.dart';
 import '../bloc/event_overview_bloc.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
-import '../sync/event_hydration_status.dart';
 import '../widgets/event_list_slivers.dart';
 import '../widgets/event_row.dart';
 import 'event_overview_screen.dart';
@@ -59,7 +59,7 @@ class EventGroupScreen extends StatelessWidget {
   final Stream<List<Household>>? households;
 
   /// See [EventOverviewScreen.hydration].
-  final Stream<EventHydration>? hydration;
+  final Stream<Hydration>? hydration;
 
   /// See [EventOverviewScreen.onOpen].
   final void Function(BuildContext context, String eventId)? onOpen;

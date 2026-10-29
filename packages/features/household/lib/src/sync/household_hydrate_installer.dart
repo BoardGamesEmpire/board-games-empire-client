@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
@@ -10,7 +11,7 @@ import 'household_hydration_status.dart';
 import 'household_hydrator.dart';
 import 'household_refresher.dart';
 
-/// Starts the household hydrate when a user session activates (#267 D1).
+/// Starts the household hydrate when a user session activates (#267).
 ///
 /// Lives beside the hydrator it drives, and is shared by both composition
 /// roots — `buildNativeUserScopeInstallers` and `buildWebUserScopeInstallers`
@@ -37,7 +38,7 @@ import 'household_refresher.dart';
 /// advance and `AuthSignOutRequested` is dispatched. So:
 ///
 /// - the drain is started **unawaited**, because awaiting it would put the
-///   network on the sign-in path (#267 D2). The household list renders
+///   network on the sign-in path (#267). The household list renders
 ///   reactively off the local cache, so hydration is a refresh, not a
 ///   precondition for the screen;
 /// - a missing [HouseholdRemoteDataSource] is a no-op rather than a
@@ -66,16 +67,16 @@ import 'household_refresher.dart';
 /// cost of being wrong about the above is a user who cannot sign in.
 ///
 /// The hydrator swallows its own failures; the `unawaited` here is
-/// deliberate rather than incidental, and the guard below keeps it that way
-/// even if that ever changes.
+/// deliberate rather than incidental, and `HydratePass` keeps it that way
+/// even if that ever changes: it catches whatever a drain throws.
 ///
-/// ## Publishing what the drain is doing (#269 D1)
+/// ## Publishing what the drain is doing (#269)
 ///
 /// The outcome used to be discarded here, which left the household list
 /// unable to tell an empty cache that is *filling* from one that is
 /// *empty*, or a failed refresh from a successful one — `watchHouseholds()`
 /// answers neither. So this registers a [HouseholdHydrationStatus] in the
-/// session scope and drives it around the drain.
+/// session scope, and a `HydratePass` drives it around the drain.
 ///
 /// Where there is no household client, **nothing is registered**: a reader
 /// treats an absent status as idle, which is the truth, whereas a
@@ -88,60 +89,27 @@ import 'household_refresher.dart';
 /// a cache that is about to fill — the exact flash this decision exists to
 /// prevent.
 ///
-/// ## Registering to be re-run (#302 D2)
+/// ## What this decides (#302, #563)
 ///
-/// The install-time pass used to be the only one there would ever be: a
-/// session that started while the server was unreachable never asked
-/// again, and the user's only route back was signing out and in (#302).
-/// So the hydrator is now kept and registered with the session's
-/// [SessionRehydrator], which a later trigger drives.
+/// `HydratePass` is the one place a drain is single-flighted, checked against
+/// the session and registered to be re-run; its class doc gives the
+/// reasoning. This installer decides only what is the household's:
 ///
-/// ## The retry the screens call (#300 D5)
-///
-/// The same `pass()` is registered a second time, as a
-/// [HouseholdRefresher], for the retry on the household list's and detail
-/// screen's refresh banners. A press is not a trigger: it is not filtered
-/// by staleness and it is not dropped while a pass is running, because
-/// someone is waiting to see it do something. Overlap is safe because the
-/// hydrator single-flights (#302 D3).
-///
-/// Two things this deliberately does not do. It does not decide **when** to
-/// re-run — a connectivity edge and app resume live in the shell, and the
-/// household feature learns nothing about either. And it does not publish a
-/// second status: the re-run drives the same [HouseholdHydrationStatus] the
-/// list is already watching, so the banner clears with nothing added to any
-/// screen (#270 D5).
-///
-/// Staleness is answered from that same status rather than remembered by
-/// the registry (#302 D4): `failed` or `idle` is worth another pass,
-/// `running` is one already happening, and `refreshed` — including a
-/// drained pass, which updated the cache — is not, until it ages out. A
-/// registry holding its own copy of that would be a second answer free to
-/// drift from the one the screen reads.
-///
-/// ## The window a refreshed pass ages out of (#300 D1, D2, D8)
-///
-/// [staleAfter] is what lets a `refreshed` entry go stale at all. Without
-/// it a session that hydrated once at sign-in never asked again however
-/// long it ran, which is half of what #300 was filed for; the other half
-/// is the manual retry above.
-///
-/// **This widens what every trigger does, deliberately** (#300 D15). The
-/// registry consults this one closure, so after this an app resume or a
-/// connectivity edge finding a cache that refreshed longer ago than the
-/// window will re-drain it — not only the household list's own entry
-/// trigger. #302 D4's actual constraint is intact: the registry still
-/// holds no staleness state of its own, and the timestamp lives on the
-/// status the screen reads.
-///
-/// A trigger that lands while a pass is `running` is therefore **dropped,
-/// not queued**. Joining it would change nothing — the joined caller gets
-/// the doomed pass's own outcome, not a fresh request — so the case worth
-/// naming is a slow failure: a drain hanging on a socket timeout can
-/// swallow the one connectivity edge the transport produces, and the list
-/// stays at `failed` afterwards with nothing left to re-trigger it. That
-/// is a failure-driven retry (#311), not something a staleness rule can
-/// answer; #300's manual retry covers it in the meantime.
+/// - the pass is registered with the session's [SessionRehydrator] as
+///   `'household'`, and again as a [HouseholdRefresher] for the retry on the
+///   list's and detail screen's refresh banners (#300). It publishes no
+///   second status — it drives the one the list is already watching, so the
+///   banner clears with nothing added to any screen (#270);
+/// - the window a `refreshed` pass ages out of is [staleAfter] (#300).
+///   **This widens what every trigger does, deliberately** (#300): after
+///   this an app resume or a connectivity edge finding a cache that refreshed
+///   longer ago than the window re-drains it, not only the list's own entry
+///   trigger;
+/// - the hydrator is deliberately not registered. Nothing resolves one by
+///   type and it holds no resources to dispose; the pass closes over it. The
+///   drain is bounded by the scope anyway — once the session pops, the
+///   repository it writes through is disposed and the next write ends the
+///   pass.
 ///
 /// An absent [SessionRehydrator] is a no-op, on the same reasoning as an
 /// absent household client: a composition without the seam must still sign
@@ -149,14 +117,14 @@ import 'household_refresher.dart';
 ///
 /// ## Whose session a pass reads as (#432)
 ///
-/// Every pass first asks the [SessionIdentityGuard] whether the session is
-/// still this scope's user, and the hydrator asks again before writing each
-/// page it reads. On web another tab can move the shared cookie to another
-/// user under a tab still presenting the first, and a pass read then would
-/// cache the other user's households as this user's. A refused
-/// pass reads as `failed`, so the next trigger tries again; by then the
-/// shell has usually switched users and this scope is gone. No guard, as on
-/// native, is a confirmed session.
+/// The pass asks the [SessionIdentityGuard] once per drain, before its first
+/// request, and the hydrator asks again before writing each page it reads;
+/// this builds that per-page closure from the same guard. On web another tab
+/// can move the shared cookie to another user under a tab still presenting
+/// the first, and a pass read then would cache the other user's households as
+/// this user's. A refused pass reads as `failed`, so the next trigger tries
+/// again; by then the shell has usually switched users and this scope is
+/// gone. No guard, as on native, is a confirmed session.
 class HouseholdHydrateInstaller implements UserScopeInstaller {
   /// [now] overrides the clock the published [HouseholdHydrationStatus]
   /// stamps [staleAfter] against. Production leaves it null, which is the
@@ -164,13 +132,13 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
   /// five real minutes.
   const HouseholdHydrateInstaller({this.now});
 
-  /// How long a successful pass stays current (#300 D2).
+  /// How long a successful pass stays current (#300).
   ///
   /// Long enough that flipping between screens does not hit the network on
   /// every visit; short enough that "I fixed the server, let me go look"
   /// works without a restart.
   ///
-  /// **Recorded as a guess rather than a measurement.** D2 put the figure
+  /// **Recorded as a guess rather than a measurement.** #300 put the figure
   /// in writing precisely so it would be cheaper to argue with than to
   /// reverse-engineer from a constant. If it turns out wrong, this is the
   /// one place it is wrong in.
@@ -218,92 +186,29 @@ class HouseholdHydrateInstaller implements UserScopeInstaller {
       dispose: (s) => s.close(),
     );
 
-    /// One pass: drive the status around the drain, and never throw.
-    ///
-    /// Shared by the install-time call below and every #302 re-run, so a
-    /// triggered pass cannot report differently from the first one.
-    Future<void> pass() async {
-      status.started();
-      final answer = await guard?.confirm(userId);
-      if (answer != null && answer != SessionConfirmation.confirmed) {
-        _log.info(
-          'Household hydrate held off: the session could not be confirmed as '
-          'this scope\'s user',
-          context: {'serverId': server.serverId, 'answer': answer.name},
-        );
-        status.finished(HydrateOutcome.failed);
-        return;
-      }
-      final outcome = await hydrator.hydrate().catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        // Unreachable by contract — hydrate() reports failure in its
-        // return value. Kept because the cost of being wrong is a
-        // sign-out.
-        _log.error(
-          'Household hydrate escaped its own error handling',
-          error: error,
-          stackTrace: stackTrace,
-          context: {'serverId': server.serverId},
-        );
-        return HydrateOutcome.failed;
-      });
-      status.finished(outcome);
-    }
-
-    _registerRehydrate(container, status, pass);
-
-    // The same pass, reachable by the screens (#300 D5). Registered rather
-    // than routed through the [SessionRehydrator]: that seam skips an
-    // entry a pass is already running for (#302 D4), which is right for a
-    // trigger and wrong for a button someone is waiting on.
-    //
-    // It closes over the same hydrator the rehydrate entry does, so its
-    // single-flight guard (#302 D3) still means something — a second
-    // instance would have its own.
-    container.registerSingleton<HouseholdRefresher>(HouseholdRefresher(pass));
-
-    // The hydrator itself is deliberately not registered: nothing resolves
-    // one by type, and it holds no resources to dispose. The re-hydrate
-    // entry above closes over it instead, which keeps its single-flight
-    // guard (#302 D3) meaningful — a second instance would have its own.
-    //
-    // The drain is bounded by the scope anyway — once the session pops, the
-    // repository it writes through is disposed and the next write ends the
-    // pass.
-    //
-    // The #269 D1 window is unchanged by moving `status.started()` into
-    // `pass()`: an async function body runs synchronously up to its first
-    // await, so the status is running before this method returns — before
-    // the drain's first turn, not inside it. A screen built in that window
-    // must not read idle.
-    unawaited(pass());
-  }
-
-  /// Registers the household drain as re-runnable for this session (#302).
-  ///
-  /// A composition without the seam is a no-op rather than a resolution
-  /// failure, for the same reason a missing household client is: a throw
-  /// here aborts activation, and the shell converges that to a sign-out.
-  static void _registerRehydrate(
-    DependencyContainer container,
-    HouseholdHydrationStatus status,
-    Future<void> Function() pass,
-  ) {
-    if (!container.isRegistered<SessionRehydrator>()) return;
-
-    container.get<SessionRehydrator>().register(
-      'household',
-      isStale: () => switch (status.state) {
-        HouseholdHydrationState.idle || HouseholdHydrationState.failed => true,
-        HouseholdHydrationState.running => false,
-        // The window is this composition's to choose; whether the stamp
-        // has aged past it is the status's own question to answer
-        // (#300 D8).
-        HouseholdHydrationState.refreshed => status.isStaleAfter(staleAfter),
-      },
-      run: pass,
+    final pass = HydratePass<HydrateOutcome>(
+      feature: 'Household',
+      drain: hydrator.hydrate,
+      status: status,
+      failed: HydrateOutcome.failed,
+      userId: userId,
+      logger: _log,
+      guard: guard,
+      context: {'serverId': server.serverId},
     );
+
+    pass.registerRehydrate(container, 'household', staleAfter: staleAfter);
+
+    // The same pass, reachable by the screens (#300). Registered rather
+    // than routed through the [SessionRehydrator]: that seam skips an
+    // entry a pass is already running for, which is right for a trigger and
+    // wrong for a button someone is waiting on.
+    container.registerSingleton<HouseholdRefresher>(
+      HouseholdRefresher(pass.run, afterChange: pass.runAfterSettled),
+    );
+
+    // Unawaited, and the status is running before this returns: see the
+    // class doc.
+    unawaited(pass.run());
   }
 }

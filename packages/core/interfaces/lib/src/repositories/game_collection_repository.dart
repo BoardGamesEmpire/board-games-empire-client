@@ -378,7 +378,7 @@ abstract class GameCollectionRepository {
   Future<String?> titleOf(String collectionId);
 
   /// A mark to pass to [mergeFromServer] (#121): it moves each time this
-  /// repository confirms a removal, and each time [discardQueuedOp] leaves
+  /// repository confirms a removal, and each time a [discardQueuedOp] leaves
   /// a row for a merge to rebuild (#190).
   ///
   /// A confirmation is the server's answer, to an op this device sent,
@@ -395,7 +395,10 @@ abstract class GameCollectionRepository {
   ///
   /// The mark lives in this instance, not the database, so a confirmation
   /// made through another instance over the same database, such as another
-  /// browser tab's, doesn't move it.
+  /// browser tab's, doesn't move it. A discard through another instance
+  /// does, at the next read here: the row it leaves is in the database. A
+  /// read that moves the mark for such a row moves it once, until a merge
+  /// here sees that row's server copy.
   Future<int> removalMark();
 
   /// Merges server state that no local mutation asked for, such as a

@@ -328,34 +328,43 @@ void main() {
       expect(refreshes, 1);
     });
 
-    testWidgets('a removal answering while a hydrate pass runs reads the '
-        'households twice (#480, #122)', (tester) async {
-      // The pass in flight may have read the roster before the removal, so
-      // `refreshAfterMembershipChange` runs a second one. It knows a pass
-      // was running only from the hydration status, which the route has to
-      // hand it.
+    testWidgets('a removal marks the households stale and runs a pass that '
+        'starts after any in flight (#480, #122)', (tester) async {
+      // A pass in flight may have read the roster before the removal, so
+      // `refreshAfterMembershipChange` waits it out and runs another. It
+      // marks the set stale through the hydration status, which the route
+      // has to hand it.
       final memberRemote = _MockMemberRemote();
       final guest = _member('u-guest', role: HouseholdRole.householdGuest);
       when(() => memberRemote.remove(any(), any()))
           .thenAnswer((_) async => guest);
       var refreshes = 0;
-      final status = HouseholdHydrationStatus()..started();
+      var afterChanges = 0;
+      final status = HouseholdHydrationStatus()
+        ..started()
+        ..finished(HydrateOutcome.complete);
       addTearDown(status.close);
       await pumpHome(
         tester,
         memberRemote: memberRemote,
-        refresher: HouseholdRefresher(() async => refreshes++),
+        refresher: HouseholdRefresher(
+          () async => refreshes++,
+          afterChange: () async => afterChanges++,
+        ),
         status: status,
         rosters: {
           _id: [_member('u-me'), guest],
         },
       );
       await openDetailFromTheList(tester);
+      expect(status.sinceRefresh, isNotNull);
 
       await removeThroughTheMenu(tester, 'u-guest');
 
       verify(() => memberRemote.remove(_id, guest.id)).called(1);
-      expect(refreshes, 2);
+      expect(afterChanges, 1);
+      expect(refreshes, 0);
+      expect(status.sinceRefresh, isNull);
     });
 
     testWidgets('no member client, no member menus (#480)', (tester) async {

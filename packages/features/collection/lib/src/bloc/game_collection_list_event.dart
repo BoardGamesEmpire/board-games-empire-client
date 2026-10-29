@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:hydration/hydration.dart';
 import 'package:models/domain.dart';
-
-import '../sync/game_collection_hydration_status.dart';
 
 /// Events of `GameCollectionListBloc`.
 ///
@@ -40,7 +39,7 @@ final class GameCollectionListCacheEnded extends GameCollectionListEvent {
 final class GameCollectionListHydrationUpdated extends GameCollectionListEvent {
   const GameCollectionListHydrationUpdated(this.hydration);
 
-  final GameCollectionHydration hydration;
+  final Hydration hydration;
 
   @override
   List<Object?> get props => [hydration];

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -126,7 +127,7 @@ class HouseholdListScreen extends StatelessWidget {
   /// What the hydrate is doing, when this composition runs one. Null where
   /// no household client exists (#125), which reads as settled rather than
   /// as forever-loading.
-  final Stream<HouseholdHydration>? hydration;
+  final Stream<Hydration>? hydration;
 
   /// Opens the create flow, or null where creating is not possible on this
   /// container — the create screen needs a `HouseholdRemoteDataSource` the

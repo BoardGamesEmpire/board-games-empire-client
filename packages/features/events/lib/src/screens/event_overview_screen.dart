@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:ui/ui.dart';
@@ -12,7 +13,6 @@ import 'package:events/l10n/events_localizations.dart';
 import '../bloc/event_overview_bloc.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
-import '../sync/event_hydration_status.dart';
 import '../widgets/event_list_slivers.dart';
 import '../widgets/event_row.dart';
 
@@ -110,7 +110,7 @@ class EventOverviewScreen extends StatelessWidget {
 
   /// What the hydrate is doing, when this composition runs one. Null reads
   /// as settled rather than as loading forever.
-  final Stream<EventHydration>? hydration;
+  final Stream<Hydration>? hydration;
 
   /// Opens one event, or null where there is nowhere to open it.
   final void Function(BuildContext context, String eventId)? onOpen;

@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:hydration/hydration.dart';
 import 'package:models/domain.dart';
-
-import '../sync/event_hydration_status.dart';
 
 /// Events of `EventOverviewBloc`.
 ///
@@ -50,7 +49,7 @@ final class EventOverviewHouseholdsUpdated extends EventOverviewEvent {
 final class EventOverviewHydrationUpdated extends EventOverviewEvent {
   const EventOverviewHydrationUpdated(this.hydration);
 
-  final EventHydration hydration;
+  final Hydration hydration;
 
   @override
   List<Object?> get props => [hydration];

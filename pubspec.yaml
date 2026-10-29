@@ -91,6 +91,7 @@ workspace:
   - packages/core/models
   - packages/core/di
   - packages/core/observability
+  - packages/core/hydration
   - packages/features/auth
   - packages/features/catalog
   - packages/features/collection

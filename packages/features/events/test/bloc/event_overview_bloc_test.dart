@@ -164,7 +164,7 @@ void main() {
 
   test('a failing status stream leaves the rows up', () async {
     // The status annotates the list; losing it must not lose the list.
-    final hydration = StreamController<EventHydration>();
+    final hydration = StreamController<Hydration>();
     final bloc = EventOverviewBloc(
       repository: repository,
       hydration: hydration.stream,
@@ -776,7 +776,7 @@ void main() {
     test('events compare by value', () {
       final rows = [upcoming('e-1')];
       final households = [_household('h-1', 'The Smiths')];
-      const reading = EventHydration();
+      const reading = Hydration();
 
       expect(EventOverviewCacheUpdated(rows), EventOverviewCacheUpdated(rows));
       expect(

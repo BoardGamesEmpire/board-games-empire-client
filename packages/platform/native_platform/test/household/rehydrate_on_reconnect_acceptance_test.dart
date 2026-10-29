@@ -215,7 +215,7 @@ void main() {
 
     // Where #302 starts: the list is showing "couldn't refresh", and
     // nothing in the client will ever ask again on its own.
-    expect(status.state, equals(HouseholdHydrationState.failed));
+    expect(status.state, equals(HydrationState.failed));
     verifyNever(() => repo.cacheHouseholdWithRoster(any(), any()));
 
     await tester.pumpWidget(
@@ -242,7 +242,7 @@ void main() {
 
     verify(() => remote.fetchHouseholds(page: 1, limit: 100)).called(1);
     verify(() => repo.cacheHouseholdWithRoster(any(), any())).called(1);
-    expect(status.state, equals(HouseholdHydrationState.refreshed));
+    expect(status.state, equals(HydrationState.refreshed));
   });
 
   testWidgets('a session whose first pass succeeded is left alone', (
@@ -258,7 +258,7 @@ void main() {
     await activateSession(tester);
     expect(
       container.get<HouseholdHydrationStatus>().state,
-      equals(HouseholdHydrationState.refreshed),
+      equals(HydrationState.refreshed),
     );
 
     await tester.pumpWidget(

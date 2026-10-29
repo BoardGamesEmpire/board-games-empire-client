@@ -730,6 +730,55 @@ void main() {
     });
   });
 
+  // A discard through another tab leaves the row for a merge to rebuild, as
+  // one through this tab does, but moves only that tab's mark. A hydrate
+  // here reads the mark to choose between a delta and a full drain, and the
+  // server's copy did not change, so only a full drain rebuilds the row.
+  group("another tab's discard", () {
+    late GameCollectionRepositoryImpl otherTab;
+
+    setUp(() {
+      otherTab = GameCollectionRepositoryImpl(
+        db: db,
+        syncQueue: queue,
+        currentUserId: _kUserId,
+        clock: FixedClockService(DateTime.utc(2026, 10, 17, 12)),
+      );
+    });
+
+    /// Has [otherTab] edit the entry, the server refuse it, and the user
+    /// discard it there.
+    Future<void> discardThere() async {
+      await otherTab.updateCollectionEntry(id: _kServerId, rating: 9);
+      final updateOp = await parkNewest();
+      expect(await otherTab.discardQueuedOp(updateOp.id), isTrue);
+    }
+
+    test('moves the removal mark once, at its next read', () async {
+      await seedConfirmed(rating: 5);
+      final before = await repo.removalMark();
+
+      await discardThere();
+      final first = await repo.removalMark();
+      final second = await repo.removalMark();
+
+      expect(first, greaterThan(before));
+      expect(second, first);
+    });
+
+    test('moves it again after a merge here rebuilt the row', () async {
+      await seedConfirmed(rating: 5);
+      await discardThere();
+      await hydrate(_server(rating: 5));
+      expect((await rows()).single.rating, 5);
+      final rebuilt = await repo.removalMark();
+
+      await discardThere();
+
+      expect(await repo.removalMark(), greaterThan(rebuilt));
+    });
+  });
+
   group('changes nothing', () {
     test('for an op that is no longer stuck, such as one another tab '
         'retried', () async {

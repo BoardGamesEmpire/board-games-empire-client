@@ -1,5 +1,7 @@
 library;
 
+export 'package:hydration/hydration.dart' show Hydration, HydrationState;
+
 export 'src/bloc/game_collection_list_bloc.dart';
 export 'src/bloc/game_collection_list_event.dart';
 export 'src/bloc/game_collection_list_state.dart';

@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import '../sync/household_hydration_status.dart';
 import 'household_list_event.dart';
 import 'household_list_state.dart';
 
@@ -76,7 +76,7 @@ import 'household_list_state.dart';
 class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   HouseholdListBloc({
     required HouseholdRepository repository,
-    Stream<HouseholdHydration>? hydration,
+    Stream<Hydration>? hydration,
     this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.household.list'),
@@ -122,7 +122,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   final Future<void> Function()? _onRetry;
 
   late final StreamSubscription<List<Household>> _cache;
-  StreamSubscription<HouseholdHydration>? _hydrationUpdates;
+  StreamSubscription<Hydration>? _hydrationUpdates;
 
   /// Null until the cache has answered at all — which is not the same as
   /// having answered with nothing.
@@ -138,9 +138,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
   /// The status keeps the history, not this bloc (#453). The list is often
   /// opened while a pass is already running, and a bloc that remembered
   /// only the readings it saw would treat that pass as the first.
-  /// [HouseholdHydration.everRefreshed] is what makes an empty list
-  /// *confirmed* rather than merely unverified (#300).
-  HouseholdHydration _hydration = const HouseholdHydration();
+  /// [Hydration.everRefreshed] is what makes an empty list *confirmed*
+  /// rather than merely unverified (#300).
+  Hydration _hydration = const Hydration();
 
   /// Whether a pass **this screen asked for** is still running (#300 D6).
   ///
@@ -193,9 +193,9 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     Emitter<HouseholdListState> emit,
   ) async {
     final retry = _onRetry;
-    // Already running one: the hydrator single-flights (#302 D3), so a
-    // second call would join rather than duplicate the drain — but the
-    // button should not queue passes either.
+    // Already running one: `HydratePass` single-flights (#302), so a second
+    // call would join the drain in flight rather than duplicate it — but
+    // the button should not queue passes either.
     if (retry == null || _retrying) return;
 
     _retrying = true;
@@ -243,7 +243,7 @@ class HouseholdListBloc extends Bloc<HouseholdListEvent, HouseholdListState> {
     // screen on every entry.
     final filling =
         households.isEmpty &&
-        _hydration.state == HouseholdHydrationState.running &&
+        _hydration.state == HydrationState.running &&
         !_hydration.everRefreshed;
     if (filling) return emit(const HouseholdListLoading());
 

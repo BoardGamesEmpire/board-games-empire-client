@@ -124,40 +124,9 @@ class HouseholdHydrator {
   ///
   /// Never throws — see the class doc.
   ///
-  /// **Single-flight** (#302 D3): a call made while a pass is in flight
-  /// joins that pass and receives its outcome, rather than starting a
-  /// second drain. Until #302 there was exactly one caller, so this was a
-  /// question nobody had to answer; the re-hydrate trigger and #300's
-  /// manual retry both add callers that can fire while the install-time
-  /// pass (#267 D2, started unawaited) is still running.
-  ///
-  /// Overlap was very likely benign while the cache writers only upserted,
-  /// but #300 asked for that to be recorded rather than assumed, and a
-  /// guard is cheaper than the proof and keeps holding as the drain grows.
-  /// It has since grown: a pass now deletes (#268), and one pass's purge
-  /// racing another's writes is a question this guard means nobody has to
-  /// answer.
-  ///
-  /// This is a concurrency guard, **not a cache**: once a pass settles the
-  /// next call asks the server again, which is the whole point of #302.
-  Future<HydrateOutcome> hydrate() {
-    final inFlight = _inFlight;
-    if (inFlight != null) return inFlight;
-
-    final pass = _drain();
-    _inFlight = pass;
-    // Identity-checked so a pass cannot clear its successor. Today a
-    // successor can only be created after this clear runs, but the check
-    // costs nothing and does not depend on that staying true.
-    return pass.whenComplete(() {
-      if (identical(_inFlight, pass)) _inFlight = null;
-    });
-  }
-
-  /// The pass currently draining, or null when none is.
-  Future<HydrateOutcome>? _inFlight;
-
-  Future<HydrateOutcome> _drain() async {
+  /// Not single-flight: a drain deletes as well as writes, so the caller,
+  /// `HydratePass`, runs one at a time (#302, #268).
+  Future<HydrateOutcome> hydrate() async {
     final Map<String, String> purgeable;
     try {
       purgeable = await _repo.purgeableMemberships();

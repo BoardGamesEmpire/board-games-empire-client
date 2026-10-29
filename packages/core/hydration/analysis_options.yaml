@@ -1,0 +1,15 @@
+# Static analysis configuration for `package:hydration`.
+#
+# Mirrors the sibling core packages (`models`, `interfaces`): the
+# 'recommended' lint set from `package:lints`.
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
+include: package:lints/recommended.yaml

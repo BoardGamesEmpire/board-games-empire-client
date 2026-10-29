@@ -60,6 +60,12 @@ PaginatedResult<GameCollectionWithSummary> _page(
   );
 }
 
+/// One hydrate pass: how it ended, and the requests it sent.
+typedef _Pass = ({
+  CollectionHydrateOutcome outcome,
+  List<CollectionListRequest> requests,
+});
+
 void main() {
   late ServerDatabase db;
   late GameRepositoryImpl games;
@@ -371,6 +377,376 @@ void main() {
     });
   });
 
+  // A completed pass leaves a mark, and the next asks only for what changed
+  // since it. Whenever the mark may not describe the cache, the next pass
+  // reads everything instead.
+  group('a re-run reads only what changed (#450)', () {
+    final t = DateTime.utc(2026, 5, 1, 12);
+
+    /// The mark a completed pass whose newest row was at [t] leaves.
+    final markAtT = t.subtract(GameCollectionHydrator.deltaOverlap);
+
+    /// The page a server holding [rows] answers [request] with: every row,
+    /// or, for a delta, only those updated at or after its `updatedSince`.
+    PaginatedResult<GameCollectionWithSummary> serverPage(
+      List<GameCollectionWithSummary> rows,
+      CollectionListRequest request,
+    ) {
+      final since = request.updatedSince;
+      return _page([
+        for (final row in rows)
+          if (since == null || !row.entry.updatedAt.isBefore(since)) row,
+      ]);
+    }
+
+    /// Runs [hydrator]'s next pass, and returns its outcome and the requests
+    /// it sent [remote].
+    Future<_Pass> nextPass(
+      GameCollectionHydrator hydrator,
+      FakeCollectionRemote remote,
+    ) async {
+      final from = remote.requests.length;
+      final outcome = await hydrator.hydrate();
+      return (outcome: outcome, requests: remote.requests.sublist(from));
+    }
+
+    test('the first pass is a full drain', () async {
+      final remote = FakeCollectionRemote(
+        (r) => serverPage([_row(1, updatedAt: t)], r),
+      );
+
+      await build(remote).hydrate();
+
+      expect(remote.requests.first.updatedSince, isNull);
+    });
+
+    test('a completed pass that saw no rows leaves no delta mark, so the next '
+        'is a full drain', () async {
+      final remote = FakeCollectionRemote((r) => serverPage([], r));
+      final hydrator = build(remote);
+      final first = await nextPass(hydrator, remote);
+      expect(first.outcome, CollectionHydrateOutcome.complete);
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests.first.updatedSince, isNull);
+    });
+
+    test('after a completed pass, the next asks only for rows changed since '
+        'the newest it saw, less the overlap', () async {
+      final remote = FakeCollectionRemote(
+        (r) => serverPage([
+          _row(1, updatedAt: t),
+          _row(2, updatedAt: t.subtract(const Duration(hours: 1))),
+        ], r),
+      );
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests.first, (
+        page: 1,
+        limit: 100,
+        includeDeleted: true,
+        updatedSince: t.subtract(GameCollectionHydrator.deltaOverlap),
+      ));
+    });
+
+    test('a delta read applies a server-side removal', () async {
+      final older = t.subtract(const Duration(hours: 1));
+      final remote = FakeCollectionRemote(
+        (r) =>
+            serverPage([_row(1, updatedAt: t), _row(2, updatedAt: older)], r),
+      );
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      final removedAt = t.add(const Duration(minutes: 5));
+      remote.respond = (r) => serverPage([
+        _row(1, updatedAt: removedAt, deletedAt: removedAt),
+        _row(2, updatedAt: older),
+      ], r);
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests.single.updatedSince, markAtT);
+      expect(await listedTitles(), ['Game 2']);
+    });
+
+    test('after a failed pass, the next is a full drain', () async {
+      final rows = [_row(1, updatedAt: t)];
+      final remote = FakeCollectionRemote((r) => serverPage(rows, r));
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      remote.respond = (_) =>
+          throw const GameCollectionRemoteTransientException('offline');
+      final second = await nextPass(hydrator, remote);
+      remote.respond = (r) => serverPage(rows, r);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(second.outcome, CollectionHydrateOutcome.failed);
+      expect(third.requests.first.updatedSince, isNull);
+    });
+
+    test("a delta that hits another user's entry fails, and the next is a "
+        'full drain', () async {
+      final rows = [_row(1, updatedAt: t)];
+      final remote = FakeCollectionRemote((r) => serverPage(rows, r));
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      remote.respond = (_) => _page([
+        _row(
+          2,
+          updatedAt: t.add(const Duration(minutes: 1)),
+          userId: 'user-other',
+        ),
+      ]);
+      final second = await nextPass(hydrator, remote);
+      remote.respond = (r) => serverPage(rows, r);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(second.outcome, CollectionHydrateOutcome.failed);
+      expect(second.requests.single.updatedSince, markAtT);
+      expect(third.requests.first.updatedSince, isNull);
+    });
+
+    // A disposed repository is how this suite fails a cache write. The
+    // summaries are written first, so a disposed game repository fails the
+    // page while the removal mark can still be read. The next pass fails
+    // the same way, but only after its first request.
+    test('a delta whose cache write fails ends failed, and the next is a '
+        'full drain', () async {
+      final rows = [_row(1, updatedAt: t)];
+      final remote = FakeCollectionRemote((r) => serverPage(rows, r));
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      remote.respond = (_) =>
+          _page([_row(2, updatedAt: t.add(const Duration(minutes: 1)))]);
+      await games.onDispose();
+      final second = await nextPass(hydrator, remote);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(second.outcome, CollectionHydrateOutcome.failed);
+      expect(second.requests.single.updatedSince, markAtT);
+      expect(third.requests.first.updatedSince, isNull);
+    });
+
+    test('the mark moves only forward', () async {
+      final remote = FakeCollectionRemote(
+        (r) => serverPage([_row(1, updatedAt: t)], r),
+      );
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      remote.respond = (_) =>
+          _page([_row(2, updatedAt: t.subtract(const Duration(hours: 2)))]);
+      final second = await nextPass(hydrator, remote);
+      remote.respond = (_) => _page(const []);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(second.outcome, CollectionHydrateOutcome.complete);
+      expect(second.requests.single.updatedSince, markAtT);
+      expect(
+        third.requests.single.updatedSince,
+        second.requests.single.updatedSince,
+      );
+    });
+
+    test('a completed pass that saw no rows keeps its mark', () async {
+      final remote = FakeCollectionRemote(
+        (r) => serverPage([_row(1, updatedAt: t)], r),
+      );
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      remote.respond = (_) => _page(const []);
+      final second = await nextPass(hydrator, remote);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(second.outcome, CollectionHydrateOutcome.complete);
+      expect(second.requests.single.updatedSince, markAtT);
+      expect(
+        third.requests.single.updatedSince,
+        second.requests.single.updatedSince,
+      );
+    });
+
+    test('the newest row of a catch-up counts toward the mark', () async {
+      final caughtUp = t.add(const Duration(minutes: 1));
+      final remote = FakeCollectionRemote(
+        (r) => switch ((r.page, r.updatedSince)) {
+          (1, null) => _page(
+            [
+              _row(1, updatedAt: t),
+              _row(2, updatedAt: t.subtract(const Duration(hours: 1))),
+            ],
+            limit: 2,
+            total: 3,
+            hasMore: true,
+          ),
+          (2, null) => _page(
+            [_row(3, updatedAt: t.subtract(const Duration(hours: 2)))],
+            page: 2,
+            limit: 2,
+            total: 3,
+          ),
+          _ => _page([_row(4, updatedAt: caughtUp)], limit: 2),
+        },
+      );
+      final hydrator = build(remote, limit: 2);
+      await hydrator.hydrate();
+      remote.respond = (_) => _page(const [], limit: 2);
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(
+        second.requests.single.updatedSince,
+        caughtUp.subtract(GameCollectionHydrator.deltaOverlap),
+      );
+    });
+
+    test('a delta spanning two pages runs a catch-up from its own '
+        'page 1', () async {
+      final remote = FakeCollectionRemote(
+        (_) => _page([_row(1, updatedAt: t)], limit: 2),
+      );
+      final hydrator = build(remote, limit: 2);
+      await hydrator.hydrate();
+      final newestOnPageOne = t.add(const Duration(minutes: 10));
+      remote.respond = (r) => r.updatedSince != markAtT
+          ? _page(const [], limit: 2)
+          : switch (r.page) {
+              1 => _page(
+                [
+                  _row(2, updatedAt: newestOnPageOne),
+                  _row(3, updatedAt: t.add(const Duration(minutes: 5))),
+                ],
+                limit: 2,
+                total: 3,
+                hasMore: true,
+              ),
+              _ => _page(
+                [_row(4, updatedAt: t.add(const Duration(minutes: 2)))],
+                page: 2,
+                limit: 2,
+                total: 3,
+              ),
+            };
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests, [
+        (page: 1, limit: 2, includeDeleted: true, updatedSince: markAtT),
+        (page: 2, limit: 2, includeDeleted: true, updatedSince: markAtT),
+        (
+          page: 1,
+          limit: 2,
+          includeDeleted: true,
+          updatedSince: newestOnPageOne,
+        ),
+      ]);
+    });
+
+    // A discard leaves the row holding the discarded op's values for a merge
+    // to rebuild, and moves the removal mark. The server's copy did not
+    // change, so a delta would never read it.
+    test('after a stuck op is discarded, the next is a full drain that '
+        'rebuilds its row, and the one after a delta', () async {
+      // Older than the mark, so only a full drain reads it again.
+      final rows = [
+        _row(1, updatedAt: t.subtract(const Duration(hours: 1))),
+        _row(2, updatedAt: t),
+      ];
+      final remote = FakeCollectionRemote((r) => serverPage(rows, r));
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      await collection.updateCollectionEntry(id: 'gc-1', quantity: 4);
+      final update = (await queue.getOutstandingEntries()).single;
+      await queue.park(update.id, error: 'rejected: 400');
+      expect(await collection.discardQueuedOp(update.id), isTrue);
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests.single.updatedSince, isNull);
+      final items = await collection.watchCollectionListItems().first;
+      expect(items.firstWhere((i) => i.entry.id == 'gc-1').entry.quantity, 1);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(third.requests.single.updatedSince, markAtT);
+    });
+
+    // Another tab over the same database can discard the op, and close
+    // before its own hydrate rebuilds the row.
+    test('after another tab discards a stuck op, the next is a full drain '
+        'that rebuilds its row, and the one after a delta', () async {
+      // Older than the mark, so only a full drain reads it again.
+      final rows = [
+        _row(1, updatedAt: t.subtract(const Duration(hours: 1))),
+        _row(2, updatedAt: t),
+      ];
+      final remote = FakeCollectionRemote((r) => serverPage(rows, r));
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      final otherTab = openCollection();
+      await otherTab.updateCollectionEntry(id: 'gc-1', quantity: 4);
+      final update = (await queue.getOutstandingEntries()).single;
+      await queue.park(update.id, error: 'rejected: 400');
+      expect(await otherTab.discardQueuedOp(update.id), isTrue);
+      await otherTab.onDispose();
+
+      final second = await nextPass(hydrator, remote);
+
+      expect(second.requests.single.updatedSince, isNull);
+      final items = await collection.watchCollectionListItems().first;
+      expect(items.firstWhere((i) => i.entry.id == 'gc-1').entry.quantity, 1);
+
+      final third = await nextPass(hydrator, remote);
+
+      expect(third.requests.single.updatedSince, markAtT);
+    });
+
+    // The pass records the removal mark it read before its first request,
+    // not one read when it ends: a confirmation mid-pass can make the merge
+    // skip a live copy, which the next pass must read again.
+    test('after a removal is confirmed during a pass, the next is a full '
+        'drain, and the one after a delta', () async {
+      final remote = FakeCollectionRemote(
+        (r) => serverPage([_row(1, updatedAt: t), _row(2, updatedAt: t)], r),
+      );
+      final hydrator = build(remote);
+      await hydrator.hydrate();
+      await collection.removeFromCollection('gc-1');
+      final removal = (await queue.getPendingEntries()).single;
+      final answer = Completer<PaginatedResult<GameCollectionWithSummary>>();
+      remote.respond = (_) => answer.future;
+      final during = hydrator.hydrate();
+      await Future<void>.delayed(Duration.zero);
+      expect(remote.requests, hasLength(2));
+      expect(remote.requests.last.updatedSince, markAtT);
+      await collection.confirmRemoved('gc-1', completedSyncQueueId: removal.id);
+      answer.complete(_page([_row(1, updatedAt: t), _row(2, updatedAt: t)]));
+      expect(await during, CollectionHydrateOutcome.complete);
+      final removedAt = t.add(const Duration(minutes: 5));
+      remote.respond = (r) => serverPage([
+        _row(1, updatedAt: removedAt, deletedAt: removedAt),
+        _row(2, updatedAt: t),
+      ], r);
+
+      final third = await nextPass(hydrator, remote);
+      final fourth = await nextPass(hydrator, remote);
+
+      expect(third.requests.single.updatedSince, isNull);
+      expect(
+        fourth.requests.single.updatedSince,
+        removedAt.subtract(GameCollectionHydrator.deltaOverlap),
+      );
+    });
+  });
+
   group('dirty entries', () {
     test('a dirty entry keeps its edit through a hydrate', () async {
       await build(FakeCollectionRemote((_) => _page([_row(1)]))).hydrate();
@@ -401,32 +777,6 @@ void main() {
 
       expect(outcome, CollectionHydrateOutcome.failed);
       expect(await listedTitles(), ['Game 1', 'Game 2']);
-    });
-  });
-
-  group('one pass at a time', () {
-    test('a call made while a pass is in flight joins it', () async {
-      final gate = Completer<PaginatedResult<GameCollectionWithSummary>>();
-      final remote = FakeCollectionRemote((_) => gate.future);
-      final hydrator = build(remote);
-
-      final first = hydrator.hydrate();
-      final second = hydrator.hydrate();
-      gate.complete(_page([_row(1)]));
-
-      expect(await first, CollectionHydrateOutcome.complete);
-      expect(await second, CollectionHydrateOutcome.complete);
-      expect(remote.requests, hasLength(1));
-    });
-
-    test('a call after a pass settles asks the server again', () async {
-      final remote = FakeCollectionRemote((_) => _page([_row(1)]));
-      final hydrator = build(remote);
-
-      await hydrator.hydrate();
-      await hydrator.hydrate();
-
-      expect(remote.requests, hasLength(2));
     });
   });
 }

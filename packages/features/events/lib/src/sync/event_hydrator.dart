@@ -145,31 +145,9 @@ class EventHydrator {
   ///
   /// Never throws — see the class doc.
   ///
-  /// **Single-flight:** a call made while a pass is in flight is handed that
-  /// pass, the very same future, rather than starting a second drain, as a
-  /// call to `HouseholdHydrator.hydrate` joins its pass. A pass deletes, and
-  /// one pass's purge racing another's writes is a question this means
-  /// nobody has to answer. It is a concurrency guard, not a cache: once a
-  /// pass settles, the next call asks the server again.
-  Future<EventHydrateOutcome> hydrate() {
-    final inFlight = _inFlight;
-    if (inFlight != null) return inFlight;
-
-    // The future stored is the one returned, so every caller of a pass holds
-    // the same one, and none resumes before the clear has run. Identity-
-    // checked so a pass cannot clear its successor, as the household's is.
-    late final Future<EventHydrateOutcome> pass;
-    pass = _drain().whenComplete(() {
-      if (identical(_inFlight, pass)) _inFlight = null;
-    });
-    _inFlight = pass;
-    return pass;
-  }
-
-  /// The pass currently draining, or null when none is.
-  Future<EventHydrateOutcome>? _inFlight;
-
-  Future<EventHydrateOutcome> _drain() async {
+  /// Not single-flight: a drain deletes as well as writes, so the caller,
+  /// `HydratePass`, runs one at a time (#302).
+  Future<EventHydrateOutcome> hydrate() async {
     final Map<String, int> purgeable;
     try {
       purgeable = await _repo.purgeableAttendance();

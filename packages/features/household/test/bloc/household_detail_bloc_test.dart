@@ -43,14 +43,14 @@ void main() {
   /// For the tests about the stream itself: one that has not spoken yet, or
   /// that closes. A real status replays its reading the moment it is
   /// listened to.
-  late StreamController<HouseholdHydration> hydration;
+  late StreamController<Hydration> hydration;
 
   setUp(() {
     repository = _MockHouseholdRepository();
     households = StreamController<List<Household>>();
     members = StreamController<List<HouseholdMember>>();
     status = HouseholdHydrationStatus();
-    hydration = StreamController<HouseholdHydration>();
+    hydration = StreamController<Hydration>();
     when(repository.watchHouseholds).thenAnswer((_) => households.stream);
     when(() => repository.watchMembers(_id)).thenAnswer((_) => members.stream);
     when(() => repository.getCurrentUserMember(_id)).thenAnswer(
@@ -500,10 +500,7 @@ void main() {
       households.add([_household('other')]);
       await settle();
       hydration.add(
-        const HouseholdHydration(
-          state: HouseholdHydrationState.refreshed,
-          everRefreshed: true,
-        ),
+        const Hydration(state: HydrationState.refreshed, everRefreshed: true),
       );
 
       await expectLater(
@@ -807,9 +804,7 @@ void main() {
         final bloc = buildOnRawStream();
         addTearDown(bloc.close);
 
-        hydration.add(
-          const HouseholdHydration(state: HouseholdHydrationState.running),
-        );
+        hydration.add(const Hydration(state: HydrationState.running));
         households.add(const []);
         members.add(const []);
         await settle();

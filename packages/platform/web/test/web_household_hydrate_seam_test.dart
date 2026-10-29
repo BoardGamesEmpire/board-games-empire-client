@@ -177,7 +177,7 @@ void main() {
 
     final status = container.get<HouseholdHydrationStatus>();
     await status.watch().firstWhere(
-      (reading) => reading.state == HouseholdHydrationState.refreshed,
+      (reading) => reading.state == HydrationState.refreshed,
     );
 
     // And the drain really went through that remote, not merely resolved it:

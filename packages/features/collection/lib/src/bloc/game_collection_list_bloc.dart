@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hydration/hydration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
-import '../sync/game_collection_hydration_status.dart';
 import 'game_collection_list_event.dart';
 import 'game_collection_list_state.dart';
 
@@ -43,7 +43,7 @@ import 'game_collection_list_state.dart';
 /// rule.
 ///
 /// The status remembers which passes completed, not this bloc
-/// ([GameCollectionHydration]). The list is often opened while a pass is
+/// ([Hydration]). The list is often opened while a pass is
 /// already running, and a bloc that remembered only what it saw would treat
 /// that pass as the first.
 ///
@@ -64,7 +64,7 @@ class GameCollectionListBloc
     extends Bloc<GameCollectionListEvent, GameCollectionListState> {
   GameCollectionListBloc({
     required GameCollectionRepository repository,
-    Stream<GameCollectionHydration>? hydration,
+    Stream<Hydration>? hydration,
     this._onRetry,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.collection.list'),
@@ -111,7 +111,7 @@ class GameCollectionListBloc
   bool get canRetry => _onRetry != null;
 
   late final StreamSubscription<List<GameCollectionListItem>> _cache;
-  StreamSubscription<GameCollectionHydration>? _hydrationUpdates;
+  StreamSubscription<Hydration>? _hydrationUpdates;
 
   /// Null until the cache has answered at all, which is not the same as
   /// having answered with nothing.
@@ -122,7 +122,7 @@ class GameCollectionListBloc
 
   /// What the hydrate last reported. The default is also what an absent
   /// hydrate means: idle, nothing confirmed, nothing failed.
-  GameCollectionHydration _hydration = const GameCollectionHydration();
+  Hydration _hydration = const Hydration();
 
   /// Whether a pass this screen asked for is still running.
   bool _retrying = false;
@@ -169,7 +169,7 @@ class GameCollectionListBloc
     Emitter<GameCollectionListState> emit,
   ) async {
     final retry = _onRetry;
-    // The hydrator would join a second call rather than duplicate the
+    // The pass would join a second call rather than duplicate the
     // drain, but the button should not queue passes either.
     if (retry == null || _retrying) return;
 
@@ -204,7 +204,7 @@ class GameCollectionListBloc
     // to the spinner rather than annotating an emptiness no pass confirmed.
     final filling =
         items.isEmpty &&
-        _hydration.state == GameCollectionHydrationState.running &&
+        _hydration.state == HydrationState.running &&
         !_hydration.everRefreshed;
     if (filling) return emit(const GameCollectionListLoading());
 
