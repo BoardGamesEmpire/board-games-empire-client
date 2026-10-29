@@ -260,8 +260,13 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
 /// Always supplied by [BgeApp]; returns null at navigation time when no
-/// active server is resolvable (a transient pre-active state), in which
-/// case the route falls back to the placeholder.
+/// active server is resolvable, in which case the route falls back to the
+/// placeholder.
+///
+/// That fallback is a dead end, not a transient state: the redirect pins
+/// [AppBootstrapNeedsAuth] to this route. Native bootstrap fails as a
+/// retryable error rather than reach it (#217), and the builder logs an
+/// error naming the cause if it ever is reached.
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the user-initiated feedback flow (#107) for the

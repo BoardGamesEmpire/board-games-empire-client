@@ -100,6 +100,7 @@ void main() {
     );
     when(() => serverRepository.updateLastActive(any(), any()))
         .thenAnswer((_) async {});
+    when(() => serverRepository.getAllServers()).thenAnswer((_) async => []);
 
     orchestrator = ServerOrchestratorImpl(
       serverRepository: serverRepository,
@@ -232,6 +233,242 @@ void main() {
         },
       );
     });
+  });
+
+  group('initialize() retries disconnected servers (#217)', () {
+    test(
+      'restores a disconnected server when no connected server restored',
+      () async {
+        installersById['a'] = _CountedInstaller();
+        when(() => serverRepository.getConnectedServers())
+            .thenAnswer((_) async => []);
+        when(() => serverRepository.getAllServers()).thenAnswer(
+          (_) async => [
+            testServerConfig(id: 'a', state: ConnectionState.disconnected),
+          ],
+        );
+
+        await orchestrator.initialize();
+
+        expect(orchestrator.activeServerId, 'a');
+        expect(orchestrator.getContext('a')?.state, ServerContextState.active);
+        verify(
+          () => serverRepository.updateConnectionState(
+            serverId: 'a',
+            newState: ConnectionState.active,
+          ),
+        ).called(1);
+      },
+    );
+
+    test(
+      'leaves a disconnected server alone when a connected one restored',
+      () async {
+        installersById['a'] = _CountedInstaller();
+        installersById['b'] = _CountedInstaller();
+        when(() => serverRepository.getConnectedServers()).thenAnswer(
+          (_) async => [
+            testServerConfig(id: 'a', state: ConnectionState.active),
+          ],
+        );
+        when(() => serverRepository.getAllServers()).thenAnswer(
+          (_) async => [
+            testServerConfig(id: 'a', state: ConnectionState.active),
+            testServerConfig(id: 'b', state: ConnectionState.disconnected),
+          ],
+        );
+
+        await orchestrator.initialize();
+
+        expect(orchestrator.activeServerId, 'a');
+        expect(orchestrator.getContext('b'), isNull);
+        verifyNever(() => serverRepository.getAllServers());
+      },
+    );
+
+    test(
+      'a connected server that fails is not retried in the same initialize',
+      () async {
+        final installer = _CountedInstaller(failOnCalls: {1});
+        installersById['a'] = installer;
+        when(() => serverRepository.getConnectedServers()).thenAnswer(
+          (_) async => [
+            testServerConfig(id: 'a', state: ConnectionState.active),
+          ],
+        );
+        // The failed restore persisted it as disconnected.
+        when(() => serverRepository.getAllServers()).thenAnswer(
+          (_) async => [
+            testServerConfig(id: 'a', state: ConnectionState.disconnected),
+          ],
+        );
+
+        await orchestrator.initialize();
+
+        expect(orchestrator.activeServerId, isNull);
+        expect(installer.calls, 1);
+      },
+    );
+
+    test('a retried server that fails again stays disconnected', () async {
+      installersById['a'] = _CountedInstaller(failOnCalls: {1});
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
+      when(() => serverRepository.getAllServers()).thenAnswer(
+        (_) async => [
+          testServerConfig(id: 'a', state: ConnectionState.disconnected),
+        ],
+      );
+
+      await orchestrator.initialize();
+
+      expect(orchestrator.isInitialized, isTrue);
+      expect(orchestrator.activeServerId, isNull);
+      expect(orchestrator.getContext('a'), isNull);
+      verify(
+        () => serverRepository.updateConnectionState(
+          serverId: 'a',
+          newState: ConnectionState.disconnected,
+        ),
+      ).called(1);
+    });
+
+    test(
+      'a retried server whose key store cannot be reached fails initialize',
+      () async {
+        installersById['a'] = _CountedInstaller(
+          failOnCalls: {1},
+          error: const EncryptionKeyUnavailableError(),
+        );
+        when(() => serverRepository.getConnectedServers())
+            .thenAnswer((_) async => []);
+        when(() => serverRepository.getAllServers()).thenAnswer(
+          (_) async => [
+            testServerConfig(id: 'a', state: ConnectionState.disconnected),
+          ],
+        );
+
+        await expectLater(
+          orchestrator.initialize(),
+          throwsA(isA<EncryptionKeyUnavailableError>()),
+        );
+        verifyNever(
+          () => serverRepository.updateConnectionState(
+            serverId: 'a',
+            newState: any(named: 'newState'),
+          ),
+        );
+      },
+    );
+
+    test('a retried server whose key store cannot be reached on promotion '
+        'fails initialize and keeps its persisted state', () async {
+      installersById['a'] = _CountedInstaller(
+        failOnCalls: {2},
+        error: const EncryptionKeyUnavailableError(),
+      );
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
+      when(() => serverRepository.getAllServers()).thenAnswer(
+        (_) async => [
+          testServerConfig(id: 'a', state: ConnectionState.disconnected),
+        ],
+      );
+
+      await expectLater(
+        orchestrator.initialize(),
+        throwsA(isA<EncryptionKeyUnavailableError>()),
+      );
+      verifyNever(
+        () => serverRepository.updateConnectionState(
+          serverId: 'a',
+          newState: any(named: 'newState'),
+        ),
+      );
+    });
+
+    test('only the first retried server that activates is brought back, '
+        'the most recently active first', () async {
+      final older = _CountedInstaller();
+      final newer = _CountedInstaller();
+      final never = _CountedInstaller();
+      installersById
+        ..['a'] = older
+        ..['b'] = newer
+        ..['c'] = never;
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
+      when(() => serverRepository.getAllServers()).thenAnswer(
+        (_) async => [
+          testServerConfig(id: 'c', state: ConnectionState.disconnected),
+          testServerConfig(
+            id: 'a',
+            state: ConnectionState.disconnected,
+          ).copyWith(lastActiveAt: DateTime.utc(2026, 1, 1)),
+          testServerConfig(
+            id: 'b',
+            state: ConnectionState.disconnected,
+          ).copyWith(lastActiveAt: DateTime.utc(2026, 2, 1)),
+        ],
+      );
+
+      await orchestrator.initialize();
+
+      expect(orchestrator.activeServerId, 'b');
+      expect(orchestrator.currentConnectedCount, 1);
+      expect(older.calls, 0);
+      expect(never.calls, 0);
+      verifyNever(
+        () => serverRepository.updateConnectionState(
+          serverId: any(named: 'serverId', that: isNot('b')),
+          newState: any(named: 'newState'),
+        ),
+      );
+    });
+
+    test('a retried server that fails moves on to the next', () async {
+      installersById['a'] = _CountedInstaller(failOnCalls: {2});
+      installersById['b'] = _CountedInstaller();
+      when(() => serverRepository.getConnectedServers())
+          .thenAnswer((_) async => []);
+      when(() => serverRepository.getAllServers()).thenAnswer(
+        (_) async => [
+          testServerConfig(id: 'a', state: ConnectionState.disconnected),
+          testServerConfig(id: 'b', state: ConnectionState.disconnected),
+        ],
+      );
+
+      await orchestrator.initialize();
+
+      expect(orchestrator.activeServerId, 'b');
+      expect(orchestrator.getContext('a'), isNull);
+    });
+  });
+
+  test('initialize() promotes another restored server when the previously '
+      'active one fails to activate (#217)', () async {
+    // Restores fine, then fails on promotion.
+    installersById['a'] = _CountedInstaller(failOnCalls: {2});
+    installersById['b'] = _CountedInstaller();
+    when(() => serverRepository.getConnectedServers()).thenAnswer(
+      (_) async => [
+        testServerConfig(id: 'b', state: ConnectionState.monitoring),
+        testServerConfig(id: 'a', state: ConnectionState.active),
+      ],
+    );
+
+    await orchestrator.initialize();
+
+    expect(orchestrator.activeServerId, 'b');
+    expect(orchestrator.getContext('b')?.state, ServerContextState.active);
+    expect(orchestrator.getContext('a'), isNull);
+    verify(
+      () => serverRepository.updateConnectionState(
+        serverId: 'a',
+        newState: ConnectionState.disconnected,
+      ),
+    ).called(1);
+    verifyNever(() => serverRepository.getAllServers());
   });
 
   group('connectServer()', () {

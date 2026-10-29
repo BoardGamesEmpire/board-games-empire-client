@@ -604,12 +604,25 @@ class _BgeAppState extends State<BgeApp> {
       _rootService<ConnectivityService>();
 
   /// Renders the auth route at navigation time. Falls back to the router's
-  /// placeholder when no active server is resolvable (no scope, or none
-  /// active yet) — the redirect only routes here once a server is active,
-  /// so the fallback is transient/defensive.
+  /// placeholder when no active server is resolvable: bootstrap published
+  /// no scope, or the scope has no active server.
+  ///
+  /// The fallback is reachable, and not transient: [AppBootstrapNeedsAuth]
+  /// pins every location here, so a user who reaches it has no way out.
+  /// Native bootstrap now fails as a retryable error rather than report
+  /// saved servers it restored none of (#217); [_logAuthUnavailable] is
+  /// what's left if the fallback is ever reached again.
   Widget? _buildAuthRoute(BuildContext context) {
-    final active = widget.bootstrapCubit.activeServerScope?.active;
-    if (active == null) return null;
+    final scope = widget.bootstrapCubit.activeServerScope;
+    if (scope == null) {
+      _logAuthUnavailable('noScope');
+      return null;
+    }
+    final active = scope.active;
+    if (active == null) {
+      _logAuthUnavailable('noActiveServer');
+      return null;
+    }
     return AuthGate(
       identity: active.identity,
       serverDisplayName: active.displayName,
@@ -1895,6 +1908,15 @@ class _BgeAppState extends State<BgeApp> {
     '${missing.join(', ')}.',
     context: {'missing': missing},
   );
+
+  /// Reports an auth route with no active server behind it (#217), naming
+  /// the [cause]: `noScope` when bootstrap published no active-server
+  /// scope, `noActiveServer` when the scope has none.
+  ///
+  /// Error, for the reason [_logServerAddUnavailable] gives: the redirect
+  /// pins the user to this route, so the placeholder is a dead end.
+  void _logAuthUnavailable(String cause) =>
+      _log.error('Auth is unavailable: $cause.', context: {'cause': cause});
 
   /// True once bootstrap has left the initializing/failed legs for a state
   /// that only follows successful hydrated-storage init inside
