@@ -187,8 +187,9 @@ abstract class EventRemoteDataSource {
   /// measured after it trims the key. A longer key is a 400.
   static const int maxClientRequestIdLength = 128;
 
-  /// The server's length ceiling for [cancelOccurrence]'s `reason`. A longer
-  /// one is a 400, which is permanent.
+  /// The server's length ceiling for [cancelOccurrence]'s `reason`, in code
+  /// points, as its `MaxLength` counts them. A longer one is a 400, which is
+  /// permanent.
   static const int maxCancelReasonLength = 1000;
 
   /// `GET /api/events`: one page of the events the caller attends, newest

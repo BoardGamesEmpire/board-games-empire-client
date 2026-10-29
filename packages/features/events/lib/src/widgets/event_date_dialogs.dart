@@ -503,7 +503,7 @@ const _reasonTooLong = 'reasonTooLong';
 /// counts it.
 Map<String, dynamic>? _checkReason(AbstractControl<dynamic> control) {
   final reason = (control.value as String?)?.trim() ?? '';
-  return reason.length > EventRemoteDataSource.maxCancelReasonLength
+  return reason.runes.length > EventRemoteDataSource.maxCancelReasonLength
       ? const {_reasonTooLong: true}
       : null;
 }

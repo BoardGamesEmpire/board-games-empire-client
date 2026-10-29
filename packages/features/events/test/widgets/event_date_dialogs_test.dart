@@ -348,6 +348,34 @@ void main() {
       );
     });
 
+    testWidgets('a date past the calendar keeps its day when edited', (
+      tester,
+    ) async {
+      // Wednesday 7 November 2029, 7 PM local: past the two years the
+      // calendar runs to.
+      useViewSize(tester, const Size(400, 800));
+      final distant = opening.copyWith(
+        startDate: DateTime(2029, 11, 7, 19).toUtc(),
+        endDate: null,
+      );
+      final popped = await open(
+        tester,
+        (context) => showEditDateDialog(context, distant, now: () => now),
+      );
+
+      await pick(tester, EventDateDialogKeys.start, day: 7, hour: 8);
+      await pick(tester, EventDateDialogKeys.end, day: 7, hour: 11);
+      await submit(tester);
+
+      expect(
+        popped.value,
+        OccurrenceUpdate(
+          startDate: DateTime(2029, 11, 7, 20).toUtc(),
+          endDate: DateTime(2029, 11, 7, 23).toUtc(),
+        ),
+      );
+    });
+
     testWidgets('a date with no start is renamed without picking one', (
       tester,
     ) async {
@@ -429,6 +457,13 @@ void main() {
       await reason(tester, '  The venue flooded.  ');
       await submit(tester);
       expect(popped.value, 'The venue flooded.');
+
+      // The server counts code points, so an emoji is one character, not
+      // two.
+      popped = await openCancel(tester);
+      await reason(tester, '🎲' * 1000);
+      await submit(tester);
+      expect(popped.value, '🎲' * 1000);
 
       // Spaces alone are no reason (#506).
       popped = await openCancel(tester);

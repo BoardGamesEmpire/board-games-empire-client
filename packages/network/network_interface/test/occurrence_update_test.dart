@@ -23,5 +23,37 @@ void main() {
         isNot(OccurrenceUpdate(location: 'Day 1')),
       );
     });
+
+    test('a blank value is refused', () {
+      expect(() => OccurrenceUpdate(label: '  '), throwsArgumentError);
+      expect(() => OccurrenceUpdate(location: ''), throwsArgumentError);
+    });
+
+    test('a value and its own clear flag are refused together', () {
+      // The PATCH cannot send both.
+      expect(
+        () => OccurrenceUpdate(label: 'Day 1', clearLabel: true),
+        throwsArgumentError,
+      );
+      expect(
+        () => OccurrenceUpdate(endDate: DateTime.utc(2026), clearEndDate: true),
+        throwsArgumentError,
+      );
+      expect(
+        () => OccurrenceUpdate(location: 'Hall', clearLocation: true),
+        throwsArgumentError,
+      );
+    });
+
+    test('an update that changes nothing is empty', () {
+      expect(OccurrenceUpdate().isEmpty, isTrue);
+      expect(OccurrenceUpdate(label: 'Day 1').isEmpty, isFalse);
+      expect(OccurrenceUpdate(clearLabel: true).isEmpty, isFalse);
+      expect(OccurrenceUpdate(startDate: DateTime.utc(2026)).isEmpty, isFalse);
+      expect(OccurrenceUpdate(endDate: DateTime.utc(2026)).isEmpty, isFalse);
+      expect(OccurrenceUpdate(clearEndDate: true).isEmpty, isFalse);
+      expect(OccurrenceUpdate(location: 'Hall').isEmpty, isFalse);
+      expect(OccurrenceUpdate(clearLocation: true).isEmpty, isFalse);
+    });
   });
 }

@@ -217,7 +217,7 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     _checkOccurrenceIds(eventId, occurrenceId);
     final trimmed = reason?.trim();
     if (trimmed != null &&
-        trimmed.length > EventRemoteDataSource.maxCancelReasonLength) {
+        trimmed.runes.length > EventRemoteDataSource.maxCancelReasonLength) {
       // The server's 400 for this is permanent, so it is not sent.
       throw ArgumentError.value(
         reason,

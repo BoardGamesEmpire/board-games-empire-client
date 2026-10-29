@@ -1716,33 +1716,11 @@ void main() {
     test('updateOccurrence refuses an empty update before sending', () async {
       final remote = answering(occurrenceBody());
 
-      expect(OccurrenceUpdate().isEmpty, isTrue);
-      expect(OccurrenceUpdate(clearLabel: true).isEmpty, isFalse);
       await expectLater(
         remote.updateOccurrence('e1', 'o1', OccurrenceUpdate()),
         throwsArgumentError,
       );
       expect(adapter.sent, isEmpty);
-    });
-
-    test('an OccurrenceUpdate refuses a blank value', () {
-      expect(() => OccurrenceUpdate(label: '  '), throwsArgumentError);
-      expect(() => OccurrenceUpdate(location: ''), throwsArgumentError);
-    });
-
-    test('an OccurrenceUpdate refuses a value and its own clear flag', () {
-      expect(
-        () => OccurrenceUpdate(label: 'Day 1', clearLabel: true),
-        throwsArgumentError,
-      );
-      expect(
-        () => OccurrenceUpdate(endDate: DateTime.utc(2026), clearEndDate: true),
-        throwsArgumentError,
-      );
-      expect(
-        () => OccurrenceUpdate(location: 'Hall', clearLocation: true),
-        throwsArgumentError,
-      );
     });
 
     test('confirmOccurrence, declineOccurrence and cancelOccurrence post to '
@@ -1787,6 +1765,17 @@ void main() {
         expect(adapter.sent.single.body, {'reason': 'a' * 1000});
       },
     );
+
+    test('cancelOccurrence counts a reason in code points, as the server '
+        'does', () async {
+      // One emoji is two UTF-16 code units, and one character to the
+      // server's MaxLength.
+      final remote = answering(occurrenceBody(), status: 201);
+
+      await remote.cancelOccurrence('e1', 'o1', reason: '🎲' * 1000);
+
+      expect(adapter.sent.single.body, {'reason': '🎲' * 1000});
+    });
 
     test('cancelOccurrence refuses a reason past 1000 characters before '
         'sending', () async {
