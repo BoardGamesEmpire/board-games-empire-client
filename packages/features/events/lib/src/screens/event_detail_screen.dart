@@ -73,7 +73,9 @@ import '../widgets/event_refresh_banner.dart';
 /// (#589). Dropped, an add or edit would take what the user typed with it.
 /// It is sent with the id of the event the screen shows then, and not at
 /// all if that event was cancelled or archived meanwhile, which the server
-/// would still let a date be edited or removed on (backend#956). Removing a
+/// would still let a date be edited or removed on (backend#956), or if the
+/// viewer's role no longer allows it, which for a confirm, decline or
+/// cancel the server doesn't check (backend#979). Removing a
 /// Confirmed date asks once, and is a cancel and then a remove (#446).
 ///
 /// Every end shows a banner, done included, since the screen stays, and
@@ -550,21 +552,24 @@ class _Dates extends StatelessWidget {
           : null,
       onAdd:
           hasActions && canAddDate(event, snapshot.occurrences, state.actions)
-          ? () => unawaited(_send(context, () => _askAdd(context)))
+          ? () => unawaited(
+              _send(context, EventAction.addDate, () => _askAdd(context)),
+            )
           : null,
       onAction: hasActions
           ? (occurrence, action) => unawaited(
-              _send(context, () => _ask(context, occurrence, action)),
+              _send(context, action, () => _ask(context, occurrence, action)),
             )
           : null,
       enabled: enabled,
     );
   }
 
-  /// Asks through [ask]'s dialog, then sends the request it answers, as
-  /// Delete does.
+  /// Asks through [ask]'s dialog, then sends the request it answers for
+  /// [action], as Delete does.
   Future<void> _send(
     BuildContext context,
+    EventAction action,
     Future<_DateRequest?> Function() ask,
   ) async {
     // Read before the dialog opens: the page under it can rebuild without
@@ -582,10 +587,14 @@ class _Dates extends StatelessWidget {
 
     // A sync can have cancelled the event while the dialog was open, and
     // the server still takes an edit or a removal on a cancelled event
-    // (backend#956). The page already shows it so, with no date controls.
+    // (backend#956). Or taken the action from the viewer, and the server
+    // still takes a confirm, decline or cancel from an organizer
+    // (backend#979). The page already shows either, without the control.
     // A date's own change goes on to the server, whose 400 says so.
     final shown = state.detail.snapshot;
-    if (!takesDateWrites(shown.event)) return;
+    if (!takesDateWrites(shown.event) || !state.actions.contains(action)) {
+      return;
+    }
     actions.add(request(shown));
   }
 

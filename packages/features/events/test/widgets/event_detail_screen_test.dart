@@ -42,7 +42,7 @@ const _cancelRemoveBodyCopy =
     "It's cancelled first, so everyone who answered is told, then removed. "
     "This can't be undone.";
 const _dateChangedCopy =
-    'This date changed meanwhile. Here it is as it stands now.';
+    'This date changed meanwhile. Check it below before trying again.';
 const _dateGoneCopy = "This date isn't on the event any more.";
 const _dateRefusedCopy = "You can't change this date.";
 const _dateCancelledRemoveUnconfirmedCopy =
@@ -2038,6 +2038,38 @@ void main() {
 
         expect(remote.dateRequests, isEmpty);
         expect(menuOf('o-1'), findsNothing);
+      });
+    }
+
+    for (final action in [
+      EventAction.confirmDate,
+      EventAction.declineDate,
+      EventAction.cancelDate,
+    ]) {
+      testWidgets('${action.name} is not sent for a host made an organizer '
+          'while its dialog was open', (tester) async {
+        // The server still takes all three from an organizer
+        // (backend#979).
+        final status = action == EventAction.cancelDate
+            ? OccurrenceStatus.confirmed
+            : OccurrenceStatus.proposed;
+        final remote = answering();
+        await show(
+          tester,
+          hosted([date('o-1', status: status)]),
+          remote: remote,
+          onBack: back,
+        );
+        await choose(tester, 'o-1', action);
+
+        // A sync lands the viewer's new role under the dialog.
+        cache.add(
+          hosted([date('o-1', status: status)], role: EventRole.organizer),
+        );
+        await settle(tester);
+        await submit(tester);
+
+        expect(remote.dateRequests, isEmpty);
       });
     }
 

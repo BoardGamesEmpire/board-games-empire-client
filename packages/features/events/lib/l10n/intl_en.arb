@@ -266,9 +266,9 @@
   "@eventsActionDismiss": {
     "description": "Button on the banner that says how the last change made on an event's screen went, such as deleting the event or confirming one of its dates. Closes the banner."
   },
-  "eventsDateChanged": "This date changed meanwhile. Here it is as it stands now.",
+  "eventsDateChanged": "This date changed meanwhile. Check it below before trying again.",
   "@eventsDateChanged": {
-    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. The screen has just been refreshed and shows the date as it is now. A warning, not an error."
+    "description": "Banner on an event's screen when a change to one of its dates was turned down because the date had changed since the screen showed it: someone else changed, confirmed or cancelled it, or an earlier attempt from this device went through. It shows as the screen starts reading the event again, and stays if that read fails, so the copy must not say the date below is up to date: the refresh banner says whether the read went through. A warning, not an error."
   },
   "eventsDateCancelledRemoveUnconfirmed": "The date was cancelled. If it's still below, you can remove it now.",
   "@eventsDateCancelledRemoveUnconfirmed": {
