@@ -15,6 +15,7 @@ Game _makeGame({
   String title = 'Test Game',
   String? subtitle,
   ContentType contentType = ContentType.baseGame,
+  int? publishYear,
   int? minPlayers,
   int? maxPlayers,
   int? minPlayTime,
@@ -35,6 +36,7 @@ Game _makeGame({
     title: title,
     subtitle: subtitle,
     contentType: contentType,
+    publishYear: publishYear,
     minPlayers: minPlayers,
     maxPlayers: maxPlayers,
     minPlayTime: minPlayTime,
@@ -337,7 +339,7 @@ void main() {
         final result = await repo.searchGames(
           'cat',
           limit: 3,
-          contentTypes: {ContentType.expansion},
+          filter: const GameSearchFilter(contentTypes: {ContentType.expansion}),
         );
         expect(result.map((g) => g.id), equals(['g-exp']));
       });
@@ -397,6 +399,188 @@ void main() {
           expect(result.map((g) => g.id), equals(['g-1']));
         },
       );
+    });
+
+    group('searchGames() narrows by the filter\'s ranges (#565, #580)', () {
+      /// The titles of the games matching "game" that [filter] keeps, in the
+      /// search's order.
+      Future<List<String>> titles(GameSearchFilter filter) async => [
+        for (final game in await repo.searchGames('game', filter: filter))
+          game.title,
+      ];
+
+      test('a publish-year range keeps the years inside it, and undated '
+          'games only when asked', () async {
+        await repo.cacheGames([
+          _makeGame(id: 'g-1', title: 'Game -2200', publishYear: -2200),
+          _makeGame(id: 'g-2', title: 'Game 1995', publishYear: 1995),
+          _makeGame(id: 'g-3', title: 'Game 2010', publishYear: 2010),
+          _makeGame(id: 'g-4', title: 'Game undated'),
+        ]);
+
+        expect(
+          await titles(
+            const GameSearchFilter(
+              publishYear: GameSearchRange(min: -3000, max: 2000),
+            ),
+          ),
+          ['Game -2200', 'Game 1995'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(
+              publishYear: GameSearchRange(
+                min: -3000,
+                max: 2000,
+                includeUnknown: true,
+              ),
+            ),
+          ),
+          ['Game -2200', 'Game 1995', 'Game undated'],
+        );
+      });
+
+      test('a single player-count bound is one count', () async {
+        await repo.cacheGames([
+          _makeGame(id: 'g-1', title: 'Game 2-6', minPlayers: 2, maxPlayers: 6),
+          _makeGame(id: 'g-2', title: 'Game 2-4', minPlayers: 2, maxPlayers: 4),
+          _makeGame(id: 'g-3', title: 'Game ?-6', maxPlayers: 6),
+        ]);
+
+        expect(
+          await titles(
+            const GameSearchFilter(playerCount: GameSearchRange(min: 5)),
+          ),
+          ['Game 2-6'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(playerCount: GameSearchRange(max: 5)),
+          ),
+          ['Game 2-6'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(
+              playerCount: GameSearchRange(min: 5, includeUnknown: true),
+            ),
+          ),
+          ['Game 2-6', 'Game ?-6'],
+        );
+      });
+
+      test('a player-count range needs every count in it', () async {
+        await repo.cacheGames([
+          _makeGame(id: 'g-1', title: 'Game 2-6', minPlayers: 2, maxPlayers: 6),
+          _makeGame(id: 'g-2', title: 'Game 2-4', minPlayers: 2, maxPlayers: 4),
+        ]);
+
+        expect(
+          await titles(
+            const GameSearchFilter(
+              playerCount: GameSearchRange(min: 3, max: 5),
+            ),
+          ),
+          ['Game 2-6'],
+        );
+      });
+
+      test('a play time fits when the whole time does', () async {
+        await repo.cacheGames([
+          _makeGame(
+            id: 'g-1',
+            title: 'Game 30-60',
+            minPlayTime: 30,
+            maxPlayTime: 60,
+          ),
+          _makeGame(
+            id: 'g-2',
+            title: 'Game 45-90',
+            minPlayTime: 45,
+            maxPlayTime: 90,
+          ),
+          _makeGame(id: 'g-3', title: 'Game 90', maxPlayTime: 90),
+          _makeGame(id: 'g-4', title: 'Game none'),
+        ]);
+
+        expect(
+          await titles(
+            const GameSearchFilter(playTime: GameSearchRange(max: 60)),
+          ),
+          ['Game 30-60'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(playTime: GameSearchRange(min: 45)),
+          ),
+          ['Game 45-90', 'Game 90'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(playTime: GameSearchRange(min: 30, max: 90)),
+          ),
+          ['Game 30-60', 'Game 45-90', 'Game 90'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(
+              playTime: GameSearchRange(min: 30, max: 90, includeUnknown: true),
+            ),
+          ),
+          ['Game 30-60', 'Game 45-90', 'Game 90', 'Game none'],
+        );
+      });
+
+      test('a game with one play time uses it for both ends', () async {
+        await repo.cacheGame(
+          _makeGame(id: 'g-1', title: 'Game 120', minPlayTime: 120),
+        );
+
+        expect(
+          await titles(
+            const GameSearchFilter(playTime: GameSearchRange(min: 100)),
+          ),
+          ['Game 120'],
+        );
+        expect(
+          await titles(
+            const GameSearchFilter(playTime: GameSearchRange(max: 100)),
+          ),
+          isEmpty,
+        );
+      });
+
+      test('a platform-type filter finds nothing', () async {
+        await repo.cacheGame(_makeGame(id: 'g-1', title: 'Game one'));
+        expect(await titles(const GameSearchFilter()), ['Game one']);
+
+        expect(
+          await titles(
+            const GameSearchFilter(platformTypes: {PlatformType.tabletop}),
+          ),
+          isEmpty,
+        );
+      });
+
+      test('the ranges narrow before the limit', () async {
+        // Titles sort by name, so the three in range sort last.
+        await repo.cacheGames([
+          for (var i = 0; i < 25; i++)
+            _makeGame(
+              id: 'g-$i',
+              title: 'Game ${i.toString().padLeft(2, '0')}',
+              publishYear: i < 22 ? 1990 : 2000,
+            ),
+        ]);
+
+        final result = await repo.searchGames(
+          'game',
+          filter: const GameSearchFilter(
+            publishYear: GameSearchRange(min: 2000),
+          ),
+        );
+        expect(result.map((g) => g.title), ['Game 22', 'Game 23', 'Game 24']);
+      });
     });
 
     group('watchGame()', () {

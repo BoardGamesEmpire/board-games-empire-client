@@ -134,7 +134,7 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   Future<List<Game>> searchGames(
     String query, {
     int limit = 20,
-    Set<ContentType> contentTypes = const {},
+    GameSearchFilter filter = const GameSearchFilter(),
   }) async {
     checkNotDisposed();
     // Reject non-positive limits up front. Without this, passing
@@ -143,6 +143,10 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     // SQL with `LIMIT 0` that returns nothing but still pays the
     // ORDER BY cost.
     if (limit <= 0) return [];
+
+    // The cache holds no platform types (#474), so none of its games can be
+    // vouched for.
+    if (filter.platformTypes.isNotEmpty) return const [];
 
     // Strip SQL `LIKE` wildcards (`%`, `_`) from the user's input.
     //
@@ -171,9 +175,9 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     // LIMIT trims it down.
     final prefixPattern = '$q%';
 
-    // The content types narrow in SQL, before LIMIT, so a type outnumbered
-    // by other matches is still found.
-    final types = [for (final type in contentTypes) type.toWire()];
+    // The filter narrows in SQL, before LIMIT, so a game outnumbered by
+    // other matches is still found.
+    final types = [for (final type in filter.contentTypes) type.toWire()];
 
     final rows =
         await (_db.select(_db.gamesTable)
@@ -184,7 +188,8 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
                         t.subtitle.lower().contains(q)) &
                     (types.isEmpty
                         ? const Constant(true)
-                        : t.contentType.isIn(types)),
+                        : t.contentType.isIn(types)) &
+                    _inRanges(t, filter),
               )
               ..orderBy([
                 // Title-prefix matches first. The LIKE expression
@@ -201,6 +206,78 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
 
     return rows.map(_mapGame).toList();
   }
+
+  /// [filter]'s ranges as one condition, mirroring the server's
+  /// `localFilterConditions` (backend
+  /// `libs/api/game-search/src/lib/search-filter.ts`, #565, #580).
+  ///
+  /// A comparison with a null column is null in SQL, which a WHERE drops, so
+  /// a game missing a value fails the match and is kept only by its range's
+  /// unknown arm.
+  static Expression<bool> _inRanges(
+    $GamesTableTable t,
+    GameSearchFilter filter,
+  ) {
+    final GameSearchFilter(:publishYear, :playerCount, :playTime) = filter;
+    return Expression.and([
+      if (publishYear.narrows)
+        _orUnknown(
+          publishYear,
+          Expression.and([
+            if (publishYear.min case final min?)
+              t.publishYear.isBiggerOrEqualValue(min),
+            if (publishYear.max case final max?)
+              t.publishYear.isSmallerOrEqualValue(max),
+          ]),
+          t.publishYear.isNull(),
+        ),
+      if (playerCount.narrows) _supportsPlayerCount(t, playerCount),
+      if (playTime.narrows) _fitsPlayTime(t, playTime),
+    ]);
+  }
+
+  /// [match], widened to the games [unknown] picks out when [range] keeps
+  /// unknown values: the server's `orUnknown`.
+  static Expression<bool> _orUnknown(
+    GameSearchRange range,
+    Expression<bool> match,
+    Expression<bool> unknown,
+  ) => range.includeUnknown ? match | unknown : match;
+
+  /// Games that support every player count in [range]. A bound alone is one
+  /// count (#580), so `min: 5` means "supports 5".
+  static Expression<bool> _supportsPlayerCount(
+    $GamesTableTable t,
+    GameSearchRange range,
+  ) {
+    final lo = (range.min ?? range.max)!;
+    final hi = (range.max ?? range.min)!;
+    return _orUnknown(
+      range,
+      t.minPlayers.isSmallerOrEqualValue(lo) &
+          t.maxPlayers.isBiggerOrEqualValue(hi),
+      t.minPlayers.isNull() | t.maxPlayers.isNull(),
+    );
+  }
+
+  /// Games whose whole play time, in minutes, fits [range]. A game with one
+  /// play time takes that long, so it stands in for the missing end, and a
+  /// bound left out doesn't narrow that side.
+  static Expression<bool> _fitsPlayTime(
+    $GamesTableTable t,
+    GameSearchRange range,
+  ) => _orUnknown(
+    range,
+    Expression.and([
+      if (range.min case final min?)
+        t.minPlayTime.isBiggerOrEqualValue(min) |
+            (t.minPlayTime.isNull() & t.maxPlayTime.isBiggerOrEqualValue(min)),
+      if (range.max case final max?)
+        t.maxPlayTime.isSmallerOrEqualValue(max) |
+            (t.maxPlayTime.isNull() & t.minPlayTime.isSmallerOrEqualValue(max)),
+    ]),
+    t.minPlayTime.isNull() & t.maxPlayTime.isNull(),
+  );
 
   @override
   Future<List<Game>> getGamesPage({int offset = 0, required int limit}) async {
