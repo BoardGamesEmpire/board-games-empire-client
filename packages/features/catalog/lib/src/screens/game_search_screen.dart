@@ -11,6 +11,7 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import '../bloc/game_search_bloc.dart';
 import '../bloc/game_search_event.dart';
 import '../bloc/game_search_state.dart';
+import '../search/game_length_band.dart';
 import '../widgets/catalog_chip_label.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_game_row.dart';
@@ -76,6 +77,19 @@ class GameSearchScreen extends StatelessWidget {
   /// The chip under the field for one filter in use: `content_<name>`,
   /// `platform_<name>`, `year`, `players` or `time`.
   static Key inUseKey(String id) => Key('catalog_search.in_use_$id');
+
+  /// A range's From or To field in the filter sheet: [range] is `year`,
+  /// `players` or `time`, and [end] is `from` or `to`.
+  static Key rangeFieldKey(String range, String end) =>
+      Key('catalog_search.${range}_$end');
+
+  /// The filter sheet's switch that keeps games with no value for [range].
+  static Key includeUnknownKey(String range) =>
+      Key('catalog_search.${range}_unknown');
+
+  /// The filter sheet's choice of [band] for the play time.
+  static Key bandKey(GameLengthBand band) =>
+      Key('catalog_search.band_${band.name}');
 
   /// Per-row key for a result this server holds:
   /// `catalog_search.server_<externalId>`.
@@ -475,21 +489,40 @@ class _GameSearchPageState extends State<_GameSearchPage> {
 
 /// One filter in use, as its chip under the field shows it: [without] is
 /// the filter once it is cleared.
-typedef _InUse = ({String id, String label, GameSearchFilter without});
+typedef _InUse = ({String id, CatalogFact label, GameSearchFilter without});
 
 /// Every filter in use, in the sheet's order: one per chosen content type,
-/// one per chosen platform type. The Filters button counts them.
+/// one per chosen platform type, and one per range that narrows. The Filters
+/// button counts them.
+///
+/// A range that keeps unknown values says so, as "1990–2000 or no year",
+/// since those games are in the results. Clearing a range clears whether it
+/// keeps them too.
 List<_InUse> _filtersInUse(
   GameCatalogLocalizations l10n,
   GameSearchFilter filter,
 ) {
-  final GameSearchFilter(:contentTypes, :platformTypes) = filter;
+  final GameSearchFilter(
+    :contentTypes,
+    :platformTypes,
+    :publishYear,
+    :playerCount,
+    :playTime,
+  ) = filter;
+  const cleared = GameSearchRange();
+  CatalogFact? orUnknown(
+    GameSearchRange range,
+    CatalogFact? label,
+    String Function(String range) withUnknown,
+  ) => label == null || !range.includeUnknown
+      ? label
+      : (shown: withUnknown(label.shown), spoken: withUnknown(label.spoken));
   return [
     for (final type in GameSearchScreen.filterTypes)
       if (contentTypes.contains(type))
         (
           id: 'content_${type.name}',
-          label: contentTypeLabel(l10n, type)!,
+          label: sameFact(contentTypeLabel(l10n, type)!),
           without: filter.copyWith(
             contentTypes: {...contentTypes}..remove(type),
           ),
@@ -498,13 +531,72 @@ List<_InUse> _filtersInUse(
       if (platformTypes.contains(type))
         (
           id: 'platform_${type.name}',
-          label: platformTypeLabel(l10n, type)!,
+          label: sameFact(platformTypeLabel(l10n, type)!),
           without: filter.copyWith(
             platformTypes: {...platformTypes}..remove(type),
           ),
         ),
+    if (orUnknown(
+          publishYear,
+          _yearFact(l10n, publishYear),
+          l10n.catalogSearchOrNoYear,
+        )
+        case final label?)
+      (
+        id: 'year',
+        label: label,
+        without: filter.copyWith(publishYear: cleared),
+      ),
+    if (orUnknown(
+          playerCount,
+          // A bound alone is one count (#580).
+          playersFact(
+            l10n,
+            playerCount.min ?? playerCount.max,
+            playerCount.max ?? playerCount.min,
+          ),
+          l10n.catalogSearchOrNoPlayerCount,
+        )
+        case final label?)
+      (
+        id: 'players',
+        label: label,
+        without: filter.copyWith(playerCount: cleared),
+      ),
+    if (orUnknown(
+          playTime,
+          _playTimeFact(l10n, playTime),
+          l10n.catalogSearchOrNoPlayTime,
+        )
+        case final label?)
+      (id: 'time', label: label, without: filter.copyWith(playTime: cleared)),
   ];
 }
+
+/// A publish-year range in use, or null when it names no year.
+CatalogFact? _yearFact(GameCatalogLocalizations l10n, GameSearchRange range) {
+  String year(int year) => yearText(l10n, year);
+  return switch ((range.min, range.max)) {
+    (final int min, final int max) when min == max => sameFact(year(min)),
+    (final int min, final int max) => (
+      shown: l10n.catalogSearchYearRange(year(min), year(max)),
+      spoken: l10n.catalogSearchYearRangeSpoken(year(min), year(max)),
+    ),
+    (final int min, null) => sameFact(l10n.catalogSearchFromYear(year(min))),
+    (null, final int max) => sameFact(l10n.catalogSearchUpToYear(year(max))),
+    (null, null) => null,
+  };
+}
+
+/// A play-time range in use, by its band's name where it is one, or null
+/// when it names no time.
+CatalogFact? _playTimeFact(
+  GameCatalogLocalizations l10n,
+  GameSearchRange range,
+) => switch (GameLengthBand.matching(range)) {
+  final band? => sameFact(bandName(l10n, band)),
+  null => playTimeRangeFact(l10n, range.min, range.max),
+};
 
 /// The filters in use, as chips under the field (#474). Tapping one, or its
 /// remove button, clears it and searches again.
@@ -530,10 +622,12 @@ class _FiltersInUse extends StatelessWidget {
         for (final (:id, :label, :without) in inUse)
           InputChip(
             key: GameSearchScreen.inUseKey(id),
-            label: CatalogChipLabel(label),
+            label: CatalogChipLabel(label.shown, semanticsLabel: label.spoken),
             onPressed: () => clear(without),
             onDeleted: () => clear(without),
-            deleteButtonTooltipMessage: l10n.catalogSearchFilterRemove(label),
+            deleteButtonTooltipMessage: l10n.catalogSearchFilterRemove(
+              label.spoken,
+            ),
           ),
       ],
     );

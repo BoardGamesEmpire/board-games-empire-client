@@ -395,6 +395,57 @@ void main() {
       verify: (_) => expect(remote.calls, ['search(catan {tabletop})']),
     );
 
+    const keepUndated = GameSearchFilter(
+      publishYear: GameSearchRange(includeUnknown: true),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a change that narrows nothing new is kept without searching again',
+      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        // Keeping undated games, with no year bound, narrows nothing.
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+        // Nor does the same filter again.
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        const GameSearchReady(query: 'catan', filter: keepUndated),
+      ],
+      verify: (_) => expect(remote.calls, ['search(catan)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a change that narrows nothing new keeps everything the answer showed',
+      setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
+        local: [hit('catan')],
+        failedDataGateways: const {'dg_down'},
+        unfilterableDataGateways: const {'dg_bgg'},
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('catan')],
+          missingSources: const [GameSearchSource(id: 'dg_down')],
+          unfilterableSources: const [GameSearchSource(id: 'dg_bgg')],
+          filter: keepUndated,
+        ),
+      ],
+    );
+
     blocTest<GameSearchBloc, GameSearchState>(
       'with nothing typed, is only remembered',
       build: build,

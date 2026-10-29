@@ -82,6 +82,53 @@ void main() {
       )
       .data;
 
+  /// The open filter sheet's own scrollable.
+  Finder sheetScrollable() => find
+      .descendant(
+        of: find.byKey(GameSearchScreen.filterSheetKey),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+
+  /// Scrolls the open filter sheet until [finder] is in view. A widget below
+  /// the fold can already be built, in the list's cache, so it is then
+  /// brought fully on screen.
+  Future<Finder> reveal(WidgetTester tester, Finder finder) async {
+    await tester.scrollUntilVisible(finder, 100, scrollable: sheetScrollable());
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    return finder;
+  }
+
+  /// Types [text] into [range]'s [end] field in the open filter sheet, and
+  /// submits it.
+  Future<void> enterBound(
+    WidgetTester tester,
+    String range,
+    String end,
+    String text,
+  ) async {
+    final field = await reveal(
+      tester,
+      find.byKey(GameSearchScreen.rangeFieldKey(range, end)),
+    );
+    await tester.enterText(field, text);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+  }
+
+  /// The label of the chip under the field for the filter in use [id].
+  String? inUseLabel(WidgetTester tester, String id) => tester
+      .widget<Text>(
+        find
+            .descendant(
+              of: find.byKey(GameSearchScreen.inUseKey(id)),
+              matching: find.byType(Text),
+            )
+            .first,
+      )
+      .data;
+
   /// Narrows the search to [filter] through the screen's bloc, as its
   /// controls do, and waits for the answer.
   Future<void> narrow(WidgetTester tester, GameSearchFilter filter) async {
@@ -337,6 +384,353 @@ void main() {
     });
   });
 
+  group('the range controls', () {
+    setUp(() => remote.onSearch = (_, _) async => const GameSearchResults());
+
+    /// Shows the screen with "catan" searched for and the filter sheet open.
+    Future<void> showSheet(WidgetTester tester) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await openFilters(tester);
+    }
+
+    const rangeErrors = [
+      "From can't be after To",
+      'Must be at least 1',
+      'Too large',
+    ];
+
+    testWidgets('a year range searches once it is committed', (tester) async {
+      await showSheet(tester);
+      final before = remote.calls.length;
+
+      await enterBound(tester, 'year', 'from', '-3000');
+      await enterBound(tester, 'year', 'to', '500');
+
+      expect(remote.calls, hasLength(before + 2));
+      expect(remote.calls.last, 'search(catan year(-3000..500))');
+      expect(inUseLabel(tester, 'year'), '3000 BCE–500');
+    });
+
+    testWidgets('a reversed range shows the error and sends nothing, until '
+        'it is fixed', (tester) async {
+      await showSheet(tester);
+      await enterBound(tester, 'year', 'from', '2000');
+      expect(remote.calls.last, 'search(catan year(2000..))');
+      final before = remote.calls.length;
+
+      await enterBound(tester, 'year', 'to', '1990');
+
+      expect(remote.calls, hasLength(before));
+      expect(find.text("From can't be after To"), findsOneWidget);
+
+      await enterBound(tester, 'year', 'to', '2010');
+
+      expect(remote.calls, hasLength(before + 1));
+      expect(remote.calls.last, 'search(catan year(2000..2010))');
+      expect(find.text("From can't be after To"), findsNothing);
+    });
+
+    testWidgets('a bound typed and not submitted is committed when the '
+        'sheet closes', (tester) async {
+      await showSheet(tester);
+      final field = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.rangeFieldKey('year', 'from')),
+      );
+      await tester.enterText(field, '1990');
+      await tester.pump();
+
+      await closeFilters(tester);
+
+      expect(remote.calls.last, 'search(catan year(1990..))');
+      expect(inUseLabel(tester, 'year'), 'From 1990');
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets("a range that can't be sent says so when the sheet closes", (
+      tester,
+    ) async {
+      await showSheet(tester);
+      final before = remote.calls.length;
+      final field = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.rangeFieldKey('players', 'from')),
+      );
+      await tester.enterText(field, '0');
+      await tester.pump();
+
+      await closeFilters(tester);
+
+      expect(remote.calls, hasLength(before));
+      expect(find.byKey(GameSearchScreen.inUseKey('players')), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(SnackBar),
+          matching: find.text('Player count not applied. Must be at least 1.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a range's typing and its error outlive scrolling it out of "
+        'view', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await showSheet(tester);
+      await enterBound(tester, 'year', 'from', '2000');
+      await enterBound(tester, 'year', 'to', '1990');
+      expect(find.text("From can't be after To"), findsOneWidget);
+
+      await tester.drag(sheetScrollable(), const Offset(0, -5000));
+      await tester.pumpAndSettle();
+      await tester.drag(sheetScrollable(), const Offset(0, 5000));
+      await tester.pumpAndSettle();
+
+      final to = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.rangeFieldKey('year', 'to')),
+      );
+      expect(tester.widget<TextField>(to).controller!.text, '1990');
+      expect(find.text("From can't be after To"), findsOneWidget);
+    });
+
+    testWidgets('the keyboard leaves the field being typed in on screen', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.reset);
+      await showSheet(tester);
+
+      final field = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.rangeFieldKey('time', 'to')),
+      );
+      await tester.showKeyboard(field);
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(field).bottom, lessThanOrEqualTo(640 - 300));
+    });
+
+    testWidgets('clear all drops a bound typed and not yet sent', (
+      tester,
+    ) async {
+      await showSheet(tester);
+      await tester.tap(
+        find.byKey(GameSearchScreen.filterKey(ContentType.expansion)),
+      );
+      await tester.pumpAndSettle();
+      final from = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.rangeFieldKey('year', 'from')),
+      );
+      await tester.enterText(from, '1990');
+      await tester.pump();
+
+      await tester.tap(
+        await reveal(tester, find.byKey(GameSearchScreen.clearAllKey)),
+      );
+      await tester.pumpAndSettle();
+      await closeFilters(tester);
+
+      expect(remote.calls.last, 'search(catan)');
+      expect(find.byKey(GameSearchScreen.inUseKey('year')), findsNothing);
+      await openFilters(tester);
+      expect(
+        tester
+            .widget<TextField>(
+              await reveal(
+                tester,
+                find.byKey(GameSearchScreen.rangeFieldKey('year', 'from')),
+              ),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+    });
+
+    testWidgets('the range fields take numbers, not prose', (tester) async {
+      await showSheet(tester);
+
+      for (final range in ['year', 'players', 'time']) {
+        for (final end in ['from', 'to']) {
+          final field = tester.widget<TextField>(
+            find.byKey(GameSearchScreen.rangeFieldKey(range, end)),
+          );
+          expect(field.autocorrect, isFalse, reason: '$range $end');
+          expect(field.enableSuggestions, isFalse, reason: '$range $end');
+        }
+      }
+    });
+
+    testWidgets("a range's error is announced as it appears", (tester) async {
+      final handle = tester.ensureSemantics();
+      await showSheet(tester);
+      await enterBound(tester, 'year', 'from', '2000');
+
+      await enterBound(tester, 'year', 'to', '1990');
+
+      final announcer = find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            (widget.properties.liveRegion ?? false) &&
+            widget.properties.label == "From can't be after To",
+      );
+      expect(announcer, findsOneWidget);
+      expect(
+        tester.getSemantics(announcer),
+        isSemantics(label: "From can't be after To", isLiveRegion: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a lone minus sign is no bound', (tester) async {
+      await showSheet(tester);
+      final before = remote.calls.length;
+
+      await enterBound(tester, 'year', 'from', '-');
+
+      expect(remote.calls, hasLength(before));
+      for (final error in rangeErrors) {
+        expect(find.text(error), findsNothing);
+      }
+    });
+
+    testWidgets('one player count is an exact count', (tester) async {
+      await showSheet(tester);
+
+      await enterBound(tester, 'players', 'from', '4');
+
+      expect(remote.calls.last, 'search(catan players(4..))');
+      expect(inUseLabel(tester, 'players'), '4 players');
+    });
+
+    testWidgets('a player count below 1 is refused', (tester) async {
+      await showSheet(tester);
+      final before = remote.calls.length;
+
+      await enterBound(tester, 'players', 'from', '0');
+
+      expect(find.text('Must be at least 1'), findsOneWidget);
+      expect(remote.calls, hasLength(before));
+    });
+
+    testWidgets('a band sends its minutes, and Marathon sends only a '
+        'minimum', (tester) async {
+      await showSheet(tester);
+
+      await tester.tap(
+        await reveal(
+          tester,
+          find.byKey(GameSearchScreen.bandKey(GameLengthBand.medium)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.last, 'search(catan time(60..120))');
+      expect(inUseLabel(tester, 'time'), 'Medium');
+
+      await tester.tap(
+        await reveal(
+          tester,
+          find.byKey(GameSearchScreen.bandKey(GameLengthBand.marathon)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.last, 'search(catan time(480..))');
+    });
+
+    testWidgets('typing a time makes a custom range and unselects the band', (
+      tester,
+    ) async {
+      await showSheet(tester);
+      await tester.tap(
+        await reveal(
+          tester,
+          find.byKey(GameSearchScreen.bandKey(GameLengthBand.medium)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await enterBound(tester, 'time', 'to', '90');
+
+      expect(remote.calls.last, 'search(catan time(60..90))');
+      for (final band in GameLengthBand.values) {
+        expect(
+          tester
+              .widget<ChoiceChip>(find.byKey(GameSearchScreen.bandKey(band)))
+              .selected,
+          isFalse,
+          reason: '$band',
+        );
+      }
+      expect(inUseLabel(tester, 'time'), '1 hr–1 hr 30 min');
+    });
+
+    testWidgets('keeping unknown values goes with a bound, not without', (
+      tester,
+    ) async {
+      await showSheet(tester);
+      final before = remote.calls.length;
+
+      await tester.tap(
+        await reveal(
+          tester,
+          find.byKey(GameSearchScreen.includeUnknownKey('year')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(remote.calls, hasLength(before));
+
+      await enterBound(tester, 'year', 'from', '1990');
+
+      expect(remote.calls, hasLength(before + 1));
+      expect(remote.calls.last, 'search(catan year(1990..+?))');
+    });
+
+    testWidgets('a range cleared by its chip empties its fields', (
+      tester,
+    ) async {
+      await showSheet(tester);
+      await tester.tap(
+        await reveal(
+          tester,
+          find.byKey(GameSearchScreen.includeUnknownKey('year')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await enterBound(tester, 'year', 'from', '1990');
+      await enterBound(tester, 'year', 'to', '2000');
+      await closeFilters(tester);
+
+      await tester.tap(find.byTooltip('Remove 1990 to 2000 or no year'));
+      await tester.pumpAndSettle();
+      expect(remote.calls.last, 'search(catan)');
+
+      await openFilters(tester);
+      for (final end in ['from', 'to']) {
+        final field = await reveal(
+          tester,
+          find.byKey(GameSearchScreen.rangeFieldKey('year', end)),
+        );
+        expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+      }
+      final keep = await reveal(
+        tester,
+        find.byKey(GameSearchScreen.includeUnknownKey('year')),
+      );
+      expect(tester.widget<SwitchListTile>(keep).value, isFalse);
+    });
+  });
+
   testWidgets('a source both ranges skipped asks for both kinds of game '
       'back', (tester) async {
     remote.onSearch = (_, _) async =>
@@ -467,6 +861,57 @@ void main() {
         findsOneWidget,
       );
       expect(filtersButtonLabel(tester), 'Filters (2)');
+    });
+
+    testWidgets('two changes made in one turn both apply', (tester) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await openFilters(tester);
+
+      // Neither waits for the bloc to take the other, as a field committing
+      // as it loses focus and the tap that took it may not.
+      tester
+          .widget<FilterChip>(
+            find.byKey(GameSearchScreen.filterKey(ContentType.expansion)),
+          )
+          .onSelected!(true);
+      tester
+          .widget<FilterChip>(
+            find.byKey(GameSearchScreen.platformFilterKey(PlatformType.pc)),
+          )
+          .onSelected!(true);
+      await tester.pumpAndSettle();
+      await closeFilters(tester);
+
+      expect(
+        find.byKey(GameSearchScreen.inUseKey('content_expansion')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(GameSearchScreen.inUseKey('platform_pc')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a range that keeps games with no value says so on its chip', (
+      tester,
+    ) async {
+      await show(tester);
+      await search(tester, 'catan');
+
+      await narrow(
+        tester,
+        GameSearchFilter(
+          publishYear: const GameSearchRange(min: 1990, includeUnknown: true),
+          playerCount: const GameSearchRange(min: 4, includeUnknown: true),
+          playTime: GameLengthBand.medium.range.copyWith(includeUnknown: true),
+        ),
+      );
+
+      expect(inUseLabel(tester, 'year'), 'From 1990 or no year');
+      expect(inUseLabel(tester, 'players'), '4 players or no player count');
+      expect(inUseLabel(tester, 'time'), 'Medium or no play time');
+      expect(find.byTooltip('Remove 4 players or no player count'), findsOne);
     });
 
     testWidgets('removing an in-use chip clears it, and the sheet agrees', (

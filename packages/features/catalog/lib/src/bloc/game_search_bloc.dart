@@ -39,7 +39,10 @@ import 'game_search_state.dart';
 ///
 /// Query changes are debounced, and a new one cancels the handler still
 /// waiting on an older one (`restartable()`). A filter change and a retry
-/// start a search of their own, outside that ordering. So every search
+/// start a search of their own, outside that ordering. A filter change that
+/// narrows the search no differently, such as keeping unknown values on a
+/// range with no bound, starts none: the state takes the new filter, for
+/// its controls, and nothing else changes. So every search
 /// takes a sequence number, and an answer that lands after a newer search
 /// started is dropped, as `DataGatewayListBloc`'s reads are.
 ///
@@ -166,8 +169,44 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     GameSearchFilterChanged event,
     Emitter<GameSearchState> emit,
   ) async {
+    final same = _asSearched(event.filter) == _asSearched(_filter);
     _filter = event.filter;
+    if (same) {
+      _keepFilter(emit);
+      return;
+    }
     await _search(emit);
+  }
+
+  /// [filter] as a search reads it: a range with no bound narrows nothing,
+  /// so whether it keeps unknown values makes no difference (#565, #580).
+  static GameSearchFilter _asSearched(GameSearchFilter filter) {
+    GameSearchRange read(GameSearchRange range) =>
+        range.narrows ? range : const GameSearchRange();
+    return filter.copyWith(
+      publishYear: read(filter.publishYear),
+      playerCount: read(filter.playerCount),
+      playTime: read(filter.playTime),
+    );
+  }
+
+  /// Shows the current state again under [_filter], which narrows the
+  /// search no differently, so the filter's controls read it. An answer is
+  /// built again by [_ready], its one maker, so it keeps all it showed.
+  void _keepFilter(Emitter<GameSearchState> emit) {
+    final filter = _filter;
+    switch (state) {
+      case GameSearchReady():
+        _showAgain(emit);
+      case GameSearchIdle():
+        emit(GameSearchIdle(filter: filter));
+      case GameSearchLoading(:final query):
+        emit(GameSearchLoading(query: query, filter: filter));
+      case GameSearchFailed(:final query):
+        emit(GameSearchFailed(query: query, filter: filter));
+      case GameSearchDenied(:final query):
+        emit(GameSearchDenied(query: query, filter: filter));
+    }
   }
 
   Future<void> _onRetryRequested(

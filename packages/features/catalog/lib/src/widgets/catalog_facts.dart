@@ -3,6 +3,8 @@ import 'package:models/domain.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
+import '../search/game_length_band.dart';
+
 /// One fact about a game, as it is shown and as a screen reader says it.
 typedef CatalogFact = ({String shown, String spoken});
 
@@ -117,18 +119,29 @@ CatalogFact durationRangeFact(GameCatalogLocalizations l10n, int min, int max) {
 /// equal (backend#869). One end alone reads as the bound it is, not as the
 /// playing time.
 CatalogFact? playTimeFact(GameCatalogLocalizations l10n, Game game) =>
-    switch ((game.minPlayTime, game.maxPlayTime)) {
-      (final int min, final int max) when min != max => durationRangeFact(
-        l10n,
-        min,
-        max,
-      ),
-      // The same minimum and maximum: one playing time.
-      (final int minutes, final int _) => durationFact(l10n, minutes),
-      (final int min, null) => _atLeast(l10n, durationFact(l10n, min)),
-      (null, final int max) => _upTo(l10n, durationFact(l10n, max)),
-      (null, null) => null,
-    };
+    playTimeRangeFact(l10n, game.minPlayTime, game.maxPlayTime);
+
+/// A play time from [min] to [max] minutes, either of which may be left out,
+/// or null with neither (#579): a game's play time, or a search's.
+///
+/// Equal ends read as one time, and one end alone as the bound it is:
+/// "Up to 2 hr", "30 min+".
+CatalogFact? playTimeRangeFact(
+  GameCatalogLocalizations l10n,
+  int? min,
+  int? max,
+) => switch ((min, max)) {
+  (final int min, final int max) when min != max => durationRangeFact(
+    l10n,
+    min,
+    max,
+  ),
+  // The same minimum and maximum: one playing time.
+  (final int minutes, final int _) => durationFact(l10n, minutes),
+  (final int min, null) => _atLeast(l10n, durationFact(l10n, min)),
+  (null, final int max) => _upTo(l10n, durationFact(l10n, max)),
+  (null, null) => null,
+};
 
 CatalogFact _atLeast(GameCatalogLocalizations l10n, CatalogFact duration) => (
   shown: l10n.catalogPlayTimeAtLeastShort(duration.shown),
@@ -139,6 +152,18 @@ CatalogFact _upTo(GameCatalogLocalizations l10n, CatalogFact duration) => (
   shown: l10n.catalogPlayTimeUpTo(duration.shown),
   spoken: l10n.catalogPlayTimeUpTo(duration.spoken),
 );
+
+/// The name of [band], as the play-time filter offers it (#580).
+String bandName(GameCatalogLocalizations l10n, GameLengthBand band) =>
+    switch (band) {
+      GameLengthBand.filler => l10n.catalogBandFiller,
+      GameLengthBand.quick => l10n.catalogBandQuick,
+      GameLengthBand.short => l10n.catalogBandShort,
+      GameLengthBand.medium => l10n.catalogBandMedium,
+      GameLengthBand.long => l10n.catalogBandLong,
+      GameLengthBand.epic => l10n.catalogBandEpic,
+      GameLengthBand.marathon => l10n.catalogBandMarathon,
+    };
 
 /// A publish year; one before the common era reads "3000 BCE" (#565).
 String yearText(GameCatalogLocalizations l10n, int year) =>
