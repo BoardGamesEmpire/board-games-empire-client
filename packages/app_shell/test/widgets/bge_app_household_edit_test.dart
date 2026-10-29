@@ -159,6 +159,43 @@ void main() {
     expect(update.name, 'Beta Crew');
   });
 
+  // #465: pages animate now, so a form the user left is still mounted for
+  // its exit transition, and a save can answer inside it.
+  testWidgets('a save that answers after the user went back leaves the '
+      'detail screen open', (tester) async {
+    final saved = Completer<Household>();
+    when(() => remote.updateHousehold('hh_a', any()))
+        .thenAnswer((_) => saved.future);
+    final router = await pumpApp(tester);
+    router.go(AppRoutes.householdDetailOf('hh_a'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(HouseholdDetailScreen.editKey));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(EditHouseholdForm.nameFieldKey),
+      'Beta Crew',
+    );
+    await tester.ensureVisible(find.byKey(EditHouseholdForm.submitButtonKey));
+    await tester.tap(find.byKey(EditHouseholdForm.submitButtonKey));
+    await tester.pump();
+    await tester.tap(find.byType(BackButton));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      find.byType(EditHouseholdScreen, skipOffstage: false),
+      findsOneWidget,
+      reason: 'the form is still on its way out',
+    );
+
+    saved.complete(_household('Beta Crew'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(EditHouseholdScreen), findsNothing);
+    expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+    expect(find.text('Household updated.'), findsOneWidget);
+  });
+
   testWidgets('without a household remote there is no Edit, and the route '
       'falls back', (tester) async {
     final router = await pumpApp(tester, withRemote: false);

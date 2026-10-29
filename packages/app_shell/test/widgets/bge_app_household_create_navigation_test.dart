@@ -35,8 +35,12 @@ class _FakeSender implements SyncOperationSender {
 
   bool offline = false;
 
+  /// When set, delivery waits for it: the server has yet to answer.
+  Completer<void>? held;
+
   @override
   Future<SyncDelivery> deliver(String entryId, SyncOperation operation) async {
+    await held?.future;
     if (offline) {
       return SyncFailed(SyncFailure.unreachable, Exception('offline'));
     }
@@ -281,6 +285,40 @@ void main() {
         findsNothing,
         reason: 'the spent form was replaced, not pushed over (#271)',
       );
+    });
+
+    // #465: pages animate now, so a form the user left is still mounted for
+    // its exit transition, and a create can answer inside it.
+    testWidgets('a create that answers after the user went back leaves the '
+        'list open', (tester) async {
+      await pumpApp(tester);
+      routerOf(tester).go(AppRoutes.household);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdListScreen.createFabKey));
+      await tester.pumpAndSettle();
+
+      final held = sender.held = Completer<void>();
+      await tester.enterText(
+        find.byKey(CreateHouseholdForm.nameFieldKey),
+        'Sunday Crew',
+      );
+      await tester.tap(find.byKey(CreateHouseholdForm.submitButtonKey));
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byType(CreateHouseholdScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'the form is still on its way out',
+      );
+
+      held.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateHouseholdScreen), findsNothing);
+      expect(find.byType(HouseholdDetailScreen), findsNothing);
+      expect(find.byType(HouseholdListScreen), findsOneWidget);
     });
 
     testWidgets('direct entry lands on the detail screen, and back goes to '

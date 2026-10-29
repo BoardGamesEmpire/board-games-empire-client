@@ -1094,7 +1094,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<HouseholdRepository>(),
       remote: remote,
       onRefresh: _householdRetry(container),
-      onSaved: (ctx) => ctx.pop(),
+      onSaved: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
     );
   }
 
@@ -1279,7 +1279,10 @@ class _BgeAppState extends State<BgeApp> {
         if (container.isRegistered<HouseholdHydrationStatus>()) {
           container.get<HouseholdHydrationStatus>().markStale();
         }
-        ctx.pushReplacement(AppRoutes.householdDetailOf(householdId));
+        _leaveIfCurrent(
+          ctx,
+          () => ctx.pushReplacement(AppRoutes.householdDetailOf(householdId)),
+        );
       },
     );
   }
@@ -1627,8 +1630,10 @@ class _BgeAppState extends State<BgeApp> {
           : eventCreateHouseholds(households, roleOf),
       householdId: householdId,
       onRefresh: _householdRetry(container),
-      onCreated: (ctx, eventId) =>
-          ctx.pushReplacement(AppRoutes.eventDetailOf(eventId)),
+      onCreated: (ctx, eventId) => _leaveIfCurrent(
+        ctx,
+        () => ctx.pushReplacement(AppRoutes.eventDetailOf(eventId)),
+      ),
     );
   }
 
@@ -3248,18 +3253,31 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       remote: widget.remote,
       users: widget.users,
       onRefresh: widget.onRefresh,
-      onSent: (ctx) => ctx.pop(),
+      onSent: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
       // Back from Sent returns to the household, even under a form opened
       // from its invites by a viewer who has since lost them (#569). Pops,
       // rather than a `go`, keep the household and what is beneath it.
-      onMemberSent: (ctx) {
+      onMemberSent: (ctx) => _leaveIfCurrent(ctx, () {
         final router = GoRouter.of(ctx);
         while (router.state.fullPath != AppRoutes.householdDetail &&
             router.canPop()) {
           router.pop();
         }
         unawaited(router.push<void>(AppRoutes.invitesSent));
-      },
+      }),
     );
   }
+}
+
+/// Runs [leave], a form's way out after its save, only while [context]'s
+/// route is the current one (#465).
+///
+/// Pages animate, so a form the user has already left stays mounted for its
+/// exit transition, and its save can answer inside it. A pop or replacement
+/// from there acts on the top route, which by then is the screen beneath the
+/// form. The save happened and the form still confirms it; only the way out
+/// is dropped, since the user already took one. The DataGateway form holds
+/// itself to the same rule (#458).
+void _leaveIfCurrent(BuildContext context, VoidCallback leave) {
+  if (ModalRoute.isCurrentOf(context) ?? true) leave();
 }

@@ -39,9 +39,14 @@ class _DeliveringSender implements SyncOperationSender {
 
   final String eventId;
 
+  /// When set, delivery waits for it: the server has yet to answer.
+  Completer<void>? held;
+
   @override
-  Future<SyncDelivery> deliver(String entryId, SyncOperation operation) async =>
-      SyncDelivered(eventId: eventId);
+  Future<SyncDelivery> deliver(String entryId, SyncOperation operation) async {
+    await held?.future;
+    return SyncDelivered(eventId: eventId);
+  }
 
   @override
   Future<SyncDelivery> deliverEntry(SyncQueueEntry entry) =>
@@ -852,6 +857,50 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(EventOverviewScreen), findsOneWidget);
       expect(find.byType(CreateEventScreen), findsNothing);
+    });
+
+    // #465: pages animate now, so a form the user left is still mounted for
+    // its exit transition, and a create can answer inside it.
+    testWidgets('a create that answers after the user went back leaves the '
+        'overview open', (tester) async {
+      final sender = _DeliveringSender('srv1');
+      await pumpHome(tester, sender: sender, users: _MockUserRemote());
+      await openTheOverview(tester);
+      await tester.tap(find.byKey(EventOverviewScreen.createKey));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(CreateEventScreen.titleKey),
+        'Game night',
+      );
+      await tester.pumpAndSettle();
+      final starts = find.widgetWithText(InkWell, 'Starts');
+      await reveal(tester, starts);
+      await tester.tap(starts);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await reveal(tester, find.byKey(CreateEventScreen.submitKey));
+      final held = sender.held = Completer<void>();
+      await tester.tap(find.byKey(CreateEventScreen.submitKey));
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byType(CreateEventScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'the form is still on its way out',
+      );
+
+      held.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CreateEventScreen), findsNothing);
+      expect(find.byType(EventDetailScreen), findsNothing);
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
     });
 
     testWidgets("a household's New event opens the form with it picked", (
