@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
@@ -58,6 +59,28 @@ void main() {
     await tester.pump(GameSearchBloc.defaultDebounce);
     await tester.pumpAndSettle();
   }
+
+  /// Opens the filter sheet and waits for it to finish opening.
+  Future<void> openFilters(WidgetTester tester) async {
+    await tester.tap(find.byKey(GameSearchScreen.filtersButtonKey));
+    await tester.pumpAndSettle();
+  }
+
+  /// Closes the filter sheet by tapping the barrier above it.
+  Future<void> closeFilters(WidgetTester tester) async {
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+  }
+
+  /// The Filters button's label.
+  String? filtersButtonLabel(WidgetTester tester) => tester
+      .widget<Text>(
+        find.descendant(
+          of: find.byKey(GameSearchScreen.filtersButtonKey),
+          matching: find.byType(Text),
+        ),
+      )
+      .data;
 
   /// Narrows the search to [filter] through the screen's bloc, as its
   /// controls do, and waits for the answer.
@@ -367,18 +390,240 @@ void main() {
     expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
   });
 
-  testWidgets('a filter chip searches again, narrowed', (tester) async {
-    remote.onSearch = (_, _) async => const GameSearchResults();
+  group('the filter sheet', () {
+    setUp(() => remote.onSearch = (_, _) async => const GameSearchResults());
 
+    testWidgets('offers every content type and every platform type', (
+      tester,
+    ) async {
+      await show(tester);
+      await openFilters(tester);
+
+      expect(find.byKey(GameSearchScreen.filterSheetKey), findsOneWidget);
+      expect(GameSearchScreen.filterTypes, hasLength(11));
+      for (final type in GameSearchScreen.filterTypes) {
+        expect(find.byKey(GameSearchScreen.filterKey(type)), findsOneWidget);
+      }
+      expect(GameSearchScreen.platformFilterTypes, hasLength(7));
+      for (final type in GameSearchScreen.platformFilterTypes) {
+        expect(
+          find.byKey(GameSearchScreen.platformFilterKey(type)),
+          findsOneWidget,
+        );
+      }
+    });
+
+    testWidgets('a content-type chip searches again, narrowed', (tester) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await openFilters(tester);
+      await tester.tap(
+        find.byKey(GameSearchScreen.filterKey(ContentType.expansion)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(remote.calls, ['search(catan)', 'search(catan [expansion])']);
+      expect(find.byKey(GameSearchScreen.noResultsKey), findsOneWidget);
+    });
+
+    testWidgets('choosing a platform type searches again, narrowed', (
+      tester,
+    ) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await openFilters(tester);
+      await tester.tap(
+        find.byKey(GameSearchScreen.platformFilterKey(PlatformType.console)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.last, 'search(catan {console})');
+    });
+
+    testWidgets('each filter in use shows as a chip, and the button counts '
+        'them', (tester) async {
+      await show(tester);
+      await search(tester, 'catan');
+      expect(filtersButtonLabel(tester), 'Filters');
+
+      await openFilters(tester);
+      await tester.tap(
+        find.byKey(GameSearchScreen.filterKey(ContentType.expansion)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(GameSearchScreen.platformFilterKey(PlatformType.pc)),
+      );
+      await tester.pumpAndSettle();
+      await closeFilters(tester);
+
+      expect(find.byKey(GameSearchScreen.filterSheetKey), findsNothing);
+      expect(
+        find.byKey(GameSearchScreen.inUseKey('content_expansion')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(GameSearchScreen.inUseKey('platform_pc')),
+        findsOneWidget,
+      );
+      expect(filtersButtonLabel(tester), 'Filters (2)');
+    });
+
+    testWidgets('removing an in-use chip clears it, and the sheet agrees', (
+      tester,
+    ) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await narrow(
+        tester,
+        const GameSearchFilter(
+          contentTypes: {ContentType.expansion},
+          platformTypes: {PlatformType.pc},
+        ),
+      );
+
+      await tester.tap(find.byTooltip('Remove PC'));
+      await tester.pumpAndSettle();
+
+      expect(remote.calls.last, 'search(catan [expansion])');
+      expect(
+        find.byKey(GameSearchScreen.inUseKey('platform_pc')),
+        findsNothing,
+      );
+
+      await openFilters(tester);
+      expect(
+        tester
+            .widget<FilterChip>(
+              find.byKey(GameSearchScreen.platformFilterKey(PlatformType.pc)),
+            )
+            .selected,
+        isFalse,
+      );
+      expect(
+        tester
+            .widget<FilterChip>(
+              find.byKey(GameSearchScreen.filterKey(ContentType.expansion)),
+            )
+            .selected,
+        isTrue,
+      );
+    });
+
+    testWidgets('clear all removes every filter', (tester) async {
+      await show(tester);
+      await search(tester, 'catan');
+      await narrow(
+        tester,
+        const GameSearchFilter(
+          contentTypes: {ContentType.expansion},
+          platformTypes: {PlatformType.pc},
+        ),
+      );
+      final searches = remote.calls.length;
+
+      await openFilters(tester);
+      await tester.tap(find.byKey(GameSearchScreen.clearAllKey));
+      await tester.pumpAndSettle();
+      await closeFilters(tester);
+
+      expect(remote.calls, hasLength(searches + 1));
+      expect(remote.calls.last, 'search(catan)');
+      expect(filtersButtonLabel(tester), 'Filters');
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith(
+                'catalog_search.in_use_',
+              ),
+        ),
+        findsNothing,
+      );
+    });
+  });
+
+  group('at 320dp and twice the text size', () {
+    setUp(() => remote.onSearch = (_, _) async => const GameSearchResults());
+
+    void narrowScreen(WidgetTester tester) {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    }
+
+    /// Fails for a label in [chips] that is cut: wider than its line with no
+    /// wrapping, or taller than its chip lets it be.
+    void expectWholeLabels(WidgetTester tester, Finder chips) {
+      final labels = find.descendant(
+        of: chips,
+        matching: find.byType(RichText),
+      );
+      expect(labels, findsWidgets);
+      for (final label in labels.evaluate()) {
+        final paragraph = label.renderObject! as RenderParagraph;
+        final text = paragraph.text.toPlainText();
+        expect(
+          paragraph.softWrap ||
+              paragraph.getMaxIntrinsicWidth(double.infinity) <=
+                  paragraph.size.width,
+          isTrue,
+          reason: '"$text" is cut at its end',
+        );
+        expect(
+          paragraph.size.height,
+          greaterThanOrEqualTo(
+            paragraph.getMaxIntrinsicHeight(paragraph.size.width) - 0.5,
+          ),
+          reason: '"$text" is cut at its foot',
+        );
+      }
+    }
+
+    testWidgets('the Filters button goes under the field, leaving it the '
+        'row', (tester) async {
+      narrowScreen(tester);
+      await show(tester);
+
+      final field = tester.getRect(find.byKey(GameSearchScreen.fieldKey));
+      final button = tester.getRect(
+        find.byKey(GameSearchScreen.filtersButtonKey),
+      );
+      expect(button.top, greaterThanOrEqualTo(field.bottom));
+    });
+
+    testWidgets('every chip label reads whole, under the field and in the '
+        'sheet', (tester) async {
+      narrowScreen(tester);
+      await show(tester);
+      await search(tester, 'catan');
+      await narrow(
+        tester,
+        const GameSearchFilter(
+          contentTypes: {...GameSearchScreen.filterTypes},
+          platformTypes: {...GameSearchScreen.platformFilterTypes},
+        ),
+      );
+      expectWholeLabels(tester, find.byType(InputChip));
+
+      await openFilters(tester);
+
+      expectWholeLabels(tester, find.byType(RawChip));
+    });
+  });
+
+  testWidgets('the Filters button sits beside the field where there is '
+      'room', (tester) async {
     await show(tester);
-    await search(tester, 'catan');
-    await tester.tap(
-      find.byKey(GameSearchScreen.filterKey(ContentType.expansion)),
-    );
-    await tester.pumpAndSettle();
 
-    expect(remote.calls, ['search(catan)', 'search(catan [expansion])']);
-    expect(find.byKey(GameSearchScreen.noResultsKey), findsOneWidget);
+    final field = tester.getRect(find.byKey(GameSearchScreen.fieldKey));
+    final button = tester.getRect(
+      find.byKey(GameSearchScreen.filtersButtonKey),
+    );
+    expect(button.top, lessThan(field.bottom));
+    expect(button.left, greaterThanOrEqualTo(field.right));
   });
 
   testWidgets(

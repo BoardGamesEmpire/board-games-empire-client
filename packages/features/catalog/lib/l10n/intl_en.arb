@@ -186,6 +186,34 @@
   "@catalogContentTypeRemaster": {
     "description": "An earlier game released again with improved graphics or sound."
   },
+  "catalogPlatformTypeTabletop": "Tabletop",
+  "@catalogPlatformTypeTabletop": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Board, card and other games played at a table."
+  },
+  "catalogPlatformTypeConsole": "Console",
+  "@catalogPlatformTypeConsole": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for home video-game consoles."
+  },
+  "catalogPlatformTypePortable": "Portable",
+  "@catalogPlatformTypePortable": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for handheld game consoles."
+  },
+  "catalogPlatformTypePc": "PC",
+  "@catalogPlatformTypePc": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for personal computers."
+  },
+  "catalogPlatformTypeMobile": "Mobile",
+  "@catalogPlatformTypeMobile": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for phones and tablets."
+  },
+  "catalogPlatformTypeArcade": "Arcade",
+  "@catalogPlatformTypeArcade": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Arcade cabinet games."
+  },
+  "catalogPlatformTypeOther": "Other",
+  "@catalogPlatformTypeOther": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Any platform that is none of the others."
+  },
   "catalogSearchTitle": "Search games",
   "@catalogSearchTitle": {
     "description": "Title of the search screen, and the tooltip of the button on the games list that opens it."
@@ -194,13 +222,45 @@
   "@catalogSearchFieldLabel": {
     "description": "Label of the text field the user types a game's title into."
   },
+  "catalogSearchFiltersButton": "{count, plural, =0{Filters} other{Filters ({count})}}",
+  "@catalogSearchFiltersButton": {
+    "description": "The button beside the search field that opens the filters. It counts the filters in use, one per chosen type and one per range.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchFiltersTitle": "Filters",
+  "@catalogSearchFiltersTitle": {
+    "description": "Heading of the sheet holding every search filter."
+  },
+  "catalogSearchFiltersClearAll": "Clear all",
+  "@catalogSearchFiltersClearAll": {
+    "description": "Button in the filter sheet that turns every filter off at once."
+  },
+  "catalogSearchFilterContentType": "Content type",
+  "@catalogSearchFilterContentType": {
+    "description": "Heading over the content-type filter choices, such as 'Base game' and 'Expansion'. With none chosen, every type is shown."
+  },
+  "catalogSearchFilterPlatformType": "Platform",
+  "@catalogSearchFilterPlatformType": {
+    "description": "Heading over the platform-type filter choices, such as 'Tabletop' and 'PC'. With none chosen, every platform is shown."
+  },
+  "catalogSearchFilterRemove": "Remove {filter}",
+  "@catalogSearchFilterRemove": {
+    "description": "Tooltip and screen-reader label of the remove button on a filter in use, shown under the search field.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Expansion"
+      }
+    }
+  },
   "catalogSearchClear": "Clear search",
   "@catalogSearchClear": {
     "description": "Tooltip of the button that empties the search field."
-  },
-  "catalogSearchFilterLabel": "Show only",
-  "@catalogSearchFilterLabel": {
-    "description": "Heading over the content-type filter choices, such as 'Base game' and 'Expansion'. With none chosen, every type is shown."
   },
   "catalogSearchIdle": "Search this server and its data sources for a game.",
   "@catalogSearchIdle": {

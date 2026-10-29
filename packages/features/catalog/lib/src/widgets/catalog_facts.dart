@@ -27,6 +27,19 @@ String? contentTypeLabel(GameCatalogLocalizations l10n, ContentType type) =>
       ContentType.unknown => null,
     };
 
+/// The label of [type], or null for one this client does not know (#474).
+String? platformTypeLabel(GameCatalogLocalizations l10n, PlatformType type) =>
+    switch (type) {
+      PlatformType.tabletop => l10n.catalogPlatformTypeTabletop,
+      PlatformType.console => l10n.catalogPlatformTypeConsole,
+      PlatformType.portable => l10n.catalogPlatformTypePortable,
+      PlatformType.pc => l10n.catalogPlatformTypePc,
+      PlatformType.mobile => l10n.catalogPlatformTypeMobile,
+      PlatformType.arcade => l10n.catalogPlatformTypeArcade,
+      PlatformType.other => l10n.catalogPlatformTypeOther,
+      PlatformType.unknown => null,
+    };
+
 /// How many players a game takes, or null when neither bound is known.
 CatalogFact? playersFact(GameCatalogLocalizations l10n, int? min, int? max) =>
     switch ((min, max)) {

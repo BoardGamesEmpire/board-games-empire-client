@@ -11,9 +11,11 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import '../bloc/game_search_bloc.dart';
 import '../bloc/game_search_event.dart';
 import '../bloc/game_search_state.dart';
+import '../widgets/catalog_chip_label.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_game_row.dart';
 import '../widgets/catalog_slivers.dart';
+import 'game_search_filter_sheet.dart';
 
 /// Searches this server and its DataGateways by title (#42).
 ///
@@ -28,6 +30,12 @@ import '../widgets/catalog_slivers.dart';
 /// that lands is announced as "12 results" without moving focus from the
 /// field the user is typing in. The page's scroll view counts the result
 /// rows, not the headings, for "result 3 of 12".
+///
+/// ## Filters
+///
+/// A Filters button beside the field opens a sheet holding every control
+/// (#474), and each filter in use shows as a chip under the field, which
+/// clears it. The filter lasts while the screen is open.
 class GameSearchScreen extends StatelessWidget {
   const GameSearchScreen({
     required this.remote,
@@ -53,10 +61,21 @@ class GameSearchScreen extends StatelessWidget {
   static const Key platformOfflineNoteKey = Key(
     'catalog_search.platform_offline',
   );
+  static const Key filtersButtonKey = Key('catalog_search.filters');
+  static const Key filterSheetKey = Key('catalog_search.filter_sheet');
+  static const Key clearAllKey = Key('catalog_search.filters_clear_all');
 
-  /// The filter chip for [type].
+  /// The filter sheet's chip for [type].
   static Key filterKey(ContentType type) =>
       Key('catalog_search.filter_${type.name}');
+
+  /// The filter sheet's chip for [type].
+  static Key platformFilterKey(PlatformType type) =>
+      Key('catalog_search.platform_${type.name}');
+
+  /// The chip under the field for one filter in use: `content_<name>`,
+  /// `platform_<name>`, `year`, `players` or `time`.
+  static Key inUseKey(String id) => Key('catalog_search.in_use_$id');
 
   /// Per-row key for a result this server holds:
   /// `catalog_search.server_<externalId>`.
@@ -68,11 +87,8 @@ class GameSearchScreen extends StatelessWidget {
   static Key sourceRowKey(String sourceId, String externalId) =>
       Key('catalog_search.source_${sourceId}_$externalId');
 
-  /// The content types the filter offers, in this order.
-  ///
-  /// The board-game kinds. The video-game ones (DLC, mods, ports, remakes,
-  /// remasters) wait for the platform-type filter (#474), which is what
-  /// would make them findable.
+  /// The content types the filter offers, in this order: the board-game
+  /// kinds, then the video-game ones.
   static const List<ContentType> filterTypes = [
     ContentType.baseGame,
     ContentType.expansion,
@@ -80,6 +96,23 @@ class GameSearchScreen extends StatelessWidget {
     ContentType.expandedEdition,
     ContentType.accessory,
     ContentType.bundle,
+    ContentType.dlc,
+    ContentType.mod,
+    ContentType.port,
+    ContentType.remake,
+    ContentType.remaster,
+  ];
+
+  /// The platform types the filter offers, in the backend's order: every
+  /// one but unknown, which names none.
+  static const List<PlatformType> platformFilterTypes = [
+    PlatformType.tabletop,
+    PlatformType.console,
+    PlatformType.portable,
+    PlatformType.pc,
+    PlatformType.mobile,
+    PlatformType.arcade,
+    PlatformType.other,
   ];
 
   final GamesRemoteDataSource remote;
@@ -131,6 +164,10 @@ class _GameSearchPage extends StatefulWidget {
 }
 
 class _GameSearchPageState extends State<_GameSearchPage> {
+  /// The narrowest row, scaled by the text size, that holds the Filters
+  /// button beside the field and leaves the field room for its label.
+  static const double _besideFieldWidth = 320;
+
   final TextEditingController _query = TextEditingController();
 
   @override
@@ -163,33 +200,75 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         },
         slivers: [
           SliverToBoxAdapter(
-            child: ValueListenableBuilder<TextEditingValue>(
-              valueListenable: _query,
-              builder: (context, value, _) => TextField(
-                key: GameSearchScreen.fieldKey,
-                controller: _query,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onChanged: _changed,
-                decoration: InputDecoration(
-                  labelText: l10n.catalogSearchFieldLabel,
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: value.text.isEmpty
-                      ? null
-                      : IconButton(
-                          key: GameSearchScreen.clearKey,
-                          tooltip: l10n.catalogSearchClear,
-                          icon: const Icon(Icons.clear),
-                          onPressed: _clear,
+            // The Filters button sits beside the field where both have room,
+            // and under it where they don't, as at a large text size, so the
+            // field is never squeezed to its icons. One Flex either way keeps
+            // the field, and its focus, when the layout changes.
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final beside =
+                    constraints.maxWidth >=
+                    MediaQuery.textScalerOf(context).scale(_besideFieldWidth);
+                return Flex(
+                  direction: beside ? Axis.horizontal : Axis.vertical,
+                  crossAxisAlignment: beside
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.stretch,
+                  children: [
+                    Flexible(
+                      flex: beside ? 1 : 0,
+                      fit: FlexFit.tight,
+                      child: ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _query,
+                        builder: (context, value, _) => TextField(
+                          key: GameSearchScreen.fieldKey,
+                          controller: _query,
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          onChanged: _changed,
+                          decoration: InputDecoration(
+                            labelText: l10n.catalogSearchFieldLabel,
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: value.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    key: GameSearchScreen.clearKey,
+                                    tooltip: l10n.catalogSearchClear,
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: _clear,
+                                  ),
+                          ),
                         ),
-                ),
-              ),
+                      ),
+                    ),
+                    BgeGap.sm(axis: beside ? Axis.horizontal : Axis.vertical),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      widthFactor: 1,
+                      heightFactor: 1,
+                      child: OutlinedButton.icon(
+                        key: GameSearchScreen.filtersButtonKey,
+                        onPressed: () => showGameSearchFilterSheet(context),
+                        icon: const Icon(Icons.tune),
+                        label: Text(
+                          l10n.catalogSearchFiltersButton(
+                            _filtersInUse(l10n, state.filter).length,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: tokens.spaceMd),
-              child: _Filter(filter: state.filter),
+              padding: EdgeInsets.only(
+                top: tokens.spaceSm,
+                bottom: tokens.spaceMd,
+              ),
+              child: _FiltersInUse(filter: state.filter),
             ),
           ),
           ..._results(context, state),
@@ -394,11 +473,43 @@ class _GameSearchPageState extends State<_GameSearchPage> {
   );
 }
 
-/// The content-type filter: one chip per type, any number chosen. None
-/// chosen does not narrow. The platform types the filter also carries are
-/// kept as they are; offering them is #474.
-class _Filter extends StatelessWidget {
-  const _Filter({required this.filter});
+/// One filter in use, as its chip under the field shows it: [without] is
+/// the filter once it is cleared.
+typedef _InUse = ({String id, String label, GameSearchFilter without});
+
+/// Every filter in use, in the sheet's order: one per chosen content type,
+/// one per chosen platform type. The Filters button counts them.
+List<_InUse> _filtersInUse(
+  GameCatalogLocalizations l10n,
+  GameSearchFilter filter,
+) {
+  final GameSearchFilter(:contentTypes, :platformTypes) = filter;
+  return [
+    for (final type in GameSearchScreen.filterTypes)
+      if (contentTypes.contains(type))
+        (
+          id: 'content_${type.name}',
+          label: contentTypeLabel(l10n, type)!,
+          without: filter.copyWith(
+            contentTypes: {...contentTypes}..remove(type),
+          ),
+        ),
+    for (final type in GameSearchScreen.platformFilterTypes)
+      if (platformTypes.contains(type))
+        (
+          id: 'platform_${type.name}',
+          label: platformTypeLabel(l10n, type)!,
+          without: filter.copyWith(
+            platformTypes: {...platformTypes}..remove(type),
+          ),
+        ),
+  ];
+}
+
+/// The filters in use, as chips under the field (#474). Tapping one, or its
+/// remove button, clears it and searches again.
+class _FiltersInUse extends StatelessWidget {
+  const _FiltersInUse({required this.filter});
 
   final GameSearchFilter filter;
 
@@ -406,43 +517,24 @@ class _Filter extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
-    final selected = filter.contentTypes;
+    final inUse = _filtersInUse(l10n, filter);
+    if (inUse.isEmpty) return const SizedBox.shrink();
 
-    void toggle(ContentType type, bool on) =>
-        context.read<GameSearchBloc>().add(
-          GameSearchFilterChanged(
-            filter.copyWith(
-              contentTypes: on
-                  ? {...selected, type}
-                  : ({...selected}..remove(type)),
-            ),
-          ),
-        );
+    void clear(GameSearchFilter without) =>
+        context.read<GameSearchBloc>().add(GameSearchFilterChanged(without));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: tokens.spaceSm,
+      runSpacing: tokens.spaceSm,
       children: [
-        Semantics(
-          header: true,
-          child: Text(
-            l10n.catalogSearchFilterLabel,
-            style: Theme.of(context).textTheme.labelLarge,
+        for (final (:id, :label, :without) in inUse)
+          InputChip(
+            key: GameSearchScreen.inUseKey(id),
+            label: CatalogChipLabel(label),
+            onPressed: () => clear(without),
+            onDeleted: () => clear(without),
+            deleteButtonTooltipMessage: l10n.catalogSearchFilterRemove(label),
           ),
-        ),
-        const BgeGap.sm(),
-        Wrap(
-          spacing: tokens.spaceSm,
-          runSpacing: tokens.spaceSm,
-          children: [
-            for (final type in GameSearchScreen.filterTypes)
-              FilterChip(
-                key: GameSearchScreen.filterKey(type),
-                label: Text(contentTypeLabel(l10n, type)!),
-                selected: selected.contains(type),
-                onSelected: (on) => toggle(type, on),
-              ),
-          ],
-        ),
       ],
     );
   }
