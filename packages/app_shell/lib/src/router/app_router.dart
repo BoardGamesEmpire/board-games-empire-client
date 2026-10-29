@@ -512,6 +512,29 @@ typedef DataGatewayFormScreenBuilder = Widget? Function(
   String? dataGatewayId,
 );
 
+/// Makes the location the router reports for the address bar follow pushed
+/// screens, not only the declarative stack beneath them (#321). The web
+/// composition calls it before the router is built; native doesn't.
+///
+/// Without it, every `push` leaves the address bar on the location beneath,
+/// `/home` for most of the app, and browser Back leaves the app.
+///
+/// go_router warns against the setting because the top route's location
+/// isn't always deep-linkable. Here it is, and the route table keeps it so:
+///
+/// - Every location the app pushes is a declared path, built by an
+///   `AppRoutes.*Of` helper, that parses on its own.
+/// - A child screen nests under the screen it's reached from (#308), so
+///   entering it directly builds its parent beneath it.
+///
+/// go_router reports each location change, pops and replacements included,
+/// as a new browser history entry that carries its whole stack, and restores
+/// that stack when Back or Forward returns to the entry. Restoring a screen
+/// on reload, or from a bookmark, needs the location kept through bootstrap
+/// and sign-in, which is #83's.
+void reflectPushedRoutesInUrl() =>
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -581,6 +604,11 @@ GoRouter buildAppRouter({
         _materialPage(state, const RouteNotFoundScreen()),
     // Every route builds its page explicitly; see [_materialPage] for why,
     // and for which routes keep no transition.
+    //
+    // On web, pushed locations show in the address bar, so every location
+    // the app pushes must be a declared path that parses on its own, with a
+    // child nested under the screen it's reached from (#321; see
+    // [reflectPushedRoutesInUrl]).
     routes: [
       GoRoute(
         path: AppRoutes.splash,
