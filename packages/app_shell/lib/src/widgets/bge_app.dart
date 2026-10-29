@@ -604,12 +604,25 @@ class _BgeAppState extends State<BgeApp> {
       _rootService<ConnectivityService>();
 
   /// Renders the auth route at navigation time. Falls back to the router's
-  /// placeholder when no active server is resolvable (no scope, or none
-  /// active yet) — the redirect only routes here once a server is active,
-  /// so the fallback is transient/defensive.
+  /// placeholder when no active server is resolvable: bootstrap published
+  /// no scope, or the scope has no active server.
+  ///
+  /// The fallback is reachable, and not transient: [AppBootstrapNeedsAuth]
+  /// pins every location here, so a user who reaches it has no way out.
+  /// Native bootstrap now fails as a retryable error rather than report
+  /// saved servers it restored none of (#217); [_logAuthUnavailable] is
+  /// what's left if the fallback is ever reached again.
   Widget? _buildAuthRoute(BuildContext context) {
-    final active = widget.bootstrapCubit.activeServerScope?.active;
-    if (active == null) return null;
+    final scope = widget.bootstrapCubit.activeServerScope;
+    if (scope == null) {
+      _logAuthUnavailable('noScope');
+      return null;
+    }
+    final active = scope.active;
+    if (active == null) {
+      _logAuthUnavailable('noActiveServer');
+      return null;
+    }
     return AuthGate(
       identity: active.identity,
       serverDisplayName: active.displayName,
@@ -1081,7 +1094,7 @@ class _BgeAppState extends State<BgeApp> {
       repository: container.get<HouseholdRepository>(),
       remote: remote,
       onRefresh: _householdRetry(container),
-      onSaved: (ctx) => ctx.pop(),
+      onSaved: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
     );
   }
 
@@ -1266,7 +1279,11 @@ class _BgeAppState extends State<BgeApp> {
         if (container.isRegistered<HouseholdHydrationStatus>()) {
           container.get<HouseholdHydrationStatus>().markStale();
         }
-        ctx.pushReplacement(AppRoutes.householdDetailOf(householdId));
+        _leaveIfCurrent(
+          ctx,
+          () =>
+              _replaceSpentForm(ctx, AppRoutes.householdDetailOf(householdId)),
+        );
       },
     );
   }
@@ -1614,8 +1631,10 @@ class _BgeAppState extends State<BgeApp> {
           : eventCreateHouseholds(households, roleOf),
       householdId: householdId,
       onRefresh: _householdRetry(container),
-      onCreated: (ctx, eventId) =>
-          ctx.pushReplacement(AppRoutes.eventDetailOf(eventId)),
+      onCreated: (ctx, eventId) => _leaveIfCurrent(
+        ctx,
+        () => _replaceSpentForm(ctx, AppRoutes.eventDetailOf(eventId)),
+      ),
     );
   }
 
@@ -1895,6 +1914,15 @@ class _BgeAppState extends State<BgeApp> {
     '${missing.join(', ')}.',
     context: {'missing': missing},
   );
+
+  /// Reports an auth route with no active server behind it (#217), naming
+  /// the [cause]: `noScope` when bootstrap published no active-server
+  /// scope, `noActiveServer` when the scope has none.
+  ///
+  /// Error, for the reason [_logServerAddUnavailable] gives: the redirect
+  /// pins the user to this route, so the placeholder is a dead end.
+  void _logAuthUnavailable(String cause) =>
+      _log.error('Auth is unavailable: $cause.', context: {'cause': cause});
 
   /// True once bootstrap has left the initializing/failed legs for a state
   /// that only follows successful hydrated-storage init inside
@@ -3226,18 +3254,42 @@ class _SendHouseholdInviteRouteState extends State<_SendHouseholdInviteRoute> {
       remote: widget.remote,
       users: widget.users,
       onRefresh: widget.onRefresh,
-      onSent: (ctx) => ctx.pop(),
+      onSent: (ctx) => _leaveIfCurrent(ctx, () => ctx.pop()),
       // Back from Sent returns to the household, even under a form opened
       // from its invites by a viewer who has since lost them (#569). Pops,
       // rather than a `go`, keep the household and what is beneath it.
-      onMemberSent: (ctx) {
+      onMemberSent: (ctx) => _leaveIfCurrent(ctx, () {
         final router = GoRouter.of(ctx);
         while (router.state.fullPath != AppRoutes.householdDetail &&
             router.canPop()) {
           router.pop();
         }
         unawaited(router.push<void>(AppRoutes.invitesSent));
-      },
+      }),
     );
   }
 }
+
+/// Runs [leave], a form's way out after its save, only while [context]'s
+/// route is the current one (#465).
+///
+/// Pages animate, so a form the user has already left stays mounted for its
+/// exit transition, and its save can answer inside it. A pop or replacement
+/// from there acts on the top route, which by then is the screen beneath the
+/// form. The save happened and the form still confirms it; only the way out
+/// is dropped, since the user already took one. The DataGateway form holds
+/// itself to the same rule (#458).
+void _leaveIfCurrent(BuildContext context, VoidCallback leave) {
+  if (ModalRoute.isCurrentOf(context) ?? true) leave();
+}
+
+/// Puts [location], what a create made, in place of the spent create form
+/// at [context], so back can never land on the form again (#162, #271).
+///
+/// Under [Router.neglect] because on web a pushed route reaches the address
+/// bar (#321), and the replacement would otherwise be a new browser history
+/// entry after the form's, which browser Back returns to. Neglected, it
+/// takes the form's entry instead. Native keeps no browser history, so it
+/// changes nothing there.
+void _replaceSpentForm(BuildContext context, String location) =>
+    Router.neglect(context, () => context.pushReplacement(location));

@@ -467,6 +467,81 @@ void main() {
       expect(find.byType(SentInvitesScreen), findsNothing);
     });
 
+    // #465: pages animate now, so a form the user left is still mounted for
+    // its exit transition, and a send can answer inside it.
+    testWidgets('a send that answers after the user went back leaves the '
+        'invites open', (tester) async {
+      final sent = Completer<HouseholdInvite>();
+      when(() => remote.send(any(), any())).thenAnswer((_) => sent.future);
+      final router = await pumpApp(tester);
+      router.go(AppRoutes.householdInvitesOf('hh_a'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(HouseholdInviteListScreen.inviteKey));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.emailKey),
+        'ana@example.com',
+      );
+      await tester.ensureVisible(
+        find.byKey(SendHouseholdInviteScreen.submitKey),
+      );
+      await tester.tap(find.byKey(SendHouseholdInviteScreen.submitKey));
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byType(SendHouseholdInviteScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'the form is still on its way out',
+      );
+
+      sent.complete(_invite('i_new'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SendHouseholdInviteScreen), findsNothing);
+      expect(find.byType(HouseholdInviteListScreen), findsOneWidget);
+    });
+
+    testWidgets("a member's send that answers after they went back leaves "
+        'the household open', (tester) async {
+      final sent = Completer<HouseholdInvite>();
+      when(() => remote.send(any(), any())).thenAnswer((_) => sent.future);
+      final router = await pumpApp(
+        tester,
+        stub: asMember(MemberInvitePolicy.direct),
+      );
+      router.go(AppRoutes.householdDetailOf('hh_a'));
+      await tester.pumpAndSettle();
+      unawaited(router.push<void>(AppRoutes.householdInviteSendOf('hh_a')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(SendHouseholdInviteScreen.emailKey),
+        'ana@example.com',
+      );
+      await tester.ensureVisible(
+        find.byKey(SendHouseholdInviteScreen.submitKey),
+      );
+      await tester.tap(find.byKey(SendHouseholdInviteScreen.submitKey));
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byType(SendHouseholdInviteScreen, skipOffstage: false),
+        findsOneWidget,
+        reason: 'the form is still on its way out',
+      );
+
+      sent.complete(_invite('i_new'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SentInvitesScreen), findsNothing);
+      expect(find.byType(HouseholdDetailScreen), findsOneWidget);
+    });
+
     testWidgets('a viewer made a member under a form opened from the invites '
         'lands on Sent with the household beneath', (tester) async {
       var role = HouseholdRole.householdOwner;

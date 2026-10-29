@@ -37,6 +37,7 @@ export 'src/screens/feedback_flow_screen.dart';
 export 'src/screens/home_menu_entry.dart';
 export 'src/screens/home_screen.dart';
 export 'src/screens/not_yet_available_screen.dart';
+export 'src/screens/route_not_found_screen.dart';
 export 'src/screens/settings_screen.dart';
 export 'src/screens/shell_placeholder_screen.dart';
 export 'src/screens/splash_screen.dart';

@@ -92,6 +92,7 @@ stubbedOrchestrator({bool withContainers = false}) {
   final prefsRepo = MockDevicePreferencesRepository();
   when(() => prefsRepo.get()).thenAnswer((_) async => DevicePreferences());
   when(() => repo.getConnectedServers()).thenAnswer((_) async => []);
+  when(() => repo.getAllServers()).thenAnswer((_) async => []);
   when(
     () => repo.updateConnectionState(
       serverId: any(named: 'serverId'),

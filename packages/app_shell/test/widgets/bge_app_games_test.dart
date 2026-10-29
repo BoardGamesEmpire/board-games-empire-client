@@ -289,7 +289,9 @@ void main() {
     // answers.
     final held = games.held = Completer();
     await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+    // The spinner never settles, so pump past the push transition instead.
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 450));
     expect(find.byKey(GameDetailScreen.loadingKey), findsOneWidget);
     repo.emitAuthState(const AuthStateUnauthenticated());
     await tester.pumpAndSettle();

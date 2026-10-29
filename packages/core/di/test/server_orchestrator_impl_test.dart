@@ -29,6 +29,7 @@ void main() {
 
     // Default: no connected servers
     when(() => mockRepo.getConnectedServers()).thenAnswer((_) async => []);
+    when(() => mockRepo.getAllServers()).thenAnswer((_) async => []);
 
     orchestrator = ServerOrchestratorImpl(
       serverRepository: mockRepo,

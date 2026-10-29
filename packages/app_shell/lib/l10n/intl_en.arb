@@ -52,6 +52,18 @@
   "@shellNotYetAvailableBody": {
     "description": "Body shown when a reserved deep-link route has no UI behind it yet"
   },
+  "shellRouteNotFoundTitle": "Page not found",
+  "@shellRouteNotFoundTitle": {
+    "description": "Title of the page shown for an address that matches no screen in the app (#465)"
+  },
+  "shellRouteNotFoundBody": "There's nothing at this address.",
+  "@shellRouteNotFoundBody": {
+    "description": "Body of the page shown for an address that matches no screen in the app (#465)"
+  },
+  "shellRouteNotFoundHome": "Go to home",
+  "@shellRouteNotFoundHome": {
+    "description": "Button on the not-found page that leaves for the home screen (#465)"
+  },
   "shellPlaceholderServerAddTitle": "Add a server",
   "@shellPlaceholderServerAddTitle": {
     "description": "Title of the server-add route placeholder (real UI lands with the server-add flow)"

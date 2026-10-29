@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:app_shell/app_shell.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:drift_storage/drift_storage_native.dart';
@@ -228,12 +229,76 @@ void main() {
       test('reports a server when the registry is non-empty', () async {
         when(() => serverRepository.getAllServers())
             .thenAnswer((_) async => [_serverConfig()]);
+        when(() => orchestrator.activeServerId).thenReturn('srv');
         final bootstrap = buildBootstrap();
 
         final result = await bootstrap.initialize();
 
         expect(result.hasServer, isTrue);
         await bootstrap.dispose();
+      });
+
+      test('fails with NoServerRestoredError when servers are saved but none '
+          'is active (#217)', () async {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => [_serverConfig()]);
+        when(() => orchestrator.activeServerId).thenReturn(null);
+        final bootstrap = buildBootstrap();
+        addTearDown(bootstrap.dispose);
+
+        await expectLater(
+          bootstrap.initialize(),
+          throwsA(
+            isA<NoServerRestoredError>().having(
+              (e) => e.registeredCount,
+              'registeredCount',
+              1,
+            ),
+          ),
+        );
+        verify(() => orchestrator.dispose()).called(1);
+      });
+
+      test('the shell shows NoServerRestoredError as a failed boot, '
+          'not the auth screen', () async {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => [_serverConfig()]);
+        when(() => orchestrator.activeServerId).thenReturn(null);
+        final bootstrap = buildBootstrap();
+        addTearDown(bootstrap.dispose);
+        final cubit = AppBootstrapCubit(
+          platformBootstrap: bootstrap,
+          hydratedStorageInitializer: (_) async {},
+        );
+        addTearDown(cubit.close);
+
+        await cubit.initialize();
+
+        expect(
+          cubit.state,
+          isA<AppBootstrapFailed>().having(
+            (s) => s.error,
+            'error',
+            isA<NoServerRestoredError>(),
+          ),
+        );
+      });
+
+      test('a retry after NoServerRestoredError can succeed', () async {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => [_serverConfig()]);
+        when(() => orchestrator.activeServerId).thenReturn(null);
+        final bootstrap = buildBootstrap();
+        addTearDown(bootstrap.dispose);
+
+        await expectLater(
+          bootstrap.initialize(),
+          throwsA(isA<NoServerRestoredError>()),
+        );
+        when(() => orchestrator.activeServerId).thenReturn('srv');
+        final result = await bootstrap.initialize();
+
+        expect(result.hasServer, isTrue);
       });
 
       test('a failed attempt rethrows and a subsequent attempt can '
@@ -283,6 +348,7 @@ void main() {
                 required contextFactory,
               }) {
                 final activating = _MockServerOrchestrator();
+                when(() => activating.activeServerId).thenReturn(server.id);
                 when(activating.initialize).thenAnswer((_) async {
                   final context = contextFactory(server);
                   contexts.add(context);
@@ -304,6 +370,7 @@ void main() {
       setUp(() {
         when(() => serverRepository.getAllServers())
             .thenAnswer((_) async => [server]);
+        when(() => orchestrator.activeServerId).thenReturn(server.id);
       });
 
       test('is returned to the shell', () async {
@@ -578,6 +645,26 @@ void main() {
         await disposal;
         verify(() => orchestrator.dispose()).called(1);
         expect(executorFactory.metaExecutors.single.closed, isTrue);
+      });
+
+      test('during an attempt that restored no saved server, still makes '
+          'the attempt throw StateError (#217)', () async {
+        when(() => serverRepository.getAllServers())
+            .thenAnswer((_) async => [_serverConfig()]);
+        when(() => orchestrator.activeServerId).thenReturn(null);
+        final orchestratorStarting = Completer<void>();
+        when(() => orchestrator.initialize())
+            .thenAnswer((_) => orchestratorStarting.future);
+        final bootstrap = buildBootstrap();
+
+        final attempt = bootstrap.initialize();
+        await pumpEventQueue();
+        final disposal = bootstrap.dispose();
+        await pumpEventQueue();
+
+        orchestratorStarting.complete();
+        await expectLater(attempt, throwsStateError);
+        await disposal;
       });
 
       test('during the meta database open, the attempt stops before it '

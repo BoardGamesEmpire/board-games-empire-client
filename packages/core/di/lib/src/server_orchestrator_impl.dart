@@ -160,17 +160,11 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       // Restore contexts for servers that were connected at last shutdown.
       final connected = await _serverRepository.getConnectedServers();
 
-      // Determine which was last active; fall back to first in list.
-      final previouslyActive = connected
-          .where((s) => s.isActive)
-          .map((s) => s.id)
-          .firstOrNull;
-
       // One bad server (key recovery failed twice, unreachable resources,
       // …) must not prevent the orchestrator from initializing: restore
       // each context into monitoring independently, drop the ones that
       // fail. A dropped context has its persisted connection state cleared
-      // so it isn't retried on every startup.
+      // so it isn't retried on every startup while another server works.
       //
       // Except when the key store could not be reached: that says nothing
       // about the server, whose key may be intact. Initialization fails
@@ -178,48 +172,38 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
       // persisted state stays for the next attempt (#428). Contexts already
       // restored are released by [dispose].
       for (final config in connected) {
-        final context = _contextFactory(config);
-        try {
-          await context.activate(); // initializing → active
-          await context.background(); // active → backgrounding
-          await context.suspend(); // backgrounding → monitoring
-          _contexts[config.id] = context;
-          _configs[config.id] = config;
-        } catch (e, st) {
-          _logError('restore of server ${config.id} failed', e, st);
-          await _disposeQuietly(context);
-          if (e is EncryptionKeyUnavailableError) rethrow;
-          await _updateStateQuietly(config.id, ConnectionState.disconnected);
-        }
+        await _restoreIntoMonitoring(config);
       }
 
-      // Choose the active server, then actually promote it to `active` so
-      // `_activeServerId` never points at a merely-monitoring context.
-      final chosenActive =
-          (previouslyActive != null && _contexts.containsKey(previouslyActive))
-          ? previouslyActive
-          : _contexts.keys.firstOrNull;
+      // Promote a restored server to `active`, so `_activeServerId` never
+      // points at a merely-monitoring context: the one that was active,
+      // else the most recently active. One that fails to activate is
+      // dropped and the next tried, since saved servers with none active
+      // fail the boot (#217).
+      await _promoteFirst([
+        for (final config in _byRecency(connected))
+          if (_contexts.containsKey(config.id)) config.id,
+      ]);
 
-      if (chosenActive != null) {
-        try {
-          await _ensureActive(_contexts[chosenActive]!);
-          await _commitActive(chosenActive);
-        } catch (e, st) {
-          // Promotion of the chosen active failed: drop it and leave the
-          // orchestrator with no active server rather than a non-active
-          // pointer. Remaining monitoring contexts stay connected. A key
-          // store that could not be reached fails initialization instead,
-          // as in the restore loop above.
-          _logError('activating restored server $chosenActive failed', e, st);
-          await _disposeQuietly(_contexts.remove(chosenActive)!);
-          _configs.remove(chosenActive);
-          _lastActiveTick.remove(chosenActive);
-          if (e is EncryptionKeyUnavailableError) rethrow;
-          await _updateStateQuietly(chosenActive, ConnectionState.disconnected);
-          _activeServerId = null;
+      // With none active, the disconnected servers are tried too, the most
+      // recently active first. A device with one saved server would
+      // otherwise never recover from a single failed restore: the server
+      // stays disconnected, and every start lands on a screen with no way
+      // out (#217). The first that activates ends the search. A boot needs
+      // no more than that, so the rest stay disconnected, within capacity
+      // and without opening each one's database. Servers that already
+      // failed in this call are not tried twice.
+      if (_activeServerId == null) {
+        final tried = {for (final config in connected) config.id};
+        final disconnected = (await _serverRepository.getAllServers()).where(
+          (config) => config.isDisconnected && !tried.contains(config.id),
+        );
+        for (final config in _byRecency(disconnected)) {
+          if (await _restoreIntoMonitoring(config) &&
+              await _promoteFirst([config.id])) {
+            break;
+          }
         }
-      } else {
-        _activeServerId = null;
       }
 
       _isInitialized = true;
@@ -590,6 +574,75 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
           ? id
           : best,
     );
+  }
+
+  /// Restores [config]'s context into [ServerContextState.monitoring] and
+  /// registers it, returning whether it restored. A failed restore is
+  /// logged, its context released, and the server persisted as
+  /// disconnected; a key store that could not be reached rethrows instead
+  /// and leaves the persisted state alone (#428).
+  Future<bool> _restoreIntoMonitoring(ServerConfig config) async {
+    final context = _contextFactory(config);
+    try {
+      await context.activate(); // initializing → active
+      await context.background(); // active → backgrounding
+      await context.suspend(); // backgrounding → monitoring
+      _contexts[config.id] = context;
+      _configs[config.id] = config;
+      return true;
+    } catch (e, st) {
+      _logError('restore of server ${config.id} failed', e, st);
+      await _disposeQuietly(context);
+      if (e is EncryptionKeyUnavailableError) rethrow;
+      await _updateStateQuietly(config.id, ConnectionState.disconnected);
+      return false;
+    }
+  }
+
+  /// Promotes the first of [serverIds], each a context restored into
+  /// [ServerContextState.monitoring], that activates, returning whether one
+  /// did. One that fails is logged, released, and persisted as
+  /// disconnected; a key store that could not be reached rethrows instead
+  /// and leaves the persisted state alone (#428).
+  Future<bool> _promoteFirst(List<String> serverIds) async {
+    for (final id in serverIds) {
+      try {
+        await _ensureActive(_contexts[id]!);
+        await _commitActive(id);
+        return true;
+      } catch (e, st) {
+        _logError('activating restored server $id failed', e, st);
+        await _disposeQuietly(_contexts.remove(id)!);
+        _configs.remove(id);
+        _lastActiveTick.remove(id);
+        if (e is EncryptionKeyUnavailableError) rethrow;
+        await _updateStateQuietly(id, ConnectionState.disconnected);
+      }
+    }
+    return false;
+  }
+
+  /// [configs] in the order [initialize] tries them: the server persisted
+  /// as active first, then by [ServerConfig.lastActiveAt], newest first.
+  /// Servers never active come last. The sort is stable, so ties keep the
+  /// repository's order.
+  static List<ServerConfig> _byRecency(Iterable<ServerConfig> configs) {
+    int rank(ServerConfig config) => config.isActive ? 0 : 1;
+    final sorted = configs.toList();
+    mergeSort(
+      sorted,
+      compare: (a, b) {
+        final byActive = rank(a).compareTo(rank(b));
+        if (byActive != 0) return byActive;
+        final aAt = a.lastActiveAt;
+        final bAt = b.lastActiveAt;
+        if (aAt == null || bAt == null) {
+          return (aAt == null ? 1 : 0) - (bAt == null ? 1 : 0);
+        }
+        return bAt.compareTo(aAt);
+      },
+    );
+    return sorted;
   }
 
   /// Brings [context] to [ServerContextState.active] from any connected

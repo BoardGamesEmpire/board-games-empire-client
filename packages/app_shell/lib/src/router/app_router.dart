@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,6 +8,7 @@ import '../bootstrap/app_bootstrap_cubit.dart';
 import '../bootstrap/app_bootstrap_state.dart';
 import '../screens/bootstrap_error_screen.dart';
 import '../screens/not_yet_available_screen.dart';
+import '../screens/route_not_found_screen.dart';
 import '../screens/shell_placeholder_screen.dart';
 import '../screens/splash_screen.dart';
 
@@ -260,8 +261,13 @@ typedef ServerAddScreenBuilder = Widget? Function(BuildContext context);
 /// Builds the real auth screen subtree (#37) for the [AppRoutes.auth]
 /// route — the `AuthGate` rendered against the active server's bloc.
 /// Always supplied by [BgeApp]; returns null at navigation time when no
-/// active server is resolvable (a transient pre-active state), in which
-/// case the route falls back to the placeholder.
+/// active server is resolvable, in which case the route falls back to the
+/// placeholder.
+///
+/// That fallback is a dead end, not a transient state: the redirect pins
+/// [AppBootstrapNeedsAuth] to this route. Native bootstrap fails as a
+/// retryable error rather than reach it (#217), and the builder logs an
+/// error naming the cause if it ever is reached.
 typedef AuthScreenBuilder = Widget? Function(BuildContext context);
 
 /// Builds the user-initiated feedback flow (#107) for the
@@ -506,6 +512,29 @@ typedef DataGatewayFormScreenBuilder = Widget? Function(
   String? dataGatewayId,
 );
 
+/// Makes the location the router reports for the address bar follow pushed
+/// screens, not only the declarative stack beneath them (#321). The web
+/// composition calls it before the router is built; native doesn't.
+///
+/// Without it, every `push` leaves the address bar on the location beneath,
+/// `/home` for most of the app, and browser Back leaves the app.
+///
+/// go_router warns against the setting because the top route's location
+/// isn't always deep-linkable. Here it is, and the route table keeps it so:
+///
+/// - Every location the app pushes is a declared path, built by an
+///   `AppRoutes.*Of` helper, that parses on its own.
+/// - A child screen nests under the screen it's reached from (#308), so
+///   entering it directly builds its parent beneath it.
+///
+/// go_router reports each location change, pops and replacements included,
+/// as a new browser history entry that carries its whole stack, and restores
+/// that stack when Back or Forward returns to the entry. Restoring a screen
+/// on reload, or from a bookmark, needs the location kept through bootstrap
+/// and sign-in, which is #83's.
+void reflectPushedRoutesInUrl() =>
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+
 /// Builds the application router.
 ///
 /// Redirects are driven entirely by [bootstrapCubit]'s state: while
@@ -569,15 +598,34 @@ GoRouter buildAppRouter({
               : null,
       };
     },
+    // An unknown location, reachable only once ready: before that the
+    // redirect above pins every location to a bootstrap screen.
+    errorPageBuilder: (context, state) =>
+        _materialPage(state, const RouteNotFoundScreen()),
+    // Every route builds its page explicitly; see [_materialPage] for why,
+    // and for which routes keep no transition.
+    //
+    // On web, pushed locations show in the address bar, so every location
+    // the app pushes must be a declared path that parses on its own, with a
+    // child nested under the screen it's reached from (#321; see
+    // [reflectPushedRoutesInUrl]).
     routes: [
-      GoRoute(path: AppRoutes.splash, builder: (_, _) => const SplashScreen()),
+      GoRoute(
+        path: AppRoutes.splash,
+        pageBuilder: (_, state) =>
+            _noTransitionPage(state, const SplashScreen()),
+      ),
       GoRoute(
         path: AppRoutes.serverAdd,
         // Real server-add UI (#36) when the shell supplied a builder;
         // the placeholder otherwise (tests, web).
-        builder: (context, _) =>
-            serverAddBuilder?.call(context) ??
-            const ShellPlaceholderScreen(kind: ShellPlaceholderKind.serverAdd),
+        pageBuilder: (context, state) => _noTransitionPage(
+          state,
+          serverAddBuilder?.call(context) ??
+              const ShellPlaceholderScreen(
+                kind: ShellPlaceholderKind.serverAdd,
+              ),
+        ),
       ),
       // #37: the auth and home routes share ONE AuthBloc, provided by
       // [authScopeBuilder] inside the router subtree — go_router builds
@@ -595,9 +643,11 @@ GoRouter buildAppRouter({
         routes: [
           GoRoute(
             path: AppRoutes.auth,
-            builder: (context, _) =>
-                authBuilder?.call(context) ??
-                const ShellPlaceholderScreen(kind: ShellPlaceholderKind.auth),
+            pageBuilder: (context, state) => _noTransitionPage(
+              state,
+              authBuilder?.call(context) ??
+                  const ShellPlaceholderScreen(kind: ShellPlaceholderKind.auth),
+            ),
           ),
           GoRoute(
             path: AppRoutes.home,
@@ -608,8 +658,10 @@ GoRouter buildAppRouter({
             // a spinner would hang pumpAndSettle) and consistent with the
             // other optional-builder routes (feedback / settings /
             // householdCreate). The home placeholder is retired (#129).
-            builder: (context, _) =>
-                homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
+            pageBuilder: (context, state) => _noTransitionPage(
+              state,
+              homeBuilder?.call(context) ?? const NotYetAvailableScreen(),
+            ),
           ),
         ],
       ),
@@ -618,8 +670,10 @@ GoRouter buildAppRouter({
       // when [AppBootstrapReady] admits non-bootstrap locations.
       GoRoute(
         path: AppRoutes.feedback,
-        builder: (context, _) =>
-            feedbackBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          feedbackBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
       ),
       // #120: user settings. Outside the auth ShellRoute (no AuthBloc
       // needed — see [SettingsScreenBuilder]); reachable only when
@@ -627,8 +681,10 @@ GoRouter buildAppRouter({
       // bounced (settings is not a bootstrap location).
       GoRoute(
         path: AppRoutes.settings,
-        builder: (context, _) =>
-            settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          settingsBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
       ),
       // ── The household routes: why they nest, and why their order matters ──
       //
@@ -651,9 +707,10 @@ GoRouter buildAppRouter({
       // reordered.
       GoRoute(
         path: AppRoutes.household,
-        builder: (context, _) =>
-            householdListBuilder?.call(context) ??
-            const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          householdListBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
         routes: [
           // #129: create-household flow. Outside the auth ShellRoute (needs
           // no AuthBloc — only the active server's container; see
@@ -664,19 +721,24 @@ GoRouter buildAppRouter({
           // MUST stay declared above the detail route — see the block above.
           GoRoute(
             path: AppRoutes._householdCreateSegment,
-            builder: (context, _) =>
-                createHouseholdBuilder?.call(context) ??
-                const NotYetAvailableScreen(),
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              createHouseholdBuilder?.call(context) ??
+                  const NotYetAvailableScreen(),
+            ),
           ),
           // #270: one household, read-only. Pushed from a list row, and
           // where the reserved invite deep link eventually lands — which is
           // why the id-addressed route exists now rather than later.
           GoRoute(
             path: AppRoutes._householdDetailSegment,
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final id = state.pathParameters[AppRoutes.householdIdParam] ?? '';
-              return householdDetailBuilder?.call(context, id) ??
-                  const NotYetAvailableScreen();
+              return _materialPage(
+                state,
+                householdDetailBuilder?.call(context, id) ??
+                    const NotYetAvailableScreen(),
+              );
             },
             // #455: the household's invites, its send form (#569) and its
             // edit form (#476), side by side and nested for the reason the
@@ -687,11 +749,14 @@ GoRouter buildAppRouter({
             routes: [
               GoRoute(
                 path: AppRoutes._householdInvitesSegment,
-                builder: (context, state) {
+                pageBuilder: (context, state) {
                   final id =
                       state.pathParameters[AppRoutes.householdIdParam] ?? '';
-                  return householdInvitesBuilder?.call(context, id) ??
-                      const NotYetAvailableScreen();
+                  return _materialPage(
+                    state,
+                    householdInvitesBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
                 },
               ),
               // #569: the send form sits beside the invites rather than
@@ -701,22 +766,28 @@ GoRouter buildAppRouter({
               // pushes it, which keeps the invites beneath.
               GoRoute(
                 path: AppRoutes._householdInviteSendSegment,
-                builder: (context, state) {
+                pageBuilder: (context, state) {
                   final id =
                       state.pathParameters[AppRoutes.householdIdParam] ?? '';
-                  return sendHouseholdInviteBuilder?.call(context, id) ??
-                      const NotYetAvailableScreen();
+                  return _materialPage(
+                    state,
+                    sendHouseholdInviteBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
                 },
               ),
               // #476: the household's edit form. A save leaves by a plain
               // pop.
               GoRoute(
                 path: AppRoutes._householdEditSegment,
-                builder: (context, state) {
+                pageBuilder: (context, state) {
                   final id =
                       state.pathParameters[AppRoutes.householdIdParam] ?? '';
-                  return editHouseholdBuilder?.call(context, id) ??
-                      const NotYetAvailableScreen();
+                  return _materialPage(
+                    state,
+                    editHouseholdBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
                 },
               ),
             ],
@@ -726,15 +797,19 @@ GoRouter buildAppRouter({
       // #455: the invites sent to the current user, from the home drawer.
       GoRoute(
         path: AppRoutes.invites,
-        builder: (context, _) =>
-            inviteInboxBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          inviteInboxBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
         routes: [
           // #487: the invites the current user sent, pushed from the inbox.
           GoRoute(
             path: 'sent',
-            builder: (context, _) =>
-                sentInvitesBuilder?.call(context) ??
-                const NotYetAvailableScreen(),
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              sentInvitesBuilder?.call(context) ??
+                  const NotYetAvailableScreen(),
+            ),
           ),
         ],
       ),
@@ -744,9 +819,10 @@ GoRouter buildAppRouter({
       // non-bootstrap locations. A top-level destination is #414's.
       GoRoute(
         path: AppRoutes.collection,
-        builder: (context, _) =>
-            collectionListBuilder?.call(context) ??
-            const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          collectionListBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
       ),
       // #42: browse, search and one game. Outside the auth ShellRoute, like
       // the collection list, and pushed from the home drawer. Search and the
@@ -758,21 +834,27 @@ GoRouter buildAppRouter({
       // `:gameId`, and go_router takes the first declared match.
       GoRoute(
         path: AppRoutes.games,
-        builder: (context, _) =>
-            gameBrowseBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          gameBrowseBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
         routes: [
           GoRoute(
             path: AppRoutes._gameSearchSegment,
-            builder: (context, _) =>
-                gameSearchBuilder?.call(context) ??
-                const NotYetAvailableScreen(),
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              gameSearchBuilder?.call(context) ?? const NotYetAvailableScreen(),
+            ),
           ),
           GoRoute(
             path: AppRoutes._gameDetailSegment,
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final id = state.pathParameters[AppRoutes.gameIdParam] ?? '';
-              return gameDetailBuilder?.call(context, id) ??
-                  const NotYetAvailableScreen();
+              return _materialPage(
+                state,
+                gameDetailBuilder?.call(context, id) ??
+                    const NotYetAvailableScreen(),
+              );
             },
           ),
         ],
@@ -794,36 +876,45 @@ GoRouter buildAppRouter({
       // with game search and the game detail.
       GoRoute(
         path: AppRoutes.events,
-        builder: (context, _) =>
-            eventOverviewBuilder?.call(context) ??
-            const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          eventOverviewBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
         routes: [
           for (final segment in AppRoutes.eventGroupSegments)
             GoRoute(
               path: segment,
-              builder: (context, _) =>
-                  eventGroupBuilder?.call(context, segment) ??
-                  const NotYetAvailableScreen(),
+              pageBuilder: (context, state) => _materialPage(
+                state,
+                eventGroupBuilder?.call(context, segment) ??
+                    const NotYetAvailableScreen(),
+              ),
             ),
           GoRoute(
             path: AppRoutes._eventCreateSegment,
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final query = state.uri.queryParameters;
               final household = query[AppRoutes.eventCreateHouseholdParam];
               // An empty value names no household, as an absent one does.
               final householdId = household == null || household.isEmpty
                   ? null
                   : household;
-              return eventCreateBuilder?.call(context, householdId) ??
-                  const NotYetAvailableScreen();
+              return _materialPage(
+                state,
+                eventCreateBuilder?.call(context, householdId) ??
+                    const NotYetAvailableScreen(),
+              );
             },
           ),
           GoRoute(
             path: AppRoutes._eventDetailSegment,
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
-              return eventDetailBuilder?.call(context, id) ??
-                  const NotYetAvailableScreen();
+              return _materialPage(
+                state,
+                eventDetailBuilder?.call(context, id) ??
+                    const NotYetAvailableScreen(),
+              );
             },
           ),
         ],
@@ -834,8 +925,10 @@ GoRouter buildAppRouter({
       // locations.
       GoRoute(
         path: AppRoutes.stuckChanges,
-        builder: (context, _) =>
-            stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
+        ),
       ),
       // #41: the DataGateway admin screens. The forms are children of the
       // list, as the household children are of theirs (#308), so a deep link
@@ -843,49 +936,107 @@ GoRouter buildAppRouter({
       // pop.
       GoRoute(
         path: AppRoutes.adminDataGateways,
-        builder: (context, _) =>
-            dataGatewayListBuilder?.call(context) ??
-            const NotYetAvailableScreen(),
+        pageBuilder: (context, state) => _materialPage(
+          state,
+          dataGatewayListBuilder?.call(context) ??
+              const NotYetAvailableScreen(),
+        ),
         routes: [
           GoRoute(
             path: AppRoutes._dataGatewayAddSegment,
-            builder: (context, _) =>
-                dataGatewayFormBuilder?.call(context, null) ??
-                const NotYetAvailableScreen(),
+            pageBuilder: (context, state) => _materialPage(
+              state,
+              dataGatewayFormBuilder?.call(context, null) ??
+                  const NotYetAvailableScreen(),
+            ),
           ),
           GoRoute(
             path: AppRoutes._dataGatewayEditSegment,
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final id =
                   state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
-              return dataGatewayFormBuilder?.call(context, id) ??
-                  const NotYetAvailableScreen();
+              return _materialPage(
+                state,
+                dataGatewayFormBuilder?.call(context, id) ??
+                    const NotYetAvailableScreen(),
+              );
             },
           ),
         ],
       ),
       GoRoute(
         path: AppRoutes.error,
-        builder: (_, _) => BlocBuilder<AppBootstrapCubit, AppBootstrapState>(
-          bloc: bootstrapCubit,
-          builder: (context, state) {
-            final failed = state is AppBootstrapFailed ? state : null;
-            return BootstrapErrorScreen(
-              canOfferReset: failed?.canOfferReset ?? false,
-              onRetry: () => unawaited(bootstrapCubit.retry()),
-              onReset: () => unawaited(bootstrapCubit.resetAndRetry()),
-            );
-          },
+        pageBuilder: (_, routerState) => _noTransitionPage(
+          routerState,
+          BlocBuilder<AppBootstrapCubit, AppBootstrapState>(
+            bloc: bootstrapCubit,
+            builder: (context, state) {
+              final failed = state is AppBootstrapFailed ? state : null;
+              return BootstrapErrorScreen(
+                canOfferReset: failed?.canOfferReset ?? false,
+                onRetry: () => unawaited(bootstrapCubit.retry()),
+                onReset: () => unawaited(bootstrapCubit.resetAndRetry()),
+              );
+            },
+          ),
         ),
       ),
       for (final pattern in reservedDeepLinkPathPatterns)
         GoRoute(
           path: pattern,
-          builder: (_, _) => const NotYetAvailableScreen(),
+          pageBuilder: (_, state) =>
+              _materialPage(state, const NotYetAvailableScreen()),
         ),
     ],
   );
 }
+
+// go_router 18 picks a route's default page by looking for
+// `material_ui`'s `MaterialApp`. The shell builds Flutter's
+// `MaterialApp.router`, so go_router finds neither that nor a
+// `CupertinoApp` and falls back to a [NoTransitionPage]: nothing animated,
+// and iOS lost its edge swipe back (#465). Moving to `material_ui`'s
+// `MaterialApp` is a whole-app migration (#637), so every route builds its
+// page here instead, with the values go_router's own builder passes.
+//
+// Routes the user opens build a [MaterialPage], which slides or fades per
+// platform and, on iOS, brings the edge swipe. Routes the bootstrap
+// redirect lands on (splash, error, server-add, auth and home) keep no
+// transition: the app moved there by itself, and a slide would suggest a
+// back step that doesn't exist. The auth [ShellRoute]'s own page is left
+// as go_router builds it, for the same reason.
+
+/// A [MaterialPage] for a route the user opens (#465).
+Page<void> _materialPage(GoRouterState state, Widget child) =>
+    _page(MaterialPage<void>.new, state, child);
+
+/// A [NoTransitionPage] for a route the bootstrap redirect lands on (#465).
+Page<void> _noTransitionPage(GoRouterState state, Widget child) =>
+    _page(NoTransitionPage<void>.new, state, child);
+
+/// Builds [child]'s page with [create], from the values go_router's own
+/// builder passes. Both page types go through here, so they can't drift.
+Page<void> _page(
+  Page<void> Function({
+    required Widget child,
+    LocalKey? key,
+    String? name,
+    Object? arguments,
+    String? restorationId,
+  })
+  create,
+  GoRouterState state,
+  Widget child,
+) => create(
+  key: state.pageKey,
+  name: state.name ?? state.path,
+  arguments: <String, String>{
+    ...state.pathParameters,
+    ...state.uri.queryParameters,
+  },
+  restorationId: state.pageKey.value,
+  child: child,
+);
 
 /// Builds the real home screen subtree for the [AppRoutes.home] route —
 /// the navigation-drawer menu (#129). Always supplied by [BgeApp] so the

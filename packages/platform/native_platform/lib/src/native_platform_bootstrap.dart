@@ -129,6 +129,27 @@ ServerContextFactory buildNativeServerContextFactory({
   );
 }
 
+/// Thrown by [NativePlatformBootstrap.initialize] when servers are saved on
+/// the device but the orchestrator restored none of them as active.
+///
+/// Reporting a server anyway would land the user on an auth screen with no
+/// server behind it and no way out. The shell shows this as a retryable
+/// boot failure instead, and a retry also tries the servers a failed
+/// restore left disconnected (#217).
+class NoServerRestoredError implements Exception {
+  /// Creates the error for a registry holding [registeredCount] servers.
+  const NoServerRestoredError({required this.registeredCount});
+
+  /// How many servers are saved on the device.
+  final int registeredCount;
+
+  @override
+  String toString() =>
+      'NoServerRestoredError: $registeredCount saved '
+      '${registeredCount == 1 ? 'server' : 'servers'}, none restored as '
+      'active. The boot can be retried.';
+}
+
 /// Shared native (mobile + desktop) [PlatformBootstrap]: opens the
 /// encrypted MetaDB, builds the meta repositories, composes the real
 /// context factory, and constructs + initializes the [ServerOrchestrator].
@@ -334,6 +355,12 @@ class NativePlatformBootstrap implements PlatformBootstrap {
       // these handles, so throwing here sends them through the rollback
       // below rather than committing them after the teardown has run.
       _throwIfDisposed();
+
+      // Saved servers with none active fail the attempt, through the
+      // rollback below (#217).
+      if (servers.isNotEmpty && orchestrator.activeServerId == null) {
+        throw NoServerRestoredError(registeredCount: servers.length);
+      }
 
       // Commit state only on success (established orchestrator invariant).
       _metaDatabase = meta;

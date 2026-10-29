@@ -9,9 +9,13 @@ import 'package:web_network/web_network.dart';
 import 'web_root_module.dart';
 
 /// Installs path-based URLs (no `#` fragments) so the reserved deep-link
-/// paths (#10) are real browser URLs. Call first in the browser app's
-/// `main()`, before `runBgeApp`.
-void configureWebUrlStrategy() => setPathUrlStrategy();
+/// paths (#10) are real browser URLs, and makes pushed screens show in them,
+/// so browser Back returns to the screen beneath (#321). Call first in the
+/// browser app's `main()`, before `runBgeApp`.
+void configureWebUrlStrategy() {
+  setPathUrlStrategy();
+  reflectPushedRoutesInUrl();
+}
 
 /// Web [PlatformBootstrap].
 ///
