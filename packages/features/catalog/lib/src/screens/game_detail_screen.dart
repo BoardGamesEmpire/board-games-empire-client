@@ -309,7 +309,8 @@ class _GameDetailBody extends StatelessWidget {
     final type = contentTypeLabel(l10n, game.contentType);
     return [
       if (type != null) sameFact(type),
-      if (year != null) sameFact(l10n.catalogDetailPublished('$year')),
+      if (year != null)
+        sameFact(l10n.catalogDetailPublished(yearText(l10n, year))),
       ?playersFact(l10n, game.minPlayers, game.maxPlayers),
       ?playTimeFact(l10n, game),
       if (age != null)

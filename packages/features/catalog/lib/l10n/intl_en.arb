@@ -316,71 +316,202 @@
       }
     }
   },
-  "catalogDetailPlayingTime": "{minutes, plural, =1{1 minute} other{{minutes} minutes}}",
-  "@catalogDetailPlayingTime": {
-    "description": "How long one play of the game usually takes.",
+  "catalogYearBce": "{year} BCE",
+  "@catalogYearBce": {
+    "description": "A year before the common era, wherever a game's publish year shows. The year is written without its minus sign.",
     "placeholders": {
+      "year": {
+        "type": "String",
+        "example": "3000"
+      }
+    }
+  },
+  "catalogMinutesShort": "{n} min",
+  "@catalogMinutesShort": {
+    "description": "A play time under an hour, as shown on screen, abbreviated.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "catalogMinutes": "{n, plural, =1{1 minute} other{{n} minutes}}",
+  "@catalogMinutes": {
+    "description": "catalogMinutesShort as a screen reader reads it, in full words. Also the minutes part of catalogHoursMinutes.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "catalogHoursShort": "{n} hr",
+  "@catalogHoursShort": {
+    "description": "A play time of whole hours, as shown on screen, abbreviated. Play times of an hour or more read in hours, never days.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "5"
+      }
+    }
+  },
+  "catalogHours": "{n, plural, =1{1 hour} other{{n} hours}}",
+  "@catalogHours": {
+    "description": "catalogHoursShort as a screen reader reads it, in full words. Also the hours part of catalogHoursMinutes.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "5"
+      }
+    }
+  },
+  "catalogHoursMinutesShort": "{h} hr {m} min",
+  "@catalogHoursMinutesShort": {
+    "description": "A play time of hours and some minutes, as shown on screen, abbreviated: 90 minutes reads 1 hr 30 min.",
+    "placeholders": {
+      "h": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1"
+      },
+      "m": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "catalogHoursMinutes": "{hours} {minutes}",
+  "@catalogHoursMinutes": {
+    "description": "catalogHoursMinutesShort as a screen reader reads it, joining two parts already in words: catalogHours, then catalogMinutes, as in \"1 hour 30 minutes\".",
+    "placeholders": {
+      "hours": {
+        "type": "String",
+        "example": "1 hour"
+      },
       "minutes": {
-        "type": "int",
-        "example": "90"
+        "type": "String",
+        "example": "30 minutes"
       }
     }
   },
-  "catalogDetailPlayTimeRange": "{min}–{max} minutes",
-  "@catalogDetailPlayTimeRange": {
-    "description": "How long one play of the game takes, as a range, as shown on screen.",
+  "catalogMinutesRangeShort": "{from}–{to} min",
+  "@catalogMinutesRangeShort": {
+    "description": "A play-time range whose ends are both under an hour, sharing one unit, as shown on screen.",
     "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "60"
-      },
-      "max": {
-        "type": "String",
-        "example": "120"
-      }
-    }
-  },
-  "catalogDetailPlayTimeRangeSpoken": "{min} to {max} minutes",
-  "@catalogDetailPlayTimeRangeSpoken": {
-    "description": "catalogDetailPlayTimeRange as a screen reader reads it, without the dash.",
-    "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "60"
-      },
-      "max": {
-        "type": "String",
-        "example": "120"
-      }
-    }
-  },
-  "catalogDetailPlayTimeAtLeast": "{min}+ minutes",
-  "@catalogDetailPlayTimeAtLeast": {
-    "description": "How long one play of the game takes when only the shortest time is known, as shown on screen.",
-    "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "30"
-      }
-    }
-  },
-  "catalogDetailPlayTimeAtLeastSpoken": "{min, plural, =1{1 minute or more} other{{min} minutes or more}}",
-  "@catalogDetailPlayTimeAtLeastSpoken": {
-    "description": "catalogDetailPlayTimeAtLeast as a screen reader reads it.",
-    "placeholders": {
-      "min": {
+      "from": {
         "type": "int",
         "example": "30"
+      },
+      "to": {
+        "type": "int",
+        "example": "45"
       }
     }
   },
-  "catalogDetailPlayTimeUpTo": "{max, plural, =1{Up to 1 minute} other{Up to {max} minutes}}",
-  "@catalogDetailPlayTimeUpTo": {
-    "description": "How long one play of the game takes when only the longest time is known.",
+  "catalogMinutesRange": "{from} to {to} minutes",
+  "@catalogMinutesRange": {
+    "description": "catalogMinutesRangeShort as a screen reader reads it, without the dash.",
     "placeholders": {
-      "max": {
+      "from": {
         "type": "int",
-        "example": "120"
+        "example": "30"
+      },
+      "to": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "catalogHoursRangeShort": "{from}–{to} hr",
+  "@catalogHoursRangeShort": {
+    "description": "A play-time range whose ends are both whole hours, sharing one unit, as shown on screen.",
+    "placeholders": {
+      "from": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1"
+      },
+      "to": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "2"
+      }
+    }
+  },
+  "catalogHoursRange": "{from} to {to} hours",
+  "@catalogHoursRange": {
+    "description": "catalogHoursRangeShort as a screen reader reads it, without the dash.",
+    "placeholders": {
+      "from": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1"
+      },
+      "to": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "2"
+      }
+    }
+  },
+  "catalogDurationRangeShort": "{from}–{to}",
+  "@catalogDurationRangeShort": {
+    "description": "A play-time range whose ends can't share a unit, as shown on screen: each end is already a play time, as in \"45 min–1 hr 30 min\".",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "45 min"
+      },
+      "to": {
+        "type": "String",
+        "example": "1 hr 30 min"
+      }
+    }
+  },
+  "catalogDurationRange": "{from} to {to}",
+  "@catalogDurationRange": {
+    "description": "catalogDurationRangeShort as a screen reader reads it, each end in full words, as in \"45 minutes to 1 hour 30 minutes\".",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "45 minutes"
+      },
+      "to": {
+        "type": "String",
+        "example": "1 hour 30 minutes"
+      }
+    }
+  },
+  "catalogPlayTimeUpTo": "Up to {duration}",
+  "@catalogPlayTimeUpTo": {
+    "description": "A play time with only its longest time known, or a search narrowed to games that fit in it. The duration is already a play time, abbreviated on screen and in words for a screen reader.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "2 hr"
+      }
+    }
+  },
+  "catalogPlayTimeAtLeastShort": "{duration}+",
+  "@catalogPlayTimeAtLeastShort": {
+    "description": "A play time with only its shortest time known, or a search narrowed to games at least that long, as shown on screen. The duration is already a play time.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "30 min"
+      }
+    }
+  },
+  "catalogPlayTimeAtLeast": "{duration} or more",
+  "@catalogPlayTimeAtLeast": {
+    "description": "catalogPlayTimeAtLeastShort as a screen reader reads it. The duration is already in words.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "30 minutes"
       }
     }
   },
