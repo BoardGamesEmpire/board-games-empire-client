@@ -24,7 +24,7 @@ Set<EventAction> dateActionsFor(
   EventOccurrence occurrence,
   Set<EventAction> allowed,
 ) {
-  if (!_takesDateWrites(event)) return const {};
+  if (!takesDateWrites(event)) return const {};
 
   final byStatus = switch (occurrence.status) {
     OccurrenceStatus.proposed => const {
@@ -59,7 +59,7 @@ bool canAddDate(
   Set<EventAction> allowed,
 ) {
   if (!allowed.contains(EventAction.addDate)) return false;
-  if (!_takesDateWrites(event)) return false;
+  if (!takesDateWrites(event)) return false;
 
   return switch (event.schedulingMode) {
     EventSchedulingMode.fixed => occurrences.isEmpty,
@@ -78,7 +78,9 @@ int nextSortOrder(List<EventOccurrence> occurrences) {
       1;
 }
 
-bool _takesDateWrites(Event event) => switch (event.status) {
+/// Whether [event] takes a date write at all: not once cancelled or
+/// archived, nor while its status is unknown.
+bool takesDateWrites(Event event) => switch (event.status) {
   EventStatus.cancelled || EventStatus.archived || EventStatus.unknown => false,
   EventStatus.completed ||
   EventStatus.ongoing ||

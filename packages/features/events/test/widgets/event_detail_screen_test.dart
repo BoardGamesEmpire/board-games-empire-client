@@ -2007,6 +2007,40 @@ void main() {
       expect(find.byKey(EventDetailScreen.notFoundKey), findsOneWidget);
     });
 
+    for (final action in [EventAction.editDate, EventAction.removeDate]) {
+      testWidgets('${action.name} is not sent for an event cancelled while '
+          'its dialog was open', (tester) async {
+        // The server still takes both on a cancelled event (backend#956).
+        final remote = answering();
+        await show(tester, hosted([date('o-1')]), remote: remote, onBack: back);
+        await choose(tester, 'o-1', action);
+        if (action == EventAction.editDate) {
+          await tester.enterText(
+            find.byKey(EventDateDialogKeys.label),
+            'Saturday',
+          );
+          await tester.pump();
+        }
+
+        // A sync lands the event cancelled under the dialog.
+        cache.add(
+          _detail(
+            event: _event(
+              schedulingMode: EventSchedulingMode.poll,
+              status: EventStatus.cancelled,
+            ),
+            occurrences: [date('o-1')],
+            attendance: _attending(EventRole.host),
+          ),
+        );
+        await settle(tester);
+        await submit(tester);
+
+        expect(remote.dateRequests, isEmpty);
+        expect(menuOf('o-1'), findsNothing);
+      });
+    }
+
     testWidgets('nothing on the dates may be pressed while a write is out', (
       tester,
     ) async {

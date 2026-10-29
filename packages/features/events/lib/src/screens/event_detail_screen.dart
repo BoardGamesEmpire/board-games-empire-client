@@ -71,8 +71,10 @@ import '../widgets/event_refresh_banner.dart';
 /// request waits for that read to end, as Delete's does, since the read's
 /// answer landing after the write would put the date back as it was
 /// (#589). Dropped, an add or edit would take what the user typed with it.
-/// It is sent with the id of the event the screen shows then. Removing a Confirmed date asks once, and is a cancel and then a
-/// remove (#446).
+/// It is sent with the id of the event the screen shows then, and not at
+/// all if that event was cancelled or archived meanwhile, which the server
+/// would still let a date be edited or removed on (backend#956). Removing a
+/// Confirmed date asks once, and is a cancel and then a remove (#446).
 ///
 /// Every end shows a banner, done included, since the screen stays, and
 /// each is read again as [EventActionOutcome.rereads] says: the server
@@ -577,7 +579,14 @@ class _Dates extends StatelessWidget {
     // whose id a reconcile can have moved (#499).
     final state = await _readEnded(detail);
     if (state is! EventDetailReady || actions.isClosed) return;
-    actions.add(request(state.detail.snapshot));
+
+    // A sync can have cancelled the event while the dialog was open, and
+    // the server still takes an edit or a removal on a cancelled event
+    // (backend#956). The page already shows it so, with no date controls.
+    // A date's own change goes on to the server, whose 400 says so.
+    final shown = state.detail.snapshot;
+    if (!takesDateWrites(shown.event)) return;
+    actions.add(request(shown));
   }
 
   Future<_DateRequest?> _askAdd(BuildContext context) async {
