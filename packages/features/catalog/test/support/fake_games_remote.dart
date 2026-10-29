@@ -11,10 +11,7 @@ class FakeGamesRemote implements GamesRemoteDataSource {
 
   Future<PaginatedResult<Game>> Function(int page, int limit)? onFetchPage;
   Future<GameWithPlatformGames> Function(String id)? onFetchGame;
-  Future<GameSearchResults> Function(
-    String query,
-    Set<ContentType> contentTypes,
-  )?
+  Future<GameSearchResults> Function(String query, GameSearchFilter filter)?
   onSearch;
   Future<GameImportReceipt> Function(
     String gatewayId,
@@ -44,15 +41,31 @@ class FakeGamesRemote implements GamesRemoteDataSource {
     String query, {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
-    Set<ContentType> contentTypes = const {},
-    Set<PlatformType> platformTypes = const {},
+    GameSearchFilter filter = const GameSearchFilter(),
   }) {
+    calls.add('search($query${_describe(filter)})');
+    return _run(onSearch, 'search')(query, filter);
+  }
+
+  /// [filter] as a search's call records it: ` [content] {platform}`, then
+  /// `year(…)`, `players(…)` and `time(…)` for each range that narrows, as
+  /// `min..max`, with `+?` when it keeps unknown values.
+  static String _describe(GameSearchFilter filter) {
     String names(Iterable<Enum> types) =>
         (types.map((t) => t.name).toList()..sort()).join(',');
-    final content = contentTypes.isEmpty ? '' : ' [${names(contentTypes)}]';
-    final platform = platformTypes.isEmpty ? '' : ' {${names(platformTypes)}}';
-    calls.add('search($query$content$platform)');
-    return _run(onSearch, 'search')(query, contentTypes);
+    String range(String name, GameSearchRange range) => range.narrows
+        ? ' $name(${range.min ?? ''}..${range.max ?? ''}'
+              '${range.includeUnknown ? '+?' : ''})'
+        : '';
+
+    final GameSearchFilter(:contentTypes, :platformTypes) = filter;
+    return [
+      if (contentTypes.isNotEmpty) ' [${names(contentTypes)}]',
+      if (platformTypes.isNotEmpty) ' {${names(platformTypes)}}',
+      range('year', filter.publishYear),
+      range('players', filter.playerCount),
+      range('time', filter.playTime),
+    ].join();
   }
 
   @override

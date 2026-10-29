@@ -3,6 +3,8 @@ import 'package:models/domain.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
+import '../search/game_length_band.dart';
+
 /// One fact about a game, as it is shown and as a screen reader says it.
 typedef CatalogFact = ({String shown, String spoken});
 
@@ -27,6 +29,19 @@ String? contentTypeLabel(GameCatalogLocalizations l10n, ContentType type) =>
       ContentType.unknown => null,
     };
 
+/// The label of [type], or null for one this client does not know (#474).
+String? platformTypeLabel(GameCatalogLocalizations l10n, PlatformType type) =>
+    switch (type) {
+      PlatformType.tabletop => l10n.catalogPlatformTypeTabletop,
+      PlatformType.console => l10n.catalogPlatformTypeConsole,
+      PlatformType.portable => l10n.catalogPlatformTypePortable,
+      PlatformType.pc => l10n.catalogPlatformTypePc,
+      PlatformType.mobile => l10n.catalogPlatformTypeMobile,
+      PlatformType.arcade => l10n.catalogPlatformTypeArcade,
+      PlatformType.other => l10n.catalogPlatformTypeOther,
+      PlatformType.unknown => null,
+    };
+
 /// How many players a game takes, or null when neither bound is known.
 CatalogFact? playersFact(GameCatalogLocalizations l10n, int? min, int? max) =>
     switch ((min, max)) {
@@ -45,28 +60,114 @@ CatalogFact? playersFact(GameCatalogLocalizations l10n, int? min, int? max) =>
       (null, final int max) => sameFact(l10n.catalogPlayersUpTo('$max')),
     };
 
+/// One play time, in minutes, as shown and as spoken (#579).
+///
+/// Under an hour it reads in minutes. From an hour on it reads in hours,
+/// keeping any minutes left over, and never in days: 90 reads "1 hr 30 min",
+/// and 90,000 "1,500 hr". A screen reader gets the words.
+CatalogFact durationFact(GameCatalogLocalizations l10n, int minutes) {
+  if (minutes < 60) {
+    return (
+      shown: l10n.catalogMinutesShort(minutes),
+      spoken: l10n.catalogMinutes(minutes),
+    );
+  }
+  final (hours, rest) = (minutes ~/ 60, minutes % 60);
+  if (rest == 0) {
+    return (
+      shown: l10n.catalogHoursShort(hours),
+      spoken: l10n.catalogHours(hours),
+    );
+  }
+  return (
+    shown: l10n.catalogHoursMinutesShort(hours, rest),
+    spoken: l10n.catalogHoursMinutes(
+      l10n.catalogHours(hours),
+      l10n.catalogMinutes(rest),
+    ),
+  );
+}
+
+/// A play-time range, one unit where both ends share it (#579).
+///
+/// Both ends under an hour share minutes ("30–45 min"), and both whole hours
+/// share hours ("1–2 hr"). Otherwise each end reads as [durationFact] does
+/// ("45 min–1 hr 30 min").
+CatalogFact durationRangeFact(GameCatalogLocalizations l10n, int min, int max) {
+  if (min < 60 && max < 60) {
+    return (
+      shown: l10n.catalogMinutesRangeShort(min, max),
+      spoken: l10n.catalogMinutesRange(min, max),
+    );
+  }
+  if (min >= 60 && max >= 60 && min % 60 == 0 && max % 60 == 0) {
+    return (
+      shown: l10n.catalogHoursRangeShort(min ~/ 60, max ~/ 60),
+      spoken: l10n.catalogHoursRange(min ~/ 60, max ~/ 60),
+    );
+  }
+  final (from, to) = (durationFact(l10n, min), durationFact(l10n, max));
+  return (
+    shown: l10n.catalogDurationRangeShort(from.shown, to.shown),
+    spoken: l10n.catalogDurationRange(from.spoken, to.spoken),
+  );
+}
+
 /// How long a game takes to play, or null when that is not known.
 ///
 /// Play time is minutes, and a single time is a range whose two ends are
 /// equal (backend#869). One end alone reads as the bound it is, not as the
 /// playing time.
 CatalogFact? playTimeFact(GameCatalogLocalizations l10n, Game game) =>
-    switch ((game.minPlayTime, game.maxPlayTime)) {
-      (final int min, final int max) when min != max => (
-        shown: l10n.catalogDetailPlayTimeRange('$min', '$max'),
-        spoken: l10n.catalogDetailPlayTimeRangeSpoken('$min', '$max'),
-      ),
-      // The same minimum and maximum: one playing time.
-      (final int minutes, final int _) => sameFact(
-        l10n.catalogDetailPlayingTime(minutes),
-      ),
-      (final int min, null) => (
-        shown: l10n.catalogDetailPlayTimeAtLeast('$min'),
-        spoken: l10n.catalogDetailPlayTimeAtLeastSpoken(min),
-      ),
-      (null, final int max) => sameFact(l10n.catalogDetailPlayTimeUpTo(max)),
-      (null, null) => null,
+    playTimeRangeFact(l10n, game.minPlayTime, game.maxPlayTime);
+
+/// A play time from [min] to [max] minutes, either of which may be left out,
+/// or null with neither (#579): a game's play time, or a search's.
+///
+/// Equal ends read as one time, and one end alone as the bound it is:
+/// "Up to 2 hr", "30 min+".
+CatalogFact? playTimeRangeFact(
+  GameCatalogLocalizations l10n,
+  int? min,
+  int? max,
+) => switch ((min, max)) {
+  (final int min, final int max) when min != max => durationRangeFact(
+    l10n,
+    min,
+    max,
+  ),
+  // The same minimum and maximum: one playing time.
+  (final int minutes, final int _) => durationFact(l10n, minutes),
+  (final int min, null) => _atLeast(l10n, durationFact(l10n, min)),
+  (null, final int max) => _upTo(l10n, durationFact(l10n, max)),
+  (null, null) => null,
+};
+
+CatalogFact _atLeast(GameCatalogLocalizations l10n, CatalogFact duration) => (
+  shown: l10n.catalogPlayTimeAtLeastShort(duration.shown),
+  spoken: l10n.catalogPlayTimeAtLeast(duration.spoken),
+);
+
+CatalogFact _upTo(GameCatalogLocalizations l10n, CatalogFact duration) => (
+  shown: l10n.catalogPlayTimeUpTo(duration.shown),
+  spoken: l10n.catalogPlayTimeUpTo(duration.spoken),
+);
+
+/// The name of [band], as the play-time filter offers it (#580).
+String bandName(GameCatalogLocalizations l10n, GameLengthBand band) =>
+    switch (band) {
+      GameLengthBand.filler => l10n.catalogBandFiller,
+      GameLengthBand.quick => l10n.catalogBandQuick,
+      GameLengthBand.short => l10n.catalogBandShort,
+      GameLengthBand.medium => l10n.catalogBandMedium,
+      GameLengthBand.long => l10n.catalogBandLong,
+      GameLengthBand.epic => l10n.catalogBandEpic,
+      GameLengthBand.marathon => l10n.catalogBandMarathon,
     };
+
+/// A publish year; one before the common era reads "3000 BCE" (#565).
+String yearText(GameCatalogLocalizations l10n, int year) =>
+    year < 0 ? l10n.catalogYearBce('${-year}') : '$year';
 
 /// The facts a row lists after the title: the year, the players, and the
 /// content type when the game is not a base game, which most are.
@@ -81,7 +182,7 @@ List<CatalogFact> rowFacts(
       ? null
       : contentTypeLabel(l10n, contentType);
   return [
-    if (year != null) sameFact('$year'),
+    if (year != null) sameFact(yearText(l10n, year)),
     ?playersFact(l10n, minPlayers, maxPlayers),
     if (type != null) sameFact(type),
   ];

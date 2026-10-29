@@ -92,7 +92,7 @@ void main() {
             ),
           )
           .data,
-      'Base game · Published 1995 · 3–4 players · 90 minutes · Ages 10+',
+      'Base game · Published 1995 · 3–4 players · 1 hr 30 min · Ages 10+',
     );
   });
 
@@ -122,7 +122,7 @@ void main() {
             ),
           )
           .data,
-      'Base game · 60–120 minutes',
+      'Base game · 1–2 hr',
     );
   });
 
@@ -130,12 +130,12 @@ void main() {
     (
       'a lone minimum',
       (minPlayTime: 30, maxPlayTime: null),
-      'Base game · 30+ minutes',
+      'Base game · 30 min+',
     ),
     (
       'a lone maximum',
       (minPlayTime: null, maxPlayTime: 120),
-      'Base game · Up to 120 minutes',
+      'Base game · Up to 2 hr',
     ),
   ]) {
     testWidgets('reads $bound as a bound, not as the playing time', (

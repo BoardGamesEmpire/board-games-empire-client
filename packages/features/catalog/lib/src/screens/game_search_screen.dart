@@ -11,9 +11,12 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import '../bloc/game_search_bloc.dart';
 import '../bloc/game_search_event.dart';
 import '../bloc/game_search_state.dart';
+import '../search/game_length_band.dart';
+import '../widgets/catalog_chip_label.dart';
 import '../widgets/catalog_facts.dart';
 import '../widgets/catalog_game_row.dart';
 import '../widgets/catalog_slivers.dart';
+import 'game_search_filter_sheet.dart';
 
 /// Searches this server and its DataGateways by title (#42).
 ///
@@ -28,6 +31,12 @@ import '../widgets/catalog_slivers.dart';
 /// that lands is announced as "12 results" without moving focus from the
 /// field the user is typing in. The page's scroll view counts the result
 /// rows, not the headings, for "result 3 of 12".
+///
+/// ## Filters
+///
+/// A Filters button beside the field opens a sheet holding every control
+/// (#474), and each filter in use shows as a chip under the field, which
+/// clears it. The filter lasts while the screen is open.
 class GameSearchScreen extends StatelessWidget {
   const GameSearchScreen({
     required this.remote,
@@ -49,10 +58,38 @@ class GameSearchScreen extends StatelessWidget {
   static const Key errorKey = Key('catalog_search.error');
   static const Key deniedKey = Key('catalog_search.denied');
   static const Key missingSourcesKey = Key('catalog_search.missing_sources');
+  static const Key unfilterableNoteKey = Key('catalog_search.unfilterable');
+  static const Key platformOfflineNoteKey = Key(
+    'catalog_search.platform_offline',
+  );
+  static const Key filtersButtonKey = Key('catalog_search.filters');
+  static const Key filterSheetKey = Key('catalog_search.filter_sheet');
+  static const Key clearAllKey = Key('catalog_search.filters_clear_all');
 
-  /// The filter chip for [type].
+  /// The filter sheet's chip for [type].
   static Key filterKey(ContentType type) =>
       Key('catalog_search.filter_${type.name}');
+
+  /// The filter sheet's chip for [type].
+  static Key platformFilterKey(PlatformType type) =>
+      Key('catalog_search.platform_${type.name}');
+
+  /// The chip under the field for one filter in use: `content_<name>`,
+  /// `platform_<name>`, `year`, `players` or `time`.
+  static Key inUseKey(String id) => Key('catalog_search.in_use_$id');
+
+  /// A range's From or To field in the filter sheet: [range] is `year`,
+  /// `players` or `time`, and [end] is `from` or `to`.
+  static Key rangeFieldKey(String range, String end) =>
+      Key('catalog_search.${range}_$end');
+
+  /// The filter sheet's switch that keeps games with no value for [range].
+  static Key includeUnknownKey(String range) =>
+      Key('catalog_search.${range}_unknown');
+
+  /// The filter sheet's choice of [band] for the play time.
+  static Key bandKey(GameLengthBand band) =>
+      Key('catalog_search.band_${band.name}');
 
   /// Per-row key for a result this server holds:
   /// `catalog_search.server_<externalId>`.
@@ -64,11 +101,8 @@ class GameSearchScreen extends StatelessWidget {
   static Key sourceRowKey(String sourceId, String externalId) =>
       Key('catalog_search.source_${sourceId}_$externalId');
 
-  /// The content types the filter offers, in this order.
-  ///
-  /// The board-game kinds. The video-game ones (DLC, mods, ports, remakes,
-  /// remasters) wait for the platform-type filter (#474), which is what
-  /// would make them findable.
+  /// The content types the filter offers, in this order: the board-game
+  /// kinds, then the video-game ones.
   static const List<ContentType> filterTypes = [
     ContentType.baseGame,
     ContentType.expansion,
@@ -76,6 +110,23 @@ class GameSearchScreen extends StatelessWidget {
     ContentType.expandedEdition,
     ContentType.accessory,
     ContentType.bundle,
+    ContentType.dlc,
+    ContentType.mod,
+    ContentType.port,
+    ContentType.remake,
+    ContentType.remaster,
+  ];
+
+  /// The platform types the filter offers, in the backend's order: every
+  /// one but unknown, which names none.
+  static const List<PlatformType> platformFilterTypes = [
+    PlatformType.tabletop,
+    PlatformType.console,
+    PlatformType.portable,
+    PlatformType.pc,
+    PlatformType.mobile,
+    PlatformType.arcade,
+    PlatformType.other,
   ];
 
   final GamesRemoteDataSource remote;
@@ -127,6 +178,10 @@ class _GameSearchPage extends StatefulWidget {
 }
 
 class _GameSearchPageState extends State<_GameSearchPage> {
+  /// The narrowest row, scaled by the text size, that holds the Filters
+  /// button beside the field and leaves the field room for its label.
+  static const double _besideFieldWidth = 320;
+
   final TextEditingController _query = TextEditingController();
 
   @override
@@ -159,33 +214,75 @@ class _GameSearchPageState extends State<_GameSearchPage> {
         },
         slivers: [
           SliverToBoxAdapter(
-            child: ValueListenableBuilder<TextEditingValue>(
-              valueListenable: _query,
-              builder: (context, value, _) => TextField(
-                key: GameSearchScreen.fieldKey,
-                controller: _query,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onChanged: _changed,
-                decoration: InputDecoration(
-                  labelText: l10n.catalogSearchFieldLabel,
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: value.text.isEmpty
-                      ? null
-                      : IconButton(
-                          key: GameSearchScreen.clearKey,
-                          tooltip: l10n.catalogSearchClear,
-                          icon: const Icon(Icons.clear),
-                          onPressed: _clear,
+            // The Filters button sits beside the field where both have room,
+            // and under it where they don't, as at a large text size, so the
+            // field is never squeezed to its icons. One Flex either way keeps
+            // the field, and its focus, when the layout changes.
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final beside =
+                    constraints.maxWidth >=
+                    MediaQuery.textScalerOf(context).scale(_besideFieldWidth);
+                return Flex(
+                  direction: beside ? Axis.horizontal : Axis.vertical,
+                  crossAxisAlignment: beside
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.stretch,
+                  children: [
+                    Flexible(
+                      flex: beside ? 1 : 0,
+                      fit: FlexFit.tight,
+                      child: ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _query,
+                        builder: (context, value, _) => TextField(
+                          key: GameSearchScreen.fieldKey,
+                          controller: _query,
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          onChanged: _changed,
+                          decoration: InputDecoration(
+                            labelText: l10n.catalogSearchFieldLabel,
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: value.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    key: GameSearchScreen.clearKey,
+                                    tooltip: l10n.catalogSearchClear,
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: _clear,
+                                  ),
+                          ),
                         ),
-                ),
-              ),
+                      ),
+                    ),
+                    BgeGap.sm(axis: beside ? Axis.horizontal : Axis.vertical),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      widthFactor: 1,
+                      heightFactor: 1,
+                      child: OutlinedButton.icon(
+                        key: GameSearchScreen.filtersButtonKey,
+                        onPressed: () => showGameSearchFilterSheet(context),
+                        icon: const Icon(Icons.tune),
+                        label: Text(
+                          l10n.catalogSearchFiltersButton(
+                            _filtersInUse(l10n, state.filter).length,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: tokens.spaceMd),
-              child: _Filter(filter: state.filter),
+              padding: EdgeInsets.only(
+                top: tokens.spaceSm,
+                bottom: tokens.spaceMd,
+              ),
+              child: _FiltersInUse(filter: state.filter),
             ),
           ),
           ..._results(context, state),
@@ -249,6 +346,19 @@ class _GameSearchPageState extends State<_GameSearchPage> {
               ),
             ),
           ),
+        // The cache holds no platform types (#474), so say why nothing
+        // matches rather than let it read as no results.
+        if (ready.fromCache && ready.filter.platformTypes.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: tokens.spaceMd),
+              child: Text(
+                l10n.catalogSearchPlatformOffline,
+                key: GameSearchScreen.platformOfflineNoteKey,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
         // The announcement: a live region whose label changes with each
         // answer, so a screen reader reads the count when results land.
         SliverToBoxAdapter(
@@ -305,6 +415,16 @@ class _GameSearchPageState extends State<_GameSearchPage> {
             child: Padding(
               padding: EdgeInsets.only(top: tokens.spaceMd),
               child: _MissingSourcesNote(missing: ready.missingSources),
+            ),
+          ),
+        if (ready.unfilterableSources.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: tokens.spaceMd),
+              child: _UnfilterableNote(
+                skipped: ready.unfilterableSources,
+                filter: ready.filter,
+              ),
             ),
           ),
       ],
@@ -367,11 +487,121 @@ class _GameSearchPageState extends State<_GameSearchPage> {
   );
 }
 
-/// The content-type filter: one chip per type, any number chosen. None
-/// chosen does not narrow. The platform types the filter also carries are
-/// kept as they are; offering them is #474.
-class _Filter extends StatelessWidget {
-  const _Filter({required this.filter});
+/// One filter in use, as its chip under the field shows it: [without] is
+/// the filter once it is cleared.
+typedef _InUse = ({String id, CatalogFact label, GameSearchFilter without});
+
+/// Every filter in use, in the sheet's order: one per chosen content type,
+/// one per chosen platform type, and one per range that narrows. The Filters
+/// button counts them.
+///
+/// A range that keeps unknown values says so, as "1990–2000 or no year",
+/// since those games are in the results. Clearing a range clears whether it
+/// keeps them too.
+List<_InUse> _filtersInUse(
+  GameCatalogLocalizations l10n,
+  GameSearchFilter filter,
+) {
+  final GameSearchFilter(
+    :contentTypes,
+    :platformTypes,
+    :publishYear,
+    :playerCount,
+    :playTime,
+  ) = filter;
+  const cleared = GameSearchRange();
+  CatalogFact? orUnknown(
+    GameSearchRange range,
+    CatalogFact? label,
+    String Function(String range) withUnknown,
+  ) => label == null || !range.includeUnknown
+      ? label
+      : (shown: withUnknown(label.shown), spoken: withUnknown(label.spoken));
+  return [
+    for (final type in GameSearchScreen.filterTypes)
+      if (contentTypes.contains(type))
+        (
+          id: 'content_${type.name}',
+          label: sameFact(contentTypeLabel(l10n, type)!),
+          without: filter.copyWith(
+            contentTypes: {...contentTypes}..remove(type),
+          ),
+        ),
+    for (final type in GameSearchScreen.platformFilterTypes)
+      if (platformTypes.contains(type))
+        (
+          id: 'platform_${type.name}',
+          label: sameFact(platformTypeLabel(l10n, type)!),
+          without: filter.copyWith(
+            platformTypes: {...platformTypes}..remove(type),
+          ),
+        ),
+    if (orUnknown(
+          publishYear,
+          _yearFact(l10n, publishYear),
+          l10n.catalogSearchOrNoYear,
+        )
+        case final label?)
+      (
+        id: 'year',
+        label: label,
+        without: filter.copyWith(publishYear: cleared),
+      ),
+    if (orUnknown(
+          playerCount,
+          // A bound alone is one count (#580).
+          playersFact(
+            l10n,
+            playerCount.min ?? playerCount.max,
+            playerCount.max ?? playerCount.min,
+          ),
+          l10n.catalogSearchOrNoPlayerCount,
+        )
+        case final label?)
+      (
+        id: 'players',
+        label: label,
+        without: filter.copyWith(playerCount: cleared),
+      ),
+    if (orUnknown(
+          playTime,
+          _playTimeFact(l10n, playTime),
+          l10n.catalogSearchOrNoPlayTime,
+        )
+        case final label?)
+      (id: 'time', label: label, without: filter.copyWith(playTime: cleared)),
+  ];
+}
+
+/// A publish-year range in use, or null when it names no year.
+CatalogFact? _yearFact(GameCatalogLocalizations l10n, GameSearchRange range) {
+  String year(int year) => yearText(l10n, year);
+  return switch ((range.min, range.max)) {
+    (final int min, final int max) when min == max => sameFact(year(min)),
+    (final int min, final int max) => (
+      shown: l10n.catalogSearchYearRange(year(min), year(max)),
+      spoken: l10n.catalogSearchYearRangeSpoken(year(min), year(max)),
+    ),
+    (final int min, null) => sameFact(l10n.catalogSearchFromYear(year(min))),
+    (null, final int max) => sameFact(l10n.catalogSearchUpToYear(year(max))),
+    (null, null) => null,
+  };
+}
+
+/// A play-time range in use, by its band's name where it is one, or null
+/// when it names no time.
+CatalogFact? _playTimeFact(
+  GameCatalogLocalizations l10n,
+  GameSearchRange range,
+) => switch (GameLengthBand.matching(range)) {
+  final band? => sameFact(bandName(l10n, band)),
+  null => playTimeRangeFact(l10n, range.min, range.max),
+};
+
+/// The filters in use, as chips under the field (#474). Tapping one, or its
+/// remove button, clears it and searches again.
+class _FiltersInUse extends StatelessWidget {
+  const _FiltersInUse({required this.filter});
 
   final GameSearchFilter filter;
 
@@ -379,41 +609,26 @@ class _Filter extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = GameCatalogLocalizations.of(context);
     final tokens = BgeTokens.of(context);
-    final selected = filter.contentTypes;
+    final inUse = _filtersInUse(l10n, filter);
+    if (inUse.isEmpty) return const SizedBox.shrink();
 
-    void toggle(ContentType type, bool on) =>
-        context.read<GameSearchBloc>().add(
-          GameSearchFilterChanged(
-            filter.withContentTypes(
-              on ? {...selected, type} : ({...selected}..remove(type)),
+    void clear(GameSearchFilter without) =>
+        context.read<GameSearchBloc>().add(GameSearchFilterChanged(without));
+
+    return Wrap(
+      spacing: tokens.spaceSm,
+      runSpacing: tokens.spaceSm,
+      children: [
+        for (final (:id, :label, :without) in inUse)
+          InputChip(
+            key: GameSearchScreen.inUseKey(id),
+            label: CatalogChipLabel(label.shown, semanticsLabel: label.spoken),
+            onPressed: () => clear(without),
+            onDeleted: () => clear(without),
+            deleteButtonTooltipMessage: l10n.catalogSearchFilterRemove(
+              label.spoken,
             ),
           ),
-        );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Semantics(
-          header: true,
-          child: Text(
-            l10n.catalogSearchFilterLabel,
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
-        ),
-        const BgeGap.sm(),
-        Wrap(
-          spacing: tokens.spaceSm,
-          runSpacing: tokens.spaceSm,
-          children: [
-            for (final type in GameSearchScreen.filterTypes)
-              FilterChip(
-                key: GameSearchScreen.filterKey(type),
-                label: Text(contentTypeLabel(l10n, type)!),
-                selected: selected.contains(type),
-                onSelected: (on) => toggle(type, on),
-              ),
-          ],
-        ),
       ],
     );
   }
@@ -440,6 +655,67 @@ class _MissingSourcesNote extends StatelessWidget {
             )
           : l10n.catalogSearchMissingUnnamed(missing.length),
       key: GameSearchScreen.missingSourcesKey,
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+}
+
+/// The quiet note under the results naming the DataGateways the filter
+/// skipped (#580): they can't apply its player count or play time. It names
+/// the filter that caused it and the way back, the switch that keeps games
+/// with no value.
+///
+/// It names them when it can name every one, and counts them otherwise, as
+/// [_MissingSourcesNote] does.
+class _UnfilterableNote extends StatelessWidget {
+  const _UnfilterableNote({required this.skipped, required this.filter});
+
+  final List<GameSearchSource> skipped;
+  final GameSearchFilter filter;
+
+  /// Whether [range] skips a DataGateway that can't apply it: the server
+  /// asks every one when the range keeps unknown values.
+  static bool _skips(GameSearchRange range) =>
+      range.narrows && !range.includeUnknown;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCatalogLocalizations.of(context);
+    final names = [for (final source in skipped) ?source.name];
+    final count = skipped.length;
+    final (players, time) = (
+      _skips(filter.playerCount),
+      _skips(filter.playTime),
+    );
+
+    // With both ranges skipping, the server names the sources but not which
+    // range skipped each, so the note says either or both, and asks for both
+    // switches: that alone is sure to bring every one back.
+    final String text;
+    if (names.length == count) {
+      final sources = names.join(l10n.catalogSearchSourceSeparator);
+      text = switch ((players, time)) {
+        (true, false) => l10n.catalogSearchUnfilterableNamedPlayers(
+          sources,
+          count,
+        ),
+        (false, true) => l10n.catalogSearchUnfilterableNamedTime(
+          sources,
+          count,
+        ),
+        _ => l10n.catalogSearchUnfilterableNamedBoth(sources, count),
+      };
+    } else {
+      text = switch ((players, time)) {
+        (true, false) => l10n.catalogSearchUnfilterableUnnamedPlayers(count),
+        (false, true) => l10n.catalogSearchUnfilterableUnnamedTime(count),
+        _ => l10n.catalogSearchUnfilterableUnnamedBoth(count),
+      };
+    }
+
+    return Text(
+      text,
+      key: GameSearchScreen.unfilterableNoteKey,
       style: Theme.of(context).textTheme.bodySmall,
     );
   }

@@ -40,16 +40,23 @@ class FakeGamesCache extends Fake implements GameRepository {
   Future<List<Game>> getGamesPage({int offset = 0, required int limit}) async =>
       _games.skip(offset).take(limit).toList();
 
+  /// Narrows by content type and finds nothing for a platform type, as the
+  /// real cache does. The ranges are ignored: the screens' tests don't search
+  /// by them offline, and the drift cache's own tests hold those rules.
   @override
   Future<List<Game>> searchGames(
     String query, {
     int limit = 20,
-    Set<ContentType> contentTypes = const {},
-  }) async => _games
-      .where((g) => g.title.toLowerCase().contains(query.toLowerCase()))
-      .where(
-        (g) => contentTypes.isEmpty || contentTypes.contains(g.contentType),
-      )
-      .take(limit)
-      .toList();
+    GameSearchFilter filter = const GameSearchFilter(),
+  }) async {
+    final GameSearchFilter(:contentTypes, :platformTypes) = filter;
+    if (platformTypes.isNotEmpty) return const [];
+    return _games
+        .where((g) => g.title.toLowerCase().contains(query.toLowerCase()))
+        .where(
+          (g) => contentTypes.isEmpty || contentTypes.contains(g.contentType),
+        )
+        .take(limit)
+        .toList();
+  }
 }

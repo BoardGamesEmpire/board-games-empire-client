@@ -1,36 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
-/// What a search is narrowed to (#42). An empty set does not narrow; one
-/// that names a type keeps only games of it.
-///
-/// The screen offers content types. Platform types are taken here and sent
-/// to the server, and the screen's control for them is #474.
-final class GameSearchFilter extends Equatable {
-  const GameSearchFilter({
-    this.contentTypes = const {},
-    this.platformTypes = const {},
-  });
-
-  final Set<ContentType> contentTypes;
-  final Set<PlatformType> platformTypes;
-
-  GameSearchFilter withContentTypes(Set<ContentType> contentTypes) =>
-      GameSearchFilter(
-        contentTypes: contentTypes,
-        platformTypes: platformTypes,
-      );
-
-  GameSearchFilter withPlatformTypes(Set<PlatformType> platformTypes) =>
-      GameSearchFilter(
-        contentTypes: contentTypes,
-        platformTypes: platformTypes,
-      );
-
-  @override
-  List<Object?> get props => [contentTypes, platformTypes];
-}
-
 /// What the search screen is showing (#42).
 ///
 /// Every state carries the filter, so the filter's controls read the same
@@ -66,6 +36,11 @@ final class GameSearchLoading extends GameSearchState {
 /// [missingSources] names every DataGateway that did not answer, so one that
 /// dropped out does not read as one that found nothing.
 ///
+/// [unfilterableSources] names every DataGateway the filter skipped, because
+/// it can't apply the filter's player count or play time (#580). They are
+/// kept apart from [missingSources] because the user can act on them: the
+/// range's switch that keeps games with no value asks them again.
+///
 /// [fromCache] says the server's search failed, so [onServer] is the games
 /// cached on this device that match, and there is nothing from DataGateways.
 final class GameSearchReady extends GameSearchState {
@@ -74,6 +49,7 @@ final class GameSearchReady extends GameSearchState {
     this.onServer = const [],
     this.fromSources = const [],
     this.missingSources = const [],
+    this.unfilterableSources = const [],
     this.fromCache = false,
     super.filter,
   });
@@ -82,6 +58,7 @@ final class GameSearchReady extends GameSearchState {
   final List<GameSearchHit> onServer;
   final List<GameSearchSourceHit> fromSources;
   final List<GameSearchSource> missingSources;
+  final List<GameSearchSource> unfilterableSources;
   final bool fromCache;
 
   /// How many results the screen lists.
@@ -93,6 +70,7 @@ final class GameSearchReady extends GameSearchState {
     onServer,
     fromSources,
     missingSources,
+    unfilterableSources,
     fromCache,
     filter,
   ];

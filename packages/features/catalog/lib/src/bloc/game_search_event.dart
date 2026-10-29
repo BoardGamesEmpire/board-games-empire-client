@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import 'game_search_state.dart';
+import 'package:models/domain.dart';
 
 /// Events of `GameSearchBloc`.
 sealed class GameSearchEvent extends Equatable {

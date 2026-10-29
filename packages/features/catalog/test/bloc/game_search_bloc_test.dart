@@ -19,6 +19,16 @@ class _FailingForgetCache extends FakeGamesCache {
   Future<void> forgetCatalog() async => throw StateError('disposed');
 }
 
+/// A cache that cannot be searched, as a corrupt database would leave it.
+class _FailingSearchCache extends FakeGamesCache {
+  @override
+  Future<List<Game>> searchGames(
+    String query, {
+    int limit = 20,
+    GameSearchFilter filter = const GameSearchFilter(),
+  }) async => throw StateError('corrupt');
+}
+
 const _expansions = GameSearchFilter(contentTypes: {ContentType.expansion});
 
 void main() {
@@ -275,6 +285,31 @@ void main() {
     );
 
     blocTest<GameSearchBloc, GameSearchState>(
+      'names the DataGateways the filter skipped, apart from those that did '
+      'not answer',
+      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(
+        unfilterableDataGateways: {'dg_bgg'},
+        unavailableDataGateways: {'dg_down'},
+      ),
+      build: () => build(sourceNames: () async => {'dg_bgg': 'BoardGameGeek'}),
+      act: (bloc) async {
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      skip: 1,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.unfilterableSources, 'unfilterableSources', [
+              const GameSearchSource(id: 'dg_bgg', name: 'BoardGameGeek'),
+            ])
+            .having((s) => s.missingSources, 'missingSources', [
+              const GameSearchSource(id: 'dg_down'),
+            ]),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
       'names results already on screen when the names arrive late',
       setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
         byDataGateway: {
@@ -370,6 +405,105 @@ void main() {
       verify: (_) => expect(remote.calls, ['search(catan {tabletop})']),
     );
 
+    const keepUndated = GameSearchFilter(
+      publishYear: GameSearchRange(includeUnknown: true),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a change that narrows nothing new is kept without searching again',
+      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        // Keeping undated games, with no year bound, narrows nothing.
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+        // Nor does the same filter again.
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        const GameSearchReady(query: 'catan', filter: keepUndated),
+      ],
+      verify: (_) => expect(remote.calls, ['search(catan)']),
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
+      'a change that narrows nothing new keeps everything the answer showed',
+      setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
+        local: [hit('catan')],
+        failedDataGateways: const {'dg_down'},
+        unfilterableDataGateways: const {'dg_bgg'},
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+      },
+      skip: 2,
+      expect: () => [
+        GameSearchReady(
+          query: 'catan',
+          onServer: [hit('catan')],
+          missingSources: const [GameSearchSource(id: 'dg_down')],
+          unfilterableSources: const [GameSearchSource(id: 'dg_bgg')],
+          filter: keepUndated,
+        ),
+      ],
+    );
+
+    group('a change that narrows nothing new, made while a search is out, is '
+        'kept when that search', () {
+      /// Types, keeps undated games while the search is out, then has it
+      /// end in [error].
+      Future<void> changeWhilePending(GameSearchBloc bloc, Object error) async {
+        // Made inside the test's zone: an error can't cross into another.
+        final pending = Completer<GameSearchResults>();
+        remote.onSearch = (_, _) => pending.future;
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+        bloc.add(const GameSearchFilterChanged(keepUndated));
+        await settle();
+        pending.completeError(error);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      blocTest<GameSearchBloc, GameSearchState>(
+        'fails',
+        build: build,
+        act: (bloc) => changeWhilePending(bloc, unreachable()),
+        skip: 2,
+        expect: () => [
+          const GameSearchFailed(query: 'catan', filter: keepUndated),
+        ],
+      );
+
+      blocTest<GameSearchBloc, GameSearchState>(
+        'is refused',
+        build: build,
+        act: (bloc) =>
+            changeWhilePending(bloc, const GamesForbiddenException('403')),
+        skip: 2,
+        expect: () => [
+          const GameSearchDenied(query: 'catan', filter: keepUndated),
+        ],
+      );
+
+      blocTest<GameSearchBloc, GameSearchState>(
+        'falls back to a cache that fails too',
+        build: () => build(cache: _FailingSearchCache()),
+        act: (bloc) => changeWhilePending(bloc, unreachable()),
+        skip: 2,
+        expect: () => [
+          const GameSearchFailed(query: 'catan', filter: keepUndated),
+        ],
+      );
+    });
+
     blocTest<GameSearchBloc, GameSearchState>(
       'with nothing typed, is only remembered',
       build: build,
@@ -384,7 +518,7 @@ void main() {
       'an older answer that lands last does not replace the newer one',
       setUp: () {
         unfiltered = Completer<GameSearchResults>();
-        remote.onSearch = (_, types) => types.isEmpty
+        remote.onSearch = (_, filter) => filter.contentTypes.isEmpty
             ? unfiltered.future
             : Future.value(GameSearchResults(local: [hit('newer')]));
       },

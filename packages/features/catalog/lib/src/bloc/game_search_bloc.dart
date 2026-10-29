@@ -39,7 +39,10 @@ import 'game_search_state.dart';
 ///
 /// Query changes are debounced, and a new one cancels the handler still
 /// waiting on an older one (`restartable()`). A filter change and a retry
-/// start a search of their own, outside that ordering. So every search
+/// start a search of their own, outside that ordering. A filter change that
+/// narrows the search no differently, such as keeping unknown values on a
+/// range with no bound, starts none: the state takes the new filter, for
+/// its controls, and nothing else changes. So every search
 /// takes a sequence number, and an answer that lands after a newer search
 /// started is dropped, as `DataGatewayListBloc`'s reads are.
 ///
@@ -71,9 +74,9 @@ import 'game_search_state.dart';
 /// ## When the search fails
 ///
 /// The bloc searches the games cached on this device instead
-/// ([GameRepository.searchGames]), narrowed by the filter's content types,
-/// and reports them as [GameSearchReady.fromCache]. Without a cache, or when
-/// that read fails too, it reports [GameSearchFailed].
+/// ([GameRepository.searchGames]), narrowed by the whole filter by the
+/// server's rules, and reports them as [GameSearchReady.fromCache]. Without a
+/// cache, or when that read fails too, it reports [GameSearchFailed].
 ///
 /// The cache holds no platform types, so a search narrowed by platform type
 /// finds nothing there rather than showing games it cannot vouch for.
@@ -166,8 +169,44 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
     GameSearchFilterChanged event,
     Emitter<GameSearchState> emit,
   ) async {
+    final same = _asSearched(event.filter) == _asSearched(_filter);
     _filter = event.filter;
+    if (same) {
+      _keepFilter(emit);
+      return;
+    }
     await _search(emit);
+  }
+
+  /// [filter] as a search reads it: a range with no bound narrows nothing,
+  /// so whether it keeps unknown values makes no difference (#565, #580).
+  static GameSearchFilter _asSearched(GameSearchFilter filter) {
+    GameSearchRange read(GameSearchRange range) =>
+        range.narrows ? range : const GameSearchRange();
+    return filter.copyWith(
+      publishYear: read(filter.publishYear),
+      playerCount: read(filter.playerCount),
+      playTime: read(filter.playTime),
+    );
+  }
+
+  /// Shows the current state again under [_filter], which narrows the
+  /// search no differently, so the filter's controls read it. An answer is
+  /// built again by [_ready], its one maker, so it keeps all it showed.
+  void _keepFilter(Emitter<GameSearchState> emit) {
+    final filter = _filter;
+    switch (state) {
+      case GameSearchReady():
+        _showAgain(emit);
+      case GameSearchIdle():
+        emit(GameSearchIdle(filter: filter));
+      case GameSearchLoading(:final query):
+        emit(GameSearchLoading(query: query, filter: filter));
+      case GameSearchFailed(:final query):
+        emit(GameSearchFailed(query: query, filter: filter));
+      case GameSearchDenied(:final query):
+        emit(GameSearchDenied(query: query, filter: filter));
+    }
   }
 
   Future<void> _onRetryRequested(
@@ -209,11 +248,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
 
     emit(GameSearchLoading(query: query, filter: filter));
     try {
-      final results = await _remote.search(
-        query,
-        contentTypes: filter.contentTypes,
-        platformTypes: filter.platformTypes,
-      );
+      final results = await _remote.search(query, filter: filter);
       if (search != _sequence) return;
       _shown = results;
       emit(_ready(results, fromCache: false));
@@ -221,7 +256,10 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
       // A stale 403 still says the catalog is refused.
       await _forgetCatalog();
       if (search != _sequence) return;
-      emit(GameSearchDenied(query: query, filter: filter));
+      // [_filter], not the filter searched with: one that narrows no
+      // differently may have come in since, and the controls read it here,
+      // as they do from [_ready].
+      emit(GameSearchDenied(query: query, filter: _filter));
     } on Object catch (error, stackTrace) {
       if (search != _sequence) return;
       _logger.warn(
@@ -255,18 +293,16 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
   }) async {
     final cache = _cache;
     if (cache == null) {
-      emit(GameSearchFailed(query: query, filter: filter));
+      emit(GameSearchFailed(query: query, filter: _filter));
       return;
     }
 
     try {
-      final games = filter.platformTypes.isNotEmpty
-          ? const <Game>[]
-          : await cache.searchGames(
-              query,
-              limit: GamesRemoteDataSource.searchPageSize,
-              contentTypes: filter.contentTypes,
-            );
+      final games = await cache.searchGames(
+        query,
+        limit: GamesRemoteDataSource.searchPageSize,
+        filter: filter,
+      );
       if (search != _sequence) return;
       final results = GameSearchResults(
         local: [for (final game in games) _hitOf(game)],
@@ -280,7 +316,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         error: error,
         stackTrace: stackTrace,
       );
-      emit(GameSearchFailed(query: query, filter: filter));
+      emit(GameSearchFailed(query: query, filter: _filter));
     }
   }
 
@@ -330,6 +366,9 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
           ...results.unavailableDataGateways,
         })
           _source(id),
+      ],
+      unfilterableSources: [
+        for (final id in results.unfilterableDataGateways) _source(id),
       ],
     );
   }

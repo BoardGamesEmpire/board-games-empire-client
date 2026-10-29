@@ -186,6 +186,34 @@
   "@catalogContentTypeRemaster": {
     "description": "An earlier game released again with improved graphics or sound."
   },
+  "catalogPlatformTypeTabletop": "Tabletop",
+  "@catalogPlatformTypeTabletop": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Board, card and other games played at a table."
+  },
+  "catalogPlatformTypeConsole": "Console",
+  "@catalogPlatformTypeConsole": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for home video-game consoles."
+  },
+  "catalogPlatformTypePortable": "Portable",
+  "@catalogPlatformTypePortable": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for handheld game consoles."
+  },
+  "catalogPlatformTypePc": "PC",
+  "@catalogPlatformTypePc": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for personal computers."
+  },
+  "catalogPlatformTypeMobile": "Mobile",
+  "@catalogPlatformTypeMobile": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Games for phones and tablets."
+  },
+  "catalogPlatformTypeArcade": "Arcade",
+  "@catalogPlatformTypeArcade": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Arcade cabinet games."
+  },
+  "catalogPlatformTypeOther": "Other",
+  "@catalogPlatformTypeOther": {
+    "description": "A kind of platform games are played on: a filter choice on the search screen, and a filter in use under the search field. Any platform that is none of the others."
+  },
   "catalogSearchTitle": "Search games",
   "@catalogSearchTitle": {
     "description": "Title of the search screen, and the tooltip of the button on the games list that opens it."
@@ -194,13 +222,257 @@
   "@catalogSearchFieldLabel": {
     "description": "Label of the text field the user types a game's title into."
   },
+  "catalogSearchFiltersButton": "{count, plural, =0{Filters} other{Filters ({count})}}",
+  "@catalogSearchFiltersButton": {
+    "description": "The button beside the search field that opens the filters. It counts the filters in use, one per chosen type and one per range.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchFiltersTitle": "Filters",
+  "@catalogSearchFiltersTitle": {
+    "description": "Heading of the sheet holding every search filter."
+  },
+  "catalogSearchFiltersClearAll": "Clear all",
+  "@catalogSearchFiltersClearAll": {
+    "description": "Button in the filter sheet that turns every filter off at once."
+  },
+  "catalogSearchFilterContentType": "Content type",
+  "@catalogSearchFilterContentType": {
+    "description": "Heading over the content-type filter choices, such as 'Base game' and 'Expansion'. With none chosen, every type is shown."
+  },
+  "catalogSearchFilterPlatformType": "Platform",
+  "@catalogSearchFilterPlatformType": {
+    "description": "Heading over the platform-type filter choices, such as 'Tabletop' and 'PC'. With none chosen, every platform is shown."
+  },
+  "catalogSearchFilterRemove": "Remove {filter}",
+  "@catalogSearchFilterRemove": {
+    "description": "Tooltip and screen-reader label of the remove button on a filter in use, shown under the search field.",
+    "placeholders": {
+      "filter": {
+        "type": "String",
+        "example": "Expansion"
+      }
+    }
+  },
+  "catalogSearchFilterYear": "Publish year",
+  "@catalogSearchFilterYear": {
+    "description": "Heading over the filter sheet's publish-year range."
+  },
+  "catalogSearchFilterPlayers": "Players",
+  "@catalogSearchFilterPlayers": {
+    "description": "Heading over the filter sheet's player-count range."
+  },
+  "catalogSearchFilterPlayTime": "Play time",
+  "@catalogSearchFilterPlayTime": {
+    "description": "Heading over the filter sheet's play-time range and its length bands."
+  },
+  "catalogSearchRangeFrom": "From",
+  "@catalogSearchRangeFrom": {
+    "description": "Label of the field for a filter range's lowest value: the earliest year, the fewest players or the shortest play time. It may be left empty."
+  },
+  "catalogSearchRangeTo": "To",
+  "@catalogSearchRangeTo": {
+    "description": "Label of the field for a filter range's highest value: the latest year, the most players or the longest play time. It may be left empty."
+  },
+  "catalogSearchYearHelper": "Use a minus sign for years BCE",
+  "@catalogSearchYearHelper": {
+    "description": "Help under the publish-year fields: a year before the common era is typed as a negative number, such as -3000."
+  },
+  "catalogSearchPlayersHelper": "Fill in one for an exact count",
+  "@catalogSearchPlayersHelper": {
+    "description": "Help under the player-count fields: filling in only From, or only To, finds games for exactly that many players."
+  },
+  "catalogSearchPlayTimeHelper": "In minutes",
+  "@catalogSearchPlayTimeHelper": {
+    "description": "Help under the play-time fields: the numbers are minutes."
+  },
+  "catalogSearchRangeReversed": "From can't be after To",
+  "@catalogSearchRangeReversed": {
+    "description": "Error on a filter range's To field when its From value is larger. Nothing is searched until it is fixed."
+  },
+  "catalogSearchRangeTooLow": "Must be at least {lowest}",
+  "@catalogSearchRangeTooLow": {
+    "description": "Error on a filter range's field when its value is below the lowest the search accepts, such as 0 players.",
+    "placeholders": {
+      "lowest": {
+        "type": "int",
+        "example": "1"
+      }
+    }
+  },
+  "catalogSearchRangeTooHigh": "Too large",
+  "@catalogSearchRangeTooHigh": {
+    "description": "Error on a filter range's field when its value is larger than the search accepts."
+  },
+  "catalogSearchYearNotApplied": "Publish year not applied. {problem}.",
+  "@catalogSearchYearNotApplied": {
+    "description": "A SnackBar after the filter sheet closes on a publish-year range it couldn't send, as when From is after To. The range is dropped, and the problem is the error its field would show.",
+    "placeholders": {
+      "problem": {
+        "type": "String",
+        "example": "From can't be after To"
+      }
+    }
+  },
+  "catalogSearchPlayersNotApplied": "Player count not applied. {problem}.",
+  "@catalogSearchPlayersNotApplied": {
+    "description": "A SnackBar after the filter sheet closes on a player-count range it couldn't send, as when From is after To. The range is dropped, and the problem is the error its field would show.",
+    "placeholders": {
+      "problem": {
+        "type": "String",
+        "example": "From can't be after To"
+      }
+    }
+  },
+  "catalogSearchPlayTimeNotApplied": "Play time not applied. {problem}.",
+  "@catalogSearchPlayTimeNotApplied": {
+    "description": "A SnackBar after the filter sheet closes on a play-time range it couldn't send, as when From is after To. The range is dropped, and the problem is the error its field would show.",
+    "placeholders": {
+      "problem": {
+        "type": "String",
+        "example": "From can't be after To"
+      }
+    }
+  },
+  "catalogSearchIncludeUnknownYear": "Include games with no year",
+  "@catalogSearchIncludeUnknownYear": {
+    "description": "Switch under the publish-year range. On, games with no known publish year are kept. It changes nothing until a year is filled in."
+  },
+  "catalogSearchIncludeUnknownPlayers": "Include games with no player count",
+  "@catalogSearchIncludeUnknownPlayers": {
+    "description": "Switch under the player-count range. On, games with no known player count are kept. It changes nothing until a count is filled in."
+  },
+  "catalogSearchIncludeUnknownPlayTime": "Include games with no play time",
+  "@catalogSearchIncludeUnknownPlayTime": {
+    "description": "Switch under the play-time range. On, games with no known play time are kept. It changes nothing until a time is filled in."
+  },
+  "catalogSearchFromYear": "From {year}",
+  "@catalogSearchFromYear": {
+    "description": "A publish-year filter in use with only its earliest year, shown as a chip under the search field.",
+    "placeholders": {
+      "year": {
+        "type": "String",
+        "example": "1990"
+      }
+    }
+  },
+  "catalogSearchUpToYear": "Up to {year}",
+  "@catalogSearchUpToYear": {
+    "description": "A publish-year filter in use with only its latest year, shown as a chip under the search field.",
+    "placeholders": {
+      "year": {
+        "type": "String",
+        "example": "2000"
+      }
+    }
+  },
+  "catalogSearchYearRange": "{from}–{to}",
+  "@catalogSearchYearRange": {
+    "description": "A publish-year filter in use with both years, shown as a chip under the search field. Either year may read as BCE.",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "1990"
+      },
+      "to": {
+        "type": "String",
+        "example": "2000"
+      }
+    }
+  },
+  "catalogSearchYearRangeSpoken": "{from} to {to}",
+  "@catalogSearchYearRangeSpoken": {
+    "description": "catalogSearchYearRange as a screen reader reads it, without the dash.",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "1990"
+      },
+      "to": {
+        "type": "String",
+        "example": "2000"
+      }
+    }
+  },
+  "catalogSearchOrNoYear": "{range} or no year",
+  "@catalogSearchOrNoYear": {
+    "description": "A publish year filter in use that also keeps games with no publish year, shown as a chip under the search field and read by a screen reader. The range is the chip's own label, such as 1990–2000.",
+    "placeholders": {
+      "range": {
+        "type": "String",
+        "example": "1990–2000"
+      }
+    }
+  },
+  "catalogSearchOrNoPlayerCount": "{range} or no player count",
+  "@catalogSearchOrNoPlayerCount": {
+    "description": "A player count filter in use that also keeps games with no player count, shown as a chip under the search field and read by a screen reader. The range is the chip's own label, such as 4 players.",
+    "placeholders": {
+      "range": {
+        "type": "String",
+        "example": "4 players"
+      }
+    }
+  },
+  "catalogSearchOrNoPlayTime": "{range} or no play time",
+  "@catalogSearchOrNoPlayTime": {
+    "description": "A play time filter in use that also keeps games with no play time, shown as a chip under the search field and read by a screen reader. The range is the chip's own label, such as Medium.",
+    "placeholders": {
+      "range": {
+        "type": "String",
+        "example": "Medium"
+      }
+    }
+  },
+  "catalogBandFiller": "Filler",
+  "@catalogBandFiller": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. Up to 15 minutes: ultra-quick games while waiting."
+  },
+  "catalogBandQuick": "Quick",
+  "@catalogBandQuick": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. 15 to 30 minutes: short and sweet."
+  },
+  "catalogBandShort": "Short",
+  "@catalogBandShort": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. 30 minutes to an hour: a standard game length."
+  },
+  "catalogBandMedium": "Medium",
+  "@catalogBandMedium": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. 1 to 2 hours: a solid gaming session."
+  },
+  "catalogBandLong": "Long",
+  "@catalogBandLong": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. 2 to 4 hours: a dedicated evening game."
+  },
+  "catalogBandEpic": "Epic",
+  "@catalogBandEpic": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. 4 to 8 hours: a major time commitment."
+  },
+  "catalogBandMarathon": "Marathon",
+  "@catalogBandMarathon": {
+    "description": "A game-length band the play-time filter offers, by the server's name for it. 8 hours or more: all-day or multi-session games."
+  },
+  "catalogBandLabel": "{name} ({range})",
+  "@catalogBandLabel": {
+    "description": "A game-length band's choice in the play-time filter: its name, then the play times it covers, such as \"Medium (1–2 hr)\".",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Medium"
+      },
+      "range": {
+        "type": "String",
+        "example": "1–2 hr"
+      }
+    }
+  },
   "catalogSearchClear": "Clear search",
   "@catalogSearchClear": {
     "description": "Tooltip of the button that empties the search field."
-  },
-  "catalogSearchFilterLabel": "Show only",
-  "@catalogSearchFilterLabel": {
-    "description": "Heading over the content-type filter choices, such as 'Base game' and 'Expansion'. With none chosen, every type is shown."
   },
   "catalogSearchIdle": "Search this server and its data sources for a game.",
   "@catalogSearchIdle": {
@@ -276,7 +548,83 @@
   },
   "catalogSearchSourceSeparator": ", ",
   "@catalogSearchSourceSeparator": {
-    "description": "Joins data source names in catalogSearchMissingNamed."
+    "description": "Joins data source names in catalogSearchMissingNamed and the catalogSearchUnfilterableNamed notes."
+  },
+  "catalogSearchUnfilterableNamedPlayers": "{sources} can't filter by player count, so {count, plural, =1{its games aren't} other{their games aren't}} shown. Include games with no player count to see them.",
+  "@catalogSearchUnfilterableNamedPlayers": {
+    "description": "A quiet note under the search results naming the data sources the search skipped because the search names a player count and they can't filter by it. It says how to see their games: the filter's switch that keeps games with no value. Only shown to a user who may see the data sources' names.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, IGDB"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableNamedTime": "{sources} can't filter by play time, so {count, plural, =1{its games aren't} other{their games aren't}} shown. Include games with no play time to see them.",
+  "@catalogSearchUnfilterableNamedTime": {
+    "description": "A quiet note under the search results naming the data sources the search skipped because the search names a play time and they can't filter by it. It says how to see their games: the filter's switch that keeps games with no value. Only shown to a user who may see the data sources' names.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, IGDB"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableNamedBoth": "{sources} can't filter by player count, play time or both, so {count, plural, =1{its games aren't} other{their games aren't}} shown. Include games with no player count and games with no play time to see them.",
+  "@catalogSearchUnfilterableNamedBoth": {
+    "description": "A quiet note under the search results naming the data sources the search skipped because the search names both a player count and a play time. The server doesn't say which of the two skipped each source, so the note says it may be either or both, and asks for both switches that keep games with no value: that always brings their games back. Only shown to a user who may see the data sources' names.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, IGDB"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableUnnamedPlayers": "{count, plural, =1{A data source can't filter by player count, so its games aren't shown.} other{{count} data sources can't filter by player count, so their games aren't shown.}} Include games with no player count to see them.",
+  "@catalogSearchUnfilterableUnnamedPlayers": {
+    "description": "catalogSearchUnfilterableNamedPlayers for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableUnnamedTime": "{count, plural, =1{A data source can't filter by play time, so its games aren't shown.} other{{count} data sources can't filter by play time, so their games aren't shown.}} Include games with no play time to see them.",
+  "@catalogSearchUnfilterableUnnamedTime": {
+    "description": "catalogSearchUnfilterableNamedTime for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableUnnamedBoth": "{count, plural, =1{A data source can't filter by player count, play time or both, so its games aren't shown.} other{{count} data sources can't filter by player count, play time or both, so their games aren't shown.}} Include games with no player count and games with no play time to see them.",
+  "@catalogSearchUnfilterableUnnamedBoth": {
+    "description": "catalogSearchUnfilterableNamedBoth for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchPlatformOffline": "Platform type can't be checked on this device, so nothing here matches. Clear it to search this device.",
+  "@catalogSearchPlatformOffline": {
+    "description": "Shown under the note that the search failed and these are games saved on this device, when the search is narrowed by platform type. The device doesn't know games' platform types, so nothing can match until that filter is cleared."
   },
   "catalogDetailTitle": "Game",
   "@catalogDetailTitle": {
@@ -316,71 +664,202 @@
       }
     }
   },
-  "catalogDetailPlayingTime": "{minutes, plural, =1{1 minute} other{{minutes} minutes}}",
-  "@catalogDetailPlayingTime": {
-    "description": "How long one play of the game usually takes.",
+  "catalogYearBce": "{year} BCE",
+  "@catalogYearBce": {
+    "description": "A year before the common era, wherever a game's publish year shows. The year is written without its minus sign.",
     "placeholders": {
+      "year": {
+        "type": "String",
+        "example": "3000"
+      }
+    }
+  },
+  "catalogMinutesShort": "{n} min",
+  "@catalogMinutesShort": {
+    "description": "A play time under an hour, as shown on screen, abbreviated.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "catalogMinutes": "{n, plural, =1{1 minute} other{{n} minutes}}",
+  "@catalogMinutes": {
+    "description": "catalogMinutesShort as a screen reader reads it, in full words. Also the minutes part of catalogHoursMinutes.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "catalogHoursShort": "{n} hr",
+  "@catalogHoursShort": {
+    "description": "A play time of whole hours, as shown on screen, abbreviated. Play times of an hour or more read in hours, never days.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "5"
+      }
+    }
+  },
+  "catalogHours": "{n, plural, =1{1 hour} other{{n} hours}}",
+  "@catalogHours": {
+    "description": "catalogHoursShort as a screen reader reads it, in full words. Also the hours part of catalogHoursMinutes.",
+    "placeholders": {
+      "n": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "5"
+      }
+    }
+  },
+  "catalogHoursMinutesShort": "{h} hr {m} min",
+  "@catalogHoursMinutesShort": {
+    "description": "A play time of hours and some minutes, as shown on screen, abbreviated: 90 minutes reads 1 hr 30 min.",
+    "placeholders": {
+      "h": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1"
+      },
+      "m": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "catalogHoursMinutes": "{hours} {minutes}",
+  "@catalogHoursMinutes": {
+    "description": "catalogHoursMinutesShort as a screen reader reads it, joining two parts already in words: catalogHours, then catalogMinutes, as in \"1 hour 30 minutes\".",
+    "placeholders": {
+      "hours": {
+        "type": "String",
+        "example": "1 hour"
+      },
       "minutes": {
-        "type": "int",
-        "example": "90"
+        "type": "String",
+        "example": "30 minutes"
       }
     }
   },
-  "catalogDetailPlayTimeRange": "{min}–{max} minutes",
-  "@catalogDetailPlayTimeRange": {
-    "description": "How long one play of the game takes, as a range, as shown on screen.",
+  "catalogMinutesRangeShort": "{from}–{to} min",
+  "@catalogMinutesRangeShort": {
+    "description": "A play-time range whose ends are both under an hour, sharing one unit, as shown on screen.",
     "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "60"
-      },
-      "max": {
-        "type": "String",
-        "example": "120"
-      }
-    }
-  },
-  "catalogDetailPlayTimeRangeSpoken": "{min} to {max} minutes",
-  "@catalogDetailPlayTimeRangeSpoken": {
-    "description": "catalogDetailPlayTimeRange as a screen reader reads it, without the dash.",
-    "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "60"
-      },
-      "max": {
-        "type": "String",
-        "example": "120"
-      }
-    }
-  },
-  "catalogDetailPlayTimeAtLeast": "{min}+ minutes",
-  "@catalogDetailPlayTimeAtLeast": {
-    "description": "How long one play of the game takes when only the shortest time is known, as shown on screen.",
-    "placeholders": {
-      "min": {
-        "type": "String",
-        "example": "30"
-      }
-    }
-  },
-  "catalogDetailPlayTimeAtLeastSpoken": "{min, plural, =1{1 minute or more} other{{min} minutes or more}}",
-  "@catalogDetailPlayTimeAtLeastSpoken": {
-    "description": "catalogDetailPlayTimeAtLeast as a screen reader reads it.",
-    "placeholders": {
-      "min": {
+      "from": {
         "type": "int",
         "example": "30"
+      },
+      "to": {
+        "type": "int",
+        "example": "45"
       }
     }
   },
-  "catalogDetailPlayTimeUpTo": "{max, plural, =1{Up to 1 minute} other{Up to {max} minutes}}",
-  "@catalogDetailPlayTimeUpTo": {
-    "description": "How long one play of the game takes when only the longest time is known.",
+  "catalogMinutesRange": "{from} to {to} minutes",
+  "@catalogMinutesRange": {
+    "description": "catalogMinutesRangeShort as a screen reader reads it, without the dash.",
     "placeholders": {
-      "max": {
+      "from": {
         "type": "int",
-        "example": "120"
+        "example": "30"
+      },
+      "to": {
+        "type": "int",
+        "example": "45"
+      }
+    }
+  },
+  "catalogHoursRangeShort": "{from}–{to} hr",
+  "@catalogHoursRangeShort": {
+    "description": "A play-time range whose ends are both whole hours, sharing one unit, as shown on screen.",
+    "placeholders": {
+      "from": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1"
+      },
+      "to": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "2"
+      }
+    }
+  },
+  "catalogHoursRange": "{from} to {to} hours",
+  "@catalogHoursRange": {
+    "description": "catalogHoursRangeShort as a screen reader reads it, without the dash.",
+    "placeholders": {
+      "from": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "1"
+      },
+      "to": {
+        "type": "int",
+        "format": "decimalPattern",
+        "example": "2"
+      }
+    }
+  },
+  "catalogDurationRangeShort": "{from}–{to}",
+  "@catalogDurationRangeShort": {
+    "description": "A play-time range whose ends can't share a unit, as shown on screen: each end is already a play time, as in \"45 min–1 hr 30 min\".",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "45 min"
+      },
+      "to": {
+        "type": "String",
+        "example": "1 hr 30 min"
+      }
+    }
+  },
+  "catalogDurationRange": "{from} to {to}",
+  "@catalogDurationRange": {
+    "description": "catalogDurationRangeShort as a screen reader reads it, each end in full words, as in \"45 minutes to 1 hour 30 minutes\".",
+    "placeholders": {
+      "from": {
+        "type": "String",
+        "example": "45 minutes"
+      },
+      "to": {
+        "type": "String",
+        "example": "1 hour 30 minutes"
+      }
+    }
+  },
+  "catalogPlayTimeUpTo": "Up to {duration}",
+  "@catalogPlayTimeUpTo": {
+    "description": "A play time with only its longest time known, or a search narrowed to games that fit in it. The duration is already a play time, abbreviated on screen and in words for a screen reader.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "2 hr"
+      }
+    }
+  },
+  "catalogPlayTimeAtLeastShort": "{duration}+",
+  "@catalogPlayTimeAtLeastShort": {
+    "description": "A play time with only its shortest time known, or a search narrowed to games at least that long, as shown on screen. The duration is already a play time.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "30 min"
+      }
+    }
+  },
+  "catalogPlayTimeAtLeast": "{duration} or more",
+  "@catalogPlayTimeAtLeast": {
+    "description": "catalogPlayTimeAtLeastShort as a screen reader reads it. The duration is already in words.",
+    "placeholders": {
+      "duration": {
+        "type": "String",
+        "example": "30 minutes"
       }
     }
   },

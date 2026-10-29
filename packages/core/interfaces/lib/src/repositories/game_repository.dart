@@ -153,12 +153,28 @@ abstract class GameRepository {
   /// positive; non-positive values short-circuit to an empty list
   /// without touching the database.
   ///
-  /// Given [contentTypes], only games of those types match, and [limit]
-  /// counts those. Empty, the default, matches every type.
+  /// [filter] narrows the search by the server's own rules (#474, #565,
+  /// #580), before [limit], so [limit] counts only the games it keeps:
+  ///
+  /// - **Content types:** a game of any type named. None named matches every
+  ///   type.
+  /// - **Platform types:** the cache holds none, so a filter naming one finds
+  ///   nothing rather than games it can't vouch for (#474).
+  /// - **Publish year:** a year inside the bounds given. An undated game is
+  ///   left out unless the range keeps unknown values.
+  /// - **Player count:** a game that supports every count in the range. A
+  ///   bound alone is one count, so `min: 5` keeps a 2 to 6 player game and
+  ///   drops a 2 to 4 one. A game missing either count is unknown.
+  /// - **Play time:** a game whose whole play time fits the range. A bound
+  ///   left out doesn't narrow that side. A game with one play time uses it
+  ///   for both ends, and one with neither is unknown.
+  ///
+  /// A range with neither bound narrows nothing, and one that keeps unknown
+  /// values also keeps the games that are unknown on it.
   Future<List<Game>> searchGames(
     String query, {
     int limit = 20,
-    Set<ContentType> contentTypes = const {},
+    GameSearchFilter filter = const GameSearchFilter(),
   });
 
   /// One page of this user's cached games, in the order `GET /games` pages
