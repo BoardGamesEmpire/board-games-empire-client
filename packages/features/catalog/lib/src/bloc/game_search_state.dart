@@ -36,6 +36,11 @@ final class GameSearchLoading extends GameSearchState {
 /// [missingSources] names every DataGateway that did not answer, so one that
 /// dropped out does not read as one that found nothing.
 ///
+/// [unfilterableSources] names every DataGateway the filter skipped, because
+/// it can't apply the filter's player count or play time (#580). They are
+/// kept apart from [missingSources] because the user can act on them: the
+/// range's switch that keeps games with no value asks them again.
+///
 /// [fromCache] says the server's search failed, so [onServer] is the games
 /// cached on this device that match, and there is nothing from DataGateways.
 final class GameSearchReady extends GameSearchState {
@@ -44,6 +49,7 @@ final class GameSearchReady extends GameSearchState {
     this.onServer = const [],
     this.fromSources = const [],
     this.missingSources = const [],
+    this.unfilterableSources = const [],
     this.fromCache = false,
     super.filter,
   });
@@ -52,6 +58,7 @@ final class GameSearchReady extends GameSearchState {
   final List<GameSearchHit> onServer;
   final List<GameSearchSourceHit> fromSources;
   final List<GameSearchSource> missingSources;
+  final List<GameSearchSource> unfilterableSources;
   final bool fromCache;
 
   /// How many results the screen lists.
@@ -63,6 +70,7 @@ final class GameSearchReady extends GameSearchState {
     onServer,
     fromSources,
     missingSources,
+    unfilterableSources,
     fromCache,
     filter,
   ];

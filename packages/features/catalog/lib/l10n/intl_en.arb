@@ -276,7 +276,83 @@
   },
   "catalogSearchSourceSeparator": ", ",
   "@catalogSearchSourceSeparator": {
-    "description": "Joins data source names in catalogSearchMissingNamed."
+    "description": "Joins data source names in catalogSearchMissingNamed and the catalogSearchUnfilterableNamed notes."
+  },
+  "catalogSearchUnfilterableNamedPlayers": "{sources} can't filter by player count, so {count, plural, =1{its games aren't} other{their games aren't}} shown. Include games with no player count to see them.",
+  "@catalogSearchUnfilterableNamedPlayers": {
+    "description": "A quiet note under the search results naming the data sources the search skipped because the search names a player count and they can't filter by it. It says how to see their games: the filter's switch that keeps games with no value. Only shown to a user who may see the data sources' names.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, IGDB"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableNamedTime": "{sources} can't filter by play time, so {count, plural, =1{its games aren't} other{their games aren't}} shown. Include games with no play time to see them.",
+  "@catalogSearchUnfilterableNamedTime": {
+    "description": "A quiet note under the search results naming the data sources the search skipped because the search names a play time and they can't filter by it. It says how to see their games: the filter's switch that keeps games with no value. Only shown to a user who may see the data sources' names.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, IGDB"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableNamedBoth": "{sources} can't filter by player count, play time or both, so {count, plural, =1{its games aren't} other{their games aren't}} shown. Include games with no player count and games with no play time to see them.",
+  "@catalogSearchUnfilterableNamedBoth": {
+    "description": "A quiet note under the search results naming the data sources the search skipped because the search names both a player count and a play time. The server doesn't say which of the two skipped each source, so the note says it may be either or both, and asks for both switches that keep games with no value: that always brings their games back. Only shown to a user who may see the data sources' names.",
+    "placeholders": {
+      "sources": {
+        "type": "String",
+        "example": "BoardGameGeek, IGDB"
+      },
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableUnnamedPlayers": "{count, plural, =1{A data source can't filter by player count, so its games aren't shown.} other{{count} data sources can't filter by player count, so their games aren't shown.}} Include games with no player count to see them.",
+  "@catalogSearchUnfilterableUnnamedPlayers": {
+    "description": "catalogSearchUnfilterableNamedPlayers for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableUnnamedTime": "{count, plural, =1{A data source can't filter by play time, so its games aren't shown.} other{{count} data sources can't filter by play time, so their games aren't shown.}} Include games with no play time to see them.",
+  "@catalogSearchUnfilterableUnnamedTime": {
+    "description": "catalogSearchUnfilterableNamedTime for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchUnfilterableUnnamedBoth": "{count, plural, =1{A data source can't filter by player count, play time or both, so its games aren't shown.} other{{count} data sources can't filter by player count, play time or both, so their games aren't shown.}} Include games with no player count and games with no play time to see them.",
+  "@catalogSearchUnfilterableUnnamedBoth": {
+    "description": "catalogSearchUnfilterableNamedBoth for a user who may not see the data sources' names.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "catalogSearchPlatformOffline": "Platform type can't be checked on this device, so nothing here matches. Clear it to search this device.",
+  "@catalogSearchPlatformOffline": {
+    "description": "Shown under the note that the search failed and these are games saved on this device, when the search is narrowed by platform type. The device doesn't know games' platform types, so nothing can match until that filter is cleared."
   },
   "catalogDetailTitle": "Game",
   "@catalogDetailTitle": {

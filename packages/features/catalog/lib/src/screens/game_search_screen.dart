@@ -49,6 +49,10 @@ class GameSearchScreen extends StatelessWidget {
   static const Key errorKey = Key('catalog_search.error');
   static const Key deniedKey = Key('catalog_search.denied');
   static const Key missingSourcesKey = Key('catalog_search.missing_sources');
+  static const Key unfilterableNoteKey = Key('catalog_search.unfilterable');
+  static const Key platformOfflineNoteKey = Key(
+    'catalog_search.platform_offline',
+  );
 
   /// The filter chip for [type].
   static Key filterKey(ContentType type) =>
@@ -249,6 +253,19 @@ class _GameSearchPageState extends State<_GameSearchPage> {
               ),
             ),
           ),
+        // The cache holds no platform types (#474), so say why nothing
+        // matches rather than let it read as no results.
+        if (ready.fromCache && ready.filter.platformTypes.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: tokens.spaceMd),
+              child: Text(
+                l10n.catalogSearchPlatformOffline,
+                key: GameSearchScreen.platformOfflineNoteKey,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
         // The announcement: a live region whose label changes with each
         // answer, so a screen reader reads the count when results land.
         SliverToBoxAdapter(
@@ -305,6 +322,16 @@ class _GameSearchPageState extends State<_GameSearchPage> {
             child: Padding(
               padding: EdgeInsets.only(top: tokens.spaceMd),
               child: _MissingSourcesNote(missing: ready.missingSources),
+            ),
+          ),
+        if (ready.unfilterableSources.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: tokens.spaceMd),
+              child: _UnfilterableNote(
+                skipped: ready.unfilterableSources,
+                filter: ready.filter,
+              ),
             ),
           ),
       ],
@@ -442,6 +469,67 @@ class _MissingSourcesNote extends StatelessWidget {
             )
           : l10n.catalogSearchMissingUnnamed(missing.length),
       key: GameSearchScreen.missingSourcesKey,
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+}
+
+/// The quiet note under the results naming the DataGateways the filter
+/// skipped (#580): they can't apply its player count or play time. It names
+/// the filter that caused it and the way back, the switch that keeps games
+/// with no value.
+///
+/// It names them when it can name every one, and counts them otherwise, as
+/// [_MissingSourcesNote] does.
+class _UnfilterableNote extends StatelessWidget {
+  const _UnfilterableNote({required this.skipped, required this.filter});
+
+  final List<GameSearchSource> skipped;
+  final GameSearchFilter filter;
+
+  /// Whether [range] skips a DataGateway that can't apply it: the server
+  /// asks every one when the range keeps unknown values.
+  static bool _skips(GameSearchRange range) =>
+      range.narrows && !range.includeUnknown;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCatalogLocalizations.of(context);
+    final names = [for (final source in skipped) ?source.name];
+    final count = skipped.length;
+    final (players, time) = (
+      _skips(filter.playerCount),
+      _skips(filter.playTime),
+    );
+
+    // With both ranges skipping, the server names the sources but not which
+    // range skipped each, so the note says either or both, and asks for both
+    // switches: that alone is sure to bring every one back.
+    final String text;
+    if (names.length == count) {
+      final sources = names.join(l10n.catalogSearchSourceSeparator);
+      text = switch ((players, time)) {
+        (true, false) => l10n.catalogSearchUnfilterableNamedPlayers(
+          sources,
+          count,
+        ),
+        (false, true) => l10n.catalogSearchUnfilterableNamedTime(
+          sources,
+          count,
+        ),
+        _ => l10n.catalogSearchUnfilterableNamedBoth(sources, count),
+      };
+    } else {
+      text = switch ((players, time)) {
+        (true, false) => l10n.catalogSearchUnfilterableUnnamedPlayers(count),
+        (false, true) => l10n.catalogSearchUnfilterableUnnamedTime(count),
+        _ => l10n.catalogSearchUnfilterableUnnamedBoth(count),
+      };
+    }
+
+    return Text(
+      text,
+      key: GameSearchScreen.unfilterableNoteKey,
       style: Theme.of(context).textTheme.bodySmall,
     );
   }

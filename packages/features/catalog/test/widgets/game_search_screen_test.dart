@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:models/domain.dart';
@@ -55,6 +56,16 @@ void main() {
   Future<void> search(WidgetTester tester, String text) async {
     await tester.enterText(find.byKey(GameSearchScreen.fieldKey), text);
     await tester.pump(GameSearchBloc.defaultDebounce);
+    await tester.pumpAndSettle();
+  }
+
+  /// Narrows the search to [filter] through the screen's bloc, as its
+  /// controls do, and waits for the answer.
+  Future<void> narrow(WidgetTester tester, GameSearchFilter filter) async {
+    tester
+        .element(find.byKey(GameSearchScreen.fieldKey))
+        .read<GameSearchBloc>()
+        .add(GameSearchFilterChanged(filter));
     await tester.pumpAndSettle();
   }
 
@@ -257,6 +268,103 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('the data sources a filter skipped', () {
+    const fourPlayers = GameSearchFilter(playerCount: GameSearchRange(min: 4));
+
+    testWidgets('get a note naming the filter and the way back', (
+      tester,
+    ) async {
+      remote.onSearch = (_, filter) async => GameSearchResults(
+        unfilterableDataGateways: {if (filter.playerCount.narrows) 'dg_bgg'},
+      );
+
+      await show(tester, sourceNames: () async => {'dg_bgg': 'BoardGameGeek'});
+      await search(tester, 'catan');
+      expect(find.byKey(GameSearchScreen.unfilterableNoteKey), findsNothing);
+
+      await narrow(tester, fourPlayers);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(GameSearchScreen.unfilterableNoteKey))
+            .data,
+        "BoardGameGeek can't filter by player count, so its games aren't "
+        'shown. Include games with no player count to see them.',
+      );
+    });
+
+    testWidgets('are counted where they cannot be named', (tester) async {
+      remote.onSearch = (_, _) async => const GameSearchResults(
+        unfilterableDataGateways: {'dg_bgg', 'dg_igdb'},
+      );
+
+      await show(tester);
+      await search(tester, 'catan');
+      await narrow(tester, fourPlayers);
+
+      expect(
+        tester
+            .widget<Text>(find.byKey(GameSearchScreen.unfilterableNoteKey))
+            .data,
+        "2 data sources can't filter by player count, so their games aren't "
+        'shown. Include games with no player count to see them.',
+      );
+    });
+  });
+
+  testWidgets('a source both ranges skipped asks for both kinds of game '
+      'back', (tester) async {
+    remote.onSearch = (_, _) async =>
+        const GameSearchResults(unfilterableDataGateways: {'dg_bgg'});
+
+    await show(tester, sourceNames: () async => {'dg_bgg': 'BoardGameGeek'});
+    await search(tester, 'catan');
+    await narrow(
+      tester,
+      const GameSearchFilter(
+        playerCount: GameSearchRange(min: 4),
+        playTime: GameSearchRange(max: 60),
+      ),
+    );
+
+    // The server doesn't say which range skipped it, so the note can't
+    // either. Both switches bring it back; one alone may not.
+    expect(
+      tester
+          .widget<Text>(find.byKey(GameSearchScreen.unfilterableNoteKey))
+          .data,
+      "BoardGameGeek can't filter by player count, play time or both, so its "
+      "games aren't shown. Include games with no player count and games with "
+      'no play time to see them.',
+    );
+  });
+
+  testWidgets('offline, a platform-type filter says why nothing matches', (
+    tester,
+  ) async {
+    remote.onSearch = (_, _) async => throw unreachable();
+
+    await show(
+      tester,
+      cache: FakeGamesCache([game('g_catan', title: 'Catan')]),
+    );
+    await search(tester, 'catan');
+    expect(find.byKey(GameSearchScreen.platformOfflineNoteKey), findsNothing);
+    expect(
+      find.byKey(GameSearchScreen.serverRowKey('g_catan')),
+      findsOneWidget,
+    );
+
+    await narrow(
+      tester,
+      const GameSearchFilter(platformTypes: {PlatformType.console}),
+    );
+
+    expect(find.byKey(GameSearchScreen.fromCacheBannerKey), findsOneWidget);
+    expect(find.byKey(GameSearchScreen.platformOfflineNoteKey), findsOneWidget);
+    expect(find.byKey(GameSearchScreen.serverRowKey('g_catan')), findsNothing);
   });
 
   testWidgets('a filter chip searches again, narrowed', (tester) async {

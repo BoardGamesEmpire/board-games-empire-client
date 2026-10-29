@@ -275,6 +275,31 @@ void main() {
     );
 
     blocTest<GameSearchBloc, GameSearchState>(
+      'names the DataGateways the filter skipped, apart from those that did '
+      'not answer',
+      setUp: () => remote.onSearch = (_, _) async => const GameSearchResults(
+        unfilterableDataGateways: {'dg_bgg'},
+        unavailableDataGateways: {'dg_down'},
+      ),
+      build: () => build(sourceNames: () async => {'dg_bgg': 'BoardGameGeek'}),
+      act: (bloc) async {
+        await settle();
+        bloc.add(const GameSearchQueryChanged('catan'));
+        await settle();
+      },
+      skip: 1,
+      expect: () => [
+        isA<GameSearchReady>()
+            .having((s) => s.unfilterableSources, 'unfilterableSources', [
+              const GameSearchSource(id: 'dg_bgg', name: 'BoardGameGeek'),
+            ])
+            .having((s) => s.missingSources, 'missingSources', [
+              const GameSearchSource(id: 'dg_down'),
+            ]),
+      ],
+    );
+
+    blocTest<GameSearchBloc, GameSearchState>(
       'names results already on screen when the names arrive late',
       setUp: () => remote.onSearch = (_, _) async => GameSearchResults(
         byDataGateway: {

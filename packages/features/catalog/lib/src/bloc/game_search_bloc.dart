@@ -325,6 +325,9 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
         })
           _source(id),
       ],
+      unfilterableSources: [
+        for (final id in results.unfilterableDataGateways) _source(id),
+      ],
     );
   }
 }
