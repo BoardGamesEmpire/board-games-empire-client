@@ -113,8 +113,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
     String query, {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
-    Set<ContentType> contentTypes = const {},
-    Set<PlatformType> platformTypes = const {},
+    GameSearchFilter filter = const GameSearchFilter(),
   }) async {
     _checkLimit(limit);
     if (offset < 0 || offset > GamesRemoteDataSource.maxDepth) {
@@ -124,6 +123,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         'must be between 0 and ${GamesRemoteDataSource.maxDepth}',
       );
     }
+    final GameSearchFilter(:contentTypes, :platformTypes) = filter;
     if (contentTypes.contains(ContentType.unknown)) {
       // The server refuses `Unknown` as a filter: it names no kind of game.
       throw ArgumentError.value(
@@ -139,6 +139,21 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         'cannot name PlatformType.unknown',
       );
     }
+    _checkRange(
+      filter.publishYear,
+      'publishYear',
+      lowest: GamesRemoteDataSource.minRangeBound,
+    );
+    _checkRange(
+      filter.playerCount,
+      'playerCount',
+      lowest: GamesRemoteDataSource.minPlayerCount,
+    );
+    _checkRange(
+      filter.playTime,
+      'playTime',
+      lowest: GamesRemoteDataSource.minPlayTime,
+    );
 
     const action = 'Game search';
     final response = await _send(
@@ -156,6 +171,9 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
             'contentTypes': contentTypes.map((t) => t.toWire()).join(','),
           if (platformTypes.isNotEmpty)
             'platformTypes': platformTypes.map((t) => t.toWire()).join(','),
+          ..._rangeParams('publishYear', filter.publishYear),
+          ..._rangeParams('playerCount', filter.playerCount),
+          ..._rangeParams('playTime', filter.playTime),
         },
       ),
       action: action,
@@ -442,6 +460,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       failedDataGateways: errors.keys.toSet(),
       rateLimitedDataGateways: _sources(body['rateLimitedSources']),
       unavailableDataGateways: _sources(body['unavailableSources']),
+      unfilterableDataGateways: _sources(body['unfilterableSources']),
     );
   }
 
@@ -587,6 +606,42 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       );
     }
   }
+
+  /// Refuses a [range] the server would answer with a 400: a bound below
+  /// [lowest] or past an int32, or a minimum above the maximum.
+  static void _checkRange(
+    GameSearchRange range,
+    String name, {
+    required int lowest,
+  }) {
+    for (final bound in [range.min, range.max]) {
+      if (bound != null &&
+          (bound < lowest || bound > GamesRemoteDataSource.maxRangeBound)) {
+        throw ArgumentError.value(
+          range,
+          name,
+          'bounds must be between $lowest and '
+          '${GamesRemoteDataSource.maxRangeBound}',
+        );
+      }
+    }
+    if (range.isReversed) {
+      throw ArgumentError.value(range, name, 'min is above max');
+    }
+  }
+
+  /// [range]'s query fields, named from [prefix]: none without a bound, and
+  /// the include-unknown flag only when set, as `true`.
+  static Map<String, Object> _rangeParams(
+    String prefix,
+    GameSearchRange range,
+  ) => {
+    if (range.narrows) ...{
+      '${prefix}Min': ?range.min,
+      '${prefix}Max': ?range.max,
+      if (range.includeUnknown) '${prefix}IncludeUnknown': 'true',
+    },
+  };
 
   void _checkLimit(int limit) {
     const maxPageSize = GamesRemoteDataSource.maxPageSize;

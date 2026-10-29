@@ -28,14 +28,15 @@ typedef GameWithPlatformGames = ({
 ///
 /// ## Wire contract
 ///
-/// Backend `libs/api/game` and `libs/api/game-search` at `a21cd51e`, and
-/// `libs/api/game-import` at `83e62bb0`, all under the `api` global prefix:
+/// Backend `libs/api/game` at `a21cd51e`, `libs/api/game-search` at
+/// `997cc084`, and `libs/api/game-import` at `83e62bb0`, all under the `api`
+/// global prefix:
 ///
 /// | Method | Path | Body |
 /// |---|---|---|
 /// | [fetchPage] | `GET /api/games` | `{ games: [...], pagination }` |
 /// | [fetchGame] | `GET /api/games/:id` | `{ game }` |
-/// | [search] | `GET /api/games/search` | `{ correlationId, resultsBySource, errors?, rateLimitedSources?, unavailableSources? }` |
+/// | [search] | `GET /api/games/search` | `{ correlationId, resultsBySource, errors?, rateLimitedSources?, unavailableSources?, unfilterableSources? }` |
 /// | [startImport] | `POST /api/games/import` | `{ message, batchId, baseJobId, expansionJobIds, correlationId }` |
 /// | [fetchImport] | `GET /api/games/import/:batchId` | `{ batchId, correlationId, status, jobs: [...] }` |
 ///
@@ -94,8 +95,10 @@ typedef GameWithPlatformGames = ({
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: a page, limit or offset out of range, a filter naming an
-/// unknown type, an id that is not one path segment, an empty DataGateway or
-/// external id, or a correlation or batch id that is not a UUID.
+/// unknown type, a filter range whose minimum is above its maximum or whose
+/// bound is past the server's limits, an id that is not one path segment, an
+/// empty DataGateway or external id, or a correlation or batch id that is
+/// not a UUID.
 abstract class GamesRemoteDataSource {
   /// The backend's `limit` ceiling on both list reads
   /// (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is a 400, not clamped.
@@ -108,6 +111,17 @@ abstract class GamesRemoteDataSource {
   /// How many results [search] asks each source for by default: the
   /// server's own default for its local half.
   static const int searchPageSize = 20;
+
+  /// The lowest and highest bound a search range may name: the server
+  /// carries each as an int32 (#565, #580).
+  static const int minRangeBound = -2147483648;
+  static const int maxRangeBound = 2147483647;
+
+  /// The fewest players a search's player count may name.
+  static const int minPlayerCount = 1;
+
+  /// The shortest play time, in minutes, a search's play time may name.
+  static const int minPlayTime = 0;
 
   /// One page of the catalog: the live public games and the caller's own,
   /// ordered by title and then id.
@@ -129,15 +143,24 @@ abstract class GamesRemoteDataSource {
   /// Searches this server and its DataGateways by title.
   ///
   /// [limit] goes to each source, and [offset] skips that many of each
-  /// source's results. A filter set that is empty does not narrow; one that
-  /// names a type keeps only games of it. Neither may name an `unknown`
-  /// type, which has no wire name.
+  /// source's results.
+  ///
+  /// [filter] narrows the search (#474). A type set that is empty does not
+  /// narrow; one that names a type keeps only games of it. Neither may name
+  /// an `unknown` type, which has no wire name. A range is sent only when it
+  /// names a bound, and its include-unknown flag only when set (#565, #580).
+  /// Each bound must be an int32, a player count at least [minPlayerCount]
+  /// and a play time at least [minPlayTime], and no range may be reversed:
+  /// the server answers each with a 400.
+  ///
+  /// A DataGateway that can't apply the filter's player count or play time
+  /// isn't asked, and is named in
+  /// [GameSearchResults.unfilterableDataGateways].
   Future<GameSearchResults> search(
     String query, {
     int limit = searchPageSize,
     int offset = 0,
-    Set<ContentType> contentTypes = const {},
-    Set<PlatformType> platformTypes = const {},
+    GameSearchFilter filter = const GameSearchFilter(),
   });
 
   /// Starts importing the game [externalId] from the DataGateway [gatewayId],

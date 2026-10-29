@@ -384,7 +384,7 @@ void main() {
       'an older answer that lands last does not replace the newer one',
       setUp: () {
         unfiltered = Completer<GameSearchResults>();
-        remote.onSearch = (_, types) => types.isEmpty
+        remote.onSearch = (_, filter) => filter.contentTypes.isEmpty
             ? unfiltered.future
             : Future.value(GameSearchResults(local: [hit('newer')]));
       },

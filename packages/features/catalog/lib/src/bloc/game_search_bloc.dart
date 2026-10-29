@@ -209,11 +209,7 @@ class GameSearchBloc extends Bloc<GameSearchEvent, GameSearchState> {
 
     emit(GameSearchLoading(query: query, filter: filter));
     try {
-      final results = await _remote.search(
-        query,
-        contentTypes: filter.contentTypes,
-        platformTypes: filter.platformTypes,
-      );
+      final results = await _remote.search(query, filter: filter);
       if (search != _sequence) return;
       _shown = results;
       emit(_ready(results, fromCache: false));

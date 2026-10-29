@@ -71,8 +71,7 @@ class _GamesRemote implements GamesRemoteDataSource {
     String query, {
     int limit = GamesRemoteDataSource.searchPageSize,
     int offset = 0,
-    Set<ContentType> contentTypes = const {},
-    Set<PlatformType> platformTypes = const {},
+    GameSearchFilter filter = const GameSearchFilter(),
   }) async => const GameSearchResults(
     local: [
       GameSearchHit(

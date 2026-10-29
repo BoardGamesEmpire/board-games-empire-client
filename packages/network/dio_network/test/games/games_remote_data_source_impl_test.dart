@@ -630,8 +630,10 @@ void main() {
         'catan',
         limit: 10,
         offset: 20,
-        contentTypes: {ContentType.baseGame, ContentType.standaloneExpansion},
-        platformTypes: {PlatformType.tabletop, PlatformType.pc},
+        filter: const GameSearchFilter(
+          contentTypes: {ContentType.baseGame, ContentType.standaloneExpansion},
+          platformTypes: {PlatformType.tabletop, PlatformType.pc},
+        ),
       );
 
       final sent = adapter.sent.single;
@@ -657,6 +659,113 @@ void main() {
       });
     });
 
+    test('sends each range that narrows, and keeps-unknown only as '
+        'true', () async {
+      final remote = answering(searchBody());
+
+      await remote.search(
+        'catan',
+        filter: const GameSearchFilter(
+          publishYear: GameSearchRange(
+            min: -3000,
+            max: 500,
+            includeUnknown: true,
+          ),
+          playerCount: GameSearchRange(min: 5),
+          playTime: GameSearchRange(max: 120),
+        ),
+      );
+
+      expect(adapter.sent.single.query, {
+        'query': 'catan',
+        'limit': 20,
+        'offset': 0,
+        'publishYearMin': -3000,
+        'publishYearMax': 500,
+        'publishYearIncludeUnknown': 'true',
+        'playerCountMin': 5,
+        'playTimeMax': 120,
+      });
+    });
+
+    test('leaves out a range with no bound, even when it keeps unknown '
+        'values', () async {
+      final remote = answering(searchBody());
+
+      await remote.search(
+        'catan',
+        filter: const GameSearchFilter(
+          playTime: GameSearchRange(includeUnknown: true),
+        ),
+      );
+
+      expect(adapter.sent.single.query, {
+        'query': 'catan',
+        'limit': GamesRemoteDataSource.searchPageSize,
+        'offset': 0,
+      });
+    });
+
+    test('refuses a reversed range before sending', () {
+      final remote = answering(searchBody());
+      const reversed = GameSearchRange(min: 5, max: 3);
+
+      for (final filter in const [
+        GameSearchFilter(publishYear: reversed),
+        GameSearchFilter(playerCount: reversed),
+        GameSearchFilter(playTime: reversed),
+      ]) {
+        expect(
+          () => remote.search('x', filter: filter),
+          throwsArgumentError,
+          reason: '$filter',
+        );
+      }
+      expect(adapter.sent, isEmpty);
+    });
+
+    test("refuses a bound past the server's limits", () async {
+      final remote = answering(searchBody());
+
+      for (final filter in const [
+        GameSearchFilter(playerCount: GameSearchRange(min: 0)),
+        GameSearchFilter(playTime: GameSearchRange(min: -1)),
+        GameSearchFilter(publishYear: GameSearchRange(max: 2147483648)),
+      ]) {
+        expect(
+          () => remote.search('x', filter: filter),
+          throwsArgumentError,
+          reason: '$filter',
+        );
+      }
+      expect(adapter.sent, isEmpty);
+
+      await remote.search(
+        'x',
+        filter: const GameSearchFilter(
+          publishYear: GameSearchRange(min: -2147483648),
+        ),
+      );
+      expect(adapter.sent.single.query['publishYearMin'], -2147483648);
+    });
+
+    test('reads the DataGateways the filter skipped', () async {
+      final skipped = answering(
+        jsonEncode({
+          'correlationId': 'c-3',
+          'resultsBySource': {'local': <Object>[]},
+          'unfilterableSources': ['dg_bgg', 'dg_igdb'],
+        }),
+      );
+      expect((await skipped.search('catan')).unfilterableDataGateways, {
+        'dg_bgg',
+        'dg_igdb',
+      });
+
+      final none = answering(searchBody());
+      expect((await none.search('catan')).unfilterableDataGateways, isEmpty);
+    });
+
     test('waits longer than the server\'s 15-second cutoff', () async {
       final remote = answering(searchBody());
 
@@ -673,11 +782,17 @@ void main() {
       final remote = answering(searchBody());
 
       expect(
-        () => remote.search('x', contentTypes: {ContentType.unknown}),
+        () => remote.search(
+          'x',
+          filter: const GameSearchFilter(contentTypes: {ContentType.unknown}),
+        ),
         throwsArgumentError,
       );
       expect(
-        () => remote.search('x', platformTypes: {PlatformType.unknown}),
+        () => remote.search(
+          'x',
+          filter: const GameSearchFilter(platformTypes: {PlatformType.unknown}),
+        ),
         throwsArgumentError,
       );
       expect(() => remote.search('x', limit: 0), throwsArgumentError);
