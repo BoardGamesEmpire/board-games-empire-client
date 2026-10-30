@@ -89,10 +89,13 @@ void main() {
     await tester.tap(find.byKey(SendHouseholdInviteScreen.roleKey));
     await tester.pumpAndSettle();
     final items = tester
-        .widgetList<DropdownMenuItem<HouseholdRole>>(
-          find.byType(DropdownMenuItem<HouseholdRole>),
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byType(MenuItemButton),
+            matching: find.byType(Text),
+          ),
         )
-        .map((item) => (item.child as Text).data!)
+        .map((text) => text.data!)
         .toSet();
     return items;
   }
