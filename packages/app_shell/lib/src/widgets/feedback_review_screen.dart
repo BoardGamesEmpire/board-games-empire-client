@@ -346,6 +346,18 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       _ => field,
     };
 
+    // The entries the platform device readers report (#324). Any other key
+    // keeps its raw name, as an unknown field does above.
+    String deviceLabel(String key) => switch (key) {
+      'operatingSystem' => i18n.feedbackReviewDeviceOperatingSystem,
+      'operatingSystemVersion' =>
+        i18n.feedbackReviewDeviceOperatingSystemVersion,
+      'operatingSystemBuild' => i18n.feedbackReviewDeviceOperatingSystemBuild,
+      'browser' => i18n.feedbackReviewDeviceBrowser,
+      'browserEngine' => i18n.feedbackReviewDeviceBrowserEngine,
+      _ => key,
+    };
+
     // Enumerate the redactable rows from the model's authoritative set
     // rather than hardcoded lists (#76 review). Known fields keep their
     // section and order; any *unknown* redactable field is still surfaced
@@ -381,7 +393,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       for (final key in deviceKeys)
         _redactRow(
           path: '${FeedbackReportPreview.deviceInfoPrefix}$key',
-          label: key,
+          label: deviceLabel(key),
           value: deviceValueOf(key),
           enabled: !sending,
         ),

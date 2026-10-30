@@ -192,6 +192,26 @@
   "@feedbackReviewFieldLocale": {
     "description": "Label for the locale/language field on the review screen"
   },
+  "feedbackReviewDeviceOperatingSystem": "Operating system",
+  "@feedbackReviewDeviceOperatingSystem": {
+    "description": "Label for the device's operating system (e.g. macOS, android) in the review screen's device details"
+  },
+  "feedbackReviewDeviceOperatingSystemVersion": "OS version",
+  "@feedbackReviewDeviceOperatingSystemVersion": {
+    "description": "Label for the operating system's version in the review screen's device details"
+  },
+  "feedbackReviewDeviceOperatingSystemBuild": "OS build",
+  "@feedbackReviewDeviceOperatingSystemBuild": {
+    "description": "Label for the operating system's build ID (Android reports a build ID rather than a version) in the review screen's device details"
+  },
+  "feedbackReviewDeviceBrowser": "Browser",
+  "@feedbackReviewDeviceBrowser": {
+    "description": "Label for the web browser's name and major version (e.g. Firefox 131) in the review screen's device details"
+  },
+  "feedbackReviewDeviceBrowserEngine": "Browser engine",
+  "@feedbackReviewDeviceBrowserEngine": {
+    "description": "Label for the web browser's rendering engine (blink, webkit or firefox) in the review screen's device details"
+  },
   "feedbackReviewFieldCategory": "Type",
   "@feedbackReviewFieldCategory": {
     "description": "Label for the report category/type field (view-only) on the review screen"

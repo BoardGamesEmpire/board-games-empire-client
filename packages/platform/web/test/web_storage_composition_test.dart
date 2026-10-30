@@ -16,6 +16,7 @@ import 'package:di/di.dart';
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/wasm.dart' show WasmStorageImplementation;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:interfaces/services.dart';
 import 'package:logging/logging.dart';
 import 'package:observability/observability.dart';
 import 'package:mocktail/mocktail.dart';
@@ -82,6 +83,25 @@ void main() {
         pending.map((r) => r.storageKey),
         contains('composition-round-trip'),
       );
+    });
+
+    test('registers a device reader fed by the browser it runs in '
+        '(#324)', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await buildWebRootModule(container);
+      final info = container.get<DeviceInfoReader>().read();
+
+      // The host OS varies by machine; what is pinned is that it reads as one
+      // of the values the reader can report.
+      expect(
+        info['operatingSystem'],
+        isIn(['android', 'iOS', 'macOS', 'windows', 'linux', 'unknown']),
+      );
+      // This suite only runs in Chrome.
+      expect(info['browserEngine'], 'blink');
+      expect(info['browser'], startsWith('Chrome '));
     });
   });
 

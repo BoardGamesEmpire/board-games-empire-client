@@ -43,6 +43,14 @@ class _FakeConnectivityService implements ConnectivityService, Disposable {
   Future<void> onDispose() async => disposed = true;
 }
 
+class _FixedDeviceInfoReader implements DeviceInfoReader {
+  const _FixedDeviceInfoReader(this._info);
+  final Map<String, String> _info;
+
+  @override
+  Map<String, String> read() => _info;
+}
+
 const _info = BuildInfo(
   version: '1.2.3',
   buildNumber: '42',
@@ -151,6 +159,41 @@ void main() {
       );
 
       await expectLater(container.dispose(), completes);
+    });
+  });
+
+  group('DeviceInfoReader registration (#324)', () {
+    test(
+      'registers the reader the browser-only composition passes in',
+      () async {
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+        const injected = _FixedDeviceInfoReader({'operatingSystem': 'linux'});
+
+        await registerWebRootModule(
+          container,
+          buildInfoReader: const _StubBuildInfoReader(_info),
+          deviceInfoReader: injected,
+        );
+
+        expect(container.isRegistered<DeviceInfoReader>(), isTrue);
+        expect(container.get<DeviceInfoReader>(), same(injected));
+      },
+    );
+
+    test('registers none when the caller passes none, leaving runBgeApp its '
+        'default', () async {
+      // The browser's sources only exist in a browser, so this library
+      // cannot build the reader itself; `buildWebRootModule` passes it.
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerWebRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(container.isRegistered<DeviceInfoReader>(), isFalse);
     });
   });
 

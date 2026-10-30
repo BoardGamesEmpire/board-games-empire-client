@@ -210,6 +210,17 @@ Future<void> runBgeApp({
   final buildInfo = rootContainer.isRegistered<BuildInfo>()
       ? rootContainer.get<BuildInfo>()
       : BuildInfo.unknown;
+  // #324: the device entries come from the platform module's reader — the
+  // real OS, its version on native, the browser on web — read once here,
+  // since none of them change while the app runs. With no reader registered
+  // (the empty fallback, or a web root module given none), native names the
+  // OS the way `platform` does; web cannot tell, so it reads `unknown`, the
+  // reader's own value for that.
+  final deviceInfo = rootContainer.isRegistered<DeviceInfoReader>()
+      ? rootContainer.get<DeviceInfoReader>().read()
+      : <String, String>{
+          'operatingSystem': kIsWeb ? 'unknown' : defaultTargetPlatform.name,
+        };
   // #97: the feedback target resolver. The production adapter reads the
   // ActiveServerScope *through the cubit at resolve time* — the scope is
   // replaced on every bootstrap retry, so nothing may capture a scope
@@ -242,12 +253,7 @@ Future<void> runBgeApp({
       // reflected) from the authoritative registered reader — the
       // locale the UI renders in, not the raw OS preference.
       locale: registeredLocaleReader.languageTag,
-      // Alpha-minimal, no plugin, and web-safe (this file compiles for
-      // web, so dart:io is off the table here). OS *version* enrichment
-      // can ride a platform-module-registered probe later.
-      deviceInfo: <String, dynamic>{
-        'operatingSystem': kIsWeb ? 'web' : defaultTargetPlatform.name,
-      },
+      deviceInfo: deviceInfo,
     ),
     // #97: resolved fresh per submit/drain — the active server's
     // bgeServerId always, its transport only when authenticated. Every
