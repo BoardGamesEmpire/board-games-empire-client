@@ -60,15 +60,28 @@ import 'queued_feedback_report.dart';
 /// no platform sink is registered, and the web composition root registers it
 /// when the browser refuses storage.
 abstract interface class FeedbackSink {
+  /// Whether a stored record is still here after the app restarts or the
+  /// page reloads.
+  ///
+  /// The queued message depends on it (#385). A report queued to a sink that
+  /// survives is saved to send later; one queued to a sink that does not is
+  /// held only until the app closes, so `submit` reports
+  /// [FeedbackSubmitResult.queuedForSession] and the outcome screens say the
+  /// report will be lost rather than promising a later send.
+  ///
+  /// Answer for the storage itself. A store the browser may still clear under
+  /// storage pressure survives a reload, and counts as surviving; eviction is
+  /// #320's to handle.
+  bool get survivesRestart;
+
   /// Persists [record]. Throws [ArgumentError] if it has no
   /// [QueuedFeedbackReport.storageKey] — the sink is addressed by it.
   ///
   /// On return, [record] **is** stored. An implementation enforcing the
   /// capacity bound below must never satisfy it by discarding the record it
-  /// was just handed: `submit` reports [FeedbackSubmitResult.queued] on the
-  /// strength of this call, and a sink that dropped the new record would
-  /// have the prompt promise a later send for a report that no longer
-  /// exists.
+  /// was just handed: `submit` reports the report as queued on the strength
+  /// of this call, and a sink that dropped the new record would have the
+  /// prompt promise a later send for a report that no longer exists.
   Future<void> persist(QueuedFeedbackReport record);
 
   /// Rewrites a record **that is already stored**, addressed by

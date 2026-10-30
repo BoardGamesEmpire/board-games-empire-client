@@ -9,8 +9,8 @@ import 'queued_feedback_report.dart';
 /// implementation when `IndexedDbFeedbackSink` landed.
 ///
 /// An approved-but-unsent report held here survives within the session and is
-/// lost on reload. The prompt does **not** say so — it promises a later send
-/// on every platform, which is #385, not something this sink can fix.
+/// lost on reload, so [survivesRestart] is false and the outcome screens tell
+/// the user so rather than promising a later send (#385).
 ///
 /// Nothing about a RAM sink is platform-specific, so it lives in
 /// `observability`.
@@ -32,6 +32,9 @@ import 'queued_feedback_report.dart';
 class MemoryFeedbackSink implements FeedbackSink {
   final Map<String, QueuedFeedbackReport> _byKey = {};
   final List<String> _order = [];
+
+  @override
+  bool get survivesRestart => false;
 
   @override
   Future<void> persist(QueuedFeedbackReport record) async {

@@ -24,6 +24,10 @@ void main() {
       expect(MemoryFeedbackSink(), isA<FeedbackSink>());
     });
 
+    test('does not survive a restart (#385)', () {
+      expect(MemoryFeedbackSink().survivesRestart, isFalse);
+    });
+
     test('round-trips records with their serverId tag, oldest '
         'first', () async {
       final sink = MemoryFeedbackSink();

@@ -95,6 +95,11 @@ class FileFeedbackSink implements FeedbackSink {
 
   final Future<Directory> Function() _directoryProvider;
 
+  /// Records are files in the app's support directory, which outlives the
+  /// process.
+  @override
+  bool get survivesRestart => true;
+
   /// Suffix of the in-progress write target. Never ends in `.json`, so an
   /// in-flight or crash-orphaned temp can never be mistaken for a record.
   static const String _tempSuffix = '.tmp';

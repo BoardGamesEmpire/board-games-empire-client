@@ -7,9 +7,9 @@ import '../../l10n/shell_localizations.dart';
 /// Minimal accessible "ask each time" crash prompt (#69).
 ///
 /// Deliberately small — crash summary, optional comment, send/discard —
-/// with an **honest outcome**: "sent" vs "saved to send later"
-/// ([FeedbackSubmitResult]), because on web "saved" only lasts until
-/// reload.
+/// with an **honest outcome** ([FeedbackSubmitResult]): "sent", "saved to
+/// send later", or, when the report could only be held in memory, saved
+/// until the app closes (#385).
 ///
 /// The full review/redaction surface ([FeedbackReportPreview]-driven) is
 /// #76: when [onReviewDetails] is supplied, a "Review details" affordance
@@ -78,6 +78,9 @@ class CrashReportPrompt extends StatefulWidget {
   );
   static const Key sentConfirmationKey = Key('crash_report_prompt.sent');
   static const Key queuedConfirmationKey = Key('crash_report_prompt.queued');
+  static const Key queuedForSessionConfirmationKey = Key(
+    'crash_report_prompt.queued_for_session',
+  );
   static const Key submissionFailedKey = Key('crash_report_prompt.failed');
   static const Key submissionRejectedKey = Key('crash_report_prompt.rejected');
 
@@ -85,7 +88,15 @@ class CrashReportPrompt extends StatefulWidget {
   State<CrashReportPrompt> createState() => _CrashReportPromptState();
 }
 
-enum _PromptPhase { composing, sending, sent, queued, rejected, failed }
+enum _PromptPhase {
+  composing,
+  sending,
+  sent,
+  queued,
+  queuedForSession,
+  rejected,
+  failed,
+}
 
 class _CrashReportPromptState extends State<CrashReportPrompt> {
   final TextEditingController _comment = TextEditingController();
@@ -105,9 +116,12 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
       );
       if (!mounted) return;
       setState(
-        () => _phase = result == FeedbackSubmitResult.sent
-            ? _PromptPhase.sent
-            : _PromptPhase.queued,
+        () => _phase = switch (result) {
+          FeedbackSubmitResult.sent => _PromptPhase.sent,
+          FeedbackSubmitResult.queued => _PromptPhase.queued,
+          FeedbackSubmitResult.queuedForSession =>
+            _PromptPhase.queuedForSession,
+        },
       );
     } on FeedbackPermanentSubmissionException catch (error) {
       // #97: permanent rejection — deliberately NOT queued ("saved for
@@ -159,6 +173,12 @@ class _CrashReportPromptState extends State<CrashReportPrompt> {
                 key: CrashReportPrompt.queuedConfirmationKey,
                 icon: Icons.schedule_send_outlined,
                 text: i18n.crashReportPromptQueued,
+              ),
+              _PromptPhase.queuedForSession => _outcome(
+                i18n,
+                key: CrashReportPrompt.queuedForSessionConfirmationKey,
+                icon: Icons.schedule_send_outlined,
+                text: i18n.crashReportPromptQueuedForSession,
               ),
               _PromptPhase.rejected => _outcome(
                 i18n,

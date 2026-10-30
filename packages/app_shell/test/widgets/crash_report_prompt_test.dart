@@ -132,6 +132,30 @@ void main() {
       );
     });
 
+    testWidgets('a report held only for this session says it is lost if the '
+        'app closes, not that it will be sent later (#385)', (tester) async {
+      await pumpPrompt(
+        tester,
+        onSubmit: (_) async => FeedbackSubmitResult.queuedForSession,
+      );
+
+      await tester.tap(find.byKey(CrashReportPrompt.sendButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(CrashReportPrompt.queuedForSessionConfirmationKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(CrashReportPrompt.queuedConfirmationKey), findsNothing);
+      expect(
+        find.text(
+          "Saved for now, but it will be lost if the app is closed or reloaded. "
+          "It will be sent if you're connected and signed in before then.",
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a submission failure shows the failed state and keeps '
         'discard available', (tester) async {
       await pumpPrompt(

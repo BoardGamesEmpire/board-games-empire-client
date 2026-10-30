@@ -279,6 +279,9 @@ class _DisposableSink implements FeedbackSink, Disposable {
   Future<void> onDispose() async => disposals++;
 
   @override
+  bool get survivesRestart => true;
+
+  @override
   Future<void> persist(QueuedFeedbackReport record) async {}
 
   @override
