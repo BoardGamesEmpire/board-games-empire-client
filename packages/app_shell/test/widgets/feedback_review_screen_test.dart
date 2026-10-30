@@ -445,6 +445,31 @@ void main() {
       );
     });
 
+    testWidgets('labels the device entries it knows, and shows any other '
+        'under its key with its toggle (#324)', (tester) async {
+      await pumpReview(
+        tester,
+        preview: FeedbackReportPreview.fromReport(
+          buildReport().copyWith(
+            deviceInfo: const {
+              'operatingSystem': 'macOS',
+              'browser': 'Safari 18',
+              'custom': 'x',
+            },
+          ),
+        ),
+      );
+
+      expect(find.text('Operating system'), findsOneWidget);
+      expect(find.text('operatingSystem'), findsNothing);
+      expect(find.text('Browser'), findsOneWidget);
+      expect(find.text('custom'), findsOneWidget);
+      expect(
+        find.byKey(FeedbackReviewScreen.redactToggleKey('deviceInfo.custom')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('renders a toggle for every redactable top-level field the '
         'model exposes — driven by the model set, not a hardcoded list', (
       tester,

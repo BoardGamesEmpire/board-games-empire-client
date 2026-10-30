@@ -42,6 +42,14 @@ class _FakeConnectivityService implements ConnectivityService, Disposable {
   Future<void> onDispose() async => disposed = true;
 }
 
+class _FixedDeviceInfoReader implements DeviceInfoReader {
+  const _FixedDeviceInfoReader(this._info);
+  final Map<String, String> _info;
+
+  @override
+  Map<String, String> read() => _info;
+}
+
 const _info = BuildInfo(
   version: '1.2.3',
   buildNumber: '42',
@@ -76,6 +84,35 @@ void main() {
     // FileFeedbackSink resolves its directory lazily at first persist.
     expect(container.isRegistered<FeedbackSink>(), isTrue);
     expect(container.get<FeedbackSink>(), isA<FileFeedbackSink>());
+  });
+
+  group('DeviceInfoReader registration (#324)', () {
+    test('registers the native reader', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+      );
+
+      expect(container.isRegistered<DeviceInfoReader>(), isTrue);
+      expect(container.get<DeviceInfoReader>(), isA<NativeDeviceInfoReader>());
+    });
+
+    test('an injected reader is the one resolved', () async {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+      const injected = _FixedDeviceInfoReader({'operatingSystem': 'linux'});
+
+      await registerNativeRootModule(
+        container,
+        buildInfoReader: const _StubBuildInfoReader(_info),
+        deviceInfoReader: injected,
+      );
+
+      expect(container.get<DeviceInfoReader>(), same(injected));
+    });
   });
 
   group('ConnectivityService registration (#9)', () {

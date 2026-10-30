@@ -343,6 +343,51 @@ void main() {
       expect(fallback.isRegistered<FeedbackService>(), isTrue);
     });
 
+    testWidgets('reports carry the entries of a registered '
+        'DeviceInfoReader (#324)', (tester) async {
+      final container = SpyRootContainer();
+      container.registerSingleton<DeviceInfoReader>(
+        const _FixedDeviceInfoReader({
+          'operatingSystem': 'linux',
+          'browser': 'Firefox 130',
+        }),
+      );
+      final bootstrap = FakePlatformBootstrap(rootContainerOutcome: container);
+
+      await boot(tester, bootstrap);
+
+      final report = container.get<FeedbackService>().buildReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        userComment: 'x',
+      );
+      expect(report.deviceInfo, {
+        'operatingSystem': 'linux',
+        'browser': 'Firefox 130',
+      });
+    });
+
+    testWidgets('with no DeviceInfoReader registered, reports still name the '
+        'OS (#324)', (tester) async {
+      final bootstrap = FakePlatformBootstrap(
+        rootContainerOutcome: StateError('root container build exploded'),
+      );
+
+      await boot(tester, bootstrap);
+
+      final fallback = tester
+          .widget<BgeApp>(find.byType(BgeApp))
+          .rootContainer!;
+      final report = fallback.get<FeedbackService>().buildReport(
+        category: FeedbackCategory.bug,
+        severity: FeedbackSeverity.low,
+        userComment: 'x',
+      );
+      expect(report.deviceInfo, {
+        'operatingSystem': defaultTargetPlatform.name,
+      });
+    });
+
     testWidgets('an uncaught platform error flows through the hooks into '
         'a pending crash draft on the app-held reporter', (tester) async {
       final bootstrap = FakePlatformBootstrap();
@@ -575,6 +620,14 @@ class _FakeDeepLinkSource implements DeepLinkSource {
 
   @override
   final Stream<Uri> uris;
+}
+
+class _FixedDeviceInfoReader implements DeviceInfoReader {
+  const _FixedDeviceInfoReader(this._info);
+  final Map<String, String> _info;
+
+  @override
+  Map<String, String> read() => _info;
 }
 
 class _FixedLocaleReader implements ActiveLocaleReader {
