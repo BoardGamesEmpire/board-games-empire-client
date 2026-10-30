@@ -376,12 +376,12 @@ class _Basics extends StatelessWidget {
               label: l10n.eventCreateHousehold,
               items: [
                 // Its value is null: the event joins no household.
-                DropdownMenuItem(child: Text(l10n.eventCreateNoHousehold)),
+                BgeDropdownItem(
+                  value: null,
+                  label: l10n.eventCreateNoHousehold,
+                ),
                 for (final household in offered ?? const <Household>[])
-                  DropdownMenuItem(
-                    value: household.id,
-                    child: Text(household.name),
-                  ),
+                  BgeDropdownItem(value: household.id, label: household.name),
               ],
               // Nothing to pick until the households answer.
               readOnly: readOnly || offered == null,

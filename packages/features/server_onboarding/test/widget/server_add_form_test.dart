@@ -579,10 +579,9 @@ void main() {
       await tester.pumpWidget(wrap());
       await submit(tester);
 
-      // Populating validationMessages switches BgeTextField's announcer on,
-      // so this form only just gained the behaviour. Two nodes carry the
-      // message by design: the field takes it as `hint` (read on arrival),
-      // a 1×1 live region announces it on appearance. The stutter
+      // Two nodes carry the message by design: the field takes it as
+      // `hint` (read on arrival), a 1×1 live region announces it on
+      // appearance. The stutter
       // BgeTextField warns about is two *labels* on the field.
       expect(
         find.descendant(

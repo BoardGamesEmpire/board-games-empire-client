@@ -32,13 +32,13 @@ Widget _page(FormGroup form, {double spacerHeight = 0}) => BgePage(
           label: 'Name',
         ),
         const BgeGap.md(),
-        ReactiveDropdownField<String>(
+        BgeDropdownField<String>(
           key: _kindKey,
           formControlName: 'kind',
-          decoration: const InputDecoration(labelText: 'Kind'),
+          label: 'Kind',
           items: const [
-            DropdownMenuItem(value: 'a', child: Text('A')),
-            DropdownMenuItem(value: 'b', child: Text('B')),
+            BgeDropdownItem(value: 'a', label: 'A'),
+            BgeDropdownItem(value: 'b', label: 'B'),
           ],
           validationMessages: {ValidationMessage.required: (_) => 'Pick one'},
         ),
