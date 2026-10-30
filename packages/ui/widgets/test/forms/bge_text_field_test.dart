@@ -177,6 +177,35 @@ void main() {
       form.dispose();
     });
 
+    testWidgets('an error with no message of its own is announced as it is '
+        'shown', (tester) async {
+      final handle = tester.ensureSemantics();
+      final form = _form();
+      await tester.pumpWidget(
+        _host(
+          form,
+          const BgeTextField(formControlName: 'email', label: 'Email'),
+        ),
+      );
+
+      form.control('email').markAsTouched();
+      await tester.pump();
+
+      // reactive_forms shows the error's key when nothing names it.
+      expect(find.text(ValidationMessage.required), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics &&
+              (w.properties.liveRegion ?? false) &&
+              w.properties.label == ValidationMessage.required,
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+      form.dispose();
+    });
+
     testWidgets('announces nothing while the control is valid', (tester) async {
       final handle = tester.ensureSemantics();
       final form = _form();
@@ -210,7 +239,7 @@ void main() {
     // dependency on the group, so the swap went unnoticed.
     //
     // The field's binding does not rebind on its own, which is why these tests
-    // assert on the field and not only on the announcer. Its
+    // assert on the field and not only on the announcement. Its
     // `didChangeDependencies` does re-resolve the control (reactive_forms
     // 18.2.2, `reactive_form_field.dart:167-177`); what is missing is the
     // notification, because `_resolveFormControl` looks the group up with

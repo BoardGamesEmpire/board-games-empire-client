@@ -1,5 +1,8 @@
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui/ui.dart';
@@ -29,35 +32,42 @@ Widget _host<T>(
   ThemeData? theme,
   double scale = 1,
   bool atBottom = false,
-}) => MaterialApp(
-  theme: theme ?? BgeTheme.light(),
-  // Inside the app, so the menu's overlay is scaled too.
-  builder: (context, child) => MediaQuery(
-    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
-    child: child!,
-  ),
-  home: Scaffold(
-    body: ReactiveForm(
-      formGroup: form,
-      // A form's padding, as `BgePage` gives it. A menu keeps 8dp off the
-      // screen's edges, so it can't match a field that runs edge to edge.
-      child: Padding(
-        padding: EdgeInsets.all(BgeTokens.standard.spaceLg),
-        child: Align(
-          alignment: atBottom ? Alignment.bottomCenter : Alignment.topCenter,
-          child: BgeDropdownField<T>(
-            formControlName: 'fruit',
-            label: 'Fruit',
-            items: items,
-            hint: hint,
-            readOnly: readOnly,
-            validationMessages: validationMessages,
+  bool intrinsic = false,
+}) {
+  final field = BgeDropdownField<T>(
+    formControlName: 'fruit',
+    label: 'Fruit',
+    items: items,
+    hint: hint,
+    readOnly: readOnly,
+    validationMessages: validationMessages,
+  );
+
+  return MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    // Inside the app, so the menu's overlay is scaled too.
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(scale)),
+      child: child!,
+    ),
+    home: Scaffold(
+      body: ReactiveForm(
+        formGroup: form,
+        // A form's padding, as `BgePage` gives it. A menu keeps 8dp off the
+        // screen's edges, so it can't match a field that runs edge to edge.
+        child: Padding(
+          padding: EdgeInsets.all(BgeTokens.standard.spaceLg),
+          child: Align(
+            alignment: atBottom ? Alignment.bottomCenter : Alignment.topCenter,
+            // An AlertDialog sizes its content this way.
+            child: intrinsic ? IntrinsicWidth(child: field) : field,
           ),
         ),
       ),
     ),
-  ),
-);
+  );
+}
 
 /// Sets the test view to [size] at a device pixel ratio of 1.
 void _view(WidgetTester tester, Size size) {
@@ -105,6 +115,76 @@ Iterable<SemanticsNode> _semanticsNodes(WidgetTester tester) sync* {
       return true;
     });
   }
+}
+
+/// The deepest semantics node whose label is [label] (a [String] matches the
+/// whole label, a [RegExp] any part), preferring one flagged as a button.
+///
+/// Walked from the root because `tester.getSemantics` walks *up* from a
+/// widget, and returns an ancestor's node for a widget whose own node sits
+/// deeper.
+SemanticsNode nodeLabelled(WidgetTester tester, Pattern label) {
+  bool matches(String text) =>
+      label is RegExp ? label.hasMatch(text) : text == label;
+
+  final found = _semanticsNodes(tester).where((n) => matches(n.label)).toList()
+    ..sort((a, b) {
+      final button =
+          (b.flagsCollection.isButton ? 1 : 0) -
+          (a.flagsCollection.isButton ? 1 : 0);
+      return button != 0 ? button : b.depth - a.depth;
+    });
+  expect(found, isNotEmpty, reason: 'no semantics node labelled $label');
+  return found.first;
+}
+
+/// The closed field's focus node: the one `control.focus()` moves, and the
+/// one the menu hands focus back to.
+FocusNode _fieldFocus(WidgetTester tester) =>
+    tester.widget<MenuAnchor>(find.byType(MenuAnchor)).childFocusNode!;
+
+/// The label of the menu item holding primary focus, or null if none does.
+String? _focusedItem(WidgetTester tester) {
+  final focused = FocusManager.instance.primaryFocus?.context;
+  if (focused == null) return null;
+  for (final item in _items.evaluate()) {
+    var inside = identical(focused, item);
+    focused.visitAncestorElements((element) {
+      if (identical(element, item)) inside = true;
+      return !inside;
+    });
+    if (inside) {
+      return tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byElementPredicate((e) => identical(e, item)),
+              matching: find.byType(Text),
+            ),
+          )
+          .data;
+    }
+  }
+  return null;
+}
+
+final _platforms = TargetPlatformVariant({
+  TargetPlatform.android,
+  TargetPlatform.macOS,
+});
+
+/// Pumps the field holding 'b' (Banana) and focuses it the way a rejected
+/// submit does.
+Future<FormControl<String>> _pumpFocused(WidgetTester tester) async {
+  final control = FormControl<String>(value: 'b');
+  await tester.pumpWidget(_host(_form(control), _fruit));
+  control.focus();
+  await tester.pumpAndSettle();
+  return control;
+}
+
+Future<void> _key(WidgetTester tester, LogicalKeyboardKey key) async {
+  await tester.sendKeyEvent(key);
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -177,6 +257,27 @@ void main() {
       expect(_items, findsNothing);
     });
 
+    // The in-flight state: read-only, never disabled (STYLE_GUIDE, "In-flight
+    // forms"). A keyboard or screen-reader user keeps the field, as they keep
+    // a read-only text field, and the form isn't greyed out.
+    testWidgets('read-only stays in the focus order and is not drawn '
+        'disabled', (tester) async {
+      final control = FormControl<String>(value: 'b');
+      await tester.pumpWidget(_host(_form(control), _fruit, readOnly: true));
+
+      control.focus();
+      await tester.pumpAndSettle();
+
+      expect(_fieldFocus(tester).hasFocus, isTrue);
+      expect(tester.widget<InputDecorator>(_field).decoration.enabled, isTrue);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+      await _key(tester, LogicalKeyboardKey.space);
+
+      expect(_items, findsNothing);
+      expect(control.value, 'b');
+    }, variant: _platforms);
+
     testWidgets('a disabled control does not open and takes no focus', (
       tester,
     ) async {
@@ -189,17 +290,113 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_items, findsNothing);
+      expect(tester.widget<InputDecorator>(_field).decoration.enabled, isFalse);
 
       control.focus();
       await tester.pumpAndSettle();
 
-      final trigger = tester.widget<InkWell>(
-        find.descendant(
-          of: find.byType(BgeDropdownField<String>),
-          matching: find.byType(InkWell),
+      expect(_fieldFocus(tester).hasFocus, isFalse);
+    });
+
+    // The create event form turns read-only on submit, and when the
+    // households it offers are read again, neither of which waits for the
+    // menu.
+    testWidgets('an open menu closes when the field turns read-only, and '
+        'takes no pick meanwhile', (tester) async {
+      final control = FormControl<String>(value: 'b');
+      final form = _form(control);
+      await tester.pumpWidget(_host(form, _fruit));
+      await _open(tester);
+
+      await tester.pumpWidget(_host(form, _fruit, readOnly: true));
+      expect(_items, findsWidgets, reason: 'open until after this frame');
+      await tester.tap(find.text('Cherry').last, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(_items, findsNothing);
+      expect(control.value, 'b');
+    });
+
+    testWidgets('an open menu closes when the control is disabled', (
+      tester,
+    ) async {
+      final control = FormControl<String>(value: 'b');
+      await tester.pumpWidget(_host(_form(control), _fruit));
+      await _open(tester);
+
+      control.markAsDisabled();
+      // The status arrives on a stream, so it is in before the next frame.
+      await tester.idle();
+      await tester.pump();
+      expect(_items, findsWidgets, reason: 'open until after this frame');
+      await tester.tap(find.text('Cherry').last, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      expect(_items, findsNothing);
+      expect(control.value, 'b');
+    });
+
+    // #186: a form reset by handing ReactiveForm a new group, with the field
+    // left mounted.
+    testWidgets('follows a swapped form group', (tester) async {
+      final old = _form(FormControl<String>(value: 'a'));
+      final control = FormControl<String>(
+        value: 'b',
+        validators: [Validators.required],
+      );
+      await tester.pumpWidget(_host(old, _fruit));
+
+      await tester.pumpWidget(
+        _host(
+          _form(control),
+          _fruit,
+          validationMessages: {ValidationMessage.required: (_) => 'Choose one'},
         ),
       );
-      expect(trigger.focusNode!.hasFocus, isFalse);
+      await tester.pumpAndSettle();
+
+      expect(_closedText('Banana'), findsOneWidget);
+
+      await _pick(tester, 'Cherry');
+
+      expect(control.value, 'c');
+      expect(old.control('fruit').value, 'a');
+
+      final handle = tester.ensureSemantics();
+      control.value = null;
+      await tester.pumpAndSettle();
+
+      expect(find.text('Choose one'), findsOneWidget);
+      expect(
+        _semanticsNodes(tester).where(
+          (node) =>
+              node.label == 'Choose one' && node.flagsCollection.isLiveRegion,
+        ),
+        hasLength(1),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('an error with no message of its own is announced as it is '
+        'shown', (tester) async {
+      final handle = tester.ensureSemantics();
+      final control = FormControl<String>(validators: [Validators.required]);
+      await tester.pumpWidget(_host(_form(control), _fruit));
+
+      control.markAsTouched();
+      await tester.pumpAndSettle();
+
+      // reactive_forms shows the error's key when nothing names it.
+      expect(find.text(ValidationMessage.required), findsOneWidget);
+      expect(
+        _semanticsNodes(tester).where(
+          (node) =>
+              node.label == ValidationMessage.required &&
+              node.flagsCollection.isLiveRegion,
+        ),
+        hasLength(1),
+      );
+      handle.dispose();
     });
 
     testWidgets('a required error shows and is announced once touched', (
@@ -300,6 +497,22 @@ void main() {
       expect(field.top, greaterThanOrEqualTo(0));
       expect(panel.top, greaterThanOrEqualTo(field.bottom));
       expect(panel.width, moreOrLessEquals(field.width));
+    });
+
+    testWidgets('lays out under an intrinsic width, as in a dialog, and '
+        'opens as wide as the field', (tester) async {
+      _view(tester, const Size(390, 844));
+      final form = _form(FormControl<String>(value: 'b'));
+      await tester.pumpWidget(_host(form, _fruit, intrinsic: true));
+
+      expect(tester.takeException(), isNull);
+
+      await _open(tester);
+
+      expect(
+        tester.getRect(_panel).width,
+        moreOrLessEquals(tester.getRect(_field).width),
+      );
     });
 
     testWidgets('flips above the field near the bottom of the screen', (
@@ -435,5 +648,168 @@ void main() {
         );
       }
     });
+  });
+
+  // #648's list, measured on the old menu on Android and macOS: it must not
+  // regress on either.
+  group('BgeDropdownField keyboard and screen reader', () {
+    testWidgets('is a button with an expanded state', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpFocused(tester);
+
+      var node = nodeLabelled(tester, RegExp('Fruit'));
+      expect(node.flagsCollection.isButton, isTrue);
+      expect(node.flagsCollection.isExpanded, Tristate.isFalse);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      node = nodeLabelled(tester, RegExp('Fruit'));
+      expect(node.flagsCollection.isExpanded, Tristate.isTrue);
+      handle.dispose();
+    }, variant: _platforms);
+
+    // A read-only text field says so; this one must too, and must not
+    // promise a menu a double tap won't open.
+    testWidgets('read-only reads as read-only, with no menu to expand', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final form = _form(FormControl<String>(value: 'b'));
+      await tester.pumpWidget(_host(form, _fruit, readOnly: true));
+
+      final node = nodeLabelled(tester, RegExp('Fruit'));
+      expect(node.flagsCollection.isButton, isTrue);
+      expect(node.flagsCollection.isReadOnly, isTrue);
+      expect(node.flagsCollection.isEnabled, Tristate.isTrue);
+      expect(node.flagsCollection.isExpanded, Tristate.none);
+      handle.dispose();
+    });
+
+    testWidgets('a disabled control reads as disabled, with no menu to '
+        'expand', (tester) async {
+      final handle = tester.ensureSemantics();
+      final control = FormControl<String>(value: 'b', disabled: true);
+      await tester.pumpWidget(_host(_form(control), _fruit));
+
+      final node = nodeLabelled(tester, RegExp('Fruit'));
+      expect(node.flagsCollection.isEnabled, Tristate.isFalse);
+      expect(node.flagsCollection.isExpanded, Tristate.none);
+      handle.dispose();
+    });
+
+    testWidgets('Enter opens it', (tester) async {
+      await _pumpFocused(tester);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      expect(_items, findsWidgets);
+    }, variant: _platforms);
+
+    testWidgets('Space opens it', (tester) async {
+      await _pumpFocused(tester);
+
+      await _key(tester, LogicalKeyboardKey.space);
+
+      expect(_items, findsWidgets);
+    }, variant: _platforms);
+
+    testWidgets('focus starts on the chosen item', (tester) async {
+      await _pumpFocused(tester);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      expect(_focusedItem(tester), 'Banana');
+    }, variant: _platforms);
+
+    testWidgets('the arrows move through it', (tester) async {
+      await _pumpFocused(tester);
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      await _key(tester, LogicalKeyboardKey.arrowDown);
+      expect(_focusedItem(tester), 'Cherry');
+
+      await _key(tester, LogicalKeyboardKey.arrowUp);
+      expect(_focusedItem(tester), 'Banana');
+    }, variant: _platforms);
+
+    testWidgets('Enter picks', (tester) async {
+      final control = await _pumpFocused(tester);
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      await _key(tester, LogicalKeyboardKey.arrowDown);
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      expect(control.value, 'c');
+      expect(_items, findsNothing);
+    }, variant: _platforms);
+
+    testWidgets('Escape closes it and leaves the value', (tester) async {
+      final control = await _pumpFocused(tester);
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      await _key(tester, LogicalKeyboardKey.escape);
+
+      expect(_items, findsNothing);
+      expect(control.value, 'b');
+    }, variant: _platforms);
+
+    testWidgets('focus returns to the field after Escape, and after a pick', (
+      tester,
+    ) async {
+      await _pumpFocused(tester);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+      await _key(tester, LogicalKeyboardKey.escape);
+      expect(_fieldFocus(tester).hasFocus, isTrue, reason: 'after Escape');
+
+      await _key(tester, LogicalKeyboardKey.enter);
+      await _key(tester, LogicalKeyboardKey.arrowDown);
+      await _key(tester, LogicalKeyboardKey.enter);
+      expect(_fieldFocus(tester).hasFocus, isTrue, reason: 'after a pick');
+    }, variant: _platforms);
+
+    testWidgets('focus returns to the field after a tap outside', (
+      tester,
+    ) async {
+      await _pumpFocused(tester);
+      // Blank page, below the field and clear of the menu.
+      const outside = Offset(400, 580);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+      expect(_focusedItem(tester), 'Banana');
+      await tester.tapAt(outside);
+      await tester.pumpAndSettle();
+      expect(_items, findsNothing);
+      expect(_fieldFocus(tester).hasFocus, isTrue, reason: 'keyboard open');
+
+      await _open(tester);
+      await tester.tapAt(outside);
+      await tester.pumpAndSettle();
+      expect(_items, findsNothing);
+      expect(_fieldFocus(tester).hasFocus, isTrue, reason: 'tap open');
+    }, variant: _platforms);
+
+    testWidgets('the chosen item reads as selected', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _pumpFocused(tester);
+
+      await _key(tester, LogicalKeyboardKey.enter);
+
+      expect(
+        nodeLabelled(tester, 'Banana').flagsCollection.isSelected,
+        Tristate.isTrue,
+      );
+      expect(
+        nodeLabelled(tester, 'Apple').flagsCollection.isSelected,
+        isNot(Tristate.isTrue),
+      );
+      handle.dispose();
+    }, variant: _platforms);
+
+    testWidgets('control.focus() focuses the field', (tester) async {
+      await _pumpFocused(tester);
+
+      expect(_fieldFocus(tester).hasFocus, isTrue);
+    }, variant: _platforms);
   });
 }

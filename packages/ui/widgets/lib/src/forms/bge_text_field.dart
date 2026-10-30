@@ -53,11 +53,10 @@ import 'live_error_announcer.dart';
 ///
 /// Two things close the gap here:
 ///
-/// - The control is resolved once, in this widget's `build`, and passed to both
-///   the [_BoundTextField] (as `formControl`) and [LiveErrorAnnouncer]. Two
-///   lookups of the same name would let the field and its announcer end up
-///   describing different objects; one resolution makes that impossible rather
-///   than merely unlikely.
+/// - The control is resolved once, in this widget's `build`, and passed to the
+///   [_BoundTextField] (as `formControl`). The live region sits inside the
+///   binding and announces its `errorText`, so the field and its announcement
+///   can't end up describing different objects, or saying different things.
 /// - The [_BoundTextField] is keyed on that control. `initState` is the only
 ///   place `ReactiveFormField` resolves a binding that takes effect — its
 ///   `didChangeDependencies` would too, but never runs, per above — so a
@@ -290,57 +289,47 @@ class _BgeTextFieldState extends State<BgeTextField> {
   }
 
   Widget _buildField(BuildContext context, FormControl<String>? control) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // No enclosing `Semantics(label:, textField:)` here, deliberately.
-        // `InputDecoration.labelText` already gives the field both its
-        // accessible name and its textField flag; wrapping it added a SECOND
-        // nested node carrying the same label, which screen readers announce
-        // twice ("Email, Email"). Inherited from the auth-feature original,
-        // where it read as belt-and-braces and was really a stutter.
-        _BoundTextField(
-          // Keyed on the resolved control: `initState` is the only place
-          // `ReactiveFormField` resolves a binding that takes effect — its
-          // `didChangeDependencies` would too, but never runs (see the class
-          // doc) — so a changed key, which rebuilds its state, is what rebinds
-          // it. Without this the field goes on editing the control of the
-          // group that was swapped away.
-          // `ObjectKey`, not `ValueKey`: identity is the question being asked.
-          key: control == null ? null : ObjectKey(control),
-          // Bound by object, not re-looked-up by name. Passing the name here
-          // would have the child resolve the same control a second time, which
-          // is the disagreement this widget exists to prevent; the name is the
-          // fallback only when resolution failed, so upstream raises its own
-          // diagnostic.
-          formControl: control,
-          formControlName: control == null ? widget.formControlName : null,
-          autofocus: widget.autofocus,
-          readOnly: widget.readOnly,
-          autocorrect: widget.autocorrect,
-          enableSuggestions: widget.enableSuggestions,
-          obscureText: widget.isPassword && _obscure,
-          textInputAction: widget.textInputAction,
-          keyboardType: widget.keyboardType,
-          autofillHints: widget.autofillHints,
-          minLines: widget.minLines,
-          maxLines: widget.maxLines,
-          onSubmitted: widget.onSubmitted,
-          validationMessages: widget.validationMessages,
-          decoration: InputDecoration(
-            // Label, not hint-only. The border comes from the theme.
-            labelText: widget.label,
-            hintText: widget.hint,
-            helperText: widget.helper,
-            suffixIcon: widget.isPassword ? _visibilityToggle() : null,
-          ),
-        ),
-        LiveErrorAnnouncer(
-          control: control,
-          validationMessages: widget.validationMessages,
-        ),
-      ],
+    // No enclosing `Semantics(label:, textField:)` here, deliberately.
+    // `InputDecoration.labelText` already gives the field both its
+    // accessible name and its textField flag; wrapping it added a SECOND
+    // nested node carrying the same label, which screen readers announce
+    // twice ("Email, Email"). Inherited from the auth-feature original,
+    // where it read as belt-and-braces and was really a stutter.
+    return _BoundTextField(
+      // Keyed on the resolved control: `initState` is the only place
+      // `ReactiveFormField` resolves a binding that takes effect — its
+      // `didChangeDependencies` would too, but never runs (see the class
+      // doc) — so a changed key, which rebuilds its state, is what rebinds
+      // it. Without this the field goes on editing the control of the
+      // group that was swapped away.
+      // `ObjectKey`, not `ValueKey`: identity is the question being asked.
+      key: control == null ? null : ObjectKey(control),
+      // Bound by object, not re-looked-up by name. Passing the name here
+      // would have the child resolve the same control a second time, which
+      // is the disagreement this widget exists to prevent; the name is the
+      // fallback only when resolution failed, so upstream raises its own
+      // diagnostic.
+      formControl: control,
+      formControlName: control == null ? widget.formControlName : null,
+      autofocus: widget.autofocus,
+      readOnly: widget.readOnly,
+      autocorrect: widget.autocorrect,
+      enableSuggestions: widget.enableSuggestions,
+      obscureText: widget.isPassword && _obscure,
+      textInputAction: widget.textInputAction,
+      keyboardType: widget.keyboardType,
+      autofillHints: widget.autofillHints,
+      minLines: widget.minLines,
+      maxLines: widget.maxLines,
+      onSubmitted: widget.onSubmitted,
+      validationMessages: widget.validationMessages,
+      decoration: InputDecoration(
+        // Label, not hint-only. The border comes from the theme.
+        labelText: widget.label,
+        hintText: widget.hint,
+        helperText: widget.helper,
+        suffixIcon: widget.isPassword ? _visibilityToggle() : null,
+      ),
     );
   }
 
@@ -434,7 +423,7 @@ class _BoundTextField extends ReactiveFocusableFormField<String, String> {
              Theme.of(state.context).inputDecorationTheme,
            );
 
-           return TextField(
+           final text = TextField(
              controller: state._controller,
              focusNode: state.focusNode,
              decoration: themed.copyWith(errorText: state.errorText),
@@ -453,6 +442,17 @@ class _BoundTextField extends ReactiveFocusableFormField<String, String> {
              maxLines: maxLines,
              onChanged: state.didChange,
              onSubmitted: onSubmitted == null ? null : (_) => onSubmitted(),
+           );
+
+           return Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             mainAxisSize: MainAxisSize.min,
+             children: [
+               text,
+               // The error text the field shows, so what is announced is what
+               // is drawn; the state already rebuilds on status and touch.
+               LiveErrorRegion(message: state.errorText),
+             ],
            );
          },
        );
