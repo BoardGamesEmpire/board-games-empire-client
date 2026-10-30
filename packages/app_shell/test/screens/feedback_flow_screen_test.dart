@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/widgets.dart';
 import 'package:feedback/feedback.dart';
@@ -74,8 +76,9 @@ void main() {
   }
 
   /// System back exactly as the platform delivers it — with a real route
-  /// under the flow, this exercises the route-level PopScope.
-  Future<void> systemBack(WidgetTester tester) async {
+  /// under the flow, this exercises the route-level PopScope. Pass
+  /// `settle: false` while a send is in flight: its spinner never settles.
+  Future<void> systemBack(WidgetTester tester, {bool settle = true}) async {
     final message = SystemChannels.navigation.codec.encodeMethodCall(
       const MethodCall('popRoute'),
     );
@@ -84,7 +87,11 @@ void main() {
       message,
       (_) {},
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+    }
   }
 
   group('the compose → review handoff (#211)', () {
@@ -250,13 +257,126 @@ void main() {
     expect(find.text('launch'), findsOneWidget);
     expect(service.submitted, hasLength(1));
   });
+
+  // #179: once a report is out, back leaves the flow rather than re-showing
+  // the filled form, where a second send would build and submit a duplicate.
+  // A report that never got out still goes back to compose, input intact.
+  group('system back after send (#179)', () {
+    Future<void> send(WidgetTester tester) async {
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('back after a sent outcome leaves the flow; nothing is '
+        'rebuilt', (tester) async {
+      await open(tester);
+      await composeValidBug(tester);
+      await send(tester);
+      expect(
+        find.byKey(FeedbackReviewScreen.sentConfirmationKey),
+        findsOneWidget,
+      );
+
+      await systemBack(tester);
+
+      expect(find.byType(FeedbackFlowScreen), findsNothing);
+      expect(find.text('launch'), findsOneWidget);
+      expect(service.buildCalls, hasLength(1));
+      expect(service.submitted, hasLength(1));
+    });
+
+    testWidgets('back after a queued outcome leaves the flow', (tester) async {
+      service.onSubmit = (_) async => FeedbackSubmitResult.queued;
+      await open(tester);
+      await composeValidBug(tester);
+      await send(tester);
+      expect(
+        find.byKey(FeedbackReviewScreen.queuedConfirmationKey),
+        findsOneWidget,
+      );
+
+      await systemBack(tester);
+
+      expect(find.byType(FeedbackFlowScreen), findsNothing);
+      expect(find.text('launch'), findsOneWidget);
+    });
+
+    testWidgets('back while sending does nothing; the outcome still lands', (
+      tester,
+    ) async {
+      final gate = Completer<FeedbackSubmitResult>();
+      service.onSubmit = (_) => gate.future;
+      await open(tester);
+      await composeValidBug(tester);
+      await send(tester);
+
+      await systemBack(tester, settle: false);
+
+      expect(find.byType(FeedbackReviewScreen), findsOneWidget);
+      expect(find.byType(FeedbackComposeForm), findsNothing);
+
+      gate.complete(FeedbackSubmitResult.sent);
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(FeedbackReviewScreen.sentConfirmationKey),
+        findsOneWidget,
+      );
+
+      await systemBack(tester);
+
+      expect(find.byType(FeedbackFlowScreen), findsNothing);
+      expect(service.buildCalls, hasLength(1));
+    });
+
+    testWidgets('back after a rejected outcome returns to compose with the '
+        'input', (tester) async {
+      service.onSubmit = (_) => Future.error(
+        const FeedbackPermanentSubmissionException('no', statusCode: 400),
+      );
+      await open(tester);
+      await composeValidBug(tester);
+      await send(tester);
+      expect(
+        find.byKey(FeedbackReviewScreen.submissionRejectedKey),
+        findsOneWidget,
+      );
+
+      await systemBack(tester);
+
+      expect(find.byType(FeedbackComposeForm), findsOneWidget);
+      expect(find.text('it broke'), findsOneWidget);
+    });
+
+    testWidgets('back after a failed outcome returns to compose with the '
+        'input', (tester) async {
+      service.onSubmit = (_) => Future.error(StateError('sink down'));
+      await open(tester);
+      await composeValidBug(tester);
+      await send(tester);
+      expect(
+        find.byKey(FeedbackReviewScreen.submissionFailedKey),
+        findsOneWidget,
+      );
+
+      await systemBack(tester);
+
+      expect(find.byType(FeedbackComposeForm), findsOneWidget);
+      expect(find.text('it broke'), findsOneWidget);
+    });
+  });
 }
 
 /// Records buildReport arguments and materializes a minimal report so the
-/// review surface can render; submit always reports sent.
+/// review surface can render; submit reports sent unless [onSubmit] says
+/// otherwise.
 class _RecordingFeedbackService implements FeedbackService {
   final List<_BuildCall> buildCalls = [];
   final List<FeedbackReport> submitted = [];
+
+  /// Decides each submit's outcome; null reports sent.
+  Future<FeedbackSubmitResult> Function(FeedbackReport report)? onSubmit;
 
   @override
   FeedbackReport buildReport({
@@ -287,9 +407,9 @@ class _RecordingFeedbackService implements FeedbackService {
   }
 
   @override
-  Future<FeedbackSubmitResult> submit(FeedbackReport report) async {
+  Future<FeedbackSubmitResult> submit(FeedbackReport report) {
     submitted.add(report);
-    return FeedbackSubmitResult.sent;
+    return onSubmit?.call(report) ?? Future.value(FeedbackSubmitResult.sent);
   }
 
   @override

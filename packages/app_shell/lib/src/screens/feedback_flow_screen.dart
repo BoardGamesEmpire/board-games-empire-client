@@ -22,6 +22,19 @@ import '../widgets/feedback_review_screen.dart';
 /// or system back via the [PopScope] below) restores the compose step
 /// with the user's input intact.
 ///
+/// Once the user taps send, system back follows the send's stage (#179):
+///
+/// | Stage | System back |
+/// |---|---|
+/// | sending | does nothing |
+/// | delivered (sent, or saved to send later) | leaves the flow |
+/// | undelivered (the submit threw) | returns to compose, input intact |
+///
+/// Bouncing a delivered report back to its filled form invited a second
+/// send, and every send builds a new report with a new `clientRequestId`, so
+/// the server could not tell the two apart. A report that never got out is
+/// still the user's to edit and retry.
+///
 /// Composition lives in app_shell, not the feature: the review surface is
 /// shell-owned and app_shell depends on features, never the reverse. The
 /// host (BgeApp) resolves the device-global [FeedbackService] from the
@@ -45,11 +58,16 @@ class FeedbackFlowScreen extends StatefulWidget {
   State<FeedbackFlowScreen> createState() => _FeedbackFlowScreenState();
 }
 
+/// Where the review phase's send has got to; drives system back (#179).
+enum _SendStage { idle, sending, delivered, undelivered }
+
 class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
   late final FeedbackComposeFormModel _model = FeedbackComposeFormModel();
 
   /// Non-null while the review phase is showing.
   FeedbackReportPreview? _preview;
+
+  _SendStage _stage = _SendStage.idle;
 
   @override
   void dispose() {
@@ -67,22 +85,42 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
     setState(() => _preview = FeedbackReportPreview.fromReport(report));
   }
 
-  void _backToCompose() => setState(() => _preview = null);
+  void _backToCompose() => setState(() {
+    _preview = null;
+    _stage = _SendStage.idle;
+  });
+
+  /// The review surface's submit, tracked so back knows whether the report
+  /// is out. A throw is rethrown untouched: the review surface renders the
+  /// rejected and failed outcomes from it.
+  Future<FeedbackSubmitResult> _submit(FeedbackReport report) async {
+    setState(() => _stage = _SendStage.sending);
+    try {
+      final result = await widget.feedbackService.submit(report);
+      if (mounted) setState(() => _stage = _SendStage.delivered);
+      return result;
+    } catch (_) {
+      if (mounted) setState(() => _stage = _SendStage.undelivered);
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final preview = _preview;
 
     // Route-level back semantics: on the compose phase the route pops
-    // normally (system back and the AppBar back leave the flow); on the
-    // review phase system back bounces to compose — matching the review
-    // surface's visible BackButton — instead of popping the route. Unlike
-    // the crash overlay (#106), this IS a real route, so PopScope is the
-    // correct primitive here.
+    // normally (system back and the AppBar back leave the flow), and so it
+    // does once the report is delivered (#179). Before sending, and after a
+    // send that threw, system back bounces to compose — matching the review
+    // surface's visible BackButton — instead of popping the route; while
+    // sending it does nothing. Unlike the crash overlay (#106), this IS a
+    // real route, so PopScope is the correct primitive here.
     return PopScope(
-      canPop: preview == null,
+      canPop: preview == null || _stage == _SendStage.delivered,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _backToCompose();
+        if (didPop || _stage == _SendStage.sending) return;
+        _backToCompose();
       },
       child: preview == null ? _compose(context) : _review(preview),
     );
@@ -112,7 +150,7 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
 
   Widget _review(FeedbackReportPreview preview) => FeedbackReviewScreen(
     preview: preview,
-    onSubmit: widget.feedbackService.submit,
+    onSubmit: _submit,
     // The user backed out before sending → compose, input intact.
     onCancel: _backToCompose,
     // Terminal outcome dismissed → leave the flow. The route's Navigator
