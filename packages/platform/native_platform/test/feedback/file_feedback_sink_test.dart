@@ -101,6 +101,10 @@ void main() {
       expect(buildSink(), isA<FeedbackSink>());
     });
 
+    test('survives a restart (#385)', () {
+      expect(buildSink().survivesRestart, isTrue);
+    });
+
     test('does not touch the directory provider at construction — no '
         'plugin call on the boot path', () {
       FileFeedbackSink(

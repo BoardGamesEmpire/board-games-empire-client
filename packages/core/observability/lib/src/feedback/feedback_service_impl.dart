@@ -410,13 +410,14 @@ class FeedbackServiceImpl implements FeedbackService {
   }
 
   /// Persists [report] to the sink as a [QueuedFeedbackReport] tagged
-  /// with [serverId], returning [FeedbackSubmitResult.queued]; if the
-  /// sink itself fails, surfaces [FeedbackPersistenceException] — the
-  /// third failure mode ("couldn't even persist"), distinct from any
-  /// server rejection (#97). The sink failure is the primary `cause` (it
-  /// is the reason queueing failed, and usually the more actionable root
-  /// cause); a prior transport failure ([transportCause]) is carried
-  /// alongside for telemetry.
+  /// with [serverId], returning [FeedbackSubmitResult.queued] (or
+  /// [FeedbackSubmitResult.queuedForSession] when the sink does not survive
+  /// a restart, #385); if the sink itself fails, surfaces
+  /// [FeedbackPersistenceException] — the third failure mode ("couldn't even
+  /// persist"), distinct from any server rejection (#97). The sink failure
+  /// is the primary `cause` (it is the reason queueing failed, and usually
+  /// the more actionable root cause); a prior transport failure
+  /// ([transportCause]) is carried alongside for telemetry.
   ///
   /// A [transportCause] that is a [FeedbackUnverifiedDeliveryException] puts
   /// the record in the queue having **already spent an attempt**.
@@ -456,7 +457,9 @@ class FeedbackServiceImpl implements FeedbackService {
           lastAttemptAt: unverified == null ? null : stamp,
         ),
       );
-      return FeedbackSubmitResult.queued;
+      return _sink.survivesRestart
+          ? FeedbackSubmitResult.queued
+          : FeedbackSubmitResult.queuedForSession;
     } on Object catch (sinkError) {
       throw FeedbackPersistenceException(
         transportCause == null

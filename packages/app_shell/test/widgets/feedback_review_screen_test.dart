@@ -276,6 +276,26 @@ void main() {
       expect(find.byKey(FeedbackReviewScreen.copyButtonKey), findsNothing);
     });
 
+    testWidgets('stays when the report is held only for this session (#385)', (
+      tester,
+    ) async {
+      await pumpReview(
+        tester,
+        onSubmit: (_) async => FeedbackSubmitResult.queuedForSession,
+      );
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pumpAndSettle();
+
+      // Held in memory only: closing the app loses it, so it is still the
+      // user's to salvage.
+      expect(
+        find.byKey(FeedbackReviewScreen.queuedForSessionConfirmationKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(FeedbackReviewScreen.copyButtonKey), findsOneWidget);
+    });
+
     testWidgets('survives a permanent rejection, which is not queued', (
       tester,
     ) async {
@@ -566,6 +586,33 @@ void main() {
 
       expect(
         find.byKey(FeedbackReviewScreen.queuedConfirmationKey),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a report held only for this session says it is lost if the '
+        'app closes, not that it will be sent later (#385)', (tester) async {
+      await pumpReview(
+        tester,
+        onSubmit: (_) async => FeedbackSubmitResult.queuedForSession,
+      );
+
+      await tester.tap(find.byKey(FeedbackReviewScreen.sendButtonKey));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(FeedbackReviewScreen.queuedForSessionConfirmationKey),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(FeedbackReviewScreen.queuedConfirmationKey),
+        findsNothing,
+      );
+      expect(
+        find.text(
+          "Saved for now, but it will be lost if the app is closed or reloaded. "
+          "It will be sent if you're connected and signed in before then.",
+        ),
         findsOneWidget,
       );
     });

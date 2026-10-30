@@ -132,6 +132,10 @@
   "@crashReportPromptQueued": {
     "description": "Confirmation shown when the crash report was saved locally for a later send (offline, or not signed in); must stay honest — it was NOT sent yet"
   },
+  "crashReportPromptQueuedForSession": "Saved for now, but it will be lost if the app is closed or reloaded. It will be sent if you're connected and signed in before then.",
+  "@crashReportPromptQueuedForSession": {
+    "description": "Confirmation shown when the crash report could only be held in memory (the device refused storage) for a later send; must stay honest — it was NOT sent yet and is NOT durable: closing or reloading the app loses it"
+  },
   "crashReportPromptFailed": "The report couldn't be sent or saved.",
   "@crashReportPromptFailed": {
     "description": "Shown when both sending and local saving failed; the prompt can still be closed"
@@ -231,6 +235,10 @@
   "feedbackReviewQueued": "Saved. It will be sent once you're connected and signed in.",
   "@feedbackReviewQueued": {
     "description": "Confirmation shown when the reviewed report was saved locally for a later send; must stay honest — it was NOT sent yet"
+  },
+  "feedbackReviewQueuedForSession": "Saved for now, but it will be lost if the app is closed or reloaded. It will be sent if you're connected and signed in before then.",
+  "@feedbackReviewQueuedForSession": {
+    "description": "Confirmation shown when the reviewed report could only be held in memory (the device refused storage) for a later send; must stay honest — it was NOT sent yet and is NOT durable: closing or reloading the app loses it"
   },
   "feedbackReviewFailed": "The report couldn't be sent or saved.",
   "@feedbackReviewFailed": {

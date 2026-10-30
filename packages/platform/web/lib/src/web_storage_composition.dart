@@ -96,8 +96,9 @@ Future<void> buildWebRootModule(DependencyContainer container) async {
 ///
 /// Reported at `error` on the same reasoning as an `ephemeral` database: the
 /// app keeps working, but a queued report now evaporates on reload, and that
-/// is invisible from the outside. What the user is *told* at approval time is
-/// #385 — the prompt promises a later send on every platform today.
+/// is invisible from the outside. The user is told at approval time: the
+/// in-memory fallback does not survive a restart, so the outcome screens say
+/// the report is held only until the app closes (#385).
 Future<FeedbackSink?> _openFeedbackSink() async {
   try {
     return await IndexedDbFeedbackSink.open();
