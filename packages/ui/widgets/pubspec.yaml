@@ -29,7 +29,7 @@ dependencies:
   ui_tokens:
     path: ../tokens
 
-  # Forms. Used by BgeTextField, which wraps ReactiveTextField.
+  # Forms. BgeTextField and BgeDropdownField bind to its controls.
   reactive_forms: ^18.1.1
 
 dev_dependencies:

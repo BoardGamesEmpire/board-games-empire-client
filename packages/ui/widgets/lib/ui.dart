@@ -8,7 +8,8 @@
 /// Everything here is justified by duplication that already existed, and the
 /// migration is complete rather than aspirational — `BgePage` is used by all
 /// 12 page-shaped screens, `BgeSubmitButton` by all 6 submit controls,
-/// `BgeTextField` by every form field in 5 files (#165), `BgeErrorState` by
+/// `BgeTextField` by every form field in 5 files (#165), `BgeDropdownField`
+/// by all 4 form menus (#649), `BgeErrorState` by
 /// both whole-surface retry views (#102), `BgeFormActions` by all 4 forms
 /// that show a submit's failure (#211), `rejectSubmit` by all 5 forms
 /// (#230), `ReadAgainWhenUncovered` by all 3 screens that read the
@@ -27,6 +28,7 @@ library;
 export 'src/banners/bge_inline_banner.dart';
 export 'src/banners/unverified_session_banner.dart';
 export 'src/buttons/bge_submit_button.dart';
+export 'src/forms/bge_dropdown_field.dart';
 export 'src/forms/bge_form_actions.dart';
 export 'src/forms/bge_rejected_submit.dart';
 export 'src/forms/bge_text_field.dart';
