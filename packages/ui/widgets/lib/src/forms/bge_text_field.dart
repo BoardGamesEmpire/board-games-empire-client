@@ -1,10 +1,14 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
-/// The standard form field: an accessible [ReactiveTextField] wrapper (#165).
+import 'live_error_announcer.dart';
+
+/// The standard form field: an accessible text field bound to a reactive_forms
+/// control (#165).
+///
+/// The binding, [_BoundTextField], is this package's own: reactive_forms' own
+/// `ReactiveTextField` takes Flutter's Material types, which blocks #637.
 ///
 /// Promoted out of `features/auth`, where it was the best of the three text
 /// fields in the codebase — the other two were hand-rolled per feature and had
@@ -50,11 +54,11 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Two things close the gap here:
 ///
 /// - The control is resolved once, in this widget's `build`, and passed to both
-///   the `ReactiveTextField` (as `formControl`) and [_LiveErrorAnnouncer]. Two
+///   the [_BoundTextField] (as `formControl`) and [LiveErrorAnnouncer]. Two
 ///   lookups of the same name would let the field and its announcer end up
 ///   describing different objects; one resolution makes that impossible rather
 ///   than merely unlikely.
-/// - The `ReactiveTextField` is keyed on that control. `initState` is the only
+/// - The [_BoundTextField] is keyed on that control. `initState` is the only
 ///   place `ReactiveFormField` resolves a binding that takes effect — its
 ///   `didChangeDependencies` would too, but never runs, per above — so a
 ///   changed key, which rebuilds its state, is what rebinds it.
@@ -261,7 +265,7 @@ class _BgeTextFieldState extends State<BgeTextField> {
     // would quietly break.
     //
     // What happens to a name that is genuinely absent is unchanged and
-    // deliberate: `formControlName` goes to `ReactiveTextField` below, whose
+    // deliberate: `formControlName` goes to `_BoundTextField` below, whose
     // own resolution throws `FormControlParentNotFoundException` (no enclosing
     // form) or `FormControlNotFoundException` (no such control). Both are
     // programming errors and both should be loud; degrading to the last known
@@ -296,7 +300,7 @@ class _BgeTextFieldState extends State<BgeTextField> {
         // nested node carrying the same label, which screen readers announce
         // twice ("Email, Email"). Inherited from the auth-feature original,
         // where it read as belt-and-braces and was really a stutter.
-        ReactiveTextField<String>(
+        _BoundTextField(
           // Keyed on the resolved control: `initState` is the only place
           // `ReactiveFormField` resolves a binding that takes effect — its
           // `didChangeDependencies` would too, but never runs (see the class
@@ -322,9 +326,7 @@ class _BgeTextFieldState extends State<BgeTextField> {
           autofillHints: widget.autofillHints,
           minLines: widget.minLines,
           maxLines: widget.maxLines,
-          onSubmitted: widget.onSubmitted != null
-              ? (_) => widget.onSubmitted!()
-              : null,
+          onSubmitted: widget.onSubmitted,
           validationMessages: widget.validationMessages,
           decoration: InputDecoration(
             // Label, not hint-only. The border comes from the theme.
@@ -334,7 +336,7 @@ class _BgeTextFieldState extends State<BgeTextField> {
             suffixIcon: widget.isPassword ? _visibilityToggle() : null,
           ),
         ),
-        _LiveErrorAnnouncer(
+        LiveErrorAnnouncer(
           control: control,
           validationMessages: widget.validationMessages,
         ),
@@ -397,145 +399,98 @@ class _VisibilityToggle extends StatelessWidget {
   }
 }
 
-/// Edge length of the box that carries the error announcement's semantics.
+/// [BgeTextField]'s binding: a [TextField] kept in step with a
+/// `FormControl<String>`, both ways.
 ///
-/// **Not a spacing decision, which is why it is named rather than inline.** A
-/// semantics node with an empty rect can be dropped when the tree is compiled,
-/// and a dropped node announces nothing; this is the smallest box that is
-/// guaranteed to survive. `SizedBox.shrink()` does not.
-///
-/// Naming it also removes the need for a file-wide `spacing` exemption in
-/// `design_system_enforcement_test.dart`. A blanket exemption would have kept
-/// itself alive on the strength of this one anchor while waving through every
-/// future literal `SizedBox` in the file.
-const double _semanticsAnchorExtent = 1;
+/// Built on `ReactiveFocusableFormField`, which is Material-free at runtime,
+/// so the Material types stay in this package (#649). Its state registers the
+/// `FocusController` that lets `control.focus()` reach the field, which is how
+/// a rejected submit moves focus to the first invalid one (#230).
+class _BoundTextField extends ReactiveFocusableFormField<String, String> {
+  _BoundTextField({
+    required InputDecoration decoration,
+    required bool autofocus,
+    required bool readOnly,
+    required bool autocorrect,
+    required bool enableSuggestions,
+    required bool obscureText,
+    required TextInputAction textInputAction,
+    required TextInputType? keyboardType,
+    required Iterable<String>? autofillHints,
+    required int? minLines,
+    required int? maxLines,
+    required VoidCallback? onSubmitted,
+    super.validationMessages,
+    super.formControl,
+    super.formControlName,
+    super.key,
+  }) : super(
+         builder: (field) {
+           final state = field as _BoundTextFieldState;
+           // Merged here, not left to `TextField`, so the field's own
+           // decoration carries the theme's border. The test that every field
+           // takes the theme's border reads it there.
+           final themed = decoration.applyDefaults(
+             Theme.of(state.context).inputDecorationTheme,
+           );
 
-/// A visually-imperceptible node that announces validation errors as they
-/// appear. Deliberately 1x1 rather than zero-size — see
-/// [_semanticsAnchorExtent].
-///
-/// The announcement rides a [Semantics.label] on a 1×1 box rather than
-/// rendering invisible text. The earlier version of this widget drew a real
-/// `Text` at `fontSize: 0` inside an `OverflowBox` — which put a raw font size
-/// in the widget tree purely to hide something, and is the kind of trick that
-/// gets "cleaned up" by someone who does not realize it is load-bearing.
-///
-/// ## Why it subscribes to two streams
-///
-/// The obvious implementation — wrapping this in `ReactiveFormConsumer` — is
-/// what the auth-feature original did, and it **never fired**.
-/// `ReactiveFormConsumer` rebuilds on value and status changes; becoming
-/// *touched* is neither. So in the flow that actually produces errors —
-/// submit an empty form, which calls `markAllAsTouched()` — the control went
-/// from untouched-invalid to touched-invalid, no rebuild happened, and nothing
-/// was ever announced.
-///
-/// Listening to `touchChanges` as well as `statusChanged` is what makes the
-/// announcement real rather than nominal. Both are needed: status covers
-/// "became invalid while already touched", touch covers "was already invalid
-/// and just became touched".
-///
-/// ## Why the control is passed in rather than looked up
-///
-/// This used to resolve `formControlName` itself, from a one-shot
-/// `didChangeDependencies` — its `ReactiveForm.of` call passed `listen: false`,
-/// which registers no dependency, so it never ran a second time — plus a
-/// `didUpdateWidget` that re-resolved only when the **name** changed. A group
-/// swap changes neither, so the announcer stayed subscribed to a control that
-/// was no longer on any form: silent about the field on screen, and still
-/// announcing for the one that had gone away (#186).
-///
-/// Taking the already-resolved control as a parameter makes that staleness
-/// impossible rather than merely handled — there is no lookup left to go
-/// stale, and `didUpdateWidget` is a sufficient signal because the control now
-/// arrives the same way every other piece of configuration does.
-class _LiveErrorAnnouncer extends StatefulWidget {
-  const _LiveErrorAnnouncer({
-    required this.control,
-    required this.validationMessages,
-  });
-
-  /// The control to announce for, already resolved by [BgeTextField]. Null
-  /// when there is no enclosing group to resolve against, in which case there
-  /// is nothing to announce and the inner field is the one that complains.
-  final AbstractControl<dynamic>? control;
-  final Map<String, String Function(Object)> validationMessages;
+           return TextField(
+             controller: state._controller,
+             focusNode: state.focusNode,
+             decoration: themed.copyWith(errorText: state.errorText),
+             enabled: state.control.enabled,
+             autofocus: autofocus,
+             readOnly: readOnly,
+             autocorrect: autocorrect,
+             enableSuggestions: enableSuggestions,
+             // Smart dashes and quotes follow it too: `TextField` turns them
+             // off for obscured text by default.
+             obscureText: obscureText,
+             textInputAction: textInputAction,
+             keyboardType: keyboardType,
+             autofillHints: autofillHints,
+             minLines: minLines,
+             maxLines: maxLines,
+             onChanged: state.didChange,
+             onSubmitted: onSubmitted == null ? null : (_) => onSubmitted(),
+           );
+         },
+       );
 
   @override
-  State<_LiveErrorAnnouncer> createState() => _LiveErrorAnnouncerState();
+  ReactiveFormFieldState<String, String> createState() =>
+      _BoundTextFieldState();
 }
 
-class _LiveErrorAnnouncerState extends State<_LiveErrorAnnouncer> {
-  AbstractControl<dynamic>? _control;
-  StreamSubscription<ControlStatus>? _statusSub;
-  StreamSubscription<bool>? _touchSub;
+class _BoundTextFieldState
+    extends ReactiveFocusableFormFieldState<String, String> {
+  late final TextEditingController _controller;
 
   @override
   void initState() {
     super.initState();
-    _resubscribe();
+    _controller = TextEditingController(text: value ?? '');
   }
 
+  /// A value set on the control in code, not typed here.
+  ///
+  /// The text lives in the controller, which a rebuild leaves alone, so the
+  /// field would go on showing its old text until it is written here.
   @override
-  void didUpdateWidget(_LiveErrorAnnouncer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Unconditional, and the guard in `_resubscribe` is what makes that cheap.
-    // The case worth catching is a *different control arriving under the same
-    // name*, which no comparison of the widget's other fields can see.
-    _resubscribe();
-  }
+  void onControlValueChanged(dynamic value) {
+    final text = value == null ? '' : value.toString();
+    _controller.value = _controller.value.copyWith(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+      composing: TextRange.empty,
+    );
 
-  void _resubscribe() {
-    final control = widget.control;
-    if (identical(control, _control)) return;
-
-    _unsubscribe();
-    _control = control;
-    if (control == null) return;
-
-    _statusSub = control.statusChanged.listen(_onChanged);
-    _touchSub = control.touchChanges.listen(_onChanged);
-  }
-
-  void _onChanged(Object? _) {
-    if (mounted) setState(() {});
-  }
-
-  void _unsubscribe() {
-    _statusSub?.cancel();
-    _touchSub?.cancel();
-    _statusSub = null;
-    _touchSub = null;
+    super.onControlValueChanged(value);
   }
 
   @override
   void dispose() {
-    _unsubscribe();
+    _controller.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final control = _control;
-    if (control == null || !control.invalid || !control.touched) {
-      return const SizedBox.shrink();
-    }
-
-    final errorKey = control.errors.keys.firstOrNull;
-    if (errorKey == null) return const SizedBox.shrink();
-
-    final message = widget.validationMessages[errorKey]?.call(
-      control.errors[errorKey]!,
-    );
-    if (message == null) return const SizedBox.shrink();
-
-    return Semantics(
-      liveRegion: true,
-      label: message,
-      child: const SizedBox(
-        width: _semanticsAnchorExtent,
-        height: _semanticsAnchorExtent,
-      ),
-    );
   }
 }
