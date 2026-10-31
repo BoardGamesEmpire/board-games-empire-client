@@ -611,6 +611,10 @@
   "@eventsOccurrenceProposed": {
     "description": "Where one of an event's dates stands, in the dates on the event's screen: suggested while a vote chooses the date, and not settled yet."
   },
+  "eventsOccurrencePassed": "Date passed",
+  "@eventsOccurrencePassed": {
+    "description": "Where one of an event's dates stands, in the dates on the event's screen: a suggested date whose time went by before the host chose it, so it is closed unless moved to a later time."
+  },
   "eventsOccurrenceConfirmed": "Confirmed",
   "@eventsOccurrenceConfirmed": {
     "description": "Where one of an event's dates stands, in the dates on the event's screen: settled: the event happens then."

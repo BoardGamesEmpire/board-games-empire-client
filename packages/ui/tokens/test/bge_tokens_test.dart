@@ -19,6 +19,9 @@ void main() {
       expect(t.radiusLg, 16);
       expect(t.minTapTarget, 48);
       expect(t.focusOutlineWidth, 2);
+      expect(t.separatorThickness, 2);
+      expect(t.separatorInset, 96);
+      expect(t.accentBarWidth, 4);
       expect(t.contentMaxWidth, 480);
       expect(t.paneMaxWidth, 840);
       expect(t.breakpointMedium, 600);
@@ -210,6 +213,10 @@ void main() {
       'minTapTarget': (t) => t.copyWith(minTapTarget: t.minTapTarget + 1),
       'focusOutlineWidth': (t) =>
           t.copyWith(focusOutlineWidth: t.focusOutlineWidth + 1),
+      'separatorThickness': (t) =>
+          t.copyWith(separatorThickness: t.separatorThickness + 1),
+      'separatorInset': (t) => t.copyWith(separatorInset: t.separatorInset + 1),
+      'accentBarWidth': (t) => t.copyWith(accentBarWidth: t.accentBarWidth + 1),
       'contentMaxWidth': (t) =>
           t.copyWith(contentMaxWidth: t.contentMaxWidth + 1),
       'paneMaxWidth': (t) => t.copyWith(paneMaxWidth: t.paneMaxWidth + 1),

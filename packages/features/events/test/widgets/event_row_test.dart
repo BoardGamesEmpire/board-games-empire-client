@@ -1,6 +1,7 @@
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -243,5 +244,43 @@ void main() {
     await tester.tap(find.byKey(EventOverviewScreen.rowKey('e-1')));
 
     expect(opened, ['e-1']);
+  });
+
+  testWidgets('keeps its focus when it gains or loses its separator', (
+    tester,
+  ) async {
+    // A row becomes the last of its group, or stops being it, when a row
+    // below it leaves or arrives. Its focus must survive that, as it does a
+    // row above it leaving (#549).
+    Future<void> pumpSeparated({required bool separated}) => tester.pumpWidget(
+      MaterialApp(
+        theme: BgeTheme.light(),
+        localizationsDelegates: EventsLocalizations.localizationsDelegates,
+        supportedLocales: EventsLocalizations.supportedLocales,
+        home: Scaffold(
+          body: EventRowTile(
+            row: undated(beingChosen: false),
+            now: () => now,
+            onOpen: (_, _) {},
+            separated: separated,
+          ),
+        ),
+      ),
+    );
+
+    await pumpSeparated(separated: true);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    final focused = FocusManager.instance.primaryFocus;
+    expect(
+      focused?.context?.findAncestorWidgetOfExactType<EventRowTile>(),
+      isNotNull,
+    );
+
+    await pumpSeparated(separated: false);
+    expect(FocusManager.instance.primaryFocus, same(focused));
+
+    await pumpSeparated(separated: true);
+    expect(FocusManager.instance.primaryFocus, same(focused));
   });
 }
