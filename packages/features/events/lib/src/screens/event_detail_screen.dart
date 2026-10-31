@@ -548,7 +548,8 @@ class _Dates extends StatelessWidget {
       schedulingMode: event.schedulingMode,
       now: now,
       actionsFor: hasActions
-          ? (occurrence) => dateActionsFor(event, occurrence, state.actions)
+          ? (occurrence, at) =>
+                dateActionsFor(event, occurrence, state.actions, now: at)
           : null,
       onAdd:
           hasActions && canAddDate(event, snapshot.occurrences, state.actions)

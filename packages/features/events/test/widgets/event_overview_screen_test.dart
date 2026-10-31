@@ -220,6 +220,91 @@ void main() {
     });
   });
 
+  group('the groups are told apart', () {
+    Future<void> showAll(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(harness());
+      items.add([
+        item('e-past', occurrences: [confirmed('p', day(20))]),
+        item('e-plan'),
+        item('e-up', occurrences: [confirmed('o', day(25))]),
+      ]);
+      await tester.pump();
+    }
+
+    testWidgets('by a heading larger than the rows inside', (tester) async {
+      await showAll(tester);
+
+      for (final heading in ['Upcoming', 'Planning', 'Past']) {
+        expect(
+          tester.getSize(find.text(heading)).height,
+          greaterThan(tester.getSize(find.text('Game night').first).height),
+          reason: heading,
+        );
+      }
+    });
+
+    testWidgets('and rows within a group by a red separator', (tester) async {
+      await tester.pumpWidget(harness());
+      items.add([
+        item('e-1', occurrences: [confirmed('a', day(25))]),
+        item('e-2', occurrences: [confirmed('b', day(26))]),
+        item('e-3', occurrences: [confirmed('c', day(27))]),
+        item('e-plan'),
+      ]);
+      await tester.pump();
+
+      // Between the three upcoming rows, not after the last of them, and none
+      // for a group of one.
+      final dividers = tester.widgetList<Divider>(find.byType(Divider));
+      expect(dividers, hasLength(2));
+      final context = tester.element(find.text('Upcoming'));
+      for (final divider in dividers) {
+        expect(divider.color, Theme.of(context).colorScheme.error);
+        expect(divider.thickness, BgeTokens.standard.separatorThickness);
+        expect(divider.indent, BgeTokens.standard.separatorInset);
+        expect(divider.endIndent, BgeTokens.standard.separatorInset);
+      }
+    });
+
+    testWidgets('by a bar of its own colour', (tester) async {
+      await showAll(tester);
+
+      final colours = [
+        for (final group in EventGroup.values)
+          ((tester
+                              .widget<DecoratedSliver>(
+                                find.descendant(
+                                  of: find.byKey(
+                                    EventOverviewScreen.groupKey(group),
+                                  ),
+                                  matching: find.byType(DecoratedSliver),
+                                ),
+                              )
+                              .decoration
+                          as BoxDecoration)
+                      .border!
+                  as BorderDirectional)
+              .start
+              .color,
+      ];
+      expect(colours.toSet(), hasLength(3));
+    });
+
+    testWidgets('by a gap between one group and the next', (tester) async {
+      await showAll(tester);
+
+      final gap =
+          tester.getTopLeft(find.text('Planning')).dy -
+          tester
+              .getBottomLeft(find.byKey(EventOverviewScreen.rowKey('e-up')))
+              .dy;
+      expect(gap, greaterThanOrEqualTo(BgeTokens.spaceXlValue));
+    });
+  });
+
   testWidgets('tells a screen reader how many rows there are', (tester) async {
     // Rows are numbered across the groups on screen, so "item 6 of 6" is
     // the last row shown, not the last of its group (#210).

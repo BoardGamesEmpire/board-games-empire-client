@@ -7,6 +7,8 @@ import '../support/event_list_items.dart';
 
 /// Which date actions a status offers (#506), on top of the role table.
 void main() {
+  final now = DateTime.utc(2026, 10, 30);
+
   const all = {
     EventAction.editDate,
     EventAction.confirmDate,
@@ -31,7 +33,7 @@ void main() {
     final event = eventWith();
 
     Set<EventAction> forStatus(OccurrenceStatus status) =>
-        dateActionsFor(event, date(status), all);
+        dateActionsFor(event, date(status), all, now: now);
 
     test('a proposed date can be edited, confirmed, declined or removed', () {
       expect(forStatus(OccurrenceStatus.proposed), {
@@ -64,6 +66,58 @@ void main() {
       });
     });
 
+    group('once a proposed date has passed', () {
+      const closed = {EventAction.editDate, EventAction.removeDate};
+
+      EventOccurrence proposed(DateTime? start, {DateTime? end}) =>
+          date(OccurrenceStatus.proposed)
+              .copyWith(startDate: start, endDate: end);
+
+      Set<EventAction> actions(EventOccurrence date) =>
+          dateActionsFor(event, date, all, now: now);
+
+      test('it can no longer be confirmed or declined', () {
+        expect(
+          actions(proposed(now.subtract(const Duration(days: 1)))),
+          closed,
+        );
+      });
+
+      test('its end decides, not its start', () {
+        final yesterday = now.subtract(const Duration(days: 1));
+
+        expect(
+          actions(proposed(yesterday, end: now.add(const Duration(hours: 1)))),
+          contains(EventAction.confirmDate),
+        );
+        expect(
+          actions(
+            proposed(yesterday, end: now.subtract(const Duration(hours: 1))),
+          ),
+          closed,
+        );
+      });
+
+      test('a date ending now is still open', () {
+        expect(actions(proposed(now)), contains(EventAction.confirmDate));
+      });
+
+      test('a date with no start stays open, whatever its end', () {
+        expect(actions(proposed(null)), contains(EventAction.confirmDate));
+        expect(
+          actions(proposed(null, end: now.subtract(const Duration(days: 1)))),
+          contains(EventAction.confirmDate),
+        );
+      });
+
+      test('a past confirmed date keeps its actions', () {
+        final past = date(OccurrenceStatus.confirmed)
+            .copyWith(startDate: now.subtract(const Duration(days: 1)));
+
+        expect(actions(past), contains(EventAction.cancelDate));
+      });
+    });
+
     test('a date of unknown status offers nothing', () {
       expect(forStatus(OccurrenceStatus.unknown), isEmpty);
     });
@@ -76,7 +130,7 @@ void main() {
       test('a ${status.name} event offers no date write', () {
         for (final s in OccurrenceStatus.values) {
           expect(
-            dateActionsFor(eventWith(status: status), date(s), all),
+            dateActionsFor(eventWith(status: status), date(s), all, now: now),
             isEmpty,
           );
         }
@@ -88,7 +142,7 @@ void main() {
         dateActionsFor(event, date(OccurrenceStatus.confirmed), {
           EventAction.editDate,
           EventAction.cancelDate,
-        }),
+        }, now: now),
         {EventAction.editDate, EventAction.cancelDate},
       );
     });
@@ -98,7 +152,7 @@ void main() {
         dateActionsFor(event, date(OccurrenceStatus.proposed), {
           EventAction.edit,
           EventAction.addDate,
-        }),
+        }, now: now),
         isEmpty,
       );
     });

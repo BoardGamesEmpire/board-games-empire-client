@@ -152,8 +152,12 @@ class _EventGroupPage extends StatelessWidget {
             return BgeKeyedSliverList<EventRow>(
               items: rows,
               keyOf: (row) => EventOverviewScreen.rowKey(row.event.id),
-              itemBuilder: (context, row) =>
-                  EventRowTile(row: row, now: clock, onOpen: onOpen),
+              itemBuilder: (context, row) => EventRowTile(
+                row: row,
+                now: clock,
+                onOpen: onOpen,
+                separated: !identical(row, rows.last),
+              ),
             );
           },
         ),
