@@ -109,8 +109,6 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     on<EventOverviewClockTicked>(_onClockTicked);
     on<EventOverviewRetryRequested>(_onRetryRequested);
 
-    _cache = _watchCache();
-
     _householdUpdates = households?.listen(
       (households) => add(EventOverviewHouseholdsUpdated(households)),
       // The names annotate the rows. Losing them must not lose the rows,
@@ -132,6 +130,10 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
         stackTrace: stackTrace,
       ),
     );
+
+    // After the hydrate, whose replay is then queued first: a cache answering
+    // at once must not read an empty list as settled during the first fill.
+    _cache = _watchCache();
   }
 
   final EventRepository _repository;

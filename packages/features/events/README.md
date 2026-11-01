@@ -153,6 +153,26 @@ offers under its message. The shell wires `onOpen` to the detail and
 `/events`, and each group at `/events/upcoming`, `/events/planning` and
 `/events/past`.
 
+## The home section
+
+`UpcomingEventsSection` is the home page's first section (#613). It shows the
+user's next three upcoming events, with their RSVP where it's known, from its
+own `EventOverviewBloc`. It passes that bloc no entry trigger, because activating
+the session already runs a pass. With nothing upcoming of their own, including
+when they have only planning and past events, it asks `UpcomingFallbackCubit` for
+what's coming up that they could see, from
+`EventRemoteDataSource.browseEvents`. Those rows are network-only: nothing writes
+them to the cache, so they never reach the events screen. Offline the section
+shows its empty text, as it does when a read fails with no rows up, while a failed
+re-read leaves the rows in place. They carry no RSVP and offer no way to join,
+because nobody can add themselves to an event until backend#812. The
+cubit reads when the rows are first wanted, when home is uncovered and on
+reconnecting, and waits for the cache's answer, so the first sync can't flash
+other people's events ahead of the user's own. After a failed pass it doesn't
+read at all until one lands, because the user may have events that pass never
+reached, and the section shows its empty text. Opening a fallback row caches that
+event with `read` access, which keeps it off the events screen as well.
+
 ## The detail
 
 `EventDetailScreen` shows one event, at `/events/:eventId` above the list it

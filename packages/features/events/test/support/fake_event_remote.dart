@@ -22,6 +22,19 @@ typedef EventDateRequest = ({
   String? reason,
 });
 
+/// One whole page of [rows], as a browse read answers (#613).
+PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
+    PaginatedResult(
+      items: rows,
+      meta: PaginationMeta(
+        page: 1,
+        limit: 3,
+        total: rows.length,
+        totalPages: 1,
+        hasMore: false,
+      ),
+    );
+
 /// An event remote that answers list requests from [respond], detail requests
 /// from [detail], creates from [created], deletes from [deleted] and date
 /// writes from [dateWritten], and records each one. A request it has no

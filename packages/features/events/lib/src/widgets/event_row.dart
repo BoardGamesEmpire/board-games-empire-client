@@ -6,13 +6,13 @@ import 'package:events/l10n/events_localizations.dart';
 import '../overview/event_groups.dart';
 import 'event_labels.dart';
 
-/// One event on the overview or a group's page (#497): its title, when it
-/// happens, and where, whose and whether the user is going, as one
+/// One event on the overview, a group's page or home (#497, #613): its title,
+/// when it happens, and where, whose and whether the user is going, as one
 /// semantics node.
 ///
 /// `EventOverviewScreen.rowKey` is held by the wrapper `BgeKeyedSliverList`
 /// puts around each row, not by the row (#549); [key] is for a caller that
-/// keys one directly.
+/// keys one directly, as home does, whose rows sit on a box page.
 ///
 /// ## The date is the device's
 ///
