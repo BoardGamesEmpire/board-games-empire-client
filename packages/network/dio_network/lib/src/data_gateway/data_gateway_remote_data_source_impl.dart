@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
@@ -15,11 +16,25 @@ import '../network/decode_json_body.dart';
 ///
 /// Failure taxonomy per the [DataGatewayRemoteDataSource] contract.
 class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
-  const DataGatewayRemoteDataSourceImpl(this._dio);
+  const DataGatewayRemoteDataSourceImpl(this._dio, {this._browser = kIsWeb});
 
   final Dio _dio;
 
+  /// Whether a browser's adapter carries the requests. See [interviewTimeout].
+  final bool _browser;
+
   static const String _basePath = '/api/data-gateways';
+
+  /// How long an interview may take to answer. The server waits for it and
+  /// sets no deadline of its own (backend#722), so the factories' ten seconds
+  /// could cut one short.
+  ///
+  /// In a browser it is the connect timeout as well: with no request body, the
+  /// adapter there keeps the connect timer running until response bytes arrive,
+  /// so a slow answer surfaces as a connection timeout. Elsewhere the connect
+  /// timer stops at the connection, so it keeps the factory's limit, and a
+  /// server that can't be reached says so as soon as any other call would.
+  static const Duration interviewTimeout = Duration(seconds: 60);
 
   /// See `GameCollectionRemoteDataSourceImpl._plainBody`: `Response<String>`
   /// alone is not enough when the injected Dio's own response type is
@@ -30,6 +45,14 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// 4xx statuses worth retrying: an expired session (401), proxy
   /// authentication (407), a request timeout (408), and the throttle (429).
   static const Set<int> _retryable4xx = {401, 407, 408, 429};
+
+  /// Whether a request that failed with [type] ran out of time waiting for an
+  /// answer. A browser reports a slow answer as a connection timeout (see
+  /// [interviewTimeout]). Elsewhere a connection timeout means the request
+  /// never left, so it says nothing is running on the server.
+  bool _ranOutOfTime(DioExceptionType type) =>
+      type == DioExceptionType.receiveTimeout ||
+      (_browser && type == DioExceptionType.connectionTimeout);
 
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
@@ -142,6 +165,29 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   }
 
   @override
+  Future<DataGatewayChangeResult> setDisabledCapabilities(
+    String id,
+    List<String> disabled,
+  ) async {
+    const action = 'DataGateway capability update';
+    final response = await _send(
+      request: () => _dio.patch<String>(
+        _pathOf(id),
+        options: _plainBody,
+        // The whole list, in the order given: the server replaces its list
+        // with this one, so an empty list is how everything is switched back
+        // on.
+        data: {'disabledCapabilities': disabled},
+      ),
+      action: action,
+      rowRoute: true,
+      // The body names no name, so a 409 here cannot be a name clash.
+      conflictIsName: false,
+    );
+    return _changeResult(response, action: action);
+  }
+
+  @override
   Future<DataGatewayChangeResult> delete(String id) async {
     const action = 'DataGateway delete';
     final response = await _send(
@@ -176,6 +222,27 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     return _changeResult(response, action: action);
   }
 
+  @override
+  Future<DataGatewayInterviewResult> interview(String id) async {
+    const action = 'DataGateway interview';
+    final response = await _send(
+      request: () => _dio.post<String>(
+        '${_pathOf(id)}/interview',
+        options: _plainBody.copyWith(
+          connectTimeout: _browser ? interviewTimeout : null,
+          receiveTimeout: interviewTimeout,
+        ),
+      ),
+      action: action,
+      rowRoute: true,
+      // The route answers 409 for a DataGateway that is disabled.
+      conflictIsName: false,
+      // The server may keep interviewing after the caller stops waiting.
+      timeoutIsUnknown: true,
+    );
+    return _interviewResult(response, action: action);
+  }
+
   static String _pathOf(String id) => '$_basePath/${Uri.encodeComponent(id)}';
 
   // ── Request plumbing ────────────────────────────────────────────────
@@ -185,16 +252,32 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   ///
   /// [rowRoute] says whether the path names one DataGateway, which is what
   /// lets an application 404 mean that row is gone.
+  ///
+  /// [conflictIsName] says whether a 409 from the API can mean another
+  /// DataGateway has the name. A route that cannot name one passes false, and
+  /// its 409 is a [DataGatewayConflictException] instead.
+  ///
+  /// [timeoutIsUnknown] says the server may still be working on a request that
+  /// ran out of time, so the outcome is unknown. Such a request throws
+  /// [DataGatewayTimedOutException], not a transient failure.
   Future<({Map<String, dynamic> body, int status})> _send({
     required Future<Response<String>> Function() request,
     required String action,
     required bool rowRoute,
+    bool conflictIsName = true,
+    bool timeoutIsUnknown = false,
   }) async {
     late final Response<String> response;
     try {
       response = await request();
     } on DioException catch (error) {
-      throw _classifyDioException(error, action: action, rowRoute: rowRoute);
+      throw _classifyDioException(
+        error,
+        action: action,
+        rowRoute: rowRoute,
+        conflictIsName: conflictIsName,
+        timeoutIsUnknown: timeoutIsUnknown,
+      );
     } on Object catch (error) {
       // Nothing else should escape Dio. `Object`, not `Exception`, so an
       // `Error` cannot break the "no raw transport error" promise either.
@@ -215,6 +298,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         cause: null,
         rowRoute: rowRoute,
         body: response.data,
+        conflictIsName: conflictIsName,
       );
     }
 
@@ -291,6 +375,32 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
               responseKey: 'disconnection_response',
               action: DataGatewayConnectionAction.disconnect,
             ),
+      );
+    },
+    action: action,
+    status: response.status,
+  );
+
+  /// Reads `{ dataGateway, interview_attempt, interview_response }`, the body
+  /// the interview route answers with.
+  ///
+  /// `interview_attempt` is always true there, so it says nothing and is not
+  /// read.
+  DataGatewayInterviewResult _interviewResult(
+    ({Map<String, dynamic> body, int status}) response, {
+    required String action,
+  }) => _parse(
+    () {
+      final body = response.body;
+      final answer = body['interview_response'];
+      if (answer is! Map<String, dynamic>) {
+        throw const FormatException(
+          'response is missing an "interview_response" object',
+        );
+      }
+      return DataGatewayInterviewResult(
+        dataGateway: _mapDataGateway(_dataGatewayObject(body)),
+        succeeded: answer['success'] as bool,
       );
     },
     action: action,
@@ -426,6 +536,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     DioException error, {
     required String action,
     required bool rowRoute,
+    bool conflictIsName = true,
+    bool timeoutIsUnknown = false,
   }) {
     final status = error.response?.statusCode;
     if (status != null) {
@@ -435,6 +547,13 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
         cause: error,
         rowRoute: rowRoute,
         body: error.response?.data,
+        conflictIsName: conflictIsName,
+      );
+    }
+    if (timeoutIsUnknown && _ranOutOfTime(error.type)) {
+      return DataGatewayTimedOutException(
+        '$action timed out; the server may still be working',
+        cause: error,
       );
     }
     return DataGatewayTransientException('$action failed', cause: error);
@@ -446,6 +565,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     required Object? cause,
     required bool rowRoute,
     required Object? body,
+    bool conflictIsName = true,
   }) {
     if (status >= 500 || _retryable4xx.contains(status)) {
       return DataGatewayTransientException(
@@ -500,11 +620,19 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       );
     }
     if (status == 409 && fromApi) {
-      return DataGatewayNameInUseException(
-        message,
-        cause: cause,
-        statusCode: status,
-      );
+      // On a route that takes a name, the application's 409 is a name clash.
+      // On the others it is the row's state refusing the request.
+      return conflictIsName
+          ? DataGatewayNameInUseException(
+              message,
+              cause: cause,
+              statusCode: status,
+            )
+          : DataGatewayConflictException(
+              message,
+              cause: cause,
+              statusCode: status,
+            );
     }
     if (status >= 400) {
       return DataGatewayPermanentException(

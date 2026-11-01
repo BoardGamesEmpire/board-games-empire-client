@@ -134,12 +134,27 @@ String _listBody(
 String _envelope(int status, String error, String message) =>
     jsonEncode({'statusCode': status, 'message': message, 'error': error});
 
+/// The backend's rendering of a deadlock that outlived its own retry.
+String _retryableConflict() => jsonEncode({
+  'statusCode': 409,
+  'error': 'Conflict',
+  'message': 'The request collided with another; try it again.',
+  'code': 'TransactionDeadlockError',
+  'retryable': true,
+});
+
+/// What the production factories give every request, before a source asks for
+/// more.
+const _factoryTimeout = Duration(seconds: 10);
+
 /// One request as the transport received it.
 typedef _Sent = ({
   String method,
   String path,
   Map<String, dynamic> query,
   Object? body,
+  Duration? connectTimeout,
+  Duration? receiveTimeout,
 });
 
 /// Answers every request with one canned response, and records what it was
@@ -167,6 +182,8 @@ class _RecordingAdapter implements HttpClientAdapter {
       path: options.path,
       query: options.queryParameters,
       body: requestBody,
+      connectTimeout: options.connectTimeout,
+      receiveTimeout: options.receiveTimeout,
     ));
     return ResponseBody.fromString(
       body,
@@ -184,13 +201,22 @@ class _RecordingAdapter implements HttpClientAdapter {
 void main() {
   late _RecordingAdapter adapter;
 
-  /// A data source over a real Dio, permissive about status like the
-  /// production factories.
-  DataGatewayRemoteDataSource answering(String body, {int status = 200}) {
+  /// A data source over a real Dio, permissive about status and holding the
+  /// timeouts of the production factories.
+  DataGatewayRemoteDataSource answering(
+    String body, {
+    int status = 200,
+    bool browser = false,
+  }) {
     adapter = _RecordingAdapter(body, status);
-    final dio = Dio(BaseOptions(validateStatus: (_) => true))
-      ..httpClientAdapter = adapter;
-    return DataGatewayRemoteDataSourceImpl(dio);
+    final dio = Dio(
+      BaseOptions(
+        validateStatus: (_) => true,
+        connectTimeout: _factoryTimeout,
+        receiveTimeout: _factoryTimeout,
+      ),
+    )..httpClientAdapter = adapter;
+    return DataGatewayRemoteDataSourceImpl(dio, browser: browser);
   }
 
   group('fetchPage', () {
@@ -700,19 +726,22 @@ void main() {
       );
     });
 
-    test('a 409 for a deadlock is transient, not the name being in use: '
-        'nothing about the edit was wrong', () async {
-      // The backend's rendering of a deadlock that outlived its own retry.
+    test('a 409 from the API is still a name already in use: an edit can '
+        'rename', () async {
       final remote = answering(
-        jsonEncode({
-          'statusCode': 409,
-          'error': 'Conflict',
-          'message': 'The request collided with another; try it again.',
-          'code': 'TransactionDeadlockError',
-          'retryable': true,
-        }),
+        _envelope(409, 'Conflict', 'A DataGateway with that name exists.'),
         status: 409,
       );
+
+      await expectLater(
+        remote.update('dg_1', const DataGatewayChanges(name: 'Steam')),
+        throwsA(isA<DataGatewayNameInUseException>()),
+      );
+    });
+
+    test('a 409 for a deadlock is transient, not the name being in use: '
+        'nothing about the edit was wrong', () async {
+      final remote = answering(_retryableConflict(), status: 409);
 
       await expectLater(
         remote.update('dg_1', const DataGatewayChanges(connectionPort: 8443)),
@@ -784,6 +813,249 @@ void main() {
       expect(
         result.connectionAttempt?.action,
         DataGatewayConnectionAction.disconnect,
+      );
+    });
+  });
+
+  group('capability writes (#457)', () {
+    /// What a PATCH that leaves `enabled` alone answers: the row, and no
+    /// connection attempt.
+    String switched({List<String> disabled = const []}) => jsonEncode({
+      'dataGateway': _row(disabledCapabilities: disabled),
+      'connection_response': null,
+      'connection_attempt': false,
+    });
+
+    test(
+      'setDisabledCapabilities sends the whole list, in the order given',
+      () async {
+        final remote = answering(switched(disabled: ['Search', 'FutureThing']));
+
+        await remote.setDisabledCapabilities('dg_1', ['Search', 'FutureThing']);
+
+        final sent = adapter.sent.single;
+        expect(sent.method, 'PATCH');
+        expect(sent.path, '/api/data-gateways/dg_1');
+        expect(sent.body, {
+          'disabledCapabilities': ['Search', 'FutureThing'],
+        });
+      },
+    );
+
+    test('setDisabledCapabilities sends an empty list, which switches all '
+        'back on', () async {
+      final remote = answering(switched());
+
+      await remote.setDisabledCapabilities('dg_1', const []);
+
+      expect(adapter.sent.single.body, {'disabledCapabilities': <String>[]});
+    });
+
+    test('setDisabledCapabilities reports no connection attempt', () async {
+      final remote = answering(switched());
+
+      final result = await remote.setDisabledCapabilities('dg_1', ['Search']);
+
+      expect(result.connectionAttempt, isNull);
+    });
+
+    test('a 409 from setDisabledCapabilities is a conflict, not a name in '
+        'use: the request names no name', () async {
+      final remote = answering(
+        _envelope(409, 'Conflict', 'The DataGateway cannot change now.'),
+        status: 409,
+      );
+
+      await expectLater(
+        remote.setDisabledCapabilities('dg_1', ['Search']),
+        throwsA(isA<DataGatewayConflictException>()),
+      );
+    });
+  });
+
+  group('interview (#457)', () {
+    /// The interview route's answer: the row read again, and how the interview
+    /// went. The route answers 200 whatever the outcome.
+    String interviewed({
+      Map<String, dynamic>? response,
+      Map<String, dynamic>? row,
+    }) => jsonEncode({
+      'dataGateway': row ?? _row(),
+      'interview_attempt': true,
+      'interview_response': response ?? {'success': true},
+    });
+
+    DataGatewayRemoteDataSource unreachableWith(
+      DioExceptionType type, {
+      bool browser = false,
+    }) => DataGatewayRemoteDataSourceImpl(
+      unreachableDio(type),
+      browser: browser,
+    );
+
+    test('interview posts and reads a success', () async {
+      final remote = answering(interviewed());
+
+      final result = await remote.interview('dg_1');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'POST');
+      expect(sent.path, '/api/data-gateways/dg_1/interview');
+      expect(sent.body, isNull);
+      expect(result.dataGateway.id, 'dg_1');
+      expect(result.succeeded, isTrue);
+    });
+
+    test('interview reads a failed attempt as a result, not an exception: '
+        'the server answers it with a 200', () async {
+      final remote = answering(
+        interviewed(
+          response: {
+            'success': false,
+            'message': 'The DataGateway could not be interviewed.',
+          },
+          row: _row(
+            interview: _interview(
+              failure: {'code': 'PingFailed', 'at': '2026-10-29T10:00:00.000Z'},
+            ),
+          ),
+        ),
+      );
+
+      final result = await remote.interview('dg_1');
+
+      expect(result.succeeded, isFalse);
+      // The row is read again after the interview, so it already records the
+      // failure.
+      expect(
+        result.dataGateway.interview.failure?.code,
+        DataGatewayInterviewFailureCode.pingFailed,
+      );
+    });
+
+    test('an interview answer with no interview_response is a permanent '
+        'failure', () async {
+      final remote = answering(jsonEncode({'dataGateway': _row()}));
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayPermanentException>()),
+      );
+    });
+
+    test('interview waits longer for its answer, and no longer to connect, so '
+        'a server that cannot be reached says so at once', () async {
+      final remote = answering(interviewed());
+
+      await remote.interview('dg_1');
+
+      final sent = adapter.sent.single;
+      const interviewTimeout = DataGatewayRemoteDataSourceImpl.interviewTimeout;
+      expect(sent.connectTimeout, _factoryTimeout);
+      expect(sent.receiveTimeout, interviewTimeout);
+      expect(interviewTimeout, greaterThan(_factoryTimeout));
+    });
+
+    test('in a browser, interview waits longer to connect as well, because a '
+        'slow answer there runs on the connect timer', () async {
+      final remote = answering(interviewed(), browser: true);
+
+      await remote.interview('dg_1');
+
+      final sent = adapter.sent.single;
+      const interviewTimeout = DataGatewayRemoteDataSourceImpl.interviewTimeout;
+      expect(sent.connectTimeout, interviewTimeout);
+      expect(sent.receiveTimeout, interviewTimeout);
+    });
+
+    test('a timeout on any other route stays transient: only an interview is '
+        'known to keep running on the server', () async {
+      final remote = unreachableWith(DioExceptionType.receiveTimeout);
+
+      await expectLater(
+        remote.connect('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test('a 409 from interview is a conflict, not a name in use', () async {
+      final remote = answering(
+        _envelope(409, 'Conflict', 'The DataGateway dg_1 is disabled.'),
+        status: 409,
+      );
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(
+          isA<DataGatewayConflictException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            409,
+          ),
+        ),
+      );
+    });
+
+    test('a retryable 409 from interview stays transient', () async {
+      final remote = answering(_retryableConflict(), status: 409);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test('a 404 from interview means the row is gone', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'DataGateway dg_1 was not found.'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayNotFoundException>()),
+      );
+    });
+
+    test('a receive timeout on interview is timed out, not transient: the '
+        'server may still be working', () async {
+      final remote = unreachableWith(DioExceptionType.receiveTimeout);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTimedOutException>()),
+      );
+    });
+
+    test('a connection timeout on interview stays transient outside a browser: '
+        'the request never left', () async {
+      final remote = unreachableWith(DioExceptionType.connectionTimeout);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test('a connection timeout on interview is timed out in a browser, which '
+        'reports a slow answer that way', () async {
+      final remote = unreachableWith(
+        DioExceptionType.connectionTimeout,
+        browser: true,
+      );
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTimedOutException>()),
+      );
+    });
+
+    test('a connection error on interview stays transient', () async {
+      final remote = unreachableWith(DioExceptionType.connectionError);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
       );
     });
   });

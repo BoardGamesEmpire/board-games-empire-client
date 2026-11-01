@@ -12,6 +12,7 @@ export 'src/domain/data_gateway/data_gateway_auth_type.dart';
 export 'src/domain/data_gateway/data_gateway_change_result.dart';
 export 'src/domain/data_gateway/data_gateway_input.dart';
 export 'src/domain/data_gateway/data_gateway_interview.dart';
+export 'src/domain/data_gateway/data_gateway_interview_result.dart';
 
 export 'src/domain/device/build_info.dart';
 export 'src/domain/device/device_preferences.dart';

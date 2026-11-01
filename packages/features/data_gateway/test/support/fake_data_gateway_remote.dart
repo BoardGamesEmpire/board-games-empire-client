@@ -18,9 +18,12 @@ class FakeDataGatewayRemote implements DataGatewayRemoteDataSource {
     DataGatewayChanges changes,
   )?
   onUpdate;
+  Future<DataGatewayChangeResult> Function(String id, List<String> disabled)?
+  onSetDisabledCapabilities;
   Future<DataGatewayChangeResult> Function(String id)? onDelete;
   Future<DataGatewayChangeResult> Function(String id)? onConnect;
   Future<DataGatewayChangeResult> Function(String id)? onDisconnect;
+  Future<DataGatewayInterviewResult> Function(String id)? onInterview;
 
   /// Answers every list read with [rows] on one page.
   void listing(List<DataGateway> rows) =>
@@ -60,6 +63,18 @@ class FakeDataGatewayRemote implements DataGatewayRemoteDataSource {
   }
 
   @override
+  Future<DataGatewayChangeResult> setDisabledCapabilities(
+    String id,
+    List<String> disabled,
+  ) {
+    calls.add('setDisabledCapabilities($id, $disabled)');
+    return _run(onSetDisabledCapabilities, 'setDisabledCapabilities')(
+      id,
+      disabled,
+    );
+  }
+
+  @override
   Future<DataGatewayChangeResult> delete(String id) {
     calls.add('delete($id)');
     return _run(onDelete, 'delete')(id);
@@ -75,6 +90,12 @@ class FakeDataGatewayRemote implements DataGatewayRemoteDataSource {
   Future<DataGatewayChangeResult> disconnect(String id) {
     calls.add('disconnect($id)');
     return _run(onDisconnect, 'disconnect')(id);
+  }
+
+  @override
+  Future<DataGatewayInterviewResult> interview(String id) {
+    calls.add('interview($id)');
+    return _run(onInterview, 'interview')(id);
   }
 
   static T _run<T extends Function>(T? handler, String name) =>
