@@ -530,18 +530,16 @@ class _SendFormState extends State<_SendForm> {
                 },
               ),
               const BgeGap.md(),
-              ReactiveDropdownField<HouseholdRole>(
+              BgeDropdownField<HouseholdRole>(
                 key: SendHouseholdInviteScreen.roleKey,
                 formControlName: 'role',
                 readOnly: submitting,
-                decoration: InputDecoration(
-                  labelText: l10n.inviteSendRoleLabel,
-                ),
+                label: l10n.inviteSendRoleLabel,
                 items: [
                   for (final role in widget.roles)
-                    DropdownMenuItem(
+                    BgeDropdownItem(
                       value: role,
-                      child: Text(householdRoleLabel(l10n, role)),
+                      label: householdRoleLabel(l10n, role),
                     ),
                 ],
               ),

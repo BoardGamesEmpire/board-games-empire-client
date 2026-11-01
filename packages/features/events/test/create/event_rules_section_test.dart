@@ -370,8 +370,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    DropdownButton<T> dropdown<T>(WidgetTester tester) =>
-        tester.widget<DropdownButton<T>>(find.byType(DropdownButton<T>));
+    BgeDropdownField<T> dropdown<T>(WidgetTester tester) =>
+        tester.widget<BgeDropdownField<T>>(find.byType(BgeDropdownField<T>));
 
     Finder labelled(Key field, String label) =>
         find.descendant(of: find.byKey(field), matching: find.text(label));
@@ -397,15 +397,22 @@ void main() {
       await toggleRules(tester);
 
       // Untouched, it reads as the server's default, and Direct leads.
-      final modes = dropdown<GameAdditionMode>(tester);
-      expect(modes.value, isNull);
-      expect((modes.hint! as Text).data, 'Anyone attending adds them');
-      expect(modes.items!.map((item) => item.value), [
-        GameAdditionMode.direct,
-        GameAdditionMode.requiresVote,
-        GameAdditionMode.hostApproval,
-        GameAdditionMode.hostOnly,
-      ]);
+      expect(
+        labelled(
+          EventRulesSection.gameAdditionKey,
+          'Anyone attending adds them',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        dropdown<GameAdditionMode>(tester).items.map((item) => item.value),
+        [
+          GameAdditionMode.direct,
+          GameAdditionMode.requiresVote,
+          GameAdditionMode.hostApproval,
+          GameAdditionMode.hostOnly,
+        ],
+      );
       expect(
         labelled(EventRulesSection.gameAdditionKey, 'How games get added'),
         findsOneWidget,
@@ -614,9 +621,9 @@ void main() {
       // No menu opened: the choices not picked are nowhere on screen.
       expect(find.text('The host approves them'), findsNothing);
       expect(gameAdditionOf(form).value, GameAdditionMode.requiresVote);
-      expect(dropdown<GameAdditionMode>(tester).onChanged, isNull);
-      expect(dropdown<VoteThresholdType>(tester).onChanged, isNull);
-      expect(dropdown<VoteQuorumType>(tester).onChanged, isNull);
+      expect(dropdown<GameAdditionMode>(tester).readOnly, isTrue);
+      expect(dropdown<VoteThresholdType>(tester).readOnly, isTrue);
+      expect(dropdown<VoteQuorumType>(tester).readOnly, isTrue);
       for (final key in [
         EventRulesSection.thresholdValueKey,
         EventRulesSection.quorumValueKey,

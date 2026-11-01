@@ -208,6 +208,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
+| `BgeDropdownField` | reactive_forms' `ReactiveDropdownField` in 4 form menus, whose menu covered the field (#649, #648) | Visible label; the menu opens under the field, as wide as it, and above it near the bottom of the screen; a long choice wraps, closed and open; a button with an expanded state that Enter or Space opens, the arrows move through and Escape closes, with focus back on the field after; read-only stays focusable; live-region error announcement |
 | `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
 | `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
 | `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
@@ -269,8 +270,9 @@ One rule, app-wide: while a submission is in flight, fields go **`readOnly`,
 never `enabled: false`**. A disabled field leaves the focus order, so a
 keyboard or screen-reader user mid-form has the control vanish underneath them
 for the duration of a network call. Read-only keeps it present and readable and
-still closes the keyboard submit path. `BgeTextField` deliberately exposes no
-`enabled` so two screens cannot make opposite choices about the same moment.
+still closes the keyboard submit path. `BgeTextField` and `BgeDropdownField`
+deliberately expose no `enabled` so two screens cannot make opposite choices
+about the same moment.
 
 The in-flight signal is carried by `BgeSubmitButton` — label swap plus spinner,
 in a live region — not by greying the form out.
@@ -480,7 +482,7 @@ legible body text on every surface role.
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`
-- [ ] Forms use `BgeTextField` + `BgeSubmitButton`
+- [ ] Forms use `BgeTextField`, `BgeDropdownField` + `BgeSubmitButton`
 - [ ] A submit that can fail on a screen that stays is wrapped in
       `BgeFormActions`, with its `title` decided by the rule above
 - [ ] A rejected submit calls `rejectSubmit()`

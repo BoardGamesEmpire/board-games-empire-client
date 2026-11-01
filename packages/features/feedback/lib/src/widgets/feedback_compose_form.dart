@@ -100,25 +100,21 @@ class FeedbackComposeForm extends StatelessWidget {
         children: [
           Text(l10n.feedbackComposeExplanation),
           const BgeGap.md(),
-          ReactiveDropdownField<FeedbackCategory>(
+          // Full width: sized to its widest item, "Feature request" overflowed
+          // by 24dp at 320dp wide, and by 264dp at 200% text.
+          BgeDropdownField<FeedbackCategory>(
             key: FeedbackComposeForm.categoryFieldKey,
             formControlName: FeedbackComposeFormModel.categoryControlName,
-            // Fills the field rather than sizing to its widest item. Sized to
-            // the item, "Feature request" overflowed the field by 24dp at
-            // 320dp wide, and by 264dp at 200% text.
-            isExpanded: true,
-            decoration: InputDecoration(
-              labelText: l10n.feedbackComposeCategoryLabel,
-            ),
+            label: l10n.feedbackComposeCategoryLabel,
             readOnly: !enabled,
             items: [
               for (final category in const [
                 FeedbackCategory.bug,
                 FeedbackCategory.featureRequest,
               ])
-                DropdownMenuItem(
+                BgeDropdownItem(
                   value: category,
-                  child: Text(_categoryLabel(l10n, category)),
+                  label: _categoryLabel(l10n, category),
                 ),
             ],
             validationMessages: {
@@ -141,20 +137,17 @@ class FeedbackComposeForm extends StatelessWidget {
               model.syncSeverityEnablement();
               return Padding(
                 padding: EdgeInsets.only(top: BgeTokens.of(context).spaceMd),
-                child: ReactiveDropdownField<FeedbackSeverity>(
+                // Full width, as category: at 200% text, 40dp over at 320dp.
+                child: BgeDropdownField<FeedbackSeverity>(
                   key: FeedbackComposeForm.severityFieldKey,
                   formControlName: FeedbackComposeFormModel.severityControlName,
-                  // As for category: at 200% text, 40dp over at 320dp wide.
-                  isExpanded: true,
                   readOnly: !enabled,
-                  decoration: InputDecoration(
-                    labelText: l10n.feedbackComposeSeverityLabel,
-                  ),
+                  label: l10n.feedbackComposeSeverityLabel,
                   items: [
                     for (final severity in FeedbackSeverity.values)
-                      DropdownMenuItem(
+                      BgeDropdownItem(
                         value: severity,
-                        child: Text(_severityLabel(l10n, severity)),
+                        label: _severityLabel(l10n, severity),
                       ),
                   ],
                   validationMessages: {

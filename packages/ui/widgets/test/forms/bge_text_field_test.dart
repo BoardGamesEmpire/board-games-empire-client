@@ -177,6 +177,35 @@ void main() {
       form.dispose();
     });
 
+    testWidgets('an error with no message of its own is announced as it is '
+        'shown', (tester) async {
+      final handle = tester.ensureSemantics();
+      final form = _form();
+      await tester.pumpWidget(
+        _host(
+          form,
+          const BgeTextField(formControlName: 'email', label: 'Email'),
+        ),
+      );
+
+      form.control('email').markAsTouched();
+      await tester.pump();
+
+      // reactive_forms shows the error's key when nothing names it.
+      expect(find.text(ValidationMessage.required), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics &&
+              (w.properties.liveRegion ?? false) &&
+              w.properties.label == ValidationMessage.required,
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+      form.dispose();
+    });
+
     testWidgets('announces nothing while the control is valid', (tester) async {
       final handle = tester.ensureSemantics();
       final form = _form();
@@ -209,8 +238,8 @@ void main() {
     // it was swapped away from. Nothing in the subtree registered an inherited
     // dependency on the group, so the swap went unnoticed.
     //
-    // `ReactiveTextField` does not rebind on its own, which is why these tests
-    // assert on the field and not only on the announcer. Its
+    // The field's binding does not rebind on its own, which is why these tests
+    // assert on the field and not only on the announcement. Its
     // `didChangeDependencies` does re-resolve the control (reactive_forms
     // 18.2.2, `reactive_form_field.dart:167-177`); what is missing is the
     // notification, because `_resolveFormControl` looks the group up with
@@ -556,6 +585,64 @@ void main() {
 
       expect(tester.widget<TextField>(find.byType(TextField)).readOnly, isTrue);
       form.dispose();
+    });
+  });
+
+  // The binding is this package's own, not reactive_forms' text field (#649).
+  // These pin what a rewrite of it could break that the groups above don't.
+  group('BgeTextField binding', () {
+    Future<FormGroup> pumpEmail(WidgetTester tester) async {
+      final form = _form();
+      addTearDown(form.dispose);
+      await tester.pumpWidget(
+        _host(
+          form,
+          const BgeTextField(formControlName: 'email', label: 'Email'),
+        ),
+      );
+      return form;
+    }
+
+    testWidgets('builds no ReactiveTextField', (tester) async {
+      await pumpEmail(tester);
+
+      expect(find.byType(ReactiveTextField<String>), findsNothing);
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('shows a value set on the untouched control', (tester) async {
+      final form = await pumpEmail(tester);
+
+      form.control('email').value = 'set@example.com';
+      await tester.pumpAndSettle();
+
+      expect(form.control('email').touched, isFalse);
+      expect(find.text('set@example.com'), findsOneWidget);
+    });
+
+    testWidgets('control.focus() focuses the field', (tester) async {
+      final form = await pumpEmail(tester);
+
+      // What a rejected submit does to the first invalid field (#230).
+      form.control('email').focus();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+    });
+
+    testWidgets('a disabled control draws a disabled field', (tester) async {
+      final form = await pumpEmail(tester);
+
+      form.control('email').markAsDisabled();
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
     });
   });
 }
