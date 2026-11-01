@@ -14,8 +14,9 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///
 /// The event hydrate pages through [fetchEvents] to cache the user's events,
 /// and [fetchEvent] reads one event whole, roster included, which the list
-/// does not carry. [createEvent] sends a new event and [deleteEvent] removes
-/// one. Answering an invitation or voting is #527.
+/// does not carry. [browseEvents] reads what's coming up that the user doesn't
+/// attend, which nothing caches (#613). [createEvent] sends a new event and
+/// [deleteEvent] removes one. Answering an invitation or voting is #527.
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -28,6 +29,7 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | Method | Path | Body |
 /// |---|---|---|
 /// | [fetchEvents] | `GET /api/events` | `{ events: [...], pagination }` |
+/// | [browseEvents] | `GET /api/events/browse` | `{ events: [...], pagination }` |
 /// | [fetchEvent] | `GET /api/events/:id` | `{ event }` |
 /// | [createEvent] | `POST /api/events` | `{ message, event }` |
 /// | [deleteEvent] | `DELETE /api/events/:id` | `{ message, event }`, not read |
@@ -112,10 +114,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///   above, such as a detail or a create with no roster.
 /// - [EventRemoteTransientException]: no response at all, 401, 407, 408, 429,
 ///   every 5xx, a 403 or 404 without the envelope (a proxy answered, not the
-///   API), a 404 from [fetchEvents] even with it (a list route is never absent,
-///   so the route is not deployed), a 409 saying `retryable: true` (a deadlock
-///   the server asks the caller to retry), and a 2xx body this device could not
-///   decode at all.
+///   API), a 404 from [fetchEvents] or [browseEvents] even with it (a list
+///   route is never absent, so the route is not deployed), a 409 saying
+///   `retryable: true` (a deadlock the server asks the caller to retry), and a
+///   2xx body this device could not decode at all.
 ///
 /// The envelope requirement is the household and collection rule (#350, #365,
 /// #253): only the application's own answer licenses a conclusion about the
@@ -204,6 +206,22 @@ abstract class EventRemoteDataSource {
   /// between two requests shifts the rest up and can carry one past the
   /// boundary unseen. Only a first page with `hasMore: false` is complete.
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
+    int page = 1,
+    int limit = maxPageSize,
+  });
+
+  /// `GET /api/events/browse`: one page of the events the caller can read and
+  /// holds no attendee row on (#613). A removed row counts as a row, so an
+  /// event the caller was removed from stays off this list.
+  ///
+  /// Upcoming events only: a confirmed date that hasn't ended, not cancelled or
+  /// archived. The order is soonest first, then by id, so the first page is the
+  /// next few. Rows have the shape of [fetchEvents]' rows, each snapshot with
+  /// `attendees: null`, and no row carries an RSVP because the caller has none.
+  ///
+  /// [page] is 1-based and [limit] is in `1..maxPageSize`. Failures classify as
+  /// [fetchEvents]' do.
+  Future<PaginatedResult<EventSnapshot>> browseEvents({
     int page = 1,
     int limit = maxPageSize,
   });

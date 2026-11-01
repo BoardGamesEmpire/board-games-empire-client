@@ -93,6 +93,13 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   final List<EventListRequest> requests = [];
 
+  /// Answers each browse read, which throws unless a test supplies one (#613).
+  FutureOr<PaginatedResult<EventSnapshot>> Function(EventListRequest request)?
+  browse;
+
+  /// Each browse read, in order, recorded before it is answered.
+  final List<EventListRequest> browseRequests = [];
+
   /// The id of each detail read, in order.
   final List<String> detailRequests = [];
 
@@ -117,6 +124,20 @@ class FakeEventRemote implements EventRemoteDataSource {
     final request = (page: page, limit: limit);
     requests.add(request);
     return respond(request);
+  }
+
+  @override
+  Future<PaginatedResult<EventSnapshot>> browseEvents({
+    int page = 1,
+    int limit = EventRemoteDataSource.maxPageSize,
+  }) async {
+    final request = (page: page, limit: limit);
+    browseRequests.add(request);
+    final browse = this.browse;
+    if (browse == null) {
+      throw UnimplementedError('browseEvents is not faked');
+    }
+    return browse(request);
   }
 
   @override
