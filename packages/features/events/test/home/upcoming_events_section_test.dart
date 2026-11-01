@@ -279,6 +279,92 @@ void main() {
       expect(find.byKey(UpcomingEventsSection.loadingKey), findsOneWidget);
     });
 
+    testWidgets('no fetch while a page with nothing upcoming is all that has '
+        'landed', (tester) async {
+      remote.browse = (_) => browsePage(offered(1));
+      status.started();
+      await tester.pumpWidget(harness());
+      // The list is ordered by creation, so an upcoming event can be pages on.
+      items.add([item('e-plan')]);
+      await settle(tester);
+
+      expect(remote.browseRequests, isEmpty);
+      expect(find.byKey(UpcomingEventsSection.loadingKey), findsOneWidget);
+      expect(find.text(_note), findsNothing);
+      expect(find.text(_empty), findsNothing);
+
+      items.add([item('e-plan'), ...upcoming(1)]);
+      await settle(tester);
+
+      expect(rowOf('e-up-0'), findsOneWidget);
+      expect(find.byKey(UpcomingEventsSection.loadingKey), findsNothing);
+
+      status.finished(EventHydrateOutcome.complete);
+      await settle(tester);
+
+      expect(remote.browseRequests, isEmpty);
+    });
+
+    testWidgets('the fallback reads once that pass lands with nothing '
+        'upcoming', (tester) async {
+      remote.browse = (_) => browsePage(offered(1));
+      status.started();
+      await tester.pumpWidget(harness());
+      items.add([item('e-plan')]);
+      await settle(tester);
+
+      status.finished(EventHydrateOutcome.complete);
+      await settle(tester);
+
+      expect(remote.browseRequests, hasLength(1));
+      expect(rowOf('e-offer-0'), findsOneWidget);
+      expect(find.text(_note), findsOneWidget);
+    });
+
+    testWidgets('own rows show at once, ahead of the pass ending', (
+      tester,
+    ) async {
+      status.started();
+      await tester.pumpWidget(harness());
+      items.add(upcoming(1));
+      await settle(tester);
+
+      expect(rowOf('e-up-0'), findsOneWidget);
+      expect(find.byKey(UpcomingEventsSection.loadingKey), findsNothing);
+    });
+
+    testWidgets('a re-check after a pass has landed leaves the fallback up', (
+      tester,
+    ) async {
+      remote.browse = (_) => browsePage(offered(1));
+      await show(tester, [item('e-plan')]);
+      expect(rowOf('e-offer-0'), findsOneWidget);
+
+      status.started();
+      await settle(tester);
+
+      expect(rowOf('e-offer-0'), findsOneWidget);
+      expect(find.byKey(UpcomingEventsSection.loadingKey), findsNothing);
+      expect(remote.browseRequests, hasLength(1));
+    });
+
+    testWidgets('a retried pass over a cache with nothing upcoming spins, as '
+        'it does over an empty one', (tester) async {
+      await tester.pumpWidget(harness());
+      status.finished(EventHydrateOutcome.failed);
+      await tester.pump();
+      items.add([item('e-plan')]);
+      await settle(tester);
+      expect(find.text(_empty), findsOneWidget);
+
+      status.started();
+      await settle(tester);
+
+      expect(remote.browseRequests, isEmpty);
+      expect(find.byKey(UpcomingEventsSection.loadingKey), findsOneWidget);
+      expect(find.text(_empty), findsNothing);
+    });
+
     testWidgets('announces the loading state', (tester) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(harness());

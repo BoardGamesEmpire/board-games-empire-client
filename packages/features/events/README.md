@@ -167,8 +167,9 @@ shows its empty text, as it does when a read fails with no rows up, while a fail
 re-read leaves the rows in place. They carry no RSVP and offer no way to join,
 because nobody can add themselves to an event until backend#812. The
 cubit reads when the rows are first wanted, when home is uncovered and on
-reconnecting, and waits for the cache's answer, so the first sync can't flash
-other people's events ahead of the user's own. After a failed pass it doesn't
+reconnecting, and waits out the first fill, so the first sync can't flash
+other people's events ahead of the user's own, even over cached planning and past
+rows. The section spins until then. After a failed pass it doesn't
 read at all until one lands, because the user may have events that pass never
 reached, and the section shows its empty text. Opening a fallback row caches that
 event with `read` access, which keeps it off the events screen as well.

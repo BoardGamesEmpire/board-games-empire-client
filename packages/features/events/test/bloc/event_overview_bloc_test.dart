@@ -126,6 +126,42 @@ void main() {
     expect(bloc.state, isA<EventOverviewLoading>());
   });
 
+  test('says when rows are up ahead of the first pass landing', () async {
+    final bloc = build();
+    addTearDown(bloc.close);
+
+    status.started();
+    items.add([item('e-plan')]);
+    await settle();
+    expect(
+      bloc.state,
+      isA<EventOverviewReady>().having((s) => s.firstFill, 'firstFill', isTrue),
+    );
+
+    status.finished(EventHydrateOutcome.complete);
+    await settle();
+    expect(
+      bloc.state,
+      isA<EventOverviewReady>().having(
+        (s) => s.firstFill,
+        'firstFill',
+        isFalse,
+      ),
+    );
+
+    // A re-check is not a first fill.
+    status.started();
+    await settle();
+    expect(
+      bloc.state,
+      isA<EventOverviewReady>().having(
+        (s) => s.firstFill,
+        'firstFill',
+        isFalse,
+      ),
+    );
+  });
+
   test('an empty cache is empty once the hydrate settles', () async {
     final bloc = build();
     addTearDown(bloc.close);

@@ -27,8 +27,9 @@ import 'upcoming_fallback_cubit.dart';
 /// The user's own events come from an [EventOverviewBloc], so grouping, the
 /// clock and the first hydrate behave as they do on the overview. An
 /// [UpcomingFallbackCubit] owns the fallback, and is told to read only once that
-/// bloc is ready with nothing upcoming. So the first sync can't flash other
-/// people's events ahead of the user's own, and the user's own event arriving
+/// bloc is ready with nothing upcoming and no first fill running. So the first
+/// sync can't flash other people's events ahead of the user's own, even with
+/// planning or past rows already cached, and the user's own event arriving
 /// replaces the fallback at once.
 ///
 /// A failed pass holds the fallback back, and the section shows its empty text
@@ -193,11 +194,13 @@ class _Section extends StatelessWidget {
   }
 
   /// Whether the cache has settled on the user having nothing upcoming. Not
-  /// after a failed pass, which confirms nothing: the user may have events it
-  /// never reached, and the fallback's note would be false about them.
+  /// during a first fill, whose later pages may hold them, nor after a failed
+  /// pass, which confirms nothing: the user may have events it never reached,
+  /// and the fallback's note would be false about them.
   static bool _wantsFallback(EventOverviewState own) =>
       own is EventOverviewReady &&
       own.groups.upcoming.isEmpty &&
+      !own.firstFill &&
       !own.refreshFailed;
 
   Widget _content(
@@ -230,6 +233,7 @@ class _Section extends StatelessWidget {
             retrying: retrying,
           ),
           EventOverviewReady() when ownRows.isNotEmpty => _rows(ownRows),
+          EventOverviewReady(firstFill: true) => const _Spinner(),
           EventOverviewReady() when !_wantsFallback(own) => empty,
           EventOverviewReady() => switch (suggested) {
             UpcomingFallbackIdle() ||
