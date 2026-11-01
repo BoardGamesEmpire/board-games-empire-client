@@ -4,6 +4,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
 import 'home_menu_entry.dart';
+import 'home_sections.dart';
 
 /// The authenticated landing surface (#129): a real home with a
 /// navigation drawer hosting the app's entry points, replacing the
@@ -29,11 +30,20 @@ import 'home_menu_entry.dart';
 /// carries its own control + label semantics; the app bar exposes the
 /// platform-localized "open navigation menu" affordance. The no-active-
 /// server case is handled defensively by omitting the header.
+///
+/// The page's content is the sections (#613), each built in its own feature
+/// package and handed in through a slot. [HomeSections] decides their order
+/// and which two pair up. With every slot null, which means a composition that
+/// can offer none of them, the page shows a welcome line rather than nothing.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     required this.entries,
     this.activeServerName,
     this.notice,
+    this.upcomingEvents,
+    this.stats,
+    this.newestGames,
+    this.somethingToPlay,
     super.key,
   });
 
@@ -50,8 +60,23 @@ class HomeScreen extends StatefulWidget {
   /// are stuck.
   final Widget? notice;
 
+  /// The upcoming events section.
+  final Widget? upcomingEvents;
+
+  /// The caller's stats section.
+  final Widget? stats;
+
+  /// The shelf of newly added games.
+  final Widget? newestGames;
+
+  /// The "something to play" shelf.
+  final Widget? somethingToPlay;
+
   /// Key on the [NavigationDrawer], for tests.
   static const Key drawerKey = Key('home_navigation_drawer');
+
+  /// Key on the sections' column, which is absent with every slot null.
+  static const Key sectionsKey = Key('home_sections');
 
   /// Per-entry tile key: `home_menu_entry_<id>`.
   static Key entryKey(String id) => Key('home_menu_entry_$id');
@@ -73,7 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = ShellLocalizations.of(context);
-    final theme = Theme.of(context);
+    final hasSections =
+        widget.upcomingEvents != null ||
+        widget.stats != null ||
+        widget.newestGames != null ||
+        widget.somethingToPlay != null;
 
     final destinations = widget.entries
         .where((e) => !e.isDestructive)
@@ -84,7 +113,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return BgePage(
       scaffoldKey: _scaffoldKey,
-      centerVertically: true,
+      width: hasSections ? BgePageWidth.pane : BgePageWidth.form,
+      centerVertically: !hasSections,
       title: Text(l10n.homeTitle),
       drawer: NavigationDrawer(
         key: HomeScreen.drawerKey,
@@ -147,30 +177,59 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: hasSections
+            ? CrossAxisAlignment.stretch
+            : CrossAxisAlignment.center,
         children: [
           ?widget.notice,
-          Icon(
-            Icons.dashboard_customize_outlined,
-            size: 48,
-            color: theme.colorScheme.primary,
-          ),
-          const BgeGap.md(),
-          Semantics(
-            header: true,
-            child: Text(
-              l10n.homeEmptyStateTitle,
-              style: theme.textTheme.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const BgeGap.sm(),
-          Text(
-            l10n.homeEmptyStateBody,
-            style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
+          if (hasSections)
+            HomeSections(
+              key: HomeScreen.sectionsKey,
+              upcomingEvents: widget.upcomingEvents,
+              stats: widget.stats,
+              newestGames: widget.newestGames,
+              somethingToPlay: widget.somethingToPlay,
+            )
+          else
+            const _WelcomeLine(),
         ],
       ),
+    );
+  }
+}
+
+/// What the page shows with no sections to show.
+class _WelcomeLine extends StatelessWidget {
+  const _WelcomeLine();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = ShellLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.dashboard_customize_outlined,
+          size: 48,
+          color: theme.colorScheme.primary,
+        ),
+        const BgeGap.md(),
+        Semantics(
+          header: true,
+          child: Text(
+            l10n.homeEmptyStateTitle,
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const BgeGap.sm(),
+        Text(
+          l10n.homeEmptyStateBody,
+          style: theme.textTheme.bodyMedium,
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }

@@ -191,9 +191,12 @@ and stops short on a monitor with no window-class check. Reach for a breakpoint
 only when a layout should *change form* (rail vs. bottom bar, one pane vs.
 two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
 value today and are still separate tokens: retuning one must not silently move
-the other. Nothing consumes the breakpoints yet. The first consumers are
-expected to be the navigation shell (#414), once a section of equal standing
-with home exists, and the first two-pane layout (#46).
+the other. The home page reads `breakpointExpanded`, to set its events and stats
+sections side by side (#613), and reads it against the window, because a
+`LayoutBuilder` under the page's padding reaches 840 only at a window of 888. The
+next consumers are expected to be the navigation shell (#414), once a section of
+equal standing with home exists, and the first two-pane layout (#46). Nothing
+reads `breakpointMedium` yet.
 
 ---
 

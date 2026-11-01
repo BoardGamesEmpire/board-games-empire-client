@@ -86,7 +86,7 @@
   },
   "homeEmptyStateTitle": "Welcome to Board Games Empire",
   "@homeEmptyStateTitle": {
-    "description": "Heading of the home screen's empty state, shown before any content exists (#129)."
+    "description": "Heading of the home screen's empty state, shown only when the session has none of the home page's sections to offer (#129, #613)."
   },
   "homeEmptyStateBody": "Open the menu to get started.",
   "@homeEmptyStateBody": {
