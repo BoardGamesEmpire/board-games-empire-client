@@ -496,6 +496,10 @@
   "@dataGatewaySectionNotLoaded": {
     "description": "One list the server should load from a data gateway has not been loaded since the last interview. Nothing has gone wrong: lists load in the few minutes after an interview."
   },
+  "dataGatewaySectionSwitchedOff": "Switched off",
+  "@dataGatewaySectionSwitchedOff": {
+    "description": "One list a data gateway offers, which an admin has switched off with its switch under Capabilities, so the server does not load it. Shown in place of when the list last loaded."
+  },
   "dataGatewaySectionFailed": "Failed {date}: {reason}",
   "@dataGatewaySectionFailed": {
     "description": "When the server's last attempt to load one list from a data gateway failed, and why. Shown only while no later attempt has succeeded. {reason} is a short phrase that follows the colon, such as it couldn't send the list.",

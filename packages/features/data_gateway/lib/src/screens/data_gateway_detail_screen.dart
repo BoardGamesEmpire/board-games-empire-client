@@ -501,6 +501,9 @@ class _InterviewSection extends StatelessWidget {
 }
 
 /// The lists the server loads from this DataGateway, and how each last went.
+///
+/// A list switched off keeps its row, which says so: see
+/// [dataGatewayListRows].
 class _ListsSection extends StatelessWidget {
   const _ListsSection({required this.gateway});
 
@@ -509,17 +512,18 @@ class _ListsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = DataGatewayLocalizations.of(context);
-    final expected = dataGatewayExpectedSections(gateway);
+    final rows = dataGatewayListRows(gateway);
 
     return _Section(
       heading: l10n.dataGatewayListsHeading,
       children: [
-        if (expected.isEmpty) Text(l10n.dataGatewayListsNone),
-        for (final (:capability, :section) in expected)
+        if (rows.isEmpty) Text(l10n.dataGatewayListsNone),
+        for (final (:capability, :section, :switchedOff) in rows)
           _SectionRow(
             key: DataGatewayDetailScreen.sectionKey(capability),
             capability: capability,
             section: section,
+            switchedOff: switchedOff,
           ),
       ],
     );
@@ -530,6 +534,7 @@ class _SectionRow extends StatelessWidget {
   const _SectionRow({
     required this.capability,
     required this.section,
+    required this.switchedOff,
     super.key,
   });
 
@@ -539,11 +544,16 @@ class _SectionRow extends StatelessWidget {
   /// and not a failure (#457).
   final DataGatewaySection? section;
 
+  /// An admin switched the list off. Its row says that alone: how it last
+  /// loaded is history while the server isn't loading it, and one line in
+  /// place of the usual one or two keeps the switches below where they were.
+  final bool switchedOff;
+
   @override
   Widget build(BuildContext context) {
     final l10n = DataGatewayLocalizations.of(context);
-    final loaded = section?.lastLoadedAt;
-    final failure = section?.failure;
+    final loaded = switchedOff ? null : section?.lastLoadedAt;
+    final failure = switchedOff ? null : section?.failure;
 
     // Content, not a control: with no onTap the tile is no focus stop, and it
     // reads as one node.
@@ -565,7 +575,9 @@ class _SectionRow extends StatelessWidget {
                 _sectionFailureLabel(l10n, failure.code),
               ),
             ),
-          if (loaded == null && failure == null)
+          if (switchedOff)
+            Text(l10n.dataGatewaySectionSwitchedOff)
+          else if (loaded == null && failure == null)
             Text(l10n.dataGatewaySectionNotLoaded),
         ],
       ),

@@ -1523,8 +1523,8 @@ void main() {
       capability: DataGatewayCapabilities.listMechanics,
     );
 
-    test('dataGatewayExpectedSections: leaves out a switched-off list and an '
-        'undeclared one', () {
+    test('dataGatewayListRows: keeps a switched-off list in its place, and '
+        'leaves out an undeclared one', () {
       final g = row.copyWith(
         capabilities: const [
           DataGatewayCapabilities.search,
@@ -1539,15 +1539,28 @@ void main() {
         sections: const [mechanics, platforms, languages],
       );
 
-      expect(dataGatewayExpectedSections(g), [
-        (capability: DataGatewayCapabilities.listLanguages, section: languages),
-        (capability: DataGatewayCapabilities.listMechanics, section: mechanics),
+      expect(dataGatewayListRows(g), [
+        (
+          capability: DataGatewayCapabilities.listLanguages,
+          section: languages,
+          switchedOff: false,
+        ),
+        (
+          capability: DataGatewayCapabilities.listPlatforms,
+          section: platforms,
+          switchedOff: true,
+        ),
+        (
+          capability: DataGatewayCapabilities.listMechanics,
+          section: mechanics,
+          switchedOff: false,
+        ),
       ]);
     });
 
     test(
-      'dataGatewayExpectedSections: a section this client has no name for '
-      'shows after the ones it knows, while declared and not switched off',
+      'dataGatewayListRows: a section this client has no name for shows after '
+      'the ones it knows, while declared',
       () {
         const designers = DataGatewaySection(capability: 'ListDesigners');
         const publishers = DataGatewaySection(capability: 'ListPublishers');
@@ -1562,18 +1575,23 @@ void main() {
           sections: const [designers, publishers, artists, languages],
         );
 
-        expect(dataGatewayExpectedSections(g), [
+        expect(dataGatewayListRows(g), [
           (
             capability: DataGatewayCapabilities.listLanguages,
             section: languages,
+            switchedOff: false,
           ),
-          (capability: 'ListDesigners', section: designers),
+          (capability: 'ListDesigners', section: designers, switchedOff: false),
+          (
+            capability: 'ListPublishers',
+            section: publishers,
+            switchedOff: true,
+          ),
         ]);
       },
     );
 
-    test('dataGatewayExpectedSections: a declared list with no section has '
-        'null', () {
+    test('dataGatewayListRows: a declared list with no section has null', () {
       final g = row.copyWith(
         capabilities: const [
           DataGatewayCapabilities.listLanguages,
@@ -1582,9 +1600,17 @@ void main() {
         sections: const [mechanics],
       );
 
-      expect(dataGatewayExpectedSections(g), [
-        (capability: DataGatewayCapabilities.listLanguages, section: null),
-        (capability: DataGatewayCapabilities.listMechanics, section: mechanics),
+      expect(dataGatewayListRows(g), [
+        (
+          capability: DataGatewayCapabilities.listLanguages,
+          section: null,
+          switchedOff: false,
+        ),
+        (
+          capability: DataGatewayCapabilities.listMechanics,
+          section: mechanics,
+          switchedOff: false,
+        ),
       ]);
     });
   });

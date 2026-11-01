@@ -632,18 +632,73 @@ void main() {
       );
     });
 
-    testWidgets('a switched-off list has no section row', (tester) async {
+    testWidgets('a switched-off list keeps its row, which says so in place of '
+        'how it last loaded', (tester) async {
       remote.onFetchOne = (_) async => row(
         capabilities: const [languages, platforms],
         disabled: const [platforms],
+        sections: [
+          DataGatewaySection(
+            capability: platforms,
+            lastLoadedAt: lastAt,
+            failure: DataGatewaySectionFailure(
+              code: DataGatewaySectionFailureCode.listFailed,
+              at: failedAt,
+            ),
+          ),
+        ],
       );
 
       await pumpScreen(tester);
 
-      expect(section(languages), findsOneWidget);
-      expect(section(platforms), findsNothing);
+      expect(textIn(section(languages), 'Not loaded yet'), findsOneWidget);
+      expect(textIn(section(platforms), 'Switched off'), findsOneWidget);
+      expect(textIn(section(platforms), 'Last loaded $last'), findsNothing);
+      expect(find.textContaining('Failed'), findsNothing);
+      expect(
+        find.descendant(of: section(platforms), matching: find.byType(Icon)),
+        findsNothing,
+      );
       // Its switch stays, so it can be switched back on.
       expect(capability(platforms), findsOneWidget);
+    });
+
+    testWidgets('switching a list off or on moves no switch', (tester) async {
+      // Long enough to scroll the switches to the middle of the view. At the
+      // end of a short page the scroll offset clamps, and hides a shift.
+      remote.onFetchLanguageLinks = (_, _, _, _) async => linkPageOf([
+        for (var i = 0; i < 20; i++) languageLink('l$i', value: 'Value $i'),
+      ]);
+      const declared = [search, languages, platforms];
+      remote.onFetchOne = (_) async => row(capabilities: declared);
+      remote.onSetDisabledCapabilities = (_, disabled) async =>
+          changed(row(capabilities: declared, disabled: disabled));
+      await pumpScreen(tester);
+      await Scrollable.ensureVisible(
+        tester.element(capability(languages)),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+      List<double> tops() => [
+        for (final name in declared) tester.getTopLeft(capability(name)).dy,
+      ];
+      final before = tops();
+
+      await tester.tap(capability(languages));
+      await tester.pumpAndSettle();
+
+      expect(tile(tester, languages).value, isFalse);
+      expect(tops(), before);
+
+      await tester.tap(capability(languages));
+      await tester.pumpAndSettle();
+
+      expect(tile(tester, languages).value, isTrue);
+      expect(tops(), before);
+      expect(writes(), [
+        'setDisabledCapabilities(dg_1, [$languages])',
+        'setDisabledCapabilities(dg_1, [])',
+      ]);
     });
 
     testWidgets('a loaded list says when', (tester) async {

@@ -83,10 +83,12 @@ shows, top to bottom:
 - **Interview.** When it was first and last interviewed, the failure that is
   current, and Interview again, on an enabled DataGateway while changes are
   allowed.
-- **Lists.** One row for each list the DataGateway declares and no admin has
-  switched off: languages, platforms, categories and mechanics. Each says when
-  it last loaded and, while one is current, when and why it failed. A list
-  with nothing recorded yet reads "Not loaded yet", not as a failure. The
+- **Lists.** One row for each list the DataGateway declares: languages,
+  platforms, categories and mechanics. Each says when it last loaded and,
+  while one is current, when and why it failed. A list with nothing recorded
+  yet reads "Not loaded yet", not as a failure. One an admin switched off
+  keeps its row and reads "Switched off" alone, so switching it doesn't move
+  the switches below. The
   lists load as jobs after an interview (backend#718), so a re-interview's
   answer doesn't carry them, and they show a few minutes later.
 - **Capabilities.** A switch for each thing the DataGateway says it can do,

@@ -114,26 +114,33 @@ List<String> dataGatewayCapabilityRows(DataGateway gateway) {
   ];
 }
 
-/// The lists [gateway] should load: the ones it declares and no admin switched
-/// off, in the order the server runs their jobs, then any it declares that this
-/// client doesn't know of, which only a section can say is a list.
+/// The lists to show a row for: the ones [gateway] declares, in the order the
+/// server runs their jobs, then any it declares that this client doesn't know
+/// of, which only a section can say is a list.
+///
+/// A list an admin switched off keeps its row, flagged `switchedOff`: the
+/// server doesn't load it, and its row says so. Dropping the row would move
+/// the switches below up the page under the pointer that just switched it.
 ///
 /// `section` is null for a list whose job has not run since an interview,
 /// which means it has not loaded yet, not that it failed (#457).
-List<({String capability, DataGatewaySection? section})>
-dataGatewayExpectedSections(DataGateway gateway) => [
+List<({String capability, DataGatewaySection? section, bool switchedOff})>
+dataGatewayListRows(DataGateway gateway) => [
   for (final capability in DataGatewayCapabilities.lists)
-    if (gateway.capabilities.contains(capability) &&
-        !gateway.disabledCapabilities.contains(capability))
+    if (gateway.capabilities.contains(capability))
       (
         capability: capability,
         section: gateway.sections
             .where((section) => section.capability == capability)
             .firstOrNull,
+        switchedOff: gateway.disabledCapabilities.contains(capability),
       ),
   for (final section in gateway.sections)
     if (!DataGatewayCapabilities.lists.contains(section.capability) &&
-        gateway.capabilities.contains(section.capability) &&
-        !gateway.disabledCapabilities.contains(section.capability))
-      (capability: section.capability, section: section),
+        gateway.capabilities.contains(section.capability))
+      (
+        capability: section.capability,
+        section: section,
+        switchedOff: gateway.disabledCapabilities.contains(section.capability),
+      ),
 ];
