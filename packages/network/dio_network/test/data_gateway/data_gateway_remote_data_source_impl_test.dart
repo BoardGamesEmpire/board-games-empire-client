@@ -8,17 +8,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-/// A DataGateway row as the backend serializes the Prisma model at
-/// `a182bf38` (backend PR #750, merged): every column, `authParameters`
-/// included, because the controller returns the row unfiltered until
-/// backend#753.
+/// A DataGateway row as the backend serializes it at `5f4f0728`: every column
+/// but the stored credentials, which no route returns since backend#753 (the
+/// row says only whether there are any), and with the `interview` block and
+/// `sections` the server derives.
+///
+/// The raw interview columns are not derived from the `interview` a test
+/// passes. The client reads the block, so a test that passes its own fails if
+/// the mapping reads the columns instead.
 Map<String, dynamic> _row({
   String id = 'dg_1',
   String name = 'BoardGameGeek',
   String? description = 'The BGG bridge',
   bool enabled = true,
   String authType = 'None',
-  Object? authParameters = const {'token': 's3cret-token'},
+  List<String> capabilities = _allCapabilities,
+  List<String> disabledCapabilities = const [],
+  Map<String, dynamic>? interview,
+  List<Map<String, dynamic>>? sections,
 }) => {
   'id': id,
   'name': name,
@@ -34,15 +41,77 @@ Map<String, dynamic> _row({
   'connectionPort': 50051,
   'enabled': enabled,
   'authType': authType,
-  'authParameters': authParameters,
+  'hasAuthParameters': false,
   'usageCount': 12,
   'lastUsed': '2026-10-14T18:00:00.000Z',
-  'languagesSyncedAt': null,
+  'capabilities': capabilities,
+  'coveragePlatformTypes': ['Tabletop'],
+  'coverageContentTypes': ['BaseGame', 'Expansion'],
+  'filterableAxes': ['ContentType', 'PublishYear'],
+  'acceptedLanguageCodeFormats': ['Iso6391'],
+  'responseLanguageCodeFormat': 'Iso6391',
+  'passthroughSearchLanguage': false,
+  'contentFormat': 'Html',
+  'gatewayVersion': '1.4.2',
+  'disabledCapabilities': disabledCapabilities,
+  'firstInterviewedAt': '2026-10-01T10:35:00.000Z',
+  'lastInterviewedAt': '2026-10-14T18:00:00.000Z',
+  'lastInterviewFailedAt': null,
+  'lastInterviewFailure': null,
+  'interview': interview ?? _interview(),
+  'sections': sections ?? _loadedSections(),
   'createdById': 'user_owner',
   'deletedAt': null,
   'createdAt': '2026-10-01T10:30:00.000Z',
   'updatedAt': '2026-10-14T18:00:00.000Z',
 };
+
+/// What a DataGateway that serves everything this client knows of declares,
+/// spelled as the server spells it. Written out rather than read from
+/// `DataGatewayCapabilities`, so a mistyped constant fails a test.
+const _allCapabilities = [
+  'Search',
+  'Fetch',
+  'FetchExpansions',
+  'ListLanguages',
+  'ListPlatforms',
+  'ListCategories',
+  'ListMechanics',
+];
+
+/// The `interview` block of a DataGateway whose last interview succeeded.
+Map<String, dynamic> _interview({
+  bool interviewed = true,
+  String? firstInterviewedAt = '2026-10-01T10:35:00.000Z',
+  String? lastInterviewedAt = '2026-10-14T18:00:00.000Z',
+  Map<String, dynamic>? failure,
+}) => {
+  'interviewed': interviewed,
+  'firstInterviewedAt': firstInterviewedAt,
+  'lastInterviewedAt': lastInterviewedAt,
+  'failure': failure,
+};
+
+/// One entry of `sections`: a list job that has not loaded, unless given a
+/// time.
+Map<String, dynamic> _section(
+  String capability, {
+  String? lastLoadedAt,
+  Map<String, dynamic>? failure,
+}) => {
+  'capability': capability,
+  'lastLoadedAt': lastLoadedAt,
+  'failure': failure,
+};
+
+/// The four list jobs, run a minute apart and in the server's order, all
+/// loaded.
+List<Map<String, dynamic>> _loadedSections() => [
+  _section('ListLanguages', lastLoadedAt: '2026-10-14T18:01:00.000Z'),
+  _section('ListPlatforms', lastLoadedAt: '2026-10-14T18:02:00.000Z'),
+  _section('ListCategories', lastLoadedAt: '2026-10-14T18:03:00.000Z'),
+  _section('ListMechanics', lastLoadedAt: '2026-10-14T18:04:00.000Z'),
+];
 
 String _listBody(
   List<Map<String, dynamic>> rows, {
@@ -136,6 +205,31 @@ void main() {
 
       final page = await remote.fetchPage();
 
+      // What `_row` sends by default, as the model holds it.
+      final interview = DataGatewayInterviewStatus(
+        interviewed: true,
+        firstInterviewedAt: DateTime.utc(2026, 10, 1, 10, 35),
+        lastInterviewedAt: DateTime.utc(2026, 10, 14, 18),
+      );
+      final sections = [
+        DataGatewaySection(
+          capability: 'ListLanguages',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 1),
+        ),
+        DataGatewaySection(
+          capability: 'ListPlatforms',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 2),
+        ),
+        DataGatewaySection(
+          capability: 'ListCategories',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 3),
+        ),
+        DataGatewaySection(
+          capability: 'ListMechanics',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 4),
+        ),
+      ];
+
       expect(page.items, [
         DataGateway(
           id: 'dg_1',
@@ -145,6 +239,9 @@ void main() {
           connectionPort: 50051,
           enabled: true,
           authType: DataGatewayAuthType.none,
+          interview: interview,
+          sections: sections,
+          capabilities: DataGatewayCapabilities.known,
         ),
         DataGateway(
           id: 'dg_2',
@@ -154,8 +251,15 @@ void main() {
           connectionPort: 50051,
           enabled: false,
           authType: DataGatewayAuthType.none,
+          interview: interview,
+          sections: sections,
+          capabilities: DataGatewayCapabilities.known,
         ),
       ]);
+      expect(
+        page.items.first.sections.map((s) => s.capability),
+        DataGatewayCapabilities.lists,
+      );
       expect(page.meta.total, 7);
       expect(page.meta.hasMore, isTrue);
     });
@@ -170,8 +274,13 @@ void main() {
       expect(adapter.sent.single.query, {'page': 2, 'limit': 1});
     });
 
-    test('never carries the stored credentials into the row (#41)', () async {
-      final remote = answering(_listBody([_row()]));
+    test('never carries stray credentials into the row, even from a server '
+        'that still sends them (#41)', () async {
+      final remote = answering(
+        _listBody([
+          _row()..['authParameters'] = {'token': 's3cret-token'},
+        ]),
+      );
 
       final row = (await remote.fetchPage()).items.single;
 
@@ -198,6 +307,203 @@ void main() {
 
       expect(row.id, 'dg_9');
       expect(adapter.sent.single.path, '/api/data-gateways/dg_9');
+    });
+  });
+
+  group("reading a row's interview, sections and capabilities (#457)", () {
+    Future<DataGateway> read(Map<String, dynamic> row) async =>
+        (await answering(_listBody([row])).fetchPage()).items.single;
+
+    test('reads the interview block, with a current failure', () async {
+      final row = await read(
+        _row(
+          interview: _interview(
+            failure: {'code': 'PingFailed', 'at': '2026-10-29T10:00:00.000Z'},
+          ),
+        ),
+      );
+
+      expect(
+        row.interview,
+        DataGatewayInterviewStatus(
+          interviewed: true,
+          firstInterviewedAt: DateTime.utc(2026, 10, 1, 10, 35),
+          lastInterviewedAt: DateTime.utc(2026, 10, 14, 18),
+          failure: DataGatewayInterviewFailure(
+            code: DataGatewayInterviewFailureCode.pingFailed,
+            at: DateTime.utc(2026, 10, 29, 10),
+          ),
+        ),
+      );
+    });
+
+    test('reads a never-interviewed row', () async {
+      final row = await read(
+        _row(
+          interview: _interview(
+            interviewed: false,
+            firstInterviewedAt: null,
+            lastInterviewedAt: null,
+          ),
+        ),
+      );
+
+      expect(row.interview.interviewed, isFalse);
+      expect(row.interview.firstInterviewedAt, isNull);
+      expect(row.interview.lastInterviewedAt, isNull);
+      expect(row.interview.failure, isNull);
+    });
+
+    test('reads the interview block, not the raw columns it is derived from: a '
+        'failure the server no longer calls current stays out', () async {
+      // A later success leaves the failure columns in place. The block
+      // already says the failure is over, and the client does not compare
+      // the two times itself.
+      final raw = _row()
+        ..['lastInterviewFailedAt'] = '2026-10-10T09:00:00.000Z'
+        ..['lastInterviewFailure'] = 'PingFailed';
+
+      final row = await read(raw);
+
+      expect(row.interview.failure, isNull);
+    });
+
+    test('reads sections, a failed one and one that never loaded', () async {
+      final row = await read(
+        _row(
+          sections: [
+            _section('ListLanguages', lastLoadedAt: '2026-10-14T18:01:00.000Z'),
+            _section(
+              'ListPlatforms',
+              lastLoadedAt: '2026-10-14T18:02:00.000Z',
+              failure: {'code': 'ListFailed', 'at': '2026-10-21T18:02:00.000Z'},
+            ),
+            _section('ListCategories'),
+          ],
+        ),
+      );
+
+      expect(row.sections, [
+        DataGatewaySection(
+          capability: 'ListLanguages',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 1),
+        ),
+        DataGatewaySection(
+          capability: 'ListPlatforms',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 2),
+          failure: DataGatewaySectionFailure(
+            code: DataGatewaySectionFailureCode.listFailed,
+            at: DateTime.utc(2026, 10, 21, 18, 2),
+          ),
+        ),
+        const DataGatewaySection(capability: 'ListCategories'),
+      ]);
+    });
+
+    test('keeps capability names it does not know, as sent', () async {
+      final row = await read(
+        _row(
+          capabilities: ['Search', 'FutureThing'],
+          disabledCapabilities: ['Search', 'FutureThing'],
+          sections: [_section('FutureThing')],
+        ),
+      );
+
+      expect(row.capabilities, ['Search', 'FutureThing']);
+      expect(row.disabledCapabilities, ['Search', 'FutureThing']);
+      expect(row.sections.single.capability, 'FutureThing');
+    });
+
+    test('reads every interview failure code the server defines', () async {
+      const codes = {
+        'PingFailed': DataGatewayInterviewFailureCode.pingFailed,
+        'DescribeUnsupported':
+            DataGatewayInterviewFailureCode.describeUnsupported,
+        'DescribeFailed': DataGatewayInterviewFailureCode.describeFailed,
+      };
+
+      for (final MapEntry(key: wire, value: code) in codes.entries) {
+        final row = await read(
+          _row(
+            interview: _interview(
+              failure: {'code': wire, 'at': '2026-10-29T10:00:00.000Z'},
+            ),
+          ),
+        );
+
+        expect(row.interview.failure?.code, code, reason: '"$wire"');
+      }
+    });
+
+    test('reads every section failure code the server defines', () async {
+      const codes = {
+        'ListUnsupported': DataGatewaySectionFailureCode.listUnsupported,
+        'ListFailed': DataGatewaySectionFailureCode.listFailed,
+        'LinkFailed': DataGatewaySectionFailureCode.linkFailed,
+      };
+
+      for (final MapEntry(key: wire, value: code) in codes.entries) {
+        final row = await read(
+          _row(
+            sections: [
+              _section(
+                'ListLanguages',
+                failure: {'code': wire, 'at': '2026-10-29T10:00:00.000Z'},
+              ),
+            ],
+          ),
+        );
+
+        expect(row.sections.single.failure?.code, code, reason: '"$wire"');
+      }
+    });
+
+    test('an interview code it does not know degrades, and the row '
+        'survives', () async {
+      final row = await read(
+        _row(
+          interview: _interview(
+            failure: {'code': 'NewCode', 'at': '2026-10-29T10:00:00.000Z'},
+          ),
+        ),
+      );
+
+      expect(row.id, 'dg_1');
+      expect(
+        row.interview.failure?.code,
+        DataGatewayInterviewFailureCode.unknown,
+      );
+      expect(row.interview.failure?.at, DateTime.utc(2026, 10, 29, 10));
+    });
+
+    test('a section code it does not know degrades, and the row '
+        'survives', () async {
+      final row = await read(
+        _row(
+          sections: [
+            _section(
+              'ListLanguages',
+              failure: {'code': 'NewCode', 'at': '2026-10-29T10:00:00.000Z'},
+            ),
+          ],
+        ),
+      );
+
+      expect(row.id, 'dg_1');
+      expect(
+        row.sections.single.failure?.code,
+        DataGatewaySectionFailureCode.unknown,
+      );
+      expect(row.sections.single.failure?.at, DateTime.utc(2026, 10, 29, 10));
+    });
+
+    test('a row with no interview block is a permanent failure', () async {
+      final remote = answering(_listBody([_row()..remove('interview')]));
+
+      await expectLater(
+        remote.fetchPage(),
+        throwsA(isA<DataGatewayPermanentException>()),
+      );
     });
   });
 

@@ -332,7 +332,14 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// Maps a server row to [DataGateway], field by field.
   ///
   /// Explicit rather than generated, so the mapping reads only what the model
-  /// holds. In particular it never touches `authParameters` (#41).
+  /// holds. In particular it never touches `authParameters` (#41), and it
+  /// reads `interview` rather than the raw `lastInterview*` columns that block
+  /// is derived from: the server has already decided which failure is current
+  /// (#457).
+  ///
+  /// `interview`, `sections` and both capability lists are required. A row
+  /// without them is not one this client can show, so it fails to parse
+  /// instead of reading as a DataGateway with nothing to say.
   static DataGateway _mapDataGateway(Map<String, dynamic> json) => DataGateway(
     id: json['id'] as String,
     name: json['name'] as String,
@@ -341,7 +348,54 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     connectionPort: json['connectionPort'] as int,
     enabled: json['enabled'] as bool,
     authType: DataGatewayAuthType.fromWire(json['authType'] as String),
+    interview: _mapInterview(json['interview'] as Map<String, dynamic>),
+    sections: [
+      for (final section in json['sections'] as List)
+        _mapSection(section as Map<String, dynamic>),
+    ],
+    capabilities: _names(json['capabilities']),
+    disabledCapabilities: _names(json['disabledCapabilities']),
   );
+
+  static DataGatewayInterviewStatus _mapInterview(Map<String, dynamic> json) {
+    final failure = json['failure'] as Map<String, dynamic>?;
+    return DataGatewayInterviewStatus(
+      interviewed: json['interviewed'] as bool,
+      firstInterviewedAt: _dateOrNull(json['firstInterviewedAt']),
+      lastInterviewedAt: _dateOrNull(json['lastInterviewedAt']),
+      failure: failure == null
+          ? null
+          : DataGatewayInterviewFailure(
+              code: DataGatewayInterviewFailureCode.fromWire(
+                failure['code'] as String,
+              ),
+              at: DateTime.parse(failure['at'] as String),
+            ),
+    );
+  }
+
+  static DataGatewaySection _mapSection(Map<String, dynamic> json) {
+    final failure = json['failure'] as Map<String, dynamic>?;
+    return DataGatewaySection(
+      capability: json['capability'] as String,
+      lastLoadedAt: _dateOrNull(json['lastLoadedAt']),
+      failure: failure == null
+          ? null
+          : DataGatewaySectionFailure(
+              code: DataGatewaySectionFailureCode.fromWire(
+                failure['code'] as String,
+              ),
+              at: DateTime.parse(failure['at'] as String),
+            ),
+    );
+  }
+
+  /// Capability names, kept as the server sent them (#457). Copied here, so a
+  /// name that is not a string fails the parse rather than a later read.
+  static List<String> _names(Object? wire) => List<String>.from(wire as List);
+
+  static DateTime? _dateOrNull(Object? wire) =>
+      wire == null ? null : DateTime.parse(wire as String);
 
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
