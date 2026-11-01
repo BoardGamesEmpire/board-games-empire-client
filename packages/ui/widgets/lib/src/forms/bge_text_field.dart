@@ -105,8 +105,8 @@ import 'live_error_announcer.dart';
 /// loss, and `login_form` and `register_form` both set it.
 ///
 /// No form in the repo swaps groups yet, so this is hardening slightly ahead of
-/// its first caller; #179's reset-on-terminal-outcome is the expected one. Drop
-/// the key once `ReactiveFormField` registers a dependency of its own.
+/// its first caller. Drop the key once `ReactiveFormField` registers a
+/// dependency of its own.
 class BgeTextField extends StatefulWidget {
   /// Creates a form field bound to [formControlName] in the enclosing
   /// `ReactiveForm`.

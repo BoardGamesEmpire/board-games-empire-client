@@ -113,6 +113,11 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// which share one origin, do not share one queue.
   final String databaseName;
 
+  /// IndexedDB outlives a reload. The browser may still evict it; see the
+  /// class doc's durability section.
+  @override
+  bool get survivesRestart => true;
+
   /// How long an open may take before the sink gives up on this browser.
   ///
   /// Matches `PackageInfoBuildInfoReader.defaultReadTimeout`, the other

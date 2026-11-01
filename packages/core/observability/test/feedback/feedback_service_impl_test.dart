@@ -291,6 +291,40 @@ void main() {
       expect(sink.persisted.single.serverId, isNull);
     });
 
+    // #385: a queue that dies on restart must not be reported as the one that
+    // keeps a report for a later send.
+    test('reports queuedForSession when the sink does not survive a '
+        'restart', () async {
+      final sink = _RecordingSink(survivesRestart: false);
+      final service = buildService(sink: sink);
+      final r = report(service);
+
+      final result = await service.submit(r);
+
+      expect(result, FeedbackSubmitResult.queuedForSession);
+      expect(sink.persisted.single.report, r);
+    });
+
+    test('reports queuedForSession after a transient transport failure when '
+        'the sink does not survive a restart', () async {
+      final transport = _RecordingTransport(
+        error: const FeedbackTransientSubmissionException('network down'),
+      );
+      final sink = _RecordingSink(survivesRestart: false);
+      final service = buildService(
+        targetResolver: _StaticTargetResolver(
+          FeedbackTarget(serverId: 'srv-1', transport: transport),
+        ),
+        sink: sink,
+      );
+      final r = report(service);
+
+      final result = await service.submit(r);
+
+      expect(result, FeedbackSubmitResult.queuedForSession);
+      expect(sink.persisted.single.report, r);
+    });
+
     test('re-resolves the target on every call — a transport appearing '
         'after a queued submit is used by the next one', () async {
       final transport = _RecordingTransport();
@@ -1445,8 +1479,12 @@ class _RecordingSink implements FeedbackSink {
     this.persistError,
     this.updateError,
     this.removeError,
+    this.survivesRestart = true,
     List<QueuedFeedbackReport>? pendingList,
   }) : _pending = List.of(pendingList ?? const []);
+
+  @override
+  final bool survivesRestart;
 
   final Object? persistError;
   final Object? updateError;

@@ -152,6 +152,12 @@ void main() {
       expect(sink, isA<FeedbackSink>());
     });
 
+    test('survives a restart (#385)', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
+      expect(sink.survivesRestart, isTrue);
+    });
+
     test('round-trips records with their serverId tag', () async {
       final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
       addTearDown(sink.onDispose);
