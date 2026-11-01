@@ -584,6 +584,43 @@ void main() {
       },
     );
 
+    testWidgets('a first-page retry pressed from the keyboard goes, and focus '
+        'goes back to the field', (tester) async {
+      // Nothing here moves it: the dialog's focus scope hands focus back to
+      // the node it last had before the button, and the field had it first.
+      var reads = 0;
+      final held = Completer<PaginatedResult<LanguageTagRef>>();
+      remote.onFetchLanguageTags = (_, _, _) =>
+          ++reads == 1 ? Future.error(unreachable()) : held.future;
+      await open(tester);
+      await tester.pumpAndSettle();
+
+      focusAround(
+        tester,
+        find.descendant(of: retryButton, matching: find.text('Try again')),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      final field = tester
+          .widget<EditableText>(
+            find.descendant(
+              of: searchField,
+              matching: find.byType(EditableText),
+            ),
+          )
+          .focusNode;
+      expect(retryButton, findsNothing);
+      expect(field.hasPrimaryFocus, isTrue);
+
+      held.complete(tagPageOf([t1]));
+      await tester.pumpAndSettle();
+
+      expect(row(t1), findsOneWidget);
+      expect(field.hasPrimaryFocus, isTrue);
+    });
+
     testSemantics('a next page that fails keeps the rows, says so, and its '
         'button tries again', (tester) async {
       var mores = 0;
