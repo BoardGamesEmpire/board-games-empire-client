@@ -30,7 +30,9 @@ void main() {
       // The submit swaps its label rather than dropping it, the row menu is
       // named for its row, and a busy row's spinner has a label. On the detail
       // screen the refresh control is named, the spinner and the capability
-      // write's bar have labels, and the interview button swaps its label.
+      // write's bar have labels, and the interview button swaps its label. In
+      // the language picker the field is named by its label, and what is
+      // loading, what failed and an empty result are each announced.
       expect(
         report.templateKeys,
         containsAll(<String>[
@@ -44,6 +46,10 @@ void main() {
           'dataGatewayCapabilitySaving',
           'dataGatewayInterviewAgain',
           'dataGatewayInterviewing',
+          'dataGatewayLanguagePickerSearchLabel',
+          'dataGatewayLanguagePickerLoading',
+          'dataGatewayLanguagePickerEmpty',
+          'dataGatewayLanguagePickerFailed',
         ]),
       );
     });

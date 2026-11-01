@@ -199,6 +199,30 @@ PaginatedResult<DataGateway> pageOf(
   ),
 );
 
+/// A language tag whose name and tag say which one it is.
+LanguageTagRef languageTag(String id, {String? name, String? tag}) =>
+    LanguageTagRef(id: id, tag: tag ?? 'x-$id', name: name ?? 'Language $id');
+
+/// One page of language tags, as the remote hands them over: flattened from
+/// the languages the server paged.
+///
+/// [page] and [hasMore] are the languages' paging, so they say nothing about
+/// how many tags came back: a page can hold none and have more behind it.
+PaginatedResult<LanguageTagRef> tagPageOf(
+  List<LanguageTagRef> tags, {
+  int page = 1,
+  bool hasMore = false,
+}) => PaginatedResult(
+  items: tags,
+  meta: PaginationMeta(
+    page: page,
+    limit: DataGatewayRemoteDataSource.languageTagPageSize,
+    total: tags.length,
+    totalPages: hasMore ? page + 1 : page,
+    hasMore: hasMore,
+  ),
+);
+
 DataGatewayChangeResult changed(
   DataGateway row, {
   DataGatewayConnectionAction? attempted,

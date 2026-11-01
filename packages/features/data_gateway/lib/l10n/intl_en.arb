@@ -26,7 +26,7 @@
   },
   "dataGatewayRetry": "Try again",
   "@dataGatewayRetry": {
-    "description": "Button that reads the data gateway list, the data gateway being edited, or the data gateway on its own screen, from the server again."
+    "description": "Button that reads from the server again what failed to load: the data gateway list, the data gateway being edited, the data gateway on its own screen, or the languages in the language picker, where it also tries the next page again."
   },
   "dataGatewayDeniedTitle": "You don't have access to data gateways",
   "@dataGatewayDeniedTitle": {
@@ -134,7 +134,7 @@
   },
   "dataGatewayCancel": "Cancel",
   "@dataGatewayCancel": {
-    "description": "Button that closes the delete confirmation without deleting."
+    "description": "Button that closes a dialog without doing what it asks: the delete confirmation, which deletes nothing, and the language picker, which links nothing."
   },
   "dataGatewayBusy": "Working on {name}…",
   "@dataGatewayBusy": {
@@ -599,5 +599,39 @@
   "dataGatewayOutcomeCapabilityFailed": "Couldn't get an answer about that change. Check the switch before trying again.",
   "@dataGatewayOutcomeCapabilityFailed": {
     "description": "Banner when a capability switch's change got no answer that says anything about it. It may have applied, so this must not say it did not."
+  },
+  "dataGatewayLanguagePickerTitle": "Link \"{value}\" to a language",
+  "@dataGatewayLanguagePickerTitle": {
+    "description": "Title of the dialog where an admin picks which of the server's languages a data gateway's name for a language stands for. {value} is the data gateway's own value, such as Czech or cs, shown as it is. Quotation marks set it off, in the style of your language.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguagePickerSearchLabel": "Search languages",
+  "@dataGatewayLanguagePickerSearchLabel": {
+    "description": "Label of the field in the language picker that narrows the list of languages by name. It is also the field's accessible name."
+  },
+  "dataGatewayLanguagePickerSearchHelper": "Search by language name, such as Portuguese",
+  "@dataGatewayLanguagePickerSearchHelper": {
+    "description": "Helper text under the search field in the language picker. The server matches a language's name and nothing else, so a tag such as pt-BR, or a place such as Brazil, finds nothing: this says what to type. Portuguese is an example of a language's name; translate it as that language's name."
+  },
+  "dataGatewayLanguagePickerLoading": "Loading languages…",
+  "@dataGatewayLanguagePickerLoading": {
+    "description": "Announced and shown while the language picker reads languages from the server, for its first page and for each next page."
+  },
+  "dataGatewayLanguagePickerEmpty": "No languages match",
+  "@dataGatewayLanguagePickerEmpty": {
+    "description": "Shown and announced in the language picker when no language matches what was typed."
+  },
+  "dataGatewayLanguagePickerFailed": "Couldn't load languages.",
+  "@dataGatewayLanguagePickerFailed": {
+    "description": "Shown and announced in the language picker when reading languages from the server failed, whether for the first page or for a next one. A Try again button goes with it."
+  },
+  "dataGatewayLanguagePickerMore": "Show more",
+  "@dataGatewayLanguagePickerMore": {
+    "description": "Button at the end of the language picker's list that reads the next page of languages from the server."
   }
 }
