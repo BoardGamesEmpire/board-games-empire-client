@@ -44,6 +44,50 @@
   "@dataGatewayDisabled": {
     "description": "Status on a data gateway row: the server does not use this data gateway. An admin turned it off, or the server turned it off after repeated connection failures."
   },
+  "dataGatewayStatusWaiting": "Not in use yet: waiting for its first interview",
+  "@dataGatewayStatusWaiting": {
+    "description": "Status line under the Enabled status on a data gateway row that has never been interviewed and has no failure to report. The server interviews a data gateway to learn what it can do, and does not use it until one interview has succeeded. Nothing has gone wrong yet; the interview is still to come."
+  },
+  "dataGatewayStatusNotInUse": "Not in use: {reason}",
+  "@dataGatewayStatusNotInUse": {
+    "description": "Status line under the Enabled status on a data gateway row that no interview has succeeded for, and whose latest interview failed. The server does not use it. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "it didn't answer"
+      }
+    }
+  },
+  "dataGatewayStatusLastFailed": "Last interview failed: {reason}",
+  "@dataGatewayStatusLastFailed": {
+    "description": "Status line under the Enabled status on a data gateway row that an earlier interview succeeded for, and whose latest interview failed. The server keeps using what the earlier interview found. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "it didn't answer"
+      }
+    }
+  },
+  "dataGatewayStatusInUse": "In use",
+  "@dataGatewayStatusInUse": {
+    "description": "Status line under the Enabled status on a data gateway row that an interview succeeded for and no later one has failed: the server uses it. It does not say whether the server is connected right now; the server does not record that."
+  },
+  "dataGatewayInterviewFailurePingFailed": "it didn't answer",
+  "@dataGatewayInterviewFailurePingFailed": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: it didn't answer. Keep it a short phrase that starts in lower case, with no full stop. The interview's first check, that the data gateway is there at all, went unanswered."
+  },
+  "dataGatewayInterviewFailureDescribeUnsupported": "it can't describe itself, so it may need updating",
+  "@dataGatewayInterviewFailureDescribeUnsupported": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: it can't describe itself. Keep it a short phrase that starts in lower case, with no full stop. The data gateway does not implement the call that asks what it can do, which an older version of it would not."
+  },
+  "dataGatewayInterviewFailureDescribeFailed": "it couldn't describe itself",
+  "@dataGatewayInterviewFailureDescribeFailed": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: it couldn't describe itself. Keep it a short phrase that starts in lower case, with no full stop. The call that asks the data gateway what it can do failed in some other way."
+  },
+  "dataGatewayInterviewFailureUnknown": "something went wrong",
+  "@dataGatewayInterviewFailureUnknown": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: something went wrong. Keep it a short phrase that starts in lower case, with no full stop. Used when the server gives a reason this app does not know."
+  },
   "dataGatewayAdd": "Add data gateway",
   "@dataGatewayAdd": {
     "description": "Button that opens the form to add a data gateway, and the title of that form."

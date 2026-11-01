@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
@@ -29,26 +30,54 @@ void main() {
 
   tearDown(() => access.dispose());
 
+  /// [onOpen] is null unless a test gives one, which leaves the rows
+  /// untappable, as a composition with no detail route does.
   Future<void> pumpScreen(
     WidgetTester tester, {
     void Function(BuildContext context)? onAdd,
     void Function(BuildContext context, String id)? onEdit,
+    void Function(BuildContext context, String id)? onOpen,
+    TextScaler textScaler = TextScaler.noScaling,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: BgeTheme.light(),
         localizationsDelegates: DataGatewayLocalizations.localizationsDelegates,
         supportedLocales: DataGatewayLocalizations.supportedLocales,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        ),
         home: DataGatewayListScreen(
           remote: remote,
           access: access,
           onAdd: onAdd ?? (_) {},
           onEdit: onEdit ?? (_, _) {},
+          onOpen: onOpen,
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
+
+  /// [row] with the interview status it would have if it had been
+  /// [interviewed] or not, and its last interview had failed with [failure]
+  /// or not.
+  DataGateway withInterview(
+    DataGateway row, {
+    bool interviewed = false,
+    DataGatewayInterviewFailureCode? failure,
+  }) => row.copyWith(
+    interview: DataGatewayInterviewStatus(
+      interviewed: interviewed,
+      failure: failure == null
+          ? null
+          : DataGatewayInterviewFailure(
+              code: failure,
+              at: DateTime.utc(2026, 10, 30),
+            ),
+    ),
+  );
 
   /// Stands in for the add or edit form: a page over the list.
   void openForm(BuildContext context) => unawaited(
@@ -327,6 +356,186 @@ void main() {
 
       expect(reads, 2);
       expect(find.text('Steam'), findsOneWidget);
+    });
+  });
+
+  group('whether a DataGateway is in use, and opening it (#457)', () {
+    testWidgets('a row shows why it is not in use', (tester) async {
+      remote.listing([
+        withInterview(bgg, failure: DataGatewayInterviewFailureCode.pingFailed),
+        steam,
+      ]);
+
+      await pumpScreen(tester);
+
+      expect(
+        find.descendant(
+          of: find.byKey(DataGatewayListScreen.statusKeyOf('dg_1')),
+          matching: find.text("Not in use: it didn't answer"),
+        ),
+        findsOneWidget,
+      );
+      // Under the row's name, address and badge, not in place of them.
+      expect(
+        find.descendant(
+          of: find.byKey(DataGatewayListScreen.rowKey('dg_1')),
+          matching: find.text('Enabled'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a disabled row shows only that it is disabled', (
+      tester,
+    ) async {
+      remote.listing([
+        withInterview(
+          steam,
+          failure: DataGatewayInterviewFailureCode.pingFailed,
+        ),
+      ]);
+
+      await pumpScreen(tester);
+
+      expect(find.text('Disabled'), findsOneWidget);
+      expect(
+        find.byKey(DataGatewayListScreen.statusKeyOf('dg_2')),
+        findsNothing,
+      );
+      expect(find.textContaining('Not in use'), findsNothing);
+    });
+
+    testWidgets('tapping a row opens it', (tester) async {
+      final opened = <String>[];
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, id) => opened.add(id));
+
+      await tester.tap(find.text('BGG'));
+      await tester.pumpAndSettle();
+      expect(opened, ['dg_1']);
+
+      // The status line is part of the row, not a dead patch in it.
+      await tester.tap(find.byKey(DataGatewayListScreen.statusKeyOf('dg_1')));
+      await tester.pumpAndSettle();
+      expect(opened, ['dg_1', 'dg_1']);
+    });
+
+    testWidgets('the row menu does not open the row', (tester) async {
+      final opened = <String>[];
+      String? edited;
+      remote.listing([bgg]);
+      await pumpScreen(
+        tester,
+        onOpen: (_, id) => opened.add(id),
+        onEdit: (_, id) => edited = id,
+      );
+
+      // Both taps: the one that opens the menu, and the one on its item.
+      await choose(tester, 'dg_1', DataGatewayListScreen.editKey);
+
+      expect(edited, 'dg_1');
+      expect(opened, isEmpty);
+    });
+
+    testWidgets('a row with no onOpen is not tappable', (tester) async {
+      remote.listing([bgg]);
+      await pumpScreen(tester);
+
+      final tile = tester.widget<ListTile>(
+        find.descendant(
+          of: find.byKey(DataGatewayListScreen.rowKey('dg_1')),
+          matching: find.byType(ListTile),
+        ),
+      );
+      expect(tile.onTap, isNull);
+      expect(
+        tester.getSemantics(find.text('BGG')),
+        isSemantics(isButton: false, hasTapAction: false),
+      );
+    });
+
+    testWidgets('a row that opens is one button that reads its status, and '
+        'its menu stays a button of its own', (tester) async {
+      remote.listing([
+        withInterview(bgg, failure: DataGatewayInterviewFailureCode.pingFailed),
+      ]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+
+      final row = tester.getSemantics(find.text('BGG'));
+      expect(
+        row,
+        isSemantics(
+          isButton: true,
+          hasTapAction: true,
+          label:
+              "BGG\nbgg.internal:50051\nEnabled\nNot in use: it didn't answer",
+        ),
+      );
+      // By its tooltip: getSemantics on the menu would walk up to the row.
+      final menu = find.semantics
+          .byPredicate((node) => node.tooltip == 'Actions for BGG')
+          .evaluate()
+          .single;
+      expect(menu, isNot(same(row)));
+      expect(
+        menu,
+        isSemantics(
+          isButton: true,
+          hasTapAction: true,
+          tooltip: 'Actions for BGG',
+        ),
+      );
+    });
+
+    testWidgets('a row opens from the keyboard, and its menu is the next '
+        'stop rather than part of it', (tester) async {
+      final opened = <String>[];
+      remote.listing([bgg]);
+      await pumpScreen(tester, onOpen: (_, id) => opened.add(id));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(opened, ['dg_1']);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byKey(DataGatewayListScreen.editKey), findsOneWidget);
+      expect(opened, ['dg_1']);
+    });
+
+    testWidgets('a long failure line does not overflow at 200% text', (
+      tester,
+    ) async {
+      tester.view
+        ..devicePixelRatio = 1
+        ..physicalSize = const Size(320, 800);
+      addTearDown(tester.view.reset);
+      remote.listing([
+        withInterview(
+          bgg,
+          interviewed: true,
+          failure: DataGatewayInterviewFailureCode.describeUnsupported,
+        ),
+      ]);
+
+      await pumpScreen(
+        tester,
+        onOpen: (_, _) {},
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text(
+          "Last interview failed: it can't describe itself, so it may need "
+          'updating',
+        ),
+        findsOneWidget,
+      );
     });
   });
 
