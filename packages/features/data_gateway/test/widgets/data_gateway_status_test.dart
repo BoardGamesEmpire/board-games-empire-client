@@ -123,6 +123,39 @@ void main() {
       expect(find.byType(Text), findsNothing);
       expect(tester.getSize(find.byType(DataGatewayStatusLine)), Size.zero);
     });
+
+    testWidgets('a line that wraps keeps its icon on the first line', (
+      tester,
+    ) async {
+      tester.view
+        ..devicePixelRatio = 1
+        ..physicalSize = const Size(320, 800);
+      addTearDown(tester.view.reset);
+
+      await pumpBody(
+        tester,
+        Align(
+          alignment: Alignment.topLeft,
+          child: DataGatewayStatusLine(
+            gateway: row(
+              interviewed: true,
+              failure: DataGatewayInterviewFailureCode.describeUnsupported,
+            ),
+          ),
+        ),
+      );
+
+      final style = Theme.of(tester.element(find.byType(DataGatewayStatusLine)))
+          .textTheme
+          .labelMedium!;
+      final oneLine = style.fontSize! * style.height!;
+      final words = tester.getRect(find.byType(Text));
+      expect(words.height, greaterThan(oneLine * 2), reason: 'it must wrap');
+      expect(
+        tester.getCenter(find.byType(Icon)).dy,
+        moreOrLessEquals(words.top + oneLine / 2),
+      );
+    });
   });
 
   group('dataGatewayInterviewFailureLabel', () {

@@ -25,6 +25,9 @@ class _ListingRemote implements DataGatewayRemoteDataSource {
 
   Future<PaginatedResult<DataGateway>> Function() read;
 
+  /// Thrown by every row read, when set.
+  Object? fetchOneError;
+
   @override
   Future<PaginatedResult<DataGateway>> fetchPage({
     int page = 1,
@@ -32,19 +35,24 @@ class _ListingRemote implements DataGatewayRemoteDataSource {
   }) => read();
 
   @override
-  Future<DataGateway> fetchOne(String id) async => DataGateway(
-    id: id,
-    name: 'Named $id',
-    connectionUrl: 'bgg.internal',
-    connectionPort: 50051,
-    enabled: true,
-    authType: DataGatewayAuthType.none,
-  );
+  Future<DataGateway> fetchOne(String id) async {
+    if (fetchOneError case final error?) throw error;
+    return _named(id);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName}');
 }
+
+DataGateway _named(String id) => DataGateway(
+  id: id,
+  name: 'Named $id',
+  connectionUrl: 'bgg.internal',
+  connectionPort: 50051,
+  enabled: true,
+  authType: DataGatewayAuthType.none,
+);
 
 PaginatedResult<DataGateway> _empty() => const PaginatedResult(
   items: [],
@@ -56,6 +64,18 @@ PaginatedResult<DataGateway> _empty() => const PaginatedResult(
     hasMore: false,
   ),
 );
+
+PaginatedResult<DataGateway> _listing(List<DataGateway> rows) =>
+    PaginatedResult(
+      items: rows,
+      meta: PaginationMeta(
+        page: 1,
+        limit: 100,
+        total: rows.length,
+        totalPages: 1,
+        hasMore: false,
+      ),
+    );
 
 const _forbidden = DataGatewayForbiddenException('refused', statusCode: 403);
 
@@ -225,5 +245,111 @@ void main() {
 
     expect(find.text('Named dg_b'), findsOneWidget);
     expect(find.text('Named dg_a'), findsNothing);
+  });
+
+  group('one DataGateway at its own location (#457)', () {
+    testWidgets('tapping a list row reaches the detail screen for that id', (
+      tester,
+    ) async {
+      remote.read = () async => _listing([_named('dg_a'), _named('dg_b')]);
+      access.readGranted();
+      await pumpHome(tester);
+      GoRouter.of(tester.element(find.byType(HomeScreen)))
+          .go(AppRoutes.adminDataGateways);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Named dg_b'));
+      await tester.pumpAndSettle();
+
+      final screen = find.byType(DataGatewayDetailScreen);
+      expect(tester.widget<DataGatewayDetailScreen>(screen).id, 'dg_b');
+      expect(
+        find.descendant(of: screen, matching: find.text('Named dg_b')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('leaving the detail is a pop back to the list, which reads '
+        'itself again', (tester) async {
+      var reads = 0;
+      remote.read = () async {
+        reads++;
+        return _listing([_named('dg_a')]);
+      };
+      access.readGranted();
+      await pumpHome(tester);
+      GoRouter.of(tester.element(find.byType(HomeScreen)))
+          .go(AppRoutes.dataGatewayDetailOf('dg_a'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DataGatewayDetailScreen), findsOneWidget);
+      final readsBeneathTheDetail = reads;
+
+      GoRouter.of(tester.element(find.byType(DataGatewayDetailScreen))).pop();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DataGatewayDetailScreen), findsNothing);
+      expect(find.byType(DataGatewayListScreen), findsOneWidget);
+      expect(reads, readsBeneathTheDetail + 1);
+    });
+
+    testWidgets('going from one detail straight to another shows the second', (
+      tester,
+    ) async {
+      access.readGranted();
+      await pumpHome(tester);
+      final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
+
+      router.go(AppRoutes.dataGatewayDetailOf('dg_a'));
+      await tester.pumpAndSettle();
+      expect(find.text('Named dg_a'), findsOneWidget);
+
+      // go_router keys a page by its path pattern, so this reuses the screen.
+      router.go(AppRoutes.dataGatewayDetailOf('dg_b'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Named dg_b'), findsOneWidget);
+      expect(find.text('Named dg_a'), findsNothing);
+    });
+
+    testWidgets('a deep link by a user who may not read shows access-denied', (
+      tester,
+    ) async {
+      remote
+        ..read = (() async => throw _forbidden)
+        ..fetchOneError = _forbidden;
+      await pumpHome(tester);
+
+      GoRouter.of(tester.element(find.byType(HomeScreen)))
+          .go(AppRoutes.dataGatewayDetailOf('dg_a'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(DataGatewayDetailScreen.deniedKey), findsOneWidget);
+      expect(access.value.read, DataGatewayRead.denied);
+    });
+
+    testWidgets('a session with no DataGateway client falls back', (
+      tester,
+    ) async {
+      when(() => cubit.activeServerScope).thenReturn(
+        FakeActiveServerScope(
+          buildActiveServer(
+            FakeAuthRepository(initialSession: sampleSession()),
+          ),
+        ),
+      );
+      whenListen(
+        cubit,
+        const Stream<AppBootstrapState>.empty(),
+        initialState: const AppBootstrapReady(),
+      );
+      await tester.pumpWidget(BgeApp(bootstrapCubit: cubit));
+      await tester.pumpAndSettle();
+
+      GoRouter.of(tester.element(find.byType(HomeScreen)))
+          .go(AppRoutes.dataGatewayDetailOf('dg_a'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    });
   });
 }

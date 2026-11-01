@@ -26,7 +26,7 @@
   },
   "dataGatewayRetry": "Try again",
   "@dataGatewayRetry": {
-    "description": "Button that reads the data gateway list, or the data gateway being edited, from the server again."
+    "description": "Button that reads the data gateway list, the data gateway being edited, or the data gateway on its own screen, from the server again."
   },
   "dataGatewayDeniedTitle": "You don't have access to data gateways",
   "@dataGatewayDeniedTitle": {
@@ -38,19 +38,19 @@
   },
   "dataGatewayEnabled": "Enabled",
   "@dataGatewayEnabled": {
-    "description": "Status on a data gateway row: the server uses this data gateway. It does not say whether the server is connected to it right now; the server does not record that."
+    "description": "Status on a data gateway row and on its own screen: the server uses this data gateway. It does not say whether the server is connected to it right now; the server does not record that."
   },
   "dataGatewayDisabled": "Disabled",
   "@dataGatewayDisabled": {
-    "description": "Status on a data gateway row: the server does not use this data gateway. An admin turned it off, or the server turned it off after repeated connection failures."
+    "description": "Status on a data gateway row and on its own screen: the server does not use this data gateway. An admin turned it off, or the server turned it off after repeated connection failures."
   },
   "dataGatewayStatusWaiting": "Not in use yet: waiting for its first interview",
   "@dataGatewayStatusWaiting": {
-    "description": "Status line under the Enabled status on a data gateway row that has never been interviewed and has no failure to report. The server interviews a data gateway to learn what it can do, and does not use it until one interview has succeeded. Nothing has gone wrong yet; the interview is still to come."
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that has never been interviewed and has no failure to report. The server interviews a data gateway to learn what it can do, and does not use it until one interview has succeeded. Nothing has gone wrong yet; the interview is still to come."
   },
   "dataGatewayStatusNotInUse": "Not in use: {reason}",
   "@dataGatewayStatusNotInUse": {
-    "description": "Status line under the Enabled status on a data gateway row that no interview has succeeded for, and whose latest interview failed. The server does not use it. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that no interview has succeeded for, and whose latest interview failed. The server does not use it. {reason} is a short phrase that follows the colon, such as it didn't answer.",
     "placeholders": {
       "reason": {
         "type": "String",
@@ -60,7 +60,7 @@
   },
   "dataGatewayStatusLastFailed": "Last interview failed: {reason}",
   "@dataGatewayStatusLastFailed": {
-    "description": "Status line under the Enabled status on a data gateway row that an earlier interview succeeded for, and whose latest interview failed. The server keeps using what the earlier interview found. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that an earlier interview succeeded for, and whose latest interview failed. The server keeps using what the earlier interview found. {reason} is a short phrase that follows the colon, such as it didn't answer.",
     "placeholders": {
       "reason": {
         "type": "String",
@@ -70,7 +70,7 @@
   },
   "dataGatewayStatusInUse": "In use",
   "@dataGatewayStatusInUse": {
-    "description": "Status line under the Enabled status on a data gateway row that an interview succeeded for and no later one has failed: the server uses it. It does not say whether the server is connected right now; the server does not record that."
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that an interview succeeded for and no later one has failed: the server uses it. It does not say whether the server is connected right now; the server does not record that."
   },
   "dataGatewayInterviewFailurePingFailed": "it didn't answer",
   "@dataGatewayInterviewFailurePingFailed": {
@@ -242,7 +242,7 @@
   },
   "dataGatewayDismiss": "Dismiss",
   "@dataGatewayDismiss": {
-    "description": "Button that closes the banner reporting the last action on the data gateway list."
+    "description": "Button that closes the banner reporting the last action, on the data gateway list and on a data gateway's own screen."
   },
   "dataGatewayFormEditTitle": "Edit data gateway",
   "@dataGatewayFormEditTitle": {
@@ -371,5 +371,233 @@
         "example": "BoardGameGeek"
       }
     }
+  },
+  "dataGatewayDetailLoading": "Loading this data gateway…",
+  "@dataGatewayDetailLoading": {
+    "description": "Announced while a data gateway's own screen reads it from the server, with nothing to show yet."
+  },
+  "dataGatewayDetailErrorTitle": "We couldn't load this data gateway",
+  "@dataGatewayDetailErrorTitle": {
+    "description": "Heading on a data gateway's own screen when it could not be read, for a reason other than the user's role or it being missing: the server was unreachable, or it answered with an error."
+  },
+  "dataGatewayDetailErrorBody": "Check your connection, then try again.",
+  "@dataGatewayDetailErrorBody": {
+    "description": "Body under the could-not-load heading on a data gateway's own screen."
+  },
+  "dataGatewayDetailGoneTitle": "Data gateway not found",
+  "@dataGatewayDetailGoneTitle": {
+    "description": "Heading on a data gateway's own screen when the server says it does not exist."
+  },
+  "dataGatewayDetailGoneBody": "It may have been deleted.",
+  "@dataGatewayDetailGoneBody": {
+    "description": "Body under the not-found heading on a data gateway's own screen."
+  },
+  "dataGatewayDetailRefresh": "Read this data gateway again",
+  "@dataGatewayDetailRefresh": {
+    "description": "Accessible name and tooltip of the app bar button that reads a data gateway from the server again, on its own screen."
+  },
+  "dataGatewayDateTime": "{date}, {time}",
+  "@dataGatewayDateTime": {
+    "description": "When something happened, on a data gateway's own screen, for a date in the current year: the day, then the time of day, for example 'Fri, Oct 30, 3:04 PM'. It stands in for {date} in the lines that say when something happened. The time arrives already formatted, in the 12- or 24-hour form the user's device is set to. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "MMMEd"
+      },
+      "time": {
+        "type": "String",
+        "example": "3:04 PM"
+      }
+    }
+  },
+  "dataGatewayDateTimeWithYear": "{date}, {time}",
+  "@dataGatewayDateTimeWithYear": {
+    "description": "dataGatewayDateTime for a date in another year, which carries the year, for example 'Thu, Oct 30, 2025, 3:04 PM'. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMEd"
+      },
+      "time": {
+        "type": "String",
+        "example": "3:04 PM"
+      }
+    }
+  },
+  "dataGatewayInterviewHeading": "Interview",
+  "@dataGatewayInterviewHeading": {
+    "description": "Heading of the part of a data gateway's own screen about its interviews. The server interviews a data gateway to learn what it can do, and does not use it until one interview has succeeded."
+  },
+  "dataGatewayInterviewFirst": "First interviewed {date}",
+  "@dataGatewayInterviewFirst": {
+    "description": "When the first successful interview of a data gateway ran.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      }
+    }
+  },
+  "dataGatewayInterviewLast": "Last interviewed {date}",
+  "@dataGatewayInterviewLast": {
+    "description": "When the latest successful interview of a data gateway ran. Its answers are the ones the server uses.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      }
+    }
+  },
+  "dataGatewayInterviewNever": "Not interviewed yet",
+  "@dataGatewayInterviewNever": {
+    "description": "Shown when no interview of a data gateway has succeeded. One may have failed, and then that failure is shown below this."
+  },
+  "dataGatewayInterviewLastFailure": "Last failure {date}: {reason}",
+  "@dataGatewayInterviewLastFailure": {
+    "description": "When the latest interview of a data gateway failed and why. Shown only while no later interview has succeeded. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      },
+      "reason": {
+        "type": "String",
+        "example": "it didn't answer"
+      }
+    }
+  },
+  "dataGatewayInterviewAgain": "Interview again",
+  "@dataGatewayInterviewAgain": {
+    "description": "Button that has the server interview a data gateway now, to learn again what it can do."
+  },
+  "dataGatewayInterviewing": "Interviewing…",
+  "@dataGatewayInterviewing": {
+    "description": "What the interview button says, and announces, while the interview runs. It can take up to a minute."
+  },
+  "dataGatewayListsHeading": "Lists",
+  "@dataGatewayListsHeading": {
+    "description": "Heading of the part of a data gateway's own screen about the lists the server loads from it after an interview, such as its languages."
+  },
+  "dataGatewayListsNone": "It doesn't list anything yet",
+  "@dataGatewayListsNone": {
+    "description": "Under the Lists heading, when the data gateway has no list for the server to load. It refers to the data gateway."
+  },
+  "dataGatewaySectionLoaded": "Last loaded {date}",
+  "@dataGatewaySectionLoaded": {
+    "description": "When the server last loaded one list from a data gateway.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      }
+    }
+  },
+  "dataGatewaySectionNotLoaded": "Not loaded yet",
+  "@dataGatewaySectionNotLoaded": {
+    "description": "One list the server should load from a data gateway has not been loaded since the last interview. Nothing has gone wrong: lists load in the few minutes after an interview."
+  },
+  "dataGatewaySectionFailed": "Failed {date}: {reason}",
+  "@dataGatewaySectionFailed": {
+    "description": "When the server's last attempt to load one list from a data gateway failed, and why. Shown only while no later attempt has succeeded. {reason} is a short phrase that follows the colon, such as it couldn't send the list.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      },
+      "reason": {
+        "type": "String",
+        "example": "it couldn't send the list"
+      }
+    }
+  },
+  "dataGatewaySectionFailureListUnsupported": "it doesn't offer this list",
+  "@dataGatewaySectionFailureListUnsupported": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: it doesn't offer this list. Keep it a short phrase that starts in lower case, with no full stop. The data gateway answered that it does not serve this list."
+  },
+  "dataGatewaySectionFailureListFailed": "it couldn't send the list",
+  "@dataGatewaySectionFailureListFailed": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: it couldn't send the list. Keep it a short phrase that starts in lower case, with no full stop. The data gateway failed to answer with the list."
+  },
+  "dataGatewaySectionFailureLinkFailed": "the server couldn't save the list",
+  "@dataGatewaySectionFailureLinkFailed": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: the server couldn't save the list. Keep it a short phrase that starts in lower case, with no full stop. The data gateway sent the list, and the server could not store what it sent."
+  },
+  "dataGatewaySectionFailureUnknown": "something went wrong",
+  "@dataGatewaySectionFailureUnknown": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: something went wrong. Keep it a short phrase that starts in lower case, with no full stop. Used when the server gives a reason this app does not know."
+  },
+  "dataGatewayCapabilitiesHeading": "Capabilities",
+  "@dataGatewayCapabilitiesHeading": {
+    "description": "Heading of the part of a data gateway's own screen with a switch for each thing the data gateway can do. The server does not use a capability that is switched off."
+  },
+  "dataGatewayCapabilitiesNone": "Nothing yet. It says what it can do at its first interview.",
+  "@dataGatewayCapabilitiesNone": {
+    "description": "Under the Capabilities heading, when the data gateway has not declared anything it can do. It refers to the data gateway."
+  },
+  "dataGatewayCapabilitySaving": "Saving…",
+  "@dataGatewayCapabilitySaving": {
+    "description": "Announced, and the accessible name of the progress bar shown, while a capability switch's change is being saved."
+  },
+  "dataGatewayCapabilitySearch": "Search",
+  "@dataGatewayCapabilitySearch": {
+    "description": "Name of a capability switch: the data gateway can search for games."
+  },
+  "dataGatewayCapabilityFetch": "Fetch game details",
+  "@dataGatewayCapabilityFetch": {
+    "description": "Name of a capability switch: the data gateway can fetch the details of one game."
+  },
+  "dataGatewayCapabilityFetchExpansions": "Fetch expansions",
+  "@dataGatewayCapabilityFetchExpansions": {
+    "description": "Name of a capability switch: the data gateway can fetch a game's expansions."
+  },
+  "dataGatewayCapabilityListLanguages": "List languages",
+  "@dataGatewayCapabilityListLanguages": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the languages it knows."
+  },
+  "dataGatewayCapabilityListPlatforms": "List platforms",
+  "@dataGatewayCapabilityListPlatforms": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the platforms it knows."
+  },
+  "dataGatewayCapabilityListCategories": "List categories",
+  "@dataGatewayCapabilityListCategories": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the game categories it knows."
+  },
+  "dataGatewayCapabilityListMechanics": "List mechanics",
+  "@dataGatewayCapabilityListMechanics": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the game mechanics it knows."
+  },
+  "dataGatewayCapabilityOther": "Other: {name}",
+  "@dataGatewayCapabilityOther": {
+    "description": "Name of a capability switch for something this app has no name for, because the server is newer than the app. {name} is the server's own name for it, left as it is.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "FutureThing"
+      }
+    }
+  },
+  "dataGatewayOutcomeInterviewDone": "Interview finished. Its lists load over the next few minutes.",
+  "@dataGatewayOutcomeInterviewDone": {
+    "description": "Banner after an interview of a data gateway succeeded. The server loads the lists it declared afterwards, so they don't show yet."
+  },
+  "dataGatewayOutcomeInterviewFailed": "The interview failed.",
+  "@dataGatewayOutcomeInterviewFailed": {
+    "description": "Banner after an interview of a data gateway ran and did not succeed. The screen says why in the failure line below."
+  },
+  "dataGatewayOutcomeInterviewUnknown": "The interview is taking a while, and may still finish. Check back here shortly.",
+  "@dataGatewayOutcomeInterviewUnknown": {
+    "description": "Banner when the server did not answer about an interview in time. It may keep interviewing after the app stops waiting, so this must not say the interview failed."
+  },
+  "dataGatewayOutcomeInterviewDisabled": "This data gateway is disabled, so it can't be interviewed. Connect it first.",
+  "@dataGatewayOutcomeInterviewDisabled": {
+    "description": "Banner when the server would not interview a data gateway because it is disabled. Connect is the action on its row in the data gateway list."
+  },
+  "dataGatewayOutcomeInterviewNoAnswer": "Couldn't get an answer about the interview, and it may still finish. Check back here before trying again.",
+  "@dataGatewayOutcomeInterviewNoAnswer": {
+    "description": "Banner when asking for an interview got no answer that says anything about it, such as a dropped connection. It must not say the interview did not happen: the server may still be interviewing, so it must not ask for another straight away."
+  },
+  "dataGatewayOutcomeCapabilityFailed": "Couldn't get an answer about that change. Check the switch before trying again.",
+  "@dataGatewayOutcomeCapabilityFailed": {
+    "description": "Banner when a capability switch's change got no answer that says anything about it. It may have applied, so this must not say it did not."
   }
 }

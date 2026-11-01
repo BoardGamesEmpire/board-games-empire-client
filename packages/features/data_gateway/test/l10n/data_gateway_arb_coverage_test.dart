@@ -28,7 +28,9 @@ void main() {
 
     test('the template defines the keys the a11y surface depends on', () {
       // The submit swaps its label rather than dropping it, the row menu is
-      // named for its row, and a busy row's spinner has a label.
+      // named for its row, and a busy row's spinner has a label. On the detail
+      // screen the refresh control is named, the spinner and the capability
+      // write's bar have labels, and the interview button swaps its label.
       expect(
         report.templateKeys,
         containsAll(<String>[
@@ -37,6 +39,11 @@ void main() {
           'dataGatewayFormInProgress',
           'dataGatewayRowActions',
           'dataGatewayBusy',
+          'dataGatewayDetailRefresh',
+          'dataGatewayDetailLoading',
+          'dataGatewayCapabilitySaving',
+          'dataGatewayInterviewAgain',
+          'dataGatewayInterviewing',
         ]),
       );
     });

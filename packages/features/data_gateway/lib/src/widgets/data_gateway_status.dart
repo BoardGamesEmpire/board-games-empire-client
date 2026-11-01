@@ -27,6 +27,19 @@ String dataGatewayInterviewFailureLabel(
     l10n.dataGatewayInterviewFailureUnknown,
 };
 
+/// The icon and color of an interview's current failure, wherever a screen
+/// reports it, so that one failure never reads as two severities (#457).
+///
+/// Crimson while no interview has succeeded, when the server does not use the
+/// DataGateway at all. Ember once one has, when the server keeps using what
+/// that interview found.
+(IconData, Color) dataGatewayInterviewFailureTone(
+  ColorScheme scheme, {
+  required bool interviewed,
+}) => interviewed
+    ? (Icons.warning_amber, scheme.tertiary)
+    : (Icons.error_outline, scheme.error);
+
 /// Whether the server uses an enabled DataGateway yet, and if not, why not
 /// (#457): an icon and words, never color alone.
 ///
@@ -66,6 +79,10 @@ class DataGatewayStatusLine extends StatelessWidget {
     // The colors are the ones `BgeInlineBanner` gives the same meanings:
     // ember for what is still to come or only partly wrong, crimson for what
     // has failed outright.
+    final (failureIcon, failureColor) = dataGatewayInterviewFailureTone(
+      scheme,
+      interviewed: interview.interviewed,
+    );
     final (icon, color, words) = switch ((interview.interviewed, reason)) {
       (false, null) => (
         Icons.hourglass_empty,
@@ -73,13 +90,13 @@ class DataGatewayStatusLine extends StatelessWidget {
         l10n.dataGatewayStatusWaiting,
       ),
       (false, final reason?) => (
-        Icons.error_outline,
-        scheme.error,
+        failureIcon,
+        failureColor,
         l10n.dataGatewayStatusNotInUse(reason),
       ),
       (true, final reason?) => (
-        Icons.warning_amber,
-        scheme.tertiary,
+        failureIcon,
+        failureColor,
         l10n.dataGatewayStatusLastFailed(reason),
       ),
       (true, null) => (
@@ -89,7 +106,7 @@ class DataGatewayStatusLine extends StatelessWidget {
       ),
     };
 
-    return _IconAndWords(icon: icon, color: color, words: words);
+    return DataGatewayIconAndWords(icon: icon, color: color, words: words);
   }
 }
 
@@ -108,7 +125,7 @@ class DataGatewayEnabledBadge extends StatelessWidget {
     final l10n = DataGatewayLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
 
-    return _IconAndWords(
+    return DataGatewayIconAndWords(
       icon: enabled
           ? Icons.check_circle_outline
           : Icons.do_not_disturb_on_outlined,
@@ -120,11 +137,12 @@ class DataGatewayEnabledBadge extends StatelessWidget {
 
 /// An icon beside words in one color: the shape of every status this feature
 /// shows, so the words are never left to the color to carry.
-class _IconAndWords extends StatelessWidget {
-  const _IconAndWords({
+class DataGatewayIconAndWords extends StatelessWidget {
+  const DataGatewayIconAndWords({
     required this.icon,
     required this.color,
     required this.words,
+    super.key,
   });
 
   final IconData icon;
@@ -133,26 +151,28 @@ class _IconAndWords extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final style = Theme.of(context).textTheme.labelMedium;
+    // Scales with its label, like the household badge.
+    final iconSize = MediaQuery.textScalerOf(context)
+        .scale(style?.fontSize ?? 0);
+    final oneLine = iconSize * (style?.height ?? 1);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
+      // Against the first line, in a slot as tall as one, so the icon starts
+      // the words however many lines they wrap to at 200% text, rather than
+      // floating beside the middle of them.
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          // Scales with its label, like the household badge.
-          size: MediaQuery.textScalerOf(context)
-              .scale(theme.textTheme.labelMedium?.fontSize ?? 0),
-          color: color,
+        SizedBox(
+          height: oneLine,
+          child: Icon(icon, size: iconSize, color: color),
         ),
         const BgeGap.xs(axis: Axis.horizontal),
         // Flexible, so a long line wraps inside the row at 200% text rather
         // than running off it.
         Flexible(
-          child: Text(
-            words,
-            style: theme.textTheme.labelMedium?.copyWith(color: color),
-          ),
+          child: Text(words, style: style?.copyWith(color: color)),
         ),
       ],
     );
