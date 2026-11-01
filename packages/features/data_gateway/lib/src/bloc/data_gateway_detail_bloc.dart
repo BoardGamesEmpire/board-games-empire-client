@@ -283,6 +283,8 @@ class DataGatewayDetailBloc
 
     if (end.gone) {
       _row = null;
+      _waitingSwitches.clear();
+      _interviewWaiting = false;
       emit(const DataGatewayDetailGone());
       return;
     }

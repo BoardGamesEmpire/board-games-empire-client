@@ -838,6 +838,35 @@ void main() {
           },
         );
       }
+
+      blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+        'a write that finds the row gone drops what was waiting, so a read '
+        'that brings it back sends none of it',
+        setUp: holdingTheFirstWrite,
+        build: build,
+        act: (bloc) async {
+          await send(bloc, load);
+          await send(bloc, switchOff('B'));
+          await send(bloc, switchOff('A'));
+          await send(bloc, interview);
+          firstWrite.completeError(notFound);
+          await pumpEventQueue();
+          expect(bloc.state, const DataGatewayDetailGone());
+
+          await send(bloc, load);
+          expect(bloc.state, DataGatewayDetailReady(gateway: row));
+          await send(bloc, switchOff('C'));
+        },
+        verify: (bloc) {
+          expect(remote.calls, [
+            fetchCall,
+            writeCall(['B']),
+            fetchCall,
+            writeCall(['C']),
+          ]);
+          expect(bloc.state, DataGatewayDetailReady(gateway: off(['C'])));
+        },
+      );
     });
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
