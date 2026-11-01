@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
@@ -950,6 +952,177 @@ void main() {
       expect(scrollChildCountOnScrollingNode(tester), 40);
 
       handle.dispose();
+    });
+  });
+
+  group('BgePage footer, from the keyboard on a phone (#457)', () {
+    Widget row(int index) => SizedBox(height: 48, child: Text('row $index'));
+
+    for (final (constructor, screen) in <(String, Widget)>[
+      (
+        'box',
+        BgePage(
+          title: const Text('t'),
+          footer: const SizedBox(height: 40),
+          child: Column(children: List.generate(60, row)),
+        ),
+      ),
+      (
+        'slivers',
+        BgePage.slivers(
+          title: const Text('t'),
+          footer: const SizedBox(height: 40),
+          slivers: [
+            SliverList.builder(
+              itemCount: 60,
+              itemBuilder: (context, index) => row(index),
+            ),
+          ],
+        ),
+      ),
+    ]) {
+      testWidgets(
+        'the $constructor constructor leaves the route one scroll position, '
+        "the page's, so Page Down with focus on the page scrolls it",
+        (tester) async {
+          await tester.pumpWidget(
+            hostAtSize(tester, screen, size: const Size(400, 600)),
+          );
+
+          // On Android and iOS a scroll view with no controller of its own
+          // attaches to the route's. The footer's scroll view did too, which
+          // left the keyboard's page scrolling two positions to choose from.
+          final route = PrimaryScrollController.of(
+            tester.element(find.byType(Scaffold)),
+          );
+          final page = tester
+              .state<ScrollableState>(find.byType(Scrollable).first)
+              .position;
+          expect(route.positions, [same(page)]);
+
+          // Focus on the page itself, as it is when a screen opens. With no
+          // control focused, Page Down scrolls whatever the route's
+          // controller holds.
+          expect(FocusManager.instance.primaryFocus, isA<FocusScopeNode>());
+          await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(page.pixels, greaterThan(0));
+        },
+        variant: TargetPlatformVariant.only(TargetPlatform.android),
+      );
+    }
+  });
+
+  group('BgePage.slivers, the rows kept built (#457)', () {
+    const rows = 100;
+    const footRow = 20;
+    Finder rowFinder(int index) =>
+        find.byKey(ValueKey<int>(index), skipOffstage: false);
+
+    testWidgets('a control at the foot of the view stays built, and can take '
+        'focus, when a footer half the body tall arrives', (tester) async {
+      final footer = ValueNotifier<double>(0);
+      addTearDown(footer.dispose);
+      final control = FocusNode(debugLabel: 'the control at the foot');
+      addTearDown(control.dispose);
+
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          ValueListenableBuilder<double>(
+            valueListenable: footer,
+            builder: (context, height, _) => BgePage.slivers(
+              title: const Text('t'),
+              // Given on every build: the page builds another tree without
+              // one.
+              footer: SizedBox(height: height),
+              slivers: [
+                SliverList.builder(
+                  itemCount: rows,
+                  itemBuilder: (context, index) => SizedBox(
+                    key: ValueKey<int>(index),
+                    height: 48,
+                    child: TextButton(
+                      focusNode: index == footRow ? control : null,
+                      onPressed: () {},
+                      child: Text('row $index'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          size: const Size(400, 800),
+        ),
+      );
+      final scrollable = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(
+        rowFinder(footRow),
+        200,
+        scrollable: scrollable,
+      );
+      await Scrollable.ensureVisible(
+        tester.element(rowFinder(footRow)),
+        alignment: 1,
+      );
+      await tester.pumpAndSettle();
+      final before = tester.getRect(scrollable);
+      expect(tester.getRect(rowFinder(footRow)).bottom, before.bottom);
+
+      // Far taller than the cap, so the footer takes half the body.
+      footer.value = 10000;
+      await tester.pumpAndSettle();
+
+      expect(rowFinder(footRow), findsOneWidget);
+      // Well past the default cache below the view, where a list that kept
+      // only the default would have let it go.
+      final view = tester.getRect(scrollable);
+      expect(
+        tester.getRect(rowFinder(footRow)).top - view.bottom,
+        greaterThan(RenderAbstractViewport.defaultCacheExtent),
+      );
+      control.requestFocus();
+      await tester.pump();
+      expect(control.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('without a footer, only the default cache past the view is '
+        'built', (tester) async {
+      final built = <int>{};
+
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            title: const Text('t'),
+            slivers: [
+              SliverList.builder(
+                itemCount: rows,
+                itemBuilder: (context, index) {
+                  built.add(index);
+                  return SizedBox(
+                    key: ValueKey<int>(index),
+                    height: 48,
+                    child: Text('row $index'),
+                  );
+                },
+              ),
+            ],
+          ),
+          size: const Size(400, 800),
+        ),
+      );
+
+      // The wider cache is for what a footer does to the view. Without one,
+      // a list builds no more than it did.
+      final view = tester.getRect(find.byType(Scrollable).first);
+      final last = built.reduce(math.max);
+      expect(
+        tester.getRect(rowFinder(last)).top - view.bottom,
+        lessThan(RenderAbstractViewport.defaultCacheExtent),
+      );
     });
   });
 }

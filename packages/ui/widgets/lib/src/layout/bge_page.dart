@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The largest share of the viewport a [BgePage.footer] may take.
@@ -12,6 +13,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Exists because the footer sits outside the scroll view, so an unbounded
 /// one starves the content above it. Half leaves the content at least half.
 const double _footerMaxViewportFraction = 0.5;
+
+/// How many viewports of content a [BgePage.slivers] page with a footer keeps
+/// built past each edge of its view, where the default is 250dp.
+///
+/// One is enough because of [_footerMaxViewportFraction]: a footer takes at
+/// most half the body, so a row it pushes out of view is at most half the
+/// body past the edge, which is no more than the view it leaves.
+const double _footerCacheViewports = 1;
 
 /// The standard page scaffold: a scrollable, width-constrained, centered
 /// content column inside a [Scaffold] (#165).
@@ -219,8 +228,11 @@ class BgePage extends StatelessWidget {
   ///
   /// ## When to pin (#211)
   ///
-  /// On a **flow step** or a **long review surface**, and nowhere else. Today
-  /// that means feedback compose and review. Short forms and vertically
+  /// On a **flow step**, a **long review surface**, or for **the outcome of an
+  /// action on a long list or page**, and nowhere else. Today that means
+  /// feedback compose and review, and the banners that answer actions on a
+  /// DataGateway's page: on the DataGateway itself, and on its language
+  /// worklist, stacked in its one footer (#457). Short forms and vertically
   /// centred pages keep their action inline, at the end of the form:
   /// server-add, sign-in, register and create-household.
   ///
@@ -235,6 +247,16 @@ class BgePage extends StatelessWidget {
   ///   submit band took 100dp of a 424dp body.
   /// - **A short form does not.** Its button already scrolls into reach, and
   ///   a pinned band costs content height for as long as the page is open.
+  /// - **An outcome on a long list pins because the list moves on.** Inside
+  ///   the list, a banner is built only near the view, so one that lands after
+  ///   the user has scrolled away is neither seen nor announced. At the head of
+  ///   a long page, a banner takes the page from the control it answers, and
+  ///   taking it away moves every control below it. In the footer it is always
+  ///   built and on screen, and reveals itself only within the footer's own
+  ///   scroll view, so the page doesn't move. Such a footer is passed on every
+  ///   build and renders nothing while there is nothing to report: this page
+  ///   builds a different tree with a footer than without one, so a footer
+  ///   that came and went would lose the scroll position and focus (#457).
   ///
   /// A page that pins may pass a [BgeFormActions] here, so that a failure
   /// still sits on the action it answers.
@@ -243,6 +265,16 @@ class BgePage extends StatelessWidget {
   /// over the body, so it lands on top of the footer band and swallows taps
   /// on its trailing end. Asserted rather than documented-and-hoped, because
   /// the overlap is invisible until someone taps the wrong half of a button.
+  ///
+  /// ## A footer over a lazy list
+  ///
+  /// A footer that arrives takes room from the end of the view, so the rows
+  /// there leave it. On a lazy list a row that far out of view is no longer
+  /// built, and keyboard focus on it, or on its way back to it, is lost. So a
+  /// [BgePage.slivers] page with a footer keeps one viewport of content built
+  /// past each edge of the view, where the default is 250dp. One is enough
+  /// because the footer takes at most half the body. A page without a footer
+  /// keeps the default (#457).
   final Widget? footer;
 
   /// Rejects a page carrying both a [footer] and a [floatingActionButton]
@@ -357,6 +389,13 @@ class BgePage extends StatelessWidget {
                       // 1.0 does not at 2.0 — so it shrink-wraps when short
                       // and scrolls when it is not.
                       child: SingleChildScrollView(
+                        // Never the route's primary scroll view, which on
+                        // Android and iOS is the page's own. A second one
+                        // there leaves the keyboard's page scrolling two
+                        // positions to choose from with focus on the page,
+                        // as it is when a screen opens: it threw, and the
+                        // page didn't move (#457).
+                        primary: false,
                         child: Padding(
                           // The content's own horizontal inset so the footer
                           // lines up with the column above it, and its bottom
@@ -416,6 +455,10 @@ class BgePage extends StatelessWidget {
           return CustomScrollView(
             controller: scrollController,
             semanticChildCount: semanticChildCount,
+            // See "A footer over a lazy list" on [footer].
+            scrollCacheExtent: footer == null
+                ? null
+                : const ScrollCacheExtent.viewport(_footerCacheViewports),
             slivers: [
               SliverPadding(
                 padding: resolved.add(EdgeInsets.symmetric(horizontal: gutter)),
