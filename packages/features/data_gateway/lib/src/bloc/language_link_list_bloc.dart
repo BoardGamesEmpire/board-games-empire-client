@@ -44,7 +44,10 @@ import 'language_link_list_state.dart';
 /// that change would take the link out of the filter, the count loses one all
 /// the same. Counting a place short is the safe side: the next page then
 /// starts with a link already shown, which More drops, where a place too many
-/// would skip the link that moved up.
+/// would skip the link that moved up. The same action tried again and made
+/// then takes the row off, and its place, a second time. The count stops at
+/// none: below a page short of it, More would ask for page 0, which the
+/// server refuses every time.
 ///
 /// The count is of places read, not rows shown, so a link added ahead of the
 /// rows can't stall More. Such a link, as a language job adds a few minutes
@@ -491,8 +494,10 @@ class LanguageLinkListBloc
       for (final shown in rows)
         if (shown.id != id) shown else if (keep) link ?? shown,
     ];
-    // A row taken off moves the server's later links up a place.
-    _readThrough -= rows.length - settled.length;
+    // A row taken off moves the server's later links up a place. Not past the
+    // first: a lost answer on the row may have counted that place already.
+    final taken = rows.length - settled.length;
+    _readThrough = _readThrough > taken ? _readThrough - taken : 0;
     // So may a lost answer, which keeps its row: see Pages.
     if (end.kind == LanguageLinkOutcomeKind.noAnswer &&
         !_lists(_filter, _statusAfter(action)) &&

@@ -678,6 +678,37 @@ void main() {
           expect(idsOf(bloc.state), [for (var n = 1; n <= 60; n++) _nth(n)]);
         },
       );
+
+      blocTest<LanguageLinkListBloc, LanguageLinkListState>(
+        'a page of ignores lost and then made again: more still asks for the '
+        'first page',
+        setUp: () {
+          serving(server = _Server(60));
+          final tried = <String>{};
+          remote.onIgnoreLanguageLink = (_, id) async {
+            if (tried.add(id)) throw unreachable();
+            return server.ignore(id);
+          };
+        },
+        build: build,
+        act: (bloc) async {
+          await send(bloc, load);
+          for (var round = 0; round < 2; round++) {
+            for (var n = 1; n <= 50; n++) {
+              await send(bloc, ignore(_nth(n)));
+            }
+          }
+          await send(bloc, more);
+        },
+        verify: (bloc) {
+          // Each lost answer counts a place short, and each ignore made again
+          // takes its row off as well. The count stops at none, where page 0
+          // is one the server refuses.
+          expect(remote.calls.last, fetchCall());
+          expect(idsOf(bloc.state), [for (var n = 51; n <= 60; n++) _nth(n)]);
+          expect((bloc.state as LanguageLinkListReady).hasMore, isFalse);
+        },
+      );
     });
 
     group('more waits', () {
