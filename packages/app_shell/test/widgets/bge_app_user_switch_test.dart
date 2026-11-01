@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:network_interface/network_interface.dart'
     show DataGatewayRemoteDataSource;
@@ -55,6 +56,21 @@ class _RecordingUserSessionScope implements UserSessionScope {
     _ops = result.then<void>((_) {}, onError: (Object _) {});
     return result;
   }
+}
+
+/// A session's event cache with nothing in it, counting who reads it.
+class _EmptyEventRepository implements EventRepository {
+  int watches = 0;
+
+  @override
+  Stream<List<EventListItem>> watchAttendingEventListItems() {
+    watches++;
+    return Stream.value(const []);
+  }
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} is not faked');
 }
 
 AuthResponse _sessionOf(String id, String username) => AuthResponse(
@@ -223,6 +239,32 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(adminEntry, findsOneWidget);
+  });
+
+  testWidgets("home's upcoming events read the second user's cache (#613)", (
+    tester,
+  ) async {
+    final first = _EmptyEventRepository();
+    final second = _EmptyEventRepository();
+    var current = first;
+    await signedInAsFirstUser(
+      tester,
+      onActivate: (container, userId) {
+        if (userId == 'u1') {
+          container.registerFactory<EventRepository>(() => current);
+        } else {
+          current = second;
+        }
+      },
+    );
+    expect(first.watches, 1);
+    expect(second.watches, 0);
+
+    switchToSecondUser();
+    await tester.pumpAndSettle();
+
+    expect(first.watches, 1);
+    expect(second.watches, 1);
   });
 
   testWidgets('a new session for the same user is not a switch', (
