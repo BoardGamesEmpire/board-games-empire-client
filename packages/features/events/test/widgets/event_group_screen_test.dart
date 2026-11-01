@@ -115,6 +115,20 @@ void main() {
     expect(tops, orderedEquals([...tops]..sort()));
   });
 
+  testWidgets('separates its rows, but not after the last', (tester) async {
+    await pumpGroup(tester, EventGroup.past);
+    items.add(past(3));
+    await tester.pump();
+
+    Finder dividerIn(String id) => find.descendant(
+      of: find.byKey(EventOverviewScreen.rowKey(id)),
+      matching: find.byType(Divider),
+    );
+    expect(dividerIn('e-past-0'), findsOneWidget);
+    expect(dividerIn('e-past-1'), findsOneWidget);
+    expect(dividerIn('e-past-2'), findsNothing);
+  });
+
   testWidgets("shows the group's empty copy when it empties", (tester) async {
     // The last upcoming event ends, or the user leaves it, while its page is
     // open: the page stays, and says the group is empty now.

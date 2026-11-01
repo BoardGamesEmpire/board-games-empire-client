@@ -5,6 +5,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 import 'package:events/l10n/events_localizations.dart';
 
 import '../detail/event_actions.dart';
+import '../detail/event_date_actions.dart';
 import '../screens/event_detail_screen.dart';
 import 'event_labels.dart';
 
@@ -124,11 +125,15 @@ class EventDatesSection extends StatelessWidget {
   final List<EventOccurrence> occurrences;
   final EventSchedulingMode schedulingMode;
 
-  /// The clock, which decides whether a date is this year's.
+  /// The clock, which decides whether a date is this year's and whether a
+  /// proposed one has passed.
   final DateTime Function() now;
 
-  /// What a date's menu offers. Null shows no menus.
-  final Set<EventAction> Function(EventOccurrence occurrence)? actionsFor;
+  /// What a date's menu offers as of `now`, the instant the section read
+  /// [now] at, so the menu and the date's status agree on whether it has
+  /// passed. Null shows no menus.
+  final Set<EventAction> Function(EventOccurrence occurrence, DateTime now)?
+  actionsFor;
 
   /// Opens *Add a date*. Null shows no button.
   final VoidCallback? onAdd;
@@ -172,7 +177,7 @@ class EventDatesSection extends StatelessWidget {
   }
 
   Widget _entryFor(EventOccurrence occurrence, DateTime now) {
-    final actions = actionsFor?.call(occurrence) ?? const <EventAction>{};
+    final actions = actionsFor?.call(occurrence, now) ?? const <EventAction>{};
     final onAction = this.onAction;
 
     return _OccurrenceEntry(
@@ -282,7 +287,9 @@ class _OccurrenceEntry extends StatelessWidget {
     final label = _present(occurrence.label);
     final start = occurrence.startDate;
     final end = occurrence.endDate;
-    final status = occurrenceStatusLabel(l10n, occurrence.status);
+    final status = proposalHasPassed(occurrence, now)
+        ? l10n.eventsOccurrencePassed
+        : occurrenceStatusLabel(l10n, occurrence.status);
     final reason = occurrence.status == OccurrenceStatus.cancelled
         ? _present(occurrence.cancelReason)
         : null;

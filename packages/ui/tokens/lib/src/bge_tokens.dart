@@ -30,6 +30,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     required this.radiusLg,
     required this.minTapTarget,
     required this.focusOutlineWidth,
+    required this.separatorThickness,
+    required this.separatorInset,
+    required this.accentBarWidth,
     required this.contentMaxWidth,
     required this.paneMaxWidth,
     required this.breakpointMedium,
@@ -77,6 +80,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     radiusLg: 16,
     minTapTarget: 48,
     focusOutlineWidth: 2,
+    separatorThickness: 2,
+    separatorInset: 96,
+    accentBarWidth: 4,
     contentMaxWidth: 480,
     paneMaxWidth: 840,
     breakpointMedium: 600,
@@ -146,6 +152,20 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
 
   /// Visible-focus indicator stroke width (WCAG 2.4.7).
   final double focusOutlineWidth;
+
+  // ── Rules and bars ─────────────────────────────────────────────────
+
+  /// Stroke of the short rule between rows of one group (logical px).
+  final double separatorThickness;
+
+  /// How far that rule stops short of each side of its row (logical px).
+  ///
+  /// Deep enough that the rule reads as a pause within a group, not as the
+  /// end of it, which is what [accentBarWidth]'s bar and the gap after it say.
+  final double separatorInset;
+
+  /// Width of the colored bar down the side of a group (logical px).
+  final double accentBarWidth;
 
   // ── Layout ─────────────────────────────────────────────────────────
 
@@ -223,6 +243,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     radiusLg,
     minTapTarget,
     focusOutlineWidth,
+    separatorThickness,
+    separatorInset,
+    accentBarWidth,
     contentMaxWidth,
     paneMaxWidth,
     breakpointMedium,
@@ -253,6 +276,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
     double? radiusLg,
     double? minTapTarget,
     double? focusOutlineWidth,
+    double? separatorThickness,
+    double? separatorInset,
+    double? accentBarWidth,
     double? contentMaxWidth,
     double? paneMaxWidth,
     double? breakpointMedium,
@@ -273,6 +299,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
       radiusLg: radiusLg ?? this.radiusLg,
       minTapTarget: minTapTarget ?? this.minTapTarget,
       focusOutlineWidth: focusOutlineWidth ?? this.focusOutlineWidth,
+      separatorThickness: separatorThickness ?? this.separatorThickness,
+      separatorInset: separatorInset ?? this.separatorInset,
+      accentBarWidth: accentBarWidth ?? this.accentBarWidth,
       contentMaxWidth: contentMaxWidth ?? this.contentMaxWidth,
       paneMaxWidth: paneMaxWidth ?? this.paneMaxWidth,
       breakpointMedium: breakpointMedium ?? this.breakpointMedium,
@@ -302,6 +331,13 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
         other.focusOutlineWidth,
         t,
       )!,
+      separatorThickness: lerpDouble(
+        separatorThickness,
+        other.separatorThickness,
+        t,
+      )!,
+      separatorInset: lerpDouble(separatorInset, other.separatorInset, t)!,
+      accentBarWidth: lerpDouble(accentBarWidth, other.accentBarWidth, t)!,
       contentMaxWidth: lerpDouble(contentMaxWidth, other.contentMaxWidth, t)!,
       paneMaxWidth: lerpDouble(paneMaxWidth, other.paneMaxWidth, t)!,
       breakpointMedium: lerpDouble(

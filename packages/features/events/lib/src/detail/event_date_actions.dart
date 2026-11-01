@@ -15,18 +15,24 @@ import 'event_actions.dart';
 /// on [event], by status (#506): any of editDate, confirmDate, declineDate,
 /// cancelDate, removeDate. Unmodifiable.
 ///
-/// Confirm and decline are for a proposed date and cancel for a confirmed one.
-/// Edit and remove fit a date of any status. A cancelled or archived event
-/// takes no date write, and neither does an event or date of unknown status,
-/// which the client can't judge.
+/// Confirm and decline are for a proposed date that hasn't passed
+/// ([proposalHasPassed]) and cancel for a confirmed one. Edit and remove fit a
+/// date of any status, and an edit to a later time reopens one that has passed.
+/// A cancelled or archived event takes no date write, and neither does an event
+/// or date of unknown status, which the client can't judge.
 Set<EventAction> dateActionsFor(
   Event event,
   EventOccurrence occurrence,
-  Set<EventAction> allowed,
-) {
+  Set<EventAction> allowed, {
+  required DateTime now,
+}) {
   if (!takesDateWrites(event)) return const {};
 
   final byStatus = switch (occurrence.status) {
+    OccurrenceStatus.proposed when proposalHasPassed(occurrence, now) => const {
+      EventAction.editDate,
+      EventAction.removeDate,
+    },
     OccurrenceStatus.proposed => const {
       EventAction.editDate,
       EventAction.confirmDate,
@@ -46,6 +52,20 @@ Set<EventAction> dateActionsFor(
   };
 
   return Set.unmodifiable(byStatus.intersection(allowed));
+}
+
+/// Whether [occurrence] is a proposed date whose time has gone by, as of [now].
+///
+/// Worked out here because the status can't say: the server leaves a date
+/// Proposed until a host acts on it, however long ago it was. A date ends as
+/// `groupEvents` says: at its end, or its start when it has none, and a date
+/// ending at [now] has not passed. One with no start has no time to pass.
+bool proposalHasPassed(EventOccurrence occurrence, DateTime now) {
+  if (occurrence.status != OccurrenceStatus.proposed) return false;
+
+  final start = occurrence.startDate;
+  if (start == null) return false;
+  return (occurrence.endDate ?? start).isBefore(now);
 }
 
 /// Whether [event], holding [occurrences], offers Add a date.

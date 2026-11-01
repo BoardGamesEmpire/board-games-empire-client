@@ -397,6 +397,24 @@ void main() {
   });
 
   group('the dates', () {
+    testWidgets('says a proposed date has passed', (tester) async {
+      await show(
+        tester,
+        _detail(
+          occurrences: [
+            confirmed(
+              'o-1',
+              now.subtract(const Duration(days: 1)),
+            ).copyWith(status: OccurrenceStatus.proposed),
+          ],
+        ),
+      );
+
+      const dates = EventDetailScreen.datesKey;
+      expect(inSection(dates, 'Date passed'), findsOneWidget);
+      expect(inSection(dates, 'Proposed'), findsNothing);
+    });
+
     testWidgets('shows each date with its status', (tester) async {
       await show(
         tester,
@@ -1608,6 +1626,33 @@ void main() {
       await settle(tester);
       expect(find.byKey(EventDetailScreen.addDateKey), findsNothing);
       expect(menuOf('o-1'), findsOneWidget);
+    });
+
+    testWidgets('a proposed date that has passed offers only Edit and Remove', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        hosted([
+          confirmed(
+            'o-1',
+            now.subtract(const Duration(days: 1)),
+          ).copyWith(eventId: 'e-1', status: OccurrenceStatus.proposed),
+        ]),
+        remote: answering(),
+        onBack: back,
+      );
+
+      await toggleMenu(tester, 'o-1');
+      expect(
+        [
+          for (final item in tester.widgetList<MenuItemButton>(
+            find.byType(MenuItemButton),
+          ))
+            (item.child! as Text).data,
+        ],
+        ['Edit', 'Remove'],
+      );
     });
 
     testWidgets('a participant sees no menu and no Add a date', (tester) async {
