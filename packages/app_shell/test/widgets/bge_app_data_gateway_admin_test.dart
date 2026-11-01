@@ -18,14 +18,16 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 
 class _MockStorage extends Mock implements Storage {}
 
-/// Answers every list read with [read] and every row read with a DataGateway
-/// named after its id; nothing else is called here.
+/// Answers every list read with [read], every row read with a DataGateway named
+/// after its id, and every read of a row's language links with none; nothing
+/// else is called here.
 class _ListingRemote implements DataGatewayRemoteDataSource {
   _ListingRemote(this.read);
 
   Future<PaginatedResult<DataGateway>> Function() read;
 
-  /// Thrown by every row read, when set.
+  /// Thrown by every read of a row or of its language links, when set: a user
+  /// who may not read a DataGateway may not read its links either.
   Object? fetchOneError;
 
   @override
@@ -38,6 +40,26 @@ class _ListingRemote implements DataGatewayRemoteDataSource {
   Future<DataGateway> fetchOne(String id) async {
     if (fetchOneError case final error?) throw error;
     return _named(id);
+  }
+
+  @override
+  Future<PaginatedResult<LanguageLink>> fetchLanguageLinks(
+    String id, {
+    Set<LanguageLinkStatus>? statuses,
+    int page = 1,
+    int limit = DataGatewayRemoteDataSource.languageLinkPageSize,
+  }) async {
+    if (fetchOneError case final error?) throw error;
+    return PaginatedResult(
+      items: const [],
+      meta: PaginationMeta(
+        page: page,
+        limit: limit,
+        total: 0,
+        totalPages: 0,
+        hasMore: false,
+      ),
+    );
   }
 
   @override
@@ -263,9 +285,10 @@ void main() {
 
       final screen = find.byType(DataGatewayDetailScreen);
       expect(tester.widget<DataGatewayDetailScreen>(screen).id, 'dg_b');
+      // The name heads the page as well as its app bar.
       expect(
-        find.descendant(of: screen, matching: find.text('Named dg_b')),
-        findsOneWidget,
+        tester.widget<Text>(find.byKey(DataGatewayDetailScreen.nameKey)).data,
+        'Named dg_b',
       );
     });
 
@@ -299,15 +322,18 @@ void main() {
       await pumpHome(tester);
       final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
 
+      String? heading() =>
+          tester.widget<Text>(find.byKey(DataGatewayDetailScreen.nameKey)).data;
+
       router.go(AppRoutes.dataGatewayDetailOf('dg_a'));
       await tester.pumpAndSettle();
-      expect(find.text('Named dg_a'), findsOneWidget);
+      expect(heading(), 'Named dg_a');
 
       // go_router keys a page by its path pattern, so this reuses the screen.
       router.go(AppRoutes.dataGatewayDetailOf('dg_b'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Named dg_b'), findsOneWidget);
+      expect(heading(), 'Named dg_b');
       expect(find.text('Named dg_a'), findsNothing);
     });
 

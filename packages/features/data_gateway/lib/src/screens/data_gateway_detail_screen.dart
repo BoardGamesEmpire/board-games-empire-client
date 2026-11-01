@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:models/domain.dart';
@@ -11,19 +13,44 @@ import '../access/data_gateway_access.dart';
 import '../bloc/data_gateway_detail_bloc.dart';
 import '../bloc/data_gateway_detail_event.dart';
 import '../bloc/data_gateway_detail_state.dart';
+import '../bloc/language_link_list_bloc.dart';
+import '../bloc/language_link_list_event.dart';
+import '../bloc/language_link_list_state.dart';
 import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
+import '../widgets/language_link_worklist.dart';
 
-/// One DataGateway's own page (#457): whether the server uses it and why not,
-/// how its interviews and lists went, and a switch for each thing it can do.
+/// One DataGateway's own page (#457): its name, whether the server uses it and
+/// why not, how its interviews and lists went, a switch for each thing it can
+/// do, and the language names it uses that are left to review.
 ///
 /// Decoupled from DI like the list screen: the caller resolves the per-server
 /// [DataGatewayRemoteDataSource] and the session's [DataGatewayAccess]. The
 /// screen takes an id rather than a row, and reads the row itself.
 ///
-/// The row is read again whenever the screen comes back into view, and from
-/// the refresh control. [DataGatewayDetailBloc] says how a read and an action
-/// that overlap settle.
+/// The row and the worklist are read again whenever the screen comes back into
+/// view, and from the refresh control. [DataGatewayDetailBloc] and
+/// [LanguageLinkListBloc] each say how a read and an action that overlap
+/// settle.
+///
+/// The worklist ([LanguageLinkWorklist]) shows while the row does, and has
+/// surfaces of its own for its own reads. The row's other surfaces take the
+/// screen. A worklist found gone asks for the row again, and if that finds the
+/// DataGateway gone too, the gone surface takes the screen.
+///
+/// The name heads the page as well as the app bar, which cuts a long one short:
+/// at 200% text on a phone, to a few letters.
+///
+/// ## What an action answered
+///
+/// Both banners are in the page's footer: what an action on the DataGateway
+/// answered, then what an action on a language link answered, each with its
+/// own Dismiss. A footer is always built and always on screen, so a banner
+/// there is seen and announced wherever the user is working on a long page,
+/// and its coming and going moves no control. At the head of the page, the
+/// banner for a switch far down took the page to the top, and the next action
+/// took it away and moved every switch up under the pointer. Among the
+/// worklist's rows, the banner wasn't built once the user had scrolled away.
 ///
 /// ## Keeping keyboard focus
 ///
@@ -39,11 +66,19 @@ import '../widgets/data_gateway_status.dart';
 ///   switches do stop taking presses: an interview starts from the button, so
 ///   focus is not on a switch, and up to a minute of presses that go nowhere
 ///   would mislead.
+/// - A refusal takes the interview button away and stops the switches, and a
+///   row found disabled takes the button away, whichever read or action found
+///   it. Left to go with the control, focus would land on whatever had it
+///   before. So if that control had focus, it goes to the banner's Dismiss, or
+///   with no banner to the first switch still taking presses, or else to
+///   refresh.
+/// - The banner takes room from the foot of the view as it arrives. A switch
+///   with focus that it covers is brought back into view, as Tab would, for a
+///   user who can see focus.
 ///
 /// A control also loses focus when the tree under it is rebuilt, so what comes
-/// and goes keeps the rest in place. The banner is a sliver of a type no
-/// section shares, the bar has a slot of its own whether it shows or not, and
-/// each switch is keyed.
+/// and goes keeps the rest in place: the bar has a slot of its own whether it
+/// shows or not, and each switch is keyed.
 ///
 /// ## Access
 ///
@@ -63,6 +98,7 @@ class DataGatewayDetailScreen extends StatelessWidget {
   static const Key goneKey = Key('data_gateway_detail.gone');
   static const Key errorKey = Key('data_gateway_detail.error');
   static const Key outcomeKey = Key('data_gateway_detail.outcome');
+  static const Key nameKey = Key('data_gateway_detail.name');
   static const Key interviewKey = Key('data_gateway_detail.interview');
   static const Key refreshKey = Key('data_gateway_detail.refresh');
 
@@ -87,21 +123,38 @@ class DataGatewayDetailScreen extends StatelessWidget {
   final DataGatewayAccess? access;
 
   @override
-  Widget build(BuildContext context) => BlocProvider<DataGatewayDetailBloc>(
+  Widget build(BuildContext context) => MultiBlocProvider(
     // Keyed on the row: go_router keys a page by its path pattern, so going
     // from one DataGateway's location straight to another rebuilds this screen
-    // in place. A new id has to start a new bloc, or the screen would show the
+    // in place. A new id has to start new blocs, or the screen would show the
     // first row under the second's URL, and write to the first.
     key: ValueKey<String>(id),
-    create: (_) =>
-        DataGatewayDetailBloc(remote: remote, id: id, access: access)
-          ..add(const DataGatewayDetailLoadRequested()),
-    // Reads the row again when the screen comes back into view, so it covers
-    // whatever was opened over it.
-    child: Builder(
-      builder: (context) => ReadAgainWhenUncovered(
-        onUncovered: () => _readAgain(context),
-        child: const _DataGatewayDetailView(),
+    providers: [
+      BlocProvider<DataGatewayDetailBloc>(
+        create: (_) =>
+            DataGatewayDetailBloc(remote: remote, id: id, access: access)
+              ..add(const DataGatewayDetailLoadRequested()),
+      ),
+      BlocProvider<LanguageLinkListBloc>(
+        create: (_) =>
+            LanguageLinkListBloc(remote: remote, gatewayId: id, access: access)
+              ..add(const LanguageLinkListLoadRequested()),
+      ),
+    ],
+    child: BlocListener<LanguageLinkListBloc, LanguageLinkListState>(
+      // A 404 on the worklist may mean the DataGateway itself is gone. Reading
+      // the row finds out, and its answer takes the screen.
+      listenWhen: (_, state) => state is LanguageLinkListGone,
+      listener: (context, _) => context.read<DataGatewayDetailBloc>().add(
+        const DataGatewayDetailLoadRequested(),
+      ),
+      // Reads what the screen shows again when it comes back into view, so it
+      // covers whatever was opened over it.
+      child: Builder(
+        builder: (context) => ReadAgainWhenUncovered(
+          onUncovered: () => _readAgain(context),
+          child: _DataGatewayDetailView(remote: remote),
+        ),
       ),
     ),
   );
@@ -109,12 +162,43 @@ class DataGatewayDetailScreen extends StatelessWidget {
 
 /// Reads what the screen shows from the server again: on coming back into
 /// view, on a refresh and on a retry.
-void _readAgain(BuildContext context) => context
-    .read<DataGatewayDetailBloc>()
-    .add(const DataGatewayDetailLoadRequested());
+void _readAgain(BuildContext context) {
+  context.read<DataGatewayDetailBloc>().add(
+    const DataGatewayDetailLoadRequested(),
+  );
+  context.read<LanguageLinkListBloc>().add(
+    const LanguageLinkListLoadRequested(),
+  );
+}
 
-class _DataGatewayDetailView extends StatelessWidget {
-  const _DataGatewayDetailView();
+class _DataGatewayDetailView extends StatefulWidget {
+  const _DataGatewayDetailView({required this.remote});
+
+  final DataGatewayRemoteDataSource remote;
+
+  @override
+  State<_DataGatewayDetailView> createState() => _DataGatewayDetailViewState();
+}
+
+class _DataGatewayDetailViewState extends State<_DataGatewayDetailView> {
+  /// Around the interview button and the switches, so the footer can tell
+  /// whether one of them has focus. It takes none itself.
+  final FocusNode _controls = FocusNode(
+    debugLabel: 'data gateway controls',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  final FocusNode _interview = FocusNode(debugLabel: 'data gateway interview');
+  final FocusNode _refresh = FocusNode(debugLabel: 'data gateway refresh');
+
+  @override
+  void dispose() {
+    _controls.dispose();
+    _interview.dispose();
+    _refresh.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -123,10 +207,30 @@ class _DataGatewayDetailView extends StatelessWidget {
     return BlocBuilder<DataGatewayDetailBloc, DataGatewayDetailState>(
       builder: (context, state) {
         final ready = state is DataGatewayDetailReady ? state : null;
+        final worklistRows = context.select<LanguageLinkListBloc, int?>(
+          (bloc) => switch (bloc.state) {
+            LanguageLinkListReady(:final links) when links.isNotEmpty =>
+              links.length,
+            _ => null,
+          },
+        );
+        final inset = BgeTokens.of(context).spaceLg;
 
         return BgePage.slivers(
           title: Text(ready?.gateway.name ?? l10n.dataGatewayListTitle),
           width: BgePageWidth.pane,
+          // "Language name 3 of 50": only the worklist's rows are counted, and
+          // only while it shows.
+          semanticChildCount: ready == null ? null : worklistRows,
+          // The bottom inset ends the slivers instead. The page would put it
+          // around the footer, which would then be a band with nothing in it.
+          padding: EdgeInsets.fromLTRB(inset, inset, inset, 0),
+          // On every build, in every state: see the footer's doc.
+          footer: _OutcomeFooter(
+            controls: _controls,
+            interview: _interview,
+            refresh: _refresh,
+          ),
           actions: [
             // On every surface but denied, which has nothing to act on. That
             // includes the spinner, so a refresh that takes the row down, or
@@ -135,83 +239,106 @@ class _DataGatewayDetailView extends StatelessWidget {
             if (state is! DataGatewayDetailDenied)
               IconButton(
                 key: DataGatewayDetailScreen.refreshKey,
+                focusNode: _refresh,
                 tooltip: l10n.dataGatewayDetailRefresh,
                 icon: const Icon(Icons.refresh),
                 onPressed: () => _readAgain(context),
               ),
           ],
           slivers: [
-            if (ready?.outcome case final outcome?)
-              _OutcomeSliver(outcome: outcome),
-            ...switch (state) {
-              DataGatewayDetailLoading() => [
-                _LoadingSliver(message: l10n.dataGatewayDetailLoading),
-              ],
-              DataGatewayDetailDenied() => [
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: DataGatewayMessage(
-                      key: DataGatewayDetailScreen.deniedKey,
-                      icon: Icons.lock_outline,
-                      title: l10n.dataGatewayDeniedTitle,
-                      body: l10n.dataGatewayDeniedBody,
-                    ),
-                  ),
-                ),
-              ],
-              DataGatewayDetailGone() => [
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: DataGatewayMessage(
-                      key: DataGatewayDetailScreen.goneKey,
-                      icon: Icons.search_off_outlined,
-                      title: l10n.dataGatewayDetailGoneTitle,
-                      body: l10n.dataGatewayDetailGoneBody,
-                    ),
-                  ),
-                ),
-              ],
-              DataGatewayDetailFailed() => [
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: BgeErrorState(
-                      key: DataGatewayDetailScreen.errorKey,
-                      icon: Icons.cloud_off_outlined,
-                      title: l10n.dataGatewayDetailErrorTitle,
-                      body: l10n.dataGatewayDetailErrorBody,
-                      retryLabel: l10n.dataGatewayRetry,
-                      onRetry: () => _readAgain(context),
-                    ),
-                  ),
-                ),
-              ],
-              DataGatewayDetailReady(
-                :final gateway,
-                :final mayChange,
-                :final busy,
-                :final interviewWaiting,
-              ) =>
-                [
-                  _StatusSection(gateway: gateway),
-                  _InterviewSection(
-                    gateway: gateway,
-                    mayChange: mayChange,
-                    interviewing:
-                        busy == DataGatewayDetailBusy.interview ||
-                        interviewWaiting,
-                  ),
-                  _ListsSection(gateway: gateway),
-                  _CapabilitiesSection(
-                    gateway: gateway,
-                    mayChange: mayChange,
-                    busy: busy,
-                    interviewWaiting: interviewWaiting,
-                  ),
+            // A group of its own, so that Tab and Shift-Tab go through the page
+            // as a block. Reading order goes by height alone, which would stop
+            // at the footer's Dismiss among the rows built below the fold, and
+            // at the app bar's refresh among those above the view.
+            FocusTraversalGroup(
+              child: SliverMainAxisGroup(
+                slivers: [
+                  ...switch (state) {
+                    DataGatewayDetailLoading() => [
+                      _LoadingSliver(message: l10n.dataGatewayDetailLoading),
+                    ],
+                    DataGatewayDetailDenied() => [
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: DataGatewayMessage(
+                            key: DataGatewayDetailScreen.deniedKey,
+                            icon: Icons.lock_outline,
+                            title: l10n.dataGatewayDeniedTitle,
+                            body: l10n.dataGatewayDeniedBody,
+                          ),
+                        ),
+                      ),
+                    ],
+                    DataGatewayDetailGone() => [
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: DataGatewayMessage(
+                            key: DataGatewayDetailScreen.goneKey,
+                            icon: Icons.search_off_outlined,
+                            title: l10n.dataGatewayDetailGoneTitle,
+                            body: l10n.dataGatewayDetailGoneBody,
+                          ),
+                        ),
+                      ),
+                    ],
+                    DataGatewayDetailFailed() => [
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: BgeErrorState(
+                            key: DataGatewayDetailScreen.errorKey,
+                            icon: Icons.cloud_off_outlined,
+                            title: l10n.dataGatewayDetailErrorTitle,
+                            body: l10n.dataGatewayDetailErrorBody,
+                            retryLabel: l10n.dataGatewayRetry,
+                            onRetry: () => _readAgain(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                    DataGatewayDetailReady(
+                      :final gateway,
+                      :final mayChange,
+                      :final busy,
+                      :final interviewWaiting,
+                    ) =>
+                      [
+                        _NameHeading(name: gateway.name),
+                        _StatusSection(gateway: gateway),
+                        Focus(
+                          focusNode: _controls,
+                          // A sliver can't sit under the box Focus otherwise
+                          // puts around its child for semantics.
+                          includeSemantics: false,
+                          child: SliverMainAxisGroup(
+                            slivers: [
+                              _InterviewSection(
+                                gateway: gateway,
+                                mayChange: mayChange,
+                                focusNode: _interview,
+                                interviewing:
+                                    busy == DataGatewayDetailBusy.interview ||
+                                    interviewWaiting,
+                              ),
+                              _ListsSection(gateway: gateway),
+                              _CapabilitiesSection(
+                                gateway: gateway,
+                                mayChange: mayChange,
+                                busy: busy,
+                                interviewWaiting: interviewWaiting,
+                              ),
+                            ],
+                          ),
+                        ),
+                        LanguageLinkWorklist(remote: widget.remote),
+                      ],
+                  },
+                  const SliverToBoxAdapter(child: BgeGap.lg()),
                 ],
-            },
+              ),
+            ),
           ],
         );
       },
@@ -254,6 +381,31 @@ class _Section extends StatelessWidget {
   }
 }
 
+/// The DataGateway's name, whole, as the page's first heading.
+///
+/// The app bar cuts a long name short, and "BGG staging" and "BGG prod" can
+/// read the same there (#457).
+class _NameHeading extends StatelessWidget {
+  const _NameHeading({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) => SliverToBoxAdapter(
+    child: Padding(
+      padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
+      child: Semantics(
+        header: true,
+        child: Text(
+          name,
+          key: DataGatewayDetailScreen.nameKey,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+      ),
+    ),
+  );
+}
+
 /// Whether the DataGateway is switched on, and whether the server uses it yet.
 class _StatusSection extends StatelessWidget {
   const _StatusSection({required this.gateway});
@@ -284,11 +436,13 @@ class _InterviewSection extends StatelessWidget {
   const _InterviewSection({
     required this.gateway,
     required this.mayChange,
+    required this.focusNode,
     required this.interviewing,
   });
 
   final DataGateway gateway;
   final bool mayChange;
+  final FocusNode focusNode;
   final bool interviewing;
 
   @override
@@ -325,6 +479,7 @@ class _InterviewSection extends StatelessWidget {
           const BgeGap.md(),
           OutlinedButton(
             key: DataGatewayDetailScreen.interviewKey,
+            focusNode: focusNode,
             // Enabled while its own interview runs, and the bloc settles a press
             // made meanwhile: see the screen's doc.
             onPressed: () => context.read<DataGatewayDetailBloc>().add(
@@ -491,10 +646,217 @@ class _SavingBar extends StatelessWidget {
   );
 }
 
-class _OutcomeSliver extends StatelessWidget {
-  const _OutcomeSliver({required this.outcome});
+/// What the last actions answered (#457), for the page's footer: the
+/// DataGateway's own banner, then the worklist's.
+///
+/// See the screen's doc for why a footer. A banner here reveals itself only
+/// within the footer's own scroll view, so the page doesn't move.
+///
+/// Given to the page on every build, whatever there is to show. [BgePage]
+/// builds a different tree with a footer than without one, so a footer that
+/// came and went would rebuild the page, and lose its scroll position and
+/// focus. It renders nothing while neither has anything to report, and while
+/// the DataGateway isn't showing, which the worklist shows only with. To leave
+/// no band then, it pads itself only while it shows a banner, and the page
+/// gives it no bottom inset of its own.
+///
+/// It also minds focus on the DataGateway's own controls as its banner
+/// arrives, and when one of them goes, as the screen's doc says.
+class _OutcomeFooter extends StatefulWidget {
+  const _OutcomeFooter({
+    required this.controls,
+    required this.interview,
+    required this.refresh,
+  });
+
+  /// Has focus while the interview button or a switch does.
+  final FocusNode controls;
+
+  /// The interview button's node.
+  final FocusNode interview;
+
+  /// The refresh control's node: what is left when no control of the
+  /// DataGateway's is.
+  final FocusNode refresh;
+
+  @override
+  State<_OutcomeFooter> createState() => _OutcomeFooterState();
+}
+
+class _OutcomeFooterState extends State<_OutcomeFooter> {
+  /// The node of the Dismiss on the DataGateway's own banner.
+  final FocusNode _dismiss = FocusNode(debugLabel: 'data gateway dismiss');
+
+  @override
+  void dispose() {
+    _dismiss.dispose();
+    super.dispose();
+  }
+
+  /// Whether [current] brings an outcome that wasn't showing.
+  static bool _arrives(
+    DataGatewayDetailState previous,
+    DataGatewayDetailState current,
+  ) =>
+      current is DataGatewayDetailReady &&
+      current.outcome != null &&
+      !(previous is DataGatewayDetailReady &&
+          previous.outcome == current.outcome);
+
+  /// Whether [current] takes away a control [previous] showed: the permission
+  /// went, or the row is now disabled.
+  static bool _takesControlAway(
+    DataGatewayDetailState previous,
+    DataGatewayDetailState current,
+  ) =>
+      previous is DataGatewayDetailReady &&
+      current is DataGatewayDetailReady &&
+      ((previous.mayChange && !current.mayChange) ||
+          (previous.gateway.enabled && !current.gateway.enabled));
+
+  /// Runs before the frame that takes the control away, while it still has
+  /// focus.
+  void _onControlTakenAway(BuildContext context, DataGatewayDetailState state) {
+    if (state is! DataGatewayDetailReady) return;
+    final hadFocus = state.mayChange
+        ? widget.interview.hasFocus
+        : widget.controls.hasFocus;
+    if (!hadFocus) return;
+    final banner = state.outcome != null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (banner) {
+        _focusDismiss();
+      } else {
+        final next = widget.controls.traversalDescendants.firstOrNull;
+        (next ?? widget.refresh).requestFocus();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// Puts focus on the Dismiss of the DataGateway's own banner.
+  void _focusDismiss() {
+    _dismiss.requestFocus();
+    if (FocusManager.instance.highlightMode == FocusHighlightMode.traditional) {
+      // After the banner's own reveal, which brings its head into view. The
+      // Dismiss is at its foot.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealDismiss());
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
+  }
+
+  /// Runs before the frame that builds the banner, while the control that had
+  /// focus still has it.
+  void _onArrival(BuildContext context, DataGatewayDetailState state) {
+    if (!widget.controls.hasFocus) return;
+    // A control a refusal takes away is [_onControlTakenAway]'s.
+    if (state is DataGatewayDetailReady && !state.mayChange) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.controls.hasFocus &&
+          FocusManager.instance.highlightMode ==
+              FocusHighlightMode.traditional) {
+        // The banner took the foot of the view, which may cover it.
+        FocusManager.instance.primaryFocus?.context
+            ?.findRenderObject()
+            ?.showOnScreen();
+      }
+    });
+  }
+
+  /// Brings the Dismiss into view within the footer, once the footer has
+  /// stopped scrolling. A banner taller than the footer's half of the body
+  /// scrolls inside it, and focus out of sight is focus lost.
+  void _revealDismiss() {
+    final dismiss = _dismiss.context;
+    if (!mounted ||
+        dismiss == null ||
+        !dismiss.mounted ||
+        !_dismiss.hasPrimaryFocus) {
+      return;
+    }
+    final position = Scrollable.maybeOf(dismiss)?.position;
+    if (position == null) return;
+    final scrolling = position.isScrollingNotifier;
+    if (scrolling.value) {
+      void settled() {
+        if (scrolling.value) return;
+        scrolling.removeListener(settled);
+        _revealDismiss();
+      }
+
+      scrolling.addListener(settled);
+      return;
+    }
+    unawaited(
+      Scrollable.ensureVisible(
+        dismiss,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (shown, own) = context
+        .select<DataGatewayDetailBloc, (bool, DataGatewayDetailOutcome?)>(
+          (bloc) => switch (bloc.state) {
+            DataGatewayDetailReady(:final outcome) => (true, outcome),
+            _ => (false, null),
+          },
+        );
+    final links = context.select<LanguageLinkListBloc, LanguageLinkOutcome?>(
+      (bloc) => switch (bloc.state) {
+        LanguageLinkListReady(:final outcome) => outcome,
+        _ => null,
+      },
+    );
+    final worklist = shown ? links : null;
+    final tokens = BgeTokens.of(context);
+
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<DataGatewayDetailBloc, DataGatewayDetailState>(
+          listenWhen: _arrives,
+          listener: _onArrival,
+        ),
+        BlocListener<DataGatewayDetailBloc, DataGatewayDetailState>(
+          listenWhen: _takesControlAway,
+          listener: _onControlTakenAway,
+        ),
+      ],
+      child: own == null && worklist == null
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: EdgeInsets.only(
+                top: tokens.spaceSm,
+                bottom: tokens.spaceLg,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (own != null)
+                    _OwnOutcomeBanner(outcome: own, dismissFocus: _dismiss),
+                  if (own != null && worklist != null) const BgeGap.sm(),
+                  if (worklist != null)
+                    LanguageLinkOutcomeBanner(outcome: worklist),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+/// What the last action on the DataGateway itself answered.
+class _OwnOutcomeBanner extends StatelessWidget {
+  const _OwnOutcomeBanner({required this.outcome, required this.dismissFocus});
 
   final DataGatewayDetailOutcome outcome;
+
+  /// For the Dismiss, which a refusal gives focus to.
+  final FocusNode dismissFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -531,20 +893,16 @@ class _OutcomeSliver extends StatelessWidget {
       ),
     };
 
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.only(bottom: BgeTokens.of(context).spaceMd),
-        child: BgeInlineBanner(
-          key: DataGatewayDetailScreen.outcomeKey,
-          tone: tone,
-          message: message,
-          action: TextButton(
-            onPressed: () => context.read<DataGatewayDetailBloc>().add(
-              const DataGatewayDetailOutcomeDismissed(),
-            ),
-            child: Text(l10n.dataGatewayDismiss),
-          ),
+    return BgeInlineBanner(
+      key: DataGatewayDetailScreen.outcomeKey,
+      tone: tone,
+      message: message,
+      action: TextButton(
+        focusNode: dismissFocus,
+        onPressed: () => context.read<DataGatewayDetailBloc>().add(
+          const DataGatewayDetailOutcomeDismissed(),
         ),
+        child: Text(l10n.dataGatewayDismiss),
       ),
     );
   }

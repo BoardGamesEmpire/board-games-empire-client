@@ -223,6 +223,43 @@ PaginatedResult<LanguageTagRef> tagPageOf(
   ),
 );
 
+/// A language link whose value says which one it is, unless a test names it.
+LanguageLink languageLink(
+  String id, {
+  String? value,
+  LanguageCodeFormat format = LanguageCodeFormat.unknown,
+  LanguageLinkStatus status = LanguageLinkStatus.unresolved,
+  String? suppliedName,
+  String? suppliedNativeName,
+  String? suppliedIetfTag,
+  LanguageTagRef? tag,
+}) => LanguageLink(
+  id: id,
+  value: value ?? 'Value $id',
+  format: format,
+  status: status,
+  suppliedName: suppliedName,
+  suppliedNativeName: suppliedNativeName,
+  suppliedIetfTag: suppliedIetfTag,
+  tag: tag,
+);
+
+/// One page of a DataGateway's language links, as the remote hands it over.
+PaginatedResult<LanguageLink> linkPageOf(
+  List<LanguageLink> links, {
+  int page = 1,
+  bool hasMore = false,
+}) => PaginatedResult(
+  items: links,
+  meta: PaginationMeta(
+    page: page,
+    limit: DataGatewayRemoteDataSource.languageLinkPageSize,
+    total: links.length,
+    totalPages: hasMore ? page + 1 : page,
+    hasMore: hasMore,
+  ),
+);
+
 DataGatewayChangeResult changed(
   DataGateway row, {
   DataGatewayConnectionAction? attempted,

@@ -137,7 +137,7 @@ final class LanguageLinkListReady extends LanguageLinkListState {
   ];
 }
 
-/// How an action on a link ended, for the banner above the worklist.
+/// How an action on a link ended, for the worklist's banner.
 enum LanguageLinkOutcomeKind {
   /// Linked to the tag the user picked.
   linked,

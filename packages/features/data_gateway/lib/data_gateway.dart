@@ -20,4 +20,5 @@ export 'src/screens/data_gateway_detail_screen.dart';
 export 'src/screens/data_gateway_list_screen.dart';
 export 'src/screens/data_gateway_form_screen.dart';
 export 'src/widgets/data_gateway_form.dart';
+export 'src/widgets/language_link_worklist.dart';
 export 'src/widgets/language_tag_picker_dialog.dart';

@@ -26,15 +26,15 @@
   },
   "dataGatewayRetry": "Try again",
   "@dataGatewayRetry": {
-    "description": "Button that reads from the server again what failed to load: the data gateway list, the data gateway being edited, the data gateway on its own screen, or the languages in the language picker, where it also tries the next page again."
+    "description": "Button that reads from the server again what failed to load: the data gateway list, the data gateway being edited, the data gateway on its own screen, the language names to review on that screen, or the languages in the language picker. Under the language names and in the picker it also tries a next page again."
   },
   "dataGatewayDeniedTitle": "You don't have access to data gateways",
   "@dataGatewayDeniedTitle": {
-    "description": "Heading shown when the server refuses to show data gateways to the signed-in user, because of their role on the server."
+    "description": "Heading shown when the server refuses to show data gateways to the signed-in user, because of their role on the server. Also shown in place of the language names to review on a data gateway's own screen, when the server refuses those."
   },
   "dataGatewayDeniedBody": "Ask an admin of this server if you need to manage them.",
   "@dataGatewayDeniedBody": {
-    "description": "Body under the access-denied heading on the data gateway screens."
+    "description": "Body under the access-denied heading on the data gateway screens, and in place of the language names to review."
   },
   "dataGatewayEnabled": "Enabled",
   "@dataGatewayEnabled": {
@@ -138,7 +138,7 @@
   },
   "dataGatewayBusy": "Working on {name}…",
   "@dataGatewayBusy": {
-    "description": "Accessible label of the progress indicator shown on a data gateway row while an action on it is in flight.",
+    "description": "Accessible label of the progress indicator shown while an action is in flight: on a data gateway row, where {name} is the data gateway's name, and on a language name to review, where it is the data gateway's own value for the language.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -238,11 +238,11 @@
   },
   "dataGatewayChangeRefused": "Your role can't change data gateways.",
   "@dataGatewayChangeRefused": {
-    "description": "Shown when the server refused a change to a data gateway because of the user's role. The user can still see data gateways; the change actions are hidden afterwards."
+    "description": "Shown when the server refused a change to a data gateway, or to one of its language names, because of the user's role. The user can still see data gateways; the change actions are hidden afterwards."
   },
   "dataGatewayDismiss": "Dismiss",
   "@dataGatewayDismiss": {
-    "description": "Button that closes the banner reporting the last action, on the data gateway list and on a data gateway's own screen."
+    "description": "Button that closes the banner reporting the last action, on the data gateway list and on a data gateway's own screen, where one banner is for the data gateway and one, at the foot of the screen, for the language names to review."
   },
   "dataGatewayFormEditTitle": "Edit data gateway",
   "@dataGatewayFormEditTitle": {
@@ -633,5 +633,197 @@
   "dataGatewayLanguagePickerMore": "Show more",
   "@dataGatewayLanguagePickerMore": {
     "description": "Button at the end of the language picker's list that reads the next page of languages from the server."
+  },
+  "dataGatewayWorklistHeading": "Language names to review",
+  "@dataGatewayWorklistHeading": {
+    "description": "Heading of the part of a data gateway's own screen where an admin reviews the values the data gateway uses for languages, such as Czech or cs: by default the ones the server could not match to one of its own languages, and under the other filters the ones already settled."
+  },
+  "dataGatewayWorklistFilterWaiting": "Waiting",
+  "@dataGatewayWorklistFilterWaiting": {
+    "description": "Filter chip over the language names to review: the ones waiting for an admin, because the server could not settle them on its own. Selected when the screen opens."
+  },
+  "dataGatewayWorklistFilterIgnored": "Ignored",
+  "@dataGatewayWorklistFilterIgnored": {
+    "description": "Filter chip over the language names to review: the ones an admin chose to ignore."
+  },
+  "dataGatewayWorklistFilterResolved": "Resolved",
+  "@dataGatewayWorklistFilterResolved": {
+    "description": "Filter chip over the language names to review: the ones linked to one of the server's languages."
+  },
+  "dataGatewayWorklistLoading": "Loading language names…",
+  "@dataGatewayWorklistLoading": {
+    "description": "Announced while the language names to review are read from the server, with none to show yet."
+  },
+  "dataGatewayWorklistFailed": "Couldn't load the language names.",
+  "@dataGatewayWorklistFailed": {
+    "description": "Shown and announced in place of the language names to review when reading them from the server failed. A Try again button goes with it."
+  },
+  "dataGatewayWorklistEmptyWaiting": "Nothing to review",
+  "@dataGatewayWorklistEmptyWaiting": {
+    "description": "In place of the language names to review, under the Waiting filter, when none is waiting for an admin."
+  },
+  "dataGatewayWorklistEmptyIgnored": "Nothing ignored",
+  "@dataGatewayWorklistEmptyIgnored": {
+    "description": "In place of the language names to review, under the Ignored filter, when an admin has ignored none."
+  },
+  "dataGatewayWorklistEmptyResolved": "Nothing linked yet",
+  "@dataGatewayWorklistEmptyResolved": {
+    "description": "In place of the language names to review, under the Resolved filter, when none is linked to one of the server's languages yet."
+  },
+  "dataGatewayWorklistMore": "Show more",
+  "@dataGatewayWorklistMore": {
+    "description": "Button at the end of the language names to review that reads the next page of them from the server."
+  },
+  "dataGatewayWorklistMoreLoading": "Loading more…",
+  "@dataGatewayWorklistMoreLoading": {
+    "description": "What the Show more button at the end of the language names to review says, and announces, while the next page is read. It stays a button."
+  },
+  "dataGatewayWorklistMoreFailed": "Couldn't load more language names.",
+  "@dataGatewayWorklistMoreFailed": {
+    "description": "Shown and announced above the button at the end of the language names to review when reading the next page failed. The button then says Try again."
+  },
+  "dataGatewayLanguageLinkStatusPending": "Waiting for review",
+  "@dataGatewayLanguageLinkStatusPending": {
+    "description": "Status of a language name to review that the server doesn't have as a language yet. An admin can add it as a new language, link it to one the server has, or ignore it."
+  },
+  "dataGatewayLanguageLinkStatusUnresolved": "Not matched",
+  "@dataGatewayLanguageLinkStatusUnresolved": {
+    "description": "Status of a language name to review that the server could not match to one of its languages on its own. An admin links it to one, or ignores it."
+  },
+  "dataGatewayLanguageLinkStatusIgnored": "Ignored",
+  "@dataGatewayLanguageLinkStatusIgnored": {
+    "description": "Status of a language name an admin chose to ignore. Interviews leave it alone, and linking it undoes the ignore."
+  },
+  "dataGatewayLanguageLinkStatusResolved": "Linked to {name} ({tag})",
+  "@dataGatewayLanguageLinkStatusResolved": {
+    "description": "Status of a language name linked to one of the server's languages. {name} is that language's name and {tag} its language code, both as the server has them.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Portuguese (Brazil)"
+      },
+      "tag": {
+        "type": "String",
+        "example": "pt-BR"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkNamed": "{value} ({format})",
+  "@dataGatewayLanguageLinkNamed": {
+    "description": "A language name to review, where the words have to say which one: its menu's name, its busy label, a banner. {value} is the data gateway's own value for the language, and {format} says how that value is spelled, such as ISO 639-1 code, because the same value can be listed once per format.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      },
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "dataGatewayLanguageCodeFormatIso6391": "ISO 639-1 code",
+  "@dataGatewayLanguageCodeFormatIso6391": {
+    "description": "How a data gateway spells a language value: a two-letter ISO 639-1 code, such as cs."
+  },
+  "dataGatewayLanguageCodeFormatIso6393": "ISO 639-3 code",
+  "@dataGatewayLanguageCodeFormatIso6393": {
+    "description": "How a data gateway spells a language value: a three-letter ISO 639-3 code, such as ces."
+  },
+  "dataGatewayLanguageCodeFormatIetfBcp47": "language tag",
+  "@dataGatewayLanguageCodeFormatIetfBcp47": {
+    "description": "How a data gateway spells a language value: a BCP 47 language tag, such as pt-BR."
+  },
+  "dataGatewayLanguageCodeFormatName": "name",
+  "@dataGatewayLanguageCodeFormatName": {
+    "description": "How a data gateway spells a language value: the language's name, such as Czech."
+  },
+  "dataGatewayLanguageCodeFormatNativeName": "native name",
+  "@dataGatewayLanguageCodeFormatNativeName": {
+    "description": "How a data gateway spells a language value: the language's name in that language, such as Čeština."
+  },
+  "dataGatewayLanguageLinkActions": "Actions for {value}",
+  "@dataGatewayLanguageLinkActions": {
+    "description": "Accessible name and tooltip of the menu button on a language name to review. {value} is the data gateway's own value for the language, such as Czech or cs, with how it is spelled beside it where the app knows that.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkActionLink": "Link to a language…",
+  "@dataGatewayLanguageLinkActionLink": {
+    "description": "Menu item on a language name to review. It opens a dialog to pick which of the server's languages the name stands for. Offered whatever the name's status; on an ignored one it undoes the ignore."
+  },
+  "dataGatewayLanguageLinkActionIgnore": "Ignore",
+  "@dataGatewayLanguageLinkActionIgnore": {
+    "description": "Menu item on a language name to review: set it aside, so it no longer waits for review. Interviews leave an ignored name alone."
+  },
+  "dataGatewayLanguageLinkActionAccept": "Add this language",
+  "@dataGatewayLanguageLinkActionAccept": {
+    "description": "Menu item on a language name the server doesn't have as a language yet: the server adds it as a new language, and links the name to it."
+  },
+  "dataGatewayLanguageLinkOutcomeLinked": "Linked {value}.",
+  "@dataGatewayLanguageLinkOutcomeLinked": {
+    "description": "Banner after a language name was linked to the language the admin picked. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeIgnored": "Ignored {value}.",
+  "@dataGatewayLanguageLinkOutcomeIgnored": {
+    "description": "Banner after an admin ignored a language name. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeAccepted": "Added {value}.",
+  "@dataGatewayLanguageLinkOutcomeAccepted": {
+    "description": "Banner after the server added a language name as a new language and linked the name to it. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Klingon"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeConflict": "Couldn't add {value}. It may have been settled already, or isn't a language the server knows. Try linking it instead.",
+  "@dataGatewayLanguageLinkOutcomeConflict": {
+    "description": "Banner when the server would not add a language name as a new language: someone settled it first, or it names no language the server can add. Linking it to one of the server's languages still works. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Klingon"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeUnknownTag": "That language is no longer available.",
+  "@dataGatewayLanguageLinkOutcomeUnknownTag": {
+    "description": "Banner when the language the admin picked to link a name to was removed from the server after the dialog listed it. Nothing changed."
+  },
+  "dataGatewayLanguageLinkOutcomeGone": "{value} is no longer on this list.",
+  "@dataGatewayLanguageLinkOutcomeGone": {
+    "description": "Banner when an action found that a language name no longer exists on the server. Its row is removed. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeNoAnswer": "Couldn't get an answer about {value}. Check the list before trying again.",
+  "@dataGatewayLanguageLinkOutcomeNoAnswer": {
+    "description": "Banner when an action on a language name got no answer that says anything about it, such as a dropped connection. The change may have been made, so this must not say it wasn't. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
   }
 }

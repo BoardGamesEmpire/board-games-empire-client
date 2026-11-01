@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart' show ReadContext;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -11,6 +13,7 @@ import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_data_gateway_remote.dart';
+import '../support/screen_input.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
@@ -88,6 +91,10 @@ void main() {
     skipOffstage: false,
   );
 
+  /// [text] in the app bar's title. The name heads the page too.
+  Finder titled(String text) =>
+      find.descendant(of: find.byType(AppBar), matching: find.text(text));
+
   SwitchListTile tile(WidgetTester tester, String name) =>
       tester.widget<SwitchListTile>(capability(name));
 
@@ -100,6 +107,9 @@ void main() {
   setUp(() {
     remote = FakeDataGatewayRemote();
     access = DataGatewayAccess(remote: remote);
+    // The language worklist under the capabilities has its own tests. Here it
+    // is empty, so it reads as the one line it is.
+    remote.onFetchLanguageLinks = (_, _, _, _) async => linkPageOf(const []);
   });
 
   tearDown(() => access.dispose());
@@ -137,45 +147,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// Lets a bloc event reach the screen, without waiting for anything to
-  /// settle: the busy cue never does.
-  Future<void> pumpEvent(WidgetTester tester) async {
-    await tester.pump();
-    await tester.pump();
-  }
-
-  Future<void> press(WidgetTester tester, Finder control) async {
-    await tester.ensureVisible(control);
-    await tester.pump();
-    await tester.tap(control);
-    await pumpEvent(tester);
-  }
-
-  /// Puts keyboard focus on the control around its [label], as Tab would.
-  Future<void> focusOn(WidgetTester tester, Finder label) async {
-    Focus.of(tester.element(label)).requestFocus();
-    await tester.pump();
-  }
-
-  /// Presses the focused control from the keyboard.
-  Future<void> pressKey(WidgetTester tester) async {
-    await tester.sendKeyEvent(LogicalKeyboardKey.space);
-    await pumpEvent(tester);
-  }
-
-  /// Whether keyboard focus is on [control], or inside it.
-  bool focusIsIn(WidgetTester tester, Finder control) {
-    final focused = FocusManager.instance.primaryFocus?.context;
-    if (focused == null) return false;
-    final target = tester.element(control);
-    if (identical(focused, target)) return true;
-    var inside = false;
-    focused.visitAncestorElements((ancestor) {
-      inside = identical(ancestor, target);
-      return !inside;
-    });
-    return inside;
-  }
+  ScrollPosition page0(WidgetTester tester) =>
+      tester.state<ScrollableState>(find.byType(Scrollable).first).position;
 
   Iterable<String> writes() =>
       remote.calls.where((call) => call.startsWith('setDisabledCapabilities'));
@@ -191,7 +164,7 @@ void main() {
 
       await pumpScreen(tester);
 
-      expect(find.text('BGG'), findsOneWidget);
+      expect(titled('BGG'), findsOneWidget);
       expect(find.text('Enabled'), findsOneWidget);
       expect(
         textIn(statusLine, "Last interview failed: it didn't answer"),
@@ -444,6 +417,110 @@ void main() {
       expect(interviewButton, findsOneWidget);
     });
 
+    group(
+      'when the focused interview button goes because the row is disabled',
+      () {
+        Future<void> focusTheButton(WidgetTester tester) async {
+          await tester.ensureVisible(interviewButton);
+          await tester.pumpAndSettle();
+          await focusOn(tester, textIn(interviewButton, 'Interview again'));
+          expect(focusIsIn(tester, interviewButton), isTrue);
+        }
+
+        testWidgets('after an interview it refused, focus goes to the '
+            "banner's Dismiss", (tester) async {
+          var reads = 0;
+          remote.onFetchOne = (_) async => row(enabled: ++reads == 1);
+          remote.onInterview = (_) async =>
+              throw const DataGatewayConflictException(
+                'disabled',
+                statusCode: 409,
+              );
+          await pumpScreen(tester);
+          await focusTheButton(tester);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.space);
+          await tester.pumpAndSettle();
+
+          expect(interviewButton, findsNothing);
+          expect(
+            focusIsIn(
+              tester,
+              find.descendant(
+                of: banner,
+                matching: find.byType(TextButton),
+                skipOffstage: false,
+              ),
+            ),
+            isTrue,
+          );
+        });
+
+        testWidgets('after a read, with no banner, focus goes to the first '
+            'switch', (tester) async {
+          var reads = 0;
+          remote.onFetchOne = (_) async => row(enabled: ++reads == 1);
+          await pumpScreen(tester);
+          await focusTheButton(tester);
+
+          // A click focuses nothing.
+          await tester.tap(refreshButton);
+          await tester.pumpAndSettle();
+
+          expect(interviewButton, findsNothing);
+          expect(focusIsIn(tester, capability(search)), isTrue);
+        });
+
+        testWidgets('with no switch either, focus goes to refresh', (
+          tester,
+        ) async {
+          var reads = 0;
+          remote.onFetchOne = (_) async =>
+              row(enabled: ++reads == 1, capabilities: const []);
+          await pumpScreen(tester);
+          await focusTheButton(tester);
+
+          await tester.tap(refreshButton);
+          await tester.pumpAndSettle();
+
+          expect(interviewButton, findsNothing);
+          expect(focusIsIn(tester, refreshButton), isTrue);
+        });
+
+        testWidgets('with focus elsewhere, it stays there', (tester) async {
+          var reads = 0;
+          remote.onFetchOne = (_) async => row(enabled: ++reads == 1);
+          await pumpScreen(tester);
+          await tester.ensureVisible(capability(languages));
+          await tester.pumpAndSettle();
+          await focusOn(
+            tester,
+            textIn(capability(languages), 'List languages'),
+          );
+
+          await tester.tap(refreshButton);
+          await tester.pumpAndSettle();
+
+          expect(focusIsIn(tester, capability(languages)), isTrue);
+        });
+      },
+    );
+
+    testWidgets('a focused switch moves on when another screen learns the '
+        'role may not change anything, which stops it', (tester) async {
+      remote.onFetchOne = (_) async => row();
+      await pumpScreen(tester);
+      await tester.ensureVisible(capability(search));
+      await tester.pumpAndSettle();
+      await focusOn(tester, textIn(capability(search), 'Search'));
+
+      access.changeDenied();
+      await tester.pumpAndSettle();
+
+      expect(tile(tester, search).onChanged, isNull);
+      expect(focusIsIn(tester, refreshButton), isTrue);
+    });
+
     testWidgets('interview again shows busy, then the banner', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
       remote.onFetchOne = (_) async => row();
@@ -509,8 +586,8 @@ void main() {
       expect(remote.calls.where((c) => c == interviewCall), hasLength(1));
       expect(focusIsIn(tester, interviewButton), isTrue);
 
-      // And through what the interview answers: the banner arrives above the
-      // button, and must not take its place in the tree.
+      // And through what the interview answers: the banner arrives in the
+      // footer, and must not take the button's place in the tree.
       interview.complete(answered(row()));
       await tester.pumpAndSettle();
 
@@ -910,7 +987,7 @@ void main() {
     });
 
     testWidgets('a focused switch keeps focus when the write fails and the '
-        'banner arrives above it', (tester) async {
+        'banner arrives in the footer', (tester) async {
       remote.onFetchOne = (_) async => row();
       remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
       await pumpScreen(tester);
@@ -1099,7 +1176,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(banner, findsOneWidget);
-      expect(find.text('Disabled'), findsOneWidget);
+      // The page stays where the press left it, with the badge above.
+      expect(find.text('Disabled', skipOffstage: false), findsOneWidget);
       expect(interviewButton, findsNothing);
     });
 
@@ -1142,6 +1220,331 @@ void main() {
     });
   });
 
+  group('both banners in the footer, on a long page (#457)', () {
+    const listMechanics = DataGatewayCapabilities.listMechanics;
+    const failedCopy =
+        "Couldn't get an answer about that change. Check the switch before "
+        'trying again.';
+    const refusedCopy = "Your role can't change data gateways.";
+    final worklistBanner = find.byKey(
+      LanguageLinkWorklist.outcomeKey,
+      skipOffstage: false,
+    );
+    Finder dismissOf(Finder banner) => find.descendant(
+      of: banner,
+      matching: find.byType(TextButton, skipOffstage: false),
+      skipOffstage: false,
+    );
+
+    /// Every capability, every list loaded, and a worklist of a full page with
+    /// more behind it: the page is long, and the switches are in its middle.
+    DataGateway full() => row(
+      capabilities: DataGatewayCapabilities.known,
+      sections: [
+        for (final capability in DataGatewayCapabilities.lists)
+          DataGatewaySection(capability: capability, lastLoadedAt: lastAt),
+      ],
+    );
+
+    for (final (screen, size, scaler) in [
+      (
+        '320x568 at 200%',
+        const Size(320, 568),
+        const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      ),
+      ('1280x800 at 100%', const Size(1280, 800), TextScaler.noScaling),
+    ]) {
+      Future<void> open(WidgetTester tester) async {
+        tester.view
+          ..devicePixelRatio = 1
+          ..physicalSize = size;
+        addTearDown(tester.view.reset);
+        remote.onFetchOne = (_) async => full();
+        remote.onFetchLanguageLinks = (_, _, _, _) async => linkPageOf([
+          for (var n = 1; n <= 50; n++) languageLink('l$n'),
+        ], hasMore: true);
+        await pumpScreen(tester, textScaler: scaler);
+      }
+
+      ScrollPosition page(WidgetTester tester) =>
+          tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+      /// The banner's head is in the window, and assistive tech has it as a
+      /// live region, so it was said as it arrived.
+      void expectAnnounced(WidgetTester tester, Finder banner, String copy) {
+        final rect = tester.getRect(banner);
+        expect(rect.top, greaterThanOrEqualTo(0));
+        expect(rect.top, lessThan(size.height));
+        expect(
+          find.semantics.byLabel(copy).evaluate().single,
+          isSemantics(isLiveRegion: true, label: copy),
+        );
+      }
+
+      /// Where each switch built now is.
+      Map<String, Rect> switches(WidgetTester tester) => {
+        for (final name in DataGatewayCapabilities.known)
+          if (capability(name).evaluate().isNotEmpty)
+            name: tester.getRect(capability(name)),
+      };
+
+      for (final (outcome, Object error, copy) in [
+        ('fails', unreachable(), failedCopy),
+        ('is refused', forbidden(), refusedCopy),
+      ]) {
+        testWidgets('$screen: a capability write that $outcome leaves the '
+            'page where it is, with its banner in the window', (tester) async {
+          final handle = tester.ensureSemantics();
+          remote.onSetDisabledCapabilities = (_, _) async => throw error;
+          await open(tester);
+          await tester.ensureVisible(capability(listMechanics));
+          await tester.pumpAndSettle();
+          final before = page(tester).pixels;
+
+          await tester.tap(capability(listMechanics));
+          await tester.pumpAndSettle();
+
+          expect(page(tester).pixels, before);
+          expectAnnounced(tester, banner, copy);
+          handle.dispose();
+        });
+      }
+
+      testWidgets('$screen: starting a write after an earlier outcome moves no '
+          'switch', (tester) async {
+        final write = Completer<DataGatewayChangeResult>();
+        remote.onInterview = (_) async => answered(full());
+        remote.onSetDisabledCapabilities = (_, _) => write.future;
+        await open(tester);
+        await press(tester, interviewButton);
+        await tester.pumpAndSettle();
+        expect(banner, findsOneWidget);
+        await tester.ensureVisible(capability(search));
+        await tester.pumpAndSettle();
+        final before = switches(tester);
+
+        await tester.tap(capability(search));
+        await pumpEvent(tester);
+
+        expect(banner, findsNothing);
+        expect(switches(tester), before);
+
+        write.complete(
+          changed(full().copyWith(disabledCapabilities: [search])),
+        );
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('$screen: starting a second interview after an earlier '
+          'outcome moves no switch', (tester) async {
+        final second = Completer<DataGatewayInterviewResult>();
+        var interviews = 0;
+        remote.onInterview = (_) =>
+            ++interviews == 1 ? Future.value(answered(full())) : second.future;
+        await open(tester);
+        await press(tester, interviewButton);
+        await tester.pumpAndSettle();
+        expect(banner, findsOneWidget);
+        await tester.ensureVisible(capability(search));
+        await tester.pumpAndSettle();
+        final before = switches(tester);
+
+        // As the button would: it may be scrolled away, and pressing it there
+        // would move the page.
+        tester
+            .element(capability(search))
+            .read<DataGatewayDetailBloc>()
+            .add(const DataGatewayDetailInterviewRequested());
+        await pumpEvent(tester);
+
+        expect(interviews, 2);
+        expect(banner, findsNothing);
+        expect(switches(tester), before);
+
+        second.complete(answered(full()));
+        await tester.pumpAndSettle();
+      });
+
+      for (final first in ['the DataGateway', 'the worklist']) {
+        testWidgets("$screen: both outcomes show, the DataGateway's first, and "
+            '$first'
+            "'s Dismiss closes only its own", (tester) async {
+          remote.onSetDisabledCapabilities = (_, _) async =>
+              throw unreachable();
+          remote.onIgnoreLanguageLink = (_, id) async =>
+              languageLink(id, status: LanguageLinkStatus.ignored);
+          await open(tester);
+          await press(tester, capability(search));
+          await tester.pumpAndSettle();
+          final menu = find.byKey(
+            LanguageLinkWorklist.menuKey('l3'),
+            skipOffstage: false,
+          );
+          await tester.scrollUntilVisible(
+            menu,
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.ensureVisible(menu);
+          await tester.pumpAndSettle();
+          await tester.tap(menu);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(LanguageLinkWorklist.ignoreKey));
+          await tester.pumpAndSettle();
+
+          expect(banner, findsOneWidget);
+          expect(worklistBanner, findsOneWidget);
+          final view = tester.getRect(find.byType(Scrollable).first);
+          final own = tester.getRect(banner);
+          final theirs = tester.getRect(worklistBanner);
+          // In order, below the page's view, in the footer.
+          expect(own.bottom, lessThanOrEqualTo(theirs.top));
+          expect(theirs.top, greaterThanOrEqualTo(view.bottom));
+          // The one that arrived last is whole in the window. Both fit there
+          // unless together they are taller than the footer's half of the
+          // body, and then the footer scrolls to the other.
+          expect(theirs.bottom, lessThanOrEqualTo(size.height));
+          await tester.ensureVisible(banner);
+          await tester.pumpAndSettle();
+          expect(tester.getRect(banner).top, greaterThanOrEqualTo(view.bottom));
+
+          final (closed, kept) = first == 'the DataGateway'
+              ? (banner, worklistBanner)
+              : (worklistBanner, banner);
+          await tester.ensureVisible(dismissOf(closed));
+          await tester.pumpAndSettle();
+          await tester.tap(dismissOf(closed));
+          await tester.pumpAndSettle();
+
+          expect(closed, findsNothing);
+          expect(kept, findsOneWidget);
+
+          await tester.ensureVisible(dismissOf(kept));
+          await tester.pumpAndSettle();
+          await tester.tap(dismissOf(kept));
+          await tester.pumpAndSettle();
+
+          expect(kept, findsNothing);
+        });
+      }
+
+      for (final (control, label) in [
+        ('a switch', 'Search'),
+        ('Interview again', 'Interview again'),
+      ]) {
+        testWidgets("$screen: a refusal moves focus from $control to the "
+            "refusal's Dismiss", (tester) async {
+          remote.onSetDisabledCapabilities = (_, _) async => throw forbidden();
+          remote.onInterview = (_) async => throw forbidden();
+          await open(tester);
+          final target = control == 'a switch'
+              ? textIn(capability(search), label)
+              : textIn(interviewButton, label);
+          await tester.ensureVisible(target);
+          await tester.pumpAndSettle();
+          await focusOn(tester, target);
+
+          await tester.sendKeyEvent(LogicalKeyboardKey.space);
+          await tester.pumpAndSettle();
+
+          expect(find.text(refusedCopy), findsOneWidget);
+          expect(focusIsIn(tester, dismissOf(banner)), isTrue);
+          final focused = FocusManager.instance.primaryFocus!.rect;
+          expect(focused.top, greaterThanOrEqualTo(0));
+          expect(focused.bottom, lessThanOrEqualTo(size.height));
+        });
+      }
+    }
+
+    testWidgets('a switch with keyboard focus that the banner covers is '
+        'brought back into view', (tester) async {
+      tester.view
+        ..devicePixelRatio = 1
+        ..physicalSize = const Size(320, 568);
+      addTearDown(tester.view.reset);
+      remote.onFetchOne = (_) async => full();
+      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      await pumpScreen(
+        tester,
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      final target = textIn(capability(listMechanics), 'List mechanics');
+      await tester.ensureVisible(target);
+      // At the foot of the view, where the banner arrives.
+      await Scrollable.ensureVisible(
+        tester.element(capability(listMechanics)),
+        alignment: 1,
+      );
+      await tester.pumpAndSettle();
+      await focusOn(tester, target);
+      final before = page0(tester).pixels;
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+
+      expect(banner, findsOneWidget);
+      expect(focusIsIn(tester, capability(listMechanics)), isTrue);
+      final view = tester.getRect(find.byType(Scrollable).first);
+      final focused = FocusManager.instance.primaryFocus!.rect;
+      expect(focused.bottom, lessThanOrEqualTo(view.bottom));
+      expect(focused.top, greaterThanOrEqualTo(view.top));
+      // Only as far as that takes.
+      expect(page0(tester).pixels, greaterThan(before));
+    });
+
+    testWidgets("a refusal leaves focus alone when no control of the "
+        "DataGateway's had it", (tester) async {
+      remote.onFetchOne = (_) async => full();
+      remote.onInterview = (_) async => throw forbidden();
+      await pumpScreen(tester);
+      await focusOn(tester, find.byIcon(Icons.refresh));
+
+      // A click focuses nothing.
+      await tester.tap(interviewButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Your role can't change data gateways."),
+        findsOneWidget,
+      );
+      expect(focusIsIn(tester, refreshButton), isTrue);
+    });
+
+    testWidgets('a switch the banner covers stays put for a pointer', (
+      tester,
+    ) async {
+      tester.view
+        ..devicePixelRatio = 1
+        ..physicalSize = const Size(320, 568);
+      addTearDown(tester.view.reset);
+      remote.onFetchOne = (_) async => full();
+      remote.onSetDisabledCapabilities = (_, _) async => throw unreachable();
+      await pumpScreen(
+        tester,
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      await tester.ensureVisible(capability(listMechanics));
+      await Scrollable.ensureVisible(
+        tester.element(capability(listMechanics)),
+        alignment: 1,
+      );
+      await tester.pumpAndSettle();
+      // Focus on it, from an earlier Tab, before the click.
+      await focusOn(
+        tester,
+        textIn(capability(listMechanics), 'List mechanics'),
+      );
+      final before = page0(tester).pixels;
+
+      await tester.tap(capability(listMechanics));
+      await tester.pumpAndSettle();
+
+      expect(banner, findsOneWidget);
+      expect(focusIsIn(tester, capability(listMechanics)), isTrue);
+      expect(page0(tester).pixels, before);
+    });
+  });
+
   group('reading the row', () {
     testWidgets('announces the read, under the list title until there is a '
         'name', (tester) async {
@@ -1169,7 +1572,7 @@ void main() {
 
       expect(find.byKey(DataGatewayDetailScreen.loadingKey), findsNothing);
       expect(find.text('Data gateways'), findsNothing);
-      expect(find.text('BGG'), findsOneWidget);
+      expect(titled('BGG'), findsOneWidget);
     });
 
     testWidgets('refresh reads the row again', (tester) async {
@@ -1184,12 +1587,12 @@ void main() {
       expect(reads(), hasLength(2));
       // A read over a row on screen keeps it there.
       expect(find.byKey(DataGatewayDetailScreen.loadingKey), findsNothing);
-      expect(find.text('BGG'), findsOneWidget);
+      expect(titled('BGG'), findsOneWidget);
 
       second.complete(row(name: 'BGG renamed'));
       await tester.pumpAndSettle();
 
-      expect(find.text('BGG renamed'), findsOneWidget);
+      expect(titled('BGG renamed'), findsOneWidget);
     });
 
     testWidgets('refresh is named for what it does', (tester) async {
@@ -1284,6 +1687,8 @@ void main() {
       expect(find.text('It may have been deleted.'), findsOneWidget);
       expect(find.text('Data gateways'), findsOneWidget);
 
+      // A user who may not read is refused the worklist too.
+      remote.onFetchLanguageLinks = (_, _, _, _) async => throw forbidden();
       await tester.tap(refreshButton);
       await tester.pumpAndSettle();
 
@@ -1314,7 +1719,7 @@ void main() {
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
 
-      expect(find.text('BGG'), findsOneWidget);
+      expect(titled('BGG'), findsOneWidget);
       expect(reads(), hasLength(2));
     });
 
@@ -1342,7 +1747,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(reads(), hasLength(2));
-      expect(find.text('BGG renamed'), findsOneWidget);
+      expect(titled('BGG renamed'), findsOneWidget);
     });
 
     testWidgets('a new id in place starts over with that row', (tester) async {
@@ -1362,13 +1767,13 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Named dg_1'), findsOneWidget);
+      expect(titled('Named dg_1'), findsOneWidget);
 
       id.value = 'dg_2';
       await tester.pumpAndSettle();
 
-      expect(find.text('Named dg_2'), findsOneWidget);
-      expect(find.text('Named dg_1'), findsNothing);
+      expect(titled('Named dg_2'), findsOneWidget);
+      expect(titled('Named dg_1'), findsNothing);
     });
   });
 
@@ -1431,6 +1836,46 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(banner, findsOneWidget);
+    });
+
+    testWidgets('the name heads the page whole, as a heading, at 200% text '
+        'on 320 wide', (tester) async {
+      narrow(tester);
+      final handle = tester.ensureSemantics();
+      const name = 'Board Game Geek staging, the copy we try changes on';
+      remote.onFetchOne = (_) async => row(name: name);
+
+      await pumpScreen(tester, textScaler: large);
+
+      expect(tester.takeException(), isNull);
+      final heading = find.byKey(DataGatewayDetailScreen.nameKey);
+      // First on the page, at the head of its content, and above the status.
+      final view = tester.getRect(find.byType(Scrollable).first);
+      final inset = BgeTokens.of(tester.element(heading)).spaceLg;
+      expect(tester.getRect(heading).top, view.top + inset);
+      expect(
+        tester.getRect(heading).top,
+        lessThan(tester.getRect(find.text('Enabled', skipOffstage: false)).top),
+      );
+      // Whole: wrapped over lines, with nothing cut and nothing past the edge.
+      final paragraph = tester.renderObject<RenderParagraph>(heading);
+      expect(paragraph.didExceedMaxLines, isFalse);
+      final lines = {
+        for (final box in paragraph.getBoxesForSelection(
+          const TextSelection(baseOffset: 0, extentOffset: name.length),
+        ))
+          box.top,
+      };
+      expect(lines.length, greaterThan(1));
+      expect(tester.getRect(heading).right, lessThanOrEqualTo(320));
+      // A heading, and said once in the page: the other node with the name
+      // is the app bar's title, which names the screen.
+      final nodes = find.semantics.byLabel(name).evaluate();
+      expect(nodes, hasLength(2));
+      for (final node in nodes) {
+        expect(node, isSemantics(isHeader: true));
+      }
+      handle.dispose();
     });
 
     testWidgets('no overflow with the busy cue showing', (tester) async {
