@@ -255,6 +255,20 @@ void main() {
       expect(mid.radiusMd, BgeTokens.standard.radiusMd);
     });
 
+    test('interpolates the rule and bar tokens', () {
+      final other = BgeTokens.standard.copyWith(
+        separatorThickness: 4,
+        separatorInset: 100,
+        accentBarWidth: 8,
+      );
+
+      final mid = BgeTokens.standard.lerp(other, 0.5);
+
+      expect(mid.separatorThickness, 3);
+      expect(mid.separatorInset, 98);
+      expect(mid.accentBarWidth, 6);
+    });
+
     test('returns this when other is null', () {
       expect(BgeTokens.standard.lerp(null, 0.5), same(BgeTokens.standard));
     });

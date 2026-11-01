@@ -46,17 +46,20 @@ void main() {
     unawaited(status.close());
   });
 
-  Widget app(Widget home, {TextScaler textScaler = TextScaler.noScaling}) =>
-      MaterialApp(
-        theme: BgeTheme.light(),
-        localizationsDelegates: EventsLocalizations.localizationsDelegates,
-        supportedLocales: EventsLocalizations.supportedLocales,
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-          child: child!,
-        ),
-        home: home,
-      );
+  Widget app(
+    Widget home, {
+    TextScaler textScaler = TextScaler.noScaling,
+    ThemeData? theme,
+  }) => MaterialApp(
+    theme: theme ?? BgeTheme.light(),
+    localizationsDelegates: EventsLocalizations.localizationsDelegates,
+    supportedLocales: EventsLocalizations.supportedLocales,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child!,
+    ),
+    home: home,
+  );
 
   Widget harness({
     void Function(BuildContext context, String eventId)? onOpen,
@@ -66,6 +69,7 @@ void main() {
     VoidCallback? onEnter,
     Stream<List<Household>>? households,
     TextScaler textScaler = TextScaler.noScaling,
+    ThemeData? theme,
   }) => app(
     EventOverviewScreen(
       repository: repository,
@@ -79,6 +83,7 @@ void main() {
       now: () => now,
     ),
     textScaler: textScaler,
+    theme: theme,
   );
 
   /// Shows [rows] with the hydrate settled.
@@ -303,6 +308,40 @@ void main() {
               .dy;
       expect(gap, greaterThanOrEqualTo(BgeTokens.spaceXlValue));
     });
+
+    for (final (name, theme) in [
+      ('light', BgeTheme.light()),
+      ('dark', BgeTheme.dark()),
+    ]) {
+      testWidgets('and lays out at 200% text on a narrow window, $name', (
+        tester,
+      ) async {
+        // Tall enough to build every group, each full and offering See all,
+        // so the larger headings meet the button at the narrowest width.
+        useViewSize(tester, const Size(320, 8000));
+        await tester.pumpWidget(
+          harness(
+            onOpenGroup: (_, _) {},
+            theme: theme,
+            textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+          ),
+        );
+        items.add([
+          for (var n = 0; n < 6; n++) ...[
+            item('e-up-$n', occurrences: [confirmed('u', day(25))]),
+            item('e-plan-$n'),
+            item('e-past-$n', occurrences: [confirmed('p', day(20))]),
+          ],
+        ]);
+        await tester.pump();
+
+        expect(tester.takeException(), isNull);
+        for (final heading in ['Upcoming', 'Planning', 'Past']) {
+          expect(find.text(heading), findsOneWidget, reason: heading);
+        }
+        expect(find.byType(Divider), findsNWidgets(12));
+      });
+    }
   });
 
   testWidgets('tells a screen reader how many rows there are', (tester) async {
