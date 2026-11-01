@@ -26,23 +26,67 @@
   },
   "dataGatewayRetry": "Try again",
   "@dataGatewayRetry": {
-    "description": "Button that reads the data gateway list, or the data gateway being edited, from the server again."
+    "description": "Button that reads from the server again what failed to load: the data gateway list, the data gateway being edited, the data gateway on its own screen, the language names to review on that screen, or the languages in the language picker. Under the language names and in the picker it also tries a next page again."
   },
   "dataGatewayDeniedTitle": "You don't have access to data gateways",
   "@dataGatewayDeniedTitle": {
-    "description": "Heading shown when the server refuses to show data gateways to the signed-in user, because of their role on the server."
+    "description": "Heading shown when the server refuses to show data gateways to the signed-in user, because of their role on the server. Also shown in place of the language names to review on a data gateway's own screen, when the server refuses those."
   },
   "dataGatewayDeniedBody": "Ask an admin of this server if you need to manage them.",
   "@dataGatewayDeniedBody": {
-    "description": "Body under the access-denied heading on the data gateway screens."
+    "description": "Body under the access-denied heading on the data gateway screens, and in place of the language names to review."
   },
   "dataGatewayEnabled": "Enabled",
   "@dataGatewayEnabled": {
-    "description": "Status on a data gateway row: the server uses this data gateway. It does not say whether the server is connected to it right now; the server does not record that."
+    "description": "Status on a data gateway row and on its own screen: the server uses this data gateway. It does not say whether the server is connected to it right now; the server does not record that."
   },
   "dataGatewayDisabled": "Disabled",
   "@dataGatewayDisabled": {
-    "description": "Status on a data gateway row: the server does not use this data gateway. An admin turned it off, or the server turned it off after repeated connection failures."
+    "description": "Status on a data gateway row and on its own screen: the server does not use this data gateway. An admin turned it off, or the server turned it off after repeated connection failures."
+  },
+  "dataGatewayStatusWaiting": "Not in use yet: waiting for its first interview",
+  "@dataGatewayStatusWaiting": {
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that has never been interviewed and has no failure to report. The server interviews a data gateway to learn what it can do, and does not use it until one interview has succeeded. Nothing has gone wrong yet; the interview is still to come."
+  },
+  "dataGatewayStatusNotInUse": "Not in use: {reason}",
+  "@dataGatewayStatusNotInUse": {
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that no interview has succeeded for, and whose latest interview failed. The server does not use it. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "it didn't answer"
+      }
+    }
+  },
+  "dataGatewayStatusLastFailed": "Last interview failed: {reason}",
+  "@dataGatewayStatusLastFailed": {
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that an earlier interview succeeded for, and whose latest interview failed. The server keeps using what the earlier interview found. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "it didn't answer"
+      }
+    }
+  },
+  "dataGatewayStatusInUse": "In use",
+  "@dataGatewayStatusInUse": {
+    "description": "Status line under the Enabled status, on the row and own screen of a data gateway that an interview succeeded for and no later one has failed: the server uses it. It does not say whether the server is connected right now; the server does not record that."
+  },
+  "dataGatewayInterviewFailurePingFailed": "it didn't answer",
+  "@dataGatewayInterviewFailurePingFailed": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: it didn't answer. Keep it a short phrase that starts in lower case, with no full stop. The interview's first check, that the data gateway is there at all, went unanswered."
+  },
+  "dataGatewayInterviewFailureDescribeUnsupported": "it can't describe itself, so it may need updating",
+  "@dataGatewayInterviewFailureDescribeUnsupported": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: it can't describe itself. Keep it a short phrase that starts in lower case, with no full stop. The data gateway does not implement the call that asks what it can do, which an older version of it would not."
+  },
+  "dataGatewayInterviewFailureDescribeFailed": "it couldn't describe itself",
+  "@dataGatewayInterviewFailureDescribeFailed": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: it couldn't describe itself. Keep it a short phrase that starts in lower case, with no full stop. The call that asks the data gateway what it can do failed in some other way."
+  },
+  "dataGatewayInterviewFailureUnknown": "something went wrong",
+  "@dataGatewayInterviewFailureUnknown": {
+    "description": "Why an interview of a data gateway failed, said after a colon in a sentence such as Not in use: something went wrong. Keep it a short phrase that starts in lower case, with no full stop. Used when the server gives a reason this app does not know."
   },
   "dataGatewayAdd": "Add data gateway",
   "@dataGatewayAdd": {
@@ -90,11 +134,11 @@
   },
   "dataGatewayCancel": "Cancel",
   "@dataGatewayCancel": {
-    "description": "Button that closes the delete confirmation without deleting."
+    "description": "Button that closes a dialog without doing what it asks: the delete confirmation, which deletes nothing, and the language picker, which links nothing."
   },
   "dataGatewayBusy": "Working on {name}…",
   "@dataGatewayBusy": {
-    "description": "Accessible label of the progress indicator shown on a data gateway row while an action on it is in flight.",
+    "description": "Accessible label of the progress indicator shown while an action is in flight: on a data gateway row, where {name} is the data gateway's name, and on a language name to review, where it is the data gateway's own value for the language.",
     "placeholders": {
       "name": {
         "type": "String",
@@ -194,11 +238,11 @@
   },
   "dataGatewayChangeRefused": "Your role can't change data gateways.",
   "@dataGatewayChangeRefused": {
-    "description": "Shown when the server refused a change to a data gateway because of the user's role. The user can still see data gateways; the change actions are hidden afterwards."
+    "description": "Shown when the server refused a change to a data gateway, or to one of its language names, because of the user's role. The user can still see data gateways; the change actions are hidden afterwards."
   },
   "dataGatewayDismiss": "Dismiss",
   "@dataGatewayDismiss": {
-    "description": "Button that closes the banner reporting the last action on the data gateway list."
+    "description": "Button that closes the banner reporting the last action, on the data gateway list and on a data gateway's own screen, where one banner is for the data gateway and one, at the foot of the screen, for the language names to review."
   },
   "dataGatewayFormEditTitle": "Edit data gateway",
   "@dataGatewayFormEditTitle": {
@@ -325,6 +369,464 @@
       "name": {
         "type": "String",
         "example": "BoardGameGeek"
+      }
+    }
+  },
+  "dataGatewayDetailLoading": "Loading this data gateway…",
+  "@dataGatewayDetailLoading": {
+    "description": "Announced while a data gateway's own screen reads it from the server, with nothing to show yet."
+  },
+  "dataGatewayDetailErrorTitle": "We couldn't load this data gateway",
+  "@dataGatewayDetailErrorTitle": {
+    "description": "Heading on a data gateway's own screen when it could not be read, for a reason other than the user's role or it being missing: the server was unreachable, or it answered with an error."
+  },
+  "dataGatewayDetailErrorBody": "Check your connection, then try again.",
+  "@dataGatewayDetailErrorBody": {
+    "description": "Body under the could-not-load heading on a data gateway's own screen."
+  },
+  "dataGatewayDetailGoneTitle": "Data gateway not found",
+  "@dataGatewayDetailGoneTitle": {
+    "description": "Heading on a data gateway's own screen when the server says it does not exist."
+  },
+  "dataGatewayDetailGoneBody": "It may have been deleted.",
+  "@dataGatewayDetailGoneBody": {
+    "description": "Body under the not-found heading on a data gateway's own screen."
+  },
+  "dataGatewayDetailRefresh": "Read this data gateway again",
+  "@dataGatewayDetailRefresh": {
+    "description": "Accessible name and tooltip of the app bar button that reads a data gateway from the server again, on its own screen."
+  },
+  "dataGatewayDateTime": "{date}, {time}",
+  "@dataGatewayDateTime": {
+    "description": "When something happened, on a data gateway's own screen, for a date in the current year: the day, then the time of day, for example 'Fri, Oct 30, 3:04 PM'. It stands in for {date} in the lines that say when something happened. The time arrives already formatted, in the 12- or 24-hour form the user's device is set to. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "MMMEd"
+      },
+      "time": {
+        "type": "String",
+        "example": "3:04 PM"
+      }
+    }
+  },
+  "dataGatewayDateTimeWithYear": "{date}, {time}",
+  "@dataGatewayDateTimeWithYear": {
+    "description": "dataGatewayDateTime for a date in another year, which carries the year, for example 'Thu, Oct 30, 2025, 3:04 PM'. Reorder or change the punctuation as your language needs.",
+    "placeholders": {
+      "date": {
+        "type": "DateTime",
+        "format": "yMMMEd"
+      },
+      "time": {
+        "type": "String",
+        "example": "3:04 PM"
+      }
+    }
+  },
+  "dataGatewayInterviewHeading": "Interview",
+  "@dataGatewayInterviewHeading": {
+    "description": "Heading of the part of a data gateway's own screen about its interviews. The server interviews a data gateway to learn what it can do, and does not use it until one interview has succeeded."
+  },
+  "dataGatewayInterviewFirst": "First interviewed {date}",
+  "@dataGatewayInterviewFirst": {
+    "description": "When the first successful interview of a data gateway ran.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      }
+    }
+  },
+  "dataGatewayInterviewLast": "Last interviewed {date}",
+  "@dataGatewayInterviewLast": {
+    "description": "When the latest successful interview of a data gateway ran. Its answers are the ones the server uses.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      }
+    }
+  },
+  "dataGatewayInterviewNever": "Not interviewed yet",
+  "@dataGatewayInterviewNever": {
+    "description": "Shown when no interview of a data gateway has succeeded. One may have failed, and then that failure is shown below this."
+  },
+  "dataGatewayInterviewLastFailure": "Last failure {date}: {reason}",
+  "@dataGatewayInterviewLastFailure": {
+    "description": "When the latest interview of a data gateway failed and why. Shown only while no later interview has succeeded. {reason} is a short phrase that follows the colon, such as it didn't answer.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      },
+      "reason": {
+        "type": "String",
+        "example": "it didn't answer"
+      }
+    }
+  },
+  "dataGatewayInterviewAgain": "Interview again",
+  "@dataGatewayInterviewAgain": {
+    "description": "Button that has the server interview a data gateway now, to learn again what it can do."
+  },
+  "dataGatewayInterviewing": "Interviewing…",
+  "@dataGatewayInterviewing": {
+    "description": "What the interview button says, and announces, while the interview runs. It can take up to a minute."
+  },
+  "dataGatewayListsHeading": "Lists",
+  "@dataGatewayListsHeading": {
+    "description": "Heading of the part of a data gateway's own screen about the lists the server loads from it after an interview, such as its languages."
+  },
+  "dataGatewayListsNone": "It doesn't list anything yet",
+  "@dataGatewayListsNone": {
+    "description": "Under the Lists heading, when the data gateway has no list for the server to load. It refers to the data gateway."
+  },
+  "dataGatewaySectionLoaded": "Last loaded {date}",
+  "@dataGatewaySectionLoaded": {
+    "description": "When the server last loaded one list from a data gateway.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      }
+    }
+  },
+  "dataGatewaySectionNotLoaded": "Not loaded yet",
+  "@dataGatewaySectionNotLoaded": {
+    "description": "One list the server should load from a data gateway has not been loaded since the last interview. Nothing has gone wrong: lists load in the few minutes after an interview."
+  },
+  "dataGatewaySectionSwitchedOff": "Switched off",
+  "@dataGatewaySectionSwitchedOff": {
+    "description": "One list a data gateway offers, which an admin has switched off with its switch under Capabilities, so the server does not load it. Shown in place of when the list last loaded."
+  },
+  "dataGatewaySectionFailed": "Failed {date}: {reason}",
+  "@dataGatewaySectionFailed": {
+    "description": "When the server's last attempt to load one list from a data gateway failed, and why. Shown only while no later attempt has succeeded. {reason} is a short phrase that follows the colon, such as it couldn't send the list.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Oct 30, 3:04 PM"
+      },
+      "reason": {
+        "type": "String",
+        "example": "it couldn't send the list"
+      }
+    }
+  },
+  "dataGatewaySectionFailureListUnsupported": "it doesn't offer this list",
+  "@dataGatewaySectionFailureListUnsupported": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: it doesn't offer this list. Keep it a short phrase that starts in lower case, with no full stop. The data gateway answered that it does not serve this list."
+  },
+  "dataGatewaySectionFailureListFailed": "it couldn't send the list",
+  "@dataGatewaySectionFailureListFailed": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: it couldn't send the list. Keep it a short phrase that starts in lower case, with no full stop. The data gateway failed to answer with the list."
+  },
+  "dataGatewaySectionFailureLinkFailed": "the server couldn't save the list",
+  "@dataGatewaySectionFailureLinkFailed": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: the server couldn't save the list. Keep it a short phrase that starts in lower case, with no full stop. The data gateway sent the list, and the server could not store what it sent."
+  },
+  "dataGatewaySectionFailureUnknown": "something went wrong",
+  "@dataGatewaySectionFailureUnknown": {
+    "description": "Why a list failed to load from a data gateway, said after a colon in a sentence such as Failed Fri, Oct 30: something went wrong. Keep it a short phrase that starts in lower case, with no full stop. Used when the server gives a reason this app does not know."
+  },
+  "dataGatewayCapabilitiesHeading": "Capabilities",
+  "@dataGatewayCapabilitiesHeading": {
+    "description": "Heading of the part of a data gateway's own screen with a switch for each thing the data gateway can do. The server does not use a capability that is switched off."
+  },
+  "dataGatewayCapabilitiesNone": "Nothing yet. It says what it can do at its first interview.",
+  "@dataGatewayCapabilitiesNone": {
+    "description": "Under the Capabilities heading, when the data gateway has not declared anything it can do. It refers to the data gateway."
+  },
+  "dataGatewayCapabilitySaving": "Saving…",
+  "@dataGatewayCapabilitySaving": {
+    "description": "Announced, and the accessible name of the progress bar shown, while a capability switch's change is being saved."
+  },
+  "dataGatewayCapabilitySearch": "Search",
+  "@dataGatewayCapabilitySearch": {
+    "description": "Name of a capability switch: the data gateway can search for games."
+  },
+  "dataGatewayCapabilityFetch": "Fetch game details",
+  "@dataGatewayCapabilityFetch": {
+    "description": "Name of a capability switch: the data gateway can fetch the details of one game."
+  },
+  "dataGatewayCapabilityFetchExpansions": "Fetch expansions",
+  "@dataGatewayCapabilityFetchExpansions": {
+    "description": "Name of a capability switch: the data gateway can fetch a game's expansions."
+  },
+  "dataGatewayCapabilityListLanguages": "List languages",
+  "@dataGatewayCapabilityListLanguages": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the languages it knows."
+  },
+  "dataGatewayCapabilityListPlatforms": "List platforms",
+  "@dataGatewayCapabilityListPlatforms": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the platforms it knows."
+  },
+  "dataGatewayCapabilityListCategories": "List categories",
+  "@dataGatewayCapabilityListCategories": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the game categories it knows."
+  },
+  "dataGatewayCapabilityListMechanics": "List mechanics",
+  "@dataGatewayCapabilityListMechanics": {
+    "description": "Name of a capability switch, and of a row under the Lists heading: the data gateway can list the game mechanics it knows."
+  },
+  "dataGatewayCapabilityOther": "Other: {name}",
+  "@dataGatewayCapabilityOther": {
+    "description": "Name of a capability switch for something this app has no name for, because the server is newer than the app. {name} is the server's own name for it, left as it is.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "FutureThing"
+      }
+    }
+  },
+  "dataGatewayOutcomeInterviewDone": "Interview finished. Its lists load over the next few minutes.",
+  "@dataGatewayOutcomeInterviewDone": {
+    "description": "Banner after an interview of a data gateway succeeded. The server loads the lists it declared afterwards, so they don't show yet."
+  },
+  "dataGatewayOutcomeInterviewFailed": "The interview failed.",
+  "@dataGatewayOutcomeInterviewFailed": {
+    "description": "Banner after an interview of a data gateway ran and did not succeed. The screen says why in the failure line below."
+  },
+  "dataGatewayOutcomeInterviewUnknown": "The interview is taking a while, and may still finish. Check back here shortly.",
+  "@dataGatewayOutcomeInterviewUnknown": {
+    "description": "Banner when the server did not answer about an interview in time. It may keep interviewing after the app stops waiting, so this must not say the interview failed."
+  },
+  "dataGatewayOutcomeInterviewDisabled": "This data gateway is disabled, so it can't be interviewed. Connect it first.",
+  "@dataGatewayOutcomeInterviewDisabled": {
+    "description": "Banner when the server would not interview a data gateway because it is disabled. Connect is the action on its row in the data gateway list."
+  },
+  "dataGatewayOutcomeInterviewNoAnswer": "Couldn't get an answer about the interview, and it may still finish. Check back here before trying again.",
+  "@dataGatewayOutcomeInterviewNoAnswer": {
+    "description": "Banner when asking for an interview got no answer that says anything about it, such as a dropped connection. It must not say the interview did not happen: the server may still be interviewing, so it must not ask for another straight away."
+  },
+  "dataGatewayOutcomeCapabilityFailed": "Couldn't get an answer about that change. Check the switch before trying again.",
+  "@dataGatewayOutcomeCapabilityFailed": {
+    "description": "Banner when a capability switch's change got no answer that says anything about it. It may have applied, so this must not say it did not."
+  },
+  "dataGatewayLanguagePickerTitle": "Link \"{value}\" to a language",
+  "@dataGatewayLanguagePickerTitle": {
+    "description": "Title of the dialog where an admin picks which of the server's languages a data gateway's name for a language stands for. {value} is the data gateway's own value, such as Czech or cs, shown as it is. Quotation marks set it off, in the style of your language.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguagePickerSearchLabel": "Search languages",
+  "@dataGatewayLanguagePickerSearchLabel": {
+    "description": "Label of the field in the language picker that narrows the list of languages by name. It is also the field's accessible name."
+  },
+  "dataGatewayLanguagePickerSearchHelper": "Search by language name, such as Portuguese",
+  "@dataGatewayLanguagePickerSearchHelper": {
+    "description": "Helper text under the search field in the language picker. The server matches a language's name and nothing else, so a tag such as pt-BR, or a place such as Brazil, finds nothing: this says what to type. Portuguese is an example of a language's name; translate it as that language's name."
+  },
+  "dataGatewayLanguagePickerLoading": "Loading languages…",
+  "@dataGatewayLanguagePickerLoading": {
+    "description": "Announced and shown while the language picker reads languages from the server, for its first page and for each next page."
+  },
+  "dataGatewayLanguagePickerEmpty": "No languages match",
+  "@dataGatewayLanguagePickerEmpty": {
+    "description": "Shown and announced in the language picker when no language matches what was typed."
+  },
+  "dataGatewayLanguagePickerFailed": "Couldn't load languages.",
+  "@dataGatewayLanguagePickerFailed": {
+    "description": "Shown and announced in the language picker when reading languages from the server failed, whether for the first page or for a next one. A Try again button goes with it."
+  },
+  "dataGatewayLanguagePickerMore": "Show more",
+  "@dataGatewayLanguagePickerMore": {
+    "description": "Button at the end of the language picker's list that reads the next page of languages from the server."
+  },
+  "dataGatewayWorklistHeading": "Language names to review",
+  "@dataGatewayWorklistHeading": {
+    "description": "Heading of the part of a data gateway's own screen where an admin reviews the values the data gateway uses for languages, such as Czech or cs: by default the ones the server could not match to one of its own languages, and under the other filters the ones already settled."
+  },
+  "dataGatewayWorklistFilterWaiting": "Waiting",
+  "@dataGatewayWorklistFilterWaiting": {
+    "description": "Filter chip over the language names to review: the ones waiting for an admin, because the server could not settle them on its own. Selected when the screen opens."
+  },
+  "dataGatewayWorklistFilterIgnored": "Ignored",
+  "@dataGatewayWorklistFilterIgnored": {
+    "description": "Filter chip over the language names to review: the ones an admin chose to ignore."
+  },
+  "dataGatewayWorklistFilterResolved": "Resolved",
+  "@dataGatewayWorklistFilterResolved": {
+    "description": "Filter chip over the language names to review: the ones linked to one of the server's languages."
+  },
+  "dataGatewayWorklistLoading": "Loading language names…",
+  "@dataGatewayWorklistLoading": {
+    "description": "Announced while the language names to review are read from the server, with none to show yet."
+  },
+  "dataGatewayWorklistFailed": "Couldn't load the language names.",
+  "@dataGatewayWorklistFailed": {
+    "description": "Shown and announced in place of the language names to review when reading them from the server failed. A Try again button goes with it."
+  },
+  "dataGatewayWorklistEmptyWaiting": "Nothing to review",
+  "@dataGatewayWorklistEmptyWaiting": {
+    "description": "In place of the language names to review, under the Waiting filter, when none is waiting for an admin."
+  },
+  "dataGatewayWorklistEmptyIgnored": "Nothing ignored",
+  "@dataGatewayWorklistEmptyIgnored": {
+    "description": "In place of the language names to review, under the Ignored filter, when an admin has ignored none."
+  },
+  "dataGatewayWorklistEmptyResolved": "Nothing linked yet",
+  "@dataGatewayWorklistEmptyResolved": {
+    "description": "In place of the language names to review, under the Resolved filter, when none is linked to one of the server's languages yet."
+  },
+  "dataGatewayWorklistMore": "Show more",
+  "@dataGatewayWorklistMore": {
+    "description": "Button at the end of the language names to review that reads the next page of them from the server."
+  },
+  "dataGatewayWorklistMoreLoading": "Loading more…",
+  "@dataGatewayWorklistMoreLoading": {
+    "description": "What the Show more button at the end of the language names to review says, and announces, while the next page is read. It stays a button."
+  },
+  "dataGatewayWorklistMoreFailed": "Couldn't load more language names.",
+  "@dataGatewayWorklistMoreFailed": {
+    "description": "Shown and announced above the button at the end of the language names to review when reading the next page failed. The button then says Try again."
+  },
+  "dataGatewayLanguageLinkStatusPending": "Waiting for review",
+  "@dataGatewayLanguageLinkStatusPending": {
+    "description": "Status of a language name to review that the server doesn't have as a language yet. An admin can add it as a new language, link it to one the server has, or ignore it."
+  },
+  "dataGatewayLanguageLinkStatusUnresolved": "Not matched",
+  "@dataGatewayLanguageLinkStatusUnresolved": {
+    "description": "Status of a language name to review that the server could not match to one of its languages on its own. An admin links it to one, or ignores it."
+  },
+  "dataGatewayLanguageLinkStatusIgnored": "Ignored",
+  "@dataGatewayLanguageLinkStatusIgnored": {
+    "description": "Status of a language name an admin chose to ignore. Interviews leave it alone, and linking it undoes the ignore."
+  },
+  "dataGatewayLanguageLinkStatusResolved": "Linked to {name} ({tag})",
+  "@dataGatewayLanguageLinkStatusResolved": {
+    "description": "Status of a language name linked to one of the server's languages. {name} is that language's name and {tag} its language code, both as the server has them.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Portuguese (Brazil)"
+      },
+      "tag": {
+        "type": "String",
+        "example": "pt-BR"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkNamed": "{value} ({format})",
+  "@dataGatewayLanguageLinkNamed": {
+    "description": "A language name to review, where the words have to say which one: its menu's name, its busy label, a banner. {value} is the data gateway's own value for the language, and {format} says how that value is spelled, such as ISO 639-1 code, because the same value can be listed once per format.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      },
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "dataGatewayLanguageCodeFormatIso6391": "ISO 639-1 code",
+  "@dataGatewayLanguageCodeFormatIso6391": {
+    "description": "How a data gateway spells a language value: a two-letter ISO 639-1 code, such as cs."
+  },
+  "dataGatewayLanguageCodeFormatIso6393": "ISO 639-3 code",
+  "@dataGatewayLanguageCodeFormatIso6393": {
+    "description": "How a data gateway spells a language value: a three-letter ISO 639-3 code, such as ces."
+  },
+  "dataGatewayLanguageCodeFormatIetfBcp47": "language tag",
+  "@dataGatewayLanguageCodeFormatIetfBcp47": {
+    "description": "How a data gateway spells a language value: a BCP 47 language tag, such as pt-BR."
+  },
+  "dataGatewayLanguageCodeFormatName": "name",
+  "@dataGatewayLanguageCodeFormatName": {
+    "description": "How a data gateway spells a language value: the language's name, such as Czech."
+  },
+  "dataGatewayLanguageCodeFormatNativeName": "native name",
+  "@dataGatewayLanguageCodeFormatNativeName": {
+    "description": "How a data gateway spells a language value: the language's name in that language, such as Čeština."
+  },
+  "dataGatewayLanguageLinkActions": "Actions for {value}",
+  "@dataGatewayLanguageLinkActions": {
+    "description": "Accessible name and tooltip of the menu button on a language name to review. {value} is the data gateway's own value for the language, such as Czech or cs, with how it is spelled beside it where the app knows that.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkActionLink": "Link to a language…",
+  "@dataGatewayLanguageLinkActionLink": {
+    "description": "Menu item on a language name to review. It opens a dialog to pick which of the server's languages the name stands for. Offered whatever the name's status; on an ignored one it undoes the ignore."
+  },
+  "dataGatewayLanguageLinkActionIgnore": "Ignore",
+  "@dataGatewayLanguageLinkActionIgnore": {
+    "description": "Menu item on a language name to review: set it aside, so it no longer waits for review. Interviews leave an ignored name alone."
+  },
+  "dataGatewayLanguageLinkActionAccept": "Add this language",
+  "@dataGatewayLanguageLinkActionAccept": {
+    "description": "Menu item on a language name the server doesn't have as a language yet: the server adds it as a new language, and links the name to it."
+  },
+  "dataGatewayLanguageLinkOutcomeLinked": "Linked {value}.",
+  "@dataGatewayLanguageLinkOutcomeLinked": {
+    "description": "Banner after a language name was linked to the language the admin picked. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeIgnored": "Ignored {value}.",
+  "@dataGatewayLanguageLinkOutcomeIgnored": {
+    "description": "Banner after an admin ignored a language name. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeAccepted": "Added {value}.",
+  "@dataGatewayLanguageLinkOutcomeAccepted": {
+    "description": "Banner after the server added a language name as a new language and linked the name to it. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Klingon"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeConflict": "Couldn't add {value}. It may have been settled already, or isn't a language the server knows. Try linking it instead.",
+  "@dataGatewayLanguageLinkOutcomeConflict": {
+    "description": "Banner when the server would not add a language name as a new language: someone settled it first, or it names no language the server can add. Linking it to one of the server's languages still works. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Klingon"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeUnknownTag": "That language is no longer available.",
+  "@dataGatewayLanguageLinkOutcomeUnknownTag": {
+    "description": "Banner when the language the admin picked to link a name to was removed from the server after the dialog listed it. Nothing changed."
+  },
+  "dataGatewayLanguageLinkOutcomeGone": "{value} is no longer on this list.",
+  "@dataGatewayLanguageLinkOutcomeGone": {
+    "description": "Banner when an action found that a language name no longer exists on the server. Its row is removed. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
+      }
+    }
+  },
+  "dataGatewayLanguageLinkOutcomeNoAnswer": "Couldn't get an answer about {value}. Check the list before trying again.",
+  "@dataGatewayLanguageLinkOutcomeNoAnswer": {
+    "description": "Banner when an action on a language name got no answer that says anything about it, such as a dropped connection. The change may have been made, so this must not say it wasn't. {value} is the data gateway's own value for the language, shown as it is.",
+    "placeholders": {
+      "value": {
+        "type": "String",
+        "example": "Czech"
       }
     }
   }

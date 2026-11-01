@@ -28,7 +28,13 @@ void main() {
 
     test('the template defines the keys the a11y surface depends on', () {
       // The submit swaps its label rather than dropping it, the row menu is
-      // named for its row, and a busy row's spinner has a label.
+      // named for its row, and a busy row's spinner has a label. On the detail
+      // screen the refresh control is named, the spinner and the capability
+      // write's bar have labels, and the interview button swaps its label. In
+      // the language picker the field is named by its label, and what is
+      // loading, what failed and an empty result are each announced. In the
+      // language worklist each menu is named for its row, what is loading and
+      // what failed are each announced, and Show more swaps its label.
       expect(
         report.templateKeys,
         containsAll(<String>[
@@ -37,6 +43,20 @@ void main() {
           'dataGatewayFormInProgress',
           'dataGatewayRowActions',
           'dataGatewayBusy',
+          'dataGatewayDetailRefresh',
+          'dataGatewayDetailLoading',
+          'dataGatewayCapabilitySaving',
+          'dataGatewayInterviewAgain',
+          'dataGatewayInterviewing',
+          'dataGatewayLanguagePickerSearchLabel',
+          'dataGatewayLanguagePickerLoading',
+          'dataGatewayLanguagePickerEmpty',
+          'dataGatewayLanguagePickerFailed',
+          'dataGatewayLanguageLinkActions',
+          'dataGatewayWorklistLoading',
+          'dataGatewayWorklistFailed',
+          'dataGatewayWorklistMoreLoading',
+          'dataGatewayWorklistMoreFailed',
         ]),
       );
     });
