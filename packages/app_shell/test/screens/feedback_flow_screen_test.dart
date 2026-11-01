@@ -330,6 +330,26 @@ void main() {
       expect(service.buildCalls, hasLength(1));
     });
 
+    testWidgets('back in the gap between a send finishing and the next frame '
+        'still leaves the flow', (tester) async {
+      final gate = Completer<FeedbackSubmitResult>();
+      service.onSubmit = (_) => gate.future;
+      await open(tester);
+      await composeValidBug(tester);
+      await send(tester);
+
+      // No pump: the send has finished, and the PopScope on screen is still
+      // the sending frame's, with canPop false.
+      gate.complete(FeedbackSubmitResult.sent);
+      await tester.idle();
+
+      await systemBack(tester);
+
+      expect(find.byType(FeedbackFlowScreen), findsNothing);
+      expect(find.text('launch'), findsOneWidget);
+      expect(service.submitted, hasLength(1));
+    });
+
     testWidgets('back after a rejected outcome returns to compose with the '
         'input', (tester) async {
       service.onSubmit = (_) => Future.error(

@@ -116,11 +116,23 @@ class _FeedbackFlowScreenState extends State<FeedbackFlowScreen> {
     // surface's visible BackButton — instead of popping the route; while
     // sending it does nothing. Unlike the crash overlay (#106), this IS a
     // real route, so PopScope is the correct primitive here.
+    //
+    // The callback reads _stage live, but canPop is only as new as the last
+    // frame: back can land after a send finishes and before the rebuild, with
+    // canPop still false. Delivered pops here for that gap, or the filled form
+    // would come back.
     return PopScope(
       canPop: preview == null || _stage == _SendStage.delivered,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop || _stage == _SendStage.sending) return;
-        _backToCompose();
+        if (didPop) return;
+        switch (_stage) {
+          case _SendStage.sending:
+            return;
+          case _SendStage.delivered:
+            Navigator.of(context).pop();
+          case _SendStage.idle || _SendStage.undelivered:
+            _backToCompose();
+        }
       },
       child: preview == null ? _compose(context) : _review(preview),
     );
