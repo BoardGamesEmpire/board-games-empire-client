@@ -197,8 +197,7 @@ class FeedbackComposeForm extends StatelessWidget {
 /// callback and `enabled` flag. With copies, a host could hand the two
 /// different ones: a read-only form under a button that still submits, or a
 /// button that validates a different model from the title field's keyboard
-/// submit. A host that replaces its model (#179) rebuilds the form, and this
-/// with it.
+/// submit. A host that replaces its model rebuilds the form, and this with it.
 class FeedbackComposeSubmitButton extends StatelessWidget {
   const FeedbackComposeSubmitButton({required this.form, super.key});
 
