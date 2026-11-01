@@ -154,7 +154,10 @@ Asking the server *again* is deliberately three answers, not one:
 ### P5 — Gateways admin + game discovery (#28)
 
 - #41 DataGateway admin UI (admin-gated): list / add / edit / delete / connect /
-  disconnect. Its review UI moved to #457, which waits on backend #715.
+  disconnect. Its review UI is #457: onboarding status, capability switches,
+  re-interview and the language worklist. The worklists for the other
+  vocabularies (platforms, categories, mechanics) and the review settings are
+  #653, which waits on backend #1004, the routes that list those records.
 - #42 ~~Game browse + search UI (in-system + external gateway results)~~, with
   #472's Markdown descriptions. Split out: streamed search over the WebSocket
   (#473) and a platform-type filter on screen (#474). Left for later: a

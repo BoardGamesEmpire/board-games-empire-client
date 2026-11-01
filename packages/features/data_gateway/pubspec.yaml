@@ -1,5 +1,5 @@
 name: data_gateway
-description: "DataGateway admin feature: list, add, edit, delete, connect and disconnect the server's DataGateways"
+description: "DataGateway admin feature: list, add, edit, delete, connect and disconnect the server's DataGateways, and review each one's interview, lists, capabilities and language links"
 publish_to: none
 
 environment:

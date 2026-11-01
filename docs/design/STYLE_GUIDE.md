@@ -295,8 +295,11 @@ over.
 ### Where the primary action goes
 
 Inline, at the end of the form, unless the page is a **flow step** or a **long
-review surface**. Those pin it with `BgePage.footer`. Today that is feedback
-compose and review. The reasoning, and the measurements behind it, are on
+review surface**. Those pin it with `BgePage.footer`, and so does the outcome
+of an action on a **long list** or a long page, which has no form to sit on.
+Today that is feedback compose and review, and the banners that answer actions
+on a DataGateway's page: on the DataGateway itself, and on its language
+worklist (#457). The reasoning, and the measurements behind it, are on
 `BgePage.footer`:
 
 - a flow step pins because the step it hands over to does, and an action that
@@ -304,7 +307,10 @@ compose and review. The reasoning, and the measurements behind it, are on
 - a centred first-run page does not, because a pinned action renders below
   whatever the column continues with (auth's sign-in alternatives), and at 320dp
   and 200% text the pinned band eats a quarter of the body;
-- a short form does not, because its button already scrolls into reach.
+- a short form does not, because its button already scrolls into reach;
+- an outcome on a long list does, because the list moves on: inside it a banner
+  is built only near the view, so one that lands after the user has scrolled
+  away is neither seen nor announced (see Error and outcome surfaces).
 
 Two steps that hand over to each other also build their insets the same way:
 from the page's `padding`, not from insets inside each row. Review once put its
@@ -320,7 +326,7 @@ question it turns on is **does the screen survive the outcome?**
 
 | Situation | Surface |
 | --- | --- |
-| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) — through `BgeFormActions` when it answers a form's submit |
+| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) — through `BgeFormActions` when it answers a form's submit, in `BgePage.footer` when it answers an action on a long list |
 | Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar` |
 
 A failure that leaves the screen nothing else to show — the app could not
@@ -337,6 +343,34 @@ the answer where they pressed. At the top of the page, as auth and
 create-household once had it, reading it meant being scrolled away from the
 button — and on create-household, with the real theme, that long scroll was the
 one a tap cuts short, leaving the banner off screen (#233).
+
+**An outcome on a long list sits in the footer.** A form's banner sits on its
+button, where the user pressed. A long list has no such place, because the
+list moves on. Inside it a banner is built only near the view, so one that
+lands after the user has scrolled away is neither seen nor announced; above
+it, a banner takes the page from wherever they were working, and taking it
+away moves every control below it up under the pointer. In `BgePage.footer`
+it is always built and on screen, so its live region always fires and it
+moves no row. The DataGateway page is the case (#457): what an action on the
+DataGateway answered, then what an action on its language worklist answered,
+stacked in the one footer, each with its own Dismiss. It is the one exception
+to a banner living inside the page's scroll view, and so to having no height
+cap (#228): the footer holds at most half the body and scrolls, so even a tall
+banner there stays reachable. A banner there reveals itself within the
+footer's own scroll view, so the page doesn't move.
+
+Such a footer is passed on every build, and renders nothing while there is
+nothing to report. `BgePage` builds a different tree with a footer than
+without one, so a footer that came and went would lose the scroll position and
+the focus.
+
+**A sliver page with a footer keeps one viewport of content built past its
+edge (#457).** A footer that arrives takes room from the end of the view, so
+the rows there leave it, and on a lazy list a row that far out of view is no
+longer built — which loses keyboard focus on it, or on its way back to it. The
+page keeps one viewport built past each edge of the view, where the default is
+250dp. One is enough because a footer takes at most half the body. A page
+without a footer keeps the default.
 
 **Title a failure when some of its operation's messages state only a cause.**
 "Could not reach the server. Check your connection." never says that *signing
