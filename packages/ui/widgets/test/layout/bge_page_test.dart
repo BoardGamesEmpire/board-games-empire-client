@@ -342,6 +342,236 @@ void main() {
     });
   });
 
+  group('BgePage footer that gets shorter (#457)', () {
+    const rowKey = Key('row');
+    const actionKey = Key('action');
+    const room = 120.0;
+
+    ScrollPosition pageOf(WidgetTester tester) =>
+        tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+    /// A page of [rows] 48dp rows in a 400x600 window, with a footer [height]
+    /// says the height of, and an action at its foot.
+    Future<void> pumpPage(
+      WidgetTester tester,
+      ValueNotifier<double> height, {
+      int rows = 40,
+      bool slivers = true,
+    }) async {
+      addTearDown(height.dispose);
+      Widget row(int index) => SizedBox(
+        key: index == rows - 1 ? rowKey : null,
+        height: 48,
+        child: Text('row $index'),
+      );
+      final footer = ValueListenableBuilder<double>(
+        valueListenable: height,
+        builder: (context, value, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(height: value),
+            const SizedBox(key: actionKey, height: 8),
+          ],
+        ),
+      );
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          slivers
+              ? BgePage.slivers(
+                  title: const Text('t'),
+                  padding: EdgeInsets.zero,
+                  footer: footer,
+                  slivers: [
+                    SliverList.builder(
+                      itemCount: rows,
+                      itemBuilder: (_, index) => row(index),
+                    ),
+                  ],
+                )
+              : BgePage(
+                  title: const Text('t'),
+                  padding: EdgeInsets.zero,
+                  footer: footer,
+                  child: Column(
+                    children: [for (var n = 0; n < rows; n++) row(n)],
+                  ),
+                ),
+          size: const Size(400, 600),
+        ),
+      );
+    }
+
+    Future<void> scrollToEnd(WidgetTester tester) async {
+      final page = pageOf(tester);
+      page.jumpTo(page.maxScrollExtent);
+      await tester.pumpAndSettle();
+    }
+
+    for (final slivers in [true, false]) {
+      final kind = slivers ? 'slivers' : 'box';
+
+      testWidgets('$kind: at the end of the page, nothing on the page moves', (
+        tester,
+      ) async {
+        final height = ValueNotifier<double>(room);
+        await pumpPage(tester, height, slivers: slivers);
+        await scrollToEnd(tester);
+        final before = tester.getRect(find.byKey(rowKey));
+        final pixels = pageOf(tester).pixels;
+
+        height.value = 0;
+        await tester.pumpAndSettle();
+
+        expect(pageOf(tester).pixels, pixels);
+        expect(tester.getRect(find.byKey(rowKey)), before);
+      });
+    }
+
+    testWidgets('what is left of the footer stays where it was', (
+      tester,
+    ) async {
+      final height = ValueNotifier<double>(room);
+      await pumpPage(tester, height);
+      await scrollToEnd(tester);
+      final before = tester.getRect(find.byKey(actionKey));
+
+      height.value = 0;
+      await tester.pumpAndSettle();
+
+      expect(tester.getRect(find.byKey(actionKey)), before);
+    });
+
+    testWidgets('the room goes back as the page leaves its end, and the page '
+        'follows only the scroll', (tester) async {
+      final height = ValueNotifier<double>(room);
+      await pumpPage(tester, height);
+      await scrollToEnd(tester);
+      height.value = 0;
+      await tester.pumpAndSettle();
+      final view = tester.getSize(find.byType(Scrollable).first).height;
+      final pixels = pageOf(tester).pixels;
+
+      pageOf(tester).jumpTo(pixels - 50);
+      await tester.pumpAndSettle();
+
+      expect(pageOf(tester).pixels, pixels - 50);
+      expect(tester.getSize(find.byType(Scrollable).first).height, view + 50);
+
+      pageOf(tester).jumpTo(pixels - 200);
+      await tester.pumpAndSettle();
+
+      expect(pageOf(tester).pixels, pixels - 200);
+      expect(tester.getSize(find.byType(Scrollable).first).height, view + room);
+    });
+
+    testWidgets('away from the end it goes back at once', (tester) async {
+      final height = ValueNotifier<double>(room);
+      await pumpPage(tester, height);
+      final view = tester.getSize(find.byType(Scrollable).first).height;
+      pageOf(tester).jumpTo(300);
+      await tester.pumpAndSettle();
+
+      height.value = 0;
+      await tester.pumpAndSettle();
+
+      expect(pageOf(tester).pixels, 300);
+      expect(tester.getSize(find.byType(Scrollable).first).height, view + room);
+    });
+
+    testWidgets('on a page that has not moved it goes back at once', (
+      tester,
+    ) async {
+      final height = ValueNotifier<double>(room);
+      await pumpPage(tester, height, rows: 2);
+      final view = tester.getSize(find.byType(Scrollable).first).height;
+
+      height.value = 0;
+      await tester.pumpAndSettle();
+
+      expect(pageOf(tester).pixels, 0);
+      expect(tester.getSize(find.byType(Scrollable).first).height, view + room);
+    });
+
+    testWidgets('on a page that can only scroll part of the way, it keeps '
+        'what the page would drop by and no more', (tester) async {
+      final height = ValueNotifier<double>(room);
+      // Enough to scroll by a little less than the footer gives back.
+      await pumpPage(tester, height, rows: 10);
+      await scrollToEnd(tester);
+      final pixels = pageOf(tester).pixels;
+      expect(pixels, greaterThan(0));
+      expect(pixels, lessThan(room));
+      final before = tester.getRect(find.byKey(rowKey));
+
+      height.value = 0;
+      await tester.pumpAndSettle();
+
+      expect(pageOf(tester).pixels, pixels);
+      expect(tester.getRect(find.byKey(rowKey)), before);
+
+      pageOf(tester).jumpTo(0);
+      await tester.pumpAndSettle();
+      final window = tester.getSize(find.byType(Scrollable).first).height;
+      expect(pageOf(tester).pixels, 0);
+      // All of it has gone back: nothing could move now.
+      expect(tester.getRect(find.byKey(actionKey)).top, greaterThan(window));
+    });
+
+    testWidgets('a footer that gets taller again takes up what it kept first', (
+      tester,
+    ) async {
+      final height = ValueNotifier<double>(room);
+      await pumpPage(tester, height);
+      await scrollToEnd(tester);
+      height.value = 0;
+      await tester.pumpAndSettle();
+      final view = tester.getSize(find.byType(Scrollable).first).height;
+      final pixels = pageOf(tester).pixels;
+
+      height.value = room / 2;
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(find.byType(Scrollable).first).height, view);
+      expect(pageOf(tester).pixels, pixels);
+    });
+
+    testWidgets('a window too short for what it kept holds it to the cap', (
+      tester,
+    ) async {
+      final height = ValueNotifier<double>(room);
+      await pumpPage(tester, height);
+      await scrollToEnd(tester);
+      height.value = 0;
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(
+        hostAtSize(
+          tester,
+          BgePage.slivers(
+            title: const Text('t'),
+            padding: EdgeInsets.zero,
+            footer: const SizedBox.shrink(),
+            slivers: [
+              SliverList.builder(
+                itemCount: 40,
+                itemBuilder: (_, index) =>
+                    SizedBox(height: 48, child: Text('row $index')),
+              ),
+            ],
+          ),
+          size: const Size(400, 200),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // The page's half of a body of 144, under the app bar.
+      final view = tester.getSize(find.byType(Scrollable).first).height;
+      expect(view, greaterThanOrEqualTo(72));
+    });
+  });
+
   group('BgePage footer', () {
     testWidgets('pins the footer while the content scrolls', (tester) async {
       await tester.pumpWidget(
