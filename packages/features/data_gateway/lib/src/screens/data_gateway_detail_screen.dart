@@ -52,6 +52,13 @@ import '../widgets/language_link_worklist.dart';
 /// took it away and moved every switch up under the pointer. Among the
 /// worklist's rows, the banner wasn't built once the user had scrolled away.
 ///
+/// A banner stays up until the next action answers, not just until it starts.
+/// Taken down at the start, it came back at the answer, and the view's foot
+/// went and came with it through every action. With the page at its end,
+/// [BgePage.footer] keeps the room a banner leaves, so nothing drops under the
+/// pointer when one goes. An answer that repeats the last is a new banner, or
+/// it would go unsaid: a live region speaks only when it appears or changes.
+///
 /// ## Keeping keyboard focus
 ///
 /// A disabled control gives up keyboard focus (#607), so a control stays
@@ -673,7 +680,8 @@ class _SavingBar extends StatelessWidget {
 /// gives it no bottom inset of its own.
 ///
 /// It also minds focus on the DataGateway's own controls as its banner
-/// arrives, and when one of them goes, as the screen's doc says.
+/// arrives, and when one of them goes, as the screen's doc says. And it counts
+/// the answers, to make a banner new for each: see the screen's doc.
 class _OutcomeFooter extends StatefulWidget {
   const _OutcomeFooter({
     required this.controls,
@@ -699,11 +707,41 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
   /// The node of the Dismiss on the DataGateway's own banner.
   final FocusNode _dismiss = FocusNode(debugLabel: 'data gateway dismiss');
 
+  /// The node of the Dismiss on the worklist's banner, so that it keeps focus
+  /// when an answer makes the banner new.
+  final FocusNode _linksDismiss = FocusNode(debugLabel: 'language dismiss');
+
+  /// How many actions on the DataGateway have answered.
+  int _ownAnswers = 0;
+
+  /// How many actions on a language link have answered.
+  int _linkAnswers = 0;
+
   @override
   void dispose() {
     _dismiss.dispose();
+    _linksDismiss.dispose();
     super.dispose();
   }
+
+  /// Whether the action [previous] was running has answered.
+  static bool _ownAnswered(
+    DataGatewayDetailState previous,
+    DataGatewayDetailState current,
+  ) =>
+      previous is DataGatewayDetailReady &&
+      current is DataGatewayDetailReady &&
+      previous.busy != null &&
+      current.busy == null;
+
+  /// Whether one of the actions [previous] was running has answered.
+  static bool _linkAnswered(
+    LanguageLinkListState previous,
+    LanguageLinkListState current,
+  ) =>
+      previous is LanguageLinkListReady &&
+      current is LanguageLinkListReady &&
+      current.busy.length < previous.busy.length;
 
   /// Whether [current] brings an outcome that wasn't showing.
   static bool _arrives(
@@ -830,6 +868,14 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
     return MultiBlocListener(
       listeners: [
         BlocListener<DataGatewayDetailBloc, DataGatewayDetailState>(
+          listenWhen: _ownAnswered,
+          listener: (_, _) => setState(() => _ownAnswers++),
+        ),
+        BlocListener<LanguageLinkListBloc, LanguageLinkListState>(
+          listenWhen: _linkAnswered,
+          listener: (_, _) => setState(() => _linkAnswers++),
+        ),
+        BlocListener<DataGatewayDetailBloc, DataGatewayDetailState>(
           listenWhen: _arrives,
           listener: _onArrival,
         ),
@@ -850,10 +896,22 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (own != null)
-                    _OwnOutcomeBanner(outcome: own, dismissFocus: _dismiss),
+                    KeyedSubtree(
+                      key: ValueKey('own $_ownAnswers'),
+                      child: _OwnOutcomeBanner(
+                        outcome: own,
+                        dismissFocus: _dismiss,
+                      ),
+                    ),
                   if (own != null && worklist != null) const BgeGap.sm(),
                   if (worklist != null)
-                    LanguageLinkOutcomeBanner(outcome: worklist),
+                    KeyedSubtree(
+                      key: ValueKey('links $_linkAnswers'),
+                      child: LanguageLinkOutcomeBanner(
+                        outcome: worklist,
+                        dismissFocus: _linksDismiss,
+                      ),
+                    ),
                 ],
               ),
             ),

@@ -128,7 +128,8 @@ class DataGatewayDetailBloc
   /// The action in flight.
   DataGatewayDetailBusy? _busy;
 
-  /// What the last action answered, until dismissed or replaced.
+  /// What the last action answered, until dismissed or until the next action
+  /// answers. It stays up while that one runs: see the screen's doc.
   DataGatewayDetailOutcome? _outcome;
 
   /// Which read is the latest. An older one that answers late is dropped.
@@ -267,7 +268,6 @@ class DataGatewayDetailBloc
     Emitter<DataGatewayDetailState> emit,
   ) async {
     _busy = busy;
-    _outcome = null;
     _emitReady(emit);
 
     final end = await attempt();
@@ -283,6 +283,7 @@ class DataGatewayDetailBloc
 
     if (end.gone) {
       _row = null;
+      _outcome = null;
       _waitingSwitches.clear();
       _interviewWaiting = false;
       emit(const DataGatewayDetailGone());

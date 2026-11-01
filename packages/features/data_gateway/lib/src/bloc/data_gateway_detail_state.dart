@@ -53,8 +53,9 @@ final class DataGatewayDetailReady extends DataGatewayDetailState {
   /// write has answered.
   final bool interviewWaiting;
 
-  /// What the last action answered, until the user dismisses it or starts
-  /// another. A capability write that works has nothing to report.
+  /// What the last action answered, until the user dismisses it or another
+  /// answers. A capability write that works has nothing to report, so it takes
+  /// the last outcome down when it answers.
   final DataGatewayDetailOutcome? outcome;
 
   @override

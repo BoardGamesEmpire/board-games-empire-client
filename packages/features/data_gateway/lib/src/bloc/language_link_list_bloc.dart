@@ -372,7 +372,6 @@ class LanguageLinkListBloc
       _moreWaiting = true;
     }
     _busy.add(row.id);
-    _outcome = null;
     _emitReady(emit);
     final answeredBefore = _readAnswered;
 

@@ -1898,7 +1898,7 @@ void main() {
     );
 
     blocTest<LanguageLinkListBloc, LanguageLinkListState>(
-      'an action clears the last outcome as it starts',
+      'an action keeps the last outcome until it answers',
       setUp: () {
         reads([
           linksPage([a, b]),
@@ -1915,7 +1915,15 @@ void main() {
       },
       skip: 4,
       expect: () => [
-        ready([b], busy: {'b'}),
+        ready(
+          [b],
+          busy: {'b'},
+          outcome: LanguageLinkOutcome(
+            kind: LanguageLinkOutcomeKind.ignored,
+            value: a.value,
+            format: a.format,
+          ),
+        ),
       ],
     );
   });

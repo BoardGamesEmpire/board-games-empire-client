@@ -1381,13 +1381,158 @@ void main() {
         await tester.tap(capability(search));
         await pumpEvent(tester);
 
-        expect(banner, findsNothing);
+        expect(banner, findsOneWidget);
         expect(switches(tester), before);
 
         write.complete(
           changed(full().copyWith(disabledCapabilities: [search])),
         );
         await tester.pumpAndSettle();
+      });
+
+      group('$screen: scrolled to the end of a page with no rows', () {
+        /// The page at its end, with the outcome of an interview in the footer.
+        Future<void> openAtEnd(WidgetTester tester) async {
+          remote.onInterview = (_) async => answered(full());
+          await open(tester);
+          remote.onFetchLanguageLinks = (_, _, _, _) async =>
+              linkPageOf(const []);
+          tester
+              .element(capability(search))
+              .read<LanguageLinkListBloc>()
+              .add(const LanguageLinkListLoadRequested());
+          await tester.pumpAndSettle();
+          await press(tester, interviewButton);
+          await tester.pumpAndSettle();
+          expect(banner, findsOneWidget);
+          page(tester).jumpTo(page(tester).maxScrollExtent);
+          await tester.pumpAndSettle();
+          expect(page(tester).pixels, greaterThan(0));
+        }
+
+        /// As its button would: at 200% it may be below the footer's fold.
+        void dismiss(WidgetTester tester) => tester
+            .element(capability(search))
+            .read<DataGatewayDetailBloc>()
+            .add(const DataGatewayDetailOutcomeDismissed());
+
+        testWidgets('a write that starts and works moves no switch', (
+          tester,
+        ) async {
+          final write = Completer<DataGatewayChangeResult>();
+          remote.onSetDisabledCapabilities = (_, _) => write.future;
+          await openAtEnd(tester);
+          final before = switches(tester);
+
+          tester
+              .element(capability(search))
+              .read<DataGatewayDetailBloc>()
+              .add(
+                const DataGatewayDetailCapabilitySwitched(search, on: false),
+              );
+          await pumpEvent(tester);
+
+          expect(banner, findsOneWidget);
+          expect(switches(tester), before);
+
+          write.complete(
+            changed(full().copyWith(disabledCapabilities: [search])),
+          );
+          await tester.pumpAndSettle();
+
+          // A write that works has nothing to report.
+          expect(banner, findsNothing);
+          expect(switches(tester), before);
+        });
+
+        testWidgets('dismissing the banner moves no switch', (tester) async {
+          await openAtEnd(tester);
+          final before = switches(tester);
+
+          dismiss(tester);
+          await tester.pumpAndSettle();
+
+          expect(banner, findsNothing);
+          expect(switches(tester), before);
+        });
+
+        testWidgets('the room goes back as the page is scrolled away', (
+          tester,
+        ) async {
+          await openAtEnd(tester);
+          final view = find.byType(Scrollable).first;
+          final kept = tester.getSize(view).height;
+          dismiss(tester);
+          await tester.pumpAndSettle();
+          expect(tester.getSize(view).height, kept);
+
+          page(tester).jumpTo(0);
+          await tester.pumpAndSettle();
+
+          expect(tester.getSize(view).height, greaterThan(kept));
+        });
+      });
+
+      testWidgets('$screen: the same outcome again is news: a new banner, '
+          'which says so as it arrives', (tester) async {
+        final handle = tester.ensureSemantics();
+        remote.onInterview = (_) async => answered(full());
+        await open(tester);
+        await press(tester, interviewButton);
+        await tester.pumpAndSettle();
+        final firstCopy = find.descendant(
+          of: banner,
+          matching: find.byType(Text, skipOffstage: false),
+          skipOffstage: false,
+        );
+        final first = tester.state(find.byType(BgeInlineBanner));
+        final firstNode = tester.getSemantics(firstCopy.first).id;
+
+        await press(tester, interviewButton);
+        await tester.pumpAndSettle();
+
+        expect(banner, findsOneWidget);
+        expect(tester.state(find.byType(BgeInlineBanner)), isNot(first));
+        // A new live region to assistive tech, not the one it has already read.
+        expect(tester.getSemantics(firstCopy.first).id, isNot(firstNode));
+        handle.dispose();
+      });
+
+      testWidgets('$screen: the same outcome on a language link again is news '
+          'too, and a Dismiss with focus keeps it', (tester) async {
+        remote.onIgnoreLanguageLink = (_, _) async => throw unreachable();
+        await open(tester);
+        final bloc = tester
+            .element(capability(search))
+            .read<LanguageLinkListBloc>();
+        const ignore = LanguageLinkListActionRequested(
+          LanguageLinkAction.ignore,
+          'l1',
+        );
+
+        bloc.add(ignore);
+        await tester.pumpAndSettle();
+        final first = tester.state(find.byType(BgeInlineBanner));
+        final dismiss = dismissOf(worklistBanner);
+        Focus.of(
+          tester.element(
+            find.descendant(of: dismiss, matching: find.byType(Text)),
+          ),
+        ).requestFocus();
+        await tester.pump();
+
+        bloc.add(ignore);
+        await tester.pumpAndSettle();
+
+        expect(tester.state(find.byType(BgeInlineBanner)), isNot(first));
+        expect(
+          Focus.of(
+            tester.element(
+              find.descendant(of: dismiss, matching: find.byType(Text)),
+            ),
+          ).hasFocus,
+          isTrue,
+        );
       });
 
       testWidgets('$screen: starting a second interview after an earlier '
@@ -1413,7 +1558,7 @@ void main() {
         await pumpEvent(tester);
 
         expect(interviews, 2);
-        expect(banner, findsNothing);
+        expect(banner, findsOneWidget);
         expect(switches(tester), before);
 
         second.complete(answered(full()));

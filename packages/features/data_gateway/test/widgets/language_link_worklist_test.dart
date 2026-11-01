@@ -2263,8 +2263,8 @@ void main() {
       });
     }
 
-    testWidgets("a banner leaving at the list's foot moves the page, and that "
-        "isn't the user moving it on", (tester) async {
+    testWidgets("an action at the list's foot, with a banner up, keeps the "
+        'page and its focus', (tester) async {
       listing({waiting: longList});
       remote.onIgnoreLanguageLink = (_, _) async => throw unreachable();
       await pumpScreen(tester, size: phone);
@@ -2274,10 +2274,12 @@ void main() {
       expect(banner, findsOneWidget);
       await scrollPageTo(tester, pagePosition(tester).maxScrollExtent);
 
-      // The next action takes that banner down, and the view gets taller.
+      // The next action leaves that banner up until it answers.
+      final at = pageOffset(tester);
       final held = holdIgnores();
       await chooseByKeyboard(tester, 'r40', LanguageLinkWorklist.ignoreKey);
-      expect(banner, findsNothing);
+      expect(banner, findsOneWidget);
+      expect(pageOffset(tester), at);
 
       held.completeError(unreachable());
       await tester.pumpAndSettle();

@@ -173,9 +173,8 @@ class _LanguageLinkWorklistState extends State<LanguageLinkWorklist> {
       if (!actedOn.running) {
         actedOn.running = true;
         _letGoOfMenu(actedOn.id);
-        // After the frame, because taking the last outcome's banner down can
-        // move the page, and that isn't the user moving it. Focus has settled
-        // by then too, on the page or wherever the picker gave it back.
+        // After the frame, because focus has settled by then, on the page or
+        // wherever the picker gave it back.
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           actedOn.pageAt = _pageOffset;
@@ -623,9 +622,16 @@ class _MoreFooter extends StatelessWidget {
 /// The DataGateway's page shows it in its footer, under the banner for its own
 /// actions. The detail screen's doc says why a footer.
 class LanguageLinkOutcomeBanner extends StatelessWidget {
-  const LanguageLinkOutcomeBanner({required this.outcome, super.key});
+  const LanguageLinkOutcomeBanner({
+    required this.outcome,
+    this.dismissFocus,
+    super.key,
+  });
 
   final LanguageLinkOutcome outcome;
+
+  /// For the Dismiss, so that it can keep focus across a new banner.
+  final FocusNode? dismissFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -672,6 +678,7 @@ class LanguageLinkOutcomeBanner extends StatelessWidget {
       tone: tone,
       message: message,
       action: TextButton(
+        focusNode: dismissFocus,
         onPressed: () => context.read<LanguageLinkListBloc>().add(
           const LanguageLinkListOutcomeDismissed(),
         ),

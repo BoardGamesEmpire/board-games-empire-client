@@ -120,8 +120,8 @@ final class LanguageLinkListReady extends LanguageLinkListState {
   /// Ids of the links with an action in flight.
   final Set<String> busy;
 
-  /// What the last action answered, until the user dismisses it, starts
-  /// another or changes the filter.
+  /// What the last action answered, until the user dismisses it or changes
+  /// the filter, or another answers.
   final LanguageLinkOutcome? outcome;
 
   @override

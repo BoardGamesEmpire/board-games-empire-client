@@ -448,7 +448,7 @@ void main() {
   );
 
   blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-    're-interview: clears the last outcome when it starts',
+    're-interview: keeps the last outcome until the next one answers',
     setUp: () {
       reads([row]);
       var attempts = 0;
@@ -466,12 +466,35 @@ void main() {
       DataGatewayDetailReady(
         gateway: after,
         busy: DataGatewayDetailBusy.interview,
+        outcome: DataGatewayDetailOutcome.interviewFailed,
       ),
       DataGatewayDetailReady(
         gateway: after,
         outcome: DataGatewayDetailOutcome.interviewDone,
       ),
     ],
+  );
+
+  blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
+    'an action that finds the row gone takes the last outcome with it, so a '
+    'read that brings the row back does not show it',
+    setUp: () {
+      reads([row, after]);
+      var attempts = 0;
+      remote.onInterview = (_) async {
+        if (++attempts > 1) throw notFound;
+        return interviewed(after, succeeded: false);
+      };
+    },
+    build: build,
+    act: (bloc) async {
+      await send(bloc, load);
+      await send(bloc, interview);
+      await send(bloc, interview);
+      await send(bloc, load);
+    },
+    verify: (bloc) =>
+        expect(bloc.state, DataGatewayDetailReady(gateway: after)),
   );
 
   blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
@@ -646,7 +669,8 @@ void main() {
     );
 
     blocTest<DataGatewayDetailBloc, DataGatewayDetailState>(
-      'a write that works clears the last outcome and reports none',
+      'a write that works takes the last outcome down as it answers, and '
+      'reports none',
       setUp: () {
         reads([row]);
         var attempts = 0;
@@ -663,7 +687,11 @@ void main() {
       },
       skip: 4,
       expect: () => [
-        writing([]),
+        DataGatewayDetailReady(
+          gateway: off(const []),
+          busy: DataGatewayDetailBusy.capabilities,
+          outcome: DataGatewayDetailOutcome.capabilityFailed,
+        ),
         DataGatewayDetailReady(gateway: off(['B'])),
       ],
     );
