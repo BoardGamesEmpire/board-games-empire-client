@@ -25,6 +25,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
 
   static const String _basePath = '/api/data-gateways';
 
+  /// The language catalogue, which belongs to no DataGateway.
+  static const String _languagesPath = '/api/languages';
+
   /// How long an interview may take to answer. The server waits for it and
   /// sets no deadline of its own (backend#722), so the factories' ten seconds
   /// could cut one short.
@@ -59,7 +62,11 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     int page = 1,
     int limit = DataGatewayRemoteDataSource.maxPageSize,
   }) async {
-    _checkPaging(page: page, limit: limit);
+    _checkPaging(
+      page: page,
+      limit: limit,
+      ceiling: DataGatewayRemoteDataSource.maxPageSize,
+    );
 
     const action = 'DataGateway list';
     final response = await _send(
@@ -123,6 +130,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       rowRoute: false,
+      conflictIsName: true,
     );
     return _changeResult(response, action: action);
   }
@@ -160,6 +168,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
           _dio.patch<String>(_pathOf(id), options: _plainBody, data: body),
       action: action,
       rowRoute: true,
+      conflictIsName: true,
     );
     return _changeResult(response, action: action);
   }
@@ -181,8 +190,6 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       rowRoute: true,
-      // The body names no name, so a 409 here cannot be a name clash.
-      conflictIsName: false,
     );
     return _changeResult(response, action: action);
   }
@@ -235,15 +242,170 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
       ),
       action: action,
       rowRoute: true,
-      // The route answers 409 for a DataGateway that is disabled.
-      conflictIsName: false,
       // The server may keep interviewing after the caller stops waiting.
       timeoutIsUnknown: true,
     );
     return _interviewResult(response, action: action);
   }
 
+  @override
+  Future<PaginatedResult<LanguageLink>> fetchLanguageLinks(
+    String id, {
+    Set<LanguageLinkStatus>? statuses,
+    int page = 1,
+    int limit = DataGatewayRemoteDataSource.languageLinkPageSize,
+  }) async {
+    _checkPaging(
+      page: page,
+      limit: limit,
+      ceiling: DataGatewayRemoteDataSource.maxPageSize,
+    );
+    if (statuses != null && statuses.isEmpty) {
+      throw ArgumentError.value(
+        statuses,
+        'statuses',
+        'must name at least one status, or be null for the waiting links; '
+            'the server refuses an empty list with a 400',
+      );
+    }
+    // Worked out before the request, so a status that cannot be sent fails the
+    // call as it is, and is not reported as a request that failed.
+    final wireStatuses = statuses?.map((status) => status.toWire()).join(',');
+
+    const action = 'Language link list';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        _languageLinksPath(id),
+        options: _plainBody,
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          // Left out when no statuses were given, so the server lists the
+          // links waiting on a review.
+          'status': ?wireStatuses,
+        },
+      ),
+      action: action,
+      rowRoute: true,
+    );
+
+    return _parse(
+      () => PaginatedResult.fromEnvelope(
+        response.body,
+        key: 'languageLinks',
+        item: _mapLanguageLink,
+      ),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<LanguageLink> linkLanguageLink(
+    String id,
+    String linkId,
+    String tagId,
+  ) async {
+    const action = 'Language link to tag';
+    final response = await _send(
+      request: () => _dio.post<String>(
+        '${_languageLinkPath(id, linkId)}/link',
+        options: _plainBody,
+        data: {'tagId': tagId},
+      ),
+      action: action,
+      rowRoute: true,
+    );
+    return _languageLinkResult(response, action: action);
+  }
+
+  @override
+  Future<LanguageLink> ignoreLanguageLink(String id, String linkId) async {
+    const action = 'Language link ignore';
+    final response = await _send(
+      request: () => _dio.post<String>(
+        '${_languageLinkPath(id, linkId)}/ignore',
+        options: _plainBody,
+      ),
+      action: action,
+      rowRoute: true,
+    );
+    return _languageLinkResult(response, action: action);
+  }
+
+  @override
+  Future<LanguageLink> acceptLanguageLink(String id, String linkId) async {
+    const action = 'Language link accept';
+    final response = await _send(
+      request: () => _dio.post<String>(
+        '${_languageLinkPath(id, linkId)}/accept',
+        options: _plainBody,
+      ),
+      action: action,
+      rowRoute: true,
+    );
+    return _languageLinkResult(response, action: action);
+  }
+
+  @override
+  Future<PaginatedResult<LanguageTagRef>> fetchLanguageTags({
+    String? name,
+    int page = 1,
+    int limit = DataGatewayRemoteDataSource.languageTagPageSize,
+  }) async {
+    _checkPaging(
+      page: page,
+      limit: limit,
+      ceiling: DataGatewayRemoteDataSource.languageTagPageSize,
+    );
+    // The server matches the text as sent, so a stray space would match
+    // nothing. A blank name filters nothing, so it is left out.
+    final filter = name?.trim();
+
+    const action = 'Language tag list';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        _languagesPath,
+        options: _plainBody,
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          if (filter != null && filter.isNotEmpty) 'name': filter,
+        },
+      ),
+      action: action,
+      // The catalogue belongs to no DataGateway, and a list route is never
+      // absent for a caller who reached it, so a 404 here means the route is
+      // not deployed.
+      rowRoute: false,
+    );
+
+    return _parse(
+      () {
+        // The server pages languages, so the page is read as one, and its
+        // tags are flattened afterwards. `meta` stays the languages'.
+        final languages = PaginatedResult.fromEnvelope(
+          response.body,
+          key: 'languages',
+          item: _languageTags,
+        );
+        return PaginatedResult(
+          items: [for (final tags in languages.items) ...tags],
+          meta: languages.meta,
+        );
+      },
+      action: action,
+      status: response.status,
+    );
+  }
+
   static String _pathOf(String id) => '$_basePath/${Uri.encodeComponent(id)}';
+
+  static String _languageLinksPath(String id) =>
+      '${_pathOf(id)}/language-links';
+
+  static String _languageLinkPath(String id, String linkId) =>
+      '${_languageLinksPath(id)}/${Uri.encodeComponent(linkId)}';
 
   // ── Request plumbing ────────────────────────────────────────────────
 
@@ -253,9 +415,9 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   /// [rowRoute] says whether the path names one DataGateway, which is what
   /// lets an application 404 mean that row is gone.
   ///
-  /// [conflictIsName] says whether a 409 from the API can mean another
-  /// DataGateway has the name. A route that cannot name one passes false, and
-  /// its 409 is a [DataGatewayConflictException] instead.
+  /// [conflictIsName] says a 409 from the API means another DataGateway has the
+  /// name. Only the routes that take a name say so. Any other route's 409 is the
+  /// row's state refusing the request, a [DataGatewayConflictException].
   ///
   /// [timeoutIsUnknown] says the server may still be working on a request that
   /// ran out of time, so the outcome is unknown. Such a request throws
@@ -264,7 +426,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     required Future<Response<String>> Function() request,
     required String action,
     required bool rowRoute,
-    bool conflictIsName = true,
+    bool conflictIsName = false,
     bool timeoutIsUnknown = false,
   }) async {
     late final Response<String> response;
@@ -407,6 +569,25 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     status: response.status,
   );
 
+  /// Reads `{ languageLink }`, the body every language link action answers
+  /// with: the link as it stands afterwards.
+  LanguageLink _languageLinkResult(
+    ({Map<String, dynamic> body, int status}) response, {
+    required String action,
+  }) => _parse(
+    () {
+      final row = response.body['languageLink'];
+      if (row is! Map<String, dynamic>) {
+        throw const FormatException(
+          'response is missing a "languageLink" object',
+        );
+      }
+      return _mapLanguageLink(row);
+    },
+    action: action,
+    status: response.status,
+  );
+
   static Map<String, dynamic> _dataGatewayObject(Map<String, dynamic> body) {
     final row = body['dataGateway'];
     if (row is! Map<String, dynamic>) {
@@ -507,16 +688,54 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
   static DateTime? _dateOrNull(Object? wire) =>
       wire == null ? null : DateTime.parse(wire as String);
 
+  /// Maps a server row to [LanguageLink], field by field. Of the columns the
+  /// server sends, it reads only the ones the model holds.
+  ///
+  /// A status or a format it does not know degrades to its `unknown`, so the
+  /// row survives.
+  static LanguageLink _mapLanguageLink(Map<String, dynamic> json) {
+    final tag = json['tag'] as Map<String, dynamic>?;
+    return LanguageLink(
+      id: json['id'] as String,
+      value: json['value'] as String,
+      format: LanguageCodeFormat.fromWire(json['format'] as String?),
+      status: LanguageLinkStatus.fromWire(json['status'] as String),
+      tag: tag == null ? null : _mapLanguageTag(tag),
+      suppliedName: json['suppliedName'] as String?,
+      suppliedNativeName: json['suppliedNativeName'] as String?,
+      suppliedIetfTag: json['suppliedIetfTag'] as String?,
+    );
+  }
+
+  static LanguageTagRef _mapLanguageTag(Map<String, dynamic> json) =>
+      LanguageTagRef(
+        id: json['id'] as String,
+        tag: json['tag'] as String,
+        name: json['name'] as String,
+      );
+
+  /// The tags of one language row from the catalogue, in the order sent. A
+  /// language may have none.
+  static List<LanguageTagRef> _languageTags(Map<String, dynamic> json) => [
+    for (final tag in json['tags'] as List)
+      _mapLanguageTag(tag as Map<String, dynamic>),
+  ];
+
   // ── Guards: requests the server is guaranteed to reject ─────────────
 
-  void _checkPaging({required int page, required int limit}) {
-    const maxPageSize = DataGatewayRemoteDataSource.maxPageSize;
-    if (limit < 1 || limit > maxPageSize) {
+  /// [ceiling] is the route's own: the catalogue allows smaller pages than the
+  /// DataGateway routes do.
+  void _checkPaging({
+    required int page,
+    required int limit,
+    required int ceiling,
+  }) {
+    if (limit < 1 || limit > ceiling) {
       throw ArgumentError.value(
         limit,
         'limit',
-        'must be between 1 and $maxPageSize (the server rejects a larger '
-            'page rather than clamping it)',
+        'must be between 1 and $ceiling (the server rejects a larger page '
+            'rather than clamping it)',
       );
     }
     if (page < 1) {
@@ -536,8 +755,8 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     DioException error, {
     required String action,
     required bool rowRoute,
-    bool conflictIsName = true,
-    bool timeoutIsUnknown = false,
+    required bool conflictIsName,
+    required bool timeoutIsUnknown,
   }) {
     final status = error.response?.statusCode;
     if (status != null) {
@@ -565,7 +784,7 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
     required Object? cause,
     required bool rowRoute,
     required Object? body,
-    bool conflictIsName = true,
+    required bool conflictIsName,
   }) {
     if (status >= 500 || _retryable4xx.contains(status)) {
       return DataGatewayTransientException(
@@ -633,6 +852,15 @@ class DataGatewayRemoteDataSourceImpl implements DataGatewayRemoteDataSource {
               cause: cause,
               statusCode: status,
             );
+    }
+    if (status == 400 && !fromApi) {
+      // A proxy's 400 says nothing about what the request asked for: a link's
+      // 400 is the server saying it has no such tag.
+      return DataGatewayTransientException(
+        '$message; the request did not reach the API',
+        cause: cause,
+        statusCode: status,
+      );
     }
     if (status >= 400) {
       return DataGatewayPermanentException(

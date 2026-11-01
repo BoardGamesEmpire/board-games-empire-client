@@ -24,6 +24,23 @@ class FakeDataGatewayRemote implements DataGatewayRemoteDataSource {
   Future<DataGatewayChangeResult> Function(String id)? onConnect;
   Future<DataGatewayChangeResult> Function(String id)? onDisconnect;
   Future<DataGatewayInterviewResult> Function(String id)? onInterview;
+  Future<PaginatedResult<LanguageLink>> Function(
+    String id,
+    Set<LanguageLinkStatus>? statuses,
+    int page,
+    int limit,
+  )?
+  onFetchLanguageLinks;
+  Future<LanguageLink> Function(String id, String linkId, String tagId)?
+  onLinkLanguageLink;
+  Future<LanguageLink> Function(String id, String linkId)? onIgnoreLanguageLink;
+  Future<LanguageLink> Function(String id, String linkId)? onAcceptLanguageLink;
+  Future<PaginatedResult<LanguageTagRef>> Function(
+    String? name,
+    int page,
+    int limit,
+  )?
+  onFetchLanguageTags;
 
   /// Answers every list read with [rows] on one page.
   void listing(List<DataGateway> rows) =>
@@ -96,6 +113,54 @@ class FakeDataGatewayRemote implements DataGatewayRemoteDataSource {
   Future<DataGatewayInterviewResult> interview(String id) {
     calls.add('interview($id)');
     return _run(onInterview, 'interview')(id);
+  }
+
+  @override
+  Future<PaginatedResult<LanguageLink>> fetchLanguageLinks(
+    String id, {
+    Set<LanguageLinkStatus>? statuses,
+    int page = 1,
+    int limit = DataGatewayRemoteDataSource.languageLinkPageSize,
+  }) {
+    calls.add('fetchLanguageLinks($id, $statuses, $page)');
+    return _run(onFetchLanguageLinks, 'fetchLanguageLinks')(
+      id,
+      statuses,
+      page,
+      limit,
+    );
+  }
+
+  @override
+  Future<LanguageLink> linkLanguageLink(
+    String id,
+    String linkId,
+    String tagId,
+  ) {
+    calls.add('linkLanguageLink($id, $linkId, $tagId)');
+    return _run(onLinkLanguageLink, 'linkLanguageLink')(id, linkId, tagId);
+  }
+
+  @override
+  Future<LanguageLink> ignoreLanguageLink(String id, String linkId) {
+    calls.add('ignoreLanguageLink($id, $linkId)');
+    return _run(onIgnoreLanguageLink, 'ignoreLanguageLink')(id, linkId);
+  }
+
+  @override
+  Future<LanguageLink> acceptLanguageLink(String id, String linkId) {
+    calls.add('acceptLanguageLink($id, $linkId)');
+    return _run(onAcceptLanguageLink, 'acceptLanguageLink')(id, linkId);
+  }
+
+  @override
+  Future<PaginatedResult<LanguageTagRef>> fetchLanguageTags({
+    String? name,
+    int page = 1,
+    int limit = DataGatewayRemoteDataSource.languageTagPageSize,
+  }) {
+    calls.add('fetchLanguageTags($name, $page)');
+    return _run(onFetchLanguageTags, 'fetchLanguageTags')(name, page, limit);
   }
 
   static T _run<T extends Function>(T? handler, String name) =>
