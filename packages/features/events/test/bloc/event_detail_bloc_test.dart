@@ -1422,7 +1422,10 @@ void main() {
       await settle();
 
       // What attending gives, and nothing from the household.
-      expect(actionsOf(bloc.state), {EventAction.rsvp});
+      expect(actionsOf(bloc.state), {
+        EventAction.rsvp,
+        EventAction.voteAvailability,
+      });
       verify(
         () => logger.warn(
           any(),
