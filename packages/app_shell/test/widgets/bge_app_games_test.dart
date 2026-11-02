@@ -46,6 +46,7 @@ class _GamesRemote implements GamesRemoteDataSource {
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
     int limit = GamesRemoteDataSource.maxPageSize,
+    GameSort sort = GameSort.title,
   }) async => PaginatedResult(
     items: [_catan],
     meta: const PaginationMeta(
@@ -56,6 +57,11 @@ class _GamesRemote implements GamesRemoteDataSource {
       hasMore: false,
     ),
   );
+
+  @override
+  Future<List<GameSummary>> fetchRandom({
+    int size = GamesRemoteDataSource.defaultSampleSize,
+  }) async => const [];
 
   @override
   Future<GameWithPlatformGames> fetchGame(String id) async {

@@ -10,6 +10,7 @@ class FakeGamesRemote implements GamesRemoteDataSource {
   final List<String> calls = [];
 
   Future<PaginatedResult<Game>> Function(int page, int limit)? onFetchPage;
+  Future<List<GameSummary>> Function(int size)? onFetchRandom;
   Future<GameWithPlatformGames> Function(String id)? onFetchGame;
   Future<GameSearchResults> Function(String query, GameSearchFilter filter)?
   onSearch;
@@ -25,9 +26,23 @@ class FakeGamesRemote implements GamesRemoteDataSource {
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
     int limit = GamesRemoteDataSource.maxPageSize,
+    GameSort sort = GameSort.title,
   }) {
-    calls.add('fetchPage($page, $limit)');
+    // Title is the default, so its calls read as they always have.
+    calls.add(
+      sort == GameSort.title
+          ? 'fetchPage($page, $limit)'
+          : 'fetchPage($page, $limit, ${sort.name})',
+    );
     return _run(onFetchPage, 'fetchPage')(page, limit);
+  }
+
+  @override
+  Future<List<GameSummary>> fetchRandom({
+    int size = GamesRemoteDataSource.defaultSampleSize,
+  }) {
+    calls.add('fetchRandom($size)');
+    return _run(onFetchRandom, 'fetchRandom')(size);
   }
 
   @override

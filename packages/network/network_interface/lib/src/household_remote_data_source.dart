@@ -1,5 +1,6 @@
 import 'package:models/domain.dart';
 
+import 'games_remote_data_source.dart';
 import 'paginated_result.dart';
 
 /// One household from the list endpoint, with the members it embeds.
@@ -16,6 +17,13 @@ typedef HouseholdWithMembers = ({
   List<HouseholdMember> members,
 });
 
+/// A sample of the games in the caller's households, and how many there are
+/// altogether (#615).
+///
+/// [gameCount] counts the whole pool, not the sample, so it is at least the
+/// sample's length. A game several members own is one game in both.
+typedef GamePoolSample = ({List<GameSummary> games, int gameCount});
+
 /// Remote data source for household reads and writes against a BGE server.
 ///
 /// The first domain REST client (P4, #39). Implementations run over a
@@ -24,11 +32,12 @@ typedef HouseholdWithMembers = ({
 /// session the endpoints require; this interface adds no auth handling
 /// of its own.
 ///
-/// ## Scope today: create + list + update
+/// ## Scope today: create + list + update + game pool sample
 ///
-/// [createHousehold] (#39), [fetchHouseholds] (#266) and [updateHousehold]
-/// (#476). Membership changes have their own online-only source,
-/// [HouseholdMemberRemoteDataSource] (#122). Delete is still to come (#477).
+/// [createHousehold] (#39), [fetchHouseholds] (#266), [updateHousehold]
+/// (#476) and [fetchGamePoolSample] (#615). Membership changes have their own
+/// online-only source, [HouseholdMemberRemoteDataSource] (#122). Delete is
+/// still to come (#477).
 ///
 /// ## Failure classification
 ///
@@ -227,6 +236,34 @@ abstract class HouseholdRemoteDataSource {
   /// (see class doc for classification). A 403 is the server refusing this
   /// user the edit.
   Future<Household> updateHousehold(String householdId, HouseholdUpdate update);
+
+  /// A random sample of the games the caller's household members share with
+  /// their households, and the count of all of them (#615).
+  ///
+  /// Wire contract (backend `libs/api/household` at `c8f42b83`): `GET
+  /// /api/households/game-pool/random?size=` → 200 `{ games, gameCount }`.
+  /// The pool is every collection entry whose owner has sharing on in a
+  /// household the caller is in and has not excluded there, so it includes
+  /// the caller's own shared entries. A game several members own is in it
+  /// once, and a game the caller cannot open is left out. With no household
+  /// the server answers 200 with no games and a [GamePoolSample.gameCount]
+  /// of 0, which is a sample like any other, not a failure.
+  ///
+  /// Each game is a [GameSummary]: the id, the title and the thumbnail. The
+  /// server's description is dropped, because nothing here shows it. Ask
+  /// again for a different sample; the server never caches one.
+  ///
+  /// [size] must be in `1..GamesRemoteDataSource.maxSampleSize`, which the
+  /// server enforces with a 400, so a size outside it throws [ArgumentError]
+  /// before any request. A response with no `gameCount`, or one that is not
+  /// a whole number, is [HouseholdRemotePermanentException].
+  ///
+  /// Like the other reads, a 404 is transient whatever it carries: the route
+  /// is fixed (see the class doc). Throws [HouseholdRemoteException] for
+  /// every failure of the request itself.
+  Future<GamePoolSample> fetchGamePoolSample({
+    int size = GamesRemoteDataSource.defaultSampleSize,
+  });
 }
 
 /// What [HouseholdRemoteDataSource.updateHousehold] changes.

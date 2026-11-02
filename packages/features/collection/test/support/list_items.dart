@@ -26,6 +26,7 @@ GameCollectionListItem listItem(
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   ),
+  gameId: 'g-$id',
   title: title,
   subtitle: subtitle,
   platformName: platformName,

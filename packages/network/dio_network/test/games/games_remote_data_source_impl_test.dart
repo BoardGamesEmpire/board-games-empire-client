@@ -142,6 +142,21 @@ String _catalogBody(
   },
 });
 
+/// A game summary, as `GET /games/random` and the game pool sample send it:
+/// the `GAME_SUMMARY_SELECT` columns and no others. The thumbnail and the
+/// description are nullable columns.
+Map<String, dynamic> _summaryRow({
+  String id = 'g_catan',
+  String title = 'Catan',
+  Object? thumbnail = 'https://cf.geekdo-images.com/catan_t.jpg',
+  Object? description = 'Settle **Catan**.',
+}) => {
+  'id': id,
+  'title': title,
+  'thumbnail': thumbnail,
+  'description': description,
+};
+
 /// A local search result, as `queryLocalGames` maps a row: the Platform's id
 /// in `platforms[].externalId`, stored enum names, `inSystem: true`.
 Map<String, dynamic> _localHit({String id = 'g_catan'}) => {
@@ -341,6 +356,28 @@ void main() {
       expect(adapter.sent.single.query, {'page': 3, 'limit': 50});
     });
 
+    test('newest sends sort=newest', () async {
+      final remote = answering(_catalogBody([]));
+
+      await remote.fetchPage(limit: 10, sort: GameSort.newest);
+
+      expect(adapter.sent.single.path, '/api/games');
+      expect(adapter.sent.single.query, {
+        'page': 1,
+        'limit': 10,
+        'sort': 'newest',
+      });
+    });
+
+    test('title sends no sort, as the server\'s default', () async {
+      final remote = answering(_catalogBody([]));
+
+      await remote.fetchPage(limit: 10, sort: GameSort.title);
+
+      expect(adapter.sent.single.query, {'page': 1, 'limit': 10});
+      expect(adapter.sent.single.query, isNot(contains('sort')));
+    });
+
     test('reads a float column the server sent as a whole number', () async {
       final remote = answering(_catalogBody([_gameRow(complexity: 3)]));
 
@@ -407,6 +444,108 @@ void main() {
       final remote = answering(jsonEncode({'rows': <Object>[]}));
 
       expect(remote.fetchPage(), throwsA(isA<GamesRemotePermanentException>()));
+    });
+  });
+
+  group('fetchRandom', () {
+    test('reads GET /api/games/random?size=10', () async {
+      final remote = answering(
+        jsonEncode({
+          'games': [
+            _summaryRow(),
+            _summaryRow(id: 'g_azul', title: 'Azul', thumbnail: ''),
+            _summaryRow(id: 'g_brass', title: 'Brass', thumbnail: null),
+          ],
+        }),
+      );
+
+      final games = await remote.fetchRandom();
+
+      expect(adapter.sent.single.method, 'GET');
+      expect(adapter.sent.single.path, '/api/games/random');
+      expect(adapter.sent.single.query, {'size': 10});
+      // The description is dropped, and an empty thumbnail is none.
+      expect(games, const [
+        GameSummary(
+          id: 'g_catan',
+          title: 'Catan',
+          thumbnail: 'https://cf.geekdo-images.com/catan_t.jpg',
+        ),
+        GameSummary(id: 'g_azul', title: 'Azul'),
+        GameSummary(id: 'g_brass', title: 'Brass'),
+      ]);
+    });
+
+    test('asks for the size it was given', () async {
+      final remote = answering(jsonEncode({'games': <Object>[]}));
+
+      await remote.fetchRandom(size: 50);
+
+      expect(adapter.sent.single.query, {'size': 50});
+    });
+
+    test('an empty sample is a sample, not a failure', () async {
+      final remote = answering(jsonEncode({'games': <Object>[]}));
+
+      expect(await remote.fetchRandom(), isEmpty);
+    });
+
+    test('refuses size 0 and 51, before sending it', () {
+      final remote = answering(jsonEncode({'games': <Object>[]}));
+
+      expect(() => remote.fetchRandom(size: 0), throwsArgumentError);
+      expect(() => remote.fetchRandom(size: 51), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('fetchRandom 403 with envelope is a forbidden read', () {
+      final remote = answering(_envelope(403, 'Forbidden'), status: 403);
+
+      expect(remote.fetchRandom(), throwsA(isA<GamesForbiddenException>()));
+    });
+
+    test('a 403 without the envelope came from a proxy, so it is '
+        'transient', () {
+      final remote = answering('<html>Forbidden</html>', status: 403);
+
+      expect(
+        remote.fetchRandom(),
+        throwsA(isA<GamesRemoteTransientException>()),
+      );
+    });
+
+    test('fetchRandom 404 with envelope is transient: a list route is never '
+        'absent', () {
+      final remote = answering(_envelope(404, 'Not Found'), status: 404);
+
+      expect(
+        remote.fetchRandom(),
+        throwsA(isA<GamesRemoteTransientException>()),
+      );
+    });
+
+    test('a row with no id is permanent', () {
+      final remote = answering(
+        jsonEncode({
+          'games': [
+            {'title': 'Catan'},
+          ],
+        }),
+      );
+
+      expect(
+        remote.fetchRandom(),
+        throwsA(isA<GamesRemotePermanentException>()),
+      );
+    });
+
+    test('a body with no games array is permanent', () {
+      final remote = answering(jsonEncode({'sample': <Object>[]}));
+
+      expect(
+        remote.fetchRandom(),
+        throwsA(isA<GamesRemotePermanentException>()),
+      );
     });
   });
 

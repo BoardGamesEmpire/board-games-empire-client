@@ -4,6 +4,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
+import 'game_summary_json.dart';
 
 /// What a request's path names, which is what lets an application 404 mean
 /// that thing is gone. A list or write route names nothing: see `_send`.
@@ -47,6 +48,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
     int limit = GamesRemoteDataSource.maxPageSize,
+    GameSort sort = GameSort.title,
   }) async {
     _checkLimit(limit);
     if (page < 1) {
@@ -66,7 +68,12 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
       request: () => _dio.get<String>(
         _basePath,
         options: _plainBody,
-        queryParameters: {'page': page, 'limit': limit},
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          // Title is the server's default, so only the other order is named.
+          if (sort != GameSort.title) 'sort': sort.wire,
+        },
       ),
       action: action,
       row: null,
@@ -78,6 +85,39 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         key: 'games',
         item: _mapGame,
       ),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<List<GameSummary>> fetchRandom({
+    int size = GamesRemoteDataSource.defaultSampleSize,
+  }) async {
+    checkSampleSize(size);
+
+    const action = 'Random games';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        '$_basePath/random',
+        options: _plainBody,
+        queryParameters: {'size': size},
+      ),
+      action: action,
+      row: null,
+    );
+
+    return _parse(
+      () {
+        final rows = response.body['games'];
+        if (rows is! List) {
+          throw const FormatException('response is missing a "games" array');
+        }
+        return [
+          for (final row in rows.cast<Map<String, dynamic>>())
+            mapGameSummary(row),
+        ];
+      },
       action: action,
       status: response.status,
     );

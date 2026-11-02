@@ -3,6 +3,7 @@ import 'package:http_status/http_status.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
+import '../games/game_summary_json.dart';
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
 import 'household_member_json.dart';
@@ -50,7 +51,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// `packages/network/*/lib` now pins `responseType` per request.
   ///
   /// A fresh instance per call: `Options` is mutable, and one shared between
-  /// the two request methods is a shared mutable default waiting to be edited.
+  /// the request methods is a shared mutable default waiting to be edited.
   static Options get _plainBody => Options(responseType: ResponseType.plain);
 
   @override
@@ -61,41 +62,13 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
     _checkPaging(page: page, limit: limit);
 
     const action = 'Household list';
-    late final Response<String> response;
-    try {
-      response = await _dio.get<String>(
+    final (:body, :status) = await _sendForJson(
+      () => _dio.get<String>(
         _basePath,
         options: _plainBody,
         queryParameters: {'page': page, 'limit': limit},
-      );
-    } on DioException catch (error) {
-      throw _classifyDioException(error, action: action);
-    } on Object catch (error) {
-      throw HouseholdRemoteTransientException(
-        '$action failed unexpectedly',
-        cause: error,
-      );
-    }
-
-    final status = response.statusCode;
-    if (status == null) {
-      throw const HouseholdRemoteTransientException(
-        'Household list returned no status',
-      );
-    }
-    if (status < 200 || status >= 300) {
-      throw _classifyStatus(
-        status,
-        '$action returned $status',
-        cause: null,
-        body: response.data,
-      );
-    }
-
-    final body = await _requireJsonObject(
-      response.data,
+      ),
       action: action,
-      status: status,
     );
 
     try {
@@ -103,6 +76,51 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
         body,
         key: 'households',
         item: _mapHouseholdWithMembers,
+      );
+    } on Object catch (error) {
+      throw HouseholdRemotePermanentException(
+        'Failed to parse the $action response: $error',
+        statusCode: status,
+        cause: error,
+      );
+    }
+  }
+
+  @override
+  Future<GamePoolSample> fetchGamePoolSample({
+    int size = GamesRemoteDataSource.defaultSampleSize,
+  }) async {
+    checkSampleSize(size);
+
+    const action = 'Household game pool sample';
+    final (:body, :status) = await _sendForJson(
+      () => _dio.get<String>(
+        '$_basePath/game-pool/random',
+        options: _plainBody,
+        queryParameters: {'size': size},
+      ),
+      action: action,
+    );
+
+    try {
+      final games = body['games'];
+      final gameCount = body['gameCount'];
+      if (games is! List) {
+        throw const FormatException('response is missing a "games" array');
+      }
+      // Read strictly: a count defaulted to 0 would tell a user with games
+      // that they have none.
+      if (gameCount is! int) {
+        throw FormatException(
+          'response "gameCount" is ${gameCount.runtimeType}, expected an int',
+        );
+      }
+      return (
+        games: [
+          for (final row in games.cast<Map<String, dynamic>>())
+            mapGameSummary(row),
+        ],
+        gameCount: gameCount,
       );
     } on Object catch (error) {
       throw HouseholdRemotePermanentException(
@@ -179,8 +197,46 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   }
 
   /// Sends [request] and reads the `{ message, household }` answer the
-  /// create and the update share. [rowRoute] is passed to [_classifyStatus].
+  /// create and the update share. [rowRoute] is passed to [_sendForJson].
   Future<Household> _sendForHousehold(
+    Future<Response<String>> Function() request, {
+    required String action,
+    bool rowRoute = false,
+  }) async {
+    final (body: data, :status) = await _sendForJson(
+      request,
+      action: action,
+      rowRoute: rowRoute,
+    );
+
+    final household = data['household'];
+    if (household is! Map<String, dynamic>) {
+      throw HouseholdRemotePermanentException(
+        '$action response missing a "household" object',
+        statusCode: status,
+      );
+    }
+
+    try {
+      return _mapHousehold(household);
+    } on Object catch (error) {
+      throw HouseholdRemotePermanentException(
+        'Failed to parse the $action response: $error',
+        statusCode: status,
+        cause: error,
+      );
+    }
+  }
+
+  /// Sends [request] and returns its 2xx body as a JSON object with the
+  /// status it came with, having turned every failure into a
+  /// [HouseholdRemoteException]: no response, a status outside 2xx (by
+  /// [_classifyStatus]) and a body that is not a JSON object (by
+  /// [_requireJsonObject]). Every household read and write goes through it,
+  /// so the classification lives in one place.
+  ///
+  /// [rowRoute] is passed to [_classifyStatus].
+  Future<({Map<String, dynamic> body, int status})> _sendForJson(
     Future<Response<String>> Function() request, {
     required String action,
     bool rowRoute = false,
@@ -211,29 +267,12 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
       );
     }
 
-    final data = await _requireJsonObject(
+    final body = await _requireJsonObject(
       response.data,
       action: action,
       status: status,
     );
-
-    final household = data['household'];
-    if (household is! Map<String, dynamic>) {
-      throw HouseholdRemotePermanentException(
-        '$action response missing a "household" object',
-        statusCode: status,
-      );
-    }
-
-    try {
-      return _mapHousehold(household);
-    } on Object catch (error) {
-      throw HouseholdRemotePermanentException(
-        'Failed to parse the $action response: $error',
-        statusCode: status,
-        cause: error,
-      );
-    }
+    return (body: body, status: status);
   }
 
   /// Maps the server household payload to the domain [Household].
@@ -375,7 +414,7 @@ class HouseholdRemoteDataSourceImpl implements HouseholdRemoteDataSource {
   /// Decodes a response body the transport was told not to touch, and
   /// requires it to be a JSON object.
   ///
-  /// Both request methods ask Dio for `Response<String>` and pin
+  /// Every request method asks Dio for `Response<String>` and pins
   /// `responseType` per call (see `_plainBody` above) — together, not either
   /// alone. `DioMixin.fetch` forces `responseType` from `T` — `String` gives
   /// `plain`, and **anything else, `Object?` included, gives `json`**

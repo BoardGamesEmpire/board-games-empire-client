@@ -28,23 +28,31 @@ typedef GameWithPlatformGames = ({
 ///
 /// ## Wire contract
 ///
-/// Backend `libs/api/game` at `a21cd51e`, `libs/api/game-search` at
-/// `997cc084`, and `libs/api/game-import` at `83e62bb0`, all under the `api`
-/// global prefix:
+/// Backend `libs/api/game` at `a21cd51e` (`GET /games?sort=` and
+/// `GET /games/random` at `c8f42b83`), `libs/api/game-search` at `997cc084`,
+/// and `libs/api/game-import` at `83e62bb0`, all under the `api` global
+/// prefix:
 ///
 /// | Method | Path | Body |
 /// |---|---|---|
 /// | [fetchPage] | `GET /api/games` | `{ games: [...], pagination }` |
+/// | [fetchRandom] | `GET /api/games/random` | `{ games: [...] }` |
+/// | `HouseholdRemoteDataSource.fetchGamePoolSample` | `GET /api/households/game-pool/random` | `{ games: [...], gameCount }` |
 /// | [fetchGame] | `GET /api/games/:id` | `{ game }` |
 /// | [search] | `GET /api/games/search` | `{ correlationId, resultsBySource, errors?, rateLimitedSources?, unavailableSources?, unfilterableSources? }` |
 /// | [startImport] | `POST /api/games/import` | `{ message, batchId, baseJobId, expansionJobIds, correlationId }` |
 /// | [fetchImport] | `GET /api/games/import/:batchId` | `{ batchId, correlationId, status, jobs: [...] }` |
 ///
+/// The two random reads send each game as the server's game summary: `id`,
+/// `title`, `thumbnail` and `description`, the last two nullable (#615).
+/// The household's is listed here for that shared shape; its own source
+/// carries the rest.
+///
 /// The two list reads page differently. [fetchPage] is page-based, ordered by
-/// title and then id, and refuses `?offset=` with a 400. [search] is
-/// offset-based, sends no total and no has-more signal, and puts no order on
-/// its local half (backend#792). So a caller pages the catalog and reads one
-/// page of search.
+/// title or by newest first (`sort`), then by id, and refuses `?offset=` with
+/// a 400. [search] is offset-based, sends no total and no has-more signal,
+/// and puts no order on its local half (backend#792). So a caller pages the
+/// catalog and reads one page of search.
 ///
 /// ## What the mapping keeps and drops
 ///
@@ -81,7 +89,8 @@ typedef GameWithPlatformGames = ({
 ///
 /// - [GamesForbiddenException]: a 403 carrying the API's error envelope. A
 ///   game that exists and the caller may not read is a 403, not a 404, at
-///   `GET /games/:id`.
+///   `GET /games/:id`. The list reads answer a 403 to an actor with no games
+///   of its own.
 /// - [GameNotFoundException]: a 404 carrying the envelope from [fetchGame].
 /// - [GameImportNotFoundException]: a 404 carrying the envelope from
 ///   [fetchImport].
@@ -89,9 +98,9 @@ typedef GameWithPlatformGames = ({
 ///   leaves out, and a 2xx whose body cannot be read as the contract above.
 /// - [GamesRemoteTransientException]: no response at all, 401, 407, 408, 429,
 ///   every 5xx, a 403 or 404 without the envelope, a 404 from [fetchPage],
-///   [search] or [startImport] even with it (a list or write route is never
-///   absent, so the route is not deployed), and a 2xx body this device could
-///   not decode at all.
+///   [fetchRandom], [search] or [startImport] even with it (a list or write
+///   route is never absent, so the route is not deployed), and a 2xx body
+///   this device could not decode at all.
 ///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: a page, limit or offset out of range, a filter naming an
@@ -123,16 +132,42 @@ abstract class GamesRemoteDataSource {
   /// The shortest play time, in minutes, a search's play time may name.
   static const int minPlayTime = 0;
 
+  /// How many games a random sample asks for by default, and how many the
+  /// home page shows in a row (#615). The server's own default.
+  static const int defaultSampleSize = 10;
+
+  /// The most games the server sends in one random sample. A larger `size`
+  /// is a 400, not clamped.
+  static const int maxSampleSize = 50;
+
   /// One page of the catalog: the live public games and the caller's own,
-  /// ordered by title and then id.
+  /// ordered by [sort], each order ending in the game id.
   ///
   /// Follow [PaginationMeta.hasMore] to the end. [page] is 1-based, [limit]
   /// is in `1..maxPageSize`, and `(page - 1) * limit` may not exceed
   /// [maxDepth].
+  ///
+  /// [sort] is sent only for [GameSort.newest]: [GameSort.title] is the
+  /// server's default, so a request for it is the request this source has
+  /// always made.
   Future<PaginatedResult<Game>> fetchPage({
     int page = 1,
     int limit = maxPageSize,
+    GameSort sort = GameSort.title,
   });
+
+  /// Up to [size] games picked at random, in random order, from the games
+  /// [fetchPage] lists for the caller (#615).
+  ///
+  /// Each is a [GameSummary]: the id, the title and the thumbnail. The
+  /// server's description is dropped, because nothing here shows it. Ask
+  /// again for a different sample; the server never caches one. A catalog
+  /// with fewer than [size] games sends them all, and an empty one sends
+  /// none.
+  ///
+  /// [size] must be in `1..maxSampleSize`, which the server enforces with a
+  /// 400, so a size outside it throws [ArgumentError] before any request.
+  Future<List<GameSummary>> fetchRandom({int size = defaultSampleSize});
 
   /// One game, with the platform games the server sends beside it.
   ///

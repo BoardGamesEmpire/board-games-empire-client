@@ -44,6 +44,7 @@ GameCollectionListItem _item(String id) => GameCollectionListItem(
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   ),
+  gameId: 'g-$id',
   title: 'Catan',
   platformName: 'Board game',
 );
