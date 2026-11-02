@@ -176,6 +176,7 @@ void main() {
 
     final card = tester.getSemantics(find.byType(EventCard));
     final label = card.getSemanticsData().label;
+    expect(card.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
     expect(label, contains('Game night'));
     expect(label, contains('Fri, Nov 6 · 7:30 PM'));
     // A screen reader would read the visual separator's symbol out.
