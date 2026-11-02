@@ -113,6 +113,37 @@ void main() {
       expect(item.platformName, 'Tabletop');
     });
 
+    test('list item carries the game id', () async {
+      await hydrate(
+        _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+
+      final item = (await collection.watchCollectionListItems().first).single;
+
+      expect(item.gameId, 'g-1');
+    });
+
+    test('two platform games of one game carry the same game id', () async {
+      await hydrate(
+        _summary(id: 'pg-1', gameId: 'g-1', title: 'Brass'),
+        _entry(id: 'gc-1', platformGameId: 'pg-1'),
+      );
+      await hydrate(
+        _summary(
+          id: 'pg-2',
+          gameId: 'g-1',
+          title: 'Brass',
+          platformName: 'Steam',
+        ),
+        _entry(id: 'gc-2', platformGameId: 'pg-2'),
+      );
+
+      final items = await collection.watchCollectionListItems().first;
+
+      expect(items.map((i) => i.gameId), ['g-1', 'g-1']);
+    });
+
     test('prefers the platform game thumbnail over the game one', () async {
       await hydrate(
         _summary(

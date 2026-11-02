@@ -36,9 +36,25 @@ class FakeGamesCache extends Fake implements GameRepository {
   Future<Game?> getGame(String id) async =>
       _games.where((g) => g.id == id).firstOrNull;
 
+  /// Pages [_games] in the order given for [GameSort.title], which the
+  /// screens' tests list in title order already, and newest first for
+  /// [GameSort.newest], as the real cache does.
   @override
-  Future<List<Game>> getGamesPage({int offset = 0, required int limit}) async =>
-      _games.skip(offset).take(limit).toList();
+  Future<List<Game>> getGamesPage({
+    int offset = 0,
+    required int limit,
+    GameSort sort = GameSort.title,
+  }) async {
+    final ordered = switch (sort) {
+      GameSort.title => _games,
+      GameSort.newest =>
+        [..._games]..sort((a, b) {
+          final byCreated = b.createdAt.compareTo(a.createdAt);
+          return byCreated != 0 ? byCreated : b.id.compareTo(a.id);
+        }),
+    };
+    return ordered.skip(offset).take(limit).toList();
+  }
 
   /// Narrows by content type and finds nothing for a platform type, as the
   /// real cache does. The ranges are ignored: the screens' tests don't search

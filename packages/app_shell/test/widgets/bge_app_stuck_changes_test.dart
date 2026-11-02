@@ -85,6 +85,9 @@ void main() {
     collection = _MockGameCollectionRepository();
     when(() => collection.titleOf('gc-1')).thenAnswer((_) async => _title);
     when(() => collection.discardQueuedOp('q1')).thenAnswer((_) async => true);
+    // Home's stats card reads it.
+    when(collection.watchCollectionListItems)
+        .thenAnswer((_) => Stream.value(const []));
 
     events = _MockEventRepository();
     when(events.watchAttendingEventListItems)

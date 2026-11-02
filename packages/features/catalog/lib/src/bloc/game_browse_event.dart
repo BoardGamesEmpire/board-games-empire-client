@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:models/domain.dart';
 
 /// Events of `GameBrowseBloc`.
 sealed class GameBrowseEvent extends Equatable {
@@ -9,7 +10,8 @@ sealed class GameBrowseEvent extends Equatable {
 }
 
 /// A read of the catalog. One runs at a time, and another arriving while it
-/// does is dropped.
+/// does is dropped. A [GameBrowseSortChanged] is not one of them, and ends
+/// the one running.
 sealed class GameBrowseRead extends GameBrowseEvent {
   const GameBrowseRead();
 }
@@ -22,6 +24,19 @@ final class GameBrowseLoadRequested extends GameBrowseRead {
 /// Read the next page onto the end of the list.
 final class GameBrowseMoreRequested extends GameBrowseRead {
   const GameBrowseMoreRequested();
+}
+
+/// Read the catalog again from its first page, in [sort].
+///
+/// Not a [GameBrowseRead]: those are dropped while another runs, and a
+/// change the user asked for must not be.
+final class GameBrowseSortChanged extends GameBrowseEvent {
+  const GameBrowseSortChanged(this.sort);
+
+  final GameSort sort;
+
+  @override
+  List<Object?> get props => [sort];
 }
 
 /// A game turned out to be gone, wherever it was opened: the server has no

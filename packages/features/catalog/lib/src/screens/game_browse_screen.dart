@@ -24,6 +24,10 @@ import '../widgets/catalog_slivers.dart';
 /// The next page loads from a button at the end of the list rather than on
 /// scroll: it is reachable by keyboard and by screen reader, and says what it
 /// does.
+///
+/// The list starts in [initialSort], and a menu in the app bar changes it
+/// (#615). The choice lasts as long as the screen is open: [initialSort] is
+/// read once, when it opens, and nothing keeps the choice for the next time.
 class GameBrowseScreen extends StatelessWidget {
   const GameBrowseScreen({
     required this.remote,
@@ -31,6 +35,7 @@ class GameBrowseScreen extends StatelessWidget {
     this.gone,
     this.onOpen,
     this.onSearch,
+    this.initialSort = GameSort.title,
     super.key,
   });
 
@@ -42,6 +47,7 @@ class GameBrowseScreen extends StatelessWidget {
   static const Key moreKey = Key('catalog_browse.more');
   static const Key moreFailedKey = Key('catalog_browse.more_failed');
   static const Key searchKey = Key('catalog_browse.search');
+  static const Key sortKey = Key('catalog_browse.sort');
 
   /// Per-row key: `catalog_browse.row_<gameId>`.
   ///
@@ -65,11 +71,21 @@ class GameBrowseScreen extends StatelessWidget {
   /// Opens the search screen. Null offers no search.
   final void Function(BuildContext context)? onSearch;
 
+  /// The order the first read is in.
+  final GameSort initialSort;
+
   @override
   Widget build(BuildContext context) => BlocProvider<GameBrowseBloc>(
-    create: (_) =>
-        GameBrowseBloc(remote: remote, cache: cache, gone: gone)
-          ..add(const GameBrowseLoadRequested()),
+    // go_router keys a page on its path, so going to another `?sort=` builds
+    // this screen again in place, and a new sort needs a new bloc. A menu
+    // choice survives any other rebuild.
+    key: ValueKey<GameSort>(initialSort),
+    create: (_) => GameBrowseBloc(
+      remote: remote,
+      cache: cache,
+      gone: gone,
+      initialSort: initialSort,
+    )..add(const GameBrowseLoadRequested()),
     child: _GameBrowsePage(onOpen: onOpen, onSearch: onSearch),
   );
 }
@@ -107,6 +123,10 @@ class _GameBrowsePage extends StatelessWidget {
                 icon: const Icon(Icons.search),
                 onPressed: () => search(context),
               ),
+            // In every state, and never disabled: it is how a list that
+            // failed in one order is read in another, and a button that goes
+            // disabled drops the focus it holds (#607).
+            _SortMenu(sort: state.sort),
           ],
           slivers: switch (state) {
             GameBrowseLoading() => [
@@ -180,6 +200,66 @@ class _GameBrowsePage extends StatelessWidget {
     );
   }
 }
+
+/// Which order to list the games in.
+///
+/// A menu opened from an icon, like the sent invites' filter, rather than a
+/// [DropdownMenu], which cut its choice short at 320dp and 2.0 text. An entry
+/// wraps instead.
+class _SortMenu extends StatelessWidget {
+  const _SortMenu({required this.sort});
+
+  final GameSort sort;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = GameCatalogLocalizations.of(context);
+
+    return MenuAnchor(
+      // Within the screen. Left unconstrained, the menu takes its widest
+      // entry's width and clips past the edge.
+      crossAxisUnconstrained: false,
+      menuChildren: [
+        for (final choice in GameSort.values)
+          MenuItemButton(
+            // An empty icon on the others keeps their labels in line.
+            leadingIcon: Icon(choice == sort ? Icons.check : null),
+            overflowAxis: Axis.vertical,
+            // The chosen one is a no-op in the bloc: it only closes the menu.
+            // The press arrives after a frame, by when the screen may be gone.
+            onPressed: () {
+              if (!context.mounted) return;
+              context.read<GameBrowseBloc>().add(GameBrowseSortChanged(choice));
+            },
+            // The check is only drawn, so the label says it is chosen.
+            // Inside the item, where it merges into the item's own node;
+            // around it, it would stand as a node of its own.
+            child: Semantics(
+              selected: choice == sort,
+              child: Text(_sortLabel(l10n, choice)),
+            ),
+          ),
+      ],
+      builder: (context, controller, _) => MergeSemantics(
+        child: Semantics(
+          expanded: controller.isOpen,
+          child: IconButton(
+            key: GameBrowseScreen.sortKey,
+            tooltip: l10n.catalogBrowseSort,
+            icon: const Icon(Icons.sort),
+            onPressed: controller.isOpen ? controller.close : controller.open,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _sortLabel(GameCatalogLocalizations l10n, GameSort sort) =>
+    switch (sort) {
+      GameSort.title => l10n.catalogBrowseSortTitle,
+      GameSort.newest => l10n.catalogBrowseSortNewest,
+    };
 
 class _BrowseRow extends StatelessWidget {
   const _BrowseRow({required this.game, this.onOpen});

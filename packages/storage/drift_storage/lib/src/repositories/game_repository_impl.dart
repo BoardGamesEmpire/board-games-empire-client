@@ -280,7 +280,11 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
   );
 
   @override
-  Future<List<Game>> getGamesPage({int offset = 0, required int limit}) async {
+  Future<List<Game>> getGamesPage({
+    int offset = 0,
+    required int limit,
+    GameSort sort = GameSort.title,
+  }) async {
     checkNotDisposed();
     // Checked rather than passed through: SQLite reads a negative LIMIT as no
     // limit at all, which would turn a page into the whole cache.
@@ -294,10 +298,19 @@ class GameRepositoryImpl with WatchDisposal implements GameRepository {
     final rows =
         await (_db.select(_db.gamesTable)
               ..where(_readableGame)
-              ..orderBy([
-                (t) => OrderingTerm.asc(t.title.collate(Collate.noCase)),
-                (t) => OrderingTerm.asc(t.id),
-              ])
+              ..orderBy(switch (sort) {
+                GameSort.title => [
+                  (t) => OrderingTerm.asc(t.title.collate(Collate.noCase)),
+                  (t) => OrderingTerm.asc(t.id),
+                ],
+                // Through `julianday`, as every DateTime sort here is: the
+                // column is ISO-8601 text, which only orders by instant
+                // between values of one precision (see `build.yaml`).
+                GameSort.newest => [
+                  (t) => OrderingTerm.desc(t.createdAt.julianday),
+                  (t) => OrderingTerm.desc(t.id),
+                ],
+              })
               ..limit(limit, offset: offset))
             .get();
     return rows.map(_mapGame).toList();

@@ -69,6 +69,11 @@ Visibility is a *ceiling*, not a guarantee: household visibility still yields to
 owner's sharing preference and to exclusions.
 _Avoid_: Privacy, sharing setting, permissions
 
+**Recently added**:
+The newest games a caller can see on the server, in the order `GET /games?sort=newest`
+returns them, including hand-made and private ones.
+_Avoid_: Recently imported, Import activity
+
 ### Sync
 
 **Tombstone**:

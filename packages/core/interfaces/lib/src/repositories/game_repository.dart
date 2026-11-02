@@ -178,18 +178,31 @@ abstract class GameRepository {
   });
 
   /// One page of this user's cached games, in the order `GET /games` pages
-  /// the catalog: by title, then by id where titles tie (#42).
+  /// the catalog (#42).
   ///
   /// Offline browse reads this when the catalog cannot be fetched, so a page
-  /// of the cache lines up with a page of the server. Titles are compared
-  /// without regard to case. The server's order is its database collation,
-  /// which the cache cannot match exactly, so two titles that differ only in
-  /// case or accents may come back in a different order than online.
+  /// of the cache lines up with a page of the server. [sort] names the
+  /// order, as the server's `sort` does (#615):
+  ///
+  /// - [GameSort.title], the default: by title, then by id where titles tie.
+  ///   Titles are compared without regard to case. The server's order is its
+  ///   database collation, which the cache cannot match exactly, so two
+  ///   titles that differ only in case or accents may come back in a
+  ///   different order than online.
+  /// - [GameSort.newest]: by `createdAt` descending, then by id descending,
+  ///   matching the server's `GET /games?sort=newest`. A cached game keeps
+  ///   the server's `createdAt`, so the two agree.
   ///
   /// Tombstoned and summary-only games are left out, as every read leaves
-  /// them out. [offset] must be at least 0 and [limit] at least 1; anything
-  /// else throws [ArgumentError].
-  Future<List<Game>> getGamesPage({int offset = 0, required int limit});
+  /// them out. A summary-only row's `createdAt` is this device's clock, not
+  /// the server's, so leaving those out is also what keeps them from sorting
+  /// first under [GameSort.newest]. [offset] must be at least 0 and [limit]
+  /// at least 1; anything else throws [ArgumentError].
+  Future<List<Game>> getGamesPage({
+    int offset = 0,
+    required int limit,
+    GameSort sort = GameSort.title,
+  });
 
   /// Watches a single [Game] for changes. Emits null if deleted from cache.
   ///

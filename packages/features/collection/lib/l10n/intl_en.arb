@@ -104,5 +104,31 @@
   "collectionListFavorite": "Favorite",
   "@collectionListFavorite": {
     "description": "Spoken by screen readers for the heart icon on a collection row, which marks a game the user has favorited."
+  },
+  "collectionStatsHeading": "Your stats",
+  "@collectionStatsHeading": {
+    "description": "Heading of the home page's card of game counts."
+  },
+  "collectionStatsOwned": "{count, plural, =1{1 game in your collection} other{{count} games in your collection}}",
+  "@collectionStatsOwned": {
+    "description": "On the home page's stats card: how many different games the user's collection holds. A game owned in two forms, such as boxed and digital, counts once.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionStatsHouseholds": "{count, plural, =1{1 game across your households} other{{count} games across your households}}",
+  "@collectionStatsHouseholds": {
+    "description": "On the home page's stats card: how many different games the members of the user's households have shared with those households, the user's own included. A game several members own counts once.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "collectionStatsCreateOrJoin": "Create or join a household",
+  "@collectionStatsCreateOrJoin": {
+    "description": "A link on the home page's stats card, shown to a user who is in no household. It opens the households screen, where they can start one."
   }
 }

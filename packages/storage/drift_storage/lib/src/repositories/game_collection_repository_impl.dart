@@ -1472,6 +1472,7 @@ class GameCollectionRepositoryImpl
     GamesTableData game,
   ) => GameCollectionListItem(
     entry: _mapRow(entry),
+    gameId: game.id,
     title: game.title,
     subtitle: game.subtitle,
     platformName: platformGame.platformName,

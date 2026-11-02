@@ -14,6 +14,10 @@ part 'game_collection_list_item.freezed.dart';
 abstract class GameCollectionListItem with _$GameCollectionListItem {
   const factory GameCollectionListItem({
     required GameCollection entry,
+
+    /// The id of the [Game] the entry's platform game belongs to: what a
+    /// caller counts the distinct games in a collection by.
+    required String gameId,
     required String title,
     String? subtitle,
     required String platformName,
