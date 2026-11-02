@@ -33,11 +33,18 @@ import '../bloc/game_collection_list_state.dart';
 ///
 /// Without [onOpen] a row is inert content, not a focus stop: a tap that
 /// leads nowhere is worse than no tap (#269). #46 wires it.
+///
+/// ## An empty collection points at the catalog (#45)
+///
+/// Games are added from a game's detail, so the empty state offers
+/// [onBrowse], which opens the catalog. Null, it offers nothing to press, as
+/// the household list offers no create without a way to send one.
 class GameCollectionListScreen extends StatelessWidget {
   const GameCollectionListScreen({
     required this.repository,
     this.hydration,
     this.onOpen,
+    this.onBrowse,
     this.onRetry,
     this.onEnter,
     super.key,
@@ -48,6 +55,9 @@ class GameCollectionListScreen extends StatelessWidget {
 
   /// Key on the empty state.
   static const Key emptyKey = Key('collection_list.empty');
+
+  /// Key on the empty state's browse button.
+  static const Key browseKey = Key('collection_list.browse');
 
   /// Key on the couldn't-refresh banner.
   static const Key refreshBannerKey = Key('collection_list.refresh_banner');
@@ -84,6 +94,11 @@ class GameCollectionListScreen extends StatelessWidget {
   /// id rather than the row, because the destination re-reads the cache.
   final void Function(BuildContext context, String entryId)? onOpen;
 
+  /// Opens the catalog from the empty state, or null where this composition
+  /// has none. Called with this screen's own context, as the household list's
+  /// `onCreate` is: the feature package does not know the route table.
+  final void Function(BuildContext context)? onBrowse;
+
   /// Runs one more hydrate pass, or null where this composition has none.
   /// Absent, the banner still reports a failed refresh and offers nothing to
   /// press.
@@ -110,15 +125,16 @@ class GameCollectionListScreen extends StatelessWidget {
         onEnter?.call();
         return bloc;
       },
-      child: _GameCollectionListPage(onOpen: onOpen),
+      child: _GameCollectionListPage(onOpen: onOpen, onBrowse: onBrowse),
     );
   }
 }
 
 class _GameCollectionListPage extends StatelessWidget {
-  const _GameCollectionListPage({this.onOpen});
+  const _GameCollectionListPage({this.onOpen, this.onBrowse});
 
   final void Function(BuildContext context, String entryId)? onOpen;
+  final void Function(BuildContext context)? onBrowse;
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +154,7 @@ class _GameCollectionListPage extends StatelessWidget {
       // A list surface, so the wider measure.
       width: BgePageWidth.pane,
       semanticChildCount: rowCount,
-      slivers: [GameCollectionListSliver(onOpen: onOpen)],
+      slivers: [GameCollectionListSliver(onOpen: onOpen, onBrowse: onBrowse)],
     );
   }
 }
@@ -150,10 +166,13 @@ class _GameCollectionListPage extends StatelessWidget {
 /// its own and puts this in its own scroll view. The host owns that scroll
 /// view, so it also owns its `semanticChildCount`.
 class GameCollectionListSliver extends StatelessWidget {
-  const GameCollectionListSliver({this.onOpen, super.key});
+  const GameCollectionListSliver({this.onOpen, this.onBrowse, super.key});
 
   /// See [GameCollectionListScreen.onOpen].
   final void Function(BuildContext context, String entryId)? onOpen;
+
+  /// See [GameCollectionListScreen.onBrowse].
+  final void Function(BuildContext context)? onBrowse;
 
   @override
   Widget build(BuildContext context) {
@@ -191,7 +210,7 @@ class GameCollectionListSliver extends StatelessWidget {
               message: l10n.collectionListError,
             ),
             GameCollectionListReady(:final items) when items.isEmpty =>
-              const _EmptySliver(),
+              _EmptySliver(onBrowse: onBrowse),
             GameCollectionListReady(:final items) =>
               BgeKeyedSliverList<GameCollectionListItem>(
                 items: items,
@@ -360,15 +379,18 @@ class _LoadingSliver extends StatelessWidget {
   );
 }
 
-/// No games. Offers nothing to press: there is no add flow yet, and whether
-/// one starts here is #45's call.
+/// No games. Games are added from a game's detail, so it offers [onBrowse],
+/// which opens the catalog (#45), and nothing to press without one.
 class _EmptySliver extends StatelessWidget {
-  const _EmptySliver();
+  const _EmptySliver({this.onBrowse});
+
+  final void Function(BuildContext context)? onBrowse;
 
   @override
   Widget build(BuildContext context) {
     final l10n = GameCollectionLocalizations.of(context);
     final theme = Theme.of(context);
+    final browse = onBrowse;
 
     return SliverFillRemaining(
       hasScrollBody: false,
@@ -388,6 +410,14 @@ class _EmptySliver extends StatelessWidget {
               style: theme.textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
+            if (browse != null) ...[
+              const BgeGap.md(),
+              FilledButton.tonal(
+                key: GameCollectionListScreen.browseKey,
+                onPressed: () => browse(context),
+                child: Text(l10n.collectionListBrowse),
+              ),
+            ],
           ],
         ),
       ),

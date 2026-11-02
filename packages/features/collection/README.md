@@ -43,7 +43,8 @@ shows a spinner rather than "no games yet", and a failed refresh shows a
 banner over the rows the cache still holds until a pass completes. The
 status carries which passes completed or failed, so a list opened mid-pass
 still knows. The shell passes in the
-repository, the status, the retry and an entry trigger; the screen resolves
+repository, the status, the retry, an entry trigger and, where there is a
+catalog, a browse action the empty state offers (#45); the screen resolves
 nothing itself.
 
 The list body is `GameCollectionListSliver`, separate from the page, so a

@@ -12,9 +12,13 @@
   "@collectionListEmptyTitle": {
     "description": "Heading of the empty state shown when the user's collection holds no games."
   },
-  "collectionListEmptyBody": "Games in your collection will appear here.",
+  "collectionListEmptyBody": "Games you add from the catalog will appear here.",
   "@collectionListEmptyBody": {
-    "description": "Body of the empty state shown when the user's collection holds no games. Deliberately offers no action: this screen cannot add games yet."
+    "description": "Body of the empty state shown when the user's collection holds no games. Games are added from a game's screen in the catalog, which the Browse games button below it opens where the catalog is available."
+  },
+  "collectionListBrowse": "Browse games",
+  "@collectionListBrowse": {
+    "description": "Button on the empty collection's state that opens the catalog, where a game can be added to the collection from its screen."
   },
   "collectionListRefreshFailed": "This list may be out of date — we couldn't refresh it.",
   "@collectionListRefreshFailed": {
