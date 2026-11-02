@@ -23,15 +23,17 @@ abstract class SyncQueueRepository {
   /// Enqueues a new operation. Returns the created entry.
   Future<SyncQueueEntry> enqueue(SyncOperation operation);
 
-  /// Returns every entry [claim] would take now, in [createdAt] order with
+  /// Returns every entry [claim] may take now, in [createdAt] order with
   /// rowid as a stable tiebreaker.
   ///
   /// That is every entry under [SyncQueueEntry.maxRetries] that is
   /// [SyncStatus.pending] or [SyncStatus.failed], or [SyncStatus.inProgress]
-  /// with a claim older than [SyncQueueEntry.claimLease] (#430). The listing
-  /// and [claim] share one predicate, so a sender can't list an entry it
-  /// can't claim, or miss one it could. Listing an entry doesn't take it:
-  /// a sender claims each one before sending it.
+  /// with a claim older than [SyncQueueEntry.claimLease] (#430). [claim]
+  /// takes only entries this lists, and the listing and [claim] share one
+  /// row predicate, so a sender can't miss an entry it could take. [claim]
+  /// also refuses a collection op while another op of its entry holds a
+  /// live claim (#677), so a listed entry can still be refused. Listing an
+  /// entry doesn't take it: a sender claims each one before sending it.
   Future<List<SyncQueueEntry>> getPendingEntries();
 
   /// Returns all of the current user's entries regardless of status.
@@ -65,6 +67,18 @@ abstract class SyncQueueRepository {
   /// Returns `false` for an entry someone else holds, one that is
   /// completed or exhausted, and an id that doesn't exist or belongs to
   /// another user. Every sender must claim before sending.
+  ///
+  /// A collection op (add, update or removal) is also refused while
+  /// another op of this user for the same collection entry holds a live
+  /// claim: `inProgress` and claimed no longer than
+  /// [SyncQueueEntry.claimLease] ago, at any retry count. Two ops of one
+  /// entry sent together can reach the server out of order, so the later
+  /// one waits and stays pending (#677). A claim past its lease holds
+  /// nothing back, and household and event ops have no entry and are never
+  /// held. The check and the take run in one transaction, so it is atomic
+  /// wherever a transaction is: native, and web's three durable storage
+  /// modes (#430). It is not across tabs on `unsafeIndexedDb`, which
+  /// serialises nothing (#447).
   ///
   /// The lease is judged by the device's own clock, not the
   /// server-corrected one: the senders sharing the queue share the device,
