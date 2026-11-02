@@ -10,8 +10,10 @@ import '../auth/token_storage_service.dart';
 /// repository — so every repository sharing the server's [Dio] inherits token
 /// attachment regardless of construction order.
 ///
-/// Token attachment is the default. A request targeting a public endpoint can
-/// opt out by setting [skipAuthKey] in [Options.extra]:
+/// Token attachment is the default. A request can opt out by setting
+/// [skipAuthKey] in [Options.extra], and the interceptor then leaves its
+/// headers alone: a public endpoint attaches none, and a caller may set its
+/// own, as sign-out does with the departing token (#433):
 ///
 /// ```dart
 /// dio.get(path, options: Options(extra: {TokenInterceptor.skipAuthKey: true}));
@@ -45,8 +47,10 @@ class TokenInterceptor extends Interceptor {
   /// server's own estimator.
   final ClockService _clock;
 
-  /// Request-level opt-out flag for [Options.extra]. When `true`, no
-  /// Authorization header is attached even if a valid token is stored.
+  /// Request-level opt-out flag for [Options.extra]. When `true`, the
+  /// interceptor leaves the request's headers alone: it attaches no
+  /// Authorization header even if a valid token is stored, and keeps one the
+  /// caller set (#433).
   static const String skipAuthKey = 'bge_skip_auth';
 
   @override

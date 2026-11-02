@@ -14,6 +14,7 @@ import 'package:observability/observability.dart';
 
 import '../network/decode_json_body.dart';
 import '../network/redact_uri.dart';
+import '../network/token_interceptor.dart';
 import 'token_storage_service.dart';
 
 /// Dio-based [AuthRepository] for mobile and desktop.
@@ -604,9 +605,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
     // Capture the bearer token BEFORE clearing. TokenStorageService.clear()
     // sets its sign-out latch synchronously, after which retrieve() — and so
     // the TokenInterceptor — reports no token; a POST left to the interceptor
-    // would race that latch and go out with no Authorization header, leaving
-    // the session un-revoked server-side. Reading it here lets the POST carry
-    // the token explicitly (PR #103 review).
+    // would go out with no Authorization header, leaving the session
+    // un-revoked server-side. Reading it here lets the POST carry the token
+    // explicitly (PR #103 review). The POST also opts out of the interceptor,
+    // so this value is its credential whatever the timing: an interceptor
+    // that reached storage after a new sign-in would otherwise overwrite it
+    // and revoke that session instead (#433).
     final token = await _readSignOutToken();
 
     // Best-effort server call, fire-and-forget: its result is discarded,
@@ -639,9 +643,12 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   }
 
   /// Fire-and-forget sign-out POST carrying [token] as an explicit bearer
-  /// credential (the [TokenInterceptor] cannot be relied on here — see
-  /// [signOut]). Never throws: a synchronous throw or an async rejection is
-  /// swallowed (best-effort by design). Typed `Future<void>` so it satisfies
+  /// credential. It opts out of the [TokenInterceptor] with
+  /// [TokenInterceptor.skipAuthKey], so the credential does not depend on
+  /// when Dio reaches the interceptor relative to the sign-out latch or a
+  /// later sign-in (#433; see [signOut]). A null [token] sends no header.
+  /// Never throws: a synchronous throw or an async rejection is swallowed
+  /// (best-effort by design). Typed `Future<void>` so it satisfies
   /// [unawaited].
   Future<void> _bestEffortSignOutPost(String? token) async {
     try {
@@ -663,6 +670,7 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
         options: Options(
           responseType: ResponseType.plain,
           headers: {if (token != null) 'Authorization': 'Bearer $token'},
+          extra: {TokenInterceptor.skipAuthKey: true},
         ),
       );
     } on Object {
