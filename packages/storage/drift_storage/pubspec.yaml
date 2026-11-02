@@ -36,6 +36,8 @@ dev_dependencies:
   drift_dev: 2.34.5
   injectable_generator: ^3.1.3
   mocktail: ^1.0.5
+  observability:
+    path: ../../core/observability
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter

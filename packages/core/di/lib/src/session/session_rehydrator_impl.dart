@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 
+import '../debug_report_swallowed.dart';
+
 /// One registered hydrate: how to ask whether it needs re-running, and how
 /// to run it.
 @immutable
@@ -104,14 +106,8 @@ class SessionRehydratorImpl implements SessionRehydrator {
     }
   }
 
-  /// Debug-only breadcrumb. `di` carries no observability dependency, so
-  /// this follows `ServerContextImpl`'s existing assert/debugPrint shape
-  /// rather than adding one for a swallowed error.
   void _report(String what, String key, Object error, StackTrace stackTrace) {
-    assert(() {
-      debugPrint('SessionRehydrator: $what for "$key" threw: $error');
-      return true;
-    }());
+    debugReportSwallowed('SessionRehydrator: $what for "$key" threw', error);
   }
 
   /// Releases the registry. Idempotent; wired as the registration's

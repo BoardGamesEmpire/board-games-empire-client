@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
+import '../support/in_memory_session_tombstone_store.dart';
+
 const _kAuthBase = '/api/auth';
 
 ServerIdentity _identity() => ServerIdentity(
@@ -47,7 +49,11 @@ void main() {
 
   setUp(() {
     container = DependencyContainerImpl();
-    registerServerNetwork(container: container, config: _config());
+    registerServerNetwork(
+      container: container,
+      config: _config(),
+      sessionTombstones: InMemorySessionTombstoneStore(),
+    );
   });
 
   tearDown(() async {

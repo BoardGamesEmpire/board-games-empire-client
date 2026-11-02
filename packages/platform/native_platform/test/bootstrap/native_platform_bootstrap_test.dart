@@ -179,8 +179,10 @@ void main() {
 
   NativePlatformBootstrap buildBootstrap({
     NativeOrchestratorFactory? orchestratorFactory,
+    Future<void> Function()? deleteStoredSessions,
   }) => NativePlatformBootstrap(
     keyService: keyService,
+    deleteStoredSessions: deleteStoredSessions ?? () async {},
     executorFactory: executorFactory,
     serverRepositoryFactory: (_) => serverRepository,
     devicePreferencesRepositoryFactory: (_) => preferencesRepository,
@@ -499,6 +501,33 @@ void main() {
         expect(metaFile.existsSync(), isFalse);
         expect(wal.existsSync(), isFalse);
         expect(shm.existsSync(), isFalse);
+      });
+
+      test(
+        'deletes the stored sessions while the markers still exist',
+        () async {
+          metaFile.writeAsStringSync('db');
+          var metaFileExisted = false;
+
+          await buildBootstrap(
+            deleteStoredSessions: () async =>
+                metaFileExisted = metaFile.existsSync(),
+          ).reset();
+
+          expect(metaFileExisted, isTrue);
+          expect(metaFile.existsSync(), isFalse);
+        },
+      );
+
+      test('a keychain fault does not stop the reset', () async {
+        metaFile.writeAsStringSync('db');
+
+        await buildBootstrap(
+          deleteStoredSessions: () async => throw StateError('keychain'),
+        ).reset();
+
+        expect(keyService.deleteMetaKeyCalls, 1);
+        expect(metaFile.existsSync(), isFalse);
       });
 
       test('is safe when no meta database file exists yet', () async {

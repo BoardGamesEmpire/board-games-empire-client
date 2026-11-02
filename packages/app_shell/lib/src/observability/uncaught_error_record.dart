@@ -8,8 +8,10 @@ import 'package:observability/observability.dart';
 ///
 /// ## Sanitisation at capture
 ///
-/// [message] is the error's `toString()` run through
-/// [Redaction.redactEmailsIn] at construction — matching the
+/// [message] is the error's `toString()` with a database error's bound
+/// values removed ([Redaction.stripBoundValues], which can be a user id or
+/// what the user wrote, #463) and then run through
+/// [Redaction.redactEmailsIn], at construction — matching the
 /// BreadcrumbBuffer's capture-time philosophy, so nothing downstream has
 /// to remember to redact. The raw error object is deliberately **not**
 /// retained: keeping it would reintroduce the unredacted text through the
@@ -32,11 +34,14 @@ final class UncaughtErrorRecord {
     Object error,
     this.stackTrace, {
     DateTime? timestamp,
-  }) : message = Redaction.redactEmailsIn(error.toString()),
+  }) : message = Redaction.redactEmailsIn(
+         Redaction.stripBoundValues(error.toString()),
+       ),
        errorType = error.runtimeType.toString(),
        timestamp = timestamp ?? DateTime.now();
 
-  /// The error's `toString()`, email-redacted at capture.
+  /// The error's `toString()`, without bound values and email-redacted, as
+  /// of capture.
   final String message;
 
   /// The error's runtime type name (e.g. `StateError`) — safe to put in

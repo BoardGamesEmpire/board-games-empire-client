@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:logging/logging.dart';
 
+import '../redaction/redaction.dart';
 import 'bge_log_level.dart';
 import 'context_log_message.dart';
 
@@ -27,10 +28,12 @@ import 'context_log_message.dart';
 /// alone, so the map has to be pulled off `record.object` and encoded
 /// separately.
 ///
-/// No redaction happens here: per the #8 split, dev consoles keep full
-/// fidelity and context producers are responsible for never putting
-/// secrets in a message or context (only the BreadcrumbBuffer's
-/// capture-time scrub touches submittable data).
+/// The only thing removed here is a database error's bound values
+/// ([Redaction.stripBoundValues]): the text of such an error can carry a
+/// user id and what the user wrote (#463). Otherwise, per the #8 split,
+/// dev consoles keep full fidelity and context producers are responsible
+/// for never putting secrets in a message or context (only the
+/// BreadcrumbBuffer's capture-time scrub touches submittable data).
 class LogRecordFormatter {
   const LogRecordFormatter({this.includeTimestamp = true});
 
@@ -67,7 +70,7 @@ class LogRecordFormatter {
     if (record.error != null) {
       buffer
         ..write(' | ')
-        ..write(record.error);
+        ..write(Redaction.stripBoundValues(record.error.toString()));
     }
     return buffer.toString();
   }

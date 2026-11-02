@@ -10,6 +10,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
 
+import '../support/in_memory_session_tombstone_store.dart';
+
 class _MockTokenStorage extends Mock implements TokenStorageService {}
 
 class _MockSecureStorage extends Mock implements FlutterSecureStorage {}
@@ -186,7 +188,11 @@ void main() {
 
     setUp(() {
       secure = _MockSecureStorage();
-      realStorage = TokenStorageService(serverId: 'server-1', storage: secure);
+      realStorage = TokenStorageService(
+        serverId: 'server-1',
+        tombstones: InMemorySessionTombstoneStore(),
+        storage: secure,
+      );
       latchAdapter = _CapturingAdapter();
       latchDio =
           Dio(

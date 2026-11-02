@@ -1,4 +1,5 @@
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import 'register_server_network.dart';
@@ -20,13 +21,19 @@ import 'register_server_network.dart';
 /// The web variant (httpOnly-cookie transport, `web_network`) gets its own
 /// installer; this one must never be composed into a browser build.
 class NetworkScopeInstaller implements ServerScopeInstaller {
-  const NetworkScopeInstaller();
+  const NetworkScopeInstaller({required this._sessionTombstones});
+
+  final SessionTombstoneStore _sessionTombstones;
 
   @override
   Future<void> install(
     DependencyContainer container,
     ServerConfig config,
   ) async {
-    registerServerNetwork(container: container, config: config);
+    registerServerNetwork(
+      container: container,
+      config: config,
+      sessionTombstones: _sessionTombstones,
+    );
   }
 }

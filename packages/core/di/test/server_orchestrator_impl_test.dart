@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:di/di.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart';
 
 import 'support/orchestrator_test_fixtures.dart';
 
@@ -328,6 +331,52 @@ void main() {
           throwsA(isA<ServerCapacityExceededException>()),
         );
       });
+
+      test(
+        'a failing rollback goes to the logger, and a database error\'s '
+        'bound values reach neither the console nor a formatted line',
+        () async {
+          when(() => mockPrefsRepo.get()).thenAnswer(
+            (_) async => const DevicePreferences(maxMonitoredServers: 1),
+          );
+          stubGetServer('existing');
+          await orchestrator.connectServer('existing');
+          stubRemoveServer(
+            error: StateError(
+              'SqliteException(5): database is locked\n'
+              '  Causing statement: DELETE FROM t WHERE id = ?, '
+              'parameters: user-42',
+            ),
+          );
+
+          final printed = <String>[];
+          final previousPrint = debugPrint;
+          debugPrint = (message, {wrapWidth}) => printed.add(message ?? '');
+          addTearDown(() => debugPrint = previousPrint);
+          final records = <LogRecord>[];
+          final subscription = Logger.root.onRecord.listen(records.add);
+          addTearDown(subscription.cancel);
+
+          await expectLater(
+            orchestrator.addAndActivateServer(
+              displayName: 'My Server',
+              serverUrl: 'https://bge.example.com',
+              bgeServerId: 'bge-new',
+              identity: identity,
+            ),
+            throwsA(isA<ServerCapacityExceededException>()),
+          );
+
+          expect(printed.where((line) => line.contains('user-42')), isEmpty);
+          final rollback = records.singleWhere(
+            (record) => record.message.startsWith('rollback of'),
+          );
+          expect(
+            const LogRecordFormatter().formatLine(rollback),
+            allOf(contains('database is locked'), isNot(contains('user-42'))),
+          );
+        },
+      );
 
       test('demotes the previously active server (single-active '
           'invariant)', () async {

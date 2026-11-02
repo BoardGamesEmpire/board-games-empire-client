@@ -60,6 +60,15 @@ void main() {
       expect(line, endsWith('nope'));
     });
 
+    test('a database error\'s bound values are not written', () {
+      final line = formatter.formatLine(
+        LogRecord(Level.SEVERE, 'crashed', 'bge.x', _DatabaseError()),
+      );
+      expect(line, isNot(contains('user-42')));
+      expect(line, isNot(contains('Kitchen Table')));
+      expect(line, contains('Causing statement'));
+    });
+
     test('prefixes a UTC ISO-8601 timestamp (Z-suffixed) when enabled', () {
       const withTime = LogRecordFormatter();
       final line = withTime.formatLine(LogRecord(Level.INFO, 'hi', 'bge.x'));
@@ -114,6 +123,14 @@ void main() {
       });
     });
   });
+}
+
+/// An error whose text is a `SqliteException`'s, bound values and all.
+class _DatabaseError {
+  @override
+  String toString() =>
+      'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
+      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
 }
 
 class _Unencodable {

@@ -46,6 +46,7 @@ typedef NativeOrchestratorFactory = ServerOrchestrator Function({
 List<ServerScopeInstaller> buildNativeServerScopeInstallers({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
+  required SessionTombstoneStore sessionTombstones,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
 }) => [
   StorageScopeInstaller(
@@ -53,7 +54,7 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
     keyService: keyService,
     onRecovery: onRecovery,
   ),
-  const NetworkScopeInstaller(),
+  NetworkScopeInstaller(sessionTombstones: sessionTombstones),
 ];
 
 /// The per-user session-scope installers (#135), run on every sign-in by
@@ -114,11 +115,13 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
 ServerContextFactory buildNativeServerContextFactory({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
+  required SessionTombstoneStore sessionTombstones,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
 }) {
   final installers = buildNativeServerScopeInstallers(
     executorFactory: executorFactory,
     keyService: keyService,
+    sessionTombstones: sessionTombstones,
     onRecovery: onRecovery,
   );
   final userInstallers = buildNativeUserScopeInstallers();
@@ -184,6 +187,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     Future<HydratedStorageDirectory> Function()? hydratedDirectoryProvider,
     Future<void> Function(DependencyContainer container)? rootModule,
     DeepLinkSource Function()? deepLinkSourceFactory,
+    Future<void> Function()? deleteStoredSessions,
     BgeLogger? logger,
   }) : _logger = logger ?? BgeLogger('bge.platform.native_bootstrap'),
        assert(
@@ -205,13 +209,16 @@ class NativePlatformBootstrap implements PlatformBootstrap {
            hydratedDirectoryProvider ?? _defaultHydratedDirectory,
        _rootModule = rootModule ?? registerNativeRootModule,
        _deepLinkSourceFactory =
-           deepLinkSourceFactory ?? AppLinksDeepLinkSource.new {
+           deepLinkSourceFactory ?? AppLinksDeepLinkSource.new,
+       _deleteStoredSessions =
+           deleteStoredSessions ?? TokenStorageService.deleteAllStoredSessions {
     _executorFactory =
         executorFactory ?? EncryptedExecutorFactory(keyService: _keyService);
   }
 
   final BgeLogger _logger;
   final EncryptionKeyService _keyService;
+  final Future<void> Function() _deleteStoredSessions;
   late final EncryptedExecutorFactory _executorFactory;
   final MetaDatabase Function(QueryExecutor executor) _metaDatabaseFactory;
   final ServerRepository Function(MetaDatabase database)
@@ -344,6 +351,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         contextFactory: buildNativeServerContextFactory(
           executorFactory: _executorFactory,
           keyService: _keyService,
+          sessionTombstones: SessionTombstoneStoreImpl(meta),
           onRecovery: _onServerDatabaseRecovered,
         ),
       );
@@ -440,6 +448,19 @@ class NativePlatformBootstrap implements PlatformBootstrap {
     _throwIfDisposed();
     _logger.warn('Resetting device-local meta state (user confirmed)');
     await _release();
+    // Before the database goes, and its markers with it: a session left behind
+    // would come back when the same server is added again (#356). Best-effort,
+    // since a keychain fault must not stop the reset the user asked for.
+    try {
+      await _deleteStoredSessions();
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Could not delete the stored sessions during reset; adding the same '
+        'server again can read them',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     // Key first, then file — the recovery ordering established in
     // StorageScopeInstaller: a crash in between must not leave an
     // encrypted database whose key still exists and looks healthy.

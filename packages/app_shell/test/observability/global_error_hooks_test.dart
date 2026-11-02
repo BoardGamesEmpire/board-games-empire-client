@@ -86,6 +86,34 @@ void main() {
       expect(reporter.records, hasLength(1));
     });
 
+    test('the console never sees a database error\'s bound values', () {
+      final printed = <String>[];
+      final previousPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => printed.add(message ?? '');
+      addTearDown(() => debugPrint = previousPrint);
+      FlutterError.resetErrorCount();
+      addTearDown(FlutterError.resetErrorCount);
+      installGlobalErrorHooks(
+        // The framework's real presenter, not a stand-in.
+        presentError: FlutterError.dumpErrorToConsole,
+        reporter: _RecordingReporter(),
+        recordError: (_) {},
+      );
+
+      FlutterError.onError!(
+        frameworkDetails(
+          exception: StateError(
+            'SqliteException(5): database is locked\n'
+            '  Causing statement: UPDATE t SET a = ?, parameters: user-42',
+          ),
+        ),
+      );
+
+      final console = printed.join('\n');
+      expect(console, contains('database is locked'));
+      expect(console, isNot(contains('user-42')));
+    });
+
     test('the reported record carries the redacted message, error type, '
         'and original stack trace', () {
       final reporter = _RecordingReporter();

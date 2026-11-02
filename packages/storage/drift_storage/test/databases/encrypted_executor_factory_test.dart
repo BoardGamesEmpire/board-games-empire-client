@@ -367,6 +367,23 @@ void main() {
     });
   });
 
+  test('a failed PRAGMA key keeps the key out of the error', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+
+    // A real key is hex and can't break the statement. This one can, which is
+    // the only way to make the statement fail on demand.
+    expect(
+      () => EncryptedExecutorFactory.applyKeyForTesting(db, "deadbeef' x"),
+      throwsA(
+        isA<SqliteException>()
+            .having((e) => e.resultCode, 'resultCode', 1)
+            .having((e) => e.causingStatement, 'causingStatement', isNull)
+            .having((e) => e.toString(), 'text', isNot(contains('deadbeef'))),
+      ),
+    );
+  });
+
   group('encryptionEnabled default', () {
     test('is on unless the dev define was set at compile time', () {
       // In an ordinary test binary BGE_DISABLE_ENCRYPTION is not defined,

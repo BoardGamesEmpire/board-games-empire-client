@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
+import '../debug_report_swallowed.dart';
 import 'user_scope_host.dart';
 
 /// [UserSessionScope] over a **fixed** parent scope (#137).
@@ -144,13 +144,11 @@ class ContainerUserSessionScope implements UserSessionScope {
     try {
       await _host.close();
     } catch (error) {
-      assert(() {
-        debugPrint(
-          '$_label: user-scope disposal threw during session deactivation '
-          '(suppressed; the session still ended): $error',
-        );
-        return true;
-      }());
+      debugReportSwallowed(
+        '$_label: user-scope disposal threw during session deactivation '
+        '(suppressed; the session still ended)',
+        error,
+      );
     }
   }
 }

@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 
 import 'package:logging/logging.dart';
 
+import '../redaction/redaction.dart';
 import 'log_record_formatter.dart';
 import 'log_sink.dart';
 
@@ -27,7 +28,10 @@ typedef DeveloperLogFn = void Function(
 /// Context handling follows the #100 rule, exploiting that `developer.log`
 /// has a structured `error` slot but no `context` slot:
 /// - **error present** → the real error goes in the `error` slot and the
-///   compact context is appended to the message (so nothing is lost);
+///   compact context is appended to the message (so nothing is lost). A
+///   database error's bound values are the exception (#463): its text goes
+///   in the slot with them removed, since DevTools and Logcat would show
+///   them as the formatted line would;
 /// - **no error, context present** → the context *map itself* goes in the
 ///   `error` slot, so it renders as an inspectable object in DevTools
 ///   rather than a flattened string;
@@ -67,9 +71,11 @@ class DeveloperLogSink implements LogSink {
           ? '${record.message} $encoded'
           : record.message;
       // Error slot: a real exception wins it; otherwise the raw context map
-      // rides there so DevTools can render it structurally.
+      // rides there so DevTools can render it structurally. The exception
+      // itself goes unless its text carries bound values, which are removed
+      // by sending the stripped text instead.
       final Object? errorArg = hasError
-          ? record.error
+          ? Redaction.scrubBoundValues(record.error!)
           : (hasContext ? context : null);
 
       _log(

@@ -22,6 +22,20 @@ void main() {
       expect(record.message, isNot(contains('john.doe@email.com')));
     });
 
+    test('the message carries no bound values, and an email in the same '
+        'text is still redacted', () {
+      final record = UncaughtErrorRecord.capture(
+        _DatabaseError(),
+        StackTrace.current,
+      );
+
+      expect(record.message, isNot(contains('user-42')));
+      expect(record.message, isNot(contains('Kitchen Table')));
+      expect(record.message, contains('Causing statement'));
+      expect(record.message, contains('j**n.d*e@email.com'));
+      expect(record.message, isNot(contains('john.doe@email.com')));
+    });
+
     test('keeps the message unchanged when no email is present', () {
       final record = UncaughtErrorRecord.capture(
         StateError('nothing sensitive here'),
@@ -77,4 +91,15 @@ void main() {
       expect(record.timestamp, fixed);
     });
   });
+}
+
+/// An error whose text is a `SqliteException`'s. The email sits ahead of
+/// `, parameters: ` so it is the email redaction that gets tested, not the
+/// cut at the parameters.
+class _DatabaseError {
+  @override
+  String toString() =>
+      'SqliteException(2067): while executing statement, UNIQUE constraint '
+      'failed for john.doe@email.com\n'
+      '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
 }

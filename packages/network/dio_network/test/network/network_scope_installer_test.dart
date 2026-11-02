@@ -6,6 +6,8 @@ import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
 
+import '../support/in_memory_session_tombstone_store.dart';
+
 ServerConfig _makeConfig() => ServerConfig(
   id: 'server-local-1',
   displayName: 'Test Server',
@@ -28,6 +30,9 @@ ServerConfig _makeConfig() => ServerConfig(
   lastIdentityFetchedAt: DateTime.now().toUtc(),
 );
 
+NetworkScopeInstaller installer() =>
+    NetworkScopeInstaller(sessionTombstones: InMemorySessionTombstoneStore());
+
 void main() {
   late DependencyContainerImpl container;
 
@@ -37,7 +42,7 @@ void main() {
 
   group('NetworkScopeInstaller', () {
     test('registers the full network stack for the scope', () async {
-      await const NetworkScopeInstaller().install(container, _makeConfig());
+      await installer().install(container, _makeConfig());
 
       expect(container.isRegistered<TokenStorageService>(), isTrue);
       expect(container.isRegistered<DioFactory>(), isTrue);
@@ -47,7 +52,7 @@ void main() {
     });
 
     test('registered ClockService is the skew-corrected estimator', () async {
-      await const NetworkScopeInstaller().install(container, _makeConfig());
+      await installer().install(container, _makeConfig());
 
       // The native stack must register the estimator (fed by the Dio
       // interceptor), not the pass-through null object. Web registers the
@@ -57,8 +62,27 @@ void main() {
       expect(container.get<ClockService>(), isA<ServerSkewClockService>());
     });
 
+    test('hands the tombstone store to the token storage, keyed by the '
+        'server-vended id', () async {
+      final tombstones = InMemorySessionTombstoneStore();
+      final config = _makeConfig();
+      expect(config.id, isNot(config.bgeServerId));
+      await NetworkScopeInstaller(sessionTombstones: tombstones)
+          .install(container, config);
+
+      // The marker is written ahead of the keychain delete. There is no
+      // keychain plugin in the test host, so the delete itself throws.
+      try {
+        await container.get<TokenStorageService>().clear();
+      } on Object {
+        // Expected: only the marker is under test here.
+      }
+
+      expect(tombstones.revoked, {config.bgeServerId});
+    });
+
     test('shared Dio uses the config server URL as base', () async {
-      await const NetworkScopeInstaller().install(container, _makeConfig());
+      await installer().install(container, _makeConfig());
 
       expect(container.get<Dio>().options.baseUrl, 'https://api.example.com');
     });
@@ -67,9 +91,13 @@ void main() {
       // Guard against the adapter drifting from the function it wraps.
       final direct = DependencyContainerImpl();
       addTearDown(direct.dispose);
-      registerServerNetwork(container: direct, config: _makeConfig());
+      registerServerNetwork(
+        container: direct,
+        config: _makeConfig(),
+        sessionTombstones: InMemorySessionTombstoneStore(),
+      );
 
-      await const NetworkScopeInstaller().install(container, _makeConfig());
+      await installer().install(container, _makeConfig());
 
       expect(
         container.isRegistered<TokenStorageService>(),
