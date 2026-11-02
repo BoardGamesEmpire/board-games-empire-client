@@ -1,3 +1,4 @@
+import 'package:events/events.dart' show EventGroup, EventRow;
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_labels.dart';
 import 'package:flutter/material.dart';
@@ -110,6 +111,103 @@ void main() {
       AvailabilityResponse.unavailable: 'Unavailable',
     });
     expect(availabilityResponseLabel(l10n, null), isNull);
+  });
+
+  test('eventRowDetails leaves out what is null, in order', () {
+    EventRow row({
+      String? venue,
+      String? household,
+      EventParticipationStatus? rsvp,
+    }) => EventRow(
+      event: item('e-1').event,
+      group: EventGroup.upcoming,
+      venue: venue,
+      householdName: household,
+      rsvp: rsvp,
+    );
+
+    expect(
+      eventRowDetails(
+        l10n,
+        row(
+          venue: 'Back room',
+          household: 'The Smiths',
+          rsvp: EventParticipationStatus.attending,
+        ),
+      ),
+      ['Back room', 'The Smiths', 'Going'],
+    );
+    expect(
+      eventRowDetails(
+        l10n,
+        row(venue: 'Back room', rsvp: EventParticipationStatus.maybe),
+      ),
+      ['Back room', 'Maybe'],
+    );
+    expect(eventRowDetails(l10n, row(household: 'The Smiths')), ['The Smiths']);
+    // An answer this client can't read is not a guess at one.
+    expect(
+      eventRowDetails(l10n, row(rsvp: EventParticipationStatus.unknown)),
+      isEmpty,
+    );
+    expect(eventRowDetails(l10n, row()), isEmpty);
+  });
+
+  testWidgets("eventRowWhenLabel matches the row's three cases", (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en', 'US'),
+        localizationsDelegates: EventsLocalizations.localizationsDelegates,
+        supportedLocales: EventsLocalizations.supportedLocales,
+        home: Builder(
+          builder: (built) {
+            context = built;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final now = DateTime(2026, 10, 26, 18);
+    final event = item('e-1').event;
+
+    expect(
+      eventRowWhenLabel(
+        context,
+        l10n,
+        EventRow(
+          event: event,
+          group: EventGroup.upcoming,
+          date: confirmed('o-1', DateTime(2026, 11, 6, 19, 30)),
+        ),
+        now: now,
+      ),
+      'Fri, Nov 6 · 7:30 PM',
+    );
+    expect(
+      eventRowWhenLabel(
+        context,
+        l10n,
+        EventRow(
+          event: event,
+          group: EventGroup.planning,
+          dateBeingChosen: true,
+        ),
+        now: now,
+      ),
+      'Date being chosen',
+    );
+    expect(
+      eventRowWhenLabel(
+        context,
+        l10n,
+        EventRow(event: event, group: EventGroup.planning),
+        now: now,
+      ),
+      'No date yet',
+    );
   });
 
   testWidgets("a date's name is its label, else its when, else none yet", (

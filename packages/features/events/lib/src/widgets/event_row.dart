@@ -18,7 +18,8 @@ import 'event_labels.dart';
 ///
 /// The date and time are shown in device-local time, with the year only when
 /// it isn't this year, by [eventWhenLabel], through which the event's detail
-/// screen says its dates too (#498).
+/// screen says its dates too (#498). [eventRowWhenLabel] and [eventRowDetails]
+/// build the two lines, which home's card shares (#669).
 ///
 /// ## A row is content until there is somewhere to go
 ///
@@ -53,12 +54,7 @@ class EventRowTile extends StatelessWidget {
     final event = row.event;
     final open = onOpen;
 
-    final details = [
-      ?row.venue,
-      ?row.householdName,
-      // An answer this client can't read is not a guess at one.
-      ?eventRsvpLabel(l10n, row.rsvp),
-    ];
+    final details = eventRowDetails(l10n, row);
 
     final tokens = BgeTokens.of(context);
 
@@ -84,7 +80,7 @@ class EventRowTile extends StatelessWidget {
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_when(context, l10n)),
+                Text(eventRowWhenLabel(context, l10n, row, now: now())),
                 if (details.isNotEmpty)
                   // Joined differently for the eye and the ear: a screen
                   // reader would read the visual separator's symbol out.
@@ -107,16 +103,5 @@ class EventRowTile extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _when(BuildContext context, EventsLocalizations l10n) {
-    final start = row.date?.startDate;
-    if (start == null) {
-      return row.dateBeingChosen
-          ? l10n.eventsDateBeingChosen
-          : l10n.eventsNoDateYet;
-    }
-
-    return eventWhenLabel(context, start, now: now());
   }
 }
