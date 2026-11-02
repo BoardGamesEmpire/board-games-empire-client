@@ -15,9 +15,12 @@ import 'dart:async';
 import 'package:di/di.dart';
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift/wasm.dart' show WasmStorageImplementation;
+import 'package:drift_storage/drift_storage.dart' show ServerDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/services.dart';
+import 'package:interfaces/sync.dart' show CrossTabLock;
 import 'package:logging/logging.dart';
+import 'package:models/domain.dart' show ServerIdentity;
 import 'package:observability/observability.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:web_platform/web.dart';
@@ -142,6 +145,9 @@ void main() {
 
       expect(records.single.level, Level.WARNING);
       expect(records.single.message, contains('second tab'));
+      // #447: the drain runs on this mode too, under the same lock, and can
+      // still race another tab's inline send.
+      expect(records.single.message, contains('sync drain'));
     });
 
     test('storage that persists nothing is an error, but does not throw', () {
@@ -153,7 +159,93 @@ void main() {
       expect(records.single.message, contains('nothing is being persisted'));
     });
   });
+
+  group('installWebStorage', () {
+    test(
+      'registers the database and the drain\'s CrossTabLock (#447)',
+      () async {
+        // The server scope installs storage through this function, so removing
+        // its lock registration leaves the web drain unlocked with nothing else
+        // failing. The test page is served from localhost, a secure context,
+        // so the real check finds Web Locks.
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+
+        await installWebStorage(
+          container,
+          _identity('srv-${DateTime.now().microsecondsSinceEpoch}'),
+        );
+
+        expect(container.isRegistered<ServerDatabase>(), isTrue);
+        expect(container.get<CrossTabLock>(), isA<WebCrossTabLock>());
+      },
+    );
+  });
+
+  group('registerWebCrossTabLock', () {
+    late List<LogRecord> records;
+    late StreamSubscription<LogRecord> subscription;
+
+    setUp(() {
+      records = [];
+      Logger.root.level = Level.ALL;
+      subscription = Logger.root.onRecord
+          .where((r) => r.loggerName == 'bge.platform.web_storage')
+          .listen(records.add);
+    });
+
+    tearDown(() async {
+      await subscription.cancel();
+      Logger.root.level = Level.INFO;
+    });
+
+    test('registers the Web Lock as the drain\'s CrossTabLock (#447)', () {
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      registerWebCrossTabLock(container, locksAvailable: () => true);
+
+      expect(container.get<CrossTabLock>(), isA<WebCrossTabLock>());
+      expect(records, isEmpty);
+    });
+
+    test('without Web Locks registers nothing, and warns once that the drain '
+        'runs unlocked', () {
+      // A plain-http self-hosted origin: `navigator.locks` only exists in a
+      // secure context. The app still boots and drains.
+      final container = DependencyContainerImpl();
+      addTearDown(container.dispose);
+
+      registerWebCrossTabLock(container, locksAvailable: () => false);
+
+      expect(container.isRegistered<CrossTabLock>(), isFalse);
+      expect(records, hasLength(1));
+      expect(records.single.level, Level.WARNING);
+      expect(
+        records.single.message,
+        'no Web Locks in this browser context; the sync drain runs without a '
+        'cross-tab lock',
+      );
+    });
+  });
 }
+
+/// Shaped like `testServerIdentity` in `core/di`'s fixtures; only
+/// [ServerIdentity.serverId] matters here, as the database name derives from
+/// it.
+ServerIdentity _identity(String serverId) => ServerIdentity(
+  serverId: serverId,
+  issuer: 'https://origin.example.com',
+  wellKnownSchemaVersion: 1,
+  name: 'Test Origin',
+  deviceAuthorizationEndpoint: '/api/auth/device',
+  authBasePath: '/api/auth',
+  sessionEndpoint: '/api/auth/get-session',
+  signOutEndpoint: '/api/auth/sign-out',
+  passkeySupported: true,
+  twoFactorSupported: true,
+  anonymousAuthSupported: true,
+);
 
 /// The report never queries; a mock keeps this suite from needing a real
 /// database to assert a log level.

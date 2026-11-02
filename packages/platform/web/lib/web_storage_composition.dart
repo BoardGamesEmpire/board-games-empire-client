@@ -21,8 +21,13 @@
 /// `BroadcastChannel` and the page's focus and visibility events — for the
 /// same reason: `dart:js_interop`, composed by the one caller that compiles
 /// it.
+///
+/// Since #447 it also carries the sync drain's cross-tab lock, over the
+/// browser's Web Locks, again for `dart:js_interop`: it keeps the tabs that
+/// share one database from draining it at once.
 library;
 
 export 'src/feedback/indexed_db_feedback_sink.dart';
 export 'src/session/web_session_bindings.dart';
+export 'src/sync/web_cross_tab_lock.dart';
 export 'src/web_storage_composition.dart';

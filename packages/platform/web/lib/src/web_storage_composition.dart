@@ -1,6 +1,9 @@
+import 'dart:js_interop_unsafe';
 import 'dart:ui_web' as ui_web;
 
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/sync.dart' show CrossTabLock;
+import 'package:models/domain.dart' show ServerIdentity;
 import 'package:observability/observability.dart' show BgeLogger, FeedbackSink;
 import 'package:web/web.dart' as web;
 import 'package:web_network/web_network.dart';
@@ -9,13 +12,15 @@ import 'package:web_storage/web_storage.dart';
 import 'device_info/web_device_info_reader.dart';
 import 'feedback/indexed_db_feedback_sink.dart';
 import 'session/web_session_bindings.dart';
+import 'sync/web_cross_tab_lock.dart';
 import 'web_platform_bootstrap.dart';
 import 'web_root_module.dart';
 import 'web_user_scope_installers.dart';
 
 /// The production web server scope: the cookie-based network stack, the
-/// drift/wasm data layer (#288), the per-user session tier (#137), and the
-/// cross-tab session monitor (#432).
+/// drift/wasm data layer (#288) with the sync drain's cross-tab lock (#447),
+/// the per-user session tier (#137), and the cross-tab session monitor
+/// (#432).
 ///
 /// This is the composition `bootstrapWebServerScope` deliberately cannot do
 /// for itself. `web_network` owns the scope's assembly but must not depend on
@@ -31,8 +36,8 @@ import 'web_user_scope_installers.dart';
 /// side of the split and must stay VM-compilable.
 Future<ActiveServerScope> buildWebServerScope() {
   return bootstrapWebServerScope(
-    installStorage: WebStorageInstaller(onReport: reportWebStorage).install,
-    // #137: the per-user tier, over the database the line above registers.
+    installStorage: installWebStorage,
+    // #137: the per-user tier, over the database registered above.
     // The list itself is VM-compilable and lives in `web.dart`, so what web
     // installs per user is assertable without a browser.
     userInstallers: buildWebUserScopeInstallers(),
@@ -40,6 +45,46 @@ Future<ActiveServerScope> buildWebServerScope() {
     // the work that sends as the session on whose it is.
     sessionBindings: webSessionBindings,
   );
+}
+
+/// Installs the server scope's web storage into [container]: the
+/// [WebStorageInstaller]'s database and what it carries, then the
+/// [CrossTabLock] the user tier's drain runs each pass under (#447).
+///
+/// Named, not inline in [buildWebServerScope], so that a test can run it over
+/// a real container and see that the lock is registered along with the
+/// database.
+Future<void> installWebStorage(
+  DependencyContainer container,
+  ServerIdentity identity,
+) async {
+  await WebStorageInstaller(onReport: reportWebStorage)
+      .install(container, identity);
+  registerWebCrossTabLock(container);
+}
+
+/// Registers the browser's Web Lock in [container] as the [CrossTabLock] the
+/// sync drain runs each pass under, so that one tab at a time drains each
+/// server database and user (#447).
+///
+/// `navigator.locks` exists only in a secure context, so a browser context
+/// without it, a self-hosted server served over plain http among them,
+/// registers nothing, and the drain runs unlocked. Warned, not fatal: two
+/// tabs that drain at once can deliver an op twice, which every op type is
+/// safe for, and that is better than a queue nothing sends.
+/// [locksAvailable] replaces the check for Web Locks, for tests.
+void registerWebCrossTabLock(
+  DependencyContainer container, {
+  bool Function()? locksAvailable,
+}) {
+  if (!(locksAvailable?.call() ?? web.window.navigator.has('locks'))) {
+    _logger.warn(
+      'no Web Locks in this browser context; the sync drain runs without a '
+      'cross-tab lock',
+    );
+    return;
+  }
+  container.registerSingleton<CrossTabLock>(const WebCrossTabLock());
 }
 
 /// The browser app's [PlatformBootstrap]: [WebPlatformBootstrap] with the
@@ -147,7 +192,9 @@ final _logger = BgeLogger('bge.platform.web_storage');
 ///     mechanisms was chosen is still worth recording: it is the first thing
 ///     to want when a report says "my data vanished".
 ///   * [WebStoragePersistence.unsafe] → `warn`. Data persists, but a second
-///     tab can race it.
+///     tab can race it. The sync drain runs there too, under its cross-tab
+///     lock, but another tab's inline send takes no lock and can race it
+///     for an op (#447).
 ///   * [WebStoragePersistence.ephemeral] → `error`. Nothing is stored at all.
 ///     Not thrown, deliberately: a browser this limited can still run the
 ///     app against the server (web's server is the serving origin and is
@@ -166,7 +213,9 @@ void reportWebStorage(WebDatabaseOpening opening) {
       _logger.info(message, context: context);
     case WebStoragePersistence.unsafe:
       _logger.warn(
-        '$message — a second tab can race writes to this database',
+        '$message — a second tab can race writes to this database; the '
+        "sync drain runs there, and another tab's send can deliver an op "
+        'twice',
         context: context,
       );
     case WebStoragePersistence.ephemeral:
