@@ -2,12 +2,14 @@ import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:game_catalog/game_catalog.dart';
 import 'package:game_collection/game_collection.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 
 import '../support/active_server_fakes.dart';
 
@@ -18,6 +20,29 @@ class _MockStorage extends Mock implements Storage {}
 
 class _MockGameCollectionRepository extends Mock
     implements GameCollectionRepository {}
+
+/// A catalog with no games in it: enough for the browse screen to open.
+class _EmptyCatalog implements GamesRemoteDataSource {
+  @override
+  Future<PaginatedResult<Game>> fetchPage({
+    int page = 1,
+    int limit = GamesRemoteDataSource.maxPageSize,
+    GameSort sort = GameSort.title,
+  }) async => const PaginatedResult(
+    items: [],
+    meta: PaginationMeta(
+      page: 1,
+      limit: 50,
+      total: 0,
+      totalPages: 0,
+      hasMore: false,
+    ),
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
 
 /// Counts passes without running any. What these tests check is who calls
 /// the seam, not what it holds.
@@ -79,10 +104,13 @@ void main() {
     bool failedPass = false,
     GameCollectionRefresher? refresher,
     SessionRehydrator? rehydrator,
+    List<GameCollectionListItem>? items,
+    GamesRemoteDataSource? games,
   }) async {
     final repository = _MockGameCollectionRepository();
     when(repository.watchCollectionListItems).thenAnswer(
-      (_) => Stream<List<GameCollectionListItem>>.value([_item('e-1')]),
+      (_) =>
+          Stream<List<GameCollectionListItem>>.value(items ?? [_item('e-1')]),
     );
 
     GameCollectionHydrationStatus? status;
@@ -101,6 +129,7 @@ void main() {
           gameCollectionHydrationStatus: status,
           gameCollectionRefresher: refresher,
           sessionRehydrator: rehydrator,
+          gamesRemoteDataSource: games,
         ),
       ),
     );
@@ -245,6 +274,31 @@ void main() {
 
       expect(calls, 1);
       expect(rehydrator.passes, 1);
+    });
+  });
+
+  group('the empty list (#45)', () {
+    testWidgets('browses to the catalog', (tester) async {
+      await pumpHome(tester, items: const [], games: _EmptyCatalog());
+      await openTheList(tester);
+
+      await tester.tap(find.byKey(GameCollectionListScreen.browseKey));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GameBrowseScreen), findsOneWidget);
+
+      // A push, so back returns to the collection.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(GameCollectionListScreen), findsOneWidget);
+    });
+
+    testWidgets('offers no browse where there is no catalog', (tester) async {
+      await pumpHome(tester, items: const []);
+      await openTheList(tester);
+
+      expect(find.byKey(GameCollectionListScreen.emptyKey), findsOneWidget);
+      expect(find.byKey(GameCollectionListScreen.browseKey), findsNothing);
     });
   });
 }

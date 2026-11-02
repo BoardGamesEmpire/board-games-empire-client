@@ -6,9 +6,11 @@ import 'package:data_gateway/data_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
+import 'package:game_collection/game_collection.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -21,12 +23,77 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 
 class _MockStorage extends Mock implements Storage {}
 
+class _MockSyncOperationSender extends Mock implements SyncOperationSender {}
+
+/// A sender whose every send is delivered.
+_MockSyncOperationSender _deliveringSender() {
+  final sender = _MockSyncOperationSender();
+  when(() => sender.deliver(any(), any()))
+      .thenAnswer((_) async => const SyncDelivered());
+  return sender;
+}
+
+class _MockGameCollectionRepository extends Mock
+    implements GameCollectionRepository {}
+
 final _catan = Game(
   id: 'g_catan',
   title: 'Catan',
   createdAt: DateTime.utc(2026),
   updatedAt: DateTime.utc(2026),
 );
+
+/// Catan's one platform.
+final _tabletop = PlatformGame(
+  id: 'pg_1',
+  gameId: 'g_catan',
+  platformId: 'plat_tabletop',
+  platformName: 'Tabletop',
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
+/// A collection repository with nothing in it, whose adds succeed.
+_MockGameCollectionRepository _emptyCollection() {
+  final repository = _MockGameCollectionRepository();
+  when(repository.watchCollectionListItems)
+      .thenAnswer((_) => Stream.value(const []));
+  when(
+    () => repository.getCollectionEntry(
+      platformGameId: any(named: 'platformGameId'),
+      medium: any(named: 'medium'),
+    ),
+  ).thenAnswer((_) async => null);
+  when(
+    () => repository.addToCollection(
+      platformGameId: any(named: 'platformGameId'),
+      medium: any(named: 'medium'),
+      quantity: any(named: 'quantity'),
+      rating: any(named: 'rating'),
+      comment: any(named: 'comment'),
+    ),
+  ).thenAnswer((invocation) async {
+    final medium = invocation.namedArguments[#medium] as GameMedium;
+    return (
+      entry: GameCollection(
+        id: 'gc_1',
+        userId: 'u1',
+        platformGameId: 'pg_1',
+        medium: medium,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+      syncQueueId: 'sq_1',
+      operation: AddToCollectionOperation(
+        localId: 'gc_1',
+        platformGameId: 'pg_1',
+        medium: medium.toWire(),
+        quantity: 1,
+      ),
+    );
+  });
+  return repository;
+}
 
 /// One game in the catalog, found by every search with one DataGateway
 /// result, which imports as `g_seafarers`.
@@ -76,7 +143,7 @@ class _GamesRemote implements GamesRemoteDataSource {
     final held = this.held;
     if (held != null) return held.future;
     if (gone.contains(id)) throw const GameNotFoundException('404');
-    return (game: _catan, platformGames: const <PlatformGame>[]);
+    return (game: _catan, platformGames: [_tabletop]);
   }
 
   @override
@@ -173,6 +240,18 @@ void main() {
   late DataGatewayAccess access;
   late _GamesRemote games;
 
+  setUpAll(() {
+    registerFallbackValue(GameMedium.physical);
+    registerFallbackValue(
+      const AddToCollectionOperation(
+        localId: 'gc_fallback',
+        platformGameId: 'pg_fallback',
+        medium: 'Physical',
+        quantity: 1,
+      ),
+    );
+  });
+
   setUp(() {
     cubit = _MockAppBootstrapCubit();
     final storage = _MockStorage();
@@ -188,15 +267,34 @@ void main() {
 
   tearDown(() => access.dispose());
 
-  Future<void> pumpHome(WidgetTester tester, {bool withGames = true}) async {
+  /// The active server [pumpHome] builds, with [collection] as its user
+  /// session's collection repository.
+  FakeActiveServerScope activeServer({
+    bool withGames = true,
+    GameCollectionRepository? collection,
+    SyncOperationSender? sender,
+  }) => FakeActiveServerScope(
+    buildActiveServer(
+      FakeAuthRepository(initialSession: sampleSession()),
+      gamesRemoteDataSource: withGames ? games : null,
+      dataGatewayRemoteDataSource: dataGateways,
+      dataGatewayAccess: access,
+      gameCollectionRepository: collection,
+      syncOperationSender: sender,
+    ),
+  );
+
+  Future<void> pumpHome(
+    WidgetTester tester, {
+    bool withGames = true,
+    GameCollectionRepository? collection,
+    SyncOperationSender? sender,
+  }) async {
     when(() => cubit.activeServerScope).thenReturn(
-      FakeActiveServerScope(
-        buildActiveServer(
-          FakeAuthRepository(initialSession: sampleSession()),
-          gamesRemoteDataSource: withGames ? games : null,
-          dataGatewayRemoteDataSource: dataGateways,
-          dataGatewayAccess: access,
-        ),
+      activeServer(
+        withGames: withGames,
+        collection: collection,
+        sender: sender,
       ),
     );
     whenListen(
@@ -443,5 +541,129 @@ void main() {
 
     expect(find.byType(GameDetailScreen), findsNothing);
     expect(find.byType(GameSearchScreen), findsOneWidget);
+  });
+
+  group('adding to the collection (#45)', () {
+    Future<void> openCatan(WidgetTester tester) async {
+      await openGames(tester);
+      await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
+      await tester.pumpAndSettle();
+    }
+
+    /// Picks Physical in the open add sheet and submits it.
+    Future<void> addPhysical(WidgetTester tester) async {
+      await tester.tap(find.byKey(AddToCollectionSheet.mediumKey));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(MenuItemButton),
+          matching: find.text('Physical'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final submit = find.byKey(AddToCollectionSheet.submitKey);
+      await tester.ensureVisible(submit);
+      await tester.pumpAndSettle();
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a platform opens the add sheet, which adds through the '
+        'session', (tester) async {
+      final collection = _emptyCollection();
+      final sender = _deliveringSender();
+      await pumpHome(tester, collection: collection, sender: sender);
+      await openCatan(tester);
+
+      await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Add Catan (Tabletop)'), findsOneWidget);
+      await addPhysical(tester);
+
+      verify(
+        () => collection.addToCollection(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 1,
+        ),
+      ).called(1);
+      // Sent at once, through the session's sender (#45).
+      verify(() => sender.deliver('sq_1', any())).called(1);
+      expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+      expect(find.text('Added Catan to your collection.'), findsOneWidget);
+    });
+
+    testWidgets('no collection repository offers no add', (tester) async {
+      await pumpHome(tester, sender: _deliveringSender());
+      await openCatan(tester);
+
+      expect(find.byKey(GameDetailScreen.platformKey('pg_1')), findsOneWidget);
+      expect(find.byKey(GameDetailScreen.addKey('pg_1')), findsNothing);
+    });
+
+    testWidgets('no sender to send the add through offers no add', (
+      tester,
+    ) async {
+      await pumpHome(tester, collection: _emptyCollection());
+      await openCatan(tester);
+
+      expect(find.byKey(GameDetailScreen.platformKey('pg_1')), findsOneWidget);
+      expect(find.byKey(GameDetailScreen.addKey('pg_1')), findsNothing);
+    });
+
+    testWidgets('the add goes through the repository active at the press, '
+        'not the one the detail was built with', (tester) async {
+      final built = _emptyCollection();
+      final builtSender = _deliveringSender();
+      final current = _emptyCollection();
+      final currentSender = _deliveringSender();
+      await pumpHome(tester, collection: built, sender: builtSender);
+      await openCatan(tester);
+
+      // A session change the detail's route has not been rebuilt for: the
+      // repository and sender it was built with are disposed by then.
+      when(() => cubit.activeServerScope)
+          .thenReturn(activeServer(collection: current, sender: currentSender));
+      await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
+      await tester.pumpAndSettle();
+      await addPhysical(tester);
+
+      verify(
+        () => current.addToCollection(
+          platformGameId: 'pg_1',
+          medium: GameMedium.physical,
+          quantity: 1,
+        ),
+      ).called(1);
+      verifyNever(
+        () => built.addToCollection(
+          platformGameId: any(named: 'platformGameId'),
+          medium: any(named: 'medium'),
+          quantity: any(named: 'quantity'),
+          rating: any(named: 'rating'),
+          comment: any(named: 'comment'),
+        ),
+      );
+      verify(() => currentSender.deliver('sq_1', any())).called(1);
+      verifyNever(() => builtSender.deliver(any(), any()));
+    });
+
+    testWidgets('a press once the session has no collection repository opens '
+        'nothing', (tester) async {
+      await pumpHome(
+        tester,
+        collection: _emptyCollection(),
+        sender: _deliveringSender(),
+      );
+      await openCatan(tester);
+
+      when(() => cubit.activeServerScope).thenReturn(activeServer());
+      await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+      expect(find.byType(GameDetailScreen), findsOneWidget);
+    });
   });
 }
