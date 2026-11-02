@@ -265,12 +265,11 @@ void main() {
       expect(tops.toSet(), hasLength(4));
     });
 
-    testWidgets('at 840 wide, events and stats share a row of equal width', (
-      tester,
-    ) async {
+    testWidgets('at 1200 wide, events and stats each take the full width, '
+        'events first', (tester) async {
       await _pumpSections(
         tester,
-        width: 840,
+        width: 1200,
         upcomingEvents: _section(_events),
         stats: _section(_stats),
         newestGames: _section(_newest),
@@ -278,49 +277,13 @@ void main() {
 
       final events = tester.getRect(find.byKey(_events));
       final stats = tester.getRect(find.byKey(_stats));
-      expect(events.top, stats.top);
-      expect(events.width, stats.width);
-      expect(events.width, greaterThan(300));
-      expect(stats.left, greaterThan(events.right));
-      // The shelves sit below the pair, across both.
       final newest = tester.getRect(find.byKey(_newest));
-      expect(newest.top, greaterThan(events.bottom));
-      expect(newest.left, events.left);
-      expect(newest.right, stats.right);
-    });
-
-    testWidgets('at 839 wide, they stack', (tester) async {
-      await _pumpSections(
-        tester,
-        width: 839,
-        upcomingEvents: _section(_events),
-        stats: _section(_stats),
-      );
-
-      final events = tester.getRect(find.byKey(_events));
-      final stats = tester.getRect(find.byKey(_stats));
       expect(stats.top, greaterThan(events.bottom));
-      expect(stats.width, events.width);
+      for (final section in [events, stats]) {
+        expect(section.left, newest.left);
+        expect(section.width, newest.width);
+      }
     });
-
-    for (final (name, key) in [('events', _events), ('stats', _stats)]) {
-      testWidgets('a lone $name section takes the full width at 1000 wide', (
-        tester,
-      ) async {
-        await _pumpSections(
-          tester,
-          width: 1000,
-          upcomingEvents: key == _events ? _section(key) : null,
-          stats: key == _stats ? _section(key) : null,
-          newestGames: _section(_newest),
-        );
-
-        final lone = tester.getRect(find.byKey(key));
-        final newest = tester.getRect(find.byKey(_newest));
-        expect(lone.width, newest.width);
-        expect(lone.left, newest.left);
-      });
-    }
 
     testWidgets('null slots draw nothing and leave no gap', (tester) async {
       await _pumpSections(tester, newestGames: _section(_newest));
@@ -384,9 +347,7 @@ void main() {
       expect(find.byKey(HomeScreen.sectionsKey), findsOneWidget);
     });
 
-    testWidgets("crossing the breakpoint keeps every section's state", (
-      tester,
-    ) async {
+    testWidgets("a resized window keeps every section's state", (tester) async {
       final mounts = <String, int>{};
       void count(String name) => mounts[name] = (mounts[name] ?? 0) + 1;
 
@@ -406,9 +367,7 @@ void main() {
       expect(mounts, {'events': 1, 'stats': 1, 'newest': 1, 'toPlay': 1});
     });
 
-    testWidgets('crossing the breakpoint keeps focus on a section', (
-      tester,
-    ) async {
+    testWidgets('a resized window keeps focus on a section', (tester) async {
       Future<void> pumpAt(double width) => _pumpSections(
         tester,
         width: width,
@@ -432,6 +391,37 @@ void main() {
       await tester.pump();
       expect(FocusManager.instance.primaryFocus, same(focused));
     });
+
+    for (final (emptied, kept) in [('stats', 'events'), ('events', 'stats')]) {
+      testWidgets(
+        'the $emptied slot emptying keeps the $kept section\'s state',
+        (tester) async {
+          final mounts = <String, int>{};
+          void count(String name) => mounts[name] = (mounts[name] ?? 0) + 1;
+          Widget probe(String name) =>
+              _CountsMounts(onMount: () => count(name));
+
+          await _pumpSections(
+            tester,
+            upcomingEvents: probe('events'),
+            stats: probe('stats'),
+            newestGames: probe('newest'),
+            somethingToPlay: probe('toPlay'),
+          );
+          await _pumpSections(
+            tester,
+            upcomingEvents: emptied == 'events' ? null : probe('events'),
+            stats: emptied == 'stats' ? null : probe('stats'),
+            newestGames: probe('newest'),
+            somethingToPlay: probe('toPlay'),
+          );
+
+          // Mounted once each: none was given another's element, nor a new one.
+          expect(mounts, {'events': 1, 'stats': 1, 'newest': 1, 'toPlay': 1});
+          expect(find.byType(_CountsMounts), findsNWidgets(3));
+        },
+      );
+    }
 
     testWidgets("a shelf emptying can't give its state to the other, of the "
         'same type', (tester) async {
