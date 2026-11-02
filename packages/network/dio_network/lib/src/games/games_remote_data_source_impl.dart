@@ -140,8 +140,7 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
         if (row is! Map<String, dynamic>) {
           throw const FormatException('response is missing a "game" object');
         }
-        final game = _mapGame(row);
-        return (game: game, platformGames: _mapPlatformGames(row, game));
+        return (game: _mapGame(row), platformGames: _mapPlatformGames(row));
       },
       action: action,
       status: response.status,
@@ -428,45 +427,55 @@ class GamesRemoteDataSourceImpl implements GamesRemoteDataSource {
   static DateTime? _date(Object? wire) =>
       wire is String ? DateTime.parse(wire) : null;
 
-  /// The detail's `platformGames`, read when the server sends them
-  /// (backend#791) and empty until then.
+  /// The detail's `platformGames`: full records, in the order the server sent
+  /// them, read from the shape backend#791 settled
+  /// (`PLATFORM_GAME_DETAIL_SELECT`).
   ///
-  /// Read leniently, because backend#791 has not settled the shape: a row
-  /// without its id and its platform's id and name, which is what that issue
-  /// asks for, is skipped rather than failing the game it came with. The game
-  /// is what the detail screen is for, and a strict read here would turn
-  /// every detail into the cached copy if the shape lands differently.
-  static List<PlatformGameSummary> _mapPlatformGames(
-    Map<String, dynamic> row,
-    Game game,
-  ) {
+  /// A row missing what a [PlatformGame] requires (its id, its game's, its
+  /// platform's id and name, and both timestamps) is skipped rather than
+  /// failing the game it came with: the game is what the detail screen is
+  /// for. The platform's abbreviation and type are not kept, because the
+  /// record has no field for them. A server older than backend#791 sends no
+  /// list, which reads as none.
+  static List<PlatformGame> _mapPlatformGames(Map<String, dynamic> row) {
     final rows = row['platformGames'];
     if (rows is! List) return const [];
 
-    final parent = GameSummary(
-      id: game.id,
-      title: game.title,
-      subtitle: game.subtitle,
-      image: game.image,
-      thumbnail: game.thumbnail,
-    );
     return [
       for (final entry in rows)
         if (entry case {
           'id': final String id,
+          'gameId': final String gameId,
+          'createdAt': final String createdAt,
+          'updatedAt': final String updatedAt,
           'platform': {
             'id': final String platformId,
-            'name': final String name,
+            'name': final String platformName,
           },
         })
-          PlatformGameSummary(
-            id: id,
-            platformId: platformId,
-            platformName: name,
-            image: _nonEmpty(entry['image']),
-            thumbnail: _nonEmpty(entry['thumbnail']),
-            game: parent,
-          ),
+          if ((DateTime.tryParse(createdAt), DateTime.tryParse(updatedAt))
+              case (final DateTime created, final DateTime updated))
+            PlatformGame(
+              id: id,
+              gameId: gameId,
+              platformId: platformId,
+              platformName: platformName,
+              minPlayers: entry['minPlayers'] as int?,
+              maxPlayers: entry['maxPlayers'] as int?,
+              minPlayTime: entry['minPlayTime'] as int?,
+              maxPlayTime: entry['maxPlayTime'] as int?,
+              // Empty strings read as none, as the game's do.
+              image: _nonEmpty(entry['image']),
+              thumbnail: _nonEmpty(entry['thumbnail']),
+              supportsSolo: entry['supportsSolo'] as bool? ?? false,
+              supportsLocal: entry['supportsLocal'] as bool? ?? false,
+              supportsOnline: entry['supportsOnline'] as bool? ?? false,
+              hasAsyncPlay: entry['hasAsyncPlay'] as bool? ?? false,
+              hasRealtime: entry['hasRealtime'] as bool? ?? false,
+              hasTutorial: entry['hasTutorial'] as bool? ?? false,
+              createdAt: created,
+              updatedAt: updated,
+            ),
     ];
   }
 

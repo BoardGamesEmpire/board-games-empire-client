@@ -76,7 +76,7 @@ class _GamesRemote implements GamesRemoteDataSource {
     final held = this.held;
     if (held != null) return held.future;
     if (gone.contains(id)) throw const GameNotFoundException('404');
-    return (game: _catan, platformGames: const <PlatformGameSummary>[]);
+    return (game: _catan, platformGames: const <PlatformGame>[]);
   }
 
   @override

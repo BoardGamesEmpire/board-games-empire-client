@@ -45,11 +45,13 @@ void main() {
       );
 
   final catan = game('g_catan', title: 'Catan');
-  const tabletop = PlatformGameSummary(
+  final tabletop = PlatformGame(
     id: 'pg_1',
+    gameId: 'g_catan',
     platformId: 'plat_tabletop',
     platformName: 'Tabletop',
-    game: GameSummary(id: 'g_catan', title: 'Catan'),
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
   );
 
   blocTest<GameDetailBloc, GameDetailState>(
@@ -61,7 +63,7 @@ void main() {
     act: (bloc) => bloc.add(const GameDetailLoadRequested()),
     expect: () => [
       const GameDetailLoading(),
-      GameDetailReady(game: catan, platformGames: const [tabletop]),
+      GameDetailReady(game: catan, platformGames: [tabletop]),
     ],
     verify: (_) async {
       expect(remote.calls, ['fetchGame(g_catan)']);
@@ -209,7 +211,7 @@ void main() {
         bloc.add(const GameDetailLoadRequested());
         await pumpEventQueue();
         remote.onFetchGame = (_) async =>
-            (game: catan, platformGames: const <PlatformGameSummary>[]);
+            (game: catan, platformGames: const <PlatformGame>[]);
         bloc.add(const GameDetailLoadRequested());
       },
       skip: 2,

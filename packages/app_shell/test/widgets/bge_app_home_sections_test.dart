@@ -85,7 +85,7 @@ class _GamesRemote implements GamesRemoteDataSource {
   @override
   Future<GameWithPlatformGames> fetchGame(String id) async {
     if (gone.contains(id)) throw const GameNotFoundException('404');
-    return (game: _game(id), platformGames: const <PlatformGameSummary>[]);
+    return (game: _game(id), platformGames: const <PlatformGame>[]);
   }
 
   @override

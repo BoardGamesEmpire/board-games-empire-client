@@ -8,8 +8,8 @@
 ///
 /// A completed job's [ImportJob.platformGames] are read because they are the
 /// wire contract, but nothing uses them yet. Adding the game to a collection
-/// (#45) starts from its detail, which lists its platform games once
-/// `GET /games/:id` sends them (backend#791).
+/// (#45) starts from its detail, which reads its platform games from
+/// `GET /games/:id` (backend#791).
 library;
 
 import 'package:freezed_annotation/freezed_annotation.dart';

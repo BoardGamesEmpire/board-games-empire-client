@@ -8,16 +8,17 @@ import 'paginated_result.dart';
 /// Separate values for the reason [GameCollectionWithSummary] gives: they
 /// are different records, and the game alone is what the games cache holds.
 ///
-/// [platformGames] is empty until backend#791 ships, because `GET /games/:id`
-/// sends none yet. Each is a [PlatformGameSummary]: the id a collection add
-/// needs (#45) and the platform's name, which is what the detail screen
-/// lists. That is all backend#791 asks the server for, so a full
-/// [PlatformGame], which needs the server's timestamps too, cannot be read
-/// from it. A row without even that much is skipped, not failed.
-typedef GameWithPlatformGames = ({
-  Game game,
-  List<PlatformGameSummary> platformGames,
-});
+/// [platformGames] are full [PlatformGame] records, in the order the server
+/// sent them. The shape is backend#791's, and settled: each row is the
+/// platform game's own columns and its platform, whose name is kept as
+/// [PlatformGame.platformName]. A full record is what the cache holds, so the
+/// detail can cache it and a collection add finds its row (#45).
+///
+/// A row missing what a [PlatformGame] requires is skipped, not failed, so
+/// the game still shows. An empty list means the game is on no platform, or
+/// the caller may not read its platform games; a server older than
+/// backend#791 sends none at all, which reads the same.
+typedef GameWithPlatformGames = ({Game game, List<PlatformGame> platformGames});
 
 /// Remote data source for the server's games: the catalog, one game, and
 /// search (#42), and importing a game from a DataGateway (#43).
