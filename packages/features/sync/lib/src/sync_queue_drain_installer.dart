@@ -10,10 +10,11 @@ import 'sync_queue_drain.dart';
 
 /// Starts the sync queue drain when a user session activates (#121).
 ///
-/// Native only, for now: `buildNativeUserScopeInstallers` holds it, after
-/// the household, collection and event hydrate installers and after
-/// [SyncSenderInstaller], whose sender it runs. Composing it on web needs a
-/// Web Lock and a check of whose session is sending, and that is #447.
+/// Both platforms compose it, after [SyncSenderInstaller], whose sender it
+/// runs. Native runs it with no lock. Web registers a [CrossTabLock] over a
+/// Web Lock, and each pass then runs under one named for the server and the
+/// user, so one tab at a time drains each server database and user (#447).
+/// Whose session is sending is confirmed inside the sender itself.
 ///
 /// ## When it runs
 ///
@@ -87,6 +88,9 @@ class SyncQueueDrainInstaller implements UserScopeInstaller {
     final auth = container.isRegistered<AuthRepository>()
         ? container.get<AuthRepository>()
         : null;
+    final lock = container.isRegistered<CrossTabLock>()
+        ? container.get<CrossTabLock>()
+        : null;
     final drain = SyncQueueDrain(
       queue: container.get<SyncQueueRepository>(),
       sender: container.get<SyncOperationSender>(),
@@ -94,6 +98,9 @@ class SyncQueueDrainInstaller implements UserScopeInstaller {
       // A definitive "no session" signs the user out through the auth
       // layer's own path; the queue survives it (#98).
       revalidateSession: auth?.getSession,
+      exclusive: lock == null
+          ? null
+          : (lock: lock, name: 'bge.sync_drain.${server.serverId}.$userId'),
       now: now,
     );
     container.registerSingleton<SyncQueueDrain>(

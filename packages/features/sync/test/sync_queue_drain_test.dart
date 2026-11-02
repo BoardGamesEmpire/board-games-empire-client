@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
+import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -29,6 +30,80 @@ class _InterleavingQueue extends CountingQueue {
   Future<List<SyncQueueEntry>> getOutstandingEntries() async {
     await beforeListing(_listings++);
     return super.getOutstandingEntries();
+  }
+}
+
+/// A [CrossTabLock] held by the test: [hold] takes a name, [run] queues
+/// behind it in arrival order, and a waiter whose `abandon` completes first
+/// gives up without running its body, as the browser's does.
+class _FakeLock implements CrossTabLock {
+  /// Every name asked for, in order.
+  final requested = <String>[];
+
+  /// The abandon each request came with, in order.
+  final abandons = <Future<void>?>[];
+
+  /// The names of the requests abandoned while waiting.
+  final abandoned = <String>[];
+
+  /// Thrown by [run] when set, as a lock the browser refuses would.
+  Object? failWith;
+
+  /// Whether a waiter keeps waiting after its `abandon` completes, which a
+  /// real lock never does but a grant racing the abort could look like.
+  bool ignoreAbandon = false;
+
+  final _held = <String>{};
+  final _waiters = <String, List<Completer<bool>>>{};
+
+  /// Takes [name] now, which must be free. Returns what releases it.
+  void Function() hold(String name) {
+    expect(_held.add(name), isTrue, reason: '$name is already held');
+    return () => _release(name);
+  }
+
+  void _release(String name) {
+    final waiters = _waiters[name] ?? const [];
+    if (waiters.isEmpty) {
+      _held.remove(name);
+    } else {
+      waiters.removeAt(0).complete(true);
+    }
+  }
+
+  @override
+  Future<bool> run(
+    String name,
+    Future<void> Function() body, {
+    Future<void>? abandon,
+  }) async {
+    requested.add(name);
+    abandons.add(abandon);
+    final failure = failWith;
+    if (failure != null) throw failure;
+    if (_held.add(name)) {
+      // Free: granted at once.
+    } else {
+      final waiter = Completer<bool>();
+      (_waiters[name] ??= []).add(waiter);
+      if (!ignoreAbandon) {
+        unawaited(
+          abandon?.then((_) {
+            if (waiter.isCompleted) return;
+            _waiters[name]!.remove(waiter);
+            abandoned.add(name);
+            waiter.complete(false);
+          }),
+        );
+      }
+      if (!await waiter.future) return false;
+    }
+    try {
+      await body();
+    } finally {
+      _release(name);
+    }
+    return true;
   }
 }
 
@@ -354,6 +429,30 @@ void main() {
       expect(drain.isStale, isFalse);
     });
 
+    test('is true after a pass that could not settle', () async {
+      // The pass sends nothing and its settling read fails, so what the pass
+      // before it settled must not stand: the next trigger tries again.
+      await drain.close();
+      var failSettle = false;
+      drain = SyncQueueDrain(
+        queue: _InterleavingQueue(h.queue, (listing) async {
+          if (failSettle && listing.isOdd) throw StateError('unreadable');
+        }),
+        sender: h.sender,
+        collection: h.collection,
+        now: h.deviceNow,
+        logger: _MockLogger(),
+      );
+      await drain.drain();
+      await pumpEventQueue();
+      expect(drain.isStale, isFalse);
+
+      failSettle = true;
+      await drain.drain();
+
+      expect(drain.isStale, isTrue);
+    });
+
     test("turns true when another sender's claim runs out", () async {
       // The inline create is mid-send when the drain settles: the op is
       // claimed, so no pass lists it, and its send can fail without
@@ -519,6 +618,227 @@ void main() {
       await drain.drainAfterChange();
 
       expect((await entry(add.id)).status, SyncStatus.completed);
+    });
+  });
+
+  group('under a cross-tab lock (#447)', () {
+    const name = 'bge.sync_drain.test';
+    late _FakeLock lock;
+
+    SyncQueueDrain openLocked({BgeLogger? logger}) => SyncQueueDrain(
+      queue: h.queue,
+      sender: h.sender,
+      collection: h.collection,
+      now: h.deviceNow,
+      exclusive: (lock: lock, name: name),
+      logger: logger,
+    );
+
+    setUp(() async {
+      lock = _FakeLock();
+      await drain.close();
+      drain = openLocked();
+    });
+
+    test('a pass waits for the lock, then sends', () async {
+      final release = lock.hold(name);
+      final queued = await h.queuedCreate();
+
+      final pass = drain.drain();
+      await pumpEventQueue();
+      expect(h.householdRemote.creates, isEmpty);
+      expect(lock.requested, [name]);
+
+      release();
+      await pass;
+
+      expect(h.householdRemote.creates, hasLength(1));
+      expect((await entry(queued.id)).status, SyncStatus.completed);
+    });
+
+    test('the lock is given back when the pass settles', () async {
+      await h.queuedCreate();
+
+      await drain.drain();
+      await h.queuedCreate(name: 'Second');
+      await drain.drain();
+
+      expect(h.householdRemote.creates, hasLength(2));
+      expect(lock.requested, [name, name]);
+    });
+
+    test(
+      'close while waiting abandons the request and sends nothing',
+      () async {
+        final release = lock.hold(name);
+        await h.queuedCreate();
+
+        final pass = drain.drain();
+        await pumpEventQueue();
+        await drain.close();
+        release();
+        await pass;
+
+        expect(h.householdRemote.creates, isEmpty);
+        expect(lock.abandoned, [name]);
+      },
+    );
+
+    test('a grant that arrives after close runs nothing', () async {
+      // The scope has disposed its repositories by then, so a late pass must
+      // not so much as read the queue or purge it.
+      final counting = CountingQueue(h.queue);
+      await drain.close();
+      drain = SyncQueueDrain(
+        queue: counting,
+        sender: h.sender,
+        collection: h.collection,
+        now: h.deviceNow,
+        exclusive: (lock: lock, name: name),
+      );
+      lock.ignoreAbandon = true;
+      final release = lock.hold(name);
+      await h.queuedCreate();
+
+      final pass = drain.drain();
+      await pumpEventQueue();
+      await drain.close();
+      final readsBefore = counting.reads;
+      release();
+      await pass;
+
+      expect(counting.reads, readsBefore);
+      expect(h.householdRemote.creates, isEmpty);
+      expect(lock.abandoned, isEmpty);
+    });
+
+    test('drain joins the pass that waits for the lock', () async {
+      final release = lock.hold(name);
+      await h.queuedCreate();
+
+      final first = drain.drain();
+      final second = drain.drain();
+      await pumpEventQueue();
+      release();
+      await Future.wait([first, second]);
+
+      expect(lock.requested, [name]);
+      expect(h.householdRemote.creates, hasLength(1));
+    });
+
+    test('drainAfterChange in a tab that waits still reads the queue after '
+        'the change', () async {
+      final stuck = await h.queuedAdd();
+      await h.queue.park(stuck.id, error: 'rejected: 400');
+      await drain.drain();
+      final release = lock.hold(name);
+
+      final waiting = drain.drain();
+      await pumpEventQueue();
+      expect(await h.queue.retry(stuck.id), isTrue);
+      final after = drain.drainAfterChange();
+      release();
+      await waiting;
+      await after;
+
+      expect((await entry(stuck.id)).status, SyncStatus.completed);
+    });
+
+    test('a lock that fails before it grants is warned about, and the pass '
+        'runs without it', () async {
+      // A browser context can list Web Locks and still refuse every
+      // request, as an opaque-origin frame does. Skipping the pass there
+      // would leave the queue unsent for good.
+      final logger = _MockLogger();
+      await drain.close();
+      drain = openLocked(logger: logger);
+      final queued = await h.queuedCreate();
+      lock.failWith = StateError('locks are unavailable');
+
+      await expectLater(drain.drain(), completes);
+
+      verify(
+        () => logger.warn(
+          'The cross-tab lock failed; this pass runs without it',
+          error: any(named: 'error', that: isA<StateError>()),
+          stackTrace: any(named: 'stackTrace'),
+        ),
+      ).called(1);
+      expect(h.householdRemote.creates, hasLength(1));
+      expect((await entry(queued.id)).status, SyncStatus.completed);
+      await pumpEventQueue();
+      expect(drain.isStale, isFalse, reason: 'the unlocked pass settled');
+    });
+
+    test('each pass gives the lock its own abandon', () async {
+      // The lock may listen to it until it completes, so one shared by every
+      // pass would keep each pass's listener until close.
+      await drain.drain();
+      await drain.drain();
+
+      expect(lock.abandons, hasLength(2));
+      expect(lock.abandons, everyElement(isNotNull));
+      expect(identical(lock.abandons[0], lock.abandons[1]), isFalse);
+    });
+
+    test('a lock that throws after close is not logged', () async {
+      final logger = _MockLogger();
+      await drain.close();
+      drain = openLocked(logger: logger);
+      lock.failWith = StateError('locks are unavailable');
+      final pass = drain.drain();
+      await drain.close();
+
+      await expectLater(pass, completes);
+
+      verifyNever(
+        () => logger.error(
+          any(),
+          error: any(named: 'error'),
+          stackTrace: any(named: 'stackTrace'),
+          context: any(named: 'context'),
+        ),
+      );
+    });
+
+    test('isStale is false while the pass waits for the lock', () async {
+      final release = lock.hold(name);
+      await h.queuedCreate();
+      await pumpEventQueue();
+      expect(drain.isStale, isTrue, reason: 'nothing has run yet');
+
+      final pass = drain.drain();
+      await pumpEventQueue();
+      expect(drain.isStale, isFalse);
+
+      release();
+      await pass;
+    });
+
+    test('a throw from the pass body behaves as without a lock', () async {
+      final logger = _MockLogger();
+      final queue = _MockQueue();
+      when(queue.watchPendingCount).thenAnswer((_) => Stream.value(1));
+      when(queue.getOutstandingEntries).thenThrow(StateError('unreadable row'));
+      final open = SyncQueueDrain(
+        queue: queue,
+        sender: h.sender,
+        collection: h.collection,
+        now: h.deviceNow,
+        exclusive: (lock: lock, name: name),
+        logger: logger,
+      );
+      addTearDown(open.close);
+
+      await expectLater(open.drain(), completes);
+
+      verify(
+        () => logger.error(
+          'Sync queue pass failed',
+          error: any(named: 'error', that: isA<StateError>()),
+          stackTrace: any(named: 'stackTrace'),
+        ),
+      ).called(1);
     });
   });
 
