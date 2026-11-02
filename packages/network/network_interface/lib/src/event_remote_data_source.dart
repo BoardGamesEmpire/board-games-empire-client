@@ -15,7 +15,10 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// The event hydrate pages through [fetchEvents] to cache the user's events,
 /// and [fetchEvent] reads one event whole, roster included, which the list
 /// does not carry. [createEvent] sends a new event and [deleteEvent] removes
-/// one. Answering an invitation or voting is #527.
+/// one. [submitAvailability] and [fetchAvailabilitySummary] vote on the dates
+/// of an event whose host is polling for one, and read how the poll stands
+/// (#507). Votes are sent from here, and answering an invitation is #527, which
+/// also queues votes.
 ///
 /// Implementations run over a **per-server** authenticated transport, like
 /// [HouseholdRemoteDataSource]: the injected client carries the base URL and
@@ -37,6 +40,8 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 /// | [declineOccurrence] | `POST /api/events/:id/occurrences/:oid/decline` | `{ message, occurrence }` |
 /// | [cancelOccurrence] | `POST /api/events/:id/occurrences/:oid/cancel` | `{ message, occurrence }` |
 /// | [removeOccurrence] | `DELETE /api/events/:id/occurrences/:oid` | `{ message, ... }`, not read |
+/// | [submitAvailability] | `POST /api/events/:id/occurrences/:oid/availability` | `{ message, vote }` |
+/// | [fetchAvailabilitySummary] | `GET /api/events/:id/occurrences/summary/availability` | `{ summary }` |
 ///
 /// The two reads do not return the same parts, and an [EventSnapshot] records
 /// which it got:
@@ -96,15 +101,17 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///
 /// - [EventRemoteForbiddenException]: a 403 carrying the API's error envelope.
 /// - [EventRemoteNotFoundException]: a 404 carrying the envelope, from
-///   [fetchEvent] or [deleteEvent]. From [fetchEvent] the event is gone, or
-///   the caller may not read it. From [deleteEvent] no live event has the id.
+///   [fetchEvent], [fetchAvailabilitySummary] or [deleteEvent]. From
+///   [fetchEvent] the event is gone, or the caller may not read it. From
+///   [deleteEvent] no live event has the id.
 /// - [EventCreateRefusedException]: a 403 or 404 carrying the envelope, from
 ///   [createEvent], which says the API refused that create (below).
 /// - [EventWriteRefusedException]: a 403 carrying the envelope, from
-///   [deleteEvent] and from each date write below, which says the API refused
-///   that write to an existing event (below).
+///   [deleteEvent] and from each date write and [submitAvailability] below,
+///   which says the API refused that write to an existing event (below).
 /// - [EventWriteConflictException]: a 400 carrying the envelope with one
-///   message, from a write to an existing event's dates (below).
+///   message, from a write to an existing event's dates or a vote on one
+///   (below).
 /// - [EventRemotePermanentException]: any other 4xx the transient rule below
 ///   leaves out (a 400 for a value the server rejects, a date write's
 ///   included, and a 409 that is not
@@ -174,10 +181,25 @@ typedef CreatedEvent = ({EventSnapshot snapshot, DateTime? deletedAt});
 ///
 /// The status routes answer 201 (backend#620), and any 2xx is a success.
 ///
+/// ### The poll's answers
+///
+/// [submitAvailability] is a write to one date, and its answers are the date
+/// writes' above. A 400 carrying the envelope with one message says the date is
+/// not proposed any more, such as one confirmed or declined since the caller
+/// read it ([EventWriteConflictException]), a 404 carrying it says the event or
+/// date is gone, and a 403 carrying it is the API refusing this vote. It
+/// answers 201, and any 2xx is a success.
+///
+/// [fetchAvailabilitySummary] is a read of one event, so it is classified as
+/// [fetchEvent] is: a 403 carrying the envelope is
+/// [EventRemoteForbiddenException], and a 404 carrying it is
+/// [EventRemoteNotFoundException].
+///
 /// A call that cannot produce a valid request throws [ArgumentError]
 /// unwrapped: an out-of-range page or limit, an empty id, an update that
-/// changes nothing, a cancel reason past [maxCancelReasonLength], or a create
-/// that could not be sent (what [createEvent] never sends).
+/// changes nothing, a cancel reason past [maxCancelReasonLength], a vote of
+/// [AvailabilityResponse.unknown], or a create that could not be sent (what
+/// [createEvent] never sends).
 abstract class EventRemoteDataSource {
   /// The backend's `limit` ceiling (`DEFAULT_MAX_PAGE_SIZE`). A larger limit is
   /// a 400, not clamped.
@@ -353,6 +375,52 @@ abstract class EventRemoteDataSource {
   /// A Confirmed date is cancelled first, so a 400
   /// ([EventWriteConflictException]) can mean it is Confirmed.
   Future<void> removeOccurrence(String eventId, String occurrenceId);
+
+  /// `POST /api/events/:eventId/occurrences/:occurrenceId/availability`:
+  /// records the caller's [response] on a proposed date, and returns the vote
+  /// as the server holds it.
+  ///
+  /// The body is exactly `{ "response": "<name>" }`, and the server takes the
+  /// voter from the session. It answers 201 `{ message, vote }`. A caller who
+  /// has voted on the date changes that vote rather than adding another, so the
+  /// returned vote keeps its [AvailabilityVote.id] and the response the server
+  /// received last stands.
+  ///
+  /// The vote is the bare row: it does not say whether it counts, which only
+  /// the summary does.
+  ///
+  /// A 400 ([EventWriteConflictException]) can mean the date is not proposed
+  /// any more.
+  ///
+  /// Throws [ArgumentError] before the request for an empty id or for
+  /// [AvailabilityResponse.unknown], which has no wire name, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<AvailabilityVote> submitAvailability(
+    String eventId,
+    String occurrenceId,
+    AvailabilityResponse response,
+  );
+
+  /// `GET /api/events/:eventId/occurrences/summary/availability`: reads where
+  /// every date of the event stands in its availability poll. Answers 200
+  /// `{ summary }`.
+  ///
+  /// The summary lists every date of the event, of every status, each with its
+  /// tallies and the votes behind them, and it is read whole every time:
+  /// unbounded until backend#404. What it carries beyond that is not read, and
+  /// [AvailabilitySummary] says what and why.
+  ///
+  /// The caller's standing decides what is counted, as for the detail's roster
+  /// (backend#560). A caller who may not read the votes is usually served each
+  /// date with zero tallies and no voters, so an empty summary is not proof
+  /// that nobody has voted. The route asks only whether the caller may read
+  /// availability votes on some event, so one who holds no event or household
+  /// role anywhere is refused with a 403 instead, which surfaces as
+  /// [EventRemoteForbiddenException].
+  ///
+  /// Throws [ArgumentError] before the request for an empty id, and otherwise
+  /// [EventRemoteException] per the class doc.
+  Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId);
 }
 
 /// A change to one date of an event, for

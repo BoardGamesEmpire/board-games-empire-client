@@ -256,6 +256,62 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     );
   }
 
+  @override
+  Future<AvailabilityVote> submitAvailability(
+    String eventId,
+    String occurrenceId,
+    AvailabilityResponse response,
+  ) async {
+    _checkOccurrenceIds(eventId, occurrenceId);
+    if (response == AvailabilityResponse.unknown) {
+      // It stands for a name this client could not read, and has none to send.
+      throw ArgumentError.value(
+        response,
+        'response',
+        'has no wire name, so it cannot be sent',
+      );
+    }
+
+    const action = 'Availability vote';
+    final result = await _send(
+      request: () => _dio.post<String>(
+        '${_occurrencePath(eventId, occurrenceId)}/availability',
+        options: _plainBody,
+        data: {'response': response.toWire()},
+      ),
+      action: action,
+      // The path names one date of one event, and the call is a write to it.
+      route: _Route.write,
+    );
+    return _parse(
+      () => _mapVote(_voteObject(result.body)),
+      action: action,
+      status: result.status,
+    );
+  }
+
+  @override
+  Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
+    _checkId(eventId, name: 'eventId');
+
+    const action = 'Availability summary';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        '${_occurrencesPath(eventId)}/summary/availability',
+        options: _plainBody,
+      ),
+      action: action,
+      // The path names one event, so an application 404 is the service saying
+      // it is gone, as for the detail read.
+      route: _Route.row,
+    );
+    return _parse(
+      () => _mapSummary(_summaryObject(response.body)),
+      action: action,
+      status: response.status,
+    );
+  }
+
   Future<EventOccurrence> _postStatus(
     String action,
     String suffix,
@@ -454,6 +510,24 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     return occurrence;
   }
 
+  /// Reads the vote out of a vote's body, `{ "vote": { ... } }`.
+  static Map<String, dynamic> _voteObject(Map<String, dynamic> body) {
+    final vote = body['vote'];
+    if (vote is! Map<String, dynamic>) {
+      throw const FormatException('response is missing a "vote" object');
+    }
+    return vote;
+  }
+
+  /// Reads the summary out of its body, `{ "summary": { ... } }`.
+  static Map<String, dynamic> _summaryObject(Map<String, dynamic> body) {
+    final summary = body['summary'];
+    if (summary is! Map<String, dynamic>) {
+      throw const FormatException('response is missing a "summary" object');
+    }
+    return summary;
+  }
+
   static Event _mapEvent(Map<String, dynamic> json) => Event(
     id: json['id'] as String,
     title: json['title'] as String,
@@ -588,6 +662,49 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
     }
     return EventRole.fromWire(name);
   }
+
+  static AvailabilityVote _mapVote(Map<String, dynamic> json) =>
+      AvailabilityVote(
+        id: json['id'] as String,
+        occurrenceId: json['occurrenceId'] as String,
+        attendeeId: json['attendeeId'] as String,
+        response: AvailabilityResponse.fromWire(json['response'] as String),
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        updatedAt: DateTime.parse(json['updatedAt'] as String),
+      );
+
+  /// Maps the summary's dates. Its `attendees` and `eligibleVoters` are not
+  /// read (backend#759), and neither is anything a date carries beyond its
+  /// tallies and voters.
+  static AvailabilitySummary _mapSummary(Map<String, dynamic> json) =>
+      AvailabilitySummary(
+        occurrences: _mapObjects(
+          json['occurrences'],
+          field: 'occurrences',
+          item: _mapOccurrenceAvailability,
+        ),
+        rosterVisible: switch (json['attendees']) {
+          {'total': final int total} => total > 0,
+          _ => true,
+        },
+      );
+
+  static OccurrenceAvailability _mapOccurrenceAvailability(
+    Map<String, dynamic> json,
+  ) => OccurrenceAvailability(
+    occurrenceId: json['occurrenceId'] as String,
+    available: json['available'] as int,
+    maybe: json['maybe'] as int,
+    unavailable: json['unavailable'] as int,
+    voters: _mapObjects(json['voters'], field: 'voters', item: _mapVoter),
+  );
+
+  static AvailabilityVoter _mapVoter(Map<String, dynamic> json) =>
+      AvailabilityVoter(
+        attendeeId: json['attendeeId'] as String,
+        response: AvailabilityResponse.fromWire(json['response'] as String),
+        eligible: json['eligible'] as bool,
+      );
 
   /// Maps each object in the list [raw]. A list that is missing or of the
   /// wrong type throws, because reading it as empty would pass a payload this
@@ -877,15 +994,17 @@ enum _Route {
   /// it.
   list,
 
-  /// `GET /api/events/:id`, which names one event.
+  /// `GET /api/events/:id` and the poll's summary under it, which name one
+  /// event.
   row,
 
   /// `POST /api/events`, whose 403 and 404 refuse that create.
   create,
 
   /// A write to one event or to one of its dates: `DELETE /api/events/:id`
-  /// and the date routes under it. Its 403 refuses that write, its 404 says
-  /// the event or date is gone, and its enveloped 400 with one message is a
-  /// conflict with the row as it stands (#506). The event delete is never answered 400.
+  /// and the date routes under it, a vote included. Its 403 refuses that
+  /// write, its 404 says the event or date is gone, and its enveloped 400 with
+  /// one message is a conflict with the row as it stands (#506). The event
+  /// delete is never answered 400.
   write,
 }

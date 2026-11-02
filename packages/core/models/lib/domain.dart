@@ -15,6 +15,9 @@ export 'src/domain/data_gateway/data_gateway_input.dart';
 export 'src/domain/device/build_info.dart';
 export 'src/domain/device/device_preferences.dart';
 
+export 'src/domain/event/availability_response.dart';
+export 'src/domain/event/availability_summary.dart';
+export 'src/domain/event/availability_vote.dart';
 export 'src/domain/event/event.dart';
 export 'src/domain/event/event_attendee.dart';
 export 'src/domain/event/event_detail.dart';
