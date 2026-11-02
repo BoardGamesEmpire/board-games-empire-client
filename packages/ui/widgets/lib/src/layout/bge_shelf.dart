@@ -36,6 +36,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// [placeholder] stands in for the row, for a state with nothing to show. The
 /// header stays the same element through the swap, so an action in it keeps
 /// focus.
+///
+/// [note] is a line between the header and the row, such as one saying where
+/// the row's children come from. It goes in and out without the row losing
+/// its place or its focus.
+///
+/// [equalHeights] gives every child the height of the tallest, for children
+/// with an edge that would look broken ending at different heights. Each is
+/// measured at its own width first, so a title that wraps still counts.
 class BgeShelf extends StatefulWidget {
   /// Creates a shelf of [children] under [heading].
   const BgeShelf({
@@ -45,6 +53,8 @@ class BgeShelf extends StatefulWidget {
     this.actions = const [],
     this.children = const [],
     this.placeholder,
+    this.note,
+    this.equalHeights = false,
     this.resetToken,
     this.headingKey,
     super.key,
@@ -74,6 +84,17 @@ class BgeShelf extends StatefulWidget {
   /// Drawn under the header instead of the row when non-null.
   final Widget? placeholder;
 
+  /// Drawn between the header and the row, or the [placeholder], when
+  /// non-null.
+  final Widget? note;
+
+  /// Whether every child is stretched to the height of the tallest.
+  ///
+  /// Off, each child keeps its own height, at the top of the row. On, the row
+  /// asks each child how tall it is at its own width, which is a second pass
+  /// over the children, and so meant for a short row.
+  final bool equalHeights;
+
   /// A change jumps the row back to its start, as for a new set of [children].
   final Object? resetToken;
 
@@ -86,6 +107,9 @@ class BgeShelf extends StatefulWidget {
 
 /// What the row's scroll metrics mean for the buttons.
 typedef _Reach = ({bool overflows, bool atStart, bool atEnd});
+
+/// Holds the note's place apart from the placeholder's.
+const _noteKey = ValueKey<String>('bge_shelf.note');
 
 /// With no row there is nothing to move, so no buttons.
 const _Reach _noRow = (overflows: false, atStart: true, atEnd: true);
@@ -215,9 +239,17 @@ class _BgeShelfState extends State<BgeShelf> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     mainAxisSize: MainAxisSize.min,
+    // The note goes in before the row, which matches from the end, so the row
+    // keeps its element, and so its offset and any focus, as the note comes
+    // and goes. Keyed, so that a note of the placeholder's type can't take the
+    // placeholder's element, which matches from the start, as it comes.
     children: [
       _header(context),
       const BgeGap.sm(),
+      if (widget.note case final note?) ...[
+        KeyedSubtree(key: _noteKey, child: note),
+        const BgeGap.sm(),
+      ],
       widget.placeholder ?? _row(context),
     ],
   );
@@ -279,19 +311,23 @@ class _BgeShelfState extends State<BgeShelf> {
           // Translucent: over a gap between children too.
           behavior: HitTestBehavior.translucent,
           onPointerSignal: _sendToPage,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final (index, child) in widget.children.indexed) ...[
-                if (index > 0) const BgeGap.md(axis: Axis.horizontal),
-                child,
-              ],
-            ],
-          ),
+          child: widget.equalHeights
+              ? IntrinsicHeight(child: _children(CrossAxisAlignment.stretch))
+              : _children(CrossAxisAlignment.start),
         ),
       ),
     ),
+  );
+
+  Widget _children(CrossAxisAlignment alignment) => Row(
+    crossAxisAlignment: alignment,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final (index, child) in widget.children.indexed) ...[
+        if (index > 0) const BgeGap.md(axis: Axis.horizontal),
+        child,
+      ],
+    ],
   );
 }
 

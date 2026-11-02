@@ -61,6 +61,8 @@ Widget _shelf({
   List<Widget>? children,
   List<Widget> actions = const [],
   Widget? placeholder,
+  Widget? note,
+  bool equalHeights = false,
   Object? resetToken,
   Key? headingKey,
 }) => BgeShelf(
@@ -69,6 +71,8 @@ Widget _shelf({
   nextLabel: 'Next',
   actions: actions,
   placeholder: placeholder,
+  note: note,
+  equalHeights: equalHeights,
   resetToken: resetToken,
   headingKey: headingKey,
   children: children ?? _covers(),
@@ -1271,6 +1275,205 @@ void main() {
     });
   });
 
+  group('note', () {
+    const headingKey = Key('heading');
+    const noteKey = Key('note');
+    const note = Text('A note about the row', key: noteKey);
+
+    testWidgets('a note sits between the header and the row', (tester) async {
+      useViewSize(tester, _narrow);
+      await _show(tester, _app(_shelf(headingKey: headingKey, note: note)));
+
+      final noteRect = tester.getRect(find.byKey(noteKey));
+      expect(
+        noteRect.top,
+        greaterThan(tester.getBottomLeft(find.byKey(headingKey)).dy),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(_coverKey(0))).dy - noteRect.bottom,
+        BgeTokens.spaceSmValue,
+      );
+    });
+
+    testWidgets('a note sits above a placeholder too', (tester) async {
+      useViewSize(tester, _narrow);
+      await _show(
+        tester,
+        _app(
+          _shelf(
+            headingKey: headingKey,
+            note: note,
+            placeholder: const SizedBox(key: _placeholderKey, height: 20),
+          ),
+        ),
+      );
+
+      final noteRect = tester.getRect(find.byKey(noteKey));
+      expect(
+        noteRect.top,
+        greaterThan(tester.getBottomLeft(find.byKey(headingKey)).dy),
+      );
+      expect(
+        tester.getTopLeft(find.byKey(_placeholderKey)).dy - noteRect.bottom,
+        BgeTokens.spaceSmValue,
+      );
+    });
+
+    testWidgets('a note coming and going leaves the row where it was', (
+      tester,
+    ) async {
+      useViewSize(tester, _narrow);
+      final cover = FocusNode();
+      addTearDown(cover.dispose);
+      Widget shelf({Widget? note}) => _app(
+        _shelf(
+          note: note,
+          children: _covers(focusNodes: {2: cover}),
+        ),
+      );
+
+      await _show(tester, shelf());
+      _rowOf(tester).jumpTo(100);
+      cover.requestFocus();
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(shelf(note: note));
+      await tester.pumpAndSettle();
+      expect(find.byKey(noteKey), findsOneWidget);
+      expect(_rowOf(tester).pixels, 100);
+      expect(cover.hasPrimaryFocus, isTrue);
+
+      await tester.pumpWidget(shelf());
+      await tester.pumpAndSettle();
+      expect(find.byKey(noteKey), findsNothing);
+      expect(_rowOf(tester).pixels, 100);
+      expect(cover.hasPrimaryFocus, isTrue);
+    });
+    testWidgets("a note of the placeholder's type leaves the placeholder its "
+        'state', (tester) async {
+      final mounts = <String, int>{};
+      // Unkeyed and of one type, so only their places tell them apart.
+      Widget counted(String name) =>
+          _CountsMounts(onMount: () => mounts[name] = (mounts[name] ?? 0) + 1);
+      Widget shelf({required bool withNote}) => _app(
+        _shelf(
+          placeholder: counted('placeholder'),
+          note: withNote ? counted('note') : null,
+        ),
+      );
+
+      await _show(tester, shelf(withNote: false));
+      await _show(tester, shelf(withNote: true));
+      await _show(tester, shelf(withNote: false));
+
+      expect(mounts, {'placeholder': 1, 'note': 1});
+    });
+  });
+
+  group('equal heights', () {
+    List<double> heightsOf(WidgetTester tester, int count) => [
+      for (var i = 0; i < count; i++)
+        tester.getSize(find.byKey(_coverKey(i))).height,
+    ];
+
+    testWidgets('off by default, children keep their own heights', (
+      tester,
+    ) async {
+      useViewSize(tester, _narrow);
+      await _show(
+        tester,
+        _app(
+          _shelf(
+            children: [
+              for (final (i, height) in [40.0, 80.0, 60.0].indexed)
+                SizedBox(key: _coverKey(i), width: 100, height: height),
+            ],
+          ),
+        ),
+      );
+
+      expect(heightsOf(tester, 3), [40, 80, 60]);
+    });
+
+    testWidgets('equalHeights stretches every child to the tallest', (
+      tester,
+    ) async {
+      useViewSize(tester, _narrow);
+      Widget shelf({required bool equalHeights}) => _app(
+        _shelf(
+          equalHeights: equalHeights,
+          children: [
+            for (final (i, lines) in [1, 3, 2].indexed)
+              SizedBox(
+                key: _coverKey(i),
+                width: 100,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [for (var l = 0; l < lines; l++) Text('line $l')],
+                ),
+              ),
+          ],
+        ),
+      );
+
+      await _show(tester, shelf(equalHeights: false));
+      final natural = heightsOf(tester, 3);
+      expect(natural[1], greaterThan(natural[2]));
+      expect(natural[2], greaterThan(natural[0]));
+
+      await tester.pumpWidget(shelf(equalHeights: true));
+      await tester.pumpAndSettle();
+
+      expect(heightsOf(tester, 3), everyElement(natural[1]));
+    });
+
+    testWidgets(
+      'equalHeights measures a wrapping child at its own width, at 2.0 text',
+      (tester) async {
+        useViewSize(tester, _narrow);
+        Widget shelf({required bool equalHeights}) => MediaQuery(
+          data: const MediaQueryData(
+            size: _narrow,
+            textScaler: TextScaler.linear(2),
+          ),
+          // In a page that scrolls: the title runs to more lines than the
+          // window is tall.
+          child: _app(
+            SingleChildScrollView(
+              child: _shelf(
+                equalHeights: equalHeights,
+                children: [
+                  SizedBox(
+                    key: _coverKey(0),
+                    width: 120,
+                    child: const Text(
+                      'A title long enough to wrap over a good many lines here',
+                    ),
+                  ),
+                  SizedBox(
+                    key: _coverKey(1),
+                    width: 120,
+                    child: const Text('Short'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        await _show(tester, shelf(equalHeights: false));
+        final [wrapped, oneLine] = heightsOf(tester, 2);
+        expect(wrapped, greaterThan(oneLine));
+
+        await tester.pumpWidget(shelf(equalHeights: true));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(heightsOf(tester, 2), [wrapped, wrapped]);
+      },
+    );
+  });
+
   group('heading', () {
     testWidgets('the heading is a header', (tester) async {
       useViewSize(tester, _narrow);
@@ -1283,4 +1486,25 @@ void main() {
       );
     });
   });
+}
+
+/// Counts its mounts, to tell whether it kept its element.
+class _CountsMounts extends StatefulWidget {
+  const _CountsMounts({required this.onMount});
+
+  final VoidCallback onMount;
+
+  @override
+  State<_CountsMounts> createState() => _CountsMountsState();
+}
+
+class _CountsMountsState extends State<_CountsMounts> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onMount();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(height: 20);
 }
