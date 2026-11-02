@@ -1,6 +1,19 @@
 import 'package:observability/observability.dart';
 import 'package:test/test.dart';
 
+/// A `SqliteException`'s text as drift surfaces it: the statement, then the
+/// bound values after `, parameters: `.
+const _sqlite =
+    'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
+    '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: user-42, Kitchen Table';
+
+/// What drift's isolate channel throws for a statement sent after the
+/// connection closed: no `Causing statement`, and the values follow `with`.
+const _closed =
+    'Bad state: Tried to send Request (id = 3): StatementMethod.insert: '
+    'INSERT INTO t (a, b) VALUES (?, ?) with [user-42, Kitchen Table] over '
+    'isolate channel, but the connection was closed!';
+
 void main() {
   group('Redaction.redactName', () {
     test('empty string stays empty', () {
@@ -68,6 +81,91 @@ void main() {
     test('text without emails is returned unchanged', () {
       const text = 'no addresses here, just words';
       expect(Redaction.redactEmailsIn(text), same(text));
+    });
+  });
+
+  group('Redaction.stripBoundValues', () {
+    test('removes the parameters and keeps the statement', () {
+      expect(
+        Redaction.stripBoundValues(_sqlite),
+        'SqliteException(2067): while executing statement, UNIQUE constraint failed\n'
+        '  Causing statement: INSERT INTO t (a) VALUES (?), parameters: <redacted>',
+      );
+    });
+
+    test('removes every set when a wrapper holds two errors', () {
+      const twice =
+          'Bad state: rollback failed. Cause: $_sqlite\nWhile rolling back: $_sqlite';
+      final out = Redaction.stripBoundValues(twice);
+      expect(out, isNot(contains('user-42')));
+      expect(out, isNot(contains('Kitchen Table')));
+    });
+
+    test('removes what a wrapper appends after the parameters', () {
+      final out = Redaction.stripBoundValues('$_sqlite\nwrapped by: tail-42');
+      expect(out, isNot(contains('tail-42')));
+    });
+
+    test(
+      'removes the values from a request sent after the connection closed',
+      () {
+        expect(
+          Redaction.stripBoundValues(_closed),
+          'Bad state: Tried to send Request (id = 3): StatementMethod.insert: '
+          'INSERT INTO t (a, b) VALUES (?, ?) with <redacted>',
+        );
+      },
+    );
+
+    test(
+      'removes everything after the values of a closed-connection request',
+      () {
+        final out = Redaction.stripBoundValues('$_closed\nwrapped by: tail-42');
+        expect(out, isNot(contains('tail-42')));
+        expect(out, isNot(contains('user-42')));
+      },
+    );
+
+    test('leaves a closed-connection request with no values list alone', () {
+      const unbound =
+          'Bad state: Tried to send Request (id = 4): '
+          'StatementMethod.custom: SELECT 1 over isolate channel, but the '
+          'connection was closed!';
+      expect(Redaction.stripBoundValues(unbound), same(unbound));
+    });
+
+    test('removes both shapes when the sqlite one comes first', () {
+      final out = Redaction.stripBoundValues('$_sqlite\nthen: $_closed');
+      expect(out, isNot(contains('user-42')));
+      expect(out, isNot(contains('Kitchen Table')));
+    });
+
+    test('removes both shapes when the closed-connection one comes first', () {
+      final out = Redaction.stripBoundValues('$_closed\nthen: $_sqlite');
+      expect(out, isNot(contains('user-42')));
+      expect(out, isNot(contains('Kitchen Table')));
+    });
+
+    test('leaves other text alone', () {
+      const other = 'FormatException: parameters: not a statement';
+      expect(Redaction.stripBoundValues(other), same(other));
+    });
+
+    test('leaves a message with a bracket after "with" alone', () {
+      const other = 'FormatException: bad input with [1, 2] in the list';
+      expect(Redaction.stripBoundValues(other), same(other));
+    });
+
+    test('leaves a statement that bound nothing alone', () {
+      const unbound =
+          'SqliteException(1): while executing statement, no such table: t\n'
+          '  Causing statement: SELECT * FROM t';
+      expect(Redaction.stripBoundValues(unbound), same(unbound));
+    });
+
+    test('a second pass changes nothing', () {
+      final once = Redaction.stripBoundValues(_sqlite);
+      expect(Redaction.stripBoundValues(once), once);
     });
   });
 

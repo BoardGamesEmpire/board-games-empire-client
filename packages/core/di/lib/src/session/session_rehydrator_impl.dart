@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:observability/observability.dart';
 
 /// One registered hydrate: how to ask whether it needs re-running, and how
 /// to run it.
@@ -104,12 +105,13 @@ class SessionRehydratorImpl implements SessionRehydrator {
     }
   }
 
-  /// Debug-only breadcrumb. `di` carries no observability dependency, so
-  /// this follows `ServerContextImpl`'s existing assert/debugPrint shape
-  /// rather than adding one for a swallowed error.
+  /// Debug-only breadcrumb, following `ServerContextImpl`'s assert/debugPrint
+  /// shape. It prints directly, so it removes a database error's bound values
+  /// itself (#463).
   void _report(String what, String key, Object error, StackTrace stackTrace) {
     assert(() {
-      debugPrint('SessionRehydrator: $what for "$key" threw: $error');
+      final text = Redaction.stripBoundValues(error.toString());
+      debugPrint('SessionRehydrator: $what for "$key" threw: $text');
       return true;
     }());
   }

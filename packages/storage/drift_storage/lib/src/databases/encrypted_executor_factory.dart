@@ -292,6 +292,24 @@ class EncryptedExecutorFactory {
     if (db.select('PRAGMA cipher;').isEmpty) {
       throw EncryptionUnavailableError();
     }
-    db.execute("PRAGMA key = '$key';");
+    try {
+      db.execute("PRAGMA key = '$key';");
+    } on sqlite.SqliteException catch (error, stackTrace) {
+      // sqlite3 puts the statement in the exception's text, and this statement
+      // holds the key, so a failure here would log it (#463).
+      Error.throwWithStackTrace(
+        sqlite.SqliteException(
+          extendedResultCode: error.extendedResultCode,
+          message: error.message,
+          explanation: error.explanation,
+          operation: error.operation,
+        ),
+        stackTrace,
+      );
+    }
   }
+
+  @visibleForTesting
+  static void applyKeyForTesting(sqlite.Database db, String key) =>
+      _applyKey(db, key);
 }

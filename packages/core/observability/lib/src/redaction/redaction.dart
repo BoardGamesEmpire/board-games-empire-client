@@ -24,6 +24,15 @@ abstract final class Redaction {
     r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}',
   );
 
+  // The two landmarks of a failed statement's error text, as sqlite3 writes it.
+  static const String _statementMarker = 'Causing statement';
+  static const String _parametersMarker = ', parameters: ';
+
+  // The two landmarks of drift's isolate channel refusing a request, as
+  // `ExecuteQuery.toString()` writes it: `<method>: <sql> with [<values>]`.
+  static const String _requestMarker = 'Tried to send Request';
+  static const String _valuesMarker = ' with [';
+
   /// Partial name redaction.
   ///
   /// - empty → empty
@@ -66,6 +75,61 @@ abstract final class Redaction {
       _emailPattern,
       (match) => redactEmail(match[0]!),
     );
+  }
+
+  /// Removes the values a failed database statement was bound to from the
+  /// error [text] that reports it (#463).
+  ///
+  /// Two shapes carry them. `SqliteException.toString()` writes the
+  /// statement, then `, parameters: ` and the bound values, as the last thing
+  /// in the text, and drift's `DriftRemoteException` (what a background-isolate
+  /// database throws) returns that same text, so the original type is not
+  /// there to check. A statement sent after the connection closed never
+  /// reaches sqlite: drift's isolate channel throws a `StateError` instead,
+  /// with no `Causing statement` and no `, parameters: `, and the values
+  /// follow `with`:
+  ///
+  /// ```
+  /// Tried to send Request (id = 3): StatementMethod.insert: INSERT INTO t
+  /// (a, b) VALUES (?, ?) with [user-42, Kitchen Table] over isolate channel,
+  /// but the connection was closed!
+  /// ```
+  ///
+  /// The values can be a user id or what the user wrote. The statement has
+  /// placeholders only, so it stays. `PRAGMA key` is the one statement that
+  /// interpolates a secret, and it keeps itself out of its own exception
+  /// instead (`EncryptedExecutorFactory`).
+  ///
+  /// For the first shape, returns [text] up to the first `, parameters: `
+  /// that follows the `Causing statement` marker, then `, parameters: `
+  /// and the replacement. For the second, returns [text] up to the first
+  /// ` with [` that follows `Tried to send Request`, then ` with ` and the
+  /// replacement. The replacement is [defaultReplacement]. Anything after the
+  /// cut is dropped, which covers a second error a wrapper appended and keeps
+  /// the failure on the safe side. When both shapes appear, the earlier cut
+  /// wins, so nothing bound survives. Returns [text] itself (same instance)
+  /// when it matches neither shape or the statement bound nothing.
+  ///
+  /// This relies on the formats `sqlite3` and `drift` write today; tests in
+  /// `drift_storage` run a real failing statement, and a real statement on a
+  /// closed connection, to catch either changing.
+  static String stripBoundValues(String text) {
+    final sqlite = _cutAfter(text, _statementMarker, _parametersMarker);
+    final channel = _cutAfter(text, _requestMarker, _valuesMarker);
+    if (sqlite < 0 && channel < 0) return text;
+    if (channel < 0 || (sqlite >= 0 && sqlite < channel)) {
+      return '${text.substring(0, sqlite)}'
+          '$_parametersMarker$defaultReplacement';
+    }
+    return '${text.substring(0, channel)} with $defaultReplacement';
+  }
+
+  /// The index of the first [landmark] at or after the first [marker] in
+  /// [text], or -1 when either is missing.
+  static int _cutAfter(String text, String marker, String landmark) {
+    final start = text.indexOf(marker);
+    if (start < 0) return -1;
+    return text.indexOf(landmark, start);
   }
 
   /// Generic middle-mask: keeps [keepStart] leading and [keepEnd] trailing

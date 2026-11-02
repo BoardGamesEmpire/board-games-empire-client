@@ -35,8 +35,8 @@ typedef RecordUncaughtError = void Function(UncaughtErrorRecord record);
 /// Wires the two catch-all surfaces the Flutter team recommends:
 ///
 /// - [FlutterError.onError] — framework errors (build/layout/paint).
-///   Delegates first to [presentError] so console output survives, then
-///   captures.
+///   Delegates first to [presentError] so console output survives, without
+///   a database error's bound values (#463), then captures.
 /// - [PlatformDispatcher.instance.onError] — uncaught async and non-UI
 ///   Dart errors. Returns `true` unconditionally after capture; returning
 ///   `false` can hard-crash the app.
@@ -173,7 +173,9 @@ void installGlobalErrorHooks({
 
   FlutterError.onError = (details) {
     capture(
-      () => (presentError ?? FlutterError.presentError)(details),
+      () => (presentError ?? FlutterError.presentError)(
+        _withoutBoundValues(details),
+      ),
       'Uncaught framework error',
       details.exception,
       // Best-effort fallback: a framework error without a stack is rare;
@@ -189,4 +191,12 @@ void installGlobalErrorHooks({
     capture(() {}, 'Uncaught platform error', error, stackTrace);
     return true;
   };
+}
+
+/// [details] itself, or a copy holding the exception's text without the bound
+/// values when it has any. The presenter prints the exception as it is.
+FlutterErrorDetails _withoutBoundValues(FlutterErrorDetails details) {
+  final text = details.exception.toString();
+  final stripped = Redaction.stripBoundValues(text);
+  return stripped == text ? details : details.copyWith(exception: stripped);
 }

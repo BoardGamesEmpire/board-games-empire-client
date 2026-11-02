@@ -73,8 +73,8 @@ void installBuildErrorView() {
 /// When [showDiagnostics] is true — defaulting to [kDebugMode] — the
 /// exception summary is appended below the friendly message, preserving
 /// the developer signal the stock red screen provided. Release builds
-/// never show exception text; the raw detail still reaches the console
-/// via `FlutterError.presentError` and the observability layer via #34.
+/// never show exception text; the detail still reaches the console via
+/// `FlutterError.presentError` and the observability layer via #34.
 class BuildErrorView extends StatelessWidget {
   /// Creates the view for a single build failure.
   const BuildErrorView({

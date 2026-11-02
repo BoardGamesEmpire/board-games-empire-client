@@ -6,6 +6,7 @@ import 'package:interfaces/orchestration.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:models/domain.dart';
+import 'package:observability/observability.dart';
 
 import 'server_context_impl.dart';
 
@@ -87,6 +88,7 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   final DevicePreferencesRepository _preferencesRepository;
   final ServerContextFactory _contextFactory;
   final bool _isDesktop;
+  final BgeLogger _log = BgeLogger('bge.di.server_orchestrator');
 
   /// The connected contexts, keyed by local server id.
   ///
@@ -714,8 +716,9 @@ class ServerOrchestratorImpl implements ServerOrchestrator {
   }
 
   void _logError(String what, Object error, StackTrace stackTrace) {
-    // TODO: wire in a proper error reporting channel
-    debugPrint('[ServerOrchestrator] $what: $error\n$stackTrace');
+    // Through the logger, so the sinks keep a database error's bound values
+    // out of the console and the log file (#463).
+    _log.error(what, error: error, stackTrace: stackTrace);
   }
 
   void _startBackgroundingTimer(String serverId) {
