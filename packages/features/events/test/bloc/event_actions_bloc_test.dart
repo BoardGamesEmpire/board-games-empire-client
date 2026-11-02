@@ -929,6 +929,352 @@ void main() {
       });
     });
 
+    group('confirm and decline the others (#507)', () {
+      final second = proposedDate.copyWith(id: 'd-2', sortOrder: 1);
+      final third = proposedDate.copyWith(id: 'd-3', sortOrder: 2);
+      final byId = {'d-2': second, 'd-3': third};
+
+      /// [date] as the server holds it once declined.
+      EventOccurrence declined(EventOccurrence date) => date.copyWith(
+        status: OccurrenceStatus.declined,
+        declinedAt: answeredAt,
+        updatedAt: answeredAt,
+      );
+
+      const withDeclines = EventDateConfirmRequested(
+        'e-1',
+        'd-1',
+        decline: ['d-2', 'd-3'],
+      );
+
+      // Three Proposed dates, the first the one to confirm.
+      setUp(
+        () => cached.cacheEvent(
+          EventSnapshot(
+            event: item('e-1').event,
+            occurrences: [proposedDate, second, third],
+            attendees: const [],
+          ),
+          source: EventAccessSource.read,
+        ),
+      );
+
+      /// A server that confirms `d-1`, and answers each decline from
+      /// [decline]: the date declined, unless a test says otherwise.
+      FakeEventRemote confirming({
+        FutureOr<EventOccurrence?> Function(EventDateRequest request)? decline,
+      }) => dating(
+        (request) => switch (request.call) {
+          'confirm' => confirmedDate,
+          'decline' =>
+            decline == null
+                ? declined(byId[request.occurrenceId]!)
+                : decline(request),
+          _ => throw StateError('sent a ${request.call}'),
+        },
+      );
+
+      test('a confirm with no decline list sends one request', () async {
+        final remote = confirming();
+        final bloc = over(remote);
+        addTearDown(bloc.close);
+
+        bloc.add(confirm);
+        final outcome = await answered(bloc);
+
+        expect(remote.dateRequests, [sent('confirm')]);
+        expect(await cachedDates(), [confirmedDate, second, third]);
+        expect(
+          outcome,
+          const EventActionOutcome(
+            action: EventAction.confirmDate,
+            result: EventActionResult.done,
+          ),
+        );
+      });
+
+      test('a done confirm declines each listed date in order, then is '
+          'done', () async {
+        final remote = confirming();
+        final bloc = over(remote, confirmSession: answering([true]));
+        addTearDown(bloc.close);
+        final states = record(bloc);
+
+        bloc.add(withDeclines);
+        final outcome = await answered(bloc);
+
+        expect(remote.dateRequests, [
+          sent('confirm'),
+          sent('decline', occurrenceId: 'd-2'),
+          sent('decline', occurrenceId: 'd-3'),
+        ]);
+        // Each request goes out with the session checked first (#432).
+        expect(calls, [
+          'session',
+          'confirm',
+          'session',
+          'decline',
+          'session',
+          'decline',
+        ]);
+        expect(await cachedDates(), [
+          confirmedDate,
+          declined(second),
+          declined(third),
+        ]);
+        // Busy throughout, and one outcome at the end.
+        expect(states, [
+          busy,
+          ended(EventAction.confirmDate, EventActionResult.done),
+        ]);
+        expect(outcome.rereads, isTrue);
+      });
+
+      for (final (error, result) in <(Object, EventActionResult)>[
+        (_conflict, EventActionResult.changed),
+        (_gone, EventActionResult.gone),
+        (_refused, EventActionResult.refused),
+        (_offline, EventActionResult.failed),
+      ]) {
+        test(
+          'a confirm that fails sends no declines (${result.name})',
+          () async {
+            final remote = dating((_) => throw error);
+            final bloc = over(remote, confirmSession: answering([true]));
+            addTearDown(bloc.close);
+
+            bloc.add(withDeclines);
+            final outcome = await answered(bloc);
+
+            expect(remote.dateRequests, [sent('confirm')]);
+            expect(calls, ['session', 'confirm']);
+            expect(
+              outcome,
+              EventActionOutcome(
+                action: EventAction.confirmDate,
+                result: result,
+                error: error,
+              ),
+            );
+            expect(await cachedDates(), [proposedDate, second, third]);
+          },
+        );
+      }
+
+      test('a confirm whose session says no sends nothing at all', () async {
+        final bloc = over(confirming(), confirmSession: answering([false]));
+        addTearDown(bloc.close);
+
+        bloc.add(withDeclines);
+        final outcome = await answered(bloc);
+
+        expect(calls, ['session']);
+        expect(
+          outcome,
+          const EventActionOutcome(
+            action: EventAction.confirmDate,
+            result: EventActionResult.failed,
+          ),
+        );
+        expect(await cachedDates(), [proposedDate, second, third]);
+      });
+
+      for (final (error, code) in <(Object, int)>[
+        (_conflict, 400),
+        (_gone, 404),
+      ]) {
+        test('a decline answered $code still ends done', () async {
+          // That date moved, or is gone: there is nothing left to decline.
+          // The rest still go out, and the read shows the date as it is.
+          final remote = confirming(
+            decline: (request) =>
+                request.occurrenceId == 'd-2' ? throw error : declined(third),
+          );
+          final bloc = over(remote);
+          addTearDown(bloc.close);
+
+          bloc.add(withDeclines);
+          final outcome = await answered(bloc);
+
+          expect(remote.dateRequests, [
+            sent('confirm'),
+            sent('decline', occurrenceId: 'd-2'),
+            sent('decline', occurrenceId: 'd-3'),
+          ]);
+          expect(await cachedDates(), [confirmedDate, second, declined(third)]);
+          expect(
+            outcome,
+            const EventActionOutcome(
+              action: EventAction.confirmDate,
+              result: EventActionResult.done,
+            ),
+          );
+          expect(outcome.rereads, isTrue);
+        });
+      }
+
+      for (final error in <Object>[_refused, _offline, _rejected]) {
+        test('a decline that fails ends partlyDone, after trying the rest '
+            '(${error.runtimeType})', () async {
+          final remote = confirming(
+            decline: (request) =>
+                request.occurrenceId == 'd-2' ? throw error : declined(third),
+          );
+          final bloc = over(remote);
+          addTearDown(bloc.close);
+
+          bloc.add(withDeclines);
+          final outcome = await answered(bloc);
+
+          expect(calls, ['confirm', 'decline', 'decline']);
+          // The confirm and the later decline are written, so the read
+          // starts from what the server holds.
+          expect(await cachedDates(), [confirmedDate, second, declined(third)]);
+          expect(
+            outcome,
+            EventActionOutcome(
+              action: EventAction.confirmDate,
+              result: EventActionResult.partlyDone,
+              error: error,
+            ),
+          );
+          expect(outcome.rereads, isTrue);
+        });
+      }
+
+      test("a partlyDone confirm carries the first miss's error", () async {
+        final remote = confirming(
+          decline: (request) =>
+              throw request.occurrenceId == 'd-2' ? _refused : _offline,
+        );
+        final bloc = over(remote);
+        addTearDown(bloc.close);
+
+        bloc.add(withDeclines);
+        final outcome = await answered(bloc);
+
+        expect(calls, ['confirm', 'decline', 'decline']);
+        expect(
+          outcome,
+          const EventActionOutcome(
+            action: EventAction.confirmDate,
+            result: EventActionResult.partlyDone,
+            error: _refused,
+          ),
+        );
+      });
+
+      test('a session that says no to a decline is a miss, and the rest '
+          'still go out', () async {
+        // No error to report for the miss: nothing reached the server.
+        final remote = confirming();
+        final bloc = over(
+          remote,
+          confirmSession: answering([true, false, true]),
+        );
+        addTearDown(bloc.close);
+
+        bloc.add(withDeclines);
+        final outcome = await answered(bloc);
+
+        expect(calls, ['session', 'confirm', 'session', 'session', 'decline']);
+        expect(remote.dateRequests, [
+          sent('confirm'),
+          sent('decline', occurrenceId: 'd-3'),
+        ]);
+        expect(await cachedDates(), [confirmedDate, second, declined(third)]);
+        expect(
+          outcome,
+          const EventActionOutcome(
+            action: EventAction.confirmDate,
+            result: EventActionResult.partlyDone,
+          ),
+        );
+        expect(outcome.rereads, isTrue);
+      });
+
+      test('a bloc that closes while the confirm is out still sends the '
+          'declines, and writes them', () async {
+        // The person asked for them with the confirm, as for the delete.
+        var landed = 0;
+        final allLanded = Completer<void>();
+        cached.onLanded = () {
+          if (++landed == 3) allLanded.complete();
+        };
+        final reply = Completer<EventOccurrence>();
+        final remote = dating(
+          (request) => request.call == 'confirm'
+              ? reply.future
+              : declined(byId[request.occurrenceId]!),
+        );
+        final bloc = over(remote);
+        final states = record(bloc);
+
+        bloc.add(withDeclines);
+        await pumpEventQueue();
+        await bloc.close();
+        reply.complete(confirmedDate);
+        await allLanded.future;
+        await pumpEventQueue();
+
+        expect(remote.dateRequests, [
+          sent('confirm'),
+          sent('decline', occurrenceId: 'd-2'),
+          sent('decline', occurrenceId: 'd-3'),
+        ]);
+        expect(await cachedDates(), [
+          confirmedDate,
+          declined(second),
+          declined(third),
+        ]);
+        expect(states, [busy]);
+      });
+
+      test('a second request while a confirm and its declines are out is '
+          'dropped', () async {
+        final reached = Completer<void>();
+        final reply = Completer<EventOccurrence>();
+        final remote = confirming(
+          decline: (request) {
+            if (request.occurrenceId != 'd-2') {
+              return declined(third);
+            }
+            reached.complete();
+            return reply.future;
+          },
+        );
+        final bloc = over(remote);
+        addTearDown(bloc.close);
+        final states = record(bloc);
+
+        bloc.add(withDeclines);
+        // The confirm is done, and the first decline is out.
+        await reached.future;
+        // A double tap, another date's action, or the delete: one request at
+        // a time, through the declines as through the confirm.
+        bloc
+          ..add(confirm)
+          ..add(const EventDateDeclineRequested('e-1', 'd-3'))
+          ..add(const EventDeleteRequested('e-1'));
+        await pumpEventQueue();
+
+        final outcome = answered(bloc);
+        reply.complete(declined(second));
+        await outcome;
+
+        expect(remote.dateRequests, [
+          sent('confirm'),
+          sent('decline', occurrenceId: 'd-2'),
+          sent('decline', occurrenceId: 'd-3'),
+        ]);
+        expect(remote.deleteRequests, isEmpty);
+        expect(states, [
+          busy,
+          ended(EventAction.confirmDate, EventActionResult.done),
+        ]);
+      });
+    });
+
     test(
       'the session is asked before any date write, and a no sends nothing',
       () async {

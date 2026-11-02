@@ -28,7 +28,12 @@ enum EventActionResult {
   /// (#506).
   changed,
 
-  /// A Confirmed date cancelled, whose remove then failed (#446).
+  /// A write of two or more requests that stopped part of the way (#446,
+  /// #507): a Confirmed date cancelled, whose remove then failed, or a date
+  /// confirmed, whose declines of the other dates didn't all land. A decline
+  /// answered 400 or 404 is no miss. The outcome's error is the one the
+  /// failed request ended with, and for a confirm the first miss's, which is
+  /// null when that miss was a session that said no.
   partlyDone,
 }
 
@@ -44,8 +49,9 @@ final class EventActionOutcome extends Equatable {
   final EventActionResult result;
 
   /// What the action ended with. Null when it was done, when it failed
-  /// before the request went out, and when a cancel then remove stopped
-  /// before its remove went out.
+  /// before the request went out, when a cancel then remove stopped before
+  /// its remove went out, and when a confirm's first missed decline stopped
+  /// before it went out.
   final Object? error;
 
   /// Whether the detail should be read again.

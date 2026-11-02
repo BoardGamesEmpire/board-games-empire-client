@@ -56,15 +56,25 @@ final class EventDateEditRequested extends EventActionsEvent {
   List<Object?> get props => [eventId, occurrenceId, update];
 }
 
-/// Confirm the proposed date [occurrenceId] of the event [eventId].
+/// Confirm the proposed date [occurrenceId] of the event [eventId], then
+/// decline each date of [decline] (#507).
 final class EventDateConfirmRequested extends EventActionsEvent {
-  const EventDateConfirmRequested(this.eventId, this.occurrenceId);
+  const EventDateConfirmRequested(
+    this.eventId,
+    this.occurrenceId, {
+    this.decline = const [],
+  });
 
   final String eventId;
   final String occurrenceId;
 
+  /// The event's other Proposed dates to decline once the confirm is done,
+  /// in the order they go out. A declined date can't be proposed again, so
+  /// the screen sends only the ones the person chose to.
+  final List<String> decline;
+
   @override
-  List<Object?> get props => [eventId, occurrenceId];
+  List<Object?> get props => [eventId, occurrenceId, decline];
 }
 
 /// Decline the proposed date [occurrenceId] of the event [eventId].
