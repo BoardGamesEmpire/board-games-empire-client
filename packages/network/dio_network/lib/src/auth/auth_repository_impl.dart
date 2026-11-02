@@ -249,7 +249,8 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   ///   server contract violation, not a network condition, and it must not
   ///   be reported as success: the token has already been cleared, or
   ///   refused if the delete failed, by `getSession`, so a "signed in" state
-  ///   here would 401 on every subsequent request. Matches `WebAuthRepositoryImpl.signUp`.
+  ///   here would 401 on every subsequent request. Matches
+  ///   `WebAuthRepositoryImpl.signUp`.
   Future<AuthResponse> _finalizeCredentialGrant(
     AuthResponse granted, {
     required String context,
@@ -854,8 +855,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// ahead of the delete, so the next cold start refuses a payload that
   /// survived and retries the delete (#356). If that marker could not be
   /// written either, the payload is still there for a fresh instance to read,
-  /// and `restoreCachedSession` may adopt it offline. `AuthRepository.getSession`
-  /// states that remaining case, and the log records are its only trace.
+  /// and `restoreCachedSession` may adopt it offline.
+  /// `AuthRepository.getSession` states that remaining case, and the log
+  /// records are its only trace.
   ///
   /// A typed throw is not available for that double fault:
   /// `_finalizeCredentialGrant`'s `on AuthException` catch would read it as an

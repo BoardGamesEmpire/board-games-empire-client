@@ -124,9 +124,10 @@ class TokenStorageService {
   ///
   /// The reset deletes the meta database and every marker with it, and that
   /// database may be why the reset is happening, so the keychain is the only
-  /// list of what to delete. A surviving payload would have no marker to refuse
-  /// it when the same server is added again. So a failed delete doesn't stop the
-  /// others: every session is tried, then the first failure is rethrown.
+  /// list of what to delete. A surviving payload would have no marker to
+  /// refuse it when the same server is added again. So a failed delete doesn't
+  /// stop the others: every session is tried, then the first failure is
+  /// rethrown.
   static Future<void> deleteAllStoredSessions({
     @visibleForTesting FlutterSecureStorage? storage,
   }) async {
@@ -159,8 +160,9 @@ class TokenStorageService {
   int _markerReadFailures = 0;
 
   /// What [store] puts in [_tombstoneCheck] after a failed marker read, so no
-  /// retried read runs during its write. Null once a write behind it has landed,
-  /// which makes it permanent, or once they have all failed, which removes it.
+  /// retried read runs during its write. Null once a write behind it has
+  /// landed, which makes it permanent, or once they have all failed, which
+  /// removes it.
   Future<void>? _writeHold;
 
   /// How many writes are behind [_writeHold].

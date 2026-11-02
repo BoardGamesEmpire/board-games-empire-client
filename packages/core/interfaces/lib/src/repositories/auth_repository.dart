@@ -67,8 +67,9 @@ abstract class AuthRepository {
   /// cases are that refusal failing to persist as well, and a refusal that
   /// persisted but cannot be read at the next start, which falls back to the
   /// keychain. The material can then be read at the next cold start, nothing
-  /// is thrown, and only the log says so. Also returns null, without touching storage or state, when the caller
-  /// signed out while the request was in flight: the newer intent wins.
+  /// is thrown, and only the log says so. Also returns null, without touching
+  /// storage or state, when the caller signed out while the request was in
+  /// flight: the newer intent wins.
   ///
   /// Throws (rather than returning null) whenever the answer is
   /// **indeterminate**: [AuthNetworkException] for transport failures,
