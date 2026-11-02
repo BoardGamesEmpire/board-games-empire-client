@@ -175,6 +175,24 @@ void main() {
     expect(cover(0), findsOneWidget);
   });
 
+  testWidgets('the spinner is announced', (tester) async {
+    final handle = tester.ensureSemantics();
+    final answer = Completer<PaginatedResult<Game>>();
+    remote.onFetchPage = (_, _) => answer.future;
+
+    await tester.pumpWidget(harness());
+    await tester.pump();
+
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Loading games\u{2026}')),
+      isSemantics(isLiveRegion: true),
+    );
+
+    answer.complete(pageOf(_newest(1)));
+    await tester.pumpAndSettle();
+    handle.dispose();
+  });
+
   testWidgets('See all keeps focus from loading to loaded', (tester) async {
     final answer = Completer<PaginatedResult<Game>>();
     remote.onFetchPage = (_, _) => answer.future;
@@ -272,6 +290,20 @@ void main() {
 
     /// The text of the message, for a section that is showing one.
     String textOf(WidgetTester tester) => tester.widget<Text>(message).data!;
+
+    testWidgets('the card has no margin, so it lines up with other sections', (
+      tester,
+    ) async {
+      await show(tester, onConnectDataGateway: (_) {});
+
+      final surface = tester.getRect(
+        find
+            .descendant(of: find.byType(Card), matching: find.byType(Material))
+            .first,
+      );
+      expect(surface.left, 0);
+      expect(surface.right, tester.getSize(find.byType(Scaffold)).width);
+    });
 
     testWidgets('with a connect callback: the card and its action', (
       tester,

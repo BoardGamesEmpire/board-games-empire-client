@@ -11,6 +11,7 @@ import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 import 'empty_server_card.dart';
 import 'game_cover_tile.dart';
 import 'newest_games_cubit.dart';
+import 'shelf_loading.dart';
 
 /// The home page's "Recently added" row (#615): the games most recently added
 /// to the server, newest first, in a row that moves side to side.
@@ -165,7 +166,10 @@ class _Section extends StatelessWidget {
           ),
           NewestGamesLoading() => _shelf(
             context,
-            placeholder: const _Loading(),
+            placeholder: const ShelfLoading(
+              key: NewestGamesSection.loadingKey,
+              live: true,
+            ),
           ),
           NewestGamesFailed(:final retrying) => _shelf(
             context,
@@ -216,24 +220,6 @@ class _Section extends StatelessWidget {
       children: children,
     );
   }
-}
-
-/// The spinner, announced as loading when it appears.
-class _Loading extends StatelessWidget {
-  const _Loading();
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    key: NewestGamesSection.loadingKey,
-    padding: EdgeInsets.symmetric(vertical: BgeTokens.of(context).spaceLg),
-    child: Center(
-      child: Semantics(
-        liveRegion: true,
-        label: GameCatalogLocalizations.of(context).catalogBrowseLoading,
-        child: const ExcludeSemantics(child: CircularProgressIndicator()),
-      ),
-    ),
-  );
 }
 
 /// The message and its retry, side by side where both fit. A [Wrap] so that the

@@ -84,6 +84,18 @@
   "@catalogShelfNext": {
     "description": "Tooltip and spoken label of the button on a row of games on the home page that scrolls the row on to the games after the ones in view."
   },
+  "catalogSomethingToPlayHeading": "Something to play",
+  "@catalogSomethingToPlayHeading": {
+    "description": "Heading of the row on the home page holding a random pick of games: from the households the user is in and the user's own collection, or the server's games when those have none."
+  },
+  "catalogReshuffle": "Reshuffle",
+  "@catalogReshuffle": {
+    "description": "Button on the home page's catalogSomethingToPlayHeading row that replaces its games with a new random pick."
+  },
+  "catalogReshuffled": "New games to play",
+  "@catalogReshuffled": {
+    "description": "Announced to screen readers, and never shown, when the home page's catalogSomethingToPlayHeading row has a new random pick of games."
+  },
   "catalogRetry": "Try again",
   "@catalogRetry": {
     "description": "Button that asks the server again after a failure, on every screen of this feature."
