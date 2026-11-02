@@ -40,6 +40,16 @@ class ServerConfigs extends Table {
   DateTimeColumn get createdAt => dateTime().named('created_at')();
   DateTimeColumn get updatedAt => dateTime().named('updated_at')();
 
+  /// UTC time the stored session was marked as not to be restored, or null
+  /// when it hasn't been (#356). Written only by `SessionTombstoneStoreImpl`,
+  /// so it never moves [updatedAt].
+  ///
+  /// A column and not a key in [metadata]: `updateServer` rewrites
+  /// [metadata] from the caller's in-memory config, which would overwrite a
+  /// marker written since that config was read.
+  DateTimeColumn get sessionRevokedAt =>
+      dateTime().named('session_revoked_at').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

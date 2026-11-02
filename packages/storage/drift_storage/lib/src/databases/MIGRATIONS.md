@@ -8,13 +8,13 @@ bespoke migration registry.
 ## Current state
 
 `ServerDatabase` is at `schemaVersion == 12`; `MetaDatabase` is at
-`schemaVersion == 1`. The server database has real forward migrations, so the
-generated `server_database.steps.dart` and the `test/drift/server/**` scaffold
-(schema helpers + migration tests) exist and are **committed** — regenerate
-them with `melos run schema:migrations` after every schema change. Both
-databases build their strategy with `bgeMigrationStrategy()` (in
-`migration_policy.dart`), which refuses downgrades ahead of the steps and
-applies the standard PRAGMAs on open.
+`schemaVersion == 2`. Both databases have real forward migrations, so each has
+a generated `<name>_database.steps.dart` and a `test/drift/<name>/**` scaffold
+(schema helpers + migration tests), all **committed** — regenerate them with
+`melos run schema:migrations` after every schema change. Both databases build
+their strategy with `bgeMigrationStrategy()` (in `migration_policy.dart`),
+which refuses downgrades ahead of the steps and applies the standard PRAGMAs
+on open.
 
 Server schema history:
 
@@ -91,10 +91,17 @@ Server schema history:
   drops `cancel_reason` again right after, from the empty table, and this
   step adds it back.
 
+Meta schema history:
+
+- **v1 → v2 (#356):** a nullable `server_configs.session_revoked_at`, the
+  durable record that a server's stored session must not be restored, by one
+  `addColumn`. A row registered before it holds null, read as not revoked.
+  Additive (one nullable column, no rebuild), so #54 stays deferred.
+
 Committed, generated artefacts (never hand-edited):
 
 - `drift_schemas/server/drift_schema_v1.json` … `drift_schema_v12.json`
-- `drift_schemas/meta/drift_schema_v1.json`
+- `drift_schemas/meta/drift_schema_v1.json`, `drift_schema_v2.json`
 
 CI fails if the latest snapshot of either database drifts from the live
 schema.
@@ -183,8 +190,8 @@ promote `drift_dev` from a dev-dependency to a runtime dependency, so it is
 ## Deferred items
 
 - **#54 — step-by-step harness activation.** The `stepByStep` dispatcher and
-  the FK-off + transaction wrapper decision above. Ten migrations have
-  shipped without them: additive ones, one FK-free rebuild (v3) and v11's
+  the FK-off + transaction wrapper decision above. Every migration so far
+  has shipped without them: additive ones, one FK-free rebuild (v3) and v11's
   in-place renames and drops. The trigger is the first rebuild of an
   FK-referenced table (see "Adding a schema change"). The
   generated `test/drift/**` migration tests already exist and are committed.
