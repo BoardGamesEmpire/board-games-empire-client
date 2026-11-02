@@ -759,6 +759,38 @@ void main() {
         verify(() => secure.delete(key: 'bge_session_b')).called(1);
         verifyNever(() => secure.delete(key: 'bge_meta_key'));
       });
+
+      test('a failed delete does not spare the sessions after it', () async {
+        final firstTrace = StackTrace.fromString('first failure');
+        when(secure.readAll).thenAnswer(
+          (_) async => {
+            'bge_session_a': 'x',
+            'bge_session_b': 'y',
+            'bge_session_c': 'z',
+          },
+        );
+        when(() => secure.delete(key: 'bge_session_a'))
+            .thenAnswer((_) => Future.error(StateError('a'), firstTrace));
+        when(() => secure.delete(key: 'bge_session_b'))
+            .thenThrow(StateError('b'));
+
+        Object? caught;
+        StackTrace? caughtTrace;
+        try {
+          await TokenStorageService.deleteAllStoredSessions(storage: secure);
+        } on Object catch (error, stackTrace) {
+          caught = error;
+          caughtTrace = stackTrace;
+        }
+
+        verify(() => secure.delete(key: 'bge_session_b')).called(1);
+        verify(() => secure.delete(key: 'bge_session_c')).called(1);
+        expect(
+          caught,
+          isA<StateError>().having((e) => e.message, 'message', 'a'),
+        );
+        expect(caughtTrace, same(firstTrace));
+      });
     });
 
     test('the marker is read once per process', () async {

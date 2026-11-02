@@ -125,14 +125,24 @@ class TokenStorageService {
   /// The reset deletes the meta database and every marker with it, and that
   /// database may be why the reset is happening, so the keychain is the only
   /// list of what to delete. A surviving payload would have no marker to refuse
-  /// it when the same server is added again.
+  /// it when the same server is added again. So a failed delete doesn't stop the
+  /// others: every session is tried, then the first failure is rethrown.
   static Future<void> deleteAllStoredSessions({
     @visibleForTesting FlutterSecureStorage? storage,
   }) async {
     final keychain = storage ?? const FlutterSecureStorage();
     final stored = await keychain.readAll();
+    (Object, StackTrace)? firstFailure;
     for (final key in stored.keys) {
-      if (key.startsWith('${_prefix}_')) await keychain.delete(key: key);
+      if (!key.startsWith('${_prefix}_')) continue;
+      try {
+        await keychain.delete(key: key);
+      } on Object catch (error, stackTrace) {
+        firstFailure ??= (error, stackTrace);
+      }
+    }
+    if (firstFailure case (final error, final stackTrace)) {
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
