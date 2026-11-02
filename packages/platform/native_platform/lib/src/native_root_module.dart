@@ -8,6 +8,7 @@ import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
 import 'build_info/package_info_build_info_reader.dart';
+import 'device_info/native_device_info_reader.dart';
 import 'feedback/file_feedback_sink.dart';
 
 /// Registers the shared native (mobile + desktop) device-global services
@@ -35,7 +36,9 @@ import 'feedback/file_feedback_sink.dart';
 /// `runBgeApp`'s belt-and-braces fallback.
 ///
 /// Registrations: [BuildInfo] (resolved read, #35), the durable
-/// [FeedbackSink] (#69), the device-global [ConnectivityService]
+/// [FeedbackSink] (#69), the [DeviceInfoReader] feedback reports take their
+/// OS and OS version from (#324; lazy, and pure — `dart:io`, no plugin), the
+/// device-global [ConnectivityService]
 /// (#9) — disposed via its [Disposable] conformance when the root
 /// container tears down — the #15 [PushNotificationService] null object
 /// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free —
@@ -49,18 +52,23 @@ import 'feedback/file_feedback_sink.dart';
 /// collaborators (breadcrumb ring, locale, the transport resolver) that
 /// don't exist at this altitude.
 ///
-/// [buildInfoReader] and [connectivityFactory] are injectable for tests;
-/// production uses the concrete [PackageInfoBuildInfoReader] and
+/// [buildInfoReader], [deviceInfoReader] and [connectivityFactory] are
+/// injectable for tests; production uses the concrete
+/// [PackageInfoBuildInfoReader], [NativeDeviceInfoReader] and
 /// [ConnectivityPlusService].
 Future<void> registerNativeRootModule(
   DependencyContainer container, {
   BuildInfoReader? buildInfoReader,
+  DeviceInfoReader? deviceInfoReader,
   ConnectivityService Function()? connectivityFactory,
 }) async {
   final reader = buildInfoReader ?? PackageInfoBuildInfoReader();
   container
     ..registerSingleton<BuildInfo>(await reader.read())
     ..registerSingleton<FeedbackSink>(FileFeedbackSink())
+    ..registerLazySingleton<DeviceInfoReader>(
+      () => deviceInfoReader ?? NativeDeviceInfoReader(),
+    )
     ..registerLazySingleton<ConnectivityService>(
       connectivityFactory ?? ConnectivityPlusService.new,
       dispose: (service) async {

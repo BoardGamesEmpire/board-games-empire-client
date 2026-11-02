@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/widgets.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
 import 'package:flutter/material.dart';
@@ -362,6 +363,178 @@ void main() {
 
       expect(find.byKey(EventOverviewScreen.loadingKey), findsNothing);
       expect(find.text('Game night e-0'), findsOneWidget);
+    });
+  });
+
+  group('the home section (#613)', () {
+    const welcome = 'Welcome to Board Games Empire';
+
+    PaginatedResult<EventSnapshot> offering(String id) {
+      final offered = _upcoming(id);
+      return PaginatedResult(
+        items: [
+          EventSnapshot(event: offered.event, occurrences: offered.occurrences),
+        ],
+        meta: const PaginationMeta(
+          page: 1,
+          limit: 3,
+          total: 1,
+          totalPages: 1,
+          hasMore: false,
+        ),
+      );
+    }
+
+    testWidgets('shows when the session has an event repository', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      expect(find.byType(UpcomingEventsSection), findsOneWidget);
+      expect(find.byKey(UpcomingEventsSection.rowKey('e-0')), findsOneWidget);
+      expect(find.text(welcome), findsNothing);
+    });
+
+    testWidgets('the welcome line shows when it has none', (tester) async {
+      await pumpHome(tester, withRepository: false);
+
+      expect(find.byType(UpcomingEventsSection), findsNothing);
+      expect(find.text(welcome), findsOneWidget);
+    });
+
+    testWidgets('See all opens the overview, and back returns home', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      await tester.tap(find.byKey(UpcomingEventsSection.linkKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(EventOverviewScreen), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(EventOverviewScreen), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets('a row opens the detail, and back returns home', (
+      tester,
+    ) async {
+      await pumpHome(tester);
+
+      await tester.tap(find.byKey(UpcomingEventsSection.rowKey('e-0')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EventDetailScreen>(find.byType(EventDetailScreen))
+            .eventId,
+        'e-0',
+      );
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(EventDetailScreen), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets("the row's household is named from the session's cache", (
+      tester,
+    ) async {
+      await pumpHome(tester, withHouseholds: true);
+
+      expect(find.textContaining('The Smiths'), findsOneWidget);
+    });
+
+    testWidgets('a fallback row opens the detail, caching it for reading only', (
+      tester,
+    ) async {
+      final remote = _MockEventRemote();
+      when(
+        () => remote.browseEvents(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => offering('e-offered'));
+      when(() => remote.fetchEvent(any()))
+          .thenAnswer((_) async => _detail('e-offered').snapshot);
+      await pumpHome(tester, events: 0, remote: remote);
+      verifyNever(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      );
+
+      await tester.tap(find.byKey(UpcomingEventsSection.rowKey('e-offered')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<EventDetailScreen>(find.byType(EventDetailScreen))
+            .eventId,
+        'e-offered',
+      );
+      // `read` is what keeps it off the events screen, which lists `attending`.
+      verify(() => repository.cacheEvent(any(), source: EventAccessSource.read))
+          .called(1);
+      verifyNever(
+        () => repository.cacheEvent(any(), source: EventAccessSource.attending),
+      );
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeScreen), findsOneWidget);
+
+      await openTheOverview(tester);
+      expect(find.byKey(EventOverviewScreen.rowKey('e-offered')), findsNothing);
+    });
+
+    testWidgets('home with no event remote shows the empty text', (
+      tester,
+    ) async {
+      await pumpHome(tester, events: 0);
+
+      expect(find.byKey(UpcomingEventsSection.emptyKey), findsOneWidget);
+      expect(find.byKey(UpcomingEventsSection.linkKey), findsOneWidget);
+    });
+
+    testWidgets('a retry on a failed read reaches the session refresher', (
+      tester,
+    ) async {
+      var calls = 0;
+      await pumpHome(
+        tester,
+        listCache: Stream.error(StateError('no read')),
+        refresher: EventRefresher(() async => calls++),
+      );
+
+      await tester.tap(find.byKey(UpcomingEventsSection.retryKey));
+      await tester.pumpAndSettle();
+
+      expect(calls, 1);
+    });
+
+    testWidgets('crossing the breakpoint reads nothing again', (tester) async {
+      final remote = _MockEventRemote();
+      when(
+        () => remote.browseEvents(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => offering('e-offered'));
+      useViewSize(tester, const Size(1000, 800));
+      await pumpHome(tester, events: 0, remote: remote);
+      verify(repository.watchAttendingEventListItems).called(1);
+
+      useViewSize(tester, const Size(500, 800));
+      await tester.pumpAndSettle();
+      useViewSize(tester, const Size(1000, 800));
+      await tester.pumpAndSettle();
+
+      verifyNever(repository.watchAttendingEventListItems);
+      verify(
+        () => remote.browseEvents(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+        ),
+      ).called(1);
+      expect(find.byKey(UpcomingEventsSection.rowKey('e-offered')), findsOne);
     });
   });
 

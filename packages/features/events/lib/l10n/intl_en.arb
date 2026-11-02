@@ -40,6 +40,30 @@
       }
     }
   },
+  "eventsHomeHeading": "Upcoming events",
+  "@eventsHomeHeading": {
+    "description": "Heading of the upcoming events section on the home page (#613). The same whether it lists the user's own events or what's coming up that they aren't going to."
+  },
+  "eventsHomeSeeAll": "See all",
+  "@eventsHomeSeeAll": {
+    "description": "Link beside the home page's upcoming events (#613), over the user's own events, that opens the events screen. Keep it short: it shares a line with the heading."
+  },
+  "eventsHomeSeeAllSpoken": "See all your events",
+  "@eventsHomeSeeAllSpoken": {
+    "description": "What a screen reader says for eventsHomeSeeAll (#613), because 'See all' alone doesn't say of what."
+  },
+  "eventsHomeYourEvents": "Your events",
+  "@eventsHomeYourEvents": {
+    "description": "Link beside the home page's upcoming events (#613) when the user has none of their own listed there, that opens the events screen. Not 'See all', because the events screen doesn't list the rows shown here."
+  },
+  "eventsHomeFallbackNote": "You have no upcoming events yet. Here's what's coming up.",
+  "@eventsHomeFallbackNote": {
+    "description": "Line above the home page's list of upcoming events the user isn't going to (#613), which they can see but aren't on. Says upcoming, not that they aren't going to anything, because they may host or attend an event with no date yet. Doesn't offer to join, because nobody can add themselves to an event yet."
+  },
+  "eventsHomeEmpty": "Nothing coming up right now.",
+  "@eventsHomeEmpty": {
+    "description": "Shown in the home page's upcoming events section (#613) when there's nothing to list, whether none are coming up, the device is offline, or a list couldn't be read. Deliberately names no cause, and doesn't say the user has no events: the link beside it leads to the ones this device holds."
+  },
   "eventsGroupEmpty": "Nothing here right now.",
   "@eventsGroupEmpty": {
     "description": "Shown on the page listing one group of events when the group has no events left, for example once the last upcoming event has moved to Past."
@@ -788,6 +812,10 @@
   "eventsOccurrenceProposed": "Proposed",
   "@eventsOccurrenceProposed": {
     "description": "Where one of an event's dates stands, in the dates on the event's screen: suggested while a vote chooses the date, and not settled yet."
+  },
+  "eventsOccurrencePassed": "Date passed",
+  "@eventsOccurrencePassed": {
+    "description": "Where one of an event's dates stands, in the dates on the event's screen: a suggested date whose time went by before the host chose it, so it is closed unless moved to a later time."
   },
   "eventsOccurrenceConfirmed": "Confirmed",
   "@eventsOccurrenceConfirmed": {

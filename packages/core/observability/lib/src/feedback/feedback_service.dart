@@ -84,9 +84,9 @@ abstract class FeedbackService {
   Future<int> drainPending();
 }
 
-/// The outcome of [FeedbackService.submit] — the prompt uses this to tell
-/// the user the truth ("sent" vs "saved, will send later"; on web the
-/// latter only lasts until reload).
+/// The outcome of [FeedbackService.submit] — the outcome screens use this to
+/// tell the user the truth: sent, saved to send later, or saved only until
+/// the app closes (#385).
 enum FeedbackSubmitResult {
   /// Delivered to the server (a 2xx that looked like the API answering;
   /// the documented success status is 201).
@@ -94,6 +94,12 @@ enum FeedbackSubmitResult {
 
   /// Persisted to the durable sink for a later [FeedbackService.drainPending].
   queued,
+
+  /// Persisted to a sink that does not survive a restart (#385): the
+  /// in-memory fallback, used when a browser refuses storage or no platform
+  /// sink is registered. A drain while the app stays open still sends it,
+  /// but closing the app or reloading the page first loses it.
+  queuedForSession,
 }
 
 /// Failure taxonomy for feedback submission (#97), matching the

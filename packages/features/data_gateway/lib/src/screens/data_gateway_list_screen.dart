@@ -14,14 +14,15 @@ import '../bloc/data_gateway_list_bloc.dart';
 import '../bloc/data_gateway_list_event.dart';
 import '../bloc/data_gateway_list_state.dart';
 import '../widgets/data_gateway_message.dart';
+import '../widgets/data_gateway_status.dart';
 
 /// The DataGateway admin screen (#41): every DataGateway on the active
 /// server, with add, edit, delete, connect and disconnect.
 ///
 /// Decoupled from DI like the household screens: the caller resolves the
 /// per-server [DataGatewayRemoteDataSource] and the session's
-/// [DataGatewayAccess], and owns the routes to the form through [onAdd] and
-/// [onEdit].
+/// [DataGatewayAccess], and owns the routes to the form and to a
+/// DataGateway's own page through [onAdd], [onEdit] and [onOpen].
 ///
 /// The list is read again whenever it comes back into view, so a save shows
 /// up without the form having to hand anything back. That includes a form
@@ -35,6 +36,20 @@ import '../widgets/data_gateway_message.dart';
 /// store that (#41). A connect or disconnect reports its answer once, in the
 /// banner above the list.
 ///
+/// An enabled row also says whether the server uses it yet (#457), in the
+/// same icon and words. The server does not use a DataGateway until an
+/// interview has succeeded, so an enabled one that no interview has succeeded
+/// for returns nothing, and the row says why: it is waiting for its first
+/// interview, or that interview failed ([DataGatewayStatusLine]). A disabled
+/// row has no such line, only its badge.
+///
+/// ## Opening a row
+///
+/// A row with [onOpen] is a control: tapping it opens the DataGateway. Its
+/// menu keeps its own tap. Without [onOpen] a row is content, not a focus
+/// stop, as in the household list: a tap that leads nowhere is worse than
+/// none.
+///
 /// ## Access
 ///
 /// A refused read is the access-denied surface, with nothing to act on. A
@@ -46,6 +61,7 @@ class DataGatewayListScreen extends StatelessWidget {
     this.access,
     this.onAdd,
     this.onEdit,
+    this.onOpen,
     super.key,
   });
 
@@ -70,6 +86,11 @@ class DataGatewayListScreen extends StatelessWidget {
   /// Per-row menu button key: `data_gateway_list.menu_<id>`.
   static Key rowMenuKey(String id) => Key('data_gateway_list.menu_$id');
 
+  /// Per-row status line key: `data_gateway_list.status_<id>` (#457).
+  ///
+  /// On the [DataGatewayStatusLine] inside the row. A disabled row has none.
+  static Key statusKeyOf(String id) => Key('data_gateway_list.status_$id');
+
   final DataGatewayRemoteDataSource remote;
 
   /// The session's access, or null for a composition without one.
@@ -81,6 +102,13 @@ class DataGatewayListScreen extends StatelessWidget {
   /// Opens the edit form for one DataGateway. Null leaves edit out of the row
   /// menu.
   final void Function(BuildContext context, String id)? onEdit;
+
+  /// Opens one DataGateway's own page (#457), or null where there is none to
+  /// open, and then rows stay content rather than controls that do nothing.
+  ///
+  /// Takes the id rather than the row: the destination reads the
+  /// DataGateway from the server itself.
+  final void Function(BuildContext context, String id)? onOpen;
 
   @override
   Widget build(BuildContext context) => BlocProvider<DataGatewayListBloc>(
@@ -94,17 +122,22 @@ class DataGatewayListScreen extends StatelessWidget {
         onUncovered: () => context.read<DataGatewayListBloc>().add(
           const DataGatewayListLoadRequested(),
         ),
-        child: _DataGatewayListView(onAdd: onAdd, onEdit: onEdit),
+        child: _DataGatewayListView(
+          onAdd: onAdd,
+          onEdit: onEdit,
+          onOpen: onOpen,
+        ),
       ),
     ),
   );
 }
 
 class _DataGatewayListView extends StatelessWidget {
-  const _DataGatewayListView({this.onAdd, this.onEdit});
+  const _DataGatewayListView({this.onAdd, this.onEdit, this.onOpen});
 
   final void Function(BuildContext context)? onAdd;
   final void Function(BuildContext context, String id)? onEdit;
+  final void Function(BuildContext context, String id)? onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +148,7 @@ class _DataGatewayListView extends StatelessWidget {
         final ready = state is DataGatewayListReady ? state : null;
         final add = onAdd;
         final edit = onEdit;
+        final open = onOpen;
         final mayChange = ready?.mayChange ?? false;
         final tokens = BgeTokens.of(context);
 
@@ -192,6 +226,9 @@ class _DataGatewayListView extends StatelessWidget {
                     onEdit: edit == null
                         ? null
                         : () => edit(context, gateway.id),
+                    onOpen: open == null
+                        ? null
+                        : () => open(context, gateway.id),
                   ),
                 ),
             },
@@ -208,6 +245,7 @@ class _DataGatewayRow extends StatelessWidget {
     required this.busy,
     required this.mayChange,
     this.onEdit,
+    this.onOpen,
   });
 
   final DataGateway gateway;
@@ -217,12 +255,19 @@ class _DataGatewayRow extends StatelessWidget {
   final bool mayChange;
   final VoidCallback? onEdit;
 
+  /// Null leaves the row untappable.
+  final VoidCallback? onOpen;
+
   @override
   Widget build(BuildContext context) {
     final l10n = DataGatewayLocalizations.of(context);
     final description = gateway.description;
 
     return ListTile(
+      // Without an onTap the tile's InkWell has no handler, so the row is no
+      // tap target and no focus stop. The menu in `trailing` is a control of
+      // its own and takes its own taps.
+      onTap: onOpen,
       title: Text(gateway.name),
       // Under the name rather than in `trailing`, for the reason the
       // household list gives: at 200% text a trailing badge takes the whole
@@ -234,7 +279,15 @@ class _DataGatewayRow extends StatelessWidget {
           Text('${gateway.connectionUrl}:${gateway.connectionPort}'),
           if (description != null && description.isNotEmpty) Text(description),
           const BgeGap.xs(),
-          _EnabledBadge(enabled: gateway.enabled),
+          DataGatewayEnabledBadge(enabled: gateway.enabled),
+          // A disabled row has no line, and so no gap for it.
+          if (gateway.enabled) ...[
+            const BgeGap.xs(),
+            DataGatewayStatusLine(
+              key: DataGatewayListScreen.statusKeyOf(gateway.id),
+              gateway: gateway,
+            ),
+          ],
         ],
       ),
       trailing: busy
@@ -348,44 +401,6 @@ class _RowMenu extends StatelessWidget {
 }
 
 enum _MenuItem { edit, connect, disconnect, delete }
-
-/// "Enabled" or "Disabled", as an icon plus words, never color alone.
-class _EnabledBadge extends StatelessWidget {
-  const _EnabledBadge({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = DataGatewayLocalizations.of(context);
-    final theme = Theme.of(context);
-    final color = enabled
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          enabled
-              ? Icons.check_circle_outline
-              : Icons.do_not_disturb_on_outlined,
-          // Scales with its label, like the household badge.
-          size: MediaQuery.textScalerOf(context)
-              .scale(theme.textTheme.labelMedium?.fontSize ?? 0),
-          color: color,
-        ),
-        const BgeGap.xs(axis: Axis.horizontal),
-        Flexible(
-          child: Text(
-            enabled ? l10n.dataGatewayEnabled : l10n.dataGatewayDisabled,
-            style: theme.textTheme.labelMedium?.copyWith(color: color),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _OutcomeBanner extends StatelessWidget {
   const _OutcomeBanner({required this.outcome});

@@ -1,8 +1,12 @@
+import 'dart:ui_web' as ui_web;
+
 import 'package:interfaces/orchestration.dart';
 import 'package:observability/observability.dart' show BgeLogger, FeedbackSink;
+import 'package:web/web.dart' as web;
 import 'package:web_network/web_network.dart';
 import 'package:web_storage/web_storage.dart';
 
+import 'device_info/web_device_info_reader.dart';
 import 'feedback/indexed_db_feedback_sink.dart';
 import 'session/web_session_bindings.dart';
 import 'web_platform_bootstrap.dart';
@@ -52,11 +56,13 @@ WebPlatformBootstrap bgeWebPlatformBootstrap() => WebPlatformBootstrap(
 );
 
 /// The production web **root** module: [registerWebRootModule] with the
-/// durable feedback sink composed in (#292).
+/// durable feedback sink (#292) and the browser's device reader (#324)
+/// composed in.
 ///
 /// Here for the same reason [buildWebServerScope] is: `web_root_module.dart`
 /// is on the VM-compilable side of this package and cannot name a type that
-/// reaches `dart:js_interop`. This file already cannot run on the VM, so the
+/// reaches `dart:js_interop`, nor `dart:ui_web`'s browser detection, which
+/// only exists on the web. This file already cannot run on the VM, so the
 /// edge costs nothing that was not already paid.
 Future<void> buildWebRootModule(DependencyContainer container) async {
   // Started, not awaited: the module overlaps this with its own platform read
@@ -64,7 +70,11 @@ Future<void> buildWebRootModule(DependencyContainer container) async {
   // waits the longer of the two and not their sum.
   final opening = _openFeedbackSink();
   try {
-    await registerWebRootModule(container, feedbackSink: opening);
+    await registerWebRootModule(
+      container,
+      feedbackSink: opening,
+      deviceInfoReader: _browserDeviceInfoReader(),
+    );
   } on Object {
     // Ownership transfers at registration, and this throw means it never
     // happened: `createRootContainer`'s dispose-partial guard fires the hooks
@@ -96,8 +106,9 @@ Future<void> buildWebRootModule(DependencyContainer container) async {
 ///
 /// Reported at `error` on the same reasoning as an `ephemeral` database: the
 /// app keeps working, but a queued report now evaporates on reload, and that
-/// is invisible from the outside. What the user is *told* at approval time is
-/// #385 — the prompt promises a later send on every platform today.
+/// is invisible from the outside. The user is told at approval time: the
+/// in-memory fallback does not survive a restart, so the outcome screens say
+/// the report is held only until the app closes (#385).
 Future<FeedbackSink?> _openFeedbackSink() async {
   try {
     return await IndexedDbFeedbackSink.open();
@@ -111,6 +122,15 @@ Future<FeedbackSink?> _openFeedbackSink() async {
     return null;
   }
 }
+
+/// A [WebDeviceInfoReader] over the engine's own browser detection (#324).
+/// Each source is read when the reader is, not here.
+WebDeviceInfoReader _browserDeviceInfoReader() => WebDeviceInfoReader(
+  userAgent: () => ui_web.browser.userAgent,
+  vendor: () => web.window.navigator.vendor,
+  browserEngine: () => ui_web.browser.browserEngine.name,
+  operatingSystem: () => ui_web.browser.operatingSystem.name,
+);
 
 /// Logger for the storage report; named for the layer, matching
 /// `bge.platform.native_bootstrap`.

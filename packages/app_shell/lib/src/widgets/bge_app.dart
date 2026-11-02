@@ -403,6 +403,7 @@ class _BgeAppState extends State<BgeApp> {
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
+      dataGatewayDetailBuilder: _buildDataGatewayDetailRoute,
     );
     // #76/#105: keep the review slot honest whenever the crash draft
     // empties or changes identity.
@@ -731,6 +732,7 @@ class _BgeAppState extends State<BgeApp> {
               onReview: (ctx) => ctx.push(AppRoutes.stuckChanges),
             )
           : null,
+      upcomingEvents: canReadEvents ? _buildUpcomingEvents(container) : null,
       entries: [
         if (canReadCollection)
           HomeMenuEntry(
@@ -815,6 +817,29 @@ class _BgeAppState extends State<BgeApp> {
       valueListenable: access,
       builder: (_, access, _) =>
           home(admin: access.read == DataGatewayRead.granted),
+    );
+  }
+
+  /// Home's upcoming events (#613), for a [container] holding the user-session
+  /// [EventRepository]. Keyed on it, so that another user's session is a new
+  /// section with its own readers.
+  ///
+  /// The remote is optional, as the detail's is: with none, the section shows
+  /// the user's own events and its empty text.
+  Widget _buildUpcomingEvents(DependencyContainer container) {
+    final repository = container.get<EventRepository>();
+    return UpcomingEventsSection(
+      key: ObjectKey(repository),
+      repository: repository,
+      households: () => _eventHouseholds(container),
+      hydration: _eventHydration(container),
+      onRetry: _eventsRetry(container),
+      remote: container.isRegistered<EventRemoteDataSource>()
+          ? container.get<EventRemoteDataSource>()
+          : null,
+      connectivity: _rootConnectivity(),
+      onOpen: _openEvent,
+      onOpenEvents: (ctx) => unawaited(ctx.push<void>(AppRoutes.events)),
     );
   }
 
@@ -1526,8 +1551,8 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// Opens an event's detail (#498), pushed above the list it was opened
-  /// from so that back returns there. One callback for the overview and the
-  /// group pages, which are both lists of the same rows.
+  /// from so that back returns there. One callback for the overview, the
+  /// group pages and home's section (#613), which all list the same rows.
   static void _openEvent(BuildContext context, String eventId) =>
       unawaited(context.push<void>(AppRoutes.eventDetailOf(eventId)));
 
@@ -1806,9 +1831,9 @@ class _BgeAppState extends State<BgeApp> {
   /// Guarded on the client alone, not on access: a deep link by a user the
   /// server refuses reaches the screen, which says so (#41).
   ///
-  /// The forms are pushed. The list reads itself again whenever it comes back
-  /// into view, including the list go_router builds beneath a form reached
-  /// by a `go` straight to it.
+  /// The forms and a DataGateway's own page are pushed. The list reads itself
+  /// again whenever it comes back into view, including the list go_router
+  /// builds beneath one reached by a `go` straight to it.
   Widget? _buildDataGatewayListRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -1822,6 +1847,8 @@ class _BgeAppState extends State<BgeApp> {
       onAdd: (ctx) => unawaited(ctx.push<void>(AppRoutes.dataGatewayAdd)),
       onEdit: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.dataGatewayEditOf(id))),
+      onOpen: (ctx, id) =>
+          unawaited(ctx.push<void>(AppRoutes.dataGatewayDetailOf(id))),
     );
   }
 
@@ -1845,6 +1872,25 @@ class _BgeAppState extends State<BgeApp> {
       access: _dataGatewayAccess(container),
       editingId: dataGatewayId,
       onDone: (ctx) => ctx.pop(),
+    );
+  }
+
+  /// One DataGateway's own page (#457). Same resolution and null contract as
+  /// [_buildDataGatewayListRoute].
+  Widget? _buildDataGatewayDetailRoute(
+    BuildContext context,
+    String dataGatewayId,
+  ) {
+    final active = widget.bootstrapCubit.activeServerScope?.active;
+    if (active == null) return null;
+
+    final container = active.container;
+    if (!container.isRegistered<DataGatewayRemoteDataSource>()) return null;
+
+    return DataGatewayDetailScreen(
+      remote: container.get<DataGatewayRemoteDataSource>(),
+      access: _dataGatewayAccess(container),
+      id: dataGatewayId,
     );
   }
 

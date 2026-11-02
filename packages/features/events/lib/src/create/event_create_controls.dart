@@ -417,8 +417,7 @@ Map<String, AbstractControl<dynamic>> _buildRules() {
 /// Not a `valueChanges` listener: reactive_forms delivers those a microtask
 /// later, so a submit could read the voting settings as they stood before
 /// the switch, which is why feedback's compose form syncs its severity
-/// where it is read. Nor the dropdown's `onChanged`, which a pick of the
-/// value already chosen calls too, where nothing should start over.
+/// where it is read.
 class _Choice<T> extends FormControl<T> {
   _Choice({super.value, super.disabled});
 

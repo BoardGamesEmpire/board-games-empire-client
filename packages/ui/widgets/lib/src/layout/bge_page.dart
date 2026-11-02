@@ -1,6 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart'
+    show BoxParentData, PipelineOwner, RenderShiftedBox, ScrollCacheExtent;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:ui_tokens/ui_tokens.dart';
 
 /// The largest share of the viewport a [BgePage.footer] may take.
@@ -12,6 +16,14 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// Exists because the footer sits outside the scroll view, so an unbounded
 /// one starves the content above it. Half leaves the content at least half.
 const double _footerMaxViewportFraction = 0.5;
+
+/// How many viewports of content a [BgePage.slivers] page with a footer keeps
+/// built past each edge of its view, where the default is 250dp.
+///
+/// One is enough because of [_footerMaxViewportFraction]: a footer takes at
+/// most half the body, so a row it pushes out of view is at most half the
+/// body past the edge, which is no more than the view it leaves.
+const double _footerCacheViewports = 1;
 
 /// The standard page scaffold: a scrollable, width-constrained, centered
 /// content column inside a [Scaffold] (#165).
@@ -219,8 +231,11 @@ class BgePage extends StatelessWidget {
   ///
   /// ## When to pin (#211)
   ///
-  /// On a **flow step** or a **long review surface**, and nowhere else. Today
-  /// that means feedback compose and review. Short forms and vertically
+  /// On a **flow step**, a **long review surface**, or for **the outcome of an
+  /// action on a long list or page**, and nowhere else. Today that means
+  /// feedback compose and review, and the banners that answer actions on a
+  /// DataGateway's page: on the DataGateway itself, and on its language
+  /// worklist, stacked in its one footer (#457). Short forms and vertically
   /// centred pages keep their action inline, at the end of the form:
   /// server-add, sign-in, register and create-household.
   ///
@@ -235,6 +250,16 @@ class BgePage extends StatelessWidget {
   ///   submit band took 100dp of a 424dp body.
   /// - **A short form does not.** Its button already scrolls into reach, and
   ///   a pinned band costs content height for as long as the page is open.
+  /// - **An outcome on a long list pins because the list moves on.** Inside
+  ///   the list, a banner is built only near the view, so one that lands after
+  ///   the user has scrolled away is neither seen nor announced. At the head of
+  ///   a long page, a banner takes the page from the control it answers, and
+  ///   taking it away moves every control below it. In the footer it is always
+  ///   built and on screen, and reveals itself only within the footer's own
+  ///   scroll view, so the page doesn't move. Such a footer is passed on every
+  ///   build and renders nothing while there is nothing to report: this page
+  ///   builds a different tree with a footer than without one, so a footer
+  ///   that came and went would lose the scroll position and focus (#457).
   ///
   /// A page that pins may pass a [BgeFormActions] here, so that a failure
   /// still sits on the action it answers.
@@ -243,6 +268,27 @@ class BgePage extends StatelessWidget {
   /// over the body, so it lands on top of the footer band and swallows taps
   /// on its trailing end. Asserted rather than documented-and-hoped, because
   /// the overlap is invisible until someone taps the wrong half of a button.
+  ///
+  /// ## A footer over a lazy list
+  ///
+  /// A footer that arrives takes room from the end of the view, so the rows
+  /// there leave it. On a lazy list a row that far out of view is no longer
+  /// built, and keyboard focus on it, or on its way back to it, is lost. So a
+  /// [BgePage.slivers] page with a footer keeps one viewport of content built
+  /// past each edge of the view, where the default is 250dp. One is enough
+  /// because the footer takes at most half the body. A page without a footer
+  /// keeps the default (#457).
+  ///
+  /// ## A footer that gets shorter
+  ///
+  /// The view gets taller by what the footer gives back, so the end of the
+  /// page comes up to meet it. With the page scrolled to its end, that would
+  /// drop everything on the page by that height, under a pointer that may be
+  /// about to press something. So the band gives back only what the page has
+  /// left below the view, and keeps the rest as empty room above what is left
+  /// of the footer. That room goes as the page leaves its end, at the pace it
+  /// leaves. A page at its start has nothing to drop, and takes it all at
+  /// once (#457).
   final Widget? footer;
 
   /// Rejects a page carrying both a [footer] and a [floatingActionButton]
@@ -329,64 +375,50 @@ class BgePage extends StatelessWidget {
             // the flex entirely rather than make every one of them lay out a
             // Column with a single child.
             ? _pageContent(content, contentPadding, maxWidth)
-            : LayoutBuilder(
-                builder: (context, constraints) => Column(
-                  // Stretch so the footer's own cap decides its width. Left
-                  // to shrink-wrap it would centre at its intrinsic width
-                  // and stop lining up with the column above it.
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: _pageContent(content, contentPadding, maxWidth),
-                    ),
-                    ConstrainedBox(
-                      // The footer is not in the scroll view, so an
-                      // unbounded one starves the Expanded above it: a tall
-                      // footer at 200% text scale drove the scroll view to
-                      // zero height and made the whole page unreachable —
-                      // the failure the scroll guarantee exists to prevent.
-                      constraints: BoxConstraints(
-                        maxHeight:
-                            constraints.maxHeight * _footerMaxViewportFraction,
-                      ),
-                      // Scrollable, because the cap alone only trades one
-                      // unreachable region for another: a note plus a button
-                      // at 200% text scale overflowed the cap and put the
-                      // button 400dp below the window. The same reasoning as
-                      // the page's own scroll view — a footer that fits at
-                      // 1.0 does not at 2.0 — so it shrink-wraps when short
-                      // and scrolls when it is not.
-                      child: SingleChildScrollView(
-                        child: Padding(
-                          // The content's own horizontal inset so the footer
-                          // lines up with the column above it, and its bottom
-                          // inset so the action is not flush against the
-                          // window edge. The top is dropped because the footer
-                          // is a band against the content, not a floating
-                          // card — a page that wants a visible separation
-                          // should put a Divider in the footer, since the
-                          // scroll view's own bottom padding scrolls away with
-                          // the content and cannot supply one.
-                          padding: resolvedPadding
-                              .resolve(Directionality.of(context))
-                              .copyWith(top: 0),
-                          // `heightFactor: 1` so this shrink-wraps vertically.
-                          // Without it the Align fills the cap above, and the
-                          // footer band is always half the viewport — a 48dp
-                          // button stranded mid-band with the content squeezed
-                          // into the top half. The cap bounds the footer; it
-                          // must not size it.
-                          child: Align(
-                            heightFactor: 1,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(maxWidth: maxWidth),
-                              child: footer,
-                            ),
-                          ),
-                        ),
+            : _PageWithFooter(
+                page: _pageContent(content, contentPadding, maxWidth),
+                // Scrollable, because the cap alone only trades one
+                // unreachable region for another: a note plus a button
+                // at 200% text scale overflowed the cap and put the
+                // button 400dp below the window. The same reasoning as
+                // the page's own scroll view — a footer that fits at
+                // 1.0 does not at 2.0 — so it shrink-wraps when short
+                // and scrolls when it is not.
+                footer: SingleChildScrollView(
+                  // Never the route's primary scroll view, which on
+                  // Android and iOS is the page's own. A second one
+                  // there leaves the keyboard's page scrolling two
+                  // positions to choose from with focus on the page,
+                  // as it is when a screen opens: it threw, and the
+                  // page didn't move (#457).
+                  primary: false,
+                  child: Padding(
+                    // The content's own horizontal inset so the footer
+                    // lines up with the column above it, and its bottom
+                    // inset so the action is not flush against the
+                    // window edge. The top is dropped because the footer
+                    // is a band against the content, not a floating
+                    // card — a page that wants a visible separation
+                    // should put a Divider in the footer, since the
+                    // scroll view's own bottom padding scrolls away with
+                    // the content and cannot supply one.
+                    padding: resolvedPadding
+                        .resolve(Directionality.of(context))
+                        .copyWith(top: 0),
+                    // `heightFactor: 1` so this shrink-wraps vertically.
+                    // Without it the Align fills the cap above, and the
+                    // footer band is always half the viewport — a 48dp
+                    // button stranded mid-band with the content squeezed
+                    // into the top half. The cap bounds the footer; it
+                    // must not size it.
+                    child: Align(
+                      heightFactor: 1,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: footer,
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
       ),
@@ -416,6 +448,10 @@ class BgePage extends StatelessWidget {
           return CustomScrollView(
             controller: scrollController,
             semanticChildCount: semanticChildCount,
+            // See "A footer over a lazy list" on [footer].
+            scrollCacheExtent: footer == null
+                ? null
+                : const ScrollCacheExtent.viewport(_footerCacheViewports),
             slivers: [
               SliverPadding(
                 padding: resolved.add(EdgeInsets.symmetric(horizontal: gutter)),
@@ -455,4 +491,164 @@ class BgePage extends StatelessWidget {
           );
         },
       );
+}
+
+/// A page's content over its footer, capped so that the footer leaves the
+/// content at least half the body. See "A footer that gets shorter" on
+/// [BgePage.footer] for the room it keeps.
+class _PageWithFooter extends StatefulWidget {
+  const _PageWithFooter({required this.page, required this.footer});
+
+  final Widget page;
+  final Widget footer;
+
+  @override
+  State<_PageWithFooter> createState() => _PageWithFooterState();
+}
+
+class _PageWithFooterState extends State<_PageWithFooter> {
+  /// How the page's own scroll view last reported itself. Null until it has.
+  final ValueNotifier<ScrollMetrics?> _pageMetrics = ValueNotifier(null);
+
+  @override
+  void dispose() {
+    _pageMetrics.dispose();
+    super.dispose();
+  }
+
+  bool _onPageNotification(Notification notification) {
+    final (metrics, depth) = switch (notification) {
+      ScrollNotification(:final metrics, :final depth) => (metrics, depth),
+      ScrollMetricsNotification(:final metrics, :final depth) => (
+        metrics,
+        depth,
+      ),
+      _ => (null, 0),
+    };
+    // Only the page's own: a horizontal strip on it, or a scroll view inside
+    // it, says nothing about where the page is.
+    if (metrics != null && depth == 0) _pageMetrics.value = metrics;
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Column(
+      // Stretch so the footer's own cap decides its width. Left to shrink-wrap
+      // it would centre at its intrinsic width and stop lining up with the
+      // column above it.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: NotificationListener<Notification>(
+            onNotification: _onPageNotification,
+            child: widget.page,
+          ),
+        ),
+        ConstrainedBox(
+          // The footer is not in the scroll view, so an unbounded one starves
+          // the Expanded above it: a tall footer at 200% text scale drove the
+          // scroll view to zero height and made the whole page unreachable —
+          // the failure the scroll guarantee exists to prevent.
+          constraints: BoxConstraints(
+            maxHeight: constraints.maxHeight * _footerMaxViewportFraction,
+          ),
+          child: _FooterRoom(pageMetrics: _pageMetrics, child: widget.footer),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Keeps the room a shorter footer would give back, while giving it back would
+/// move the page.
+class _FooterRoom extends SingleChildRenderObjectWidget {
+  const _FooterRoom({required this.pageMetrics, required super.child});
+
+  final ValueListenable<ScrollMetrics?> pageMetrics;
+
+  @override
+  _RenderFooterRoom createRenderObject(BuildContext context) =>
+      _RenderFooterRoom(pageMetrics);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFooterRoom renderObject,
+  ) => renderObject.pageMetrics = pageMetrics;
+}
+
+/// A render object rather than a measure taken after the frame, so the footer
+/// that got shorter and the room kept for it are the same frame: the column
+/// lays the footer out before the page, and the page never sees a taller view.
+class _RenderFooterRoom extends RenderShiftedBox {
+  _RenderFooterRoom(this._pageMetrics) : super(null);
+
+  ValueListenable<ScrollMetrics?> _pageMetrics;
+
+  /// Keeping room for the footer now.
+  bool _keeping = false;
+
+  set pageMetrics(ValueListenable<ScrollMetrics?> value) {
+    if (identical(value, _pageMetrics)) return;
+    if (attached) {
+      _pageMetrics.removeListener(_onPageMoved);
+      value.addListener(_onPageMoved);
+    }
+    _pageMetrics = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _pageMetrics.addListener(_onPageMoved);
+  }
+
+  @override
+  void detach() {
+    _pageMetrics.removeListener(_onPageMoved);
+    super.detach();
+  }
+
+  void _onPageMoved() {
+    if (!_keeping) return;
+    // A page's scroll activity can change during layout, when its content has
+    // changed, and that can't lay anything out again until the frame is over.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (attached) markNeedsLayout();
+      });
+    } else {
+      markNeedsLayout();
+    }
+  }
+
+  /// How much of [extra] can go without moving the page.
+  double _mayGiveBack(double extra) {
+    final page = _pageMetrics.value;
+    if (page == null || page.pixels <= page.minScrollExtent) return extra;
+    return math.min(extra, page.extentAfter);
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      _keeping = false;
+      return;
+    }
+    child.layout(constraints.copyWith(minHeight: 0), parentUsesSize: true);
+    final natural = child.size.height;
+    final extra = hasSize ? math.max(0.0, size.height - natural) : 0.0;
+    final height = constraints.constrainHeight(
+      natural + extra - _mayGiveBack(extra),
+    );
+    _keeping = height > natural;
+    size = constraints.constrain(Size(child.size.width, height));
+    // At the foot of the band, so what is left of the footer stays put.
+    (child.parentData! as BoxParentData).offset = Offset(0, height - natural);
+  }
 }

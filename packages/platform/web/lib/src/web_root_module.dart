@@ -45,7 +45,9 @@ import 'build_info/package_info_build_info_reader.dart';
 /// package split, so the browser-only composition root opens it and passes
 /// it in. A caller that passes nothing — every VM test, and the storage-less
 /// bootstrap — gets RAM, and an approved-but-unsent report is then lost on
-/// reload. The device-global [ConnectivityService] (#9), disposed via its
+/// reload. The [DeviceInfoReader] feedback reports take their OS and browser
+/// from (#324), when [deviceInfoReader] supplies one. The device-global
+/// [ConnectivityService] (#9), disposed via its
 /// [Disposable] conformance when the root container tears down, and the
 /// #15 [PushNotificationService] null object
 /// ([UnsupportedPushNotificationService]: `const`, pure, plugin-free).
@@ -59,6 +61,11 @@ import 'build_info/package_info_build_info_reader.dart';
 /// rather than a test one — it is how the browser-only half supplies a sink
 /// this library cannot name.
 ///
+/// [deviceInfoReader] is a composition seam for the same reason: the reader's
+/// sources are `dart:ui_web`'s browser detection, which has no `browser` off
+/// the web. A caller that passes none registers none, and `runBgeApp` falls
+/// back to an `unknown` OS.
+///
 /// [feedbackSink] is a *future* rather than a value so the two bootstrap-time
 /// platform reads overlap. Both are bounded — [BuildInfoReader] by its own
 /// read timeout, the sink's open by its — and they share no state, so taking
@@ -71,6 +78,7 @@ Future<void> registerWebRootModule(
   BuildInfoReader? buildInfoReader,
   ConnectivityService Function()? connectivityFactory,
   Future<FeedbackSink?>? feedbackSink,
+  DeviceInfoReader? deviceInfoReader,
 }) async {
   final reader = buildInfoReader ?? PackageInfoBuildInfoReader();
   // Resolved before the read is awaited, so a caller's in-flight open is not
@@ -107,4 +115,7 @@ Future<void> registerWebRootModule(
     // registered anyway because the refresh-time re-check (#87) applies
     // to web's identity fetch during auth (#37).
     ..registerLazySingleton<VersionNegotiator>(VersionNegotiatorImpl.new);
+  if (deviceInfoReader != null) {
+    container.registerSingleton<DeviceInfoReader>(deviceInfoReader);
+  }
 }

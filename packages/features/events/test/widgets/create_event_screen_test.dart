@@ -14,6 +14,7 @@ import 'package:interfaces/sync.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 import 'package:user_search/user_search.dart';
 
@@ -305,8 +306,8 @@ void main() {
     matching: find.text(name),
   );
 
-  DropdownButton<T> menu<T>(WidgetTester tester) =>
-      tester.widget<DropdownButton<T>>(find.byType(DropdownButton<T>));
+  BgeDropdownField<T> menu<T>(WidgetTester tester) =>
+      tester.widget<BgeDropdownField<T>>(find.byType(BgeDropdownField<T>));
 
   TextField textField(WidgetTester tester, Key field) =>
       tester.widget<TextField>(
@@ -400,7 +401,9 @@ void main() {
       'offer only what it knows', (tester) async {
     await open(tester);
 
-    // Untouched, each reads as the server's default, and is left out.
+    // Untouched, each reads as the server's default. That each is left out
+    // of the draft is 'a valid form sends the draft it shows', whose draft
+    // has neither.
     expect(
       find.descendant(
         of: find.byKey(CreateEventScreen.typeKey),
@@ -415,14 +418,12 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(menu<EventType>(tester).value, isNull);
-    expect(menu<Reach>(tester).value, isNull);
-    expect(menu<EventType>(tester).items!.map((item) => item.value), [
+    expect(menu<EventType>(tester).items.map((item) => item.value), [
       for (final type in EventType.values)
         if (type != EventType.unknown) type,
     ]);
     // From the narrowest to the widest.
-    expect(menu<Reach>(tester).items!.map((item) => item.value), [
+    expect(menu<Reach>(tester).items.map((item) => item.value), [
       Reach.private,
       Reach.friends,
       Reach.friendsOfFriends,
@@ -576,7 +577,7 @@ void main() {
 
       // Drawn, with nothing to pick until they answer.
       expect(pickerShows('No household'), findsOneWidget);
-      expect(menu<String?>(tester).onChanged, isNull);
+      expect(menu<String?>(tester).readOnly, isTrue);
 
       await fill(tester);
       await submit(tester);
@@ -796,9 +797,9 @@ void main() {
       ]) {
         expect(textField(tester, field).readOnly, isTrue, reason: '$field');
       }
-      expect(menu<String?>(tester).onChanged, isNull);
-      expect(menu<EventType>(tester).onChanged, isNull);
-      expect(menu<Reach>(tester).onChanged, isNull);
+      expect(menu<String?>(tester).readOnly, isTrue);
+      expect(menu<EventType>(tester).readOnly, isTrue);
+      expect(menu<Reach>(tester).readOnly, isTrue);
       // And every section below the basics.
       expect(
         tester

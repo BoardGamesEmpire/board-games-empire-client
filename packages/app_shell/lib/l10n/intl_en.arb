@@ -86,7 +86,7 @@
   },
   "homeEmptyStateTitle": "Welcome to Board Games Empire",
   "@homeEmptyStateTitle": {
-    "description": "Heading of the home screen's empty state, shown before any content exists (#129)."
+    "description": "Heading of the home screen's empty state, shown only when the session has none of the home page's sections to offer (#129, #613)."
   },
   "homeEmptyStateBody": "Open the menu to get started.",
   "@homeEmptyStateBody": {
@@ -131,6 +131,10 @@
   "crashReportPromptQueued": "Saved. It will be sent once you're connected and signed in.",
   "@crashReportPromptQueued": {
     "description": "Confirmation shown when the crash report was saved locally for a later send (offline, or not signed in); must stay honest — it was NOT sent yet"
+  },
+  "crashReportPromptQueuedForSession": "Saved for now, but it will be lost if the app is closed or reloaded. It may still be sent before then if you're connected and signed in.",
+  "@crashReportPromptQueuedForSession": {
+    "description": "Confirmation shown when the crash report could only be held in memory (the device refused storage) for a later send; must stay honest — it was NOT sent yet and is NOT durable: closing or reloading the app loses it, and nothing guarantees a send attempt before then (the retry runs on sign-in, not when the connection or the server recovers)"
   },
   "crashReportPromptFailed": "The report couldn't be sent or saved.",
   "@crashReportPromptFailed": {
@@ -188,6 +192,26 @@
   "@feedbackReviewFieldLocale": {
     "description": "Label for the locale/language field on the review screen"
   },
+  "feedbackReviewDeviceOperatingSystem": "Operating system",
+  "@feedbackReviewDeviceOperatingSystem": {
+    "description": "Label for the device's operating system (e.g. macOS, android) in the review screen's device details"
+  },
+  "feedbackReviewDeviceOperatingSystemVersion": "OS version",
+  "@feedbackReviewDeviceOperatingSystemVersion": {
+    "description": "Label for the operating system's version in the review screen's device details"
+  },
+  "feedbackReviewDeviceOperatingSystemBuild": "OS build",
+  "@feedbackReviewDeviceOperatingSystemBuild": {
+    "description": "Label for the operating system's build ID (Android reports a build ID rather than a version) in the review screen's device details"
+  },
+  "feedbackReviewDeviceBrowser": "Browser",
+  "@feedbackReviewDeviceBrowser": {
+    "description": "Label for the web browser's name and major version (e.g. Firefox 131) in the review screen's device details"
+  },
+  "feedbackReviewDeviceBrowserEngine": "Browser engine",
+  "@feedbackReviewDeviceBrowserEngine": {
+    "description": "Label for the web browser's rendering engine (blink, webkit or firefox) in the review screen's device details"
+  },
   "feedbackReviewFieldCategory": "Type",
   "@feedbackReviewFieldCategory": {
     "description": "Label for the report category/type field (view-only) on the review screen"
@@ -231,6 +255,10 @@
   "feedbackReviewQueued": "Saved. It will be sent once you're connected and signed in.",
   "@feedbackReviewQueued": {
     "description": "Confirmation shown when the reviewed report was saved locally for a later send; must stay honest — it was NOT sent yet"
+  },
+  "feedbackReviewQueuedForSession": "Saved for now, but it will be lost if the app is closed or reloaded. It may still be sent before then if you're connected and signed in.",
+  "@feedbackReviewQueuedForSession": {
+    "description": "Confirmation shown when the reviewed report could only be held in memory (the device refused storage) for a later send; must stay honest — it was NOT sent yet and is NOT durable: closing or reloading the app loses it, and nothing guarantees a send attempt before then (the retry runs on sign-in, not when the connection or the server recovers)"
   },
   "feedbackReviewFailed": "The report couldn't be sent or saved.",
   "@feedbackReviewFailed": {

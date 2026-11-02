@@ -8,17 +8,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 
-/// A DataGateway row as the backend serializes the Prisma model at
-/// `a182bf38` (backend PR #750, merged): every column, `authParameters`
-/// included, because the controller returns the row unfiltered until
-/// backend#753.
+/// A DataGateway row as the backend serializes it at `5f4f0728`: every column
+/// but the stored credentials, which no route returns since backend#753 (the
+/// row says only whether there are any), and with the `interview` block and
+/// `sections` the server derives.
+///
+/// The raw interview columns are not derived from the `interview` a test
+/// passes. The client reads the block, so a test that passes its own fails if
+/// the mapping reads the columns instead.
 Map<String, dynamic> _row({
   String id = 'dg_1',
   String name = 'BoardGameGeek',
   String? description = 'The BGG bridge',
   bool enabled = true,
   String authType = 'None',
-  Object? authParameters = const {'token': 's3cret-token'},
+  List<String> capabilities = _allCapabilities,
+  List<String> disabledCapabilities = const [],
+  Map<String, dynamic>? interview,
+  List<Map<String, dynamic>>? sections,
 }) => {
   'id': id,
   'name': name,
@@ -34,15 +41,77 @@ Map<String, dynamic> _row({
   'connectionPort': 50051,
   'enabled': enabled,
   'authType': authType,
-  'authParameters': authParameters,
+  'hasAuthParameters': false,
   'usageCount': 12,
   'lastUsed': '2026-10-14T18:00:00.000Z',
-  'languagesSyncedAt': null,
+  'capabilities': capabilities,
+  'coveragePlatformTypes': ['Tabletop'],
+  'coverageContentTypes': ['BaseGame', 'Expansion'],
+  'filterableAxes': ['ContentType', 'PublishYear'],
+  'acceptedLanguageCodeFormats': ['Iso6391'],
+  'responseLanguageCodeFormat': 'Iso6391',
+  'passthroughSearchLanguage': false,
+  'contentFormat': 'Html',
+  'gatewayVersion': '1.4.2',
+  'disabledCapabilities': disabledCapabilities,
+  'firstInterviewedAt': '2026-10-01T10:35:00.000Z',
+  'lastInterviewedAt': '2026-10-14T18:00:00.000Z',
+  'lastInterviewFailedAt': null,
+  'lastInterviewFailure': null,
+  'interview': interview ?? _interview(),
+  'sections': sections ?? _loadedSections(),
   'createdById': 'user_owner',
   'deletedAt': null,
   'createdAt': '2026-10-01T10:30:00.000Z',
   'updatedAt': '2026-10-14T18:00:00.000Z',
 };
+
+/// What a DataGateway that serves everything this client knows of declares,
+/// spelled as the server spells it. Written out rather than read from
+/// `DataGatewayCapabilities`, so a mistyped constant fails a test.
+const _allCapabilities = [
+  'Search',
+  'Fetch',
+  'FetchExpansions',
+  'ListLanguages',
+  'ListPlatforms',
+  'ListCategories',
+  'ListMechanics',
+];
+
+/// The `interview` block of a DataGateway whose last interview succeeded.
+Map<String, dynamic> _interview({
+  bool interviewed = true,
+  String? firstInterviewedAt = '2026-10-01T10:35:00.000Z',
+  String? lastInterviewedAt = '2026-10-14T18:00:00.000Z',
+  Map<String, dynamic>? failure,
+}) => {
+  'interviewed': interviewed,
+  'firstInterviewedAt': firstInterviewedAt,
+  'lastInterviewedAt': lastInterviewedAt,
+  'failure': failure,
+};
+
+/// One entry of `sections`: a list job that has not loaded, unless given a
+/// time.
+Map<String, dynamic> _section(
+  String capability, {
+  String? lastLoadedAt,
+  Map<String, dynamic>? failure,
+}) => {
+  'capability': capability,
+  'lastLoadedAt': lastLoadedAt,
+  'failure': failure,
+};
+
+/// The four list jobs, run a minute apart and in the server's order, all
+/// loaded.
+List<Map<String, dynamic>> _loadedSections() => [
+  _section('ListLanguages', lastLoadedAt: '2026-10-14T18:01:00.000Z'),
+  _section('ListPlatforms', lastLoadedAt: '2026-10-14T18:02:00.000Z'),
+  _section('ListCategories', lastLoadedAt: '2026-10-14T18:03:00.000Z'),
+  _section('ListMechanics', lastLoadedAt: '2026-10-14T18:04:00.000Z'),
+];
 
 String _listBody(
   List<Map<String, dynamic>> rows, {
@@ -50,8 +119,25 @@ String _listBody(
   int limit = 100,
   int? total,
   bool hasMore = false,
+}) => _pagedBody(
+  'dataGateways',
+  rows,
+  page: page,
+  limit: limit,
+  total: total,
+  hasMore: hasMore,
+);
+
+/// A page in the API's list envelope: `{ <key>: [...], pagination }`.
+String _pagedBody(
+  String key,
+  List<Map<String, dynamic>> rows, {
+  int page = 1,
+  int limit = 50,
+  int? total,
+  bool hasMore = false,
 }) => jsonEncode({
-  'dataGateways': rows,
+  key: rows,
   'pagination': {
     'page': page,
     'limit': limit,
@@ -61,9 +147,90 @@ String _listBody(
   },
 });
 
+/// A language link as the backend serializes it at `5f4f0728`
+/// (`LanguageLinkView`): every column the review routes select. The model
+/// holds only some of them, so a row that still parses shows the mapping
+/// leaves the rest alone.
+Map<String, dynamic> _link({
+  String id = 'll_1',
+  String value = 'Czech',
+  String status = 'Unresolved',
+  Map<String, dynamic>? tag,
+  String? suppliedName,
+  String? suppliedNativeName,
+  String? suppliedIetfTag,
+}) => {
+  'id': id,
+  'gatewayId': 'dg_1',
+  'value': value,
+  'format': 'Name',
+  'status': status,
+  'origin': 'Interview',
+  'tag': tag,
+  'suppliedIetfTag': suppliedIetfTag,
+  'suppliedIso6393': null,
+  'suppliedIso6391': null,
+  'suppliedName': suppliedName,
+  'suppliedNativeName': suppliedNativeName,
+  'createdAt': '2026-10-01T10:30:00.000Z',
+  'updatedAt': '2026-10-14T18:00:00.000Z',
+};
+
+/// The `tag` of a Resolved link: the three columns the review routes select.
+Map<String, dynamic> _linkTag({
+  String id = 't1',
+  String tag = 'pt-BR',
+  String name = 'Portuguese (Brazil)',
+}) => {'id': id, 'tag': tag, 'name': name};
+
+/// A language as `GET /api/languages` serializes it: the row with its tags.
+Map<String, dynamic> _language({
+  required String id,
+  required String name,
+  List<Map<String, dynamic>> tags = const [],
+}) => {
+  'id': id,
+  'iso6393': 'por',
+  'iso6391': 'pt',
+  'name': name,
+  'nativeName': null,
+  'tags': tags,
+  'createdAt': '2026-10-01T10:30:00.000Z',
+  'updatedAt': '2026-10-14T18:00:00.000Z',
+};
+
+/// A tag of [_language], which is the whole row, not the three columns a link
+/// carries.
+Map<String, dynamic> _languageTag(String id, String tag, String name) => {
+  'id': id,
+  'tag': tag,
+  'script': null,
+  'region': null,
+  'name': name,
+  'nativeName': null,
+  'systemSupported': false,
+  'source': 'Curated',
+  'languageId': 'lang_1',
+  'createdAt': '2026-10-01T10:30:00.000Z',
+  'updatedAt': '2026-10-14T18:00:00.000Z',
+};
+
 /// Nest's rendering of an `HttpException` carrying a message.
 String _envelope(int status, String error, String message) =>
     jsonEncode({'statusCode': status, 'message': message, 'error': error});
+
+/// The backend's rendering of a deadlock that outlived its own retry.
+String _retryableConflict() => jsonEncode({
+  'statusCode': 409,
+  'error': 'Conflict',
+  'message': 'The request collided with another; try it again.',
+  'code': 'TransactionDeadlockError',
+  'retryable': true,
+});
+
+/// What the production factories give every request, before a source asks for
+/// more.
+const _factoryTimeout = Duration(seconds: 10);
 
 /// One request as the transport received it.
 typedef _Sent = ({
@@ -71,6 +238,8 @@ typedef _Sent = ({
   String path,
   Map<String, dynamic> query,
   Object? body,
+  Duration? connectTimeout,
+  Duration? receiveTimeout,
 });
 
 /// Answers every request with one canned response, and records what it was
@@ -98,6 +267,8 @@ class _RecordingAdapter implements HttpClientAdapter {
       path: options.path,
       query: options.queryParameters,
       body: requestBody,
+      connectTimeout: options.connectTimeout,
+      receiveTimeout: options.receiveTimeout,
     ));
     return ResponseBody.fromString(
       body,
@@ -115,13 +286,22 @@ class _RecordingAdapter implements HttpClientAdapter {
 void main() {
   late _RecordingAdapter adapter;
 
-  /// A data source over a real Dio, permissive about status like the
-  /// production factories.
-  DataGatewayRemoteDataSource answering(String body, {int status = 200}) {
+  /// A data source over a real Dio, permissive about status and holding the
+  /// timeouts of the production factories.
+  DataGatewayRemoteDataSource answering(
+    String body, {
+    int status = 200,
+    bool browser = false,
+  }) {
     adapter = _RecordingAdapter(body, status);
-    final dio = Dio(BaseOptions(validateStatus: (_) => true))
-      ..httpClientAdapter = adapter;
-    return DataGatewayRemoteDataSourceImpl(dio);
+    final dio = Dio(
+      BaseOptions(
+        validateStatus: (_) => true,
+        connectTimeout: _factoryTimeout,
+        receiveTimeout: _factoryTimeout,
+      ),
+    )..httpClientAdapter = adapter;
+    return DataGatewayRemoteDataSourceImpl(dio, browser: browser);
   }
 
   group('fetchPage', () {
@@ -136,6 +316,31 @@ void main() {
 
       final page = await remote.fetchPage();
 
+      // What `_row` sends by default, as the model holds it.
+      final interview = DataGatewayInterviewStatus(
+        interviewed: true,
+        firstInterviewedAt: DateTime.utc(2026, 10, 1, 10, 35),
+        lastInterviewedAt: DateTime.utc(2026, 10, 14, 18),
+      );
+      final sections = [
+        DataGatewaySection(
+          capability: 'ListLanguages',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 1),
+        ),
+        DataGatewaySection(
+          capability: 'ListPlatforms',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 2),
+        ),
+        DataGatewaySection(
+          capability: 'ListCategories',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 3),
+        ),
+        DataGatewaySection(
+          capability: 'ListMechanics',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 4),
+        ),
+      ];
+
       expect(page.items, [
         DataGateway(
           id: 'dg_1',
@@ -145,6 +350,9 @@ void main() {
           connectionPort: 50051,
           enabled: true,
           authType: DataGatewayAuthType.none,
+          interview: interview,
+          sections: sections,
+          capabilities: DataGatewayCapabilities.known,
         ),
         DataGateway(
           id: 'dg_2',
@@ -154,8 +362,15 @@ void main() {
           connectionPort: 50051,
           enabled: false,
           authType: DataGatewayAuthType.none,
+          interview: interview,
+          sections: sections,
+          capabilities: DataGatewayCapabilities.known,
         ),
       ]);
+      expect(
+        page.items.first.sections.map((s) => s.capability),
+        DataGatewayCapabilities.lists,
+      );
       expect(page.meta.total, 7);
       expect(page.meta.hasMore, isTrue);
     });
@@ -170,8 +385,13 @@ void main() {
       expect(adapter.sent.single.query, {'page': 2, 'limit': 1});
     });
 
-    test('never carries the stored credentials into the row (#41)', () async {
-      final remote = answering(_listBody([_row()]));
+    test('never carries stray credentials into the row, even from a server '
+        'that still sends them (#41)', () async {
+      final remote = answering(
+        _listBody([
+          _row()..['authParameters'] = {'token': 's3cret-token'},
+        ]),
+      );
 
       final row = (await remote.fetchPage()).items.single;
 
@@ -198,6 +418,203 @@ void main() {
 
       expect(row.id, 'dg_9');
       expect(adapter.sent.single.path, '/api/data-gateways/dg_9');
+    });
+  });
+
+  group("reading a row's interview, sections and capabilities (#457)", () {
+    Future<DataGateway> read(Map<String, dynamic> row) async =>
+        (await answering(_listBody([row])).fetchPage()).items.single;
+
+    test('reads the interview block, with a current failure', () async {
+      final row = await read(
+        _row(
+          interview: _interview(
+            failure: {'code': 'PingFailed', 'at': '2026-10-29T10:00:00.000Z'},
+          ),
+        ),
+      );
+
+      expect(
+        row.interview,
+        DataGatewayInterviewStatus(
+          interviewed: true,
+          firstInterviewedAt: DateTime.utc(2026, 10, 1, 10, 35),
+          lastInterviewedAt: DateTime.utc(2026, 10, 14, 18),
+          failure: DataGatewayInterviewFailure(
+            code: DataGatewayInterviewFailureCode.pingFailed,
+            at: DateTime.utc(2026, 10, 29, 10),
+          ),
+        ),
+      );
+    });
+
+    test('reads a never-interviewed row', () async {
+      final row = await read(
+        _row(
+          interview: _interview(
+            interviewed: false,
+            firstInterviewedAt: null,
+            lastInterviewedAt: null,
+          ),
+        ),
+      );
+
+      expect(row.interview.interviewed, isFalse);
+      expect(row.interview.firstInterviewedAt, isNull);
+      expect(row.interview.lastInterviewedAt, isNull);
+      expect(row.interview.failure, isNull);
+    });
+
+    test('reads the interview block, not the raw columns it is derived from: a '
+        'failure the server no longer calls current stays out', () async {
+      // A later success leaves the failure columns in place. The block
+      // already says the failure is over, and the client does not compare
+      // the two times itself.
+      final raw = _row()
+        ..['lastInterviewFailedAt'] = '2026-10-10T09:00:00.000Z'
+        ..['lastInterviewFailure'] = 'PingFailed';
+
+      final row = await read(raw);
+
+      expect(row.interview.failure, isNull);
+    });
+
+    test('reads sections, a failed one and one that never loaded', () async {
+      final row = await read(
+        _row(
+          sections: [
+            _section('ListLanguages', lastLoadedAt: '2026-10-14T18:01:00.000Z'),
+            _section(
+              'ListPlatforms',
+              lastLoadedAt: '2026-10-14T18:02:00.000Z',
+              failure: {'code': 'ListFailed', 'at': '2026-10-21T18:02:00.000Z'},
+            ),
+            _section('ListCategories'),
+          ],
+        ),
+      );
+
+      expect(row.sections, [
+        DataGatewaySection(
+          capability: 'ListLanguages',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 1),
+        ),
+        DataGatewaySection(
+          capability: 'ListPlatforms',
+          lastLoadedAt: DateTime.utc(2026, 10, 14, 18, 2),
+          failure: DataGatewaySectionFailure(
+            code: DataGatewaySectionFailureCode.listFailed,
+            at: DateTime.utc(2026, 10, 21, 18, 2),
+          ),
+        ),
+        const DataGatewaySection(capability: 'ListCategories'),
+      ]);
+    });
+
+    test('keeps capability names it does not know, as sent', () async {
+      final row = await read(
+        _row(
+          capabilities: ['Search', 'FutureThing'],
+          disabledCapabilities: ['Search', 'FutureThing'],
+          sections: [_section('FutureThing')],
+        ),
+      );
+
+      expect(row.capabilities, ['Search', 'FutureThing']);
+      expect(row.disabledCapabilities, ['Search', 'FutureThing']);
+      expect(row.sections.single.capability, 'FutureThing');
+    });
+
+    test('reads every interview failure code the server defines', () async {
+      const codes = {
+        'PingFailed': DataGatewayInterviewFailureCode.pingFailed,
+        'DescribeUnsupported':
+            DataGatewayInterviewFailureCode.describeUnsupported,
+        'DescribeFailed': DataGatewayInterviewFailureCode.describeFailed,
+      };
+
+      for (final MapEntry(key: wire, value: code) in codes.entries) {
+        final row = await read(
+          _row(
+            interview: _interview(
+              failure: {'code': wire, 'at': '2026-10-29T10:00:00.000Z'},
+            ),
+          ),
+        );
+
+        expect(row.interview.failure?.code, code, reason: '"$wire"');
+      }
+    });
+
+    test('reads every section failure code the server defines', () async {
+      const codes = {
+        'ListUnsupported': DataGatewaySectionFailureCode.listUnsupported,
+        'ListFailed': DataGatewaySectionFailureCode.listFailed,
+        'LinkFailed': DataGatewaySectionFailureCode.linkFailed,
+      };
+
+      for (final MapEntry(key: wire, value: code) in codes.entries) {
+        final row = await read(
+          _row(
+            sections: [
+              _section(
+                'ListLanguages',
+                failure: {'code': wire, 'at': '2026-10-29T10:00:00.000Z'},
+              ),
+            ],
+          ),
+        );
+
+        expect(row.sections.single.failure?.code, code, reason: '"$wire"');
+      }
+    });
+
+    test('an interview code it does not know degrades, and the row '
+        'survives', () async {
+      final row = await read(
+        _row(
+          interview: _interview(
+            failure: {'code': 'NewCode', 'at': '2026-10-29T10:00:00.000Z'},
+          ),
+        ),
+      );
+
+      expect(row.id, 'dg_1');
+      expect(
+        row.interview.failure?.code,
+        DataGatewayInterviewFailureCode.unknown,
+      );
+      expect(row.interview.failure?.at, DateTime.utc(2026, 10, 29, 10));
+    });
+
+    test('a section code it does not know degrades, and the row '
+        'survives', () async {
+      final row = await read(
+        _row(
+          sections: [
+            _section(
+              'ListLanguages',
+              failure: {'code': 'NewCode', 'at': '2026-10-29T10:00:00.000Z'},
+            ),
+          ],
+        ),
+      );
+
+      expect(row.id, 'dg_1');
+      expect(
+        row.sections.single.failure?.code,
+        DataGatewaySectionFailureCode.unknown,
+      );
+      expect(row.sections.single.failure?.at, DateTime.utc(2026, 10, 29, 10));
+    });
+
+    test('a row with no interview block is a permanent failure', () async {
+      final remote = answering(_listBody([_row()..remove('interview')]));
+
+      await expectLater(
+        remote.fetchPage(),
+        throwsA(isA<DataGatewayPermanentException>()),
+      );
     });
   });
 
@@ -394,19 +811,22 @@ void main() {
       );
     });
 
-    test('a 409 for a deadlock is transient, not the name being in use: '
-        'nothing about the edit was wrong', () async {
-      // The backend's rendering of a deadlock that outlived its own retry.
+    test('a 409 from the API is still a name already in use: an edit can '
+        'rename', () async {
       final remote = answering(
-        jsonEncode({
-          'statusCode': 409,
-          'error': 'Conflict',
-          'message': 'The request collided with another; try it again.',
-          'code': 'TransactionDeadlockError',
-          'retryable': true,
-        }),
+        _envelope(409, 'Conflict', 'A DataGateway with that name exists.'),
         status: 409,
       );
+
+      await expectLater(
+        remote.update('dg_1', const DataGatewayChanges(name: 'Steam')),
+        throwsA(isA<DataGatewayNameInUseException>()),
+      );
+    });
+
+    test('a 409 for a deadlock is transient, not the name being in use: '
+        'nothing about the edit was wrong', () async {
+      final remote = answering(_retryableConflict(), status: 409);
 
       await expectLater(
         remote.update('dg_1', const DataGatewayChanges(connectionPort: 8443)),
@@ -479,6 +899,831 @@ void main() {
         result.connectionAttempt?.action,
         DataGatewayConnectionAction.disconnect,
       );
+    });
+  });
+
+  group('capability writes (#457)', () {
+    /// What a PATCH that leaves `enabled` alone answers: the row, and no
+    /// connection attempt.
+    String switched({List<String> disabled = const []}) => jsonEncode({
+      'dataGateway': _row(disabledCapabilities: disabled),
+      'connection_response': null,
+      'connection_attempt': false,
+    });
+
+    test(
+      'setDisabledCapabilities sends the whole list, in the order given',
+      () async {
+        final remote = answering(switched(disabled: ['Search', 'FutureThing']));
+
+        await remote.setDisabledCapabilities('dg_1', ['Search', 'FutureThing']);
+
+        final sent = adapter.sent.single;
+        expect(sent.method, 'PATCH');
+        expect(sent.path, '/api/data-gateways/dg_1');
+        expect(sent.body, {
+          'disabledCapabilities': ['Search', 'FutureThing'],
+        });
+      },
+    );
+
+    test('setDisabledCapabilities sends an empty list, which switches all '
+        'back on', () async {
+      final remote = answering(switched());
+
+      await remote.setDisabledCapabilities('dg_1', const []);
+
+      expect(adapter.sent.single.body, {'disabledCapabilities': <String>[]});
+    });
+
+    test('setDisabledCapabilities reports no connection attempt', () async {
+      final remote = answering(switched());
+
+      final result = await remote.setDisabledCapabilities('dg_1', ['Search']);
+
+      expect(result.connectionAttempt, isNull);
+    });
+
+    test('a 409 from setDisabledCapabilities is a conflict, not a name in '
+        'use: the request names no name', () async {
+      final remote = answering(
+        _envelope(409, 'Conflict', 'The DataGateway cannot change now.'),
+        status: 409,
+      );
+
+      await expectLater(
+        remote.setDisabledCapabilities('dg_1', ['Search']),
+        throwsA(isA<DataGatewayConflictException>()),
+      );
+    });
+  });
+
+  group('interview (#457)', () {
+    /// The interview route's answer: the row read again, and how the interview
+    /// went. The route answers 200 whatever the outcome.
+    String interviewed({
+      Map<String, dynamic>? response,
+      Map<String, dynamic>? row,
+    }) => jsonEncode({
+      'dataGateway': row ?? _row(),
+      'interview_attempt': true,
+      'interview_response': response ?? {'success': true},
+    });
+
+    DataGatewayRemoteDataSource unreachableWith(
+      DioExceptionType type, {
+      bool browser = false,
+    }) =>
+        DataGatewayRemoteDataSourceImpl(unreachableDio(type), browser: browser);
+
+    test('interview posts and reads a success', () async {
+      final remote = answering(interviewed());
+
+      final result = await remote.interview('dg_1');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'POST');
+      expect(sent.path, '/api/data-gateways/dg_1/interview');
+      expect(sent.body, isNull);
+      expect(result.dataGateway.id, 'dg_1');
+      expect(result.succeeded, isTrue);
+    });
+
+    test('interview reads a failed attempt as a result, not an exception: '
+        'the server answers it with a 200', () async {
+      final remote = answering(
+        interviewed(
+          response: {
+            'success': false,
+            'message': 'The DataGateway could not be interviewed.',
+          },
+          row: _row(
+            interview: _interview(
+              failure: {'code': 'PingFailed', 'at': '2026-10-29T10:00:00.000Z'},
+            ),
+          ),
+        ),
+      );
+
+      final result = await remote.interview('dg_1');
+
+      expect(result.succeeded, isFalse);
+      // The row is read again after the interview, so it already records the
+      // failure.
+      expect(
+        result.dataGateway.interview.failure?.code,
+        DataGatewayInterviewFailureCode.pingFailed,
+      );
+    });
+
+    test('an interview answer with no interview_response is a permanent '
+        'failure', () async {
+      final remote = answering(jsonEncode({'dataGateway': _row()}));
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayPermanentException>()),
+      );
+    });
+
+    test('interview waits longer for its answer, and no longer to connect, so '
+        'a server that cannot be reached says so at once', () async {
+      final remote = answering(interviewed());
+
+      await remote.interview('dg_1');
+
+      final sent = adapter.sent.single;
+      const interviewTimeout = DataGatewayRemoteDataSourceImpl.interviewTimeout;
+      expect(sent.connectTimeout, _factoryTimeout);
+      expect(sent.receiveTimeout, interviewTimeout);
+      expect(interviewTimeout, greaterThan(_factoryTimeout));
+    });
+
+    test('in a browser, interview waits longer to connect as well, because a '
+        'slow answer there runs on the connect timer', () async {
+      final remote = answering(interviewed(), browser: true);
+
+      await remote.interview('dg_1');
+
+      final sent = adapter.sent.single;
+      const interviewTimeout = DataGatewayRemoteDataSourceImpl.interviewTimeout;
+      expect(sent.connectTimeout, interviewTimeout);
+      expect(sent.receiveTimeout, interviewTimeout);
+    });
+
+    test('a timeout on any other route stays transient: only an interview is '
+        'known to keep running on the server', () async {
+      final remote = unreachableWith(DioExceptionType.receiveTimeout);
+
+      await expectLater(
+        remote.connect('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test(
+      'only the routes that take a name read a 409 as the name in use',
+      () async {
+        final remote = answering(
+          _envelope(409, 'Conflict', 'Refused as things stand.'),
+          status: 409,
+        );
+        final routes = <String, Future<Object?> Function()>{
+          'fetchPage': () => remote.fetchPage(),
+          'fetchOne': () => remote.fetchOne('dg_1'),
+          'delete': () => remote.delete('dg_1'),
+          'connect': () => remote.connect('dg_1'),
+          'disconnect': () => remote.disconnect('dg_1'),
+          'fetchLanguageTags': () => remote.fetchLanguageTags(),
+        };
+
+        for (final MapEntry(key: route, value: call) in routes.entries) {
+          await expectLater(
+            call(),
+            throwsA(isA<DataGatewayConflictException>()),
+            reason: route,
+          );
+        }
+      },
+    );
+
+    test('a 409 from interview is a conflict, not a name in use', () async {
+      final remote = answering(
+        _envelope(409, 'Conflict', 'The DataGateway dg_1 is disabled.'),
+        status: 409,
+      );
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(
+          isA<DataGatewayConflictException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            409,
+          ),
+        ),
+      );
+    });
+
+    test('a retryable 409 from interview stays transient', () async {
+      final remote = answering(_retryableConflict(), status: 409);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test('a 404 from interview means the row is gone', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'DataGateway dg_1 was not found.'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayNotFoundException>()),
+      );
+    });
+
+    test('a receive timeout on interview is timed out, not transient: the '
+        'server may still be working', () async {
+      final remote = unreachableWith(DioExceptionType.receiveTimeout);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTimedOutException>()),
+      );
+    });
+
+    test('a connection timeout on interview stays transient outside a browser: '
+        'the request never left', () async {
+      final remote = unreachableWith(DioExceptionType.connectionTimeout);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test('a connection timeout on interview is timed out in a browser, which '
+        'reports a slow answer that way', () async {
+      final remote = unreachableWith(
+        DioExceptionType.connectionTimeout,
+        browser: true,
+      );
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTimedOutException>()),
+      );
+    });
+
+    test('a connection error on interview stays transient', () async {
+      final remote = unreachableWith(DioExceptionType.connectionError);
+
+      await expectLater(
+        remote.interview('dg_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+  });
+
+  group('language link worklist (#457)', () {
+    const resolved = LanguageLink(
+      id: 'll_1',
+      value: 'Brazilian',
+      format: LanguageCodeFormat.languageName,
+      status: LanguageLinkStatus.resolved,
+      tag: LanguageTagRef(id: 't1', tag: 'pt-BR', name: 'Portuguese (Brazil)'),
+      suppliedName: 'Portuguese',
+      suppliedNativeName: 'Português',
+      suppliedIetfTag: 'pt-BR',
+    );
+
+    test('fetchLanguageLinks sends no status by default, so the server picks '
+        'the waiting links', () async {
+      final remote = answering(_pagedBody('languageLinks', []));
+
+      await remote.fetchLanguageLinks('dg_1');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'GET');
+      expect(sent.path, '/api/data-gateways/dg_1/language-links');
+      expect(sent.query, {'page': 1, 'limit': 50});
+    });
+
+    test('fetchLanguageLinks joins chosen statuses with commas', () async {
+      final remote = answering(_pagedBody('languageLinks', []));
+
+      await remote.fetchLanguageLinks(
+        'dg_1',
+        statuses: {LanguageLinkStatus.ignored, LanguageLinkStatus.resolved},
+      );
+
+      expect(adapter.sent.single.query, {
+        'page': 1,
+        'limit': 50,
+        'status': 'Ignored,Resolved',
+      });
+    });
+
+    test('fetchLanguageLinks spells each status as the server does', () async {
+      const wire = {
+        LanguageLinkStatus.resolved: 'Resolved',
+        LanguageLinkStatus.pending: 'Pending',
+        LanguageLinkStatus.unresolved: 'Unresolved',
+        LanguageLinkStatus.ignored: 'Ignored',
+      };
+
+      for (final MapEntry(key: status, value: name) in wire.entries) {
+        final remote = answering(_pagedBody('languageLinks', []));
+
+        await remote.fetchLanguageLinks('dg_1', statuses: {status});
+
+        expect(adapter.sent.single.query['status'], name, reason: '$status');
+      }
+    });
+
+    test(
+      'fetchLanguageLinks asks for the page and limit it was given',
+      () async {
+        final remote = answering(_pagedBody('languageLinks', []));
+
+        await remote.fetchLanguageLinks('dg_1', page: 3, limit: 20);
+
+        expect(adapter.sent.single.query, {'page': 3, 'limit': 20});
+      },
+    );
+
+    test('fetchLanguageLinks takes a limit up to the shared ceiling, which is '
+        'above its own default', () async {
+      final remote = answering(_pagedBody('languageLinks', []));
+
+      await remote.fetchLanguageLinks('dg_1', limit: 100);
+
+      expect(adapter.sent.single.query['limit'], 100);
+    });
+
+    test('fetchLanguageLinks reads rows under languageLinks', () async {
+      final remote = answering(
+        _pagedBody(
+          'languageLinks',
+          [
+            _link(
+              id: 'll_1',
+              value: 'Brazilian',
+              status: 'Resolved',
+              tag: _linkTag(),
+              suppliedName: 'Portuguese',
+              suppliedNativeName: 'Português',
+              suppliedIetfTag: 'pt-BR',
+            ),
+            _link(id: 'll_2', value: 'Czech'),
+          ],
+          total: 9,
+          hasMore: true,
+        ),
+      );
+
+      final page = await remote.fetchLanguageLinks('dg_1');
+
+      expect(page.items, [
+        resolved,
+        const LanguageLink(
+          id: 'll_2',
+          value: 'Czech',
+          format: LanguageCodeFormat.languageName,
+          status: LanguageLinkStatus.unresolved,
+        ),
+      ]);
+      expect(page.meta.total, 9);
+      expect(page.meta.hasMore, isTrue);
+    });
+
+    test('fetchLanguageLinks reads every status the server defines', () async {
+      final remote = answering(
+        _pagedBody('languageLinks', [
+          for (final status in ['Resolved', 'Pending', 'Unresolved', 'Ignored'])
+            _link(id: 'll_$status', status: status),
+        ]),
+      );
+
+      final page = await remote.fetchLanguageLinks('dg_1');
+
+      expect(page.items.map((link) => link.status), [
+        LanguageLinkStatus.resolved,
+        LanguageLinkStatus.pending,
+        LanguageLinkStatus.unresolved,
+        LanguageLinkStatus.ignored,
+      ]);
+    });
+
+    test('an unknown link status degrades, and the row survives', () async {
+      final remote = answering(
+        _pagedBody('languageLinks', [
+          _link(id: 'll_1', status: 'Archived', suppliedName: 'Czech'),
+        ]),
+      );
+
+      final link = (await remote.fetchLanguageLinks('dg_1')).items.single;
+
+      expect(link.id, 'll_1');
+      expect(link.status, LanguageLinkStatus.unknown);
+      expect(link.suppliedName, 'Czech');
+    });
+
+    test('a worklist row that cannot be read is a permanent failure', () async {
+      final remote = answering(
+        _pagedBody('languageLinks', [_link()..remove('value')]),
+      );
+
+      await expectLater(
+        remote.fetchLanguageLinks('dg_1'),
+        throwsA(isA<DataGatewayPermanentException>()),
+      );
+    });
+
+    test('an empty status set is refused before anything is sent: the server '
+        'answers `?status=` with a 400', () async {
+      final remote = answering(_pagedBody('languageLinks', []));
+
+      await expectLater(
+        remote.fetchLanguageLinks('dg_1', statuses: <LanguageLinkStatus>{}),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('a status the client cannot send fails the call as it is, not as a '
+        'request that failed', () async {
+      // `unknown` stands for a status the client could not read, and has no
+      // wire name. It is a mistake in the caller, so it must not read as a
+      // transient failure worth retrying.
+      final remote = answering(_pagedBody('languageLinks', []));
+
+      await expectLater(
+        remote.fetchLanguageLinks(
+          'dg_1',
+          statuses: {LanguageLinkStatus.unknown},
+        ),
+        throwsStateError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('a 404 from the worklist means the DataGateway is gone', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'DataGateway dg_1 was not found.'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.fetchLanguageLinks('dg_1'),
+        throwsA(isA<DataGatewayNotFoundException>()),
+      );
+    });
+  });
+
+  group('language link actions (#457)', () {
+    /// What every action answers: the link as it stands afterwards.
+    String settled(Map<String, dynamic> link) =>
+        jsonEncode({'languageLink': link});
+
+    test('linkLanguageLink posts the tagId and reads languageLink', () async {
+      final remote = answering(
+        settled(
+          _link(
+            id: 'll_1',
+            value: 'Brazilian',
+            status: 'Resolved',
+            tag: _linkTag(id: 't_1'),
+          ),
+        ),
+      );
+
+      final link = await remote.linkLanguageLink('dg_1', 'll_1', 't_1');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'POST');
+      expect(sent.path, '/api/data-gateways/dg_1/language-links/ll_1/link');
+      expect(sent.body, {'tagId': 't_1'});
+      expect(
+        link,
+        const LanguageLink(
+          id: 'll_1',
+          value: 'Brazilian',
+          format: LanguageCodeFormat.languageName,
+          status: LanguageLinkStatus.resolved,
+          tag: LanguageTagRef(
+            id: 't_1',
+            tag: 'pt-BR',
+            name: 'Portuguese (Brazil)',
+          ),
+        ),
+      );
+    });
+
+    test('ignoreLanguageLink posts to ignore', () async {
+      final remote = answering(settled(_link(status: 'Ignored')));
+
+      final link = await remote.ignoreLanguageLink('dg_1', 'll_1');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'POST');
+      expect(sent.path, '/api/data-gateways/dg_1/language-links/ll_1/ignore');
+      expect(sent.body, isNull);
+      expect(link.status, LanguageLinkStatus.ignored);
+      expect(link.tag, isNull);
+    });
+
+    test('acceptLanguageLink posts to accept', () async {
+      final remote = answering(
+        settled(_link(status: 'Resolved', tag: _linkTag())),
+      );
+
+      final link = await remote.acceptLanguageLink('dg_1', 'll_1');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'POST');
+      expect(sent.path, '/api/data-gateways/dg_1/language-links/ll_1/accept');
+      expect(sent.body, isNull);
+      expect(link.status, LanguageLinkStatus.resolved);
+      expect(link.tag?.tag, 'pt-BR');
+    });
+
+    test('a 409 from accept is a conflict, not a name in use', () async {
+      final remote = answering(
+        _envelope(409, 'Conflict', 'The language link ll_1 is not pending.'),
+        status: 409,
+      );
+
+      await expectLater(
+        remote.acceptLanguageLink('dg_1', 'll_1'),
+        throwsA(
+          isA<DataGatewayConflictException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            409,
+          ),
+        ),
+      );
+    });
+
+    test('a 400 without the envelope is transient: a proxy answered, and it '
+        'says nothing about the tag', () async {
+      final remote = answering('<html>Bad Request</html>', status: 400);
+
+      await expectLater(
+        remote.linkLanguageLink('dg_1', 'll_1', 't_1'),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+
+    test('a format it does not know, or none, degrades to unknown, so the row '
+        'survives', () async {
+      for (final format in <Object?>['SomethingNew', null]) {
+        final remote = answering(
+          jsonEncode({'languageLink': _link()..['format'] = format}),
+        );
+
+        final link = await remote.ignoreLanguageLink('dg_1', 'll_1');
+
+        expect(link.format, LanguageCodeFormat.unknown);
+      }
+    });
+
+    test('a 400 from link is permanent: no such tag', () async {
+      final remote = answering(
+        _envelope(400, 'Bad Request', 'No language tag t_1 exists.'),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.linkLanguageLink('dg_1', 'll_1', 't_1'),
+        throwsA(
+          isA<DataGatewayPermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            400,
+          ),
+        ),
+      );
+    });
+
+    test(
+      'a 404 from any action means the link or its DataGateway is gone',
+      () async {
+        final remote = answering(
+          _envelope(404, 'Not Found', 'No language link ll_1 exists.'),
+          status: 404,
+        );
+        final actions = <String, Future<LanguageLink> Function()>{
+          'link': () => remote.linkLanguageLink('dg_1', 'll_1', 't_1'),
+          'ignore': () => remote.ignoreLanguageLink('dg_1', 'll_1'),
+          'accept': () => remote.acceptLanguageLink('dg_1', 'll_1'),
+        };
+
+        for (final MapEntry(key: name, value: act) in actions.entries) {
+          await expectLater(
+            act(),
+            throwsA(isA<DataGatewayNotFoundException>()),
+            reason: name,
+          );
+        }
+      },
+    );
+
+    test('an answer with no languageLink is a permanent failure, with its '
+        'status: the action may have been done', () async {
+      final remote = answering(
+        jsonEncode({'dataGateway': <String, Object?>{}}),
+      );
+
+      await expectLater(
+        remote.ignoreLanguageLink('dg_1', 'll_1'),
+        throwsA(
+          isA<DataGatewayPermanentException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            200,
+          ),
+        ),
+      );
+    });
+
+    test('ids are encoded in the path', () async {
+      var remote = answering(_pagedBody('languageLinks', []));
+      await remote.fetchLanguageLinks('dg/1');
+      expect(
+        adapter.sent.single.path,
+        '/api/data-gateways/dg%2F1/language-links',
+      );
+
+      remote = answering(settled(_link(id: 'll/1')));
+      await remote.linkLanguageLink('dg/1', 'll/1', 't_1');
+      await remote.ignoreLanguageLink('dg/1', 'll/1');
+      await remote.acceptLanguageLink('dg/1', 'll/1');
+      expect(adapter.sent.map((sent) => sent.path), [
+        '/api/data-gateways/dg%2F1/language-links/ll%2F1/link',
+        '/api/data-gateways/dg%2F1/language-links/ll%2F1/ignore',
+        '/api/data-gateways/dg%2F1/language-links/ll%2F1/accept',
+      ]);
+    });
+  });
+
+  group('language tag catalogue (#457)', () {
+    test('fetchLanguageTags filters by name and flattens tags', () async {
+      final remote = answering(
+        _pagedBody(
+          'languages',
+          [
+            _language(
+              id: 'lang_pt',
+              name: 'Portuguese',
+              tags: [
+                _languageTag('t1', 'pt-BR', 'Portuguese (Brazil)'),
+                _languageTag('t2', 'pt-PT', 'Portuguese (Portugal)'),
+              ],
+            ),
+          ],
+          total: 7,
+          hasMore: true,
+        ),
+      );
+
+      final page = await remote.fetchLanguageTags(name: 'port');
+
+      final sent = adapter.sent.single;
+      expect(sent.method, 'GET');
+      expect(sent.path, '/api/languages');
+      expect(sent.query, {'page': 1, 'limit': 50, 'name': 'port'});
+      expect(page.items, const [
+        LanguageTagRef(id: 't1', tag: 'pt-BR', name: 'Portuguese (Brazil)'),
+        LanguageTagRef(id: 't2', tag: 'pt-PT', name: 'Portuguese (Portugal)'),
+      ]);
+      // The languages' paging, which is what the server pages, and not a
+      // count of the tags that came out of them.
+      expect(page.meta.total, 7);
+      expect(page.meta.hasMore, isTrue);
+    });
+
+    test('fetchLanguageTags leaves out a blank name', () async {
+      for (final blank in <String?>[null, '', '   ']) {
+        final remote = answering(_pagedBody('languages', []));
+
+        await remote.fetchLanguageTags(name: blank);
+
+        expect(adapter.sent.single.query, {
+          'page': 1,
+          'limit': 50,
+        }, reason: '"$blank"');
+      }
+    });
+
+    test('fetchLanguageTags trims the name: the server matches the text as '
+        'typed', () async {
+      final remote = answering(_pagedBody('languages', []));
+
+      await remote.fetchLanguageTags(name: '  port ');
+
+      expect(adapter.sent.single.query['name'], 'port');
+    });
+
+    test(
+      'fetchLanguageTags asks for the page and limit it was given',
+      () async {
+        final remote = answering(_pagedBody('languages', []));
+
+        await remote.fetchLanguageTags(page: 2, limit: 10);
+
+        expect(adapter.sent.single.query, {'page': 2, 'limit': 10});
+      },
+    );
+
+    test(
+      'fetchLanguageTags keeps the catalogue order across languages',
+      () async {
+        final remote = answering(
+          _pagedBody('languages', [
+            _language(
+              id: 'lang_cs',
+              name: 'Czech',
+              tags: [_languageTag('c1', 'cs', 'Czech')],
+            ),
+            _language(id: 'lang_tlh', name: 'Klingon'),
+            _language(
+              id: 'lang_pt',
+              name: 'Portuguese',
+              tags: [
+                _languageTag('p1', 'pt-BR', 'Portuguese (Brazil)'),
+                _languageTag('p2', 'pt-PT', 'Portuguese (Portugal)'),
+              ],
+            ),
+          ]),
+        );
+
+        final page = await remote.fetchLanguageTags();
+
+        expect(page.items.map((tag) => tag.id), ['c1', 'p1', 'p2']);
+      },
+    );
+
+    test('a page of languages with no tags has no items, and more behind '
+        'it', () async {
+      // The server pages languages, and a language may have no tags yet. It
+      // adds nothing to the flattened page, so the item count says nothing
+      // about whether there is more: only meta.hasMore does.
+      final remote = answering(
+        _pagedBody(
+          'languages',
+          [
+            _language(id: 'lang_an', name: 'Aragonese'),
+            _language(id: 'lang_ast', name: 'Asturian'),
+          ],
+          total: 120,
+          hasMore: true,
+        ),
+      );
+
+      final page = await remote.fetchLanguageTags();
+
+      expect(page.items, isEmpty);
+      expect(page.meta.page, 1);
+      expect(page.meta.hasMore, isTrue);
+    });
+
+    test('a 404 from the catalogue is transient even from the API: a list '
+        'route is never absent, so it is not deployed', () async {
+      final remote = answering(
+        _envelope(404, 'Not Found', 'Cannot GET /api/languages'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.fetchLanguageTags(),
+        throwsA(isA<DataGatewayTransientException>()),
+      );
+    });
+  });
+
+  group('paging ceilings (#457)', () {
+    test('a limit over the ceiling throws ArgumentError, before anything is '
+        'sent', () async {
+      final remote = answering(_pagedBody('languages', []));
+
+      // The catalogue caps limit at 50, the worklist and the DataGateway list
+      // at 100. The server answers a larger one with a 400, not a clamp.
+      await expectLater(
+        remote.fetchLanguageTags(limit: 51),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.fetchLanguageLinks('dg_1', limit: 101),
+        throwsArgumentError,
+      );
+      await expectLater(remote.fetchPage(limit: 101), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('a page or limit below one throws ArgumentError, before anything is '
+        'sent', () async {
+      final remote = answering(_pagedBody('languages', []));
+
+      await expectLater(remote.fetchLanguageTags(page: 0), throwsArgumentError);
+      await expectLater(
+        remote.fetchLanguageTags(limit: 0),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.fetchLanguageLinks('dg_1', page: 0),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.fetchLanguageLinks('dg_1', limit: 0),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
     });
   });
 

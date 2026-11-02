@@ -19,6 +19,8 @@ export 'src/bloc/event_poll_event.dart';
 export 'src/bloc/event_poll_state.dart';
 export 'src/create/event_create_households.dart';
 export 'src/detail/event_actions.dart';
+export 'src/home/upcoming_events_section.dart';
+export 'src/home/upcoming_fallback_cubit.dart';
 export 'src/overview/event_groups.dart';
 export 'src/screens/create_event_screen.dart';
 export 'src/screens/event_availability_screen.dart';

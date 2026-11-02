@@ -38,13 +38,31 @@ class EventRemoteDataSourceImpl implements EventRemoteDataSource {
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
     int page = 1,
     int limit = EventRemoteDataSource.maxPageSize,
+  }) => _fetchList(_basePath, page: page, limit: limit, action: 'Event list');
+
+  @override
+  Future<PaginatedResult<EventSnapshot>> browseEvents({
+    int page = 1,
+    int limit = EventRemoteDataSource.maxPageSize,
+  }) => _fetchList(
+    '$_basePath/browse',
+    page: page,
+    limit: limit,
+    action: 'Event browse',
+  );
+
+  /// One page of event rows from the list route at [path].
+  Future<PaginatedResult<EventSnapshot>> _fetchList(
+    String path, {
+    required int page,
+    required int limit,
+    required String action,
   }) async {
     _checkPaging(page: page, limit: limit);
 
-    const action = 'Event list';
     final response = await _send(
       request: () => _dio.get<String>(
-        _basePath,
+        path,
         options: _plainBody,
         queryParameters: {'page': page, 'limit': limit},
       ),

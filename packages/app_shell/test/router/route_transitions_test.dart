@@ -157,6 +157,7 @@ void main() {
       AppRoutes.adminDataGateways,
       AppRoutes.dataGatewayAdd,
       AppRoutes.dataGatewayEditOf('d1'),
+      AppRoutes.dataGatewayDetailOf('d1'),
       '/server/srv-1/event/ev-1',
     ];
     for (final location in locations) {

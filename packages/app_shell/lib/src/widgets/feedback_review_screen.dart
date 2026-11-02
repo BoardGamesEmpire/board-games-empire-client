@@ -70,8 +70,9 @@ class FeedbackReviewScreen extends StatefulWidget {
   final FeedbackReportPreview preview;
 
   /// Submits the finalised (redactions applied) report; the result drives
-  /// the honest outcome state shown to the user ("sent" vs "saved to send
-  /// later"), matching the #69 pattern.
+  /// the honest outcome state shown to the user ("sent", "saved to send
+  /// later", or saved only until the app closes — #385), matching the #69
+  /// pattern.
   final Future<FeedbackSubmitResult> Function(FeedbackReport report) onSubmit;
 
   /// The user backed out of review before sending. The host returns to the
@@ -89,6 +90,9 @@ class FeedbackReviewScreen extends StatefulWidget {
   static const Key closeButtonKey = Key('feedback_review.close');
   static const Key sentConfirmationKey = Key('feedback_review.sent');
   static const Key queuedConfirmationKey = Key('feedback_review.queued');
+  static const Key queuedForSessionConfirmationKey = Key(
+    'feedback_review.queued_for_session',
+  );
   static const Key submissionFailedKey = Key('feedback_review.failed');
   static const Key submissionRejectedKey = Key('feedback_review.rejected');
   static const Key copyButtonKey = Key('feedback_review.copy');
@@ -107,7 +111,15 @@ class FeedbackReviewScreen extends StatefulWidget {
   State<FeedbackReviewScreen> createState() => _FeedbackReviewScreenState();
 }
 
-enum _ReviewPhase { reviewing, sending, sent, queued, rejected, failed }
+enum _ReviewPhase {
+  reviewing,
+  sending,
+  sent,
+  queued,
+  queuedForSession,
+  rejected,
+  failed,
+}
 
 class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   static final BgeLogger _log = BgeLogger('bge.shell.feedback_review');
@@ -143,9 +155,12 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       final result = await widget.onSubmit(_preview.toSubmittableReport());
       if (!mounted) return;
       setState(
-        () => _phase = result == FeedbackSubmitResult.sent
-            ? _ReviewPhase.sent
-            : _ReviewPhase.queued,
+        () => _phase = switch (result) {
+          FeedbackSubmitResult.sent => _ReviewPhase.sent,
+          FeedbackSubmitResult.queued => _ReviewPhase.queued,
+          FeedbackSubmitResult.queuedForSession =>
+            _ReviewPhase.queuedForSession,
+        },
       );
     } on FeedbackPermanentSubmissionException catch (error) {
       // #97: permanent rejection — deliberately not queued, so the
@@ -174,9 +189,14 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   /// is Close, which drops it. Hiding the copy action there would take the
   /// report away at exactly the moment it became unrecoverable. `sent` and
   /// `queued` are the two where it is genuinely gone from the user's hands.
+  ///
+  /// `queuedForSession` is not one of them (#385): the report exists only in
+  /// memory, and closing the app before a drain loses it, so it is not yet
+  /// out of the user's hands.
   bool get _copyable => switch (_phase) {
     _ReviewPhase.reviewing ||
     _ReviewPhase.sending ||
+    _ReviewPhase.queuedForSession ||
     _ReviewPhase.rejected ||
     _ReviewPhase.failed => true,
     _ReviewPhase.sent || _ReviewPhase.queued => false,
@@ -185,6 +205,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
   bool get _terminal =>
       _phase == _ReviewPhase.sent ||
       _phase == _ReviewPhase.queued ||
+      _phase == _ReviewPhase.queuedForSession ||
       _phase == _ReviewPhase.rejected ||
       _phase == _ReviewPhase.failed;
 
@@ -273,6 +294,12 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
           icon: Icons.schedule_send_outlined,
           text: i18n.feedbackReviewQueued,
         ),
+        _ReviewPhase.queuedForSession => _outcome(
+          i18n,
+          key: FeedbackReviewScreen.queuedForSessionConfirmationKey,
+          icon: Icons.schedule_send_outlined,
+          text: i18n.feedbackReviewQueuedForSession,
+        ),
         _ReviewPhase.rejected => _outcome(
           i18n,
           key: FeedbackReviewScreen.submissionRejectedKey,
@@ -319,6 +346,18 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       _ => field,
     };
 
+    // The entries the platform device readers report (#324). Any other key
+    // keeps its raw name, as an unknown field does above.
+    String deviceLabel(String key) => switch (key) {
+      'operatingSystem' => i18n.feedbackReviewDeviceOperatingSystem,
+      'operatingSystemVersion' =>
+        i18n.feedbackReviewDeviceOperatingSystemVersion,
+      'operatingSystemBuild' => i18n.feedbackReviewDeviceOperatingSystemBuild,
+      'browser' => i18n.feedbackReviewDeviceBrowser,
+      'browserEngine' => i18n.feedbackReviewDeviceBrowserEngine,
+      _ => key,
+    };
+
     // Enumerate the redactable rows from the model's authoritative set
     // rather than hardcoded lists (#76 review). Known fields keep their
     // section and order; any *unknown* redactable field is still surfaced
@@ -354,7 +393,7 @@ class _FeedbackReviewScreenState extends State<FeedbackReviewScreen> {
       for (final key in deviceKeys)
         _redactRow(
           path: '${FeedbackReportPreview.deviceInfoPrefix}$key',
-          label: key,
+          label: deviceLabel(key),
           value: deviceValueOf(key),
           enabled: !sending,
         ),

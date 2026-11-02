@@ -267,6 +267,9 @@ class EventOverviewSliver extends StatelessWidget {
         for (final group in EventGroup.values) {
           final rows = groups.of(group);
           if (rows.isEmpty) continue;
+          if (slivers.isNotEmpty) {
+            slivers.add(const SliverToBoxAdapter(child: BgeGap.xl()));
+          }
           slivers.add(
             _GroupSliver(
               key: EventOverviewScreen.groupKey(group),
@@ -287,7 +290,9 @@ class EventOverviewSliver extends StatelessWidget {
 }
 
 /// One group on the overview: its heading, then its first
-/// [EventOverviewScreen.groupCap] rows.
+/// [EventOverviewScreen.groupCap] rows, with a bar in the group's colour down
+/// the side of them all, so the eye sees where the group starts and ends. The
+/// heading names the group, so the colour is never the only sign of it.
 class _GroupSliver extends StatelessWidget {
   const _GroupSliver({
     required this.group,
@@ -310,23 +315,44 @@ class _GroupSliver extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SliverMainAxisGroup(
-      slivers: [
-        SliverToBoxAdapter(
-          child: _GroupHeader(
-            group: group,
-            count: rows.length,
-            onOpenGroup: onOpenGroup,
+    final colors = Theme.of(context).colorScheme;
+    final shown = rows.take(EventOverviewScreen.groupCap).toList();
+
+    return DecoratedSliver(
+      decoration: BoxDecoration(
+        border: BorderDirectional(
+          start: BorderSide(
+            color: switch (group) {
+              EventGroup.upcoming => colors.primary,
+              EventGroup.planning => colors.tertiary,
+              EventGroup.past => colors.outline,
+            },
+            width: BgeTokens.of(context).accentBarWidth,
           ),
         ),
-        BgeKeyedSliverList<EventRow>(
-          items: rows.take(EventOverviewScreen.groupCap).toList(),
-          keyOf: (row) => EventOverviewScreen.rowKey(row.event.id),
-          semanticIndexOffset: semanticIndexOffset,
-          itemBuilder: (context, row) =>
-              EventRowTile(row: row, now: now, onOpen: onOpen),
-        ),
-      ],
+      ),
+      sliver: SliverMainAxisGroup(
+        slivers: [
+          SliverToBoxAdapter(
+            child: _GroupHeader(
+              group: group,
+              count: rows.length,
+              onOpenGroup: onOpenGroup,
+            ),
+          ),
+          BgeKeyedSliverList<EventRow>(
+            items: shown,
+            keyOf: (row) => EventOverviewScreen.rowKey(row.event.id),
+            semanticIndexOffset: semanticIndexOffset,
+            itemBuilder: (context, row) => EventRowTile(
+              row: row,
+              now: now,
+              onOpen: onOpen,
+              separated: !identical(row, shown.last),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -357,16 +383,13 @@ class _GroupHeader extends StatelessWidget {
 
     return Padding(
       // In line with the rows' titles, which the tiles inset.
-      padding: EdgeInsetsDirectional.only(
-        start: tokens.spaceMd,
-        top: tokens.spaceMd,
-      ),
+      padding: EdgeInsetsDirectional.only(start: tokens.spaceMd),
       child: OverflowBar(
         alignment: seeAll ? MainAxisAlignment.spaceBetween : null,
         children: [
           Semantics(
             header: true,
-            child: Text(name, style: Theme.of(context).textTheme.titleSmall),
+            child: Text(name, style: Theme.of(context).textTheme.titleLarge),
           ),
           if (seeAll)
             TextButton(

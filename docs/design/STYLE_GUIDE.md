@@ -191,9 +191,12 @@ and stops short on a monitor with no window-class check. Reach for a breakpoint
 only when a layout should *change form* (rail vs. bottom bar, one pane vs.
 two), never to pick a width. `paneMaxWidth` and `breakpointExpanded` share a
 value today and are still separate tokens: retuning one must not silently move
-the other. Nothing consumes the breakpoints yet. The first consumers are
-expected to be the navigation shell (#414), once a section of equal standing
-with home exists, and the first two-pane layout (#46).
+the other. The home page reads `breakpointExpanded`, to set its events and stats
+sections side by side (#613), and reads it against the window, because a
+`LayoutBuilder` under the page's padding reaches 840 only at a window of 888. The
+next consumers are expected to be the navigation shell (#414), once a section of
+equal standing with home exists, and the first two-pane layout (#46). Nothing
+reads `breakpointMedium` yet.
 
 ---
 
@@ -208,6 +211,7 @@ Use these. They exist because the hand-rolled versions drifted.
 | `BgeSubmitButton` | all 6 hand-rolled in-flight buttons | Cannot overflow (#163); disabled-not-hidden; keeps its accessible name; announces via live region |
 | `BgeInlineBanner` | 3 divergent error banners | Tone → color *and* icon; announces on appearance **and scrolls itself into view**; one semantics node |
 | `BgeTextField` | 3 divergent field implementations | Visible label; live-region error announcement; 48dp password toggle; theme border |
+| `BgeDropdownField` | reactive_forms' `ReactiveDropdownField` in 4 form menus, whose menu covered the field (#649, #648) | Visible label; the menu opens under the field, as wide as it, and above it near the bottom of the screen; a long choice wraps, closed and open; a button with an expanded state that Enter or Space opens, the arrows move through and Escape closes, with focus back on the field after; read-only stays focusable; live-region error announcement |
 | `BgeFormActions` | a submit's failure placed by hand: above the button on server-add, at the top of the page on auth and create-household (#227) | The failure sits directly above the action it answers, one step away and exactly as wide; its title is a decision each call site writes down |
 | `rejectSubmit()` on a `FormGroup` | `markAllAsTouched()` alone, which renders every error and leaves the first one wherever it is (#230) | Every error shown; focus on the first invalid control, and the whole field on screen, label and error included — which focus alone does not do |
 | `BgeErrorState` | the bootstrap failure screen and the session-unreachable view, which had drifted apart | Title and body announced as one live region; retry autofocused; the icon says nothing; content, not a page — the caller supplies the `BgePage` |
@@ -269,8 +273,9 @@ One rule, app-wide: while a submission is in flight, fields go **`readOnly`,
 never `enabled: false`**. A disabled field leaves the focus order, so a
 keyboard or screen-reader user mid-form has the control vanish underneath them
 for the duration of a network call. Read-only keeps it present and readable and
-still closes the keyboard submit path. `BgeTextField` deliberately exposes no
-`enabled` so two screens cannot make opposite choices about the same moment.
+still closes the keyboard submit path. `BgeTextField` and `BgeDropdownField`
+deliberately expose no `enabled` so two screens cannot make opposite choices
+about the same moment.
 
 The in-flight signal is carried by `BgeSubmitButton` — label swap plus spinner,
 in a live region — not by greying the form out.
@@ -295,8 +300,11 @@ over.
 ### Where the primary action goes
 
 Inline, at the end of the form, unless the page is a **flow step** or a **long
-review surface**. Those pin it with `BgePage.footer`. Today that is feedback
-compose and review. The reasoning, and the measurements behind it, are on
+review surface**. Those pin it with `BgePage.footer`, and so does the outcome
+of an action on a **long list** or a long page, which has no form to sit on.
+Today that is feedback compose and review, and the banners that answer actions
+on a DataGateway's page: on the DataGateway itself, and on its language
+worklist (#457). The reasoning, and the measurements behind it, are on
 `BgePage.footer`:
 
 - a flow step pins because the step it hands over to does, and an action that
@@ -304,7 +312,10 @@ compose and review. The reasoning, and the measurements behind it, are on
 - a centred first-run page does not, because a pinned action renders below
   whatever the column continues with (auth's sign-in alternatives), and at 320dp
   and 200% text the pinned band eats a quarter of the body;
-- a short form does not, because its button already scrolls into reach.
+- a short form does not, because its button already scrolls into reach;
+- an outcome on a long list does, because the list moves on: inside it a banner
+  is built only near the view, so one that lands after the user has scrolled
+  away is neither seen nor announced (see Error and outcome surfaces).
 
 Two steps that hand over to each other also build their insets the same way:
 from the page's `padding`, not from insets inside each row. Review once put its
@@ -320,7 +331,7 @@ question it turns on is **does the screen survive the outcome?**
 
 | Situation | Surface |
 | --- | --- |
-| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) — through `BgeFormActions` when it answers a form's submit |
+| Outcome on a screen that stays | `BgeInlineBanner` (`announce: true`) — through `BgeFormActions` when it answers a form's submit, in `BgePage.footer` when it answers an action on a long list |
 | Outcome whose screen pops, or a notice belonging to no screen | bare `SnackBar` |
 
 A failure that leaves the screen nothing else to show — the app could not
@@ -337,6 +348,34 @@ the answer where they pressed. At the top of the page, as auth and
 create-household once had it, reading it meant being scrolled away from the
 button — and on create-household, with the real theme, that long scroll was the
 one a tap cuts short, leaving the banner off screen (#233).
+
+**An outcome on a long list sits in the footer.** A form's banner sits on its
+button, where the user pressed. A long list has no such place, because the
+list moves on. Inside it a banner is built only near the view, so one that
+lands after the user has scrolled away is neither seen nor announced; above
+it, a banner takes the page from wherever they were working, and taking it
+away moves every control below it up under the pointer. In `BgePage.footer`
+it is always built and on screen, so its live region always fires and it
+moves no row. The DataGateway page is the case (#457): what an action on the
+DataGateway answered, then what an action on its language worklist answered,
+stacked in the one footer, each with its own Dismiss. It is the one exception
+to a banner living inside the page's scroll view, and so to having no height
+cap (#228): the footer holds at most half the body and scrolls, so even a tall
+banner there stays reachable. A banner there reveals itself within the
+footer's own scroll view, so the page doesn't move.
+
+Such a footer is passed on every build, and renders nothing while there is
+nothing to report. `BgePage` builds a different tree with a footer than
+without one, so a footer that came and went would lose the scroll position and
+the focus.
+
+**A sliver page with a footer keeps one viewport of content built past its
+edge (#457).** A footer that arrives takes room from the end of the view, so
+the rows there leave it, and on a lazy list a row that far out of view is no
+longer built — which loses keyboard focus on it, or on its way back to it. The
+page keeps one viewport built past each edge of the view, where the default is
+250dp. One is enough because a footer takes at most half the body. A page
+without a footer keeps the default.
 
 **Title a failure when some of its operation's messages state only a cause.**
 "Could not reach the server. Check your connection." never says that *signing
@@ -480,7 +519,7 @@ legible body text on every surface role.
 - [ ] Spacing from `BgeGap` / `BgeTokens`; no literals
 - [ ] Colors from `Theme.of(context).colorScheme`; no `Colors.*`
 - [ ] Type from `Theme.of(context).textTheme`
-- [ ] Forms use `BgeTextField` + `BgeSubmitButton`
+- [ ] Forms use `BgeTextField`, `BgeDropdownField` + `BgeSubmitButton`
 - [ ] A submit that can fail on a screen that stays is wrapped in
       `BgeFormActions`, with its `title` decided by the rule above
 - [ ] A rejected submit calls `rejectSubmit()`

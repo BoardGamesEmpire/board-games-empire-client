@@ -81,6 +81,12 @@ enum BgeBannerTone {
 ///   message from the sighted user, who needs it most: an error is the one
 ///   text they have to read, and scrolling the page at 200% text scale is
 ///   ordinary.
+///
+///   The one exception is an outcome that answers an action on a long list
+///   or page, such as a DataGateway's (#457). It sits in the page's
+///   [BgePage.footer], where it is always built and on screen, because inside
+///   the list it can be scrolled away before it lands, and at the head of the
+///   page it takes the page from the control it answers.
 /// - **The icon is not decorative.** Tone here is conveyed by color *and*
 ///   icon, which is the project's stated answer to color-vision deficiency.
 ///   A banner that signalled failure by being red alone would be unusable for

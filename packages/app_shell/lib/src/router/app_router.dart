@@ -214,20 +214,32 @@ abstract final class AppRoutes {
 
   /// The edit form for one DataGateway, beneath the list. Build a concrete
   /// location with [dataGatewayEditOf].
-  ///
-  /// No overlap with [dataGatewayAdd]: this pattern has two segments below
-  /// the list, and that one has one.
   static const dataGatewayEdit = '$adminDataGateways/$_dataGatewayEditSegment';
 
-  /// The id segment of [dataGatewayEdit].
+  /// One DataGateway's own page (#457), beneath the list. Build a concrete
+  /// location with [dataGatewayDetailOf].
+  ///
+  /// This pattern and [dataGatewayAdd] **overlap**: `new` is a legal id
+  /// segment, so the add form is declared first, or it would open as the
+  /// detail of a DataGateway with the id "new". [dataGatewayEdit] does not
+  /// overlap this: it has two segments below the list, and this has one.
+  static const dataGatewayDetail =
+      '$adminDataGateways/$_dataGatewayDetailSegment';
+
+  /// The id segment of [dataGatewayEdit] and [dataGatewayDetail].
   static const dataGatewayIdParam = 'dataGatewayId';
 
   static const _dataGatewayAddSegment = 'new';
+  static const _dataGatewayDetailSegment = ':$dataGatewayIdParam';
   static const _dataGatewayEditSegment = ':$dataGatewayIdParam/edit';
 
   /// The location of one DataGateway's edit form.
   static String dataGatewayEditOf(String id) =>
       '$adminDataGateways/${Uri.encodeComponent(id)}/edit';
+
+  /// The location of one DataGateway's own page.
+  static String dataGatewayDetailOf(String id) =>
+      '$adminDataGateways/${Uri.encodeComponent(id)}';
 
   static const error = '/error';
 
@@ -534,6 +546,13 @@ typedef DataGatewayFormScreenBuilder = Widget? Function(
   String? dataGatewayId,
 );
 
+/// Builds one DataGateway's own page (#457) for [dataGatewayId]. Same null
+/// contract as [DataGatewayListScreenBuilder].
+typedef DataGatewayDetailScreenBuilder = Widget? Function(
+  BuildContext context,
+  String dataGatewayId,
+);
+
 /// Makes the location the router reports for the address bar follow pushed
 /// screens, not only the declarative stack beneath them (#321). The web
 /// composition calls it before the router is built; native doesn't.
@@ -595,6 +614,7 @@ GoRouter buildAppRouter({
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
+  DataGatewayDetailScreenBuilder? dataGatewayDetailBuilder,
 }) {
   return GoRouter(
     initialLocation: AppRoutes.splash,
@@ -969,10 +989,11 @@ GoRouter buildAppRouter({
           stuckChangesBuilder?.call(context) ?? const NotYetAvailableScreen(),
         ),
       ),
-      // #41: the DataGateway admin screens. The forms are children of the
-      // list, as the household children are of theirs (#308), so a deep link
-      // to a form builds the list beneath it and leaving the form is a plain
-      // pop.
+      // #41: the DataGateway admin screens. The forms and a DataGateway's own
+      // page (#457) are children of the list, as the household children are of
+      // theirs (#308), so a deep link to one builds the list beneath it and
+      // leaving it is a plain pop. The add form stays ahead of the detail:
+      // see [AppRoutes.dataGatewayDetail].
       GoRoute(
         path: AppRoutes.adminDataGateways,
         pageBuilder: (context, state) => _materialPage(
@@ -988,6 +1009,18 @@ GoRouter buildAppRouter({
               dataGatewayFormBuilder?.call(context, null) ??
                   const NotYetAvailableScreen(),
             ),
+          ),
+          GoRoute(
+            path: AppRoutes._dataGatewayDetailSegment,
+            pageBuilder: (context, state) {
+              final id =
+                  state.pathParameters[AppRoutes.dataGatewayIdParam] ?? '';
+              return _materialPage(
+                state,
+                dataGatewayDetailBuilder?.call(context, id) ??
+                    const NotYetAvailableScreen(),
+              );
+            },
           ),
           GoRoute(
             path: AppRoutes._dataGatewayEditSegment,
