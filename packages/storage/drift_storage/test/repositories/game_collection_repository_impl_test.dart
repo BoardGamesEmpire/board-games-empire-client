@@ -631,6 +631,88 @@ void main() {
         },
       );
 
+      test('addToCollection throws ArgumentError on a quantity past what the '
+          'server stores', () async {
+        await expectLater(
+          () => repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: GameCollectionRepository.maxQuantity + 1,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        expect(await repo.getCollection(), isEmpty);
+        verifyNever(() => mockSync.enqueue(any()));
+      });
+
+      // The form checks the total too, but against a lookup that may not
+      // have answered yet: the live row is read here, in the transaction.
+      test(
+        'addToCollection throws ArgumentError when a live row and the copies '
+        'added pass what the server stores, and leaves the row as it was',
+        () async {
+          const have = GameCollectionRepository.maxQuantity - 7;
+          await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: have,
+          );
+          clearInteractions(mockSync);
+
+          await expectLater(
+            () => repo.addToCollection(
+              platformGameId: kFixturePlatformGameId,
+              medium: _kMedium,
+              quantity: 8,
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          final rows = await repo.getCollection();
+          expect(rows.single.quantity, have);
+          verifyNever(() => mockSync.enqueue(any()));
+        },
+      );
+
+      test('addToCollection raises a live row to exactly what the server '
+          'stores', () async {
+        await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: GameCollectionRepository.maxQuantity - 7,
+        );
+
+        final added = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: 7,
+        );
+
+        expect(added.entry.quantity, GameCollectionRepository.maxQuantity);
+        expect(added.operation.quantity, GameCollectionRepository.maxQuantity);
+      });
+
+      test(
+        'addToCollection overwrites a removed row however many it held',
+        () async {
+          final first = await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: GameCollectionRepository.maxQuantity,
+          );
+          await repo.removeFromCollection(first.entry.id);
+
+          final added = await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: 3,
+          );
+
+          expect(added.entry.quantity, 3);
+        },
+      );
+
       test(
         'updateCollectionEntry throws ArgumentError on quantity == 0',
         () async {

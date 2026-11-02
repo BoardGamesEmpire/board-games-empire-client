@@ -24,6 +24,7 @@ const _queuedOp = AddToCollectionOperation(
 );
 
 const _openKey = Key('test.open_sheet');
+const _homeKey = Key('test.home');
 const _heading = 'Add Wingspan (Switch)';
 const _mediumRequired = 'Choose physical or digital.';
 const _quantityInvalid = 'Enter a whole number, 1 or more.';
@@ -116,10 +117,32 @@ void main() {
   );
 
   /// A screen with a button that opens the sheet.
+  ///
+  /// With [pushed], that screen is pushed over a home screen, so a pop the
+  /// sheet doesn't own shows as that screen gone.
   Future<void> open(
     WidgetTester tester, {
     TextScaler textScaler = TextScaler.noScaling,
+    bool pushed = false,
   }) async {
+    final opener = Scaffold(
+      body: Builder(
+        builder: (context) => TextButton(
+          key: _openKey,
+          onPressed: () async {
+            result = await showAddToCollectionSheet(
+              context,
+              repository: repository,
+              sender: sender,
+              game: wingspan,
+              platformGame: onSwitch,
+            );
+            resolved = true;
+          },
+          child: const Text('Open'),
+        ),
+      ),
+    );
     await tester.pumpWidget(
       MaterialApp(
         theme: BgeTheme.light(),
@@ -130,26 +153,24 @@ void main() {
           data: MediaQuery.of(context).copyWith(textScaler: textScaler),
           child: child!,
         ),
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              key: _openKey,
-              onPressed: () async {
-                result = await showAddToCollectionSheet(
-                  context,
-                  repository: repository,
-                  sender: sender,
-                  game: wingspan,
-                  platformGame: onSwitch,
-                );
-                resolved = true;
-              },
-              child: const Text('Open'),
-            ),
-          ),
-        ),
+        home: pushed
+            ? Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    key: _homeKey,
+                    onPressed: () => Navigator.of(context)
+                        .push(MaterialPageRoute<void>(builder: (_) => opener)),
+                    child: const Text('Home'),
+                  ),
+                ),
+              )
+            : opener,
       ),
     );
+    if (pushed) {
+      await tester.tap(find.byKey(_homeKey));
+      await tester.pumpAndSettle();
+    }
     await tester.tap(find.byKey(_openKey));
     await tester.pumpAndSettle();
   }
@@ -289,6 +310,33 @@ void main() {
     );
     expect(resolved, isTrue);
     expect(result, AddToCollectionSync.queued);
+  });
+
+  testWidgets('an add that lands while a dismissed sheet is still leaving '
+      'pops nothing else', (tester) async {
+    final send = Completer<SyncDelivery>();
+    when(() => sender.deliver(any(), any())).thenAnswer((_) => send.future);
+    await open(tester, pushed: true);
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    await tester.ensureVisible(find.byKey(AddToCollectionSheet.submitKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(AddToCollectionSheet.submitKey));
+    await tester.pump();
+    verify(() => sender.deliver('sq_1', _queuedOp)).called(1);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    // Still on its way out, and still listening.
+    expect(find.byKey(AddToCollectionSheet.sheetKey), findsOneWidget);
+
+    send.complete(const SyncDelivered());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+    expect(find.byKey(_openKey), findsOneWidget);
+    expect(find.text('Added Wingspan to your collection.'), findsOneWidget);
+    expect(result, AddToCollectionSync.synced);
   });
 
   testWidgets('closed without an add resolves to nothing', (tester) async {

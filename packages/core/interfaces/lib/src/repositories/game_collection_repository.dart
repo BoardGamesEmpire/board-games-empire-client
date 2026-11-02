@@ -29,6 +29,10 @@ import 'package:models/domain.dart';
 /// owns. Choose by where the entry came from, not by what it looks
 /// like.
 abstract class GameCollectionRepository {
+  /// The most copies one entry can hold: the server keeps `quantity` in a
+  /// Postgres `Int`.
+  static const int maxQuantity = 2147483647;
+
   /// Returns all collection entries for the current user.
   Future<List<GameCollection>> getCollection();
 
@@ -53,6 +57,13 @@ abstract class GameCollectionRepository {
   /// so the cache and the sync queue stay untouched on bad input.
   /// Use [removeFromCollection] to delete an entry rather than
   /// passing `quantity: 0`.
+  ///
+  /// The entry's quantity after the add can't pass [maxQuantity].
+  /// Implementations throw [ArgumentError] before the transaction for a
+  /// [quantity] past it, and inside it, before writing anything, when a
+  /// live entry's copies and [quantity] together would pass it. The second
+  /// check reads the live entry in the transaction, so a caller's own check
+  /// against an earlier read can't let a total through.
   ///
   /// Writes locally, enqueues [AddToCollectionOperation], and returns the
   /// entry as written, with the queue entry's `syncQueueId` and the

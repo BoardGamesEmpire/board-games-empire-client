@@ -39,7 +39,9 @@ import 'add_to_collection_state.dart';
 ///
 /// The bloc doesn't validate what it is sent. The sheet's form does: a
 /// medium, a quantity of 1 or more that the stored total can hold, a rating
-/// from 1 to 10 or none, and a comment that is not blank or none.
+/// from 1 to 10 or none, and a comment that is not blank or none. The form's
+/// total counts the lookup's entry, which may not have answered yet, so the
+/// repository checks the total again and throws: a failed add.
 class AddToCollectionBloc
     extends Bloc<AddToCollectionEvent, AddToCollectionState> {
   AddToCollectionBloc({

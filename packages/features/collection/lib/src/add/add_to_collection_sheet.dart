@@ -112,6 +112,9 @@ Future<AddToCollectionSync?> showAddToCollectionSheet(
 /// positive quantity. The only upper bound is storage, not product: the
 /// server keeps the quantity in a Postgres `Int`, so the copies already there
 /// and the copies added together can't pass 2147483647, and plus stops there.
+/// The form counts the copies from the medium's lookup, which a quick submit
+/// can beat; the repository checks the total against the entry as stored,
+/// and an add past it fails as any failed add does.
 ///
 /// A button at its limit stays enabled and does nothing, so one pressed down
 /// to its limit keeps the focus. Its semantics say it is disabled. After a
@@ -150,8 +153,9 @@ class _AddToCollectionSheet extends StatefulWidget {
 }
 
 class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
-  /// The largest quantity the server's column holds: Postgres `Int`.
-  static const int _storedMax = 2147483647;
+  /// The largest quantity the server's column holds, which the repository
+  /// enforces too.
+  static const int _storedMax = GameCollectionRepository.maxQuantity;
 
   static const String _medium = 'medium';
   static const String _quantity = 'quantity';
@@ -257,11 +261,19 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
           },
         ),
         // [showAddToCollectionSheet] says what became of the add.
+        //
+        // A sheet dismissed during the send stays mounted through its exit,
+        // and pop takes whichever route is on top, so a sheet that is no
+        // longer current would pop the screen beneath it.
         BlocListener<AddToCollectionBloc, AddToCollectionState>(
           listenWhen: (previous, current) =>
               previous.status != current.status &&
               current.status == AddToCollectionStatus.added,
-          listener: (context, _) => Navigator.of(context).pop(),
+          listener: (context, _) {
+            if (ModalRoute.isCurrentOf(context) ?? true) {
+              Navigator.of(context).pop();
+            }
+          },
         ),
       ],
       child: Padding(
