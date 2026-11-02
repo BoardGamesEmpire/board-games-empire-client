@@ -232,18 +232,39 @@ void main() {
       expect(events.map((e) => e.id), ['ev-server']);
     });
 
-    test('where nothing drains the queue, reopens a collection op but '
-        'leaves it for a drain, which keeps its entry in order', () async {
+    test('where nothing drains the queue, sends a collection op inline '
+        'when nothing for its entry goes first', () async {
       final add = await h.queuedAdd();
       await park(add.id);
       acceptEverything();
 
       expect(await recovery().retry(add.id), isTrue);
 
-      final reopened = await h.entry(add.id);
+      expect((await h.entry(add.id)).status, SyncStatus.completed);
+      expect(
+        h.collectionRemote.writes,
+        hasLength(2),
+        reason: 'the park, then this',
+      );
+    });
+
+    test('where nothing drains the queue, reopens a collection op an '
+        'earlier op for its entry holds back, and sends nothing', () async {
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 4);
+      final update = (await h.queue.getPendingEntries()).single;
+      final raise = await h.queuedAdd();
+      await park(raise.id);
+      final writes = h.collectionRemote.writes.length;
+      acceptEverything();
+
+      expect(await recovery().retry(raise.id), isTrue);
+
+      final reopened = await h.entry(raise.id);
       expect(reopened.status, SyncStatus.pending);
       expect(reopened.retryCount, 0);
-      expect(h.collectionRemote.writes, hasLength(1), reason: 'the park');
+      expect((await h.entry(update.id)).status, SyncStatus.pending);
+      expect(h.collectionRemote.writes, hasLength(writes));
     });
 
     test('a retry the server refuses again parks the op again, and says '

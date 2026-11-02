@@ -339,6 +339,74 @@ void main() {
     expect(result, AddToCollectionSync.synced);
   });
 
+  testWidgets('a sheet dismissed while its add is written says so when the '
+      'write fails', (tester) async {
+    final write =
+        Completer<
+          ({
+            GameCollection entry,
+            String syncQueueId,
+            AddToCollectionOperation operation,
+          })
+        >();
+    when(
+      () => repository.addToCollection(
+        platformGameId: any(named: 'platformGameId'),
+        medium: any(named: 'medium'),
+        quantity: any(named: 'quantity'),
+        rating: any(named: 'rating'),
+        comment: any(named: 'comment'),
+      ),
+    ).thenAnswer((_) => write.future);
+    await open(tester);
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    await tester.ensureVisible(find.byKey(AddToCollectionSheet.submitKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(AddToCollectionSheet.submitKey));
+    await tester.pump();
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+    expect(resolved, isFalse);
+
+    write.completeError(StateError('disposed'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Couldn't add Wingspan to your collection."),
+      findsOneWidget,
+    );
+    expect(resolved, isTrue);
+    expect(result, isNull);
+    verifyNever(() => sender.deliver(any(), any()));
+  });
+
+  testWidgets('a sheet dismissed after its failure was shown says nothing '
+      'more', (tester) async {
+    when(
+      () => repository.addToCollection(
+        platformGameId: any(named: 'platformGameId'),
+        medium: any(named: 'medium'),
+        quantity: any(named: 'quantity'),
+        rating: any(named: 'rating'),
+        comment: any(named: 'comment'),
+      ),
+    ).thenAnswer((_) async => throw StateError('disposed'));
+    await open(tester);
+    await pick(tester, AddToCollectionSheet.mediumKey, 'Physical');
+    await submit(tester);
+    expect(find.text(_failedTitle), findsOneWidget);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(AddToCollectionSheet.sheetKey), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(resolved, isTrue);
+    expect(result, isNull);
+  });
+
   testWidgets('closed without an add resolves to nothing', (tester) async {
     await open(tester);
 

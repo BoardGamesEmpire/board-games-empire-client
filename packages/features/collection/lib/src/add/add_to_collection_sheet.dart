@@ -26,7 +26,9 @@ import 'add_to_collection_state.dart';
 ///
 /// The sheet can be dismissed while an add is under way, and the send can
 /// take as long as the network's connect timeout. The add goes on, and its
-/// SnackBar shows once it settles, so a dismissed add is never silent.
+/// SnackBar shows once it settles, so a dismissed add is never silent: one
+/// whose write fails after the sheet is gone says it wasn't added. A failure
+/// the sheet already showed gets no SnackBar.
 ///
 /// [repository] and [sender] must be the active session's. The caller
 /// resolves them per use: one held across a session change is disposed, and
@@ -60,7 +62,9 @@ Future<AddToCollectionSync?> showAddToCollectionSheet(
         child: _AddToCollectionSheet(game: game, platformGame: platformGame),
       ),
     );
-    final settled = bloc.state.status == AddToCollectionStatus.submitting
+    final dismissedMidAdd =
+        bloc.state.status == AddToCollectionStatus.submitting;
+    final settled = dismissedMidAdd
         ? await bloc.stream.firstWhere(
             (state) => state.status != AddToCollectionStatus.submitting,
           )
@@ -68,17 +72,18 @@ Future<AddToCollectionSync?> showAddToCollectionSheet(
     final sync = settled.status == AddToCollectionStatus.added
         ? settled.sync
         : null;
-    if (sync != null && messenger.mounted) {
-      final title = game.title;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(switch (sync) {
-            AddToCollectionSync.queued => l10n.addToCollectionQueued(title),
-            AddToCollectionSync.refused => l10n.addToCollectionRefused(title),
-            AddToCollectionSync.synced => l10n.addToCollectionAdded(title),
-          }),
-        ),
-      );
+    final title = game.title;
+    // A failure the sheet showed was seen before it was dismissed. One that
+    // came after has no banner left to show it, so it is said here.
+    final message = switch (sync) {
+      AddToCollectionSync.queued => l10n.addToCollectionQueued(title),
+      AddToCollectionSync.refused => l10n.addToCollectionRefused(title),
+      AddToCollectionSync.synced => l10n.addToCollectionAdded(title),
+      null when dismissedMidAdd => l10n.addToCollectionDismissedFailed(title),
+      null => null,
+    };
+    if (message != null && messenger.mounted) {
+      messenger.showSnackBar(SnackBar(content: Text(message)));
     }
     return sync;
   } finally {

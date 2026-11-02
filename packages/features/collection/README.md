@@ -65,9 +65,10 @@ then sends the queued op at once with `sendNow`, as every write that queues one
 does (see the sync queue's README). A send that doesn't get through leaves the
 add queued, and the SnackBar after the sheet closes says whether the server has
 it, hasn't got it yet, or refused it. The sheet can be dismissed while the send
-runs: the add goes on, and its SnackBar shows once it settles. The bloc also
-looks up the live entry already on the medium chosen, so the sheet can say what
-the add makes.
+runs: the add goes on, and its SnackBar shows once it settles. If the add
+fails to save after the sheet is gone, a SnackBar says it wasn't added. The
+bloc also looks up the live entry already on the medium chosen, so the sheet
+can say what the add makes.
 
 Copies are typed or stepped with the minus and plus buttons beside the field,
 from 1 up to what the server can store.

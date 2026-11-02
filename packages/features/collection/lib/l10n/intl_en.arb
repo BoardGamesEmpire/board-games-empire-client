@@ -262,6 +262,16 @@
   "@addToCollectionFailedBody": {
     "description": "Body of the banner above the add sheet's submit button when the add failed: nothing reached the collection, and submitting again retries it."
   },
+  "addToCollectionDismissedFailed": "Couldn't add {title} to your collection.",
+  "@addToCollectionDismissedFailed": {
+    "description": "Shown briefly on the game's screen when the add sheet was dismissed while its add was being saved, and the save then failed: nothing reached the collection. The sheet and its error banner are gone, so this is the only word of it. Must not suggest the add will happen later.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
   "addToCollectionQueued": "Added {title} to your collection on this device. It hasn't reached the server yet.",
   "@addToCollectionQueued": {
     "description": "Shown briefly on the game's screen after the add sheet closes with the game added on this device but not yet confirmed by the server: it couldn't be reached, or an earlier change to the same entry is still waiting. Must not promise when it will reach the server: the native app sends it later on its own, but the web app has nothing that does yet (#447).",
