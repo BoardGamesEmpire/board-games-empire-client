@@ -67,17 +67,34 @@ final class EventActionOutcome extends Equatable {
   /// matches or a cache that could not be read, has no error and isn't read
   /// again: nothing reached the server, and a read would ask the same
   /// session.
-  bool get rereads => switch (result) {
-    EventActionResult.failed =>
-      error != null &&
-          (action == EventAction.addDate ||
-              error is! EventRemoteTransientException),
-    EventActionResult.done ||
-    EventActionResult.gone => action != EventAction.delete,
-    EventActionResult.refused ||
-    EventActionResult.changed ||
-    EventActionResult.partlyDone => true,
-  };
+  ///
+  /// For a vote (#507), only changed, gone and refused: the date moved, went,
+  /// or the viewer's role changed, and the read shows which. A vote changes
+  /// no event status, so a done or failed one reads the poll again, not the
+  /// event, and the poll's bloc does that itself once a run of votes ends.
+  bool get rereads {
+    if (action == EventAction.voteAvailability) {
+      return switch (result) {
+        EventActionResult.changed ||
+        EventActionResult.gone ||
+        EventActionResult.refused => true,
+        EventActionResult.done ||
+        EventActionResult.failed ||
+        EventActionResult.partlyDone => false,
+      };
+    }
+    return switch (result) {
+      EventActionResult.failed =>
+        error != null &&
+            (action == EventAction.addDate ||
+                error is! EventRemoteTransientException),
+      EventActionResult.done ||
+      EventActionResult.gone => action != EventAction.delete,
+      EventActionResult.refused ||
+      EventActionResult.changed ||
+      EventActionResult.partlyDone => true,
+    };
+  }
 
   @override
   List<Object?> get props => [action, result, error];
