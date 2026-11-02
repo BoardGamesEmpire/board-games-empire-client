@@ -11,6 +11,8 @@ import 'package:dio_network/src/auth/token_storage_service.dart';
 import 'package:dio_network/src/network/network_log_interceptor.dart';
 import 'package:dio_network/src/network/token_interceptor.dart';
 
+import '../support/in_memory_session_tombstone_store.dart';
+
 /// The keychain. Stubbed in `setUp` over a [Map] so a payload written by one
 /// call is read back by the next. A mocktail mock rather than a hand-rolled
 /// fake, matching the sibling suites: `FlutterSecureStorage` has far more
@@ -114,7 +116,11 @@ void main() {
           keychain.remove(invocation.namedArguments[#key]);
         });
 
-    storage = TokenStorageService(serverId: 'server-1', storage: secure);
+    storage = TokenStorageService(
+      serverId: 'server-1',
+      tombstones: InMemorySessionTombstoneStore(),
+      storage: secure,
+    );
     adapter = _RecordingAdapter();
     dio =
         Dio(

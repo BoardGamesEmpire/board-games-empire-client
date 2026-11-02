@@ -50,9 +50,13 @@ import 'token_interceptor.dart';
 /// Lifecycle: the container owns the shared [Dio] and closes it on dispose; the
 /// repository only closes its own resources (it must not close a [Dio] that
 /// other repositories share).
+///
+/// [sessionTombstones] is passed in rather than built here because it reads the
+/// meta database, which outlives every per-server scope (#356).
 void registerServerNetwork({
   required DependencyContainer container,
   required ServerConfig config,
+  required SessionTombstoneStore sessionTombstones,
 }) {
   // #12: per-server skew-corrected clock. Registered here — not in its
   // own installer — per the registration convention: it is fed by this
@@ -74,7 +78,10 @@ void registerServerNetwork({
 
   // Session material is keyed by the stable server-vended UUID so it
   // survives user-facing URL changes for the same server instance.
-  final tokenStorage = TokenStorageService(serverId: config.bgeServerId);
+  final tokenStorage = TokenStorageService(
+    serverId: config.bgeServerId,
+    tombstones: sessionTombstones,
+  );
   container.registerSingleton<TokenStorageService>(tokenStorage);
 
   const factory = DefaultDioFactory();

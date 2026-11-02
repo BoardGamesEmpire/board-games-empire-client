@@ -2,6 +2,7 @@ import 'package:drift_storage/drift_storage.dart';
 import 'package:drift_storage/drift_storage_native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:native_platform/native_platform.dart';
@@ -9,6 +10,9 @@ import 'package:native_platform/native_platform.dart';
 class _MockKeyService extends Mock implements EncryptionKeyService {}
 
 class _MockExecutorFactory extends Mock implements EncryptedExecutorFactory {}
+
+class _MockSessionTombstoneStore extends Mock
+    implements SessionTombstoneStore {}
 
 void main() {
   // Pure composition: installers store their collaborators and defer all
@@ -35,6 +39,7 @@ void main() {
     final installers = buildNativeServerScopeInstallers(
       executorFactory: _MockExecutorFactory(),
       keyService: _MockKeyService(),
+      sessionTombstones: _MockSessionTombstoneStore(),
     );
 
     // A per-server registration of a per-user repository would live for the
@@ -55,6 +60,7 @@ void main() {
     final installers = buildNativeServerScopeInstallers(
       executorFactory: _MockExecutorFactory(),
       keyService: _MockKeyService(),
+      sessionTombstones: _MockSessionTombstoneStore(),
     );
 
     // NetworkScopeInstaller's registrations are resolved by later tiers;

@@ -6,9 +6,9 @@ may be imported from a web build.
 
 ## Composition root
 
-`registerServerNetwork({container, config})` is the one place that knows how
-the pieces fit together. It builds the **per-server** stack and registers it
-into that server's DI container:
+`registerServerNetwork({container, config, sessionTombstones})` is the one place
+that knows how the pieces fit together. It builds the **per-server** stack and
+registers it into that server's DI container:
 
 ```
 TokenStorageService -> TokenInterceptor -> DioFactory -> shared Dio

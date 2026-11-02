@@ -247,9 +247,9 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// - reconcile returns a **definitive** "no session" → the server
   ///   accepted the credentials and then disowned the session. That is a
   ///   server contract violation, not a network condition, and it must not
-  ///   be reported as success: the token has already been cleared by
-  ///   `getSession`, so a "signed in" state here would 401 on every
-  ///   subsequent request. Matches `WebAuthRepositoryImpl.signUp`.
+  ///   be reported as success: the token has already been cleared, or
+  ///   refused if the delete failed, by `getSession`, so a "signed in" state
+  ///   here would 401 on every subsequent request. Matches `WebAuthRepositoryImpl.signUp`.
   Future<AuthResponse> _finalizeCredentialGrant(
     AuthResponse granted, {
     required String context,
@@ -309,10 +309,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       user: granted.user,
     );
 
-    // A sign-out during the grant store: our write lifted its latch and
-    // re-persisted the snapshot. Undo it and report supersession — the
-    // sign-in genuinely succeeded server-side, but locally the sign-out is
-    // the newer intent and must win.
+    // A sign-out during the grant store: unless the store was dropped for it,
+    // our write lifted its latch and re-persisted the snapshot. Undo it and
+    // report supersession — the sign-in genuinely succeeded server-side, but
+    // locally the sign-out is the newer intent and must win.
     if (epoch != _sessionEpoch) {
       await _clearQuietly('a superseded credential grant');
       throw const AuthSupersededException();
@@ -631,8 +631,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       // therefore the TokenInterceptor's Authorization header and any
       // same-process getSession() — already report nothing stored: a
       // surviving payload can be resurrected neither at the HTTP layer nor
-      // in state (PR #99 review). It is cleared for good on the next cold
-      // start.
+      // in state (PR #99 review). At the next cold start the marker clear()
+      // wrote ahead of the delete refuses the payload, and the delete is
+      // retried (#356). If the marker could not be written either, the payload
+      // can still be read then.
       Error.throwWithStackTrace(
         AuthSignOutPersistenceException(cause: error),
         stackTrace,
@@ -848,31 +850,24 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
   /// `retrieve()` — and therefore the `TokenInterceptor` and any same-process
   /// `getSession` — already report nothing stored.
   ///
-  /// It is NOT gone at the next cold start, and an earlier version of this
-  /// comment said it was. That latch is in-memory and unpersisted
-  /// (`token_storage_service.dart:55-71`), and `retrieve()` only self-heals a
-  /// payload it cannot *decode* — a well-formed one that survived a failed
-  /// delete is read again by a fresh instance, where `restoreCachedSession`
-  /// may adopt it offline. That residual predates this method: the unguarded
-  /// `clear()` left exactly the same bytes on disk and merely failed loudly
-  /// while doing it.
+  /// Contained across a restart as well: `clear()` writes a durable marker
+  /// ahead of the delete, so the next cold start refuses a payload that
+  /// survived and retries the delete (#356). If that marker could not be
+  /// written either, the payload is still there for a fresh instance to read,
+  /// and `restoreCachedSession` may adopt it offline. `AuthRepository.getSession`
+  /// states that remaining case, and the log records are its only trace.
   ///
-  /// What containment does newly cost is candour. `AuthRepository.getSession`
-  /// promises that a null for a definitive negative means "the stored session
-  /// material is cleared" (`auth_repository.dart:39-41`), and on this path
-  /// that promise cannot be kept when the delete throws. The log record is
-  /// currently the only trace. Neither of the honest repairs is free — a typed
-  /// throw here would let `_finalizeCredentialGrant`'s `on AuthException`
-  /// catch keep a session the server just disowned, and a durable tombstone is
-  /// a `TokenStorageService` change that also fixes the pre-existing residual
-  /// above — so the choice is deliberately left open rather than guessed at.
+  /// A typed throw is not available for that double fault:
+  /// `_finalizeCredentialGrant`'s `on AuthException` catch would read it as an
+  /// indeterminate reconcile and keep a session the server just disowned.
   Future<void> _clearQuietly(String what) async {
     try {
       await _tokenStorage.clear();
     } on Object catch (error, stackTrace) {
       _log.warn(
         'Could not clear session material after $what; the sign-out latch '
-        'keeps it unreadable until the next cold start',
+        'keeps it unreadable in this process, and its marker, if written, '
+        'refuses it at the next cold start',
         error: error,
         stackTrace: stackTrace,
       );

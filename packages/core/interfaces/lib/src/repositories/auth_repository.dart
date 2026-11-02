@@ -61,10 +61,14 @@ abstract class AuthRepository {
   ///
   /// Returns null only when the server gives a **definitive** negative — a
   /// 401, a 403, or BetterAuth's 200-with-null-body "no session" — in which
-  /// case the stored session material is cleared and the in-memory state
-  /// transitions to [AuthStateUnauthenticated]. Also returns null, without
-  /// touching storage or state, when the caller signed out while the request
-  /// was in flight: the newer intent wins.
+  /// case the in-memory state transitions to [AuthStateUnauthenticated] and
+  /// the stored session material is cleared or, if its delete failed, durably
+  /// refused: the next cold start will not restore it (#356). The remaining
+  /// cases are that refusal failing to persist as well, and a refusal that
+  /// persisted but cannot be read at the next start, which falls back to the
+  /// keychain. The material can then be read at the next cold start, nothing
+  /// is thrown, and only the log says so. Also returns null, without touching storage or state, when the caller
+  /// signed out while the request was in flight: the newer intent wins.
   ///
   /// Throws (rather than returning null) whenever the answer is
   /// **indeterminate**: [AuthNetworkException] for transport failures,
@@ -96,12 +100,14 @@ abstract class AuthRepository {
   /// #348 and #356 were both filed against it. What actually holds:
   ///
   /// **Where the credential is held locally** (native token storage): a
-  /// failed clear leaves a WELL-FORMED payload behind, which `retrieve()`
-  /// does not self-heal — it discards only a payload it cannot decode. The
-  /// next cold start can read it. The cold-start bound holds for a sign-out,
-  /// which the user can simply repeat. It does NOT hold when the session was
-  /// **rejected by the server** rather than ended by the user: there is then
-  /// no action to repeat and no signal that anything failed (#356).
+  /// failed clear leaves a WELL-FORMED payload behind, token and user snapshot
+  /// included. A durable marker written ahead of the delete keeps the next
+  /// cold start from restoring it, and that cold start retries the delete
+  /// (#356). If the marker could not be written either, the next cold start
+  /// can read the payload. That is bounded for a sign-out, which the user can
+  /// simply repeat. It is not when the session was **rejected by the server**
+  /// rather than ended by the user: there is then no action to repeat and no
+  /// signal that anything failed.
   ///
   /// **Where the credential is a server-set cookie** (web): nothing local
   /// exists to clear, so the residual is not deferred to a cold start at
@@ -432,9 +438,10 @@ final class AuthSupersededException extends AuthException {
 /// in-memory auth state has transitioned to [AuthStateUnauthenticated] —
 /// the sign-out is effective for this process regardless, and
 /// [AuthRepository.watchAuthState] can never re-assert the ended session.
-/// The residual risk is the persisted token surviving until the next cold
-/// start, where the restored session can be signed out again. [cause]
-/// carries the underlying storage fault.
+/// The token and user snapshot stay on disk until a delete succeeds. The next
+/// cold start refuses them and retries the delete (#356), unless the durable
+/// marker could not be written either; then the session can be restored, and
+/// signed out again. [cause] carries the underlying storage fault.
 final class AuthSignOutPersistenceException extends AuthException {
   const AuthSignOutPersistenceException({
     super.message =

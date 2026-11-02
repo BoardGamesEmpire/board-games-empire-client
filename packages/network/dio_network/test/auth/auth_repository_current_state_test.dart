@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:interfaces/repositories.dart';
 
+import '../support/in_memory_session_tombstone_store.dart';
+
 const _kAuthBase = '/api/auth';
 
 ServerIdentity _identity() => ServerIdentity(
@@ -36,7 +38,10 @@ void main() {
         'replays', () async {
       final repository = AuthRepositoryImpl(
         identity: _identity(),
-        tokenStorage: TokenStorageService(serverId: 'bge-uuid-1'),
+        tokenStorage: TokenStorageService(
+          serverId: 'bge-uuid-1',
+          tombstones: InMemorySessionTombstoneStore(),
+        ),
         dio: Dio(),
       );
       addTearDown(repository.onDispose);

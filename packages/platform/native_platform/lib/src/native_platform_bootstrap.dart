@@ -46,6 +46,7 @@ typedef NativeOrchestratorFactory = ServerOrchestrator Function({
 List<ServerScopeInstaller> buildNativeServerScopeInstallers({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
+  required SessionTombstoneStore sessionTombstones,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
 }) => [
   StorageScopeInstaller(
@@ -53,7 +54,7 @@ List<ServerScopeInstaller> buildNativeServerScopeInstallers({
     keyService: keyService,
     onRecovery: onRecovery,
   ),
-  const NetworkScopeInstaller(),
+  NetworkScopeInstaller(sessionTombstones: sessionTombstones),
 ];
 
 /// The per-user session-scope installers (#135), run on every sign-in by
@@ -114,11 +115,13 @@ List<UserScopeInstaller> buildNativeUserScopeInstallers() => const [
 ServerContextFactory buildNativeServerContextFactory({
   required EncryptedExecutorFactory executorFactory,
   required EncryptionKeyService keyService,
+  required SessionTombstoneStore sessionTombstones,
   void Function(DatabaseRecoveryEvent event)? onRecovery,
 }) {
   final installers = buildNativeServerScopeInstallers(
     executorFactory: executorFactory,
     keyService: keyService,
+    sessionTombstones: sessionTombstones,
     onRecovery: onRecovery,
   );
   final userInstallers = buildNativeUserScopeInstallers();
@@ -344,6 +347,7 @@ class NativePlatformBootstrap implements PlatformBootstrap {
         contextFactory: buildNativeServerContextFactory(
           executorFactory: _executorFactory,
           keyService: _keyService,
+          sessionTombstones: SessionTombstoneStoreImpl(meta),
           onRecovery: _onServerDatabaseRecovered,
         ),
       );
