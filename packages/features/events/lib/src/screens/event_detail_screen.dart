@@ -16,9 +16,14 @@ import '../bloc/event_actions_state.dart';
 import '../bloc/event_detail_bloc.dart';
 import '../bloc/event_detail_event.dart';
 import '../bloc/event_detail_state.dart';
+import '../bloc/event_poll_bloc.dart';
+import '../bloc/event_poll_event.dart';
+import '../bloc/event_poll_state.dart';
 import '../detail/event_actions.dart';
 import '../detail/event_date_actions.dart';
+import '../detail/event_poll.dart';
 import '../widgets/event_date_dialogs.dart';
+import '../widgets/event_date_poll.dart';
 import '../widgets/event_detail_sections.dart';
 import '../widgets/event_labels.dart';
 import '../widgets/event_refresh_banner.dart';
@@ -37,10 +42,11 @@ import '../widgets/event_refresh_banner.dart';
 /// ## What it doesn't show yet
 ///
 /// Most actions. The bloc works out what the viewer may do, and the app
-/// bar's menu offers Delete (#501), and the dates their own (#506), to a
-/// viewer the role table gives them. The other actions' issues (#500,
-/// #502–#518) add theirs. The games section says the event's games will
-/// show there, until #519 has something to show.
+/// bar's menu offers Delete (#501), the dates their own (#506), and a poll's
+/// dates their answers (#507), to a viewer the role table gives them. The
+/// other actions' issues (#500, #502–#518) add theirs. The games section
+/// says the event's games will show there, until #519 has something to
+/// show.
 ///
 /// ## Delete
 ///
@@ -82,6 +88,33 @@ import '../widgets/event_refresh_banner.dart';
 /// each is read again as [EventActionOutcome.rereads] says: the server
 /// derives the event's status from its dates.
 ///
+/// On a poll, Confirm offers to decline the other proposed dates in the
+/// same step (#507). The dates declined are the others proposed as the
+/// event stands once the confirm is sent.
+///
+/// ## The poll
+///
+/// On a poll with a proposed date, each proposed date shows the viewer's
+/// answer, its tallies, the leader's mark and how many haven't answered,
+/// from an [EventPollBloc] beside the actions' (#507). The summary isn't
+/// cached, so it is read when the poll first shows and again each time a
+/// detail read ends, for the event the detail shows then and only while
+/// it still shows a poll the server knows. Offline, the dates show from
+/// the cache and the poll says it couldn't load, with a retry.
+///
+/// A vote goes out at once, and waits for no read: no read can overwrite
+/// it, so the chips stay enabled while one runs, and a keyboard user on one
+/// keeps their place. They wait for a date write or Delete, as the dates'
+/// menus do, and for the viewer's own answers to be read. A vote's end other
+/// than done shows a banner of its own, and reads the event again where
+/// [EventActionOutcome.rereads] says to: a date no longer open for answers
+/// has been confirmed, declined or cancelled meanwhile. A poll read that
+/// finds the event gone reads it again too, since nothing else would tell
+/// the screen. Either read waits for a date write or Delete to end (#589),
+/// and isn't made once the event is deleted (#501). *Who answered* opens a
+/// page of everyone's answers, through [onWhoAnswered], where the roster
+/// can be read.
+///
 /// ## Not found is an answer
 ///
 /// The server answers 404 for an event that was deleted and for one this
@@ -96,6 +129,7 @@ class EventDetailScreen extends StatelessWidget {
     this.households,
     this.householdRole,
     this.onBack,
+    this.onWhoAnswered,
     this.now,
     super.key,
   });
@@ -156,6 +190,37 @@ class EventDetailScreen extends StatelessWidget {
   /// Key on the dates' *Add a date* button.
   static const Key addDateKey = Key('event_detail.add_date');
 
+  /// Key on one of a proposed date's answer chips (#507).
+  static Key pollAnswerKey(
+    String occurrenceId,
+    AvailabilityResponse response,
+  ) => Key('event_detail.poll_${response.name}_$occurrenceId');
+
+  /// Key on a proposed date's tallies line.
+  static Key pollTalliesKey(String occurrenceId) =>
+      Key('event_detail.poll_tallies_$occurrenceId');
+
+  /// Key on a proposed date's leader mark: the leader, or tied.
+  static Key pollLeaderKey(String occurrenceId) =>
+      Key('event_detail.poll_leader_$occurrenceId');
+
+  /// Key on *Confirm this date*, under the leading date.
+  static Key confirmLeaderKey(String occurrenceId) =>
+      Key('event_detail.confirm_leader_$occurrenceId');
+
+  /// Key on the banner saying how the last vote went.
+  static const Key pollOutcomeKey = Key('event_detail.poll_outcome');
+
+  /// Key on the retry of a poll read that failed.
+  static const Key pollRetryKey = Key('event_detail.poll_retry');
+
+  /// Key on the dates' *Who answered* button.
+  static const Key whoAnsweredKey = Key('event_detail.who_answered');
+
+  /// Key on the Confirm dialog's *Also decline the other proposed dates*:
+  /// the dialog's own key, named here beside the screen's others.
+  static const Key declineOthersKey = EventDateDialogKeys.declineOthers;
+
   /// The event to show.
   final String eventId;
 
@@ -187,6 +252,12 @@ class EventDetailScreen extends StatelessWidget {
   /// button nor Delete, and the app bar's back button still leaves.
   final void Function(BuildContext context)? onBack;
 
+  /// Opens the page of who answered the poll (#507), with this screen's
+  /// context: the feature package doesn't know the route table. Null
+  /// offers no *Who answered*, as does a roster that isn't read yet or isn't
+  /// visible.
+  final void Function(BuildContext context)? onWhoAnswered;
+
   /// The clock that decides whether a date is this year's. Defaults to the
   /// device's.
   final DateTime Function()? now;
@@ -213,8 +284,8 @@ class EventDetailScreen extends StatelessWidget {
           ),
         ),
         // None without a server or a way back, and then nothing offers
-        // Delete.
-        if (hasActions)
+        // Delete, a date's actions or the poll.
+        if (hasActions) ...[
           BlocProvider<EventActionsBloc>(
             create: (_) => EventActionsBloc(
               repository: repository,
@@ -222,9 +293,15 @@ class EventDetailScreen extends StatelessWidget {
               confirmSession: confirmSession,
             ),
           ),
+          BlocProvider<EventPollBloc>(
+            create: (_) =>
+                EventPollBloc(remote: remote, confirmSession: confirmSession),
+          ),
+        ],
       ],
       child: _EventDetailView(
         onBack: onBack,
+        onWhoAnswered: onWhoAnswered,
         now: now ?? DateTime.now,
         hasActions: hasActions,
       ),
@@ -237,10 +314,12 @@ class _EventDetailView extends StatelessWidget {
     required this.now,
     required this.hasActions,
     this.onBack,
+    this.onWhoAnswered,
   });
 
   final DateTime Function() now;
   final void Function(BuildContext context)? onBack;
+  final void Function(BuildContext context)? onWhoAnswered;
 
   /// Whether an [EventActionsBloc] is provided above, which is whether the
   /// screen has a server and a way back. Looking it up where it isn't would
@@ -282,17 +361,44 @@ class _EventDetailView extends StatelessWidget {
             state: state,
             now: now,
             hasActions: hasActions,
+            onWhoAnswered: onWhoAnswered,
           ),
         };
       },
     );
     if (!hasActions) return page;
 
-    return BlocListener<EventActionsBloc, EventActionsState>(
-      // Only a request's end emits an outcome, and a dismissal clears it.
-      listenWhen: (previous, current) =>
-          current.outcome != null && current.outcome != previous.outcome,
-      listener: _onOutcome,
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<EventActionsBloc, EventActionsState>(
+          // Only a request's end emits an outcome, and a dismissal clears it.
+          listenWhen: (previous, current) =>
+              current.outcome != null && current.outcome != previous.outcome,
+          listener: _onOutcome,
+        ),
+        BlocListener<EventDetailBloc, EventDetailState>(
+          listenWhen: _pollDue,
+          listener: (context, state) => _readPoll(context, state),
+        ),
+        BlocListener<EventPollBloc, EventPollState>(
+          // A vote's end the bloc announces, as the actions' outcomes are.
+          listenWhen: (previous, current) =>
+              current.outcome != null && current.outcome != previous.outcome,
+          listener: (context, state) {
+            if (state.outcome?.rereads ?? false) {
+              unawaited(_rereadForPoll(context));
+            }
+          },
+        ),
+        BlocListener<EventPollBloc, EventPollState>(
+          // The poll stays gone through its later reads, so a server that
+          // answers the event but not its poll can't start a loop of them.
+          listenWhen: (previous, current) =>
+              previous.load != EventPollLoad.gone &&
+              current.load == EventPollLoad.gone,
+          listener: (context, _) => unawaited(_rereadForPoll(context)),
+        ),
+      ],
       child: page,
     );
   }
@@ -337,34 +443,106 @@ bool _covered(BuildContext context) =>
     (ModalRoute.isActiveOf(context) ?? false) &&
     !(ModalRoute.isCurrentOf(context) ?? true);
 
+/// Reads the event again after a vote's end that asks for it, or a poll read
+/// that found the event gone (#507), once no date write or Delete is out, and
+/// not at all once the event is removed.
+///
+/// A vote or a poll read runs beside the actions' requests, so it can end
+/// while one of them is out. A read then could land after the write's answer
+/// and put the date back as it was (#589), or cache a deleted event again
+/// (#501).
+/// The write's own end reads the event where its outcome says to. Where
+/// that read is running, the detail drops this one, and the running read
+/// shows the date as it is.
+Future<void> _rereadForPoll(BuildContext context) async {
+  final actions = context.read<EventActionsBloc>();
+  final detail = context.read<EventDetailBloc>();
+  final ended = actions.state.busy
+      ? await actions.stream.firstWhere(
+          (state) => !state.busy,
+          orElse: () => actions.state,
+        )
+      : actions.state;
+  // The bloc can still read as open just after its provider has gone.
+  if (!context.mounted || actions.isClosed || detail.isClosed) return;
+  if (_removed(ended)) return;
+  detail.add(const EventDetailRetryRequested());
+}
+
+/// Whether [state] shows a poll the server can be asked about (#507): one
+/// with a proposed date, on an event the server knows. An event created
+/// offline has an id the server has never heard of.
+bool _pollShows(EventDetailState state) {
+  if (state is! EventDetailReady) return false;
+  final snapshot = state.detail.snapshot;
+  return !snapshot.event.isLocalOnly &&
+      showsPoll(snapshot.event, snapshot.occurrences);
+}
+
+/// Whether the poll is due a read as the detail goes from [previous] to
+/// [current] (#507): it has just started to show, or a detail read has just
+/// ended and it still shows. A detail read can change which dates are
+/// proposed, and other people's answers come in only when it is read.
+bool _pollDue(EventDetailState previous, EventDetailState current) {
+  if (!_pollShows(current)) return false;
+  if (!_pollShows(previous)) return true;
+  return previous is EventDetailReady &&
+      current is EventDetailReady &&
+      previous.reading &&
+      !current.reading;
+}
+
+/// Reads the poll of the event [state] shows, by the id it shows then, which
+/// a reconcile can move (#499). Only where it shows one.
+void _readPoll(BuildContext context, EventDetailState state) {
+  if (state is! EventDetailReady || !_pollShows(state)) return;
+  context.read<EventPollBloc>().add(
+    EventPollRequested(state.detail.snapshot.event.id),
+  );
+}
+
 /// The event itself.
 class _ReadyPage extends StatelessWidget {
   const _ReadyPage({
     required this.state,
     required this.now,
     required this.hasActions,
+    this.onWhoAnswered,
   });
 
   final EventDetailReady state;
   final DateTime Function() now;
 
-  /// Whether an [EventActionsBloc] is provided above.
+  /// Whether an [EventActionsBloc] and an [EventPollBloc] are provided
+  /// above.
   final bool hasActions;
+  final void Function(BuildContext context)? onWhoAnswered;
 
   @override
   Widget build(BuildContext context) {
-    if (!hasActions) return _build(context, null);
+    if (!hasActions) return _build(context, null, null);
 
-    return BlocBuilder<EventActionsBloc, EventActionsState>(builder: _build);
+    return BlocBuilder<EventActionsBloc, EventActionsState>(
+      builder: (context, actionsState) =>
+          BlocBuilder<EventPollBloc, EventPollState>(
+            builder: (context, pollState) =>
+                _build(context, actionsState, pollState),
+          ),
+    );
   }
 
-  /// [actionsState] is null where there is no actions bloc, and then nothing
-  /// offers Delete.
-  Widget _build(BuildContext context, EventActionsState? actionsState) {
+  /// [actionsState] and [pollState] are null where there are no such blocs,
+  /// and then nothing offers Delete, and no poll shows.
+  Widget _build(
+    BuildContext context,
+    EventActionsState? actionsState,
+    EventPollState? pollState,
+  ) {
     final l10n = EventsLocalizations.of(context);
     final snapshot = state.detail.snapshot;
     final event = snapshot.event;
     final outcome = actionsState?.outcome;
+    final pollOutcome = pollState?.outcome;
     // A request on its way, or a delete done and the screen leaving.
     final acting =
         actionsState != null && (actionsState.busy || _deleted(actionsState));
@@ -403,7 +581,25 @@ class _ReadyPage extends StatelessWidget {
           if (actionsState != null &&
               outcome != null &&
               !_deleted(actionsState)) ...[
-            _ActionOutcomeBanner(outcome: outcome),
+            _ActionOutcomeBanner(
+              bannerKey: EventDetailScreen.actionOutcomeKey,
+              outcome: outcome,
+              onDismiss: () => context.read<EventActionsBloc>().add(
+                const EventActionOutcomeDismissed(),
+              ),
+            ),
+            const BgeGap.lg(),
+          ],
+          // A vote's, beside the actions': nothing holds a date write back
+          // for a vote that is out, so both can end (#507).
+          if (pollOutcome != null) ...[
+            _ActionOutcomeBanner(
+              bannerKey: EventDetailScreen.pollOutcomeKey,
+              outcome: pollOutcome,
+              onDismiss: () => context.read<EventPollBloc>().add(
+                const EventPollOutcomeDismissed(),
+              ),
+            ),
             const BgeGap.lg(),
           ],
           EventDetailHeader(
@@ -416,6 +612,9 @@ class _ReadyPage extends StatelessWidget {
             state: state,
             now: now,
             hasActions: actionsState != null,
+            poll: pollState,
+            onWhoAnswered: onWhoAnswered,
+            acting: acting,
             // Not while a read runs, whose answer landing after the write
             // would put the date back as it was (#589). Nor while a request
             // is out or once the delete is done.
@@ -519,14 +718,17 @@ class _ActionsMenu extends StatelessWidget {
 }
 
 /// The dates section (#498), with each date's menu and *Add a date* where
-/// the viewer may use them (#506). See [EventDetailScreen] on how a choice
-/// is sent.
+/// the viewer may use them (#506), and a poll's answers (#507). See
+/// [EventDetailScreen] on how a choice is sent.
 class _Dates extends StatelessWidget {
   const _Dates({
     required this.state,
     required this.now,
     required this.hasActions,
     required this.enabled,
+    required this.acting,
+    this.poll,
+    this.onWhoAnswered,
   });
 
   final EventDetailReady state;
@@ -538,6 +740,15 @@ class _Dates extends StatelessWidget {
 
   /// Whether the controls may be pressed now.
   final bool enabled;
+
+  /// Whether a date write or Delete is out, or the delete is done. All that
+  /// holds the poll's answers: see [EventDetailScreen].
+  final bool acting;
+
+  /// The poll's state, or null where there is no [EventPollBloc] and no
+  /// poll shows.
+  final EventPollState? poll;
+  final void Function(BuildContext context)? onWhoAnswered;
 
   @override
   Widget build(BuildContext context) {
@@ -561,7 +772,35 @@ class _Dates extends StatelessWidget {
               _send(context, action, () => _ask(context, occurrence, action)),
             )
           : null,
+      poll: _pollView(context),
       enabled: enabled,
+    );
+  }
+
+  /// The poll on the dates (#507), or null where none shows: no poll bloc,
+  /// or no poll the server can be asked about, by the check the reads use.
+  DatesPollView? _pollView(BuildContext context) {
+    final poll = this.poll;
+    if (poll == null || !_pollShows(state)) return null;
+
+    final event = state.detail.snapshot.event;
+    final onWhoAnswered = this.onWhoAnswered;
+    return datesPollView(
+      snapshot: state.detail.snapshot,
+      viewer: state.detail.attendance,
+      actions: state.actions,
+      poll: poll,
+      acting: acting,
+      // Sent at once: no read can overwrite a vote, since the summary
+      // isn't cached.
+      onVote: (occurrence, response) => context.read<EventPollBloc>().add(
+        EventPollVoted(event.id, occurrence.id, response),
+      ),
+      onRetry: () =>
+          context.read<EventPollBloc>().add(EventPollRetryRequested(event.id)),
+      onWhoAnswered: onWhoAnswered == null
+          ? null
+          : () => onWhoAnswered(context),
     );
   }
 
@@ -623,8 +862,20 @@ class _Dates extends StatelessWidget {
         if (update == null) return null;
         return (shown) => EventDateEditRequested(shown.event.id, id, update);
       case EventAction.confirmDate:
-        if (!await showConfirmDateDialog(context, name)) return null;
-        return (shown) => EventDateConfirmRequested(shown.event.id, id);
+        final confirm = await showConfirmDateDialog(
+          context,
+          name,
+          offerDeclineOthers: _offersDeclineOthers(occurrence),
+        );
+        if (confirm == null) return null;
+        // The others as the event stands once it is sent (#507).
+        return (shown) => EventDateConfirmRequested(
+          shown.event.id,
+          id,
+          decline: confirm.declineOthers
+              ? _otherProposed(shown.occurrences, id)
+              : const [],
+        );
       case EventAction.declineDate:
         if (!await showDeclineDateDialog(context, name)) return null;
         return (shown) => EventDateDeclineRequested(shown.event.id, id);
@@ -662,7 +913,24 @@ class _Dates extends StatelessWidget {
         return null;
     }
   }
+
+  /// Whether confirming [occurrence] offers to decline the event's other
+  /// proposed dates in the same step (#507): on a poll that has another, to
+  /// a viewer who may decline them.
+  bool _offersDeclineOthers(EventOccurrence occurrence) {
+    final snapshot = state.detail.snapshot;
+    return snapshot.event.schedulingMode == EventSchedulingMode.poll &&
+        state.actions.contains(EventAction.declineDate) &&
+        _otherProposed(snapshot.occurrences, occurrence.id).isNotEmpty;
+  }
 }
+
+/// The ids of [occurrences]' proposed dates other than [id], in order.
+List<String> _otherProposed(List<EventOccurrence> occurrences, String id) => [
+  for (final occurrence in occurrences)
+    if (occurrence.id != id && occurrence.status == OccurrenceStatus.proposed)
+      occurrence.id,
+];
 
 /// [detail]'s state once no read is running: now, or when the running one
 /// ends. Its last state if it closes first. A write asked for through a
@@ -679,13 +947,24 @@ Future<EventDetailState> _readEnded(EventDetailBloc detail) {
 /// dialog closes.
 typedef _DateRequest = EventActionsEvent Function(EventSnapshot shown);
 
-/// How the last action went (#501, #506), over the event until dismissed
-/// or replaced. A live region, as every [BgeInlineBanner] is. A delete's
-/// done has none: the screen leaves.
+/// How the last action went (#501, #506), or the last vote (#507), over the
+/// event until dismissed or replaced. A live region, as every
+/// [BgeInlineBanner] is. A delete's done has none: the screen leaves. Nor
+/// does a vote's: its chip shows it.
 class _ActionOutcomeBanner extends StatelessWidget {
-  const _ActionOutcomeBanner({required this.outcome});
+  const _ActionOutcomeBanner({
+    required this.outcome,
+    required this.onDismiss,
+    required this.bannerKey,
+  });
 
   final EventActionOutcome outcome;
+
+  /// Clears the outcome from the bloc that holds it.
+  final VoidCallback onDismiss;
+
+  /// The screen's key for this banner, on the [BgeInlineBanner] itself.
+  final Key bannerKey;
 
   @override
   Widget build(BuildContext context) {
@@ -693,7 +972,7 @@ class _ActionOutcomeBanner extends StatelessWidget {
     final action = outcome.action;
 
     return BgeInlineBanner(
-      key: EventDetailScreen.actionOutcomeKey,
+      key: bannerKey,
       tone: switch (outcome.result) {
         EventActionResult.done => BgeBannerTone.success,
         // Gone is what deleting and removing a date asked for: a second
@@ -727,18 +1006,30 @@ class _ActionOutcomeBanner extends StatelessWidget {
           l10n,
           done: l10n.eventsDateRemoved,
         ),
+        EventAction.voteAvailability => _voteMessage(l10n),
         // Delete is the only other action the screen sends yet. #500's and
         // #502's add their own copy.
         _ => _deleteMessage(l10n),
       },
       action: TextButton(
-        onPressed: () => context.read<EventActionsBloc>().add(
-          const EventActionOutcomeDismissed(),
-        ),
+        onPressed: onDismiss,
         child: Text(l10n.eventsActionDismiss),
       ),
     );
   }
+
+  /// A vote's copy (#507). A failure never says the answer wasn't saved:
+  /// one whose answer was lost may have landed.
+  String _voteMessage(EventsLocalizations l10n) => switch (outcome.result) {
+    EventActionResult.changed => l10n.eventsPollVoteChanged,
+    EventActionResult.gone => l10n.eventsDateGone,
+    EventActionResult.refused => l10n.eventsPollVoteRefused,
+    // Done and partly done never come here: done shows on the chip, and a
+    // vote is one request.
+    EventActionResult.failed ||
+    EventActionResult.done ||
+    EventActionResult.partlyDone => l10n.eventsPollVoteFailed,
+  };
 
   String _deleteMessage(EventsLocalizations l10n) => switch (outcome.result) {
     EventActionResult.done => l10n.eventsDeleted,
@@ -770,8 +1061,12 @@ class _ActionOutcomeBanner extends StatelessWidget {
         EventActionResult.gone => l10n.eventsDateGone,
         EventActionResult.refused => l10n.eventsDateRefused,
         EventActionResult.changed => l10n.eventsDateChanged,
+        // A confirm whose declines didn't all land (#507), or a cancel whose
+        // remove didn't (#446).
         EventActionResult.partlyDone =>
-          l10n.eventsDateCancelledRemoveUnconfirmed,
+          outcome.action == EventAction.confirmDate
+              ? l10n.eventsDateConfirmedNotAllDeclined
+              : l10n.eventsDateCancelledRemoveUnconfirmed,
         EventActionResult.failed =>
           outcome.action == EventAction.addDate && outcome.error != null
               ? l10n.eventsDateAddFailed

@@ -99,6 +99,19 @@ String? eventRsvpLabel(
   EventParticipationStatus.unknown || null => null,
 };
 
+/// An answer to a date's availability poll (#507): the viewer's own on a
+/// date's chips, and each person's on who answered. Null too where there is
+/// no answer to show.
+String? availabilityResponseLabel(
+  EventsLocalizations l10n,
+  AvailabilityResponse? response,
+) => switch (response) {
+  AvailabilityResponse.available => l10n.eventsPollAvailable,
+  AvailabilityResponse.maybe => l10n.eventsPollMaybe,
+  AvailabilityResponse.unavailable => l10n.eventsPollUnavailable,
+  AvailabilityResponse.unknown || null => null,
+};
+
 /// When [instant] falls, as an event's row says it (#497): the day in
 /// device-local time, with the year only when it isn't [now]'s, then the
 /// time of day ([eventTimeOfDayLabel]).

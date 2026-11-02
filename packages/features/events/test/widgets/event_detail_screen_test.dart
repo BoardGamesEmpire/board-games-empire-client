@@ -5,6 +5,8 @@ import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:events/src/widgets/event_date_dialogs.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
@@ -54,6 +56,19 @@ const _dateAddFailedCopy =
     'adding it again.';
 const _dateFailedUnexpectedCopy =
     'Something went wrong. Check the date below before trying again.';
+const _confirmedNotAllDeclinedCopy =
+    'The date was confirmed, but some of the other dates may not have been '
+    'declined. Any still proposed below can be declined from their menus.';
+const _declineOthersCopy = 'Also decline the other proposed dates';
+const _pollChangedCopy =
+    "This date isn't open for answers any more. Here it is as it stands now.";
+const _pollRefusedCopy = "You can't answer for this date.";
+const _pollFailedCopy =
+    'An error occurred while sending your answer. You may need to try again.';
+const _pollLoadFailedCopy = "Couldn't load the poll's answers.";
+const _pollHiddenCopy = "You can't see this poll's answers.";
+const _pollNotCountingCopy =
+    "Your answers don't count while you're not attending.";
 
 Household _household(String id, String name) => Household(
   id: id,
@@ -141,7 +156,8 @@ EventAttendee _attending(EventRole? role) =>
 /// The event detail screen (#498): the four states of `EventDetailBloc`, the
 /// header, the dates, who's coming and the games, and the refresh banner it
 /// shares with the overview. Then Delete (#501), from the menu to the screen
-/// leaving, and the dates' menus and dialogs (#506).
+/// leaving, the dates' menus and dialogs (#506), and the poll on the dates
+/// (#507).
 void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
@@ -178,6 +194,7 @@ void main() {
     Stream<List<Household>>? households,
     Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
+    void Function(BuildContext context)? onWhoAnswered,
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
   }) => MaterialApp(
@@ -196,6 +213,7 @@ void main() {
       households: households,
       householdRole: householdRole,
       onBack: onBack,
+      onWhoAnswered: onWhoAnswered,
       confirmSession: confirmSession,
       now: () => now,
     ),
@@ -216,6 +234,7 @@ void main() {
     Stream<List<Household>>? households,
     Future<HouseholdRole?> Function(String householdId)? householdRole,
     void Function(BuildContext context)? onBack,
+    void Function(BuildContext context)? onWhoAnswered,
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
   }) async {
@@ -225,6 +244,7 @@ void main() {
         households: households,
         householdRole: householdRole,
         onBack: onBack,
+        onWhoAnswered: onWhoAnswered,
         confirmSession: confirmSession,
         textScaler: textScaler,
       ),
@@ -2212,6 +2232,1354 @@ void main() {
         final rect = tester.getRect(itemOf('o-1', action));
         expect(window.intersect(rect), rect, reason: action.name);
       }
+    });
+  });
+
+  group('poll (#507)', () {
+    const available = AvailabilityResponse.available;
+    const maybe = AvailabilityResponse.maybe;
+    const unavailable = AvailabilityResponse.unavailable;
+    const responses = [available, maybe, unavailable];
+    const window = Rect.fromLTWH(0, 0, 320, 640);
+    const longLabel = 'The first and longest evening of the whole tournament';
+
+    setUpAll(() {
+      registerFallbackValue(confirmed('o-fallback', kItemInstant));
+    });
+
+    setUp(() {
+      when(() => repository.cacheOccurrence(any()))
+          .thenAnswer((_) async => true);
+    });
+
+    /// Date [id] of `e-1`, Proposed unless [status] says otherwise, on the
+    /// evening of November [day].
+    EventOccurrence date(
+      String id, {
+      int day = 6,
+      OccurrenceStatus status = OccurrenceStatus.proposed,
+      String? label,
+      int sortOrder = 0,
+    }) => confirmed(
+      id,
+      DateTime(2026, 11, day, 19),
+      sortOrder: sortOrder,
+    ).copyWith(eventId: 'e-1', status: status, label: label);
+
+    /// The viewer's own row on `e-1`, `att-me`, holding [role] and answered
+    /// [status].
+    EventAttendee me({
+      EventRole role = EventRole.participant,
+      EventParticipationStatus status = EventParticipationStatus.attending,
+    }) => attendance(status).copyWith(eventId: 'e-1', role: role);
+
+    /// Poll event `e-1`, Scheduled unless [status] says otherwise, holding
+    /// [occurrences], with [viewer] (an attending participant by default) on
+    /// it and [attendees] on the roster.
+    EventDetail poll(
+      List<EventOccurrence> occurrences, {
+      EventAttendee? viewer,
+      List<EventAttendee>? attendees,
+      EventStatus status = EventStatus.scheduled,
+    }) => _detail(
+      event: _event(schedulingMode: EventSchedulingMode.poll, status: status),
+      occurrences: occurrences,
+      attendees: attendees,
+      attendance: viewer ?? me(),
+    );
+
+    AvailabilityVoter voter(
+      String attendeeId,
+      AvailabilityResponse response, {
+      bool eligible = true,
+    }) => AvailabilityVoter(
+      attendeeId: attendeeId,
+      response: response,
+      eligible: eligible,
+    );
+
+    /// Date [id]'s tallies, counted from those of its [voters] that count,
+    /// as the server counts them.
+    OccurrenceAvailability tally(String id, List<AvailabilityVoter> voters) {
+      int count(AvailabilityResponse response) => voters
+          .where((voter) => voter.eligible && voter.response == response)
+          .length;
+      return OccurrenceAvailability(
+        occurrenceId: id,
+        available: count(available),
+        maybe: count(maybe),
+        unavailable: count(unavailable),
+        voters: voters,
+      );
+    }
+
+    AvailabilitySummary summaryOf(List<OccurrenceAvailability> occurrences) =>
+        AvailabilitySummary(occurrences: occurrences);
+
+    AvailabilityVote voteOf(EventVoteRequest request) => AvailabilityVote(
+      id: 'v-1',
+      occurrenceId: request.occurrenceId,
+      attendeeId: 'att-me',
+      response: request.response,
+      createdAt: kItemInstant,
+      updatedAt: kItemInstant,
+    );
+
+    /// A server whose reads answer at once from [read], whose votes answer
+    /// from [voted] (done, by default), whose poll reads answer from
+    /// [summary] (by default, the viewer's answers it took and nobody
+    /// else's), whose date writes answer from [written] (with the date they
+    /// named, by default), and whose deletes answer from [deleted] (done, by
+    /// default).
+    FakeEventRemote serving({
+      FutureOr<EventSnapshot> Function(String id)? read,
+      FutureOr<AvailabilityVote> Function(EventVoteRequest request)? voted,
+      FutureOr<AvailabilitySummary> Function(String eventId)? summary,
+      FutureOr<EventOccurrence?> Function(EventDateRequest request)? written,
+      FutureOr<void> Function(String id)? deleted,
+    }) {
+      final held = <String, AvailabilityResponse>{};
+      return FakeEventRemote.detail(
+        read ?? (_) => _detail().snapshot,
+        voted: (request) async {
+          final vote = await (voted ?? voteOf)(request);
+          held[request.occurrenceId] = vote.response;
+          return vote;
+        },
+        summary:
+            summary ??
+            (_) => summaryOf([
+              for (final MapEntry(key: id, value: response) in held.entries)
+                tally(id, [voter('att-me', response)]),
+            ]),
+        dateWritten:
+            written ?? (request) => date(request.occurrenceId ?? 'o-9'),
+        deleted: deleted ?? (_) {},
+      );
+    }
+
+    void back(BuildContext _) {}
+
+    Finder answer(String id, AvailabilityResponse response) =>
+        find.byKey(EventDetailScreen.pollAnswerKey(id, response));
+
+    ChoiceChip chipOf(
+      WidgetTester tester,
+      String id,
+      AvailabilityResponse response,
+    ) => tester.widget<ChoiceChip>(answer(id, response));
+
+    /// The answer date [id]'s chips show as chosen, or null for none.
+    AvailabilityResponse? chosen(WidgetTester tester, String id) {
+      for (final response in responses) {
+        if (chipOf(tester, id, response).selected) return response;
+      }
+      return null;
+    }
+
+    Future<void> reveal(WidgetTester tester, Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pump();
+    }
+
+    Future<void> tapAnswer(
+      WidgetTester tester,
+      String id,
+      AvailabilityResponse response,
+    ) async {
+      await reveal(tester, answer(id, response));
+      await tester.tap(answer(id, response));
+      await tester.pump();
+    }
+
+    String? talliesOf(WidgetTester tester, String id) =>
+        textOf(tester, find.byKey(EventDetailScreen.pollTalliesKey(id)));
+
+    String? leaderOf(WidgetTester tester, String id) {
+      final leader = find.byKey(EventDetailScreen.pollLeaderKey(id));
+      return leader.evaluate().isEmpty ? null : textOf(tester, leader);
+    }
+
+    Finder pollOutcome() => find.byKey(EventDetailScreen.pollOutcomeKey);
+
+    Finder inPollOutcome(String text) =>
+        find.descendant(of: pollOutcome(), matching: find.text(text));
+
+    BgeBannerTone pollToneOf(WidgetTester tester) =>
+        tester.widget<BgeInlineBanner>(pollOutcome()).tone;
+
+    Finder inDates(String text) => inSection(EventDetailScreen.datesKey, text);
+
+    /// Expects [finder] wholly inside a 320 by 640 window once scrolled to,
+    /// and hit by a tap there.
+    Future<void> expectReachable(
+      WidgetTester tester,
+      Finder finder, {
+      String? reason,
+    }) async {
+      await reveal(tester, finder);
+      final rect = tester.getRect(finder);
+      expect(window.intersect(rect), rect, reason: reason);
+      expect(finder.hitTestable(), findsOneWidget, reason: reason);
+    }
+
+    testWidgets('a participant answers a proposed date, and the chip shows '
+        'it at once', (tester) async {
+      final vote = Completer<AvailabilityVote>();
+      var summary = summaryOf(const []);
+      final remote = serving(
+        voted: (_) => vote.future,
+        summary: (_) => summary,
+      );
+      await show(
+        tester,
+        poll([date('o-1'), date('o-2', day: 13, sortOrder: 1)]),
+        remote: remote,
+        onBack: back,
+      );
+      expect(chosen(tester, 'o-1'), isNull);
+      expect(chosen(tester, 'o-2'), isNull);
+      // Attending, so their answers count.
+      expect(inDates(_pollNotCountingCopy), findsNothing);
+
+      await tapAnswer(tester, 'o-1', maybe);
+
+      // Before the server has answered.
+      expect(remote.voteRequests, [
+        (eventId: 'e-1', occurrenceId: 'o-1', response: maybe),
+      ]);
+      expect(chosen(tester, 'o-1'), maybe);
+      expect(chosen(tester, 'o-2'), isNull);
+
+      // Once it has, the poll is read again, and holds the answer.
+      summary = summaryOf([
+        tally('o-1', [voter('att-me', maybe)]),
+      ]);
+      final reads = remote.summaryRequests.length;
+      vote.complete(voteOf(remote.voteRequests.single));
+      await settle(tester);
+
+      expect(remote.summaryRequests, hasLength(reads + 1));
+      expect(chosen(tester, 'o-1'), maybe);
+      expect(talliesOf(tester, 'o-1'), '0 available · 1 maybe · 0 unavailable');
+      // Done isn't announced.
+      expect(pollOutcome(), findsNothing);
+    });
+
+    testWidgets("tallies, the leader and who hasn't answered show from the "
+        'summary', (tester) async {
+      final roster = [
+        me(),
+        _member('att-2', displayName: 'Ada'),
+        // Neither a spectator nor a guest with no account votes, and the
+        // vote of someone not attending doesn't count.
+        _member('att-3', displayName: 'Bo', role: EventRole.spectator),
+        _guest('att-4', 'Cy'),
+        _member(
+          'att-5',
+          displayName: 'Di',
+          status: EventParticipationStatus.notAttending,
+        ),
+      ];
+      var summary = summaryOf([
+        tally('o-1', [voter('att-me', available), voter('att-2', available)]),
+        tally('o-2', [
+          voter('att-me', available),
+          voter('att-5', unavailable, eligible: false),
+        ]),
+        tally('o-4', [voter('att-me', unavailable)]),
+      ]);
+      final dates = [
+        date('o-1'),
+        date('o-2', day: 13, sortOrder: 1),
+        // The summary doesn't list it.
+        date('o-3', day: 20, sortOrder: 2),
+        date('o-4', day: 27, sortOrder: 3, status: OccurrenceStatus.confirmed),
+      ];
+      await show(
+        tester,
+        poll(dates, attendees: roster),
+        remote: serving(summary: (_) => summary),
+        onBack: back,
+      );
+
+      expect(talliesOf(tester, 'o-1'), '2 available · 0 maybe · 0 unavailable');
+      expect(talliesOf(tester, 'o-2'), '1 available · 0 maybe · 0 unavailable');
+      expect(find.byKey(EventDetailScreen.pollTalliesKey('o-3')), findsNothing);
+      // A confirmed date has no poll.
+      expect(find.byKey(EventDetailScreen.pollTalliesKey('o-4')), findsNothing);
+      expect(answer('o-4', available), findsNothing);
+
+      expect(leaderOf(tester, 'o-1'), 'Most available');
+      expect(leaderOf(tester, 'o-2'), isNull);
+      expect(leaderOf(tester, 'o-3'), isNull);
+
+      // Ada hasn't answered o-2. Everyone who votes answered o-1, and o-3
+      // has no tallies to count against.
+      final awaiting = inDates("1 person hasn't answered");
+      expect(awaiting, findsOneWidget);
+      expect(inDates("2 people haven't answered"), findsNothing);
+      expect(
+        tester.getTopLeft(awaiting).dy,
+        greaterThan(
+          tester
+              .getTopLeft(find.byKey(EventDetailScreen.pollTalliesKey('o-2')))
+              .dy,
+        ),
+      );
+      expect(
+        tester.getTopLeft(awaiting).dy,
+        lessThan(tester.getTopLeft(answer('o-3', available)).dy),
+      );
+
+      // The viewer's own answer, from the summary.
+      expect(chosen(tester, 'o-1'), available);
+      expect(chosen(tester, 'o-3'), isNull);
+      // A participant confirms nothing.
+      expect(
+        find.byKey(EventDetailScreen.confirmLeaderKey('o-1')),
+        findsNothing,
+      );
+
+      // Level on Available and on Unavailable: tied, and no single leader.
+      summary = summaryOf([
+        tally('o-1', [voter('att-me', available), voter('att-2', maybe)]),
+        tally('o-2', [voter('att-me', available), voter('att-2', maybe)]),
+        tally('o-3', const []),
+      ]);
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+
+      expect(leaderOf(tester, 'o-1'), 'Tied for most available');
+      expect(leaderOf(tester, 'o-2'), 'Tied for most available');
+      expect(leaderOf(tester, 'o-3'), isNull);
+      expect(inDates("2 people haven't answered"), findsOneWidget);
+      expect(inDates("1 person hasn't answered"), findsNothing);
+    });
+
+    testWidgets('each answer, and Confirm this date, names its date', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        poll([
+          date('o-1', label: 'Saturday'),
+          date('o-2', day: 13, sortOrder: 1, label: 'Sunday'),
+        ], viewer: me(role: EventRole.host)),
+        remote: serving(
+          summary: (_) => summaryOf([
+            tally('o-1', [voter('att-me', available)]),
+          ]),
+        ),
+        onBack: back,
+      );
+
+      // The group, and each answer in it: a screen reader doesn't always
+      // say a group's name with each of its children.
+      expect(find.bySemanticsLabel('Your answer for Saturday'), findsOneWidget);
+      expect(find.bySemanticsLabel('Your answer for Sunday'), findsOneWidget);
+      for (final (label, selected) in [
+        ('Available for Saturday', true),
+        ('Maybe for Saturday', false),
+        ('Unavailable for Saturday', false),
+        ('Available for Sunday', false),
+        ('Maybe for Sunday', false),
+        ('Unavailable for Sunday', false),
+      ]) {
+        expect(
+          tester.getSemantics(find.bySemanticsLabel(label)),
+          isSemantics(
+            label: label,
+            isButton: true,
+            hasSelectedState: true,
+            isSelected: selected,
+            isEnabled: true,
+          ),
+          reason: label,
+        );
+      }
+
+      // Read without the dot between the tallies.
+      expect(
+        find.bySemanticsLabel(
+          RegExp('1 available, 0 maybe, 0 unavailable\nMost available'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSemantics(
+          find.bySemanticsLabel('Confirm this date, Saturday'),
+        ),
+        isSemantics(isButton: true, isEnabled: true),
+      );
+    });
+
+    testWidgets('a spectator sees the tallies but no chips', (tester) async {
+      await show(
+        tester,
+        poll([date('o-1')], viewer: me(role: EventRole.spectator)),
+        remote: serving(
+          summary: (_) => summaryOf([
+            tally('o-1', [voter('att-2', available)]),
+          ]),
+        ),
+        onBack: back,
+      );
+
+      expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
+      expect(leaderOf(tester, 'o-1'), 'Most available');
+      expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('Your answer for')), findsNothing);
+    });
+
+    testWidgets('a viewer not attending sees the note, and can still answer', (
+      tester,
+    ) async {
+      final remote = serving();
+      await show(
+        tester,
+        poll([
+          date('o-1'),
+        ], viewer: me(status: EventParticipationStatus.notAttending)),
+        remote: remote,
+        onBack: back,
+      );
+
+      final note = inDates(_pollNotCountingCopy);
+      expect(note, findsOneWidget);
+      // Above the dates.
+      expect(
+        tester.getTopLeft(note).dy,
+        lessThan(tester.getTopLeft(find.text('Fri, Nov 6 · 7:00 PM')).dy),
+      );
+
+      await tapAnswer(tester, 'o-1', available);
+
+      expect(remote.voteRequests, [
+        (eventId: 'e-1', occurrenceId: 'o-1', response: available),
+      ]);
+      expect(chosen(tester, 'o-1'), available);
+    });
+
+    testWidgets('a cancelled poll event shows tallies but no chips', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        poll(
+          [date('o-1'), date('o-2', day: 13, sortOrder: 1)],
+          viewer: me(
+            role: EventRole.host,
+            status: EventParticipationStatus.notAttending,
+          ),
+          status: EventStatus.cancelled,
+        ),
+        remote: serving(
+          summary: (_) => summaryOf([
+            tally('o-1', [voter('att-2', available)]),
+          ]),
+        ),
+        onBack: back,
+      );
+
+      expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
+      expect(leaderOf(tester, 'o-1'), 'Most available');
+      expect(find.byType(ChoiceChip), findsNothing);
+      // Nothing to answer, so nothing to say about answers counting, and
+      // nothing to confirm.
+      expect(inDates(_pollNotCountingCopy), findsNothing);
+      expect(
+        find.byKey(EventDetailScreen.confirmLeaderKey('o-1')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a changed vote shows its banner, re-reads the event, and the '
+        'date loses its chips', (tester) async {
+      // Confirmed elsewhere meanwhile, as the second read says.
+      final served = [
+        poll([date('o-1'), date('o-2', day: 13, sortOrder: 1)]),
+        poll([
+          date('o-1', status: OccurrenceStatus.confirmed),
+          date('o-2', day: 13, sortOrder: 1),
+        ]),
+      ];
+      var read = 0;
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((invocation) async {
+        cache.add(
+          EventDetail(
+            snapshot: invocation.positionalArguments.single as EventSnapshot,
+            attendance: me(),
+          ),
+        );
+      });
+      final remote = serving(
+        read: (_) => served[read++ == 0 ? 0 : 1].snapshot,
+        voted: (_) =>
+            throw const EventWriteConflictException('moved', statusCode: 400),
+      );
+      await show(tester, served.first, remote: remote, onBack: back);
+      expect(answer('o-1', available), findsOneWidget);
+
+      await tapAnswer(tester, 'o-1', available);
+      await settle(tester);
+
+      expect(inPollOutcome(_pollChangedCopy), findsOneWidget);
+      expect(pollToneOf(tester), BgeBannerTone.warning);
+      // The vote's banner, not the actions'.
+      expect(outcome(), findsNothing);
+      expect(remote.detailRequests, ['e-1', 'e-1']);
+      expect(inDates('Confirmed'), findsOneWidget);
+      expect(answer('o-1', available), findsNothing);
+      expect(answer('o-2', available), findsOneWidget);
+
+      final dismiss = find.descendant(
+        of: pollOutcome(),
+        matching: find.text('Dismiss'),
+      );
+      await reveal(tester, dismiss);
+      await tester.tap(dismiss);
+      await tester.pump();
+      expect(pollOutcome(), findsNothing);
+    });
+
+    for (final confirmFails in [false, true]) {
+      testWidgets(
+        'a vote that asks for a read while a confirm is out waits for it'
+        '${confirmFails ? ', and reads once the confirm fails' : ''}',
+        (tester) async {
+          final vote = Completer<AvailabilityVote>();
+          final confirming = Completer<EventOccurrence?>();
+          final remote = serving(
+            voted: (_) => vote.future,
+            summary: (_) => summaryOf([
+              tally('o-1', [
+                voter('att-me', available),
+                voter('att-2', available),
+              ]),
+            ]),
+            written: (request) => request.call == 'confirm'
+                ? confirming.future
+                : date(
+                    request.occurrenceId!,
+                    status: OccurrenceStatus.declined,
+                  ),
+          );
+          await show(
+            tester,
+            poll([
+              date('o-1', label: 'Saturday'),
+              date('o-2', day: 13, sortOrder: 1),
+            ], viewer: me(role: EventRole.host)),
+            remote: remote,
+            onBack: back,
+          );
+          expect(remote.detailRequests, ['e-1']);
+
+          // A vote on o-2, still out when the host confirms o-1 and
+          // declines the others.
+          await tapAnswer(tester, 'o-2', maybe);
+          final confirm = find.byKey(EventDetailScreen.confirmLeaderKey('o-1'));
+          await reveal(tester, confirm);
+          await tester.tap(confirm);
+          await animate(tester);
+          await tester.tap(find.byKey(EventDetailScreen.declineOthersKey));
+          await tester.pump();
+          await tester.tap(find.byKey(EventDateDialogKeys.submit));
+          await animate(tester);
+          expect(remote.dateRequests.map((r) => r.call), ['confirm']);
+
+          // The vote finds o-2 moved, and its read waits for the write: an
+          // answer landing after the write's would put the date back as it
+          // was (#589).
+          vote.completeError(
+            const EventWriteConflictException('moved', statusCode: 400),
+          );
+          await settle(tester);
+          expect(inPollOutcome(_pollChangedCopy), findsOneWidget);
+          expect(remote.detailRequests, ['e-1']);
+
+          if (confirmFails) {
+            confirming.completeError(_offline);
+          } else {
+            confirming.complete(
+              date('o-1', status: OccurrenceStatus.confirmed),
+            );
+          }
+          await animate(tester);
+
+          // One read once the write ends. A done confirm's own read covers
+          // the vote's. A transient failure asks for none, so the vote's
+          // is the one.
+          expect(
+            remote.dateRequests.map((r) => r.call),
+            confirmFails ? ['confirm'] : ['confirm', 'decline'],
+          );
+          expect(remote.detailRequests, ['e-1', 'e-1']);
+          await animate(tester);
+          expect(remote.detailRequests, ['e-1', 'e-1']);
+        },
+      );
+    }
+
+    testWidgets('a vote that asks for a read while Delete is out reads '
+        'nothing once the event is deleted', (tester) async {
+      final vote = Completer<AvailabilityVote>();
+      final deleting = Completer<void>();
+      final remote = serving(
+        voted: (_) => vote.future,
+        deleted: (_) => deleting.future,
+      );
+      await show(
+        tester,
+        poll([date('o-1')], viewer: me(role: EventRole.host)),
+        remote: remote,
+        onBack: back,
+      );
+
+      await tapAnswer(tester, 'o-1', maybe);
+      await tester.tap(find.byKey(EventDetailScreen.moreActionsKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.deleteKey));
+      await animate(tester);
+      await tester.tap(find.byKey(EventDetailScreen.deleteConfirmKey));
+      await animate(tester);
+      expect(remote.deleteRequests, ['e-1']);
+
+      vote.completeError(
+        const EventWriteConflictException('moved', statusCode: 400),
+      );
+      await settle(tester);
+      expect(remote.detailRequests, ['e-1']);
+
+      // A read now could cache the deleted event again (#501).
+      deleting.complete();
+      await animate(tester);
+      expect(remote.detailRequests, ['e-1']);
+    });
+
+    group('each vote end has its copy and tone', () {
+      final ends = [
+        (
+          name: 'a gone date',
+          thrown: const EventRemoteNotFoundException('gone') as Object?,
+          session: true,
+          copy: _dateGoneCopy,
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a refusal',
+          thrown: const EventWriteRefusedException('no', statusCode: 403),
+          session: true,
+          copy: _pollRefusedCopy,
+          tone: BgeBannerTone.warning,
+          rereads: true,
+        ),
+        (
+          name: 'a transient failure',
+          thrown: _offline,
+          session: true,
+          copy: _pollFailedCopy,
+          tone: BgeBannerTone.error,
+          rereads: false,
+        ),
+        (
+          name: 'a vote the session stopped',
+          thrown: null,
+          session: false,
+          copy: _pollFailedCopy,
+          tone: BgeBannerTone.error,
+          rereads: false,
+        ),
+      ];
+
+      for (final end in ends) {
+        testWidgets('${end.name}: ${end.copy}', (tester) async {
+          var session = true;
+          final remote = serving(voted: (_) => throw end.thrown!);
+          await show(
+            tester,
+            poll([date('o-1')]),
+            remote: remote,
+            onBack: back,
+            confirmSession: () async => session,
+          );
+          session = end.session;
+
+          await tapAnswer(tester, 'o-1', available);
+          await settle(tester);
+
+          expect(inPollOutcome(end.copy), findsOneWidget);
+          expect(pollToneOf(tester), end.tone);
+          expect(remote.detailRequests, end.rereads ? ['e-1', 'e-1'] : ['e-1']);
+          // The chip goes back to what the poll holds.
+          expect(chosen(tester, 'o-1'), isNull);
+        });
+      }
+    });
+
+    testWidgets('the poll is read on open and again after each detail read', (
+      tester,
+    ) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = serving(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+      );
+      await show(tester, poll([date('o-1')]), remote: remote, onBack: back);
+
+      // On the first Ready, while the open's read runs. No read can overwrite
+      // a vote, so the chips don't wait for it, though the menus do.
+      expect(remote.summaryRequests, ['e-1']);
+      expect(chipOf(tester, 'o-1', available).onSelected, isNotNull);
+
+      reads.single.complete(poll([date('o-1')]).snapshot);
+      await settle(tester);
+      expect(remote.summaryRequests, ['e-1', 'e-1']);
+      expect(chipOf(tester, 'o-1', available).onSelected, isNotNull);
+
+      // A retry's read, once it ends, failed or not.
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      expect(remote.summaryRequests, hasLength(2));
+      reads[1].completeError(_offline);
+      await settle(tester);
+      expect(remote.summaryRequests, hasLength(3));
+
+      // Not once the event has no proposed date left.
+      final settled = poll([date('o-1', status: OccurrenceStatus.confirmed)]);
+      cache.add(settled);
+      await settle(tester);
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      reads[2].complete(settled.snapshot);
+      await settle(tester);
+      expect(remote.summaryRequests, hasLength(3));
+    });
+
+    testWidgets('a chip keeps its focus through a detail read', (tester) async {
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = serving(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+      );
+      await show(tester, poll([date('o-1')]), remote: remote, onBack: back);
+      reads.single.complete(poll([date('o-1')]).snapshot);
+      await settle(tester);
+
+      await reveal(tester, answer('o-1', available));
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: answer('o-1', available),
+            matching: find.text('Available'),
+          ),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      final focused = primaryFocus;
+
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      expect(reads, hasLength(2));
+      expect(primaryFocus, same(focused));
+      expect(focused?.hasPrimaryFocus, isTrue);
+    });
+
+    testWidgets('a poll read that finds the event gone reads the event, once', (
+      tester,
+    ) async {
+      var reads = 0;
+      var gone = false;
+      final remote = serving(
+        read: (_) {
+          reads++;
+          return poll([date('o-1')]).snapshot;
+        },
+        summary: (_) {
+          if (gone) {
+            throw const EventRemoteNotFoundException('gone');
+          }
+          return summaryOf(const []);
+        },
+      );
+      await show(tester, poll([date('o-1')]), remote: remote, onBack: back);
+      await settle(tester);
+      final before = reads;
+      final summaries = remote.summaryRequests.length;
+
+      // The detail read answers, as a server that has the event but not its
+      // poll would: its end reads the poll again, which is gone again, and
+      // nothing more follows.
+      gone = true;
+      tester
+          .element(find.byKey(EventDetailScreen.datesKey))
+          .read<EventPollBloc>()
+          .add(const EventPollRequested('e-1'));
+      await settle(tester);
+      await settle(tester);
+      await settle(tester);
+
+      expect(reads, before + 1);
+      expect(remote.summaryRequests, hasLength(summaries + 2));
+    });
+
+    testWidgets('a refused viewer sees no change while the poll is read '
+        'again', (tester) async {
+      final held = Completer<AvailabilitySummary>();
+      var refuse = true;
+      final remote = serving(
+        summary: (_) {
+          if (refuse) {
+            throw const EventRemoteForbiddenException('no');
+          }
+          return held.future;
+        },
+      );
+      await show(
+        tester,
+        poll([date('o-1')]),
+        remote: remote,
+        onBack: back,
+        onWhoAnswered: (_) {},
+      );
+      await settle(tester);
+      final note = inDates("You can't see this poll's answers.");
+      expect(note, findsOneWidget);
+
+      refuse = false;
+      tester
+          .element(find.byKey(EventDetailScreen.datesKey))
+          .read<EventPollBloc>()
+          .add(const EventPollRequested('e-1'));
+      await settle(tester);
+
+      expect(note, findsOneWidget);
+      expect(find.byKey(EventDetailScreen.whoAnsweredKey), findsNothing);
+
+      held.completeError(const EventRemoteForbiddenException('no'));
+      await settle(tester);
+    });
+
+    testWidgets('an event that is not a poll, or not on the server yet, '
+        'reads none', (tester) async {
+      final remote = serving();
+      await show(
+        tester,
+        _detail(occurrences: [date('o-1')], attendance: me()),
+        remote: remote,
+        onBack: back,
+        onWhoAnswered: (_) {},
+      );
+      expect(remote.detailRequests, ['e-1']);
+      expect(remote.summaryRequests, isEmpty);
+      expect(find.byType(ChoiceChip), findsNothing);
+
+      // Created offline: the server has never heard of its id.
+      cache.add(
+        _detail(
+          event: _event(schedulingMode: EventSchedulingMode.poll)
+              .copyWith(isLocalOnly: true),
+          occurrences: [date('o-1')],
+          attendees: [me(), _member('att-2')],
+          attendance: me(),
+        ),
+      );
+      await settle(tester);
+      expect(remote.summaryRequests, isEmpty);
+      // So it shows no poll either: nothing to answer, and no page of
+      // answers to open, though its roster can be read.
+      expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.byKey(EventDetailScreen.whoAnsweredKey), findsNothing);
+    });
+
+    testWidgets('a hidden poll says so, and a failed one offers a retry', (
+      tester,
+    ) async {
+      Object? fails = const EventRemoteForbiddenException(
+        'not yours',
+        statusCode: 403,
+      );
+      final remote = serving(
+        summary: (_) {
+          if (fails case final error?) throw error;
+          return summaryOf([
+            tally('o-1', [voter('att-2', available)]),
+          ]);
+        },
+      );
+      await show(
+        tester,
+        poll([date('o-1')], attendees: [me(), _member('att-2')]),
+        remote: remote,
+        onBack: back,
+        onWhoAnswered: (_) {},
+      );
+
+      expect(inDates(_pollHiddenCopy), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.pollRetryKey), findsNothing);
+      // The page would show nothing either.
+      expect(find.byKey(EventDetailScreen.whoAnsweredKey), findsNothing);
+      expect(find.byKey(EventDetailScreen.pollTalliesKey('o-1')), findsNothing);
+      // The viewer may still answer.
+      expect(answer('o-1', available), findsOneWidget);
+
+      fails = _offline;
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+
+      expect(inDates(_pollHiddenCopy), findsNothing);
+      expect(inDates(_pollLoadFailedCopy), findsOneWidget);
+      final retry = find.byKey(EventDetailScreen.pollRetryKey);
+      expect(retry, findsOneWidget);
+      expect(
+        find.descendant(of: retry, matching: find.text('Try again')),
+        findsOneWidget,
+      );
+
+      fails = null;
+      final asked = remote.summaryRequests.length;
+      await reveal(tester, retry);
+      await tester.tap(retry);
+      await settle(tester);
+
+      expect(remote.summaryRequests, hasLength(asked + 1));
+      expect(inDates(_pollLoadFailedCopy), findsNothing);
+      expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
+    });
+
+    testWidgets('a poll read the session stops shows the failed banner, '
+        'with its retry', (tester) async {
+      // On web, after a sign-in in another tab (#432). Nothing went out, and
+      // the dates still show.
+      var confirmed = false;
+      final remote = serving(
+        summary: (_) => summaryOf([
+          tally('o-1', [voter('att-2', available)]),
+        ]),
+      );
+      await show(
+        tester,
+        poll([date('o-1')], attendees: [me(), _member('att-2')]),
+        remote: remote,
+        onBack: back,
+        confirmSession: () async => confirmed,
+      );
+
+      expect(remote.summaryRequests, isEmpty);
+      expect(inDates(_pollLoadFailedCopy), findsOneWidget);
+      final retry = find.byKey(EventDetailScreen.pollRetryKey);
+      expect(retry, findsOneWidget);
+
+      confirmed = true;
+      await reveal(tester, retry);
+      await tester.tap(retry);
+      await settle(tester);
+
+      expect(remote.summaryRequests, isNotEmpty);
+      expect(inDates(_pollLoadFailedCopy), findsNothing);
+      expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
+    });
+
+    testWidgets("the poll's retry keeps focus, and its banner, while its read "
+        'runs', (tester) async {
+      Object? fails = _offline;
+      final reads = <Completer<AvailabilitySummary>>[];
+      final remote = serving(
+        summary: (_) {
+          if (fails case final error?) throw error;
+          final read = Completer<AvailabilitySummary>();
+          reads.add(read);
+          return read.future;
+        },
+      );
+      await show(
+        tester,
+        poll([date('o-1')], attendees: [me(), _member('att-2')]),
+        remote: remote,
+        onBack: back,
+      );
+      final retry = find.byKey(EventDetailScreen.pollRetryKey);
+      FocusNode retryFocus() => Focus.of(
+        tester.element(
+          find.descendant(of: retry, matching: find.byType(Text)).first,
+        ),
+      );
+      final banner = find.ancestor(
+        of: retry,
+        matching: find.byType(BgeInlineBanner),
+      );
+      Future<void> press() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await settle(tester);
+      }
+
+      await reveal(tester, retry);
+      retryFocus().requestFocus();
+      await tester.pump();
+      expect(retryFocus().hasPrimaryFocus, isTrue);
+      final asked = remote.summaryRequests.length;
+
+      // Held.
+      fails = null;
+      await press();
+
+      expect(reads, hasLength(1));
+      expect(retryFocus().hasPrimaryFocus, isTrue);
+      expect(inDates(_pollLoadFailedCopy), findsOneWidget);
+      expect(banner, findsOneWidget);
+      // Under way, and not to be pressed again: a screen reader says so.
+      expect(
+        tester.getSemantics(retry),
+        isSemantics(
+          label: _inProgressCopy,
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: false,
+          isFocusable: true,
+          isFocused: true,
+          hasTapAction: false,
+        ),
+      );
+      await press();
+      expect(remote.summaryRequests, hasLength(asked + 1));
+
+      // Failed again: the same banner, the retry offered again, focus kept.
+      reads.single.completeError(_offline);
+      await settle(tester);
+
+      expect(retryFocus().hasPrimaryFocus, isTrue);
+      expect(inDates(_pollLoadFailedCopy), findsOneWidget);
+      expect(
+        tester.getSemantics(retry),
+        isSemantics(
+          label: 'Try again',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocused: true,
+          hasTapAction: true,
+        ),
+      );
+
+      // And read: the banner goes, with its retry.
+      await press();
+      expect(reads, hasLength(2));
+      reads[1].complete(
+        summaryOf([
+          tally('o-1', [voter('att-2', available)]),
+        ]),
+      );
+      await settle(tester);
+
+      expect(inDates(_pollLoadFailedCopy), findsNothing);
+      expect(retry, findsNothing);
+      expect(talliesOf(tester, 'o-1'), '1 available · 0 maybe · 0 unavailable');
+    });
+
+    testWidgets("no who-answered button where the roster isn't visible", (
+      tester,
+    ) async {
+      var opened = 0;
+      final remote = serving();
+      final whoAnswered = find.byKey(EventDetailScreen.whoAnsweredKey);
+      await show(
+        tester,
+        poll([date('o-1')]),
+        remote: remote,
+        onBack: back,
+        onWhoAnswered: (_) => opened++,
+      );
+      // Not read yet.
+      expect(whoAnswered, findsNothing);
+
+      // Withheld from this viewer.
+      cache.add(poll([date('o-1')], attendees: const []));
+      await settle(tester);
+      expect(whoAnswered, findsNothing);
+
+      cache.add(poll([date('o-1')], attendees: [me(), _member('att-2')]));
+      await settle(tester);
+      expect(
+        find.descendant(of: whoAnswered, matching: find.text('Who answered')),
+        findsOneWidget,
+      );
+      await reveal(tester, whoAnswered);
+      await tester.tap(whoAnswered);
+      await tester.pump();
+      expect(opened, 1);
+
+      // A screen with nowhere to open it.
+      await show(
+        tester,
+        poll([date('o-1')], attendees: [me(), _member('att-2')]),
+        remote: remote,
+        onBack: back,
+      );
+      expect(whoAnswered, findsNothing);
+    });
+
+    testWidgets('confirm this date on the leader, with decline the others, '
+        'sends the decline list', (tester) async {
+      // Tied at first.
+      var summary = summaryOf([
+        tally('o-1', [voter('att-me', available)]),
+        tally('o-2', [voter('att-me', available)]),
+      ]);
+      final remote = serving(
+        summary: (_) => summary,
+        written: (request) => date(
+          request.occurrenceId!,
+          status: request.call == 'confirm'
+              ? OccurrenceStatus.confirmed
+              : OccurrenceStatus.declined,
+        ),
+      );
+      await show(
+        tester,
+        poll([
+          date('o-1', label: 'Saturday'),
+          date('o-2', day: 13, sortOrder: 1),
+          date('o-3', day: 20, sortOrder: 2),
+          // Declined already, so not again.
+          date('o-4', day: 27, sortOrder: 3, status: OccurrenceStatus.declined),
+        ], viewer: me(role: EventRole.host)),
+        remote: remote,
+        onBack: back,
+      );
+      // No single leader, so nothing to confirm from the poll.
+      expect(leaderOf(tester, 'o-1'), 'Tied for most available');
+      expect(find.text('Confirm this date'), findsNothing);
+
+      summary = summaryOf([
+        tally('o-1', [voter('att-me', available), voter('att-2', available)]),
+        tally('o-2', [voter('att-me', available)]),
+      ]);
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+
+      final confirm = find.byKey(EventDetailScreen.confirmLeaderKey('o-1'));
+      expect(
+        find.descendant(of: confirm, matching: find.text('Confirm this date')),
+        findsOneWidget,
+      );
+      // On the leader alone.
+      expect(
+        find.byKey(EventDetailScreen.confirmLeaderKey('o-2')),
+        findsNothing,
+      );
+
+      await reveal(tester, confirm);
+      await tester.tap(confirm);
+      await animate(tester);
+      expect(find.text('Confirm Saturday?'), findsOneWidget);
+      expect(find.text(_declineOthersCopy), findsOneWidget);
+      await tester.tap(find.byKey(EventDetailScreen.declineOthersKey));
+      await tester.pump();
+      await tester.tap(find.byKey(EventDateDialogKeys.submit));
+      await animate(tester);
+
+      expect(
+        remote.dateRequests.map((r) => (r.call, r.eventId, r.occurrenceId)),
+        [
+          ('confirm', 'e-1', 'o-1'),
+          ('decline', 'e-1', 'o-2'),
+          ('decline', 'e-1', 'o-3'),
+        ],
+      );
+      expect(inOutcome('Date confirmed'), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.success);
+    });
+
+    testWidgets("a date's menu offers decline the others too, only while "
+        'another date is proposed', (tester) async {
+      final remote = serving(
+        written: (request) {
+          if (request.call == 'decline') throw _offline;
+          return date(
+            request.occurrenceId!,
+            status: OccurrenceStatus.confirmed,
+          );
+        },
+      );
+      await show(
+        tester,
+        poll([
+          date('o-1'),
+          date('o-2', day: 13, sortOrder: 1),
+        ], viewer: me(role: EventRole.host)),
+        remote: remote,
+        onBack: back,
+      );
+
+      Future<void> confirmFromMenu(String id) async {
+        await tester.tap(find.byKey(EventDetailScreen.dateMenuKey(id)));
+        await animate(tester);
+        await tester.tap(
+          find.byKey(
+            EventDetailScreen.dateActionKey(id, EventAction.confirmDate),
+          ),
+        );
+        await animate(tester);
+      }
+
+      await confirmFromMenu('o-2');
+      await tester.tap(find.byKey(EventDetailScreen.declineOthersKey));
+      await tester.pump();
+      await tester.tap(find.byKey(EventDateDialogKeys.submit));
+      await animate(tester);
+
+      expect(remote.dateRequests.map((r) => (r.call, r.occurrenceId)), [
+        ('confirm', 'o-2'),
+        ('decline', 'o-1'),
+      ]);
+      // The confirm went through, and a decline may not have.
+      expect(inOutcome(_confirmedNotAllDeclinedCopy), findsOneWidget);
+      expect(toneOf(tester), BgeBannerTone.warning);
+
+      // No other proposed date: nothing to offer.
+      cache.add(
+        poll([
+          date('o-1'),
+          date(
+            'o-2',
+            day: 13,
+            sortOrder: 1,
+            status: OccurrenceStatus.confirmed,
+          ),
+        ], viewer: me(role: EventRole.host)),
+      );
+      await settle(tester);
+      await confirmFromMenu('o-1');
+      expect(find.text('Confirm Fri, Nov 6 · 7:00 PM?'), findsOneWidget);
+      expect(find.byKey(EventDetailScreen.declineOthersKey), findsNothing);
+    });
+
+    testWidgets('the chips wrap and stay tappable at 320dp and 2.0 text', (
+      tester,
+    ) async {
+      useViewSize(tester, window.size);
+      final remote = serving();
+      await show(
+        tester,
+        poll([date('o-1', label: longLabel)]),
+        remote: remote,
+        onBack: back,
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+      expect(tester.takeException(), isNull);
+
+      // Not all three on one row.
+      await reveal(tester, answer('o-1', maybe));
+      final rows = {
+        for (final response in responses)
+          tester.getTopLeft(answer('o-1', response)).dy,
+      };
+      expect(rows.length, greaterThan(1));
+
+      for (final response in responses) {
+        await expectReachable(
+          tester,
+          answer('o-1', response),
+          reason: response.name,
+        );
+        // Drawn whole, scaled down where it has to be: a chip cuts a label
+        // it can't fit, and nothing overflows to say so.
+        final label = find.descendant(
+          of: answer('o-1', response),
+          matching: find.byType(RichText),
+        );
+        final paragraph = tester.renderObject<RenderParagraph>(label);
+        expect(
+          paragraph.size.width,
+          greaterThanOrEqualTo(paragraph.getMaxIntrinsicWidth(double.infinity)),
+          reason: response.name,
+        );
+        final drawn = tester.getRect(label);
+        final chip = tester.getRect(answer('o-1', response)).inflate(0.5);
+        expect(
+          chip.contains(drawn.topLeft) && chip.contains(drawn.bottomRight),
+          isTrue,
+          reason: '${response.name}: $drawn in $chip',
+        );
+      }
+
+      await tapAnswer(tester, 'o-1', unavailable);
+      expect(remote.voteRequests.map((r) => r.response), [unavailable]);
+      expect(chosen(tester, 'o-1'), unavailable);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("the poll's notes and buttons fit at 320dp and 2.0 text", (
+      tester,
+    ) async {
+      useViewSize(tester, window.size);
+      Object? fails;
+      Completer<AvailabilitySummary>? held;
+      final remote = serving(
+        summary: (_) {
+          if (fails case final error?) throw error;
+          if (held case final read?) return read.future;
+          return summaryOf([
+            tally('o-1', [voter('att-2', available)]),
+          ]);
+        },
+      );
+      final host = me(
+        role: EventRole.host,
+        status: EventParticipationStatus.notAttending,
+      );
+      await show(
+        tester,
+        poll(
+          [date('o-1', label: longLabel), date('o-2', day: 13, sortOrder: 1)],
+          viewer: host,
+          attendees: [host, _member('att-2'), _member('att-3')],
+        ),
+        remote: remote,
+        onBack: back,
+        onWhoAnswered: (_) {},
+        textScaler: const TextScaler.linear(BgeTextScale.maxScaleFactor),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(inDates(_pollNotCountingCopy), findsOneWidget);
+      expect(inDates("1 person hasn't answered"), findsOneWidget);
+      for (final key in [
+        EventDetailScreen.whoAnsweredKey,
+        EventDetailScreen.confirmLeaderKey('o-1'),
+      ]) {
+        await expectReachable(tester, find.byKey(key), reason: '$key');
+      }
+
+      fails = _offline;
+      blocOf(tester).add(const EventDetailRetryRequested());
+      await settle(tester);
+      expect(inDates(_pollLoadFailedCopy), findsOneWidget);
+      final retry = find.byKey(EventDetailScreen.pollRetryKey);
+      await expectReachable(tester, retry);
+      expect(tester.takeException(), isNull);
+
+      // Under way, with the longer label.
+      fails = null;
+      held = Completer();
+      await tester.tap(retry);
+      await settle(tester);
+      expect(
+        find.descendant(of: retry, matching: find.text(_inProgressCopy)),
+        findsOneWidget,
+      );
+      await expectReachable(tester, retry);
+      expect(tester.takeException(), isNull);
     });
   });
 

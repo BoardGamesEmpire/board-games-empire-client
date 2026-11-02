@@ -103,6 +103,15 @@ void main() {
     expect(eventRsvpLabel(l10n, null), isNull);
   });
 
+  test("names each answer to a date's poll, and none where there is none", () {
+    names(AvailabilityResponse.values, availabilityResponseLabel, {
+      AvailabilityResponse.available: 'Available',
+      AvailabilityResponse.maybe: 'Maybe',
+      AvailabilityResponse.unavailable: 'Unavailable',
+    });
+    expect(availabilityResponseLabel(l10n, null), isNull);
+  });
+
   testWidgets("a date's name is its label, else its when, else none yet", (
     tester,
   ) async {

@@ -471,6 +471,146 @@
   "@eventsDateFailedUnexpected": {
     "description": "Banner on an event's screen when a change to one of its dates failed for any reason other than the connection: the server rejected the request, or the app sent nothing, for example because a different account signed in from another tab. Unlike the connection failure it does not invite a retry straight away."
   },
+  "eventsDateConfirmDeclineOthers": "Also decline the other proposed dates",
+  "@eventsDateConfirmDeclineOthers": {
+    "description": "Checkbox in the dialog that confirms one of the proposed dates of an event whose date is chosen by a poll, shown when the event has other proposed dates. Ticked, confirming also declines every other proposed date, one after another. Off by default, because a declined date can't be proposed again."
+  },
+  "eventsDateConfirmedNotAllDeclined": "The date was confirmed, but some of the other dates may not have been declined. Any still proposed below can be declined from their menus.",
+  "@eventsDateConfirmedNotAllDeclined": {
+    "description": "Banner on an event's screen after confirming a date with Also decline the other proposed dates ticked. The confirm went through, but declining at least one of the other dates did not come back done: it may or may not have gone through, so the copy must not say it failed. The screen has just been refreshed, and each date still proposed can be declined from the three-dot menu beside it. A warning, not an error."
+  },
+  "eventsPollAvailable": "Available",
+  "@eventsPollAvailable": {
+    "description": "One of three answers a person gives on each proposed date of an event whose date is chosen by a poll: they can make that date. A choice chip under the date; the one chosen is shown selected."
+  },
+  "eventsPollMaybe": "Maybe",
+  "@eventsPollMaybe": {
+    "description": "One of three answers a person gives on each proposed date of an event whose date is chosen by a poll: they might make that date. A choice chip under the date; the one chosen is shown selected."
+  },
+  "eventsPollUnavailable": "Unavailable",
+  "@eventsPollUnavailable": {
+    "description": "One of three answers a person gives on each proposed date of an event whose date is chosen by a poll: they can't make that date. A choice chip under the date; the one chosen is shown selected."
+  },
+  "eventsPollYourAnswer": "Your answer for {date}",
+  "@eventsPollYourAnswer": {
+    "description": "Accessible name of the group of three answer chips (Available, Maybe, Unavailable) under one proposed date of an event whose date is chosen by a poll. Not shown on screen. Every proposed date has one, so it names its date: by the date's label, or when it starts where it has none.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsPollAnswerFor": "{answer} for {date}",
+  "@eventsPollAnswerFor": {
+    "description": "Accessible name of one answer chip under a proposed date of an event whose date is chosen by a poll. Not shown on screen: the chip shows the answer alone. Screen readers don't always say the group's name with each chip, so each one names its date too. Keep the answer's own words in it, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "answer": {
+        "type": "String",
+        "example": "Available"
+      },
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsPollTallies": "{available} available · {maybe} maybe · {unavailable} unavailable",
+  "@eventsPollTallies": {
+    "description": "Line under a proposed date of an event whose date is chosen by a poll: how many people answered Available, Maybe and Unavailable for it, counting only the answers that count. Screen readers hear eventsPollTalliesSpoken instead.",
+    "placeholders": {
+      "available": {
+        "type": "int",
+        "example": "3"
+      },
+      "maybe": {
+        "type": "int",
+        "example": "1"
+      },
+      "unavailable": {
+        "type": "int",
+        "example": "0"
+      }
+    }
+  },
+  "eventsPollTalliesSpoken": "{available} available, {maybe} maybe, {unavailable} unavailable",
+  "@eventsPollTalliesSpoken": {
+    "description": "What a screen reader says for eventsPollTallies, with a short pause between the three counts in place of the symbol, which would be read out.",
+    "placeholders": {
+      "available": {
+        "type": "int",
+        "example": "3"
+      },
+      "maybe": {
+        "type": "int",
+        "example": "1"
+      },
+      "unavailable": {
+        "type": "int",
+        "example": "0"
+      }
+    }
+  },
+  "eventsPollAwaiting": "{count, plural, =1{1 person hasn't answered} other{{count} people haven't answered}}",
+  "@eventsPollAwaiting": {
+    "description": "Line under a proposed date of an event whose date is chosen by a poll: how many of the people whose answers would count have not answered for this date yet. Shown only when it is more than none.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "eventsPollLeader": "Most available",
+  "@eventsPollLeader": {
+    "description": "Mark under the one proposed date of an event's poll that the most people can make: the most Available answers, then the fewest Unavailable."
+  },
+  "eventsPollTied": "Tied for most available",
+  "@eventsPollTied": {
+    "description": "Mark under each of two or more proposed dates of an event's poll that are level for the most people who can make them: as many Available answers, and as few Unavailable. No single date leads."
+  },
+  "eventsPollConfirmLeader": "Confirm this date",
+  "@eventsPollConfirmLeader": {
+    "description": "Button under the proposed date that leads an event's poll, shown to someone who may confirm dates. Opens the dialog that confirms it, as Confirm in the date's menu does. A verb."
+  },
+  "eventsPollConfirmLeaderFor": "Confirm this date, {date}",
+  "@eventsPollConfirmLeaderFor": {
+    "description": "Accessible name of the Confirm this date button under the date leading an event's poll. Not shown on screen. It names the date, by its label or when it starts, and keeps the button's own words, so that a person controlling the device by voice can say what they see.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      }
+    }
+  },
+  "eventsPollNotCounting": "Your answers don't count while you're not attending.",
+  "@eventsPollNotCounting": {
+    "description": "Note above the dates of an event whose date is chosen by a poll, for someone who answered that they aren't attending the event. They can still answer for each date, and their answers count again if they say they are coming."
+  },
+  "eventsPollLoadFailed": "Couldn't load the poll's answers.",
+  "@eventsPollLoadFailed": {
+    "description": "Banner above the dates of an event whose date is chosen by a poll, when how people answered could not be read from the server, for any reason: most often there is no connection. The dates themselves still show from this device. Followed by a Try again button."
+  },
+  "eventsPollHidden": "You can't see this poll's answers.",
+  "@eventsPollHidden": {
+    "description": "Note above the dates of an event whose date is chosen by a poll, when the server won't show this person how others answered. They may still be able to give their own answer."
+  },
+  "eventsPollWhoAnswered": "Who answered",
+  "@eventsPollWhoAnswered": {
+    "description": "Button above the dates of an event whose date is chosen by a poll. Opens a page showing each person's answer for each proposed date. Shown only where this person can see who is coming to the event."
+  },
+  "eventsPollVoteChanged": "This date isn't open for answers any more. Here it is as it stands now.",
+  "@eventsPollVoteChanged": {
+    "description": "Banner on an event's screen when the server turned down an answer on one of its dates because the date is no longer proposed: someone confirmed, declined or cancelled it since the screen showed it. It shows as the screen reads the event again. A warning, not an error."
+  },
+  "eventsPollVoteRefused": "You can't answer for this date.",
+  "@eventsPollVoteRefused": {
+    "description": "Banner on an event's screen when the server refused the person's answer on one of its dates: they may not answer, for example because they were taken off the event on another device."
+  },
+  "eventsPollVoteFailed": "An error occurred while sending your answer. You may need to try again.",
+  "@eventsPollVoteFailed": {
+    "description": "Banner on an event's screen when sending the person's answer on one of its dates ended without an answer that says what happened, most often because there was no connection. The answer may or may not have been saved, so the copy must not say it wasn't."
+  },
   "eventsTypeAdultsOnly": "Adults only",
   "@eventsTypeAdultsOnly": {
     "description": "The kind of event the host chose, on the event's screen: for adults only."
