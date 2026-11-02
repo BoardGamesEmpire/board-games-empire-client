@@ -93,10 +93,10 @@ void main() {
     test(
       'onDispose closes a live watchEntry stream without an error',
       () async {
-        final entry = await repoA.addToCollection(
+        final entry = (await repoA.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         var done = false;
         Object? streamError;
@@ -160,10 +160,10 @@ void main() {
     });
 
     test('mutation methods after disposal throw StateError', () async {
-      final entry = await repoA.addToCollection(
+      final entry = (await repoA.addToCollection(
         platformGameId: kFixturePlatformGameId,
         medium: _kMedium,
-      );
+      )).entry;
       await repoA.onDispose();
 
       await expectLater(
@@ -181,10 +181,10 @@ void main() {
     });
 
     test('reconcileFromServer after disposal throws StateError', () async {
-      final entry = await repoA.addToCollection(
+      final entry = (await repoA.addToCollection(
         platformGameId: kFixturePlatformGameId,
         medium: _kMedium,
-      );
+      )).entry;
       await repoA.onDispose();
 
       await expectLater(

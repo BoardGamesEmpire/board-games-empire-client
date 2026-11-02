@@ -53,8 +53,69 @@ class SyncOperationSenderImpl implements SyncOperationSender {
 
   @override
   Future<SyncDelivery> deliver(String entryId, SyncOperation operation) async {
-    if (!await _queue.claim(entryId)) return _notClaimed(entryId, operation);
-    return _dispatch(entryId, operation);
+    switch (operation) {
+      case CreateHouseholdOperation() || CreateEventOperation():
+        // A create names a row of its own, so nothing is queued ahead of it.
+        if (!await _queue.claim(entryId)) {
+          return _notClaimed(entryId, operation);
+        }
+        return _dispatch(entryId, operation);
+      case AddToCollectionOperation() ||
+          UpdateCollectionOperation() ||
+          RemoveFromCollectionOperation():
+        // Read back as stored: an earlier add's acknowledgement may have
+        // moved the op to the server's id since [operation] was queued
+        // (#429), and the order is kept under the id it names now.
+        // [deliverEntry] claims it only while it still holds what was read.
+        final stored = await _queue.getEntry(entryId);
+        if (stored == null) return _notClaimed(entryId, operation);
+        if (await _heldBack(stored)) {
+          _log.debug(
+            'An earlier op for the same collection entry goes first; left '
+            'for the drain',
+            context: _context(entryId, operation),
+          );
+          return const SyncNotClaimed();
+        }
+        return deliverEntry(stored);
+    }
+  }
+
+  /// Whether the drain would hold [entry] back behind an earlier op for its
+  /// collection entry, so sending it now could land it out of order (#45).
+  ///
+  /// The rule is the drain's: an earlier op holds it back unless that op is
+  /// exhausted. An exhausted add still holds back an update or a removal
+  /// while the entry is local-only, since the add's acknowledgement can
+  /// still change the id they name.
+  Future<bool> _heldBack(SyncQueueEntry entry) async {
+    final SyncOperation op;
+    try {
+      op = entry.operation;
+    } on Object {
+      // [deliverEntry] counts a payload that won't decode.
+      return false;
+    }
+    final target = switch (op) {
+      AddToCollectionOperation(:final localId) => localId,
+      UpdateCollectionOperation(:final collectionId) => collectionId,
+      RemoveFromCollectionOperation(:final collectionId) => collectionId,
+      CreateHouseholdOperation() || CreateEventOperation() => null,
+    };
+    if (target == null) return false;
+    final earlier = (await _queue.getOutstandingOpsFor(target))
+        .takeWhile((queued) => queued.id != entry.id)
+        .toList();
+    if (earlier.any((queued) => !queued.isExhausted)) return true;
+    final namesEntryById =
+        op is UpdateCollectionOperation || op is RemoveFromCollectionOperation;
+    if (!namesEntryById ||
+        !earlier.any(
+          (queued) => queued.operation is AddToCollectionOperation,
+        )) {
+      return false;
+    }
+    return (await _collection.getLocalOnlyIds()).contains(target);
   }
 
   @override

@@ -255,6 +255,38 @@ void main() {
     });
   });
 
+  group('sendNow', () {
+    test('sends as deliver does', () async {
+      final queued = await h.queuedCreate();
+
+      final delivery = await h.sender.sendNow(
+        queued.id,
+        queued.op,
+        onClaimFailed: (_, _) => fail('the claim did not fail'),
+      );
+
+      expect(delivery, isA<SyncDelivered>());
+      expect(h.householdRemote.creates, hasLength(1));
+    });
+
+    test('hands a claim that throws to onClaimFailed, and reads as not '
+        'claimed', () async {
+      final queued = await h.queuedCreate();
+      await h.queue.onDispose();
+      Object? failed;
+
+      final delivery = await h.sender.sendNow(
+        queued.id,
+        queued.op,
+        onClaimFailed: (error, _) => failed = error,
+      );
+
+      expect(delivery, isA<SyncNotClaimed>());
+      expect(failed, isStateError);
+      expect(h.householdRemote.creates, isEmpty);
+    });
+  });
+
   group('deliverEntry', () {
     Future<void> corrupt(String entryId) => h.db.customStatement(
       'UPDATE sync_queue SET payload = ? WHERE id = ?',
@@ -348,6 +380,96 @@ void main() {
       expect(added.isDirty, isFalse);
       expect(added.isLocalOnly, isFalse);
       expect((await h.entry(queued.id)).status, SyncStatus.completed);
+    });
+
+    test('an add queued behind an earlier open add for its entry is left '
+        'for the drain, unclaimed (#45)', () async {
+      final first = await h.queuedAdd();
+      final second = await h.queuedAdd(quantity: 2);
+      expect(second.op.localId, first.op.localId);
+
+      final delivery = await h.sender.deliver(second.id, second.op);
+
+      expect(delivery, isA<SyncNotClaimed>());
+      expect(h.collectionRemote.writes, isEmpty);
+      expect((await h.entry(second.id)).status, SyncStatus.pending);
+      expect((await h.entry(second.id)).retryCount, 0);
+    });
+
+    test('an add queued behind an update to its confirmed entry is left for '
+        'the drain (#45)', () async {
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 4);
+      final raise = await h.queuedAdd();
+      expect(raise.op.localId, 'gc-server');
+
+      final delivery = await h.sender.deliver(raise.id, raise.op);
+
+      expect(delivery, isA<SyncNotClaimed>());
+      expect(h.collectionRemote.writes, isEmpty);
+    });
+
+    test('an add behind a parked update to its confirmed entry is sent, as '
+        'the drain would send it (#45)', () async {
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 4);
+      final update = (await h.queue.getPendingEntries()).single;
+      await h.queue.park(update.id, error: 'refused');
+      final raise = await h.queuedAdd();
+      h.collectionRemote.respond = (_) => serverEntry(quantity: 5);
+
+      final delivery = await h.sender.deliver(raise.id, raise.op);
+
+      expect(delivery, isA<SyncDelivered>());
+      expect(h.collectionRemote.writes.single.method, 'POST');
+    });
+
+    test('an update behind a parked add for a local-only entry is left for '
+        'the drain (#45)', () async {
+      final add = await h.queuedAdd();
+      await h.queue.park(add.id, error: 'refused');
+      await h.collection.updateCollectionEntry(id: add.local.id, quantity: 4);
+      final update = (await h.queue.getAllEntries()).last;
+
+      final delivery = await h.sender.deliver(update.id, update.operation);
+
+      expect(delivery, isA<SyncNotClaimed>());
+      expect(h.collectionRemote.writes, isEmpty);
+      expect((await h.entry(update.id)).status, SyncStatus.pending);
+    });
+
+    test('an add whose entry an earlier ack moved to the server id is held '
+        'behind the update queued before it there (#45)', () async {
+      final first = await h.queuedAdd();
+      await h.collection.updateCollectionEntry(id: first.local.id, quantity: 4);
+      final second = await h.queuedAdd(quantity: 2);
+      // The first add's acknowledgement moves both ops behind it to
+      // gc-server, while the second's caller still holds the local id.
+      await h.collection.reconcileFromServer(
+        serverEntry(),
+        completedSyncQueueId: first.id,
+      );
+      expect(second.op.localId, first.local.id);
+
+      final delivery = await h.sender.deliver(second.id, second.op);
+
+      expect(delivery, isA<SyncNotClaimed>());
+      expect(h.collectionRemote.writes, isEmpty);
+      final held = await h.entry(second.id);
+      expect(held.status, SyncStatus.pending);
+      expect((held.operation as AddToCollectionOperation).localId, 'gc-server');
+    });
+
+    test('an add is sent once the ops queued before it for its entry are '
+        'done', () async {
+      await h.confirmedEntry();
+      final raise = await h.queuedAdd();
+      h.collectionRemote.respond = (_) => serverEntry(quantity: 2);
+
+      final delivery = await h.sender.deliver(raise.id, raise.op);
+
+      expect(delivery, isA<SyncDelivered>());
+      expect(h.collectionRemote.writes.single.fields['quantity'], 2);
     });
 
     test('an add whose 2xx body would not parse is counted, never '

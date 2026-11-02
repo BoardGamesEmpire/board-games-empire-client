@@ -223,11 +223,11 @@ class Harness {
   /// Adds the fixture game offline: the local-only row and its queued add.
   Future<({GameCollection local, AddToCollectionOperation op, String id})>
   queuedAdd({int quantity = 1}) async {
-    final local = await collection.addToCollection(
+    final local = (await collection.addToCollection(
       platformGameId: kPlatformGameId,
       medium: GameMedium.physical,
       quantity: quantity,
-    );
+    )).entry;
     final entry = (await queue.getAllEntries()).last;
     return (
       local: local,

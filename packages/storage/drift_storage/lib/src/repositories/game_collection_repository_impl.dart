@@ -311,7 +311,14 @@ class GameCollectionRepositoryImpl
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   @override
-  Future<GameCollection> addToCollection({
+  Future<
+    ({
+      GameCollection entry,
+      String syncQueueId,
+      AddToCollectionOperation operation,
+    })
+  >
+  addToCollection({
     required String platformGameId,
     required GameMedium medium,
     int quantity = 1,
@@ -444,22 +451,25 @@ class GameCollectionRepositoryImpl
         );
       }
 
-      await _syncQueue.enqueue(
-        AddToCollectionOperation(
-          localId: entryId,
-          platformGameId: platformGameId,
-          medium: wireMedium,
-          quantity: finalQuantity,
-          rating: rating,
-          comment: comment,
-          raised: raised,
-        ),
+      final operation = AddToCollectionOperation(
+        localId: entryId,
+        platformGameId: platformGameId,
+        medium: wireMedium,
+        quantity: finalQuantity,
+        rating: rating,
+        comment: comment,
+        raised: raised,
       );
+      final queued = await _syncQueue.enqueue(operation);
 
       final row = await (_db.select(
         _db.gameCollectionsTable,
       )..where((t) => t.id.equals(entryId))).getSingle();
-      return _mapRow(row);
+      return (
+        entry: _mapRow(row),
+        syncQueueId: queued.id,
+        operation: operation,
+      );
     });
   }
 

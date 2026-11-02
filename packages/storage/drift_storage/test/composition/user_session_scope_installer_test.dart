@@ -412,10 +412,10 @@ void main() {
       await seedPlatformGame(db);
 
       final collectionsA = scopeA.get<GameCollectionRepository>();
-      final added = await collectionsA.addToCollection(
+      final added = (await collectionsA.addToCollection(
         platformGameId: kFixturePlatformGameId,
         medium: GameMedium.physical,
-      );
+      )).entry;
       expect(added.userId, _kUserId);
 
       expect(await collectionsA.getCollection(), hasLength(1));

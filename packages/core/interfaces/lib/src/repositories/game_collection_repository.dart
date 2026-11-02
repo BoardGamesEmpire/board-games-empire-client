@@ -3,7 +3,8 @@ import 'package:models/domain.dart';
 /// Read-write repository for the current user's [GameCollection] entries.
 ///
 /// All writes are applied locally first (optimistic) and a [SyncQueueEntry]
-/// is created for each mutation. Callers never wait for server confirmation.
+/// is created for each mutation. A caller that queues a change sends it at
+/// once (#45): see `SendQueuedOpNow` in `package:interfaces/sync.dart`.
 ///
 /// [isDirty] on a [GameCollection] signals a pending local change.
 /// [isLocalOnly] signals an entry not yet confirmed by the server.
@@ -53,7 +54,11 @@ abstract class GameCollectionRepository {
   /// Use [removeFromCollection] to delete an entry rather than
   /// passing `quantity: 0`.
   ///
-  /// Writes locally, enqueues [AddToCollectionOperation].
+  /// Writes locally, enqueues [AddToCollectionOperation], and returns the
+  /// entry as written, with the queue entry's `syncQueueId` and the
+  /// `operation` as it was queued. The caller sends that op at once with
+  /// `SendQueuedOpNow.sendNow` (#45): nothing else wakes the drain, and web
+  /// has none yet (#447).
   ///
   /// ### Re-adding a previously removed entry (resurrection)
   ///
@@ -97,7 +102,14 @@ abstract class GameCollectionRepository {
   /// (e.g. an explicit "clear my history for this game" action),
   /// it should be added as a separate operation rather than
   /// changing the default add-after-remove behaviour.
-  Future<GameCollection> addToCollection({
+  Future<
+    ({
+      GameCollection entry,
+      String syncQueueId,
+      AddToCollectionOperation operation,
+    })
+  >
+  addToCollection({
     required String platformGameId,
     required GameMedium medium,
     int quantity = 1,

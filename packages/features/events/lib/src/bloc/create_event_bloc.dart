@@ -189,20 +189,17 @@ class CreateEventBloc extends Bloc<CreateEventEvent, CreateEventState> {
       sync: CreateEventSync.queued,
     );
 
-    final SyncDelivery delivery;
-    try {
-      // The op exactly as the repository queued it, so this send carries
-      // what a drain's retry would.
-      delivery = await _sender.deliver(created.syncQueueId, created.operation);
-    } on Object catch (error, stackTrace) {
-      _logger.error(
+    // The op exactly as the repository queued it, so this send carries what
+    // a drain's retry would.
+    final delivery = await _sender.sendNow(
+      created.syncQueueId,
+      created.operation,
+      onClaimFailed: (error, stackTrace) => _logger.error(
         'Could not claim the queued event create; left queued',
         error: error,
         stackTrace: stackTrace,
-      );
-      emit(queued);
-      return;
-    }
+      ),
+    );
 
     switch (delivery) {
       case SyncDelivered(:final eventId):
