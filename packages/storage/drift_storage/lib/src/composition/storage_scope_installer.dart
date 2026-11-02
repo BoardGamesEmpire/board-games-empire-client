@@ -66,9 +66,9 @@ import '../repositories/unsent_changes_notice_repository_impl.dart';
 /// `GameRepository` is not registered here. It reads per user, so it lives
 /// in the user-session scope (`UserSessionScopeInstaller`, #434).
 ///
-/// Web registers no [UnsentChangesNoticeRepository]: it never runs a
-/// `ServerScopeInstaller`, and has nothing to count until it restores
-/// sessions offline (#144).
+/// Web registers the same repository over the same [ServerDatabase], in its
+/// own server-scope install (`WebStorageInstaller`). There the sign-out
+/// record lives in the database that every tab of the origin shares.
 ///
 /// ## Keying
 ///

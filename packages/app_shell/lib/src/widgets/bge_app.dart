@@ -3155,8 +3155,9 @@ T? _serverService<T extends Object>(ActiveServer active) =>
 /// Failures are logged with the server and never the user id, the rule the
 /// auth scope's channel has always kept, and never thrown. A failed write
 /// logs its error by type alone, since the error's own text can carry the
-/// id the write bound. Web registers no repository (#144, #447), so there
-/// all of this is a no-op.
+/// id the write bound. Both platforms register the repository in their
+/// server-scope storage install, over the same `ServerDatabase`; where a
+/// composition registers none, all of this is a no-op.
 class _UnsentChanges {
   static final BgeLogger _log = BgeLogger('bge.shell.unsent_changes');
 
