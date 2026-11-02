@@ -17,14 +17,12 @@ import 'package:ui_tokens/ui_tokens.dart';
 /// above that, so one under the content would show only on the title: the cover
 /// is opaque and hides it. The ink is a layer above the content instead.
 ///
-/// A tile focused from the keyboard also gets a ring in the theme's
-/// [BgeTokens.focusOutlineWidth] stroke, because the focus tint alone is faint
-/// over a picture. The ring shows as an ink's focus does, for a keyboard and
-/// not for a pointer, which is why this is stateful.
+/// A tile focused from the keyboard also gets a [BgeFocusRing], because the
+/// focus tint alone is faint over a picture.
 ///
 /// Without [onTap] a tile is inert content, not a focus stop, as the list's
 /// rows are (#269).
-class GameCoverTile extends StatefulWidget {
+class GameCoverTile extends StatelessWidget {
   const GameCoverTile({
     required this.title,
     this.thumbnailUrl,
@@ -43,99 +41,53 @@ class GameCoverTile extends StatefulWidget {
   final VoidCallback? onTap;
 
   @override
-  State<GameCoverTile> createState() => _GameCoverTileState();
-}
-
-class _GameCoverTileState extends State<GameCoverTile> {
-  bool _hasFocus = false;
-
-  /// Whether the ring shows: the tile has focus, and by keyboard.
-  bool _showFocus = false;
-
-  @override
-  void initState() {
-    super.initState();
-    FocusManager.instance.addHighlightModeListener(_syncFocus);
-  }
-
-  @override
-  void dispose() {
-    FocusManager.instance.removeHighlightModeListener(_syncFocus);
-    super.dispose();
-  }
-
-  void _onFocusChange(bool hasFocus) {
-    _hasFocus = hasFocus;
-    _syncFocus();
-  }
-
-  void _syncFocus([FocusHighlightMode? _]) {
-    final show =
-        _hasFocus &&
-        FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
-    if (mounted && show != _showFocus) setState(() => _showFocus = show);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final extent = MediaQuery.textScalerOf(context)
-        .scale(GameCoverTile.coverExtent);
+    final extent = MediaQuery.textScalerOf(context).scale(coverExtent);
     final tokens = BgeTokens.of(context);
     final radius = BorderRadius.circular(tokens.radiusSm);
 
     // MergeSemantics so that the cover, which is decorative, the title and the
     // ink's tap are one node, as a list row's are.
     return MergeSemantics(
-      child: Stack(
-        children: [
-          SizedBox(
-            width: extent,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                BgeThumbnail(
-                  url: widget.thumbnailUrl,
-                  extent: extent,
-                  placeholderIcon: Icons.casino_outlined,
-                ),
-                // Inset, so that the ring doesn't run through the title's
-                // first letter or its last line.
-                Padding(
-                  padding: EdgeInsets.all(tokens.spaceXs),
-                  child: Text(
-                    widget.title,
-                    style: Theme.of(context).textTheme.bodyMedium,
+      child: BgeFocusRing(
+        borderRadius: radius,
+        builder: (context, onFocusChange) => Stack(
+          children: [
+            SizedBox(
+              width: extent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  BgeThumbnail(
+                    url: thumbnailUrl,
+                    extent: extent,
+                    placeholderIcon: Icons.casino_outlined,
                   ),
-                ),
-              ],
-            ),
-          ),
-          Positioned.fill(
-            child: Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                onTap: widget.onTap,
-                onFocusChange: _onFocusChange,
-                borderRadius: radius,
-              ),
-            ),
-          ),
-          if (_showFocus)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: radius,
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: tokens.focusOutlineWidth,
+                  // Inset, so that the ring doesn't run through the title's
+                  // first letter or its last line.
+                  Padding(
+                    padding: EdgeInsets.all(tokens.spaceXs),
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
+                ],
+              ),
+            ),
+            Positioned.fill(
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: onTap,
+                  onFocusChange: onFocusChange,
+                  borderRadius: radius,
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
