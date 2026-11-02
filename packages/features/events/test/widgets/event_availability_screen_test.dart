@@ -150,6 +150,11 @@ void main() {
   // Local, as the device's clock reads it.
   final now = DateTime(2026, 10, 23, 18);
 
+  setUpAll(() {
+    registerFallbackValue(_poll(const []).snapshot);
+    registerFallbackValue(EventAccessSource.read);
+  });
+
   late _MockEventRepository repository;
   late StreamController<EventDetail?> cache;
 
@@ -157,6 +162,7 @@ void main() {
     repository = _MockEventRepository();
     cache = StreamController<EventDetail?>.broadcast();
     when(() => repository.watchEvent(any())).thenAnswer((_) => cache.stream);
+    when(() => repository.lastWrite(any())).thenAnswer((_) async => null);
   });
 
   tearDown(() {
@@ -167,13 +173,15 @@ void main() {
     EventRemoteDataSource? remote,
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
+    bool boldText = false,
   }) => MaterialApp(
     theme: BgeTheme.light(),
     locale: const Locale('en', 'US'),
     localizationsDelegates: EventsLocalizations.localizationsDelegates,
     supportedLocales: EventsLocalizations.supportedLocales,
     builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: textScaler, boldText: boldText),
       child: child!,
     ),
     home: EventAvailabilityScreen(
@@ -207,6 +215,7 @@ void main() {
     EventRemoteDataSource? remote,
     Future<bool> Function()? confirmSession,
     TextScaler textScaler = TextScaler.noScaling,
+    bool boldText = false,
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(
@@ -214,6 +223,7 @@ void main() {
         remote: remote,
         confirmSession: confirmSession,
         textScaler: textScaler,
+        boldText: boldText,
       ),
     );
     cache.add(detail);
@@ -532,7 +542,14 @@ void main() {
   testWidgets('on a direct visit it refuses nothing before the event and '
       'its roster are cached', (tester) async {
     final read = Completer<AvailabilitySummary>();
-    await show(tester, null, remote: serving(summary: (_) => read.future));
+    await show(
+      tester,
+      null,
+      remote: FakeEventRemote.detail(
+        (_) => Completer<EventSnapshot>().future,
+        summary: (_) => read.future,
+      ),
+    );
     final loading = find.byKey(EventAvailabilityScreen.loadingKey);
     final hidden = find.byKey(EventAvailabilityScreen.hiddenKey);
     expect(loading, findsOneWidget);
@@ -553,6 +570,139 @@ void main() {
     cache.add(_poll(_dates, roster: _roster));
     await settle(tester);
     expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
+  });
+
+  group('where the cache lacks the event or its roster', () {
+    final cached = _poll(_dates, roster: _roster);
+
+    /// A cache that delivers what the read writes.
+    void writesThrough() {
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((invocation) async {
+        cache.add(
+          EventDetail(
+            snapshot: invocation.positionalArguments.single as EventSnapshot,
+            attendance: cached.attendance,
+          ),
+        );
+      });
+    }
+
+    /// Opens the page on [detail], and answers the watch of the read the page
+    /// starts: a real cache answers each watcher as it arrives.
+    Future<void> open(
+      WidgetTester tester,
+      EventDetail? detail,
+      EventRemoteDataSource remote,
+    ) async {
+      await show(tester, detail, remote: remote);
+      cache.add(detail);
+      await settle(tester);
+    }
+
+    for (final (what, detail) in [
+      ('nothing cached', null),
+      ("a list's copy with no roster", _poll(_dates)),
+    ]) {
+      testWidgets('a failed read of the event, with $what, offers a retry '
+          'rather than spinning', (tester) async {
+        writesThrough();
+        var fails = true;
+        final remote = FakeEventRemote.detail(
+          (_) => fails ? throw _offline : cached.snapshot,
+          summary: (_) => _summary,
+        );
+        await open(tester, detail, remote);
+
+        expect(find.byKey(EventAvailabilityScreen.loadingKey), findsNothing);
+        expect(find.text(_loadFailedCopy), findsOneWidget);
+        expect(remote.detailRequests, ['e-1']);
+
+        fails = false;
+        await tester.tap(find.byKey(EventAvailabilityScreen.retryKey));
+        await settle(tester);
+
+        expect(remote.detailRequests, ['e-1', 'e-1']);
+        expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
+      });
+    }
+
+    testWidgets('a retry of the poll that finds the server back reads the '
+        'event too, with one press', (tester) async {
+      writesThrough();
+      var fails = true;
+      final remote = FakeEventRemote.detail(
+        (_) => cached.snapshot,
+        summary: (_) => fails ? throw _offline : _summary,
+      );
+      await show(tester, null, remote: remote);
+      expect(find.text(_loadFailedCopy), findsOneWidget);
+
+      fails = false;
+      await tester.tap(find.byKey(EventAvailabilityScreen.retryKey));
+      await settle(tester);
+      cache.add(null);
+      await settle(tester);
+
+      expect(remote.detailRequests, ['e-1']);
+      expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
+    });
+
+    testWidgets('a read answered 404 says the viewer can\'t see the answers', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        null,
+        FakeEventRemote.detail(
+          (_) => throw const EventRemoteNotFoundException('gone'),
+          summary: (_) => _summary,
+        ),
+      );
+
+      expect(find.byKey(EventAvailabilityScreen.hiddenKey), findsOneWidget);
+      expect(find.byKey(EventAvailabilityScreen.loadingKey), findsNothing);
+    });
+
+    testWidgets('a read that withholds the roster says the viewer can\'t see '
+        'the answers', (tester) async {
+      // The cache keeps no rows for an empty roster, so it reads back as none.
+      when(() => repository.cacheEvent(any(), source: any(named: 'source')))
+          .thenAnswer((_) async => cache.add(_poll(_dates)));
+      await open(
+        tester,
+        _poll(_dates),
+        FakeEventRemote.detail(
+          (_) => _poll(_dates, roster: const []).snapshot,
+          summary: (_) => _summary,
+        ),
+      );
+
+      expect(find.byKey(EventAvailabilityScreen.hiddenKey), findsOneWidget);
+      expect(find.byKey(EventAvailabilityScreen.loadingKey), findsNothing);
+    });
+
+    testWidgets('a cache that holds the roster is not read again', (
+      tester,
+    ) async {
+      final remote = serving();
+      await open(tester, cached, remote);
+
+      expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
+      expect(remote.detailRequests, isEmpty);
+    });
+  });
+
+  testWidgets('bold text draws the grid bold', (tester) async {
+    await show(
+      tester,
+      _poll(_dates, roster: _roster),
+      remote: serving(),
+      boldText: true,
+    );
+
+    expect(styleIn(tester, name('att-2'))?.fontWeight, FontWeight.bold);
   });
 
   testWidgets('an event that leaves the cache under the grid takes the grid '

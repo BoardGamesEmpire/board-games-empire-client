@@ -661,7 +661,7 @@
   "@eventsPollUnknownVoter": {
     "description": "Name shown for a row of the Who answered table (eventsPollWhoAnsweredTitle) whose person answered the poll but isn't on the event's guest list as this device has it, so their name isn't known: most often someone added or removed since the list was last loaded."
   },
-  "eventsPollVoteChanged": "This date isn't open for answers any more. Here it is as it stands now.",
+  "eventsPollVoteChanged": "This date isn't open for answers any more.",
   "@eventsPollVoteChanged": {
     "description": "Banner on an event's screen when the server turned down an answer on one of its dates because the date is no longer proposed: someone confirmed, declined or cancelled it since the screen showed it. It shows as the screen reads the event again. A warning, not an error."
   },

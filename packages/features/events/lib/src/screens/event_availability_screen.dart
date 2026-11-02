@@ -12,6 +12,9 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:events/l10n/events_localizations.dart';
 
+import '../bloc/event_detail_bloc.dart';
+import '../bloc/event_detail_event.dart';
+import '../bloc/event_detail_state.dart';
 import '../bloc/event_poll_bloc.dart';
 import '../bloc/event_poll_event.dart';
 import '../bloc/event_poll_state.dart';
@@ -27,6 +30,12 @@ import '../widgets/event_labels.dart';
 /// of its own. The event, its dates and its roster come from the cache. The
 /// rows are [pollRows]'s, and the columns are the Proposed dates in the
 /// cache's order, which is their sort order.
+///
+/// Only where the cache lacks the event or its roster, as on a direct visit,
+/// does the page read the event as well, with an [EventDetailBloc] of its own.
+/// The detail beneath reads it too, but what becomes of that read can't reach
+/// this page, and a page opened from the detail never needs it: the detail
+/// offers it only with a roster, so this read can't race a write there.
 ///
 /// ## A cell
 ///
@@ -61,7 +70,9 @@ import '../widgets/event_labels.dart';
 /// | A roster withheld from the viewer (#498), as the summary or the cache says | can't see the answers |
 /// | The event was cached, and has left the cache since | can't see the answers |
 /// | The read failed, or the session check stopped it (#432) | couldn't load, with a retry |
-/// | The read still to answer, or the event or its roster not cached yet: the detail beneath is reading them | loading |
+/// | The event or its roster not cached, and the page's own read of the event answered 404 or withheld the roster | can't see the answers |
+/// | The event or its roster not cached, and that read failed | couldn't load, with a retry |
+/// | The event or its roster not cached yet, or the poll's read still to answer | loading |
 /// | No poll open: not a poll, or no Proposed date left | can't see the answers |
 class EventAvailabilityScreen extends StatelessWidget {
   const EventAvailabilityScreen({
@@ -178,6 +189,16 @@ class _AvailabilityPageState extends State<_AvailabilityPage> {
   /// it the detail beneath still reading.
   bool _cachedOnce = false;
 
+  /// The page's own read of the event: see [EventAvailabilityScreen]. Started
+  /// the first time the page finds the cache lacking.
+  EventDetailBloc? _eventRead;
+
+  @override
+  void dispose() {
+    unawaited(_eventRead?.close());
+    super.dispose();
+  }
+
   void _retry(BuildContext context) =>
       context.read<EventPollBloc>().add(EventPollRetryRequested(_eventId));
 
@@ -209,11 +230,9 @@ class _AvailabilityPageState extends State<_AvailabilityPage> {
     final snapshot = cached.data?.snapshot;
     final roster = snapshot?.attendees;
     if (snapshot != null) _cachedOnce = true;
-    if (poll.load == EventPollLoad.hidden ||
-        poll.load == EventPollLoad.gone ||
-        summary?.rosterVisible == false ||
-        (roster != null && roster.isEmpty) ||
-        (snapshot == null && _cachedOnce)) {
+    if (_serverRefused(poll) ||
+        _rosterWithheld(poll, roster) ||
+        _eventLost(snapshot)) {
       return const _HiddenPage();
     }
     // A failed read keeps its page, and the retry on it, while the next
@@ -224,13 +243,11 @@ class _AvailabilityPageState extends State<_AvailabilityPage> {
         retrying: poll.refreshing,
       );
     }
-    // On a direct visit the cache can hold nothing yet, or a list's copy of
-    // the event with no roster, while the detail beneath reads it. Only the
-    // roster says the rest of the event has been read, so nothing is said of
-    // the poll before it: a refusal here would be announced, then taken back.
-    if (summary == null || snapshot == null || roster == null) {
-      return const _LoadingPage();
-    }
+    // Only the roster says the rest of the event has been read, so nothing is
+    // said of the poll before it: a refusal here would be announced, then
+    // taken back.
+    if (snapshot == null || roster == null) return _eventReadPage();
+    if (summary == null) return const _LoadingPage();
     if (!showsPoll(snapshot.event, snapshot.occurrences)) {
       return const _HiddenPage();
     }
@@ -240,6 +257,51 @@ class _AvailabilityPageState extends State<_AvailabilityPage> {
       roster: roster,
       summary: summary,
       now: widget.now(),
+    );
+  }
+
+  /// Whether the server refused the read, or has no such event.
+  bool _serverRefused(EventPollState poll) =>
+      poll.load == EventPollLoad.hidden || poll.load == EventPollLoad.gone;
+
+  /// Whether the summary or the cache withholds the roster from the viewer.
+  bool _rosterWithheld(EventPollState poll, List<EventAttendee>? roster) =>
+      poll.summary?.rosterVisible == false || (roster?.isEmpty ?? false);
+
+  /// Whether the cache has held the event, and no longer does.
+  bool _eventLost(EventSnapshot? snapshot) => snapshot == null && _cachedOnce;
+
+  /// The page while the cache lacks the event or its roster, as the page's
+  /// own read of them stands. A read that succeeds reaches the page through
+  /// the cache.
+  Widget _eventReadPage() {
+    final read = _eventRead ??= EventDetailBloc(
+      eventId: _eventId,
+      repository: widget.repository,
+      remote: widget.remote,
+      confirmSession: widget.confirmSession,
+    );
+
+    return BlocBuilder<EventDetailBloc, EventDetailState>(
+      bloc: read,
+      builder: (context, state) => switch (state) {
+        EventDetailNotFound() => const _HiddenPage(),
+        EventDetailError(:final refreshing, :final canRetry) ||
+        EventDetailReady(
+          refreshFailed: true,
+          :final refreshing,
+          :final canRetry,
+        ) => _FailedPage(
+          onRetry: canRetry
+              ? () => read.add(const EventDetailRetryRequested())
+              : null,
+          retrying: refreshing,
+        ),
+        EventDetailReady(:final detail)
+            when detail.snapshot.attendees?.isEmpty ?? false =>
+          const _HiddenPage(),
+        _ => const _LoadingPage(),
+      },
     );
   }
 }

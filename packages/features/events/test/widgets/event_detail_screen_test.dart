@@ -60,8 +60,7 @@ const _confirmedNotAllDeclinedCopy =
     'The date was confirmed, but some of the other dates may not have been '
     'declined. Any still proposed below can be declined from their menus.';
 const _declineOthersCopy = 'Also decline the other proposed dates';
-const _pollChangedCopy =
-    "This date isn't open for answers any more. Here it is as it stands now.";
+const _pollChangedCopy = "This date isn't open for answers any more.";
 const _pollRefusedCopy = "You can't answer for this date.";
 const _pollFailedCopy =
     'An error occurred while sending your answer. You may need to try again.';
@@ -2868,6 +2867,48 @@ void main() {
         },
       );
     }
+
+    testWidgets('a vote that asks for a read while a confirm is out reads '
+        'nothing once the screen has closed', (tester) async {
+      final vote = Completer<AvailabilityVote>();
+      final confirming = Completer<EventOccurrence?>();
+      final remote = serving(
+        voted: (_) => vote.future,
+        summary: (_) => summaryOf([
+          tally('o-1', [voter('att-me', available), voter('att-2', available)]),
+        ]),
+        written: (_) => confirming.future,
+      );
+      await show(
+        tester,
+        poll([
+          date('o-1', label: 'Saturday'),
+          date('o-2', day: 13, sortOrder: 1),
+        ], viewer: me(role: EventRole.host)),
+        remote: remote,
+        onBack: back,
+      );
+
+      await tapAnswer(tester, 'o-2', maybe);
+      final confirm = find.byKey(EventDetailScreen.confirmLeaderKey('o-1'));
+      await reveal(tester, confirm);
+      await tester.tap(confirm);
+      await animate(tester);
+      await tester.tap(find.byKey(EventDateDialogKeys.submit));
+      await animate(tester);
+
+      vote.completeError(
+        const EventWriteConflictException('moved', statusCode: 400),
+      );
+      await settle(tester);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle(tester);
+      confirming.complete(date('o-1', status: OccurrenceStatus.confirmed));
+      await settle(tester);
+
+      expect(remote.detailRequests, ['e-1']);
+    });
 
     testWidgets('a vote that asks for a read while Delete is out reads '
         'nothing once the event is deleted', (tester) async {
