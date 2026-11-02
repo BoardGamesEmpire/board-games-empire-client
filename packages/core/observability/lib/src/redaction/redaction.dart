@@ -32,6 +32,9 @@ abstract final class Redaction {
   // `ExecuteQuery.toString()` writes it: `<method>: <sql> with [<values>]`.
   static const String _requestMarker = 'Tried to send Request';
   static const String _valuesMarker = ' with [';
+  static const String _noValues = ' with []';
+  static const String _closedConnection =
+      ' over isolate channel, but the connection was closed!';
 
   /// Partial name redaction.
   ///
@@ -103,25 +106,51 @@ abstract final class Redaction {
   /// For the first shape, returns [text] up to the first `, parameters: `
   /// that follows the `Causing statement` marker, then `, parameters: `
   /// and the replacement. For the second, returns [text] up to the first
-  /// ` with [` that follows `Tried to send Request`, then ` with ` and the
-  /// replacement. The replacement is [defaultReplacement]. Anything after the
+  /// non-empty ` with [` that follows `Tried to send Request`, then ` with `
+  /// and the replacement, then drift's fixed reason for the failure when it
+  /// follows. The replacement is [defaultReplacement]. Anything else after the
   /// cut is dropped, which covers a second error a wrapper appended and keeps
   /// the failure on the safe side. When both shapes appear, the earlier cut
   /// wins, so nothing bound survives. Returns [text] itself (same instance)
-  /// when it matches neither shape or the statement bound nothing.
+  /// when it matches neither shape or the statement bound nothing, which drift
+  /// writes as ` with []`.
   ///
   /// This relies on the formats `sqlite3` and `drift` write today; tests in
   /// `drift_storage` run a real failing statement, and a real statement on a
   /// closed connection, to catch either changing.
   static String stripBoundValues(String text) {
     final sqlite = _cutAfter(text, _statementMarker, _parametersMarker);
-    final channel = _cutAfter(text, _requestMarker, _valuesMarker);
+    final channel = _firstValuesList(text);
     if (sqlite < 0 && channel < 0) return text;
     if (channel < 0 || (sqlite >= 0 && sqlite < channel)) {
       return '${text.substring(0, sqlite)}'
           '$_parametersMarker$defaultReplacement';
     }
-    return '${text.substring(0, channel)} with $defaultReplacement';
+    final reason = text.contains(_closedConnection, channel)
+        ? _closedConnection
+        : '';
+    return '${text.substring(0, channel)} with $defaultReplacement$reason';
+  }
+
+  /// [error] itself, or its text without the bound values when it has any, for
+  /// a sink or presenter that keeps the object where it can.
+  ///
+  /// Compares by value: text already stripped comes back equal but rebuilt,
+  /// and has nothing left to remove.
+  static Object scrubBoundValues(Object error) {
+    final text = error.toString();
+    final stripped = stripBoundValues(text);
+    return stripped == text ? error : stripped;
+  }
+
+  /// The index of the first ` with [` after `Tried to send Request` that holds
+  /// values, or -1.
+  static int _firstValuesList(String text) {
+    var index = _cutAfter(text, _requestMarker, _valuesMarker);
+    while (index >= 0 && text.startsWith(_noValues, index)) {
+      index = text.indexOf(_valuesMarker, index + 1);
+    }
+    return index;
   }
 
   /// The index of the first [landmark] at or after the first [marker] in

@@ -196,7 +196,8 @@ void installGlobalErrorHooks({
 /// [details] itself, or a copy holding the exception's text without the bound
 /// values when it has any. The presenter prints the exception as it is.
 FlutterErrorDetails _withoutBoundValues(FlutterErrorDetails details) {
-  final text = details.exception.toString();
-  final stripped = Redaction.stripBoundValues(text);
-  return stripped == text ? details : details.copyWith(exception: stripped);
+  final scrubbed = Redaction.scrubBoundValues(details.exception);
+  return identical(scrubbed, details.exception)
+      ? details
+      : details.copyWith(exception: scrubbed);
 }

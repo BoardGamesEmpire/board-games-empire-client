@@ -75,7 +75,7 @@ class DeveloperLogSink implements LogSink {
       // itself goes unless its text carries bound values, which are removed
       // by sending the stripped text instead.
       final Object? errorArg = hasError
-          ? _scrubbed(record.error!)
+          ? Redaction.scrubBoundValues(record.error!)
           : (hasContext ? context : null);
 
       _log(
@@ -90,13 +90,6 @@ class DeveloperLogSink implements LogSink {
       // LogSink.emit must not throw: a misbehaving formatter, context
       // encode, or logFn must not crash the caller (best-effort logging).
     }
-  }
-
-  /// [error] itself, or its text without the bound values when it has any.
-  static Object _scrubbed(Object error) {
-    final text = error.toString();
-    final stripped = Redaction.stripBoundValues(text);
-    return stripped == text ? error : stripped;
   }
 
   @override

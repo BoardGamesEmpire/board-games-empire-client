@@ -41,6 +41,26 @@ void main() {
   );
 
   group('BuildErrorView', () {
+    testWidgets('keeps a database error\'s bound values out of the '
+        'diagnostics (#463)', (tester) async {
+      await tester.pumpWidget(
+        localizedHarness(
+          BuildErrorView(
+            details: details(
+              exception:
+                  'SqliteException(2067): UNIQUE constraint failed\n'
+                  '  Causing statement: INSERT INTO t (a) VALUES (?), '
+                  'parameters: user-42',
+            ),
+            showDiagnostics: true,
+          ),
+        ),
+      );
+
+      expect(find.textContaining('user-42'), findsNothing);
+      expect(find.textContaining('Causing statement'), findsOneWidget);
+    });
+
     testWidgets('renders the localized body', (tester) async {
       await tester.pumpWidget(
         localizedHarness(

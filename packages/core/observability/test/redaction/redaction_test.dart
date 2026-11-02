@@ -112,7 +112,8 @@ void main() {
         expect(
           Redaction.stripBoundValues(_closed),
           'Bad state: Tried to send Request (id = 3): StatementMethod.insert: '
-          'INSERT INTO t (a, b) VALUES (?, ?) with <redacted>',
+          'INSERT INTO t (a, b) VALUES (?, ?) with <redacted> over isolate '
+          'channel, but the connection was closed!',
         );
       },
     );
@@ -126,12 +127,32 @@ void main() {
       },
     );
 
-    test('leaves a closed-connection request with no values list alone', () {
+    test('leaves a closed-connection request that bound nothing alone', () {
       const unbound =
           'Bad state: Tried to send Request (id = 4): '
-          'StatementMethod.custom: SELECT 1 over isolate channel, but the '
-          'connection was closed!';
+          'StatementMethod.custom: SELECT 1 with [] over isolate channel, but '
+          'the connection was closed!';
       expect(Redaction.stripBoundValues(unbound), same(unbound));
+    });
+
+    test('an empty values list does not hide a later one', () {
+      const unbound =
+          'Bad state: Tried to send Request (id = 4): '
+          'StatementMethod.custom: SELECT 1 with [] over isolate channel, but '
+          'the connection was closed!';
+      final out = Redaction.stripBoundValues('$unbound\nthen: $_closed');
+      expect(out, isNot(contains('user-42')));
+      expect(out, isNot(contains('Kitchen Table')));
+    });
+
+    test('keeps the reason when a transaction id follows the values', () {
+      const inTransaction =
+          'Bad state: Tried to send Request (id = 5): '
+          'StatementMethod.insert: INSERT INTO t (a) VALUES (?) with [user-42] '
+          '(@2) over isolate channel, but the connection was closed!';
+      final out = Redaction.stripBoundValues(inTransaction);
+      expect(out, isNot(contains('user-42')));
+      expect(out, endsWith('but the connection was closed!'));
     });
 
     test('removes both shapes when the sqlite one comes first', () {
@@ -166,6 +187,20 @@ void main() {
     test('a second pass changes nothing', () {
       final once = Redaction.stripBoundValues(_sqlite);
       expect(Redaction.stripBoundValues(once), once);
+    });
+  });
+
+  group('Redaction.scrubBoundValues', () {
+    test('returns the error itself when it has no bound values', () {
+      final error = StateError('nothing bound');
+      expect(Redaction.scrubBoundValues(error), same(error));
+    });
+
+    test('returns the stripped text when it has some', () {
+      expect(
+        Redaction.scrubBoundValues(_sqlite),
+        Redaction.stripBoundValues(_sqlite),
+      );
     });
   });
 

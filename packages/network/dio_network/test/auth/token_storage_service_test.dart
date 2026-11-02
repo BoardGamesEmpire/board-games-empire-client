@@ -492,7 +492,7 @@ void main() {
         await impatient().clear();
 
         expect(keychain, isNot(contains(key)));
-        expect(warnings(), hasLength(2));
+        expect(warnings(), hasLength(1));
       });
 
       test('falls back to the keychain on a read, and is logged', () async {
@@ -513,6 +513,21 @@ void main() {
         expect(keychain, contains(key));
         expect(warnings(), hasLength(1));
       });
+
+      test(
+        'clear skips the removal after a marker write it gave up on',
+        () async {
+          keychain[key] = v2Payload();
+          tombstones.holdWrites = Completer<void>().future;
+
+          await impatient().clear();
+
+          expect(
+            warnings().where((r) => r.message.contains('remove the session')),
+            isEmpty,
+          );
+        },
+      );
     });
 
     test('store removes the marker, and a cold start reads the new '
@@ -537,6 +552,80 @@ void main() {
       expect(warnings(), isNotEmpty);
       expect(tombstones.revoked, contains(serverId));
       expect(await coldStart().retrieve(), isNull);
+    });
+
+    test('a failed marker read is retried on the next read, which refuses a '
+        'marked session', () async {
+      keychain[key] = v2Payload();
+      tombstones.revoked.add(serverId);
+      tombstones.failReads = true;
+
+      expect((await storage.retrieve())?.token, 'tok-abc');
+
+      tombstones.failReads = false;
+
+      expect(await storage.retrieve(), isNull);
+      expect(keychain, isNot(contains(key)));
+      expect(tombstones.revoked, isEmpty);
+    });
+
+    test('a marker that cannot be read stops being asked for', () async {
+      keychain[key] = v2Payload();
+      tombstones.failReads = true;
+
+      for (var i = 0; i < 5; i++) {
+        expect((await storage.retrieve())?.token, 'tok-abc');
+      }
+
+      expect(tombstones.reads, 3);
+    });
+
+    test('a retried marker read does not delete a session stored since the '
+        'read failed', () async {
+      tombstones.revoked.add(serverId);
+      tombstones.failReads = true;
+      tombstones.failWrites = true;
+
+      await storeToken(storage, 'tok-new');
+
+      tombstones.failReads = false;
+      tombstones.failWrites = false;
+
+      expect((await storage.retrieve())?.token, 'tok-new');
+      expect(keychain, contains(key));
+    });
+
+    test('a clear landing during store stays latched', () async {
+      final releaseWrite = Completer<void>();
+      beforeWrite = () => releaseWrite.future;
+      beforeDelete = failDeletes;
+
+      final storing = storeToken(storage, 'tok-new');
+      await pumpEventQueue();
+      await expectLater(storage.clear(), throwsA(isA<StateError>()));
+      releaseWrite.complete();
+      await storing;
+
+      expect(keychain, contains(key), reason: 'the delete failed');
+      expect(await storage.retrieve(), isNull);
+    });
+
+    group('deleteAllStoredSessions', () {
+      test('deletes every session and leaves other keychain entries', () async {
+        when(secure.readAll).thenAnswer(
+          (_) async => {
+            'bge_session_a': 'x',
+            'bge_session_b': 'y',
+            'bge_meta_key': 'z',
+          },
+        );
+
+        await TokenStorageService.deleteAllStoredSessions(storage: secure);
+
+        verify(() => secure.delete(key: 'bge_session_a')).called(1);
+        verify(() => secure.delete(key: 'bge_session_b')).called(1);
+        verifyNever(() => secure.delete(key: 'bge_meta_key'));
+      });
     });
 
     test('the marker is read once per process', () async {

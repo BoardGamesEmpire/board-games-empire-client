@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 import 'package:models/domain.dart';
 
+import 'debug_report_swallowed.dart';
 import 'dependency_container_impl.dart';
 import 'scope/user_scope_host.dart';
 import 'streams/replay_then_forward.dart';
@@ -169,14 +169,12 @@ class ServerContextImpl implements ServerContext {
           try {
             await _container.replaceInner();
           } catch (teardownError) {
-            assert(() {
-              debugPrint(
-                'ServerContext($serverId): scope reset after a failed '
-                'activation threw (suppressed in favor of the original '
-                'installer error): $teardownError',
-              );
-              return true;
-            }());
+            debugReportSwallowed(
+              'ServerContext($serverId): scope reset after a failed '
+              'activation threw (suppressed in favor of the original '
+              'installer error)',
+              teardownError,
+            );
           }
           rethrow;
         }
@@ -247,13 +245,10 @@ class ServerContextImpl implements ServerContext {
       try {
         await _container.replaceInner();
       } catch (e) {
-        assert(() {
-          debugPrint(
-            'ServerContext($serverId): scope disposal threw during '
-            'suspend(): $e',
-          );
-          return true;
-        }());
+        debugReportSwallowed(
+          'ServerContext($serverId): scope disposal threw during suspend()',
+          e,
+        );
       }
       _setState(ServerContextState.monitoring);
     });
@@ -293,13 +288,10 @@ class ServerContextImpl implements ServerContext {
       // A service's dispose callback threw. Log and continue — the state
       // stream must still close so disposal is reliably idempotent and the
       // orchestrator's teardown isn't left brittle.
-      assert(() {
-        debugPrint(
-          'ServerContext($serverId): container disposal threw during '
-          'dispose(): $e',
-        );
-        return true;
-      }());
+      debugReportSwallowed(
+        'ServerContext($serverId): container disposal threw during dispose()',
+        e,
+      );
     }
     await _stateController.close();
     // Yield one event-loop turn so any buffered stream events queued
@@ -417,13 +409,11 @@ class ServerContextImpl implements ServerContext {
     try {
       await _container.endUserScope();
     } catch (e) {
-      assert(() {
-        debugPrint(
-          'ServerContext($serverId): user-scope disposal threw during '
-          'session deactivation: $e',
-        );
-        return true;
-      }());
+      debugReportSwallowed(
+        'ServerContext($serverId): user-scope disposal threw during '
+        'session deactivation',
+        e,
+      );
     }
   }
 

@@ -309,10 +309,11 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       user: granted.user,
     );
 
-    // A sign-out during the grant store: unless the store was dropped for it,
-    // our write lifted its latch and re-persisted the snapshot. Undo it and
-    // report supersession — the sign-in genuinely succeeded server-side, but
-    // locally the sign-out is the newer intent and must win.
+    // A sign-out during the grant store: the latch stands, whether the store
+    // was dropped for it or its write was overtaken. Clear again for whatever
+    // that write left, and report supersession — the sign-in genuinely
+    // succeeded server-side, but locally the sign-out is the newer intent and
+    // must win.
     if (epoch != _sessionEpoch) {
       await _clearQuietly('a superseded credential grant');
       throw const AuthSupersededException();
@@ -569,11 +570,10 @@ class AuthRepositoryImpl implements AuthRepository, Disposable {
       user: sessionResponse.user,
     );
 
-    // Second epoch check, covering the store await itself: a signOut()
-    // landing DURING that write is otherwise undone by it — store lifts the
-    // sign-out latch and re-persists the PII snapshot, and the emit below
-    // would re-assert the session. Undo our own write (restoring the latch)
-    // and stand down; the sign-out's teardown is the newer intent.
+    // Second epoch check, covering the store await itself: after a signOut()
+    // landing DURING that write, the emit below would re-assert the session.
+    // Clear again for whatever the write left and stand down; the sign-out's
+    // teardown is the newer intent.
     if (epoch != _sessionEpoch) {
       _log.warn(
         'Sign-out landed while persisting a session response; re-clearing',

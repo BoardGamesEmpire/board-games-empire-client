@@ -63,7 +63,8 @@ import 'package:observability/observability.dart';
 /// in-memory auth state — an unauthenticated user can no longer keep
 /// making authenticated requests because a persisted clear failed. The
 /// latch is lifted only when a new payload is [store]d (a fresh
-/// sign-in/up), which supersedes the prior session.
+/// sign-in/up), which supersedes the prior session, and not by a store that a
+/// [clear] overtook.
 ///
 /// The latch dies with the process, so [clear] also writes a durable marker
 /// to a [SessionTombstoneStore], ahead of the delete (#356). A payload that
@@ -75,24 +76,34 @@ import 'package:observability/observability.dart';
 /// counts as failed once the timeout passes, since sign-out and every request
 /// wait on these calls.
 ///
+/// A failed read is tried again on later reads, up to [_maxMarkerReads], so a
+/// briefly busy database doesn't let a refused session through for the whole
+/// process, and one that stays wedged doesn't slow every request. Once a
+/// [store] has started there is nothing left to check: the session it writes
+/// is the one this process keeps.
+///
 /// The remaining cases leave the payload on disk with nothing to refuse it,
-/// so a fresh [TokenStorageService] reads it again: both stores failing, and a
-/// marker that was written but cannot be read at the next start, which falls
-/// back to the keychain (#356).
+/// so a fresh [TokenStorageService] reads it again: both stores failing, a
+/// marker that cannot be read in any attempt, which falls back to the
+/// keychain, and a device-local reset whose [deleteAllStoredSessions] failed
+/// (#356).
 class TokenStorageService {
   TokenStorageService({
     required this._serverId,
     required this._tombstones,
     @visibleForTesting FlutterSecureStorage? storage,
-    @visibleForTesting this._tombstoneTimeout = const Duration(seconds: 5),
+    @visibleForTesting this._tombstoneTimeout = const Duration(seconds: 2),
   }) : _storage = storage ?? const FlutterSecureStorage();
 
   final String _serverId;
   final SessionTombstoneStore _tombstones;
   final FlutterSecureStorage _storage;
 
-  /// How long one marker call may hold up its caller. A write that outlasts
-  /// this can still land, ahead of the removal queued after it.
+  /// How long one marker call may hold up its caller. Short, because sign-out
+  /// waits on this before its delete, and giving up costs little: the call is
+  /// not cancelled, so a write that outlasts this can still land. It refuses
+  /// nothing that matters, as there is no payload left to refuse if the delete
+  /// worked, and the next [store] or cold start removes it.
   final Duration _tombstoneTimeout;
 
   final BgeLogger _log = BgeLogger('bge.auth.token_storage');
@@ -103,14 +114,38 @@ class TokenStorageService {
   /// and extend [_decode] with the compatibility rule.
   static const int payloadVersion = 2;
 
+  /// How many failed marker reads a process makes before it stops asking and
+  /// trusts the keychain. At [_tombstoneTimeout] each, this caps what a wedged
+  /// database can cost.
+  static const int _maxMarkerReads = 3;
+
+  /// Deletes every server's stored session, for a device-local reset (#356).
+  ///
+  /// The reset deletes the meta database and every marker with it, and that
+  /// database may be why the reset is happening, so the keychain is the only
+  /// list of what to delete. A surviving payload would have no marker to refuse
+  /// it when the same server is added again.
+  static Future<void> deleteAllStoredSessions({
+    @visibleForTesting FlutterSecureStorage? storage,
+  }) async {
+    final keychain = storage ?? const FlutterSecureStorage();
+    final stored = await keychain.readAll();
+    for (final key in stored.keys) {
+      if (key.startsWith('${_prefix}_')) await keychain.delete(key: key);
+    }
+  }
+
   /// Process-lifetime latch set by [clear]; see the class docs. When true,
   /// [retrieve] returns null regardless of persisted state.
   bool _clearedThisProcess = false;
 
-  /// The one marker check this process makes; see [_honourTombstone]. Shared,
-  /// so a [store] arriving during it waits, instead of having its new payload
-  /// deleted by the retry.
+  /// The marker check, once it has an answer or has run out of attempts; see
+  /// [_honourTombstone]. Shared, so a [store] arriving during it waits, instead
+  /// of having its new payload deleted by the retry.
   Future<void>? _tombstoneCheck;
+
+  /// How many marker reads have failed in this process.
+  int _markerReadFailures = 0;
 
   /// Counts the [clear]s started. Lets an operation that was suspended tell
   /// that one landed meanwhile; see [store] and [_removeMarker].
@@ -137,7 +172,7 @@ class TokenStorageService {
   /// [user] may be omitted only where no snapshot is available; without it
   /// the session cannot be restored offline (#98).
   ///
-  /// The write also removes the marker. If that removal fails it is logged,
+  /// The write also removes any marker. If that removal fails it is logged,
   /// and this process keeps the session while the next cold start asks for a
   /// sign-in, which is the safe direction (#356).
   ///
@@ -161,6 +196,9 @@ class TokenStorageService {
     // delete may already have run, so this write would bring the session back.
     // Dropping it leaves what writing first and deleting after would have left.
     if (generation != _clearGeneration) return;
+    // This session supersedes whatever a marker refused. A marker read retried
+    // from here on could only delete it.
+    _tombstoneCheck ??= Future<void>.value();
 
     final payload = jsonEncode({
       'v': payloadVersion,
@@ -170,6 +208,9 @@ class TokenStorageService {
       'user': user?.toJson(),
     });
     await _storage.write(key: _key, value: payload);
+    // A clear that started during the write is the newer intent, and its
+    // delete was issued after this write, so it stays latched.
+    if (generation != _clearGeneration) return;
     // Newly stored material supersedes any prior sign-out: lift the latch.
     _clearedThisProcess = false;
     await _removeMarker(generation);
@@ -205,13 +246,22 @@ class TokenStorageService {
   /// The marker is written between the two and removed once the delete has
   /// succeeded, so a failed delete leaves it to refuse the payload at the next
   /// cold start (#356). A failed marker write is logged and does not stop the
-  /// delete.
+  /// delete, and the removal is then skipped, so a wedged database costs one
+  /// timeout here and not two.
   Future<void> clear() async {
     _clearedThisProcess = true;
     _clearGeneration += 1;
     final generation = _clearGeneration;
+    final marked = await _writeMarker();
+    await _storage.delete(key: _key);
+    if (marked) await _removeMarker(generation);
+  }
+
+  /// Whether the marker was written. Never throws.
+  Future<bool> _writeMarker() async {
     try {
       await _tombstones.markRevoked(_serverId).timeout(_tombstoneTimeout);
+      return true;
     } on Object catch (error, stackTrace) {
       _log.warn(
         'Could not write the session marker; if the delete fails too, the next '
@@ -220,9 +270,8 @@ class TokenStorageService {
         stackTrace: stackTrace,
         context: {'bgeServerId': _serverId},
       );
+      return false;
     }
-    await _storage.delete(key: _key);
-    await _removeMarker(generation);
   }
 
   Future<bool> hasToken() async => (await retrieve()) != null;
@@ -245,6 +294,8 @@ class TokenStorageService {
         stackTrace: stackTrace,
         context: {'bgeServerId': _serverId},
       );
+      _markerReadFailures += 1;
+      if (_markerReadFailures < _maxMarkerReads) _tombstoneCheck = null;
       return;
     }
     if (!revoked) return;

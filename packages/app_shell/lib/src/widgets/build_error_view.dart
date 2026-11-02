@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:observability/observability.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../../l10n/shell_localizations.dart';
@@ -136,10 +137,11 @@ class BuildErrorView extends StatelessWidget {
                     const BgeGap.md(),
                     // Developer signal only — excluded from semantics so
                     // screen readers get the friendly message, not a raw
-                    // exception string.
+                    // exception string. A debug-build screenshot can end up
+                    // in a feedback report, so no bound values (#463).
                     ExcludeSemantics(
                       child: Text(
-                        details.exceptionAsString(),
+                        Redaction.stripBoundValues(details.exceptionAsString()),
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,

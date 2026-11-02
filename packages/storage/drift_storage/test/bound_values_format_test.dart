@@ -74,6 +74,30 @@ void main() {
     final stripped = Redaction.stripBoundValues(text);
     expect(stripped, isNot(contains(_secret)));
     expect(stripped, contains('INSERT INTO t'));
+    expect(stripped, contains('the connection was closed!'));
+  });
+
+  test('a statement that bound nothing, sent after a background isolate '
+      'database closed, is left alone', () async {
+    final directory = await Directory.systemTemp.createTemp('bge_bound_');
+    addTearDown(() => directory.delete(recursive: true));
+    final db = _TestDb(
+      NativeDatabase.createInBackground(File('${directory.path}/t.db')),
+    );
+    await db.customStatement('CREATE TABLE t (a TEXT)');
+    await db.close();
+
+    final Object error;
+    try {
+      await db.customStatement('DELETE FROM t');
+      fail('a statement on a closed database should have thrown');
+    } on StateError catch (caught) {
+      error = caught;
+    }
+    final text = error.toString();
+
+    expect(text, contains('Tried to send Request'));
+    expect(Redaction.stripBoundValues(text), same(text));
   });
 }
 

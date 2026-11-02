@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:interfaces/orchestration.dart';
 
+import '../debug_report_swallowed.dart';
 import '../dependency_container_impl.dart';
 
 /// The per-user child-scope mechanism (#135), extracted so any composition
@@ -125,14 +125,11 @@ class UserScopeHost {
       try {
         await close();
       } catch (teardownError) {
-        assert(() {
-          debugPrint(
-            '$_label: user-scope reset after a failed session activation '
-            'threw (suppressed in favor of the original installer error): '
-            '$teardownError',
-          );
-          return true;
-        }());
+        debugReportSwallowed(
+          '$_label: user-scope reset after a failed session activation '
+          'threw (suppressed in favor of the original installer error)',
+          teardownError,
+        );
       }
       rethrow;
     }

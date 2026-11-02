@@ -19,8 +19,9 @@
 /// server that is no longer registered has no marker to read, so a removed
 /// server reads as not revoked.
 ///
-/// Removing a row leaves the keychain alone. Today only the rollback of a failed
-/// onboarding removes one, but a user-facing way to remove a server has to
+/// Removing a row leaves the keychain alone. Today the rollback of a failed
+/// onboarding removes one, and a device-local reset removes them all and
+/// deletes the payloads itself. A user-facing way to remove a server has to
 /// delete the payload as well, or adding that server again reads a session its
 /// marker had refused.
 abstract class SessionTombstoneStore {
