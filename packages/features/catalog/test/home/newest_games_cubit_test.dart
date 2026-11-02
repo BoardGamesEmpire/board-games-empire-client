@@ -600,11 +600,12 @@ void main() {
     /// A cubit under the test's fake clock. Closing it cancels its timer at
     /// once, and the rest waits on microtasks that only a pump runs, so it is
     /// not awaited.
-    NewestGamesCubit buildFake() {
+    NewestGamesCubit buildFake({Stream<String>? gone}) {
       final cubit = NewestGamesCubit(
         remote: remote,
         cache: cache,
         connectivity: connectivity,
+        gone: gone,
       );
       addTearDown(() => unawaited(cubit.close()));
       return cubit;
@@ -617,9 +618,12 @@ void main() {
     }
 
     /// A cubit that has failed, with nothing saved to show instead.
-    Future<NewestGamesCubit> failed(WidgetTester tester) async {
+    Future<NewestGamesCubit> failed(
+      WidgetTester tester, {
+      Stream<String>? gone,
+    }) async {
       remote.onFetchPage = (_, _) async => throw unreachable();
-      final cubit = buildFake();
+      final cubit = buildFake(gone: gone);
       cubit.load();
       await tester.pump();
       expect(cubit.state, const NewestGamesFailed());
@@ -686,6 +690,42 @@ void main() {
       expect(states, [
         const NewestGamesFailed(retrying: true),
         NewestGamesReady(games: _newest(2)),
+      ]);
+    });
+
+    testWidgets('a game found gone while an answer waits is not shown', (
+      tester,
+    ) async {
+      final gone = goneStream();
+      final cubit = await failed(tester, gone: gone.stream);
+      final states = recordFake(cubit);
+      remote.onFetchPage = (_, _) async => pageOf(_newest(2));
+
+      cubit.retry();
+      await tester.pump(const Duration(milliseconds: 100));
+      gone.add('g-0');
+      await tester.pump(dwell);
+      expect(states, [
+        const NewestGamesFailed(retrying: true),
+        NewestGamesReady(games: [_newest(2)[1]]),
+      ]);
+    });
+
+    testWidgets('every game found gone while an answer waits is Failed', (
+      tester,
+    ) async {
+      final gone = goneStream();
+      final cubit = await failed(tester, gone: gone.stream);
+      final states = recordFake(cubit);
+      remote.onFetchPage = (_, _) async => pageOf(_newest(1));
+
+      cubit.retry();
+      await tester.pump(const Duration(milliseconds: 100));
+      gone.add('g-0');
+      await tester.pump(dwell);
+      expect(states, [
+        const NewestGamesFailed(retrying: true),
+        const NewestGamesFailed(),
       ]);
     });
 

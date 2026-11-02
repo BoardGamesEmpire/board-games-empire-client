@@ -76,6 +76,10 @@ class GameBrowseScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider<GameBrowseBloc>(
+    // go_router keys a page on its path, so going to another `?sort=` builds
+    // this screen again in place, and a new sort needs a new bloc. A menu
+    // choice survives any other rebuild.
+    key: ValueKey<GameSort>(initialSort),
     create: (_) => GameBrowseBloc(
       remote: remote,
       cache: cache,

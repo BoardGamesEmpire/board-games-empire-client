@@ -566,6 +566,57 @@ void main() {
         expect(ids(made), ['p-1']);
       });
 
+      group('a failure the server would only repeat keeps the rows too', () {
+        for (final (key, error) in [
+          (
+            'a refused random read',
+            const GamesForbiddenException('Random games returned 403'),
+          ),
+          (
+            'an unreadable random answer',
+            const GamesRemotePermanentException(
+              'Failed to parse the Random games response',
+            ),
+          ),
+        ]) {
+          test(key, () async {
+            pool.onSample = (_) async => poolOf(const []);
+            remote.onFetchRandom = randomGames;
+            final made = await drawn();
+            expect(ids(made), ['r-1']);
+            final seen = watch(made);
+
+            remote.onFetchRandom = (_) async => throw error;
+            made.reshuffle();
+            await pumpEventQueue();
+
+            expect(ids(made), ['r-1']);
+            expect(seen, isEmpty);
+
+            // Still not worth asking again on a reconnect.
+            connectivity.change(ConnectivityState.offline);
+            await pumpEventQueue();
+            connectivity.change(ConnectivityState.online);
+            await pumpEventQueue();
+            expect(remote.calls, hasLength(2));
+          });
+        }
+
+        test('a refused pool read and an empty random answer', () async {
+          final made = await showingPool();
+          pool.onSample = (_) async =>
+              throw const HouseholdRemotePermanentException(
+                'Household game pool sample returned 403',
+              );
+          remote.onFetchRandom = (_) async => const [];
+
+          made.reshuffle();
+          await pumpEventQueue();
+
+          expect(ids(made), ['p-1']);
+        });
+      });
+
       test('the next reconnect draws again', () async {
         final made = await showingPool();
         connectivity.change(ConnectivityState.offline);

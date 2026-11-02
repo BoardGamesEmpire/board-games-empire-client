@@ -54,11 +54,12 @@ final class SomethingToPlayReady extends SomethingToPlayState {
 ///
 /// A failed pool read leaves the caller's own games, with no error. With
 /// nothing to show and the server's random read failed too, the row is
-/// [SomethingToPlayNothing], unless it has rows up. A draw that couldn't ask
-/// says nothing about those, so they stay, unchanged and unannounced, and
-/// reconnecting tries again. A flaky link doesn't take the section away, and an
-/// offline press doesn't take away the button it was made on. Only a complete
-/// answer with no games in it replaces rows with nothing.
+/// [SomethingToPlayNothing], unless it has rows up. A draw that couldn't ask,
+/// or was refused or sent something unreadable, says nothing about those, so
+/// they stay, unchanged and unannounced, and reconnecting tries again where
+/// that could help. A flaky link doesn't take the section away, and an offline
+/// press doesn't take away the button it was made on. Only an answer from every
+/// source, with no games in it, replaces rows with nothing.
 ///
 /// The first draw waits for the collection's first answer, so that a user with
 /// games in the cache doesn't see the server's random ones flash up first. A
@@ -216,14 +217,17 @@ class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
     // stood when the read began.
     final merged = _rows([...?pool.sample?.games, ..._own])..shuffle(_random);
     _nothingOfTheirs = merged.isEmpty;
-    if (merged.isNotEmpty) return _land(merged, incomplete: pool.incomplete);
-    if (offline) return _land(const [], incomplete: true);
+    if (merged.isNotEmpty) {
+      return _land(merged, incomplete: pool.incomplete, answered: true);
+    }
+    if (offline) return _land(const [], incomplete: true, answered: false);
 
     final random = await _readRandom();
     if (!_wanted(generation)) return;
     _land(
       _rows(random.games ?? const []),
       incomplete: pool.incomplete || random.incomplete,
+      answered: (_pool == null || pool.sample != null) && random.games != null,
     );
   }
 
@@ -282,10 +286,19 @@ class SomethingToPlayCubit extends Cubit<SomethingToPlayState> {
     _ => true,
   };
 
-  void _land(List<GameSummary> games, {required bool incomplete}) {
+  /// Shows [games] as the draw's answer. [incomplete] is whether reconnecting
+  /// could improve on it. [answered] is whether every source asked gave an
+  /// answer: a read refused, rejected or unreadable says no more about what
+  /// there is to play than one lost in transit, so it takes no rows down,
+  /// though asking again would only repeat it.
+  void _land(
+    List<GameSummary> games, {
+    required bool incomplete,
+    required bool answered,
+  }) {
     _reading = false;
     _incomplete = incomplete;
-    if (games.isEmpty && incomplete && state is SomethingToPlayReady) return;
+    if (games.isEmpty && !answered && state is SomethingToPlayReady) return;
     emit(
       games.isEmpty
           ? const SomethingToPlayNothing()

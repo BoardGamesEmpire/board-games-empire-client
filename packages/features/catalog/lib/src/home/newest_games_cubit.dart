@@ -290,14 +290,20 @@ class NewestGamesCubit extends Cubit<NewestGamesState> {
   /// Shows [next], if the read begun as [generation] is still the one wanted.
   ///
   /// While [retry]'s state is up, whichever read answers waits for its dwell
-  /// first, and is then judged again: a newer read may have taken its place.
+  /// first, and is then judged again: a newer read may have taken its place,
+  /// and a game may have been found gone. [_onGone] takes nothing down while
+  /// the failure is up, so the waiting games are filtered again here.
   Future<void> _show(int generation, NewestGamesState next) async {
     if (!_wanted(generation)) return;
+    var shown = next;
     if (state case NewestGamesFailed(retrying: true)) {
       await _dwell.future;
       if (!_wanted(generation)) return;
+      if (next case NewestGamesReady(:final games, :final fromCache)) {
+        shown = _rows(games, fromCache: fromCache);
+      }
     }
-    emit(next);
+    emit(shown);
   }
 
   /// Whether the read begun as [generation] is the latest, on a cubit that is

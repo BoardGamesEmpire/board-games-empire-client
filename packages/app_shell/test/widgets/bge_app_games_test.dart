@@ -258,6 +258,28 @@ void main() {
     expect(games.sorts, [GameSort.newest]);
   });
 
+  testWidgets('going to another sort of the catalog reads it in that sort', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    final router =
+        tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+            as GoRouter;
+    router.go(AppRoutes.games);
+    await tester.pumpAndSettle();
+    games.sorts.clear();
+
+    // As an edited address bar does: the path is the same, so go_router keeps
+    // the page and builds the screen again in place.
+    router.go(AppRoutes.gamesSorted(GameSort.newest));
+    await tester.pumpAndSettle();
+    expect(games.sorts, [GameSort.newest]);
+
+    router.go(AppRoutes.games);
+    await tester.pumpAndSettle();
+    expect(games.sorts, [GameSort.newest, GameSort.title]);
+  });
+
   testWidgets('a game found gone is gone from the list the user returns to', (
     tester,
   ) async {
