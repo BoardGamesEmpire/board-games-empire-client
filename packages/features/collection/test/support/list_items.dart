@@ -1,9 +1,11 @@
 import 'package:models/domain.dart';
 
 /// One collection row, with whatever a test needs set and the rest at their
-/// defaults.
+/// defaults. [gameId] defaults to a game of its own; name one to give a second
+/// entry of the same game, as another medium is.
 GameCollectionListItem listItem(
   String id, {
+  String? gameId,
   String title = 'Catan',
   String? subtitle,
   String platformName = 'Board game',
@@ -26,7 +28,7 @@ GameCollectionListItem listItem(
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   ),
-  gameId: 'g-$id',
+  gameId: gameId ?? 'g-$id',
   title: title,
   subtitle: subtitle,
   platformName: platformName,
