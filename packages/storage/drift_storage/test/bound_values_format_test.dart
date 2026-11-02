@@ -77,6 +77,26 @@ void main() {
     expect(stripped, contains('the connection was closed!'));
   });
 
+  test('values starting with a closing bracket, sent after a background '
+      'isolate database closed, are removed', () async {
+    final directory = await Directory.systemTemp.createTemp('bge_bound_');
+    addTearDown(() => directory.delete(recursive: true));
+    final db = _TestDb(
+      NativeDatabase.createInBackground(File('${directory.path}/t.db')),
+    );
+    await db.customStatement('CREATE TABLE t (a TEXT, b TEXT)');
+    await db.close();
+
+    final error = await _failAfterClose(db, first: ']$_secret');
+    final text = error.toString();
+
+    // Drift writes strings unquoted, so this reads as ` with []bound-secret`.
+    expect(text, contains(' with []$_secret'));
+    final stripped = Redaction.stripBoundValues(text);
+    expect(stripped, isNot(contains(_secret)));
+    expect(stripped, contains('the connection was closed!'));
+  });
+
   test('a statement that bound nothing, sent after a background isolate '
       'database closed, is left alone', () async {
     final directory = await Directory.systemTemp.createTemp('bge_bound_');
@@ -101,12 +121,11 @@ void main() {
   });
 }
 
-/// Runs an insert binding [_secret] on a closed [db], and returns what it
-/// threw.
-Future<Object> _failAfterClose(_TestDb db) async {
+/// Runs an insert binding [first] on a closed [db], and returns what it threw.
+Future<Object> _failAfterClose(_TestDb db, {String first = _secret}) async {
   try {
     await db.customStatement('INSERT INTO t (a, b) VALUES (?, ?)', [
-      _secret,
+      first,
       'other',
     ]);
   } on Object catch (error) {

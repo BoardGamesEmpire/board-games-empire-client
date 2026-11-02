@@ -79,8 +79,9 @@ import 'package:observability/observability.dart';
 /// A failed read is tried again on later reads, up to [_maxMarkerReads], so a
 /// briefly busy database doesn't let a refused session through for the whole
 /// process, and one that stays wedged doesn't slow every request. Once a
-/// [store] has started there is nothing left to check: the session it writes
-/// is the one this process keeps.
+/// [store] has written there is nothing left to check: that session is the one
+/// this process keeps. While one is writing the check waits, and if every write
+/// fails nothing was superseded, so later reads check again.
 ///
 /// The remaining cases leave the payload on disk with nothing to refuse it,
 /// so a fresh [TokenStorageService] reads it again: both stores failing, a
@@ -147,6 +148,14 @@ class TokenStorageService {
   /// How many marker reads have failed in this process.
   int _markerReadFailures = 0;
 
+  /// What [store] puts in [_tombstoneCheck] after a failed marker read, so no
+  /// retried read runs during its write. Null once a write behind it has landed,
+  /// which makes it permanent, or once they have all failed, which removes it.
+  Future<void>? _writeHold;
+
+  /// How many writes are behind [_writeHold].
+  int _heldWrites = 0;
+
   /// Counts the [clear]s started. Lets an operation that was suspended tell
   /// that one landed meanwhile; see [store] and [_removeMarker].
   int _clearGeneration = 0;
@@ -196,9 +205,11 @@ class TokenStorageService {
     // delete may already have run, so this write would bring the session back.
     // Dropping it leaves what writing first and deleting after would have left.
     if (generation != _clearGeneration) return;
-    // This session supersedes whatever a marker refused. A marker read retried
-    // from here on could only delete it.
-    _tombstoneCheck ??= Future<void>.value();
+    // This session supersedes whatever a marker refused, so a marker read
+    // retried during the write could only delete it.
+    _tombstoneCheck ??= _writeHold = Future<void>.value();
+    final held = identical(_tombstoneCheck, _writeHold);
+    if (held) _heldWrites += 1;
 
     final payload = jsonEncode({
       'v': payloadVersion,
@@ -207,13 +218,32 @@ class TokenStorageService {
       'persisted_at': persistedAt.toUtc().toIso8601String(),
       'user': user?.toJson(),
     });
-    await _storage.write(key: _key, value: payload);
+    try {
+      await _storage.write(key: _key, value: payload);
+    } on Object {
+      if (held) _settleHeldWrite(wrote: false);
+      rethrow;
+    }
+    if (held) _settleHeldWrite(wrote: true);
     // A clear that started during the write is the newer intent, and its
     // delete was issued after this write, so it stays latched.
     if (generation != _clearGeneration) return;
     // Newly stored material supersedes any prior sign-out: lift the latch.
     _clearedThisProcess = false;
     await _removeMarker(generation);
+  }
+
+  /// Makes [_writeHold] permanent when a write landed. When the last write
+  /// behind it failed instead, nothing superseded the payload a marker may
+  /// refuse, so later reads check again. Failed reads stay counted.
+  void _settleHeldWrite({required bool wrote}) {
+    _heldWrites -= 1;
+    if (wrote) {
+      _writeHold = null;
+    } else if (_heldWrites == 0 && _writeHold != null) {
+      _writeHold = null;
+      _tombstoneCheck = null;
+    }
   }
 
   Future<StoredSession?> retrieve() async {

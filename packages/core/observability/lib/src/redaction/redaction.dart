@@ -32,9 +32,17 @@ abstract final class Redaction {
   // `ExecuteQuery.toString()` writes it: `<method>: <sql> with [<values>]`.
   static const String _requestMarker = 'Tried to send Request';
   static const String _valuesMarker = ' with [';
-  static const String _noValues = ' with []';
   static const String _closedConnection =
       ' over isolate channel, but the connection was closed!';
+
+  // A request that bound nothing: an empty list, the transaction id drift adds
+  // inside a transaction, then the fixed reason as the end of the text. Strings
+  // in the list are unquoted, so ` with []` alone can start a value such as
+  // `]x`. A value that repeats the reason still fails this, because the list's
+  // own closing bracket and reason come after it.
+  static final RegExp _unboundRequest = RegExp(
+    ' with \\[\\](?: \\(@\\d+\\))?${RegExp.escape(_closedConnection)}\$',
+  );
 
   /// Partial name redaction.
   ///
@@ -106,14 +114,15 @@ abstract final class Redaction {
   /// For the first shape, returns [text] up to the first `, parameters: `
   /// that follows the `Causing statement` marker, then `, parameters: `
   /// and the replacement. For the second, returns [text] up to the first
-  /// non-empty ` with [` that follows `Tried to send Request`, then ` with `
-  /// and the replacement, then drift's fixed reason for the failure when it
-  /// follows. The replacement is [defaultReplacement]. Anything else after the
-  /// cut is dropped, which covers a second error a wrapper appended and keeps
-  /// the failure on the safe side. When both shapes appear, the earlier cut
-  /// wins, so nothing bound survives. Returns [text] itself (same instance)
-  /// when it matches neither shape or the statement bound nothing, which drift
-  /// writes as ` with []`.
+  /// ` with [` that follows `Tried to send Request`, then ` with ` and the
+  /// replacement, then drift's fixed reason for the failure when it follows.
+  /// The replacement is [defaultReplacement]. Anything else after the cut is
+  /// dropped, which covers a second error a wrapper appended and keeps the
+  /// failure on the safe side. When both shapes appear, the earlier cut wins,
+  /// so nothing bound survives. Returns [text] itself (same instance) when it
+  /// matches neither shape or is a request that bound nothing: an empty list
+  /// followed only by drift's reason. An empty list followed by anything else
+  /// can't be told from values that start with `]`, so it is cut too.
   ///
   /// This relies on the formats `sqlite3` and `drift` write today; tests in
   /// `drift_storage` run a real failing statement, and a real statement on a
@@ -143,12 +152,12 @@ abstract final class Redaction {
     return stripped == text ? error : stripped;
   }
 
-  /// The index of the first ` with [` after `Tried to send Request` that holds
-  /// values, or -1.
+  /// The index of the first ` with [` after `Tried to send Request`, or -1
+  /// when there is none or it belongs to a request that bound nothing.
   static int _firstValuesList(String text) {
-    var index = _cutAfter(text, _requestMarker, _valuesMarker);
-    while (index >= 0 && text.startsWith(_noValues, index)) {
-      index = text.indexOf(_valuesMarker, index + 1);
+    final index = _cutAfter(text, _requestMarker, _valuesMarker);
+    if (index < 0 || _unboundRequest.matchAsPrefix(text, index) != null) {
+      return -1;
     }
     return index;
   }

@@ -145,6 +145,41 @@ void main() {
       expect(out, isNot(contains('Kitchen Table')));
     });
 
+    test('removes values whose first one starts with a closing bracket', () {
+      const bracketed =
+          'Bad state: Tried to send Request (id = 6): '
+          'StatementMethod.insert: INSERT INTO t (a, b) VALUES (?, ?) with '
+          '[]Kitchen Table, user-42] over isolate channel, but the connection '
+          'was closed!';
+      final out = Redaction.stripBoundValues(bracketed);
+      expect(out, isNot(contains('Kitchen Table')));
+      expect(out, isNot(contains('user-42')));
+      expect(out, endsWith('but the connection was closed!'));
+    });
+
+    test(
+      'removes a value written to look like an empty list and its reason',
+      () {
+        const lookalike =
+            'Bad state: Tried to send Request (id = 7): '
+            'StatementMethod.insert: INSERT INTO t (a) VALUES (?) with '
+            '[] over isolate channel, but the connection was closed!, user-42] '
+            'over isolate channel, but the connection was closed!';
+        expect(
+          Redaction.stripBoundValues(lookalike),
+          isNot(contains('user-42')),
+        );
+      },
+    );
+
+    test('leaves a request in a transaction that bound nothing alone', () {
+      const unbound =
+          'Bad state: Tried to send Request (id = 8): '
+          'StatementMethod.custom: SELECT 1 with [] (@2) over isolate channel, '
+          'but the connection was closed!';
+      expect(Redaction.stripBoundValues(unbound), same(unbound));
+    });
+
     test('keeps the reason when a transaction id follows the values', () {
       const inTransaction =
           'Bad state: Tried to send Request (id = 5): '
