@@ -13,19 +13,17 @@ import 'game_detail_state.dart';
 /// ## Online
 ///
 /// The game `GET /games/:id` returns is written to the games cache
-/// ([GameRepository.cacheGame]) before it is shown. A failed write is logged
-/// and otherwise ignored.
+/// ([GameRepository.cacheGame]) before it is shown, and then its platform
+/// games ([GameRepository.cachePlatformGames]), so an add from this screen
+/// finds its row (#45). A failed write is logged and otherwise ignored. A
+/// failed game write skips the platform games, whose rows need the game's.
 ///
 /// Nothing is written once the detail has closed: by then a later visit may
 /// have found the game gone and forgotten it, and this older answer would
-/// make it readable again.
+/// make it readable again. That holds between the two writes as well.
 ///
-/// The platform games are shown but not cached. The server sends none yet
-/// (backend#791), and what that issue asks it to send is a summary: no
-/// timestamps, so no full `PlatformGame` for
-/// [GameRepository.cachePlatformGames] to write. A summary-only row reads as not cached (#406), so writing one
-/// would show nothing more offline. Caching them waits for the shape
-/// backend#791 settles, and for #45, whose add needs the row anyway.
+/// A detail read offline still shows no platform games, because nothing reads
+/// them back here yet.
 ///
 /// ## Unavailable
 ///
@@ -146,14 +144,27 @@ class GameDetailBloc extends Bloc<GameDetailEvent, GameDetailState> {
     }
   }
 
+  /// Caches the game, then its platform games, whose rows need the game's.
   Future<void> _write(GameWithPlatformGames read) async {
     final cache = _cache;
     if (cache == null) return;
     try {
       await cache.cacheGame(read.game);
     } on Object catch (error, stackTrace) {
-      _logger.warn(
+      return _logger.warn(
         'Caching the game failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    // The game's write may have outlived the detail: see "Online".
+    if (isClosed || read.platformGames.isEmpty) return;
+    try {
+      await cache.cachePlatformGames(read.platformGames);
+    } on Object catch (error, stackTrace) {
+      _logger.warn(
+        'Caching the platform games failed',
         error: error,
         stackTrace: stackTrace,
       );
