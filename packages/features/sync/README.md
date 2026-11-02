@@ -87,10 +87,9 @@ An op the server refused, or one that ran out of retries, is **stuck**: no pass
 sends it, and nothing drops it (#190). `SyncRecovery` is the way out:
 
 - **Retry** puts it back as new, with no cooldown, and sends it through the
-  drain on native. On web, until #447, it goes out inline through the sender.
-  A collection op goes through `deliver`, which leaves it queued while an
-  earlier op for its entry goes first; with no drain, nothing sends it once
-  that op is done. A retry the server refuses again says so.
+  session's drain, on native and web alike. The drain holds a collection op
+  behind an earlier op for its entry and sends it once that op is done. A
+  retry the server refuses again says so.
 - **Discard** deletes it and undoes what it did on this device, through the
   repository that owns its rows, then refreshes that cache. The repository
   checks that the op is still stuck in the statement that deletes it, so an op
