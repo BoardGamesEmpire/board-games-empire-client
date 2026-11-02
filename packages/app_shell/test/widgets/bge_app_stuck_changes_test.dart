@@ -65,6 +65,7 @@ void main() {
   late _MockQueue queue;
   late _MockGameCollectionRepository collection;
   late _MockEventRepository events;
+  late _MockHouseholdRepository households;
   late List<SyncQueueEntry> stuck;
 
   setUp(() {
@@ -86,6 +87,10 @@ void main() {
     when(() => collection.discardQueuedOp('q1')).thenAnswer((_) async => true);
 
     events = _MockEventRepository();
+    when(events.watchAttendingEventListItems)
+        .thenAnswer((_) => Stream.value(const []));
+    households = _MockHouseholdRepository();
+    when(households.watchHouseholds).thenAnswer((_) => Stream.value(const []));
   });
 
   Future<void> pumpHome(
@@ -100,7 +105,7 @@ void main() {
           FakeAuthRepository(initialSession: sampleSession()),
           syncQueueRepository: withSession ? queue : null,
           gameCollectionRepository: withSession ? collection : null,
-          householdRepository: withSession ? _MockHouseholdRepository() : null,
+          householdRepository: withSession ? households : null,
           eventRepository: withSession ? events : null,
           gameCollectionRefresher: refresher,
           eventRefresher: eventRefresher,

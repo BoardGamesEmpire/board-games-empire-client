@@ -10,6 +10,7 @@ import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
 import '../screens/event_overview_screen.dart';
+import 'event_loading_indicator.dart';
 import 'event_refresh_banner.dart';
 
 /// What the overview and every group's page show around their rows (#497):
@@ -53,13 +54,7 @@ class EventListStatesSliver extends StatelessWidget {
               hasScrollBody: false,
               child: Center(
                 key: EventOverviewScreen.loadingKey,
-                child: Semantics(
-                  liveRegion: true,
-                  label: l10n.eventsLoading,
-                  child: const ExcludeSemantics(
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
+                child: const EventLoadingIndicator(),
               ),
             ),
             EventOverviewError(:final retrying) => EventMessageSliver(

@@ -207,8 +207,9 @@ class BgeTokens extends ThemeExtension<BgeTokens> {
   /// layout should become a different one: a navigation rail, or a list with
   /// its detail beside it.
   ///
-  /// Nothing reads the breakpoints yet. The first readers are expected to be
-  /// the navigation shell (#414) and the first two-pane layout (#46).
+  /// The home page reads this one, to set its events and stats sections side by
+  /// side (#613). The navigation shell (#414) and the first two-pane layout
+  /// (#46) are expected to follow. Nothing reads [breakpointMedium] yet.
   final double breakpointExpanded;
 
   // ── Motion durations ───────────────────────────────────────────────

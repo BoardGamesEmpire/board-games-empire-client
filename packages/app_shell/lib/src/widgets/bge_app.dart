@@ -731,6 +731,7 @@ class _BgeAppState extends State<BgeApp> {
               onReview: (ctx) => ctx.push(AppRoutes.stuckChanges),
             )
           : null,
+      upcomingEvents: canReadEvents ? _buildUpcomingEvents(container) : null,
       entries: [
         if (canReadCollection)
           HomeMenuEntry(
@@ -815,6 +816,29 @@ class _BgeAppState extends State<BgeApp> {
       valueListenable: access,
       builder: (_, access, _) =>
           home(admin: access.read == DataGatewayRead.granted),
+    );
+  }
+
+  /// Home's upcoming events (#613), for a [container] holding the user-session
+  /// [EventRepository]. Keyed on it, so that another user's session is a new
+  /// section with its own readers.
+  ///
+  /// The remote is optional, as the detail's is: with none, the section shows
+  /// the user's own events and its empty text.
+  Widget _buildUpcomingEvents(DependencyContainer container) {
+    final repository = container.get<EventRepository>();
+    return UpcomingEventsSection(
+      key: ObjectKey(repository),
+      repository: repository,
+      households: () => _eventHouseholds(container),
+      hydration: _eventHydration(container),
+      onRetry: _eventsRetry(container),
+      remote: container.isRegistered<EventRemoteDataSource>()
+          ? container.get<EventRemoteDataSource>()
+          : null,
+      connectivity: _rootConnectivity(),
+      onOpen: _openEvent,
+      onOpenEvents: (ctx) => unawaited(ctx.push<void>(AppRoutes.events)),
     );
   }
 
@@ -1526,8 +1550,8 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// Opens an event's detail (#498), pushed above the list it was opened
-  /// from so that back returns there. One callback for the overview and the
-  /// group pages, which are both lists of the same rows.
+  /// from so that back returns there. One callback for the overview, the
+  /// group pages and home's section (#613), which all list the same rows.
   static void _openEvent(BuildContext context, String eventId) =>
       unawaited(context.push<void>(AppRoutes.eventDetailOf(eventId)));
 

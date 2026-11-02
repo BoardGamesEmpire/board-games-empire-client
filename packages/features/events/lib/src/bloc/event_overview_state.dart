@@ -28,19 +28,25 @@ final class EventOverviewLoading extends EventOverviewState {
 /// be stale. A pass starting does not clear it; one completing does.
 /// [refreshing] says a pass **the user asked for** is running; passes
 /// started by entry, reconnect or resume are not narrated.
+///
+/// [firstFill] says a pass is running and none has ever landed, so what's
+/// missing from [groups] is unknown rather than absent: the list is ordered by
+/// creation, so an upcoming event can be pages behind the rows already here.
 final class EventOverviewReady extends EventOverviewState {
   const EventOverviewReady({
     required this.groups,
     this.refreshFailed = false,
     this.refreshing = false,
+    this.firstFill = false,
   });
 
   final EventGroups groups;
   final bool refreshFailed;
   final bool refreshing;
+  final bool firstFill;
 
   @override
-  List<Object?> get props => [groups, refreshFailed, refreshing];
+  List<Object?> get props => [groups, refreshFailed, refreshing, firstFill];
 }
 
 /// The cache read itself failed, so there is nothing to show.

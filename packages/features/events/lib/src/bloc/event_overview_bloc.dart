@@ -23,7 +23,8 @@ import 'event_overview_state.dart';
 /// | nothing yet | any | loading |
 /// | empty | running, and no pass has ever completed | loading |
 /// | empty | anything else | ready, no rows |
-/// | rows | any | ready: a populated cache is never hidden |
+/// | rows | running, and no pass has ever completed | ready, and a first fill |
+/// | rows | anything else | ready: a populated cache is never hidden |
 /// | error | any | error, until the cache emits rows again |
 /// | ended, nothing read | any | error: nothing answered, and nothing will |
 /// | ended, rows read | any | those rows, frozen |
@@ -109,8 +110,6 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
     on<EventOverviewClockTicked>(_onClockTicked);
     on<EventOverviewRetryRequested>(_onRetryRequested);
 
-    _cache = _watchCache();
-
     _householdUpdates = households?.listen(
       (households) => add(EventOverviewHouseholdsUpdated(households)),
       // The names annotate the rows. Losing them must not lose the rows,
@@ -132,6 +131,10 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
         stackTrace: stackTrace,
       ),
     );
+
+    // After the hydrate, whose replay is then queued first: a cache answering
+    // at once must not read an empty list as settled during the first fill.
+    _cache = _watchCache();
   }
 
   final EventRepository _repository;
@@ -296,11 +299,9 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
 
     // Outranks [_retrying]: a retry over an unconfirmed empty list returns
     // to the spinner rather than annotating an emptiness no pass confirmed.
-    final filling =
-        items.isEmpty &&
-        _hydration.state == HydrationState.running &&
-        !_hydration.everRefreshed;
-    if (filling) return emit(const EventOverviewLoading());
+    final firstFill =
+        _hydration.state == HydrationState.running && !_hydration.everRefreshed;
+    if (items.isEmpty && firstFill) return emit(const EventOverviewLoading());
 
     final now = _now();
     emit(
@@ -308,6 +309,7 @@ class EventOverviewBloc extends Bloc<EventOverviewEvent, EventOverviewState> {
         groups: groupEvents(items, now: now, householdNames: _householdNames),
         refreshFailed: _hydration.lastPassFailed,
         refreshing: _retrying,
+        firstFill: firstFill,
       ),
     );
 

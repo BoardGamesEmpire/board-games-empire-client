@@ -619,6 +619,103 @@ void main() {
     });
   });
 
+  group('browseEvents', () {
+    test('sends GET /api/events/browse with page and limit', () async {
+      final remote = answering(_listBody([]));
+
+      await remote.browseEvents(page: 2, limit: 3);
+
+      expect(adapter.sent.single.method, 'GET');
+      expect(adapter.sent.single.path, '/api/events/browse');
+      expect(adapter.sent.single.query, {'page': 2, 'limit': 3});
+    });
+
+    test('defaults to the first page at the largest size', () async {
+      final remote = answering(_listBody([]));
+
+      await remote.browseEvents();
+
+      expect(adapter.sent.single.query, {'page': 1, 'limit': 100});
+    });
+
+    test('parses rows as the list does', () async {
+      final remote = answering(_listBody([_eventRow()]));
+
+      final snapshot = (await remote.browseEvents()).items.single;
+
+      expect(snapshot.event.title, 'Friday Night Brass');
+      expect(snapshot.occurrences, hasLength(2));
+      expect(snapshot.policy!.gameAdditionMode, GameAdditionMode.requiresVote);
+      expect(snapshot.attendees, isNull);
+    });
+
+    test('reads the pagination envelope under the events key', () async {
+      final remote = answering(
+        _listBody([_eventRow()], total: 7, hasMore: true),
+      );
+
+      final page = await remote.browseEvents(limit: 1);
+
+      expect(page.meta.total, 7);
+      expect(page.meta.hasMore, isTrue);
+    });
+
+    test('refuses paging out of range before sending', () async {
+      final remote = answering(_listBody([]));
+
+      await expectLater(remote.browseEvents(limit: 0), throwsArgumentError);
+      await expectLater(remote.browseEvents(limit: 101), throwsArgumentError);
+      await expectLater(remote.browseEvents(page: 0), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('a 403 from the API is forbidden', () async {
+      final remote = answering(
+        _envelope(403, 'Forbidden', 'You are not allowed to do that.'),
+        status: 403,
+      );
+
+      await expectLater(
+        remote.browseEvents(limit: 1),
+        throwsA(isA<EventRemoteForbiddenException>()),
+      );
+    });
+
+    test('a 404 is transient, even from the API', () async {
+      // As on the list: a server without the route answers with this envelope.
+      final remote = answering(
+        _envelope(404, 'Not Found', 'Cannot GET /api/events/browse'),
+        status: 404,
+      );
+
+      await expectLater(
+        remote.browseEvents(limit: 1),
+        throwsA(
+          isA<EventRemoteTransientException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            404,
+          ),
+        ),
+      );
+    });
+
+    test('a failure names the browse, not the list', () async {
+      final remote = answering('', status: 500);
+
+      await expectLater(
+        remote.browseEvents(limit: 1),
+        throwsA(
+          isA<EventRemoteTransientException>().having(
+            (e) => e.message,
+            'message',
+            contains('Event browse'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('fetchEvent', () {
     test('reads the event with its roster', () async {
       final remote = answering(
