@@ -176,19 +176,21 @@ void main() {
     session = ContainerUserSessionScope(
       host: host,
       // `buildWebUserScopeInstallers()`'s membership, in its order, per the
-      // note at the top of this file. Four of the five are inert against
+      // note at the top of this file. Five of the six are inert against
       // this origin container and are here to keep the assembly honest rather
       // than to be exercised: the re-hydrate seam has nothing registering
-      // with it that this suite drives, and both hydrate installers and the
-      // sync queue sender no-op because no `HouseholdRemoteDataSource` or
-      // `GameCollectionRemoteDataSource` is registered here. Driving the
-      // hydrates for real over this database is #369.
+      // with it that this suite drives, both hydrate installers and the sync
+      // queue sender no-op because no `HouseholdRemoteDataSource` or
+      // `GameCollectionRemoteDataSource` is registered here, and the drain
+      // no-ops because no sender is. Driving the hydrates for real over this
+      // database is #369.
       installers: const [
         SessionRehydratorInstaller(),
         UserSessionScopeInstaller(),
         HouseholdHydrateInstaller(),
         GameCollectionHydrateInstaller(),
         SyncSenderInstaller(),
+        SyncQueueDrainInstaller(),
       ],
       server: _server,
     );

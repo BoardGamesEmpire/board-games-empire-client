@@ -68,7 +68,7 @@ import '../repositories/unsent_changes_notice_repository_impl.dart';
 ///
 /// Web registers no [UnsentChangesNoticeRepository]: it never runs a
 /// `ServerScopeInstaller`, and has nothing to count until it restores
-/// sessions offline (#144) and drains its queue (#447).
+/// sessions offline (#144).
 ///
 /// ## Keying
 ///

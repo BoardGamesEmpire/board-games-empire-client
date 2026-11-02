@@ -972,9 +972,9 @@ class _BgeAppState extends State<BgeApp> {
   /// any work lives in the registry's `isStale` (#300 D8) rather than being
   /// re-answered here.
   ///
-  /// On native the rehydrator also holds the sync-queue drain (#121), so
-  /// entering the household list drives that too, when it has something to
-  /// send. That is a trigger behaving like a trigger; the button
+  /// On both platforms the rehydrator also holds the sync-queue drain (#121,
+  /// #447), so entering the household list drives that too, when it has
+  /// something to send. That is a trigger behaving like a trigger; the button
   /// deliberately does not (#300).
   VoidCallback? _householdEntryRefresh(DependencyContainer container) {
     if (!container.isRegistered<SessionRehydrator>()) return null;

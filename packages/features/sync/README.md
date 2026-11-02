@@ -15,10 +15,9 @@ One rule for every write (#45):
   once with `sendNow` (`SendQueuedOpNow` in `package:interfaces/sync.dart`).
   The repository that queues it returns the queue entry's id and the op; the
   caller sends them. Nothing is queued and left for the drain to find: nothing
-  wakes the drain on an enqueue, and web has no drain yet (#447). There is no
-  connectivity check first. A send that can't reach the server leaves the op
-  queued, and the drain retries it. The household create, the event create and
-  the collection add work this way.
+  wakes the drain on an enqueue. There is no connectivity check first. A send
+  that can't reach the server leaves the op queued, and the drain retries it.
+  The household create, the event create and the collection add work this way.
 - **A change whose outcome is the server's to decide, or that reaches other
   people**, goes to the server directly and is never queued: invites, a
   member's approval, an RSVP or poll vote, admin settings, a game import. It
@@ -80,8 +79,7 @@ enqueue.
 
 A drain's first pass, and then at most one pass an hour, also deletes completed
 entries older than a day. They are kept that long so a late acknowledgement of
-an op delivered twice still finds its place. Web has no drain until #447, so
-nothing deletes them there yet.
+an op delivered twice still finds its place.
 
 ## Stuck ops
 
@@ -108,8 +106,14 @@ home screen while anything is stuck.
 
 - `SyncSenderInstaller` registers the sender. Both platforms run it, after
   `UserSessionScopeInstaller`.
-- `SyncQueueDrainInstaller` starts the drain. Native only for now; the web
-  drain needs a Web Lock and a check of whose session is sending, which is
-  #447.
+- `SyncQueueDrainInstaller` starts the drain. Both platforms run it, after
+  the sender. On web each pass runs under a Web Lock named for the server and
+  the user (`bge.sync_drain.<serverId>.<userId>`), so one tab at a time drains
+  each server database and user. On `unsafeIndexedDb` another tab's inline
+  send can still deliver an op twice; the creates carry `clientRequestId` and
+  a collection add is an idempotent upsert. A browser without Web Locks (a
+  plain-http origin) drains without the lock and logs one warning, and a
+  pass whose lock request fails before it is granted runs without it and
+  warns (#447).
 
 The class docs carry the rest.

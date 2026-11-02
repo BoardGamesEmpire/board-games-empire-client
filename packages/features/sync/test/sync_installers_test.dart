@@ -47,8 +47,8 @@ class _FakeLock implements CrossTabLock {
 
 const _server = ScopedServer(serverId: 'server-1', displayName: 'My Server');
 
-/// What the two installers wire into a user session (#121): the sender on
-/// every platform, and on native the drain that runs it.
+/// What the two installers wire into a user session (#121): the sender, and
+/// the drain that runs it, on every platform.
 void main() {
   late Harness h;
   late DependencyContainerImpl container;

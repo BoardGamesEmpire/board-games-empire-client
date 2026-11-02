@@ -220,11 +220,12 @@ offers it, unless the user has picked a household or submitted first.
 It then sends that queued create once, straight away, through the session's
 `SyncOperationSender`, the delivery path the queue drain takes too. A create
 the server took, or one that stays queued for the drain to send, takes the
-user to the event. On web no drain runs yet (#447), so a create whose first
-send fails stays queued there. One the server refuses keeps the user on the
-form under a banner, which names the invitee or the household when it can. A
-403 for a create in a household also reads the user's households again, since
-their role there may have changed elsewhere. The refused create stays parked:
+user to the event. A create whose first send fails is sent later by the
+drain, on web too, where each pass runs under a Web Lock so that one tab at a
+time drains (#447). One the server refuses keeps the user on the form under
+a banner, which names the invitee or the household when it can. A 403 for a
+create in a household also reads the user's households again, since their
+role there may have changed elsewhere. The refused create stays parked:
 the next submit discards it and creates afresh, unless another tab has
 retried it since, whose event then stands and is the one the user is taken
 to. One the user leaves behind waits on the sync queue's own surface (#190).

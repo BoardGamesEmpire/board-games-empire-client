@@ -48,9 +48,9 @@ abstract class SyncQueueRepository {
   /// drain needs to see to hold an op back behind an add no pass will send.
   /// Unlike [getAllEntries] it leaves out completed history, which a drain
   /// keeps for about a day before it calls [purgeCompleted], so a drain that
-  /// reads this on every pass reads only the work still open. Where no drain
-  /// runs, which is web until #447, nothing purges it. A row whose status this build doesn't know is
-  /// passed over, as [getPendingEntries] passes over it.
+  /// reads this on every pass reads only the work still open. A row whose
+  /// status this build doesn't know is passed over, as [getPendingEntries]
+  /// passes over it.
   Future<List<SyncQueueEntry>> getOutstandingEntries();
 
   /// Takes [id] for sending: marks it [SyncStatus.inProgress], stamps the
@@ -78,7 +78,8 @@ abstract class SyncQueueRepository {
   /// held. The check and the take run in one transaction, so it is atomic
   /// wherever a transaction is: native, and web's three durable storage
   /// modes (#430). It is not across tabs on `unsafeIndexedDb`, which
-  /// serialises nothing (#447).
+  /// serialises nothing; the drain's Web Lock keeps other tabs' drains out,
+  /// but not their inline sends (#447).
   ///
   /// The lease is judged by the device's own clock, not the
   /// server-corrected one: the senders sharing the queue share the device,

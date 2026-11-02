@@ -22,8 +22,8 @@ dependencies:
     path: ../../features/collection
   events:
     path: ../../features/events
-  # The sync queue's sender and drain (#121). Native composes both; web
-  # composes the sender alone until #447.
+  # The sync queue's sender and drain (#121). Both platforms compose both;
+  # web runs each drain pass under a Web Lock (#447), native under none.
   sync_queue:
     path: ../../features/sync
   interfaces:

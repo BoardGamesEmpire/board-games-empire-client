@@ -197,8 +197,8 @@ void registerServerNetworkWeb({
   // stateless; the container owns the Dio.
   //
   // The collection hydrate reads through it on both platforms (#259), and
-  // the sync queue's sender writes through it (#121). Only native runs a
-  // drain over that sender so far; the web drain is #447.
+  // the sync queue's sender writes through it (#121), and the drain over
+  // that sender on both platforms (#447).
   container.registerSingleton<GameCollectionRemoteDataSource>(
     GameCollectionRemoteDataSourceImpl(dio),
   );

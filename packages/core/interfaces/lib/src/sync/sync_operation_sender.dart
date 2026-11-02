@@ -82,13 +82,12 @@ abstract interface class SyncOperationSender {
 /// repository that queues it hands back the queue entry's id and the op,
 /// and the caller sends them. A write is never queued and left for a drain
 /// to find: nothing wakes the drain on an enqueue, so the change would wait
-/// for the next connectivity edge or resume, and on web, which has no drain
-/// yet (#447), for ever.
+/// for the next connectivity edge or resume.
 ///
 /// No connectivity check comes first. The send's answer is the real one: a
 /// send that can't reach the server leaves the op queued, and the drain
 /// retries it. So "send now if online, else queue" needs nothing more, and
-/// nothing changes here when web gains a drain.
+/// nothing changes with the platform.
 ///
 /// A change whose outcome is the server's to decide, or that reaches other
 /// people, goes to the server directly instead and is never queued: an
