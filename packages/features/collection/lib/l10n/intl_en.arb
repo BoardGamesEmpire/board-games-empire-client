@@ -56,11 +56,11 @@
   },
   "collectionListMediumPhysical": "Physical",
   "@collectionListMediumPhysical": {
-    "description": "On a collection row: the user owns a physical copy of the game, such as a boxed board game or a game disc."
+    "description": "A physical copy of a game, such as a boxed board game or a game disc. Shown on a collection row for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
   },
   "collectionListMediumDigital": "Digital",
   "@collectionListMediumDigital": {
-    "description": "On a collection row: the user owns a digital copy of the game, such as a download or an app."
+    "description": "A digital copy of a game, such as a download or an app. Shown on a collection row for a copy the user owns, and as a choice in the add sheet's physical-or-digital field."
   },
   "collectionListQuantity": "{count, plural, =1{1 copy} other{{count} copies}}",
   "@collectionListQuantity": {
@@ -130,5 +130,162 @@
   "collectionStatsCreateOrJoin": "Create or join a household",
   "@collectionStatsCreateOrJoin": {
     "description": "A link on the home page's stats card, shown to a user who is in no household. It opens the households screen, where they can start one."
+  },
+  "addToCollectionTitle": "Add {title} ({platform})",
+  "@addToCollectionTitle": {
+    "description": "Heading of the sheet that adds a game to the user's collection, naming the game and the platform it is added on, for example \"Add Wingspan (Switch)\". Read by screen readers as the sheet's heading.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      },
+      "platform": {
+        "type": "String",
+        "example": "Switch"
+      }
+    }
+  },
+  "addToCollectionMediumLabel": "Physical or digital",
+  "@addToCollectionMediumLabel": {
+    "description": "Label of the add sheet's required choice between a physical copy (a boxed game, a disc) and a digital one (a download, an app)."
+  },
+  "addToCollectionMediumHint": "Choose one",
+  "@addToCollectionMediumHint": {
+    "description": "Shown in the add sheet's physical-or-digital field until the user picks one."
+  },
+  "addToCollectionMediumRequired": "Choose physical or digital.",
+  "@addToCollectionMediumRequired": {
+    "description": "Error under the add sheet's physical-or-digital field when the user submits without picking one."
+  },
+  "addToCollectionQuantityLabel": "Copies",
+  "@addToCollectionQuantityLabel": {
+    "description": "Label of the add sheet's field for how many copies the user is adding. Starts at 1."
+  },
+  "addToCollectionQuantityInvalid": "Enter a whole number, 1 or more.",
+  "@addToCollectionQuantityInvalid": {
+    "description": "Error under the add sheet's copies field when what was typed is not a whole number of at least 1: empty, zero, negative, a fraction or not a number."
+  },
+  "addToCollectionQuantityTooMany": "That's more copies than can be stored.",
+  "@addToCollectionQuantityTooMany": {
+    "description": "Error under the add sheet's copies field when the copies being added, together with any already in the collection, are more than the server can store (over 2,147,483,647). A storage limit, not a rule about how many copies a person may own."
+  },
+  "addToCollectionQuantityDecrease": "One fewer copy",
+  "@addToCollectionQuantityDecrease": {
+    "description": "Screen-reader name and tooltip of the minus button beside the add sheet's copies field. It lowers the copies by one, not below 1."
+  },
+  "addToCollectionQuantityIncrease": "One more copy",
+  "@addToCollectionQuantityIncrease": {
+    "description": "Screen-reader name and tooltip of the plus button beside the add sheet's copies field. It raises the copies by one."
+  },
+  "addToCollectionQuantityStepped": "{count, plural, =1{1 copy} other{{count} copies}}",
+  "@addToCollectionQuantityStepped": {
+    "description": "Announced to a screen reader, not shown, after the user presses the minus or plus button beside the add sheet's copies field: the copies the field now holds.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "addToCollectionRatingLabel": "Your rating (optional)",
+  "@addToCollectionRatingLabel": {
+    "description": "Label of the add sheet's optional rating, a whole number from 1 to 10."
+  },
+  "addToCollectionRatingNone": "No rating",
+  "@addToCollectionRatingNone": {
+    "description": "The add sheet's rating choice that leaves the game unrated. The default."
+  },
+  "addToCollectionRatingValue": "{rating} out of 10",
+  "@addToCollectionRatingValue": {
+    "description": "One of the add sheet's rating choices, for example \"7 out of 10\".",
+    "placeholders": {
+      "rating": {
+        "type": "int",
+        "example": "7"
+      }
+    }
+  },
+  "addToCollectionCommentLabel": "Comment (optional)",
+  "@addToCollectionCommentLabel": {
+    "description": "Label of the add sheet's optional free-text comment about the game."
+  },
+  "addToCollectionHavePhysical": "{count, plural, =1{You have 1 physical copy.} other{You have {count} physical copies.}}",
+  "@addToCollectionHavePhysical": {
+    "description": "On the add sheet, once the user picks Physical: how many physical copies of this game on this platform are already in their collection. Adding more raises that number.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "addToCollectionHaveDigital": "{count, plural, =1{You have 1 digital copy.} other{You have {count} digital copies.}}",
+  "@addToCollectionHaveDigital": {
+    "description": "On the add sheet, once the user picks Digital: how many digital copies of this game on this platform are already in their collection. Adding more raises that number.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "addToCollectionMakes": "Adding {adding} makes {total}.",
+  "@addToCollectionMakes": {
+    "description": "Follows the you-have sentence on the add sheet: the copies being added and the total they make with those already there, for example \"Adding 1 makes 3.\"",
+    "placeholders": {
+      "adding": {
+        "type": "int",
+        "example": "1"
+      },
+      "total": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "addToCollectionSubmit": "Add to collection",
+  "@addToCollectionSubmit": {
+    "description": "The add sheet's submit button."
+  },
+  "addToCollectionInProgress": "Adding…",
+  "@addToCollectionInProgress": {
+    "description": "Replaces the add sheet's submit label while the add is being saved, and is the disabled button's accessible name meanwhile."
+  },
+  "addToCollectionFailedTitle": "Couldn't add the game",
+  "@addToCollectionFailedTitle": {
+    "description": "Heading of the banner above the add sheet's submit button when the add failed. The sheet stays open with what the user entered."
+  },
+  "addToCollectionFailedBody": "Nothing was saved. Try again.",
+  "@addToCollectionFailedBody": {
+    "description": "Body of the banner above the add sheet's submit button when the add failed: nothing reached the collection, and submitting again retries it."
+  },
+  "addToCollectionQueued": "Added {title} to your collection on this device. It hasn't reached the server yet.",
+  "@addToCollectionQueued": {
+    "description": "Shown briefly on the game's screen after the add sheet closes with the game added on this device but not yet confirmed by the server: it couldn't be reached, or an earlier change to the same entry is still waiting. Must not promise when it will reach the server: the native app sends it later on its own, but the web app has nothing that does yet (#447).",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "addToCollectionRefused": "The server didn't accept {title}. It's saved on this device: review it from the home screen to try again or discard it.",
+  "@addToCollectionRefused": {
+    "description": "Shown briefly on the game's screen after the add sheet closes when the server refused the add, so it will not sync on its own (#190). Points the user at the notice on the home screen, which opens the screen where changes that couldn't sync can be retried or discarded. Must not promise that it will sync later.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "addToCollectionAdded": "Added {title} to your collection.",
+  "@addToCollectionAdded": {
+    "description": "Shown briefly on the game's screen after the add sheet closes with the game added and confirmed by the server.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
   }
 }

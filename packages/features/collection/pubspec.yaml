@@ -2,7 +2,7 @@ name: game_collection
 # Not `collection`: that name is dart-lang's `package:collection`, already in
 # the workspace's dependency graph. The directory keeps the feature's name, as
 # `packages/platform/web` does for `web_platform`.
-description: "Game collection feature — the hydrate and the list screen (#44)"
+description: "Game collection feature — the hydrate, the list screen (#44) and the add sheet (#45)"
 publish_to: none
 
 environment:
@@ -29,6 +29,8 @@ dependencies:
 
   flutter_bloc: ^9.1.1
   equatable: ^2.1.0
+  # The add sheet's form (#45), as the other feature packages build theirs.
+  reactive_forms: ^18.1.1
   intl: ^0.20.2
   # Design system (#165). `ui` carries the shared widgets, `ui_tokens` the
   # scale; both declared directly because this package imports from both.
