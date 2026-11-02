@@ -38,6 +38,10 @@ abstract final class EventDateDialogKeys {
   /// The button that closes the dialog and changes nothing: Discard or Keep
   /// date.
   static const Key dismiss = Key('event_date_dialog.dismiss');
+
+  /// Confirm's *Also decline the other proposed dates*, where it is offered
+  /// (#507).
+  static const Key declineOthers = Key('event_date_dialog.decline_others');
 }
 
 /// Asks for a date to add: its label, when it starts and ends, and its
@@ -73,15 +77,24 @@ Future<OccurrenceUpdate?> showEditDateDialog(
 
 /// Asks whether to confirm [dateName]. Confirming is for good: the date can
 /// be cancelled after, but not proposed again.
-Future<bool> showConfirmDateDialog(BuildContext context, String dateName) {
-  final l10n = EventsLocalizations.of(context);
-  return _ask(
-    context,
-    title: l10n.eventsDateConfirmTitle(dateName),
-    body: l10n.eventsDateConfirmBody,
-    action: l10n.eventsDateConfirm,
-  );
-}
+///
+/// Where [offerDeclineOthers], as on a poll with other proposed dates
+/// (#507), it also asks whether to decline those, off by default: a
+/// declined date can't be proposed again either.
+///
+/// Null when kept. [declineOthers] is false unless [offerDeclineOthers] and
+/// checked.
+Future<({bool declineOthers})?> showConfirmDateDialog(
+  BuildContext context,
+  String dateName, {
+  bool offerDeclineOthers = false,
+}) => showDialog<({bool declineOthers})>(
+  context: context,
+  builder: (_) => _ConfirmDialog(
+    dateName: dateName,
+    offerDeclineOthers: offerDeclineOthers,
+  ),
+);
 
 /// Asks whether to decline [dateName], which is for good.
 Future<bool> showDeclineDateDialog(BuildContext context, String dateName) {
@@ -167,6 +180,71 @@ Future<bool> _ask(
 /// An action that can't be undone, in the error colour.
 ButtonStyle _destructive(BuildContext context) =>
     TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error);
+
+/// The confirm dialog, for [showConfirmDateDialog]: [_ask]'s, with the
+/// checkbox where it is offered.
+class _ConfirmDialog extends StatefulWidget {
+  const _ConfirmDialog({
+    required this.dateName,
+    required this.offerDeclineOthers,
+  });
+
+  final String dateName;
+  final bool offerDeclineOthers;
+
+  @override
+  State<_ConfirmDialog> createState() => _ConfirmDialogState();
+}
+
+class _ConfirmDialogState extends State<_ConfirmDialog> {
+  bool _declineOthers = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+
+    return AlertDialog(
+      scrollable: true,
+      title: Text(l10n.eventsDateConfirmTitle(widget.dateName)),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(l10n.eventsDateConfirmBody),
+          if (widget.offerDeclineOthers) ...[
+            const BgeGap.sm(),
+            CheckboxListTile(
+              key: EventDateDialogKeys.declineOthers,
+              value: _declineOthers,
+              onChanged: (value) =>
+                  setState(() => _declineOthers = value ?? false),
+              title: Text(l10n.eventsDateConfirmDeclineOthers),
+              // Why it's off by default, as the single Decline's dialog
+              // says. The tile reads it as part of the one control.
+              subtitle: Text(l10n.eventsDateDeclineBody),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: EventDateDialogKeys.dismiss,
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.eventsDateKeep),
+        ),
+        TextButton(
+          key: EventDateDialogKeys.submit,
+          onPressed: () => Navigator.of(
+            context,
+          ).pop((declineOthers: widget.offerDeclineOthers && _declineOthers)),
+          child: Text(l10n.eventsDateConfirm),
+        ),
+      ],
+    );
+  }
+}
 
 // The add and edit form's controls.
 const _label = 'label', _start = 'start', _end = 'end', _location = 'location';

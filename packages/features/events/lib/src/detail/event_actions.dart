@@ -53,6 +53,9 @@ enum EventAction {
   /// owner or admin who doesn't host asks for a removal instead (#513).
   removeDate,
 
+  /// Answer whether the viewer can make a proposed date (#507).
+  voteAvailability,
+
   /// Answer whether the viewer is coming (#508).
   rsvp,
 
@@ -93,8 +96,7 @@ Set<EventAction> eventActionsFor(
     EventRole.coHost => _coHost,
     EventRole.organizer => _organizer,
     EventRole.moderator => _moderator,
-    EventRole.participant ||
-    EventRole.guest ||
+    EventRole.participant || EventRole.guest => _participantOrGuest,
     EventRole.spectator => _attending,
     EventRole.unknown || null => const <EventAction>{},
   };
@@ -138,6 +140,8 @@ const _host = <EventAction>{
   EventAction.cancelDate,
   // `delete:event_occurrence`
   EventAction.removeDate,
+  // `create:event_availability_vote`
+  EventAction.voteAvailability,
   // `update:event_attendee:status`, bound to the event rather than the
   // actor's own row, so it covers the host's row too. A participant, guest or
   // spectator holds only the `:self` variant.
@@ -170,6 +174,7 @@ const _coHost = <EventAction>{
   EventAction.declineDate,
   EventAction.cancelDate,
   EventAction.removeDate,
+  EventAction.voteAvailability,
   EventAction.rsvp,
   EventAction.manageAttendees,
   EventAction.approveGame,
@@ -186,6 +191,8 @@ const _organizer = <EventAction>{
   EventAction.addDate,
   // `update:event_occurrence`
   EventAction.editDate,
+  // `create:event_availability_vote`
+  EventAction.voteAvailability,
   // `update:event_attendee:status`
   EventAction.rsvp,
   // `create:event_attendee:attending-role` and
@@ -212,8 +219,16 @@ const _moderator = <EventAction>{
   EventAction.resolveNomination,
 };
 
-/// `EventParticipant`, `EventGuest` and `EventSpectator`: they answer for
-/// themselves and nothing else.
+/// `EventParticipant` and `EventGuest`: they answer for themselves, to the
+/// invitation and on the proposed dates, and nothing else.
+const _participantOrGuest = <EventAction>{
+  // `update:event_attendee:status:self`
+  EventAction.rsvp,
+  // `create:event_availability_vote`
+  EventAction.voteAvailability,
+};
+
+/// `EventSpectator`: answers for themselves, but has no vote on a date.
 const _attending = <EventAction>{
   // `update:event_attendee:status:self`
   EventAction.rsvp,
@@ -223,8 +238,9 @@ const _attending = <EventAction>{
 /// slug is the event role's with a `:household` suffix, bound through the
 /// event's household.
 ///
-/// No `rsvp`: answering is for someone on the roster, and an owner who attends
-/// takes it from their event role. No `removeDate`, which has no household
+/// No `rsvp` or `voteAvailability`: answering is for someone on the roster,
+/// and a vote is bound to the voter's own roster row, so an owner who attends
+/// takes both from their event role. No `removeDate`, which has no household
 /// variant (an owner or admin asks for a removal instead, #513). No
 /// `delete`, because an owner or admin deletes only an event they host
 /// (#168). No `cancel` or `archive` either: the household's list holds no

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:models/domain.dart';
+import 'package:ui/ui.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:events/l10n/events_localizations.dart';
 
+import '../bloc/event_poll_state.dart';
 import '../detail/event_actions.dart';
 import '../detail/event_date_actions.dart';
 import '../screens/event_detail_screen.dart';
+import 'event_date_poll.dart';
 import 'event_labels.dart';
 
 /// The top of an event's detail (#498): its title, as the page's heading,
@@ -110,6 +113,9 @@ class EventDetailHeader extends StatelessWidget {
 /// that [actionsFor] gives any action, and *Add a date* under the dates
 /// where there is an [onAdd]. A date with nothing to offer has no menu, not
 /// an empty one.
+///
+/// Where there is a [poll] (#507), each Proposed date shows it under the
+/// date, and what it says of the whole poll sits above the dates.
 class EventDatesSection extends StatelessWidget {
   const EventDatesSection({
     required this.occurrences,
@@ -118,6 +124,7 @@ class EventDatesSection extends StatelessWidget {
     this.actionsFor,
     this.onAdd,
     this.onAction,
+    this.poll,
     this.enabled = true,
     super.key,
   });
@@ -138,8 +145,12 @@ class EventDatesSection extends StatelessWidget {
   /// Opens *Add a date*. Null shows no button.
   final VoidCallback? onAdd;
 
-  /// Runs what was picked from a date's menu. Null shows no menus.
+  /// Runs what was picked from a date's menu, and the poll's *Confirm this
+  /// date*. Null shows no menus.
   final void Function(EventOccurrence occurrence, EventAction action)? onAction;
+
+  /// The availability poll on the Proposed dates (#507). Null shows none.
+  final DatesPollView? poll;
 
   /// Whether the controls may be pressed now. While they may not, they stay
   /// in place, disabled, as Delete does in the app bar's menu.
@@ -150,6 +161,7 @@ class EventDatesSection extends StatelessWidget {
     final l10n = EventsLocalizations.of(context);
     final at = now();
     final onAdd = this.onAdd;
+    final poll = this.poll;
 
     return _Section(
       key: EventDetailScreen.datesKey,
@@ -161,6 +173,7 @@ class EventDatesSection extends StatelessWidget {
                 ? l10n.eventsDateBeingChosen
                 : l10n.eventsNoDateYet,
           ),
+        if (poll != null) _PollStatus(poll: poll),
         for (final occurrence in occurrences) _entryFor(occurrence, at),
         if (onAdd != null)
           Align(
@@ -179,6 +192,7 @@ class EventDatesSection extends StatelessWidget {
   Widget _entryFor(EventOccurrence occurrence, DateTime now) {
     final actions = actionsFor?.call(occurrence, now) ?? const <EventAction>{};
     final onAction = this.onAction;
+    final poll = this.poll;
 
     return _OccurrenceEntry(
       occurrence: occurrence,
@@ -192,6 +206,85 @@ class EventDatesSection extends StatelessWidget {
               enabled: enabled,
               now: now,
             ),
+      poll: poll == null || occurrence.status != OccurrenceStatus.proposed
+          ? null
+          : DatePollBlock(
+              occurrence: occurrence,
+              poll: poll,
+              now: now,
+              enabled: enabled,
+              // As the menu's Confirm does, so through the same dialog.
+              onConfirm:
+                  onAction != null && actions.contains(EventAction.confirmDate)
+                  ? () => onAction(occurrence, EventAction.confirmDate)
+                  : null,
+            ),
+    );
+  }
+}
+
+/// What the poll says above the dates (#507): that the viewer's answers
+/// don't count while they aren't attending, the way to who answered, and a
+/// read the server refused or that failed.
+///
+/// A refused read says so and offers nothing: the same read would be
+/// refused again, and so would the who-answered page's. A failed one keeps
+/// its banner and retry while the next read runs, so a retry that has focus
+/// keeps it ([PollRetryButton]), and the banner, whose copy doesn't change,
+/// isn't announced again when the retry fails too.
+class _PollStatus extends StatelessWidget {
+  const _PollStatus({required this.poll});
+
+  final DatesPollView poll;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = EventsLocalizations.of(context);
+    final hidden = poll.load == EventPollLoad.hidden;
+    // Nowhere to go: the page would say the same. A gone event says nothing
+    // itself, since the event's own read is about to.
+    final whoAnswered = hidden || poll.load == EventPollLoad.gone
+        ? null
+        : poll.onWhoAnswered;
+    final retry = poll.onRetry;
+
+    final children = [
+      // Only to someone with answers to give.
+      if (!poll.counts && poll.canVoteOn != null)
+        _Note(l10n.eventsPollNotCounting),
+      if (whoAnswered != null)
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: EventDetailScreen.whoAnsweredKey,
+            onPressed: whoAnswered,
+            icon: const Icon(Icons.grid_view),
+            label: Text(l10n.eventsPollWhoAnswered),
+          ),
+        ),
+      if (hidden) _Note(l10n.eventsPollHidden),
+      if (poll.failed)
+        BgeInlineBanner(
+          tone: BgeBannerTone.warning,
+          message: l10n.eventsPollLoadFailed,
+          // It says so when it appears, but the dates under it still show,
+          // and the page stays where the user has it.
+          reveal: false,
+          action: retry == null
+              ? null
+              : PollRetryButton(
+                  key: EventDetailScreen.pollRetryKey,
+                  busy: poll.retrying,
+                  onRetry: retry,
+                ),
+        ),
+    ];
+    if (children.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: BgeTokens.of(context).spaceXs,
+      children: children,
     );
   }
 }
@@ -266,12 +359,14 @@ class _DateMenu extends StatelessWidget {
 ///
 /// Its menu, where it has one, sits beside that node and outside it, so a
 /// screen reader reaches it as a control of its own rather than as part of
-/// the date's label, as a household member's does (#480).
+/// the date's label, as a household member's does (#480). Its poll (#507)
+/// sits under both, outside the node too, for the same reason.
 class _OccurrenceEntry extends StatelessWidget {
   const _OccurrenceEntry({
     required this.occurrence,
     required this.now,
     this.menu,
+    this.poll,
   });
 
   final EventOccurrence occurrence;
@@ -279,6 +374,9 @@ class _OccurrenceEntry extends StatelessWidget {
 
   /// The date's menu, or null for none.
   final Widget? menu;
+
+  /// The poll on the date, or null for none.
+  final Widget? poll;
 
   @override
   Widget build(BuildContext context) {
@@ -296,6 +394,7 @@ class _OccurrenceEntry extends StatelessWidget {
     final location = _present(occurrence.location);
     final quiet = _quiet(theme);
     final menu = this.menu;
+    final poll = this.poll;
 
     final entry = _Entry(
       children: [
@@ -316,13 +415,19 @@ class _OccurrenceEntry extends StatelessWidget {
       ],
     );
 
-    if (menu == null) return entry;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: entry),
-        menu,
-      ],
+    final row = menu == null
+        ? entry
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: entry),
+              menu,
+            ],
+          );
+    if (poll == null) return row;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [row, poll],
     );
   }
 

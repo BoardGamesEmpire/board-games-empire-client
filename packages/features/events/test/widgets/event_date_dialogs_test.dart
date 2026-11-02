@@ -24,7 +24,8 @@ class _Popped<T> {
 }
 
 /// The date dialogs (#506): add and edit, and what each hands back; confirm,
-/// decline, cancel and remove; and each one at 320dp and 2.0 text.
+/// with its offer to decline the others (#507), decline, cancel and remove;
+/// and each one at 320dp and 2.0 text.
 void main() {
   // Local, as the pickers give it: Monday 26 October 2026, 6 PM.
   final now = DateTime(2026, 10, 26, 18);
@@ -509,16 +510,112 @@ void main() {
     });
   });
 
-  testWidgets('confirm, decline and remove ask, and answer whether to go '
-      'ahead', (tester) async {
+  group('confirm', () {
+    const body =
+        'A confirmed date can be cancelled, but not set back to proposed.';
+    const declineOthers = 'Also decline the other proposed dates';
+    const declinedForGood = "A declined date can't be proposed again.";
+
+    Future<_Popped<({bool declineOthers})?>> openConfirm(
+      WidgetTester tester, {
+      bool? offerDeclineOthers,
+    }) => open(
+      tester,
+      (context) => offerDeclineOthers == null
+          ? showConfirmDateDialog(context, 'Opening night')
+          : showConfirmDateDialog(
+              context,
+              'Opening night',
+              offerDeclineOthers: offerDeclineOthers,
+            ),
+    );
+
+    Finder checkbox() => find.byKey(EventDateDialogKeys.declineOthers);
+
+    testWidgets('confirm asks, and answers whether to go ahead', (
+      tester,
+    ) async {
+      var popped = await openConfirm(tester);
+      expect(find.text('Confirm Opening night?'), findsOneWidget);
+      expect(find.text(body), findsOneWidget);
+      expect(find.text('Confirm'), findsOneWidget);
+      await submit(tester);
+      expect(popped.value, (declineOthers: false));
+
+      popped = await openConfirm(tester);
+      await tester.tap(find.byKey(EventDateDialogKeys.dismiss));
+      await tester.pumpAndSettle();
+      expect(popped.done, isTrue);
+      expect(popped.value, isNull);
+    });
+
+    testWidgets('confirm offers decline the others only when asked, off by '
+        'default', (tester) async {
+      await openConfirm(tester);
+      expect(checkbox(), findsNothing);
+      expect(find.text(declineOthers), findsNothing);
+
+      await openConfirm(tester, offerDeclineOthers: false);
+      expect(checkbox(), findsNothing);
+
+      await openConfirm(tester, offerDeclineOthers: true);
+      expect(checkbox(), findsOneWidget);
+      expect(find.text(declineOthers), findsOneWidget);
+      expect(find.text(body), findsOneWidget);
+      // Off: a declined date can't be proposed again, as the box says.
+      expect(
+        find.descendant(of: checkbox(), matching: find.text(declinedForGood)),
+        findsOneWidget,
+      );
+      // One control, which says both.
+      expect(
+        tester.getSemantics(checkbox()),
+        isSemantics(
+          label: '$declineOthers\n$declinedForGood',
+          hasCheckedState: true,
+          isChecked: false,
+          hasEnabledState: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+        ),
+      );
+    });
+
+    testWidgets('confirm returns declineOthers when checked, and null when '
+        'kept', (tester) async {
+      var popped = await openConfirm(tester, offerDeclineOthers: true);
+      await tester.tap(checkbox());
+      await tester.pumpAndSettle();
+      expect(tester.getSemantics(checkbox()), isSemantics(isChecked: true));
+      await submit(tester);
+      expect(popped.value, (declineOthers: true));
+
+      // Checked, then unchecked.
+      popped = await openConfirm(tester, offerDeclineOthers: true);
+      await tester.tap(checkbox());
+      await tester.pumpAndSettle();
+      await tester.tap(checkbox());
+      await tester.pumpAndSettle();
+      await submit(tester);
+      expect(popped.value, (declineOthers: false));
+
+      // Kept, checked or not, is null.
+      popped = await openConfirm(tester, offerDeclineOthers: true);
+      await tester.tap(checkbox());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(EventDateDialogKeys.dismiss));
+      await tester.pumpAndSettle();
+      expect(popped.done, isTrue);
+      expect(popped.value, isNull);
+    });
+  });
+
+  testWidgets('decline and remove ask, and answer whether to go ahead', (
+    tester,
+  ) async {
     final dialogs = {
-      'Confirm': (
-        show: showConfirmDateDialog,
-        title: 'Confirm Opening night?',
-        body:
-            'A confirmed date can be cancelled, but not set back to '
-            'proposed.',
-      ),
       'Decline': (
         show: showDeclineDateDialog,
         title: 'Decline Opening night?',
@@ -561,6 +658,8 @@ void main() {
       'add': (context) => showAddDateDialog(context, now: () => now),
       'edit': (context) => showEditDateDialog(context, long, now: () => now),
       'confirm': (context) => showConfirmDateDialog(context, name),
+      'confirm, offering to decline the others': (context) =>
+          showConfirmDateDialog(context, name, offerDeclineOthers: true),
       'decline': (context) => showDeclineDateDialog(context, name),
       'cancel': (context) =>
           showCancelDateDialog(context, name, removing: false),
@@ -589,6 +688,20 @@ void main() {
           final rect = tester.getRect(find.byKey(key));
           expect(window.intersect(rect), rect, reason: '$key');
           expect(find.byKey(key).hitTestable(), findsOneWidget, reason: '$key');
+        }
+        // The checkbox is in the dialog's scroll, and reached by scrolling.
+        // Its box, that is: with the warning under it, the whole tile can
+        // be taller than the screen at this size.
+        final checkbox = find.descendant(
+          of: find.byKey(EventDateDialogKeys.declineOthers),
+          matching: find.byType(Checkbox),
+        );
+        if (checkbox.evaluate().isNotEmpty) {
+          await tester.ensureVisible(checkbox);
+          await tester.pumpAndSettle();
+          final rect = tester.getRect(checkbox);
+          expect(window.intersect(rect), rect);
+          expect(checkbox.hitTestable(), findsOneWidget);
         }
 
         await tester.tap(find.byKey(EventDateDialogKeys.dismiss));

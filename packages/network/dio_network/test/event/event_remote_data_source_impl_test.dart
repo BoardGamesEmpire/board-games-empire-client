@@ -2058,6 +2058,351 @@ void main() {
     });
   });
 
+  group('availability (#507)', () {
+    /// `POST .../availability`'s answer: the bare vote row, with no `eligible`
+    /// mark.
+    String voteBody({String response = 'Maybe'}) => jsonEncode({
+      'message': 'Availability recorded',
+      'vote': {
+        'id': 'v1',
+        'occurrenceId': 'o1',
+        'attendeeId': 'a1',
+        'response': response,
+        'createdAt': '2026-10-05T09:00:00.000Z',
+        'updatedAt': '2026-10-05T09:30:00.000Z',
+      },
+    });
+
+    /// One date of the summary as the backend serializes it: the tallies it
+    /// computed, and the fields the models leave out.
+    Map<String, dynamic> summaryDate({
+      String occurrenceId = 'o1',
+      List<Map<String, dynamic>>? voters,
+    }) => {
+      'occurrenceId': occurrenceId,
+      'label': 'Saturday Evening',
+      'startDate': '2026-11-07T19:00:00.000Z',
+      'endDate': '2026-11-07T23:00:00.000Z',
+      'status': 'Proposed',
+      'available': 2,
+      'maybe': 1,
+      'unavailable': 0,
+      'totalVotes': 3,
+      'pendingVotes': 1,
+      'participationRate': 0.75,
+      'voters':
+          voters ??
+          [
+            {'attendeeId': 'a1', 'response': 'Available', 'eligible': true},
+            {'attendeeId': 'a9', 'response': 'Maybe', 'eligible': false},
+          ],
+    };
+
+    String summaryBody(List<Map<String, dynamic>> dates) => jsonEncode({
+      'summary': {
+        'attendees': {
+          'total': 4,
+          'registered': 4,
+          'guests': 0,
+          'byStatus': {
+            'attending': 3,
+            'invited': 1,
+            'maybe': 0,
+            'notAttending': 0,
+          },
+        },
+        'eligibleVoters': 4,
+        'occurrences': dates,
+      },
+    });
+
+    test('submitAvailability posts the response and reads the vote', () async {
+      final remote = answering(voteBody(), status: 201);
+
+      final vote = await remote.submitAvailability(
+        'e1',
+        'o1',
+        AvailabilityResponse.maybe,
+      );
+
+      expect(adapter.sent.single.method, 'POST');
+      expect(
+        adapter.sent.single.path,
+        '/api/events/e1/occurrences/o1/availability',
+      );
+      expect(adapter.sent.single.body, {'response': 'Maybe'});
+      expect(vote.id, 'v1');
+      expect(vote.occurrenceId, 'o1');
+      expect(vote.attendeeId, 'a1');
+      expect(vote.response, AvailabilityResponse.maybe);
+      expect(vote.createdAt, DateTime.utc(2026, 10, 5, 9));
+      expect(vote.updatedAt, DateTime.utc(2026, 10, 5, 9, 30));
+    });
+
+    test('submitAvailability encodes the ids into the path', () async {
+      final remote = answering(voteBody(), status: 201);
+
+      await remote.submitAvailability(
+        'a/b',
+        'c d',
+        AvailabilityResponse.available,
+      );
+
+      expect(
+        adapter.sent.single.path,
+        '/api/events/a%2Fb/occurrences/c%20d/availability',
+      );
+    });
+
+    test('submitAvailability refuses unknown before sending', () async {
+      final remote = answering(voteBody(), status: 201);
+
+      await expectLater(
+        remote.submitAvailability('e1', 'o1', AvailabilityResponse.unknown),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('submitAvailability refuses an empty id before sending', () async {
+      final remote = answering(voteBody(), status: 201);
+
+      await expectLater(
+        remote.submitAvailability('', 'o1', AvailabilityResponse.maybe),
+        throwsArgumentError,
+      );
+      await expectLater(
+        remote.submitAvailability('e1', '', AvailabilityResponse.maybe),
+        throwsArgumentError,
+      );
+      expect(adapter.sent, isEmpty);
+    });
+
+    test("submitAvailability's enveloped 400 is a conflict", () async {
+      final remote = answering(
+        _envelope(400, 'Bad Request', 'Occurrence is not proposed'),
+        status: 400,
+      );
+
+      await expectLater(
+        remote.submitAvailability('e1', 'o1', AvailabilityResponse.maybe),
+        throwsA(
+          isA<EventWriteConflictException>()
+              .having((e) => e.statusCode, 'statusCode', 400)
+              .having(
+                (e) => e.apiMessage,
+                'apiMessage',
+                'Occurrence is not proposed',
+              ),
+        ),
+      );
+    });
+
+    test("submitAvailability's enveloped 403 is refused and its 404 is not "
+        'found', () async {
+      await expectLater(
+        answering(
+          _envelope(403, 'Forbidden', 'Not on the roster'),
+          status: 403,
+        ).submitAvailability('e1', 'o1', AvailabilityResponse.maybe),
+        throwsA(
+          isA<EventWriteRefusedException>().having(
+            (e) => e.apiMessage,
+            'apiMessage',
+            'Not on the roster',
+          ),
+        ),
+      );
+      await expectLater(
+        answering(
+          _envelope(404, 'Not Found', 'Occurrence not found'),
+          status: 404,
+        ).submitAvailability('e1', 'o1', AvailabilityResponse.maybe),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test('a vote answer with no vote is permanent', () async {
+      for (final body in [
+        jsonEncode({'message': 'Done'}),
+        jsonEncode({'message': 'Done', 'vote': 'nope'}),
+      ]) {
+        await expectLater(
+          answering(
+            body,
+            status: 201,
+          ).submitAvailability('e1', 'o1', AvailabilityResponse.maybe),
+          throwsA(
+            isA<EventRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              201,
+            ),
+          ),
+        );
+      }
+    });
+
+    test(
+      "fetchAvailabilitySummary reads each date's tallies and voters",
+      () async {
+        final remote = answering(summaryBody([summaryDate()]));
+
+        final summary = await remote.fetchAvailabilitySummary('e1');
+
+        expect(adapter.sent.single.method, 'GET');
+        expect(
+          adapter.sent.single.path,
+          '/api/events/e1/occurrences/summary/availability',
+        );
+        final date = summary.of('o1')!;
+        expect(summary.occurrences, [date]);
+        expect(date.occurrenceId, 'o1');
+        expect(date.available, 2);
+        expect(date.maybe, 1);
+        expect(date.unavailable, 0);
+        expect(date.voters, const [
+          AvailabilityVoter(
+            attendeeId: 'a1',
+            response: AvailabilityResponse.available,
+            eligible: true,
+          ),
+          AvailabilityVoter(
+            attendeeId: 'a9',
+            response: AvailabilityResponse.maybe,
+            eligible: false,
+          ),
+        ]);
+        expect(summary.of('o2'), isNull);
+      },
+    );
+
+    test('fetchAvailabilitySummary says whether the roster is visible, by '
+        'whether the server counts anyone', () async {
+      Future<bool> visibleWith(Map<String, dynamic>? attendees) async {
+        final body = jsonDecode(summaryBody([])) as Map<String, dynamic>;
+        (body['summary'] as Map<String, dynamic>)['attendees'] = attendees;
+        final summary = await answering(jsonEncode(body))
+            .fetchAvailabilitySummary('e1');
+        return summary.rosterVisible;
+      }
+
+      expect(await visibleWith({'total': 2}), isTrue);
+      expect(await visibleWith({'total': 0}), isFalse);
+      expect(await visibleWith(null), isTrue);
+    });
+
+    test('fetchAvailabilitySummary keeps the order of the dates', () async {
+      final remote = answering(
+        summaryBody([
+          summaryDate(occurrenceId: 'o2', voters: []),
+          summaryDate(occurrenceId: 'o1', voters: []),
+        ]),
+      );
+
+      final summary = await remote.fetchAvailabilitySummary('e1');
+
+      expect(summary.occurrences.map((date) => date.occurrenceId), [
+        'o2',
+        'o1',
+      ]);
+      expect(summary.of('o1')!.voters, isEmpty);
+    });
+
+    test('fetchAvailabilitySummary maps a 403 to forbidden and a 404 to not '
+        'found', () async {
+      await expectLater(
+        answering(
+          _envelope(403, 'Forbidden', 'Not allowed'),
+          status: 403,
+        ).fetchAvailabilitySummary('e1'),
+        throwsA(isA<EventRemoteForbiddenException>()),
+      );
+      await expectLater(
+        answering(
+          _envelope(404, 'Not Found', 'Event not found'),
+          status: 404,
+        ).fetchAvailabilitySummary('e1'),
+        throwsA(isA<EventRemoteNotFoundException>()),
+      );
+    });
+
+    test(
+      'fetchAvailabilitySummary refuses an empty id before sending',
+      () async {
+        final remote = answering(summaryBody([]));
+
+        await expectLater(
+          remote.fetchAvailabilitySummary(''),
+          throwsArgumentError,
+        );
+        expect(adapter.sent, isEmpty);
+      },
+    );
+
+    test('a voter with an unknown response reads as unknown, not a '
+        'failure', () async {
+      final remote = answering(
+        summaryBody([
+          summaryDate(
+            voters: [
+              {'attendeeId': 'a1', 'response': 'Sometimes', 'eligible': true},
+            ],
+          ),
+        ]),
+      );
+
+      final summary = await remote.fetchAvailabilitySummary('e1');
+
+      expect(
+        summary.of('o1')!.voters.single.response,
+        AvailabilityResponse.unknown,
+      );
+    });
+
+    test('a summary this client cannot read is permanent', () async {
+      for (final body in [
+        jsonEncode({'message': 'Done'}),
+        jsonEncode({'summary': 'nope'}),
+        // No list of dates, as opposed to an empty one.
+        jsonEncode({
+          'summary': {'eligibleVoters': 4},
+        }),
+        // A date with no tallies.
+        summaryBody([
+          {
+            'occurrenceId': 'o1',
+            'voters': [
+              {'attendeeId': 'a1', 'response': 'Available', 'eligible': true},
+            ],
+          },
+        ]),
+        // A date with no list of voters.
+        summaryBody([summaryDate()..remove('voters')]),
+        // A voter with no eligibility mark.
+        summaryBody([
+          summaryDate(
+            voters: [
+              {'attendeeId': 'a1', 'response': 'Available'},
+            ],
+          ),
+        ]),
+      ]) {
+        await expectLater(
+          answering(body).fetchAvailabilitySummary('e1'),
+          throwsA(
+            isA<EventRemotePermanentException>().having(
+              (e) => e.statusCode,
+              'statusCode',
+              200,
+            ),
+          ),
+          reason: body,
+        );
+      }
+    });
+  });
+
   group('classification', () {
     test('any 2xx is a success, not only 200', () async {
       // Every event write answers 201, whatever the API's description says,

@@ -11,10 +11,15 @@ void main() {
   // Spelled out so a change to a set shows up in the diff of this file.
   const rsvp = {EventAction.rsvp};
 
+  // A participant or guest answers for themselves, on the invitation and on
+  // the proposed dates (#507).
+  const participant = {EventAction.rsvp, EventAction.voteAvailability};
+
   const organizer = {
     EventAction.edit,
     EventAction.addDate,
     EventAction.editDate,
+    EventAction.voteAvailability,
     EventAction.rsvp,
     EventAction.manageAttendees,
   };
@@ -56,8 +61,8 @@ void main() {
     }),
     EventRole.organizer: organizer,
     EventRole.moderator: moderator,
-    EventRole.participant: rsvp,
-    EventRole.guest: rsvp,
+    EventRole.participant: participant,
+    EventRole.guest: participant,
     EventRole.spectator: rsvp,
     EventRole.unknown: const {},
   };
@@ -143,6 +148,44 @@ void main() {
       }
     });
 
+    test("voteAvailability is the host's, co-host's, organizer's, "
+        "participant's and guest's", () {
+      final who = [
+        for (final role in EventRole.values)
+          if (eventActionsFor(
+            plain,
+            eventRole: role,
+          ).contains(EventAction.voteAvailability))
+            role,
+      ];
+
+      expect(who, [
+        EventRole.host,
+        EventRole.coHost,
+        EventRole.organizer,
+        EventRole.participant,
+        EventRole.guest,
+      ]);
+    });
+
+    test('a moderator, spectator or household owner may not vote', () {
+      expect(
+        eventActionsFor(plain, eventRole: EventRole.moderator),
+        isNot(contains(EventAction.voteAvailability)),
+      );
+      expect(
+        eventActionsFor(plain, eventRole: EventRole.spectator),
+        isNot(contains(EventAction.voteAvailability)),
+      );
+      expect(
+        eventActionsFor(
+          inHousehold,
+          householdRole: HouseholdRole.householdOwner,
+        ),
+        isNot(contains(EventAction.voteAvailability)),
+      );
+    });
+
     test('is the host alone who may archive', () {
       final who = [
         for (final role in EventRole.values)
@@ -174,7 +217,7 @@ void main() {
           eventRole: EventRole.participant,
           householdRole: HouseholdRole.householdOwner,
         ),
-        {...household, EventAction.rsvp},
+        {...household, ...participant},
       );
     });
 
@@ -211,7 +254,7 @@ void main() {
             eventRole: EventRole.participant,
             householdRole: role,
           ),
-          rsvp,
+          participant,
         );
       }
     });
@@ -223,7 +266,7 @@ void main() {
           eventRole: EventRole.participant,
           householdRole: HouseholdRole.unknown,
         ),
-        rsvp,
+        participant,
       );
     });
   });

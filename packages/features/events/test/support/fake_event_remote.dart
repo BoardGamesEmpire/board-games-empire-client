@@ -22,6 +22,13 @@ typedef EventDateRequest = ({
   String? reason,
 });
 
+/// What a vote sent (#507): the event, the date, and the answer.
+typedef EventVoteRequest = ({
+  String eventId,
+  String occurrenceId,
+  AvailabilityResponse response,
+});
+
 /// One whole page of [rows], as a browse read answers (#613).
 PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
     PaginatedResult(
@@ -36,9 +43,10 @@ PaginatedResult<EventSnapshot> browsePage(List<EventSnapshot> rows) =>
     );
 
 /// An event remote that answers list requests from [respond], detail requests
-/// from [detail], creates from [created], deletes from [deleted] and date
-/// writes from [dateWritten], and records each one. A request it has no
-/// answer for throws, as does anything else.
+/// from [detail], creates from [created], deletes from [deleted], date writes
+/// from [dateWritten], votes from [voted] and poll reads from [summary], and
+/// records each one. A request it has no answer for throws, as does anything
+/// else.
 class FakeEventRemote implements EventRemoteDataSource {
   FakeEventRemote(
     FutureOr<PaginatedResult<EventSnapshot>> Function(EventListRequest request)
@@ -46,6 +54,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.created = _noCreate,
     this.deleted = _noDelete,
     this.dateWritten = _noDateWrite,
+    this.voted = _noVote,
+    this.summary = _noSummary,
   }) : detail = null;
 
   /// Serves scripted [pages], page N from `pages[N - 1]`, and throws [error]
@@ -57,6 +67,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.created = _noCreate,
     this.deleted = _noDelete,
     this.dateWritten = _noDateWrite,
+    this.voted = _noVote,
+    this.summary = _noSummary,
   }) : respond = ((request) {
          if (request.page == failOnPage) throw error;
          return pages[request.page - 1];
@@ -70,6 +82,8 @@ class FakeEventRemote implements EventRemoteDataSource {
     this.created = _noCreate,
     this.deleted = _noDelete,
     this.dateWritten = _noDateWrite,
+    this.voted = _noVote,
+    this.summary = _noSummary,
   }) : respond = null;
 
   static Never _noCreate(EventDraft draft, String clientRequestId) =>
@@ -80,6 +94,12 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   static Never _noDateWrite(EventDateRequest request) =>
       throw UnimplementedError('the date ${request.call} is not faked');
+
+  static Never _noVote(EventVoteRequest request) =>
+      throw UnimplementedError('submitAvailability is not faked');
+
+  static Never _noSummary(String eventId) =>
+      throw UnimplementedError('fetchAvailabilitySummary is not faked');
 
   final FutureOr<PaginatedResult<EventSnapshot>> Function(
     EventListRequest request,
@@ -104,6 +124,15 @@ class FakeEventRemote implements EventRemoteDataSource {
   final FutureOr<EventOccurrence?> Function(EventDateRequest request)
   dateWritten;
 
+  /// Answers each vote with the vote as the server holds it, which throws
+  /// unless a test supplies one. A future the test completes later holds the
+  /// vote in flight.
+  final FutureOr<AvailabilityVote> Function(EventVoteRequest request) voted;
+
+  /// Answers each poll read of the event it names, which throws unless a test
+  /// supplies one.
+  final FutureOr<AvailabilitySummary> Function(String eventId) summary;
+
   final List<EventListRequest> requests = [];
 
   /// Answers each browse read, which throws unless a test supplies one (#613).
@@ -124,6 +153,13 @@ class FakeEventRemote implements EventRemoteDataSource {
 
   /// Each date write, in order, recorded before it is answered.
   final List<EventDateRequest> dateRequests = [];
+
+  /// Each vote, in order, recorded before it is answered.
+  final List<EventVoteRequest> voteRequests = [];
+
+  /// The event id of each poll read, in order, recorded before it is
+  /// answered.
+  final List<String> summaryRequests = [];
 
   @override
   Future<PaginatedResult<EventSnapshot>> fetchEvents({
@@ -262,6 +298,27 @@ class FakeEventRemote implements EventRemoteDataSource {
     );
     dateRequests.add(request);
     return dateWritten(request);
+  }
+
+  @override
+  Future<AvailabilityVote> submitAvailability(
+    String eventId,
+    String occurrenceId,
+    AvailabilityResponse response,
+  ) async {
+    final request = (
+      eventId: eventId,
+      occurrenceId: occurrenceId,
+      response: response,
+    );
+    voteRequests.add(request);
+    return voted(request);
+  }
+
+  @override
+  Future<AvailabilitySummary> fetchAvailabilitySummary(String eventId) async {
+    summaryRequests.add(eventId);
+    return summary(eventId);
   }
 
   /// [answer], which a [call] other than a remove must have.

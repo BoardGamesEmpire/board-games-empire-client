@@ -28,7 +28,12 @@ enum EventActionResult {
   /// (#506).
   changed,
 
-  /// A Confirmed date cancelled, whose remove then failed (#446).
+  /// A write of two or more requests that stopped part of the way (#446,
+  /// #507): a Confirmed date cancelled, whose remove then failed, or a date
+  /// confirmed, whose declines of the other dates didn't all land. A decline
+  /// answered 400 or 404 is no miss. The outcome's error is the one the
+  /// failed request ended with, and for a confirm the first miss's, which is
+  /// null when that miss was a session that said no.
   partlyDone,
 }
 
@@ -44,8 +49,9 @@ final class EventActionOutcome extends Equatable {
   final EventActionResult result;
 
   /// What the action ended with. Null when it was done, when it failed
-  /// before the request went out, and when a cancel then remove stopped
-  /// before its remove went out.
+  /// before the request went out, when a cancel then remove stopped before
+  /// its remove went out, and when a confirm's first missed decline stopped
+  /// before it went out.
   final Object? error;
 
   /// Whether the detail should be read again.
@@ -67,17 +73,34 @@ final class EventActionOutcome extends Equatable {
   /// matches or a cache that could not be read, has no error and isn't read
   /// again: nothing reached the server, and a read would ask the same
   /// session.
-  bool get rereads => switch (result) {
-    EventActionResult.failed =>
-      error != null &&
-          (action == EventAction.addDate ||
-              error is! EventRemoteTransientException),
-    EventActionResult.done ||
-    EventActionResult.gone => action != EventAction.delete,
-    EventActionResult.refused ||
-    EventActionResult.changed ||
-    EventActionResult.partlyDone => true,
-  };
+  ///
+  /// For a vote (#507), only changed, gone and refused: the date moved, went,
+  /// or the viewer's role changed, and the read shows which. A vote changes
+  /// no event status, so a done or failed one reads the poll again, not the
+  /// event, and the poll's bloc does that itself once a run of votes ends.
+  bool get rereads {
+    if (action == EventAction.voteAvailability) {
+      return switch (result) {
+        EventActionResult.changed ||
+        EventActionResult.gone ||
+        EventActionResult.refused => true,
+        EventActionResult.done ||
+        EventActionResult.failed ||
+        EventActionResult.partlyDone => false,
+      };
+    }
+    return switch (result) {
+      EventActionResult.failed =>
+        error != null &&
+            (action == EventAction.addDate ||
+                error is! EventRemoteTransientException),
+      EventActionResult.done ||
+      EventActionResult.gone => action != EventAction.delete,
+      EventActionResult.refused ||
+      EventActionResult.changed ||
+      EventActionResult.partlyDone => true,
+    };
+  }
 
   @override
   List<Object?> get props => [action, result, error];

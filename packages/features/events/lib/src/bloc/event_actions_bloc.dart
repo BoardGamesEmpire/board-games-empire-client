@@ -95,7 +95,9 @@ typedef _Write = Future<void> Function();
 /// Done writes the cache: the date the server answered with, or, for a
 /// remove, the cached date removed. A cancel-then-remove writes the cancelled
 /// date before its remove goes out, so its partlyDone, or a remove's gone,
-/// follows a cache write. Every other end leaves the cache to the read.
+/// follows a cache write. So does a confirm's partlyDone: the confirm's
+/// answer is written, and so is each decline's that landed. Every other end
+/// leaves the cache to the read.
 /// After a 404 that read is answered 404 too when the event is gone, and
 /// forgets it (#498).
 ///
@@ -144,6 +146,26 @@ typedef _Write = Future<void> Function();
 /// date stays Cancelled, and the read offers Remove again. Both requests
 /// report as [EventAction.removeDate].
 ///
+/// ### Confirm, then decline the others
+///
+/// A Poll event's host confirms one date and may decline the rest in the same
+/// step (#507). [EventDateConfirmRequested.decline] lists them, and the bloc
+/// sends the confirm, then each decline in turn, under one busy state. Each
+/// goes out with the session asked first, and each decline's answer is
+/// written as a single decline's is.
+///
+/// A confirm that isn't done ends there with its own outcome, and no decline
+/// is sent. After a done confirm, a decline answered 400 or 404 is no miss:
+/// that date moved or is gone, so there is nothing left to decline, and the
+/// read shows it as it now stands. Any other end is a miss, and the rest
+/// still go out. The outcome is [EventAction.confirmDate] throughout: done
+/// with no misses, and partlyDone with at least one, its error the first
+/// miss's. The date stays confirmed, and the read shows which are still
+/// Proposed.
+///
+/// Closing stops none of the declines, as it stops neither request of a
+/// cancel then remove: the person asked for them with the confirm.
+///
 /// ## The session
 ///
 /// On web every tab shares one session cookie, and a sign-in in another tab
@@ -153,7 +175,8 @@ typedef _Write = Future<void> Function();
 ///
 /// A no, or a throw, is failed with no error, and isn't read again: nothing
 /// reached the server, and a read would ask the same session. A cancel then
-/// remove whose cancel was done is the exception, above.
+/// remove whose cancel was done, and a confirm whose declines follow a done
+/// confirm, are the exceptions, above.
 ///
 /// It isn't asked again before the answer is written, as the detail read's
 /// is. That read writes what one user may see, which another user's cache
@@ -170,7 +193,7 @@ typedef _Write = Future<void> Function();
 /// with the outcome. A request that finds it set is dropped, whatever it
 /// asks for and whichever event it names, so a double tap on a dialog or two
 /// quick confirms send one request. A cancel then remove holds it through
-/// both of its requests.
+/// both of its requests, and a confirm through its declines.
 class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   EventActionsBloc({
     required this._repository,
@@ -335,15 +358,7 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
   Future<void> _onDateConfirmRequested(
     EventDateConfirmRequested event,
     Emitter<EventActionsState> emit,
-  ) => _runDate(
-    emit,
-    () => _sendDate(
-      EventAction.confirmDate,
-      'Date confirm',
-      () => _remote.confirmOccurrence(event.eventId, event.occurrenceId),
-      _repository.cacheOccurrence,
-    ),
-  );
+  ) => _runDate(emit, () => _confirmThenDecline(event));
 
   Future<void> _onDateDeclineRequested(
     EventDateDeclineRequested event,
@@ -434,6 +449,51 @@ class EventActionsBloc extends Bloc<EventActionsEvent, EventActionsState> {
         error: removed.error,
       ),
     };
+  }
+
+  /// Confirms the date [event] names, then declines each date it lists if
+  /// the confirm was done (#507). Never throws.
+  Future<EventActionOutcome> _confirmThenDecline(
+    EventDateConfirmRequested event,
+  ) async {
+    final confirmed = await _sendDate(
+      EventAction.confirmDate,
+      'Date confirm',
+      () => _remote.confirmOccurrence(event.eventId, event.occurrenceId),
+      _repository.cacheOccurrence,
+    );
+    if (confirmed.result != EventActionResult.done || event.decline.isEmpty) {
+      return confirmed;
+    }
+
+    var missed = false;
+    Object? firstError;
+    for (final occurrenceId in event.decline) {
+      final declined = await _sendDate(
+        EventAction.declineDate,
+        'Date decline after its confirm',
+        () => _remote.declineOccurrence(event.eventId, occurrenceId),
+        _repository.cacheOccurrence,
+      );
+      switch (declined.result) {
+        // That date moved or is gone, so there is nothing left to decline.
+        case EventActionResult.done ||
+            EventActionResult.changed ||
+            EventActionResult.gone:
+          break;
+        case EventActionResult.refused ||
+            EventActionResult.failed ||
+            EventActionResult.partlyDone:
+          if (!missed) firstError = declined.error;
+          missed = true;
+      }
+    }
+
+    return EventActionOutcome(
+      action: EventAction.confirmDate,
+      result: missed ? EventActionResult.partlyDone : EventActionResult.done,
+      error: firstError,
+    );
   }
 
   /// Removes the date [event] names, as it stands. Never throws.

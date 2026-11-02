@@ -13,6 +13,8 @@ class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
 const _overviewKey = Key('events_route.overview');
 Key _groupKey(String segment) => Key('events_route.group_$segment');
 Key _detailKey(String eventId) => Key('events_route.detail_$eventId');
+Key _availabilityKey(String eventId) =>
+    Key('events_route.availability_$eventId');
 
 /// The create form's marker, naming the household its builder was handed,
 /// if any.
@@ -23,7 +25,8 @@ Key _createKey([String? householdId]) => Key(
 );
 
 /// The #497 routes: the overview, with a page per group beneath it, #498's
-/// event detail beneath that, and #499's create form beside the groups.
+/// event detail beneath that, #499's create form beside the groups, and
+/// #507's who answered beneath the detail.
 void main() {
   late _MockAppBootstrapCubit cubit;
 
@@ -33,6 +36,7 @@ void main() {
     WidgetTester tester, {
     bool withBuilders = true,
     bool withDetailBuilder = true,
+    bool withAvailabilityBuilder = true,
   }) async {
     whenListen(
       cubit,
@@ -56,6 +60,10 @@ void main() {
       eventDetailBuilder: withBuilders && withDetailBuilder
           ? (_, eventId) => Scaffold(body: SizedBox(key: _detailKey(eventId)))
           : null,
+      eventAvailabilityBuilder: withBuilders && withAvailabilityBuilder
+          ? (_, eventId) =>
+                Scaffold(body: SizedBox(key: _availabilityKey(eventId)))
+          : null,
     );
     addTearDown(() {
       router.dispose();
@@ -72,7 +80,7 @@ void main() {
     return router;
   }
 
-  group('buildAppRouter — event routes (#497, #498, #499)', () {
+  group('buildAppRouter — event routes (#497, #498, #499, #507)', () {
     testWidgets('resolves the overview builder', (tester) async {
       final router = await pumpRouter(tester);
 
@@ -254,6 +262,45 @@ void main() {
 
       expect(find.byType(NotYetAvailableScreen), findsOneWidget);
       expect(find.byKey(_detailKey('e-1')), findsNothing);
+    });
+
+    testWidgets('/events/e1/availability resolves to the availability '
+        'builder, and /events/e1 still to the detail', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.eventAvailabilityOf('e1'));
+      await tester.pumpAndSettle();
+
+      expect(AppRoutes.eventAvailabilityOf('e1'), '/events/e1/availability');
+      expect(find.byKey(_availabilityKey('e1')), findsOneWidget);
+
+      // A go straight here builds the event beneath, which back returns to:
+      // the page is the detail's child, as the household's are (#308).
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(find.byKey(_detailKey('e1')), findsOneWidget);
+      expect(find.byKey(_availabilityKey('e1')), findsNothing);
+
+      router.go(AppRoutes.eventDetailOf('e1'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_detailKey('e1')), findsOneWidget);
+      expect(find.byKey(_availabilityKey('e1')), findsNothing);
+
+      // An id with a slash stays one id.
+      router.go(AppRoutes.eventAvailabilityOf('a/b'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(_availabilityKey('a/b')), findsOneWidget);
+    });
+
+    testWidgets('falls back to NotYetAvailable without an availability '
+        'builder', (tester) async {
+      final router = await pumpRouter(tester, withAvailabilityBuilder: false);
+
+      router.go(AppRoutes.eventAvailabilityOf('e1'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+      expect(find.byKey(_availabilityKey('e1')), findsNothing);
     });
 
     test('the segments are the EventGroup names', () {

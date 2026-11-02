@@ -399,6 +399,7 @@ class _BgeAppState extends State<BgeApp> {
       eventGroupBuilder: _buildEventGroupRoute,
       eventCreateBuilder: _buildEventCreateRoute,
       eventDetailBuilder: _buildEventDetailRoute,
+      eventAvailabilityBuilder: _buildEventAvailabilityRoute,
       stuckChangesBuilder: _buildStuckChangesRoute,
       dataGatewayListBuilder: _buildDataGatewayListRoute,
       dataGatewayFormBuilder: _buildDataGatewayFormRoute,
@@ -1672,6 +1673,9 @@ class _BgeAppState extends State<BgeApp> {
   /// offline, and only where this composition has a household repository.
   /// Back is a pop: the route is the list's child, so there is always a list
   /// beneath it.
+  ///
+  /// *Who answered* pushes the poll's page above the detail (#507), so back
+  /// returns here and web shows the page's own address (#321).
   Widget? _buildEventDetailRoute(BuildContext context, String eventId) {
     final container = _eventsContainer();
     if (container == null) return null;
@@ -1679,15 +1683,39 @@ class _BgeAppState extends State<BgeApp> {
     return EventDetailScreen(
       eventId: eventId,
       repository: container.get<EventRepository>(),
-      remote: container.isRegistered<EventRemoteDataSource>()
-          ? container.get<EventRemoteDataSource>()
-          : null,
+      remote: _eventRemote(container),
       confirmSession: _confirmEventSession(container),
       households: _eventHouseholds(container),
       householdRole: _eventHouseholdRole(container),
       onBack: (ctx) => ctx.pop(),
+      onWhoAnswered: (ctx) =>
+          unawaited(ctx.push<void>(AppRoutes.eventAvailabilityOf(eventId))),
     );
   }
+
+  /// The #507 page of who answered the poll of the event [eventId], behind
+  /// [_eventsContainer]'s gate, as the detail beneath it is.
+  ///
+  /// The remote is optional, as the detail's is: without one the page says
+  /// it can't show the answers. Back is a pop: the route is the detail's
+  /// child, so the event is always beneath it.
+  Widget? _buildEventAvailabilityRoute(BuildContext context, String eventId) {
+    final container = _eventsContainer();
+    if (container == null) return null;
+
+    return EventAvailabilityScreen(
+      eventId: eventId,
+      repository: container.get<EventRepository>(),
+      remote: _eventRemote(container),
+      confirmSession: _confirmEventSession(container),
+    );
+  }
+
+  /// The server's event client, or null where this composition has none.
+  static EventRemoteDataSource? _eventRemote(DependencyContainer container) =>
+      container.isRegistered<EventRemoteDataSource>()
+      ? container.get<EventRemoteDataSource>()
+      : null;
 
   /// Asks the server's [SessionIdentityGuard] whether the session is still
   /// the user whose scope the detail's repository lives in (#432), as the
