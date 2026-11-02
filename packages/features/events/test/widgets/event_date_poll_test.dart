@@ -98,6 +98,30 @@ void main() {
     expect(viewOf(dates, roster: const [], poll: poll).awaiting, isEmpty);
   });
 
+  test(
+    'a summary that withholds the roster outranks a roster still cached',
+    () {
+      final poll = EventPollState(
+        load: EventPollLoad.loaded,
+        summary: AvailabilitySummary(
+          occurrences: [tally('o1', {})],
+          rosterVisible: false,
+        ),
+      );
+
+      final view = viewOf(
+        [date('o1')],
+        roster: [me, attendee('a2')],
+        poll: poll,
+      );
+
+      // Its empty voters say nothing of who answered, and Who answered would
+      // only refuse.
+      expect(view.awaiting, isEmpty);
+      expect(view.onWhoAnswered, isNull);
+    },
+  );
+
   test('nobody is awaited on an event that takes no more answers', () {
     final poll = EventPollState(
       load: EventPollLoad.loaded,

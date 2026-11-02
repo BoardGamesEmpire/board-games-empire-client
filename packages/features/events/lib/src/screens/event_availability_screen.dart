@@ -59,6 +59,7 @@ import '../widgets/event_labels.dart';
 /// | The cache still to answer | loading |
 /// | The server refuses the read (403), or has no such event (404) | can't see the answers |
 /// | A roster withheld from the viewer (#498), as the summary or the cache says | can't see the answers |
+/// | The event was cached, and has left the cache since | can't see the answers |
 /// | The read failed, or the session check stopped it (#432) | couldn't load, with a retry |
 /// | The read still to answer, or the event or its roster not cached yet: the detail beneath is reading them | loading |
 /// | No poll open: not a poll, or no Proposed date left | can't see the answers |
@@ -172,6 +173,11 @@ class _AvailabilityPageState extends State<_AvailabilityPage> {
     _eventId,
   );
 
+  /// Whether the cache has held the event. Once it has, a cache with none
+  /// has lost it, and no read here would bring it back: only before then is
+  /// it the detail beneath still reading.
+  bool _cachedOnce = false;
+
   void _retry(BuildContext context) =>
       context.read<EventPollBloc>().add(EventPollRetryRequested(_eventId));
 
@@ -202,10 +208,12 @@ class _AvailabilityPageState extends State<_AvailabilityPage> {
     final summary = poll.summary;
     final snapshot = cached.data?.snapshot;
     final roster = snapshot?.attendees;
+    if (snapshot != null) _cachedOnce = true;
     if (poll.load == EventPollLoad.hidden ||
         poll.load == EventPollLoad.gone ||
         summary?.rosterVisible == false ||
-        (roster != null && roster.isEmpty)) {
+        (roster != null && roster.isEmpty) ||
+        (snapshot == null && _cachedOnce)) {
       return const _HiddenPage();
     }
     // A failed read keeps its page, and the retry on it, while the next

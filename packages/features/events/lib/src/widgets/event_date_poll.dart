@@ -126,7 +126,10 @@ DatesPollView datesPollView({
   final occurrences = snapshot.occurrences;
   final summary = poll.summary;
   final roster = snapshot.attendees;
-  final readable = roster != null && roster.isNotEmpty;
+  // A summary can withhold a roster the cache still holds, until the detail's
+  // read lands. Its empty voters would read as nobody having answered.
+  final readable =
+      roster != null && roster.isNotEmpty && summary?.rosterVisible != false;
 
   final tallies = {
     for (final occurrence in occurrences)

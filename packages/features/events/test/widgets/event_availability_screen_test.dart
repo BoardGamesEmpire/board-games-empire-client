@@ -555,6 +555,24 @@ void main() {
     expect(find.byKey(EventAvailabilityScreen.gridKey), findsOneWidget);
   });
 
+  testWidgets('an event that leaves the cache under the grid takes the grid '
+      'with it, rather than spinning', (tester) async {
+    await show(tester, _poll(_dates, roster: _roster), remote: serving());
+    final grid = find.byKey(EventAvailabilityScreen.gridKey);
+    expect(grid, findsOneWidget);
+
+    // A purge, a delete, or the detail beneath told the event is gone.
+    cache.add(null);
+    await settle(tester);
+    expect(find.byKey(EventAvailabilityScreen.hiddenKey), findsOneWidget);
+    expect(find.byKey(EventAvailabilityScreen.loadingKey), findsNothing);
+
+    // A read that brings it back brings the grid back.
+    cache.add(_poll(_dates, roster: _roster));
+    await settle(tester);
+    expect(grid, findsOneWidget);
+  });
+
   testWidgets('a failed read offers its retry with nothing cached', (
     tester,
   ) async {
