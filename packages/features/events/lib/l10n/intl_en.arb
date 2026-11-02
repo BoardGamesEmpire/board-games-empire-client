@@ -46,15 +46,23 @@
   },
   "eventsHomeSeeAll": "See all",
   "@eventsHomeSeeAll": {
-    "description": "Link beside the home page's upcoming events (#613), over the user's own events, that opens the events screen. Keep it short: it shares a line with the heading."
+    "description": "Link beside the home page's upcoming events (#613), over the user's own events, that opens the events screen. Keep it short: it shares a line with the heading and the row's previous and next buttons, and a long one drops them all below the heading on a narrow screen."
   },
   "eventsHomeSeeAllSpoken": "See all your events",
   "@eventsHomeSeeAllSpoken": {
     "description": "What a screen reader says for eventsHomeSeeAll (#613), because 'See all' alone doesn't say of what."
   },
+  "eventsHomePrevious": "Previous events",
+  "@eventsHomePrevious": {
+    "description": "Tooltip and spoken label of the button on the home page's row of upcoming events (#669) that scrolls the row back to the events before the ones in view."
+  },
+  "eventsHomeNext": "Next events",
+  "@eventsHomeNext": {
+    "description": "Tooltip and spoken label of the button on the home page's row of upcoming events (#669) that scrolls the row on to the events after the ones in view."
+  },
   "eventsHomeYourEvents": "Your events",
   "@eventsHomeYourEvents": {
-    "description": "Link beside the home page's upcoming events (#613) when the user has none of their own listed there, that opens the events screen. Not 'See all', because the events screen doesn't list the rows shown here."
+    "description": "Link beside the home page's upcoming events (#613) when the user has none of their own listed there, that opens the events screen. Not 'See all', because the events screen doesn't list the rows shown here. Keep it short, as eventsHomeSeeAll."
   },
   "eventsHomeFallbackNote": "You have no upcoming events yet. Here's what's coming up.",
   "@eventsHomeFallbackNote": {

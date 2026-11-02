@@ -14,9 +14,9 @@
 /// that show a submit's failure (#211), `rejectSubmit` by all 5 forms
 /// (#230), `ReadAgainWhenUncovered` by all 3 screens that read the
 /// server again when uncovered (#41, #455), `BgeKeyedSliverList` by the
-/// nine row lists #549 covers, `BgeShelf` by the home page's game sections,
-/// with its events next (#615, #669), and `BgeFocusRing` by its game covers,
-/// with the event cards next (#669).
+/// nine row lists #549 covers, `BgeShelf` by the home page's game sections and
+/// its events (#615, #669), and `BgeFocusRing` by the game covers and the event
+/// cards on them (#669).
 ///
 /// Two surfaces deliberately do NOT use `BgePage`: `CrashReportPrompt` and
 /// `BuildErrorView` render above the navigator with no `Scaffold` of their
