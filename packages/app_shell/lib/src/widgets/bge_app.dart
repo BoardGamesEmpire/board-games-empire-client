@@ -720,7 +720,10 @@ class _BgeAppState extends State<BgeApp> {
         canReadHouseholds &&
         container.isRegistered<HouseholdInviteRemoteDataSource>();
 
-    HomeScreen home({required bool admin}) => HomeScreen(
+    HomeScreen home({
+      required bool admin,
+      bool canConnect = false,
+    }) => HomeScreen(
       activeServerName: active.displayName,
       // #190: shown while anything is stuck, under the same gate as the
       // screen it opens, so it never leads to one that can't appear.
@@ -732,6 +735,11 @@ class _BgeAppState extends State<BgeApp> {
             )
           : null,
       upcomingEvents: canReadEvents ? _buildUpcomingEvents(container) : null,
+      stats: canReadCollection ? _buildStats(container) : null,
+      newestGames: canBrowseGames
+          ? _buildNewestGames(container, canConnect: canConnect)
+          : null,
+      somethingToPlay: canBrowseGames ? _buildSomethingToPlay(container) : null,
       entries: [
         if (canReadCollection)
           HomeMenuEntry(
@@ -810,12 +818,20 @@ class _BgeAppState extends State<BgeApp> {
     //
     // No access check registered (no DataGateway client, or no user
     // session) is no entry.
+    //
+    // #617: a server with no games offers the connect card on the same read,
+    // and only until a change has been refused. The read never goes back to
+    // unknown once answered, as a failed re-check leaves it standing, so the
+    // card doesn't come and go over a blip. The sections keep their keys
+    // through this rebuild, so that an answer landing reads nothing again.
     final access = _dataGatewayAccess(container);
     if (access == null) return home(admin: false);
     return ValueListenableBuilder<DataGatewayAccessState>(
       valueListenable: access,
-      builder: (_, access, _) =>
-          home(admin: access.read == DataGatewayRead.granted),
+      builder: (_, access, _) => home(
+        admin: access.read == DataGatewayRead.granted,
+        canConnect: access.read == DataGatewayRead.granted && access.mayChange,
+      ),
     );
   }
 
@@ -839,6 +855,82 @@ class _BgeAppState extends State<BgeApp> {
       connectivity: _rootConnectivity(),
       onOpen: _openEvent,
       onOpenEvents: (ctx) => unawaited(ctx.push<void>(AppRoutes.events)),
+    );
+  }
+
+  /// Home's "Your stats" card (#614), for a [container] holding the
+  /// user-session [GameCollectionRepository]. Keyed on it, so that another
+  /// user's session is a new card with its own count.
+  ///
+  /// Both hydrates' statuses go in wherever they are registered. With none the
+  /// card reads the cache as settled, and a "0 games" or the household prompt
+  /// would show before the first hydrate had landed.
+  Widget _buildStats(DependencyContainer container) {
+    final collection = container.get<GameCollectionRepository>();
+    return StatsCard(
+      key: ObjectKey(collection),
+      collection: collection,
+      collectionHydration:
+          container.isRegistered<GameCollectionHydrationStatus>()
+          ? container.get<GameCollectionHydrationStatus>().watch()
+          : null,
+      households: () => _eventHouseholds(container),
+      householdHydration: container.isRegistered<HouseholdHydrationStatus>()
+          ? container.get<HouseholdHydrationStatus>().watch()
+          : null,
+      pool: _householdRemote(container),
+      connectivity: _rootConnectivity(),
+      onOpenHouseholds: (ctx) => unawaited(ctx.push<void>(AppRoutes.household)),
+    );
+  }
+
+  /// Home's "Recently added" row (#615), for a [container] holding the
+  /// [GamesRemoteDataSource]. The remote is the server's and outlives a user,
+  /// so the row is keyed on the session's games cache: another user's session
+  /// is a new row. [canConnect] offers the #617 card on a server with no games.
+  ///
+  /// "See all" is a push, because the browse screen reads its sort once, when
+  /// it mounts.
+  Widget _buildNewestGames(
+    DependencyContainer container, {
+    required bool canConnect,
+  }) {
+    final remote = container.get<GamesRemoteDataSource>();
+    final cache = _gamesCache(container);
+    return NewestGamesSection(
+      key: ObjectKey(cache ?? remote),
+      remote: remote,
+      cache: cache,
+      connectivity: _rootConnectivity(),
+      gone: _gamesFoundGone.stream,
+      onOpen: _openGame,
+      onSeeAll: (ctx) =>
+          unawaited(ctx.push<void>(AppRoutes.gamesSorted(GameSort.newest))),
+      onConnectDataGateway: canConnect
+          ? (ctx) => unawaited(ctx.push<void>(AppRoutes.adminDataGateways))
+          : null,
+    );
+  }
+
+  /// Home's "Something to play" row (#616), for a [container] holding the
+  /// [GamesRemoteDataSource]. The remote outlives a user, so the row is keyed
+  /// on the session's [GameCollectionRepository], where half of its draw comes
+  /// from: another user's session is a new row. Without one, on the session's
+  /// games cache as [_buildNewestGames]'s is, and without that, on the remote.
+  Widget _buildSomethingToPlay(DependencyContainer container) {
+    final remote = container.get<GamesRemoteDataSource>();
+    final collection = container.isRegistered<GameCollectionRepository>()
+        ? container.get<GameCollectionRepository>()
+        : null;
+    return SomethingToPlaySection(
+      key: ObjectKey(collection ?? _gamesCache(container) ?? remote),
+      remote: remote,
+      pool: _householdRemote(container),
+      collection: collection,
+      households: () => _eventHouseholds(container),
+      connectivity: _rootConnectivity(),
+      gone: _gamesFoundGone.stream,
+      onOpen: _openGame,
     );
   }
 
@@ -1087,7 +1179,8 @@ class _BgeAppState extends State<BgeApp> {
       : null;
 
   /// The per-server household remote, or null where this composition has
-  /// none. An edit is sent through it (#476).
+  /// none. An edit is sent through it (#476), and home's sections read the
+  /// households' game pool through it (#614, #616).
   HouseholdRemoteDataSource? _householdRemote(DependencyContainer container) =>
       container.isRegistered<HouseholdRemoteDataSource>()
       ? container.get<HouseholdRemoteDataSource>()
@@ -1535,9 +1628,9 @@ class _BgeAppState extends State<BgeApp> {
     return container;
   }
 
-  /// The cached households, for each event row's household name (#497) and
-  /// the households the create form offers (#499), or null where the session
-  /// has no household cache.
+  /// The cached households, for each event row's household name (#497), the
+  /// households the create form offers (#499) and home's sections (#614, #616),
+  /// or null where the session has no household cache.
   static Stream<List<Household>>? _eventHouseholds(
     DependencyContainer container,
   ) => container.isRegistered<HouseholdRepository>()

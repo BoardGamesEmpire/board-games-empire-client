@@ -227,6 +227,8 @@ void main() {
     tester,
   ) async {
     await pumpHome(tester);
+    // Home's "Recently added" row has read already.
+    games.sorts.clear();
     await openGames(tester);
 
     expect(find.byType(GameBrowseScreen), findsOneWidget);
@@ -243,6 +245,8 @@ void main() {
     tester,
   ) async {
     await pumpHome(tester);
+    // Home's "Recently added" row has read already.
+    games.sorts.clear();
 
     final router =
         tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
