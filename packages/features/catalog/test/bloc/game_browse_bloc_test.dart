@@ -18,6 +18,15 @@ class _FailingForgetCache extends FakeGamesCache {
   Future<void> forgetCatalog() async => throw StateError('disposed');
 }
 
+/// A cache whose writes wait until the test lets them through, as one on a
+/// busy disk does.
+class _HeldWriteCache extends FakeGamesCache {
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<void> cacheGames(List<Game> games) => release.future;
+}
+
 void main() {
   late FakeGamesRemote remote;
   late ServerDatabase db;
@@ -34,13 +43,17 @@ void main() {
   tearDown(() => db.close());
 
   /// Two games a page, so paging shows with few rows.
-  GameBrowseBloc build({bool withCache = true, Stream<String>? gone}) =>
-      GameBrowseBloc(
-        remote: remote,
-        cache: withCache ? cache : null,
-        gone: gone,
-        pageSize: 2,
-      );
+  GameBrowseBloc build({
+    bool withCache = true,
+    Stream<String>? gone,
+    GameSort sort = GameSort.title,
+  }) => GameBrowseBloc(
+    remote: remote,
+    cache: withCache ? cache : null,
+    gone: gone,
+    initialSort: sort,
+    pageSize: 2,
+  );
 
   final azul = game('g_azul', title: 'Azul');
   final brass = game('g_brass', title: 'Brass');
@@ -450,6 +463,584 @@ void main() {
         GameBrowseReady(games: [catan]),
       ],
     );
+  });
+
+  group('sort', () {
+    // Added in this order, and told apart by when, not by title.
+    final oldest = game(
+      'g_oldest',
+      title: 'Azul',
+    ).copyWith(createdAt: DateTime.utc(2026, 1));
+    final middle = game(
+      'g_middle',
+      title: 'Catan',
+    ).copyWith(createdAt: DateTime.utc(2026, 2));
+    final newest = game(
+      'g_newest',
+      title: 'Brass',
+    ).copyWith(createdAt: DateTime.utc(2026, 3));
+
+    late _HeldWriteCache held;
+
+    /// A read a test answers when it likes, by hand.
+    Completer<PaginatedResult<Game>> hang() {
+      final read = Completer<PaginatedResult<Game>>();
+      addTearDown(() {
+        if (!read.isCompleted) read.complete(pageOf([]));
+      });
+      return read;
+    }
+
+    /// Answers a title read with [title], and a newest one with [recent].
+    Future<PaginatedResult<Game>> Function(int, int) bySort({
+      required Future<PaginatedResult<Game>> Function(int page) title,
+      required Future<PaginatedResult<Game>> Function(int page) recent,
+    }) =>
+        (page, _) =>
+            remote.calls.last.endsWith('newest)') ? recent(page) : title(page);
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'reads with initialSort',
+      setUp: () =>
+          remote.onFetchPage = (_, _) async => pageOf([newest, middle]),
+      build: () => build(sort: GameSort.newest),
+      act: (bloc) => bloc.add(const GameBrowseLoadRequested()),
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest, middle], sort: GameSort.newest),
+      ],
+      verify: (_) => expect(remote.calls, ['fetchPage(1, 2, newest)']),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a sort change reads page 1 in the new order',
+      setUp: () => remote.onFetchPage = bySort(
+        title: (_) async => pageOf([oldest, newest], hasMore: true),
+        recent: (_) async => pageOf([newest, middle], hasMore: true),
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+      },
+      skip: 2,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(
+          games: [newest, middle],
+          hasMore: true,
+          sort: GameSort.newest,
+        ),
+      ],
+      verify: (_) =>
+          expect(remote.calls, ['fetchPage(1, 2)', 'fetchPage(1, 2, newest)']),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a sort change drops the pages shown, and a game found gone stays down',
+      setUp: () => remote.onFetchPage = bySort(
+        title: (_) async => pageOf([oldest, newest], hasMore: true),
+        recent: (_) async => pageOf([newest, middle]),
+      ),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseGameGone('g_newest'));
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+      },
+      skip: 3,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [middle], sort: GameSort.newest),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a sort change while a page loads is not dropped, and the old answer is '
+      'discarded',
+      setUp: () {
+        final title = hang();
+        remote.onFetchPage = bySort(
+          title: (_) => title.future,
+          recent: (_) async => pageOf([newest, middle]),
+        );
+        nextPage = title;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        // The title order's page lands after the change.
+        nextPage.complete(pageOf([oldest, newest]));
+      },
+      expect: () => [
+        const GameBrowseLoading(),
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest, middle], sort: GameSort.newest),
+      ],
+      verify: (_) async {
+        // Neither shown nor cached.
+        expect(await cache.getGames(['g_oldest']), isEmpty);
+        expect(await cache.getGames(['g_newest', 'g_middle']), hasLength(2));
+      },
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a page already answered, still being cached when the sort changes, is '
+      'discarded',
+      setUp: () => remote.onFetchPage = bySort(
+        title: (_) async => pageOf([oldest, newest]),
+        recent: (_) async => pageOf([newest, middle]),
+      ),
+      build: () {
+        held = _HeldWriteCache();
+        return GameBrowseBloc(remote: remote, cache: held, pageSize: 2);
+      },
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        held.release.complete();
+      },
+      expect: () => [
+        const GameBrowseLoading(),
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest, middle], sort: GameSort.newest),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a next page on its way when the sort changes is discarded too',
+      setUp: () {
+        final title = hang();
+        remote.onFetchPage = bySort(
+          title: (page) => page == 1
+              ? Future.value(pageOf([oldest, newest], hasMore: true))
+              : title.future,
+          recent: (_) async => pageOf([newest, middle]),
+        );
+        nextPage = title;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        nextPage.complete(pageOf([middle], page: 2));
+      },
+      skip: 3,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest, middle], sort: GameSort.newest),
+      ],
+      verify: (_) async =>
+          expect(await cache.getGames(['g_middle']), hasLength(1)),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a late 403 for the old sort is ignored',
+      setUp: () async {
+        await cache.cacheGames([oldest]);
+        final title = hang();
+        remote.onFetchPage = bySort(
+          title: (_) => title.future,
+          recent: (_) async => pageOf([newest, middle]),
+        );
+        nextPage = title;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        nextPage.completeError(const GamesForbiddenException('403'));
+      },
+      expect: () => [
+        const GameBrowseLoading(),
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest, middle], sort: GameSort.newest),
+      ],
+      verify: (_) async {
+        // The catalog was not forgotten on its word.
+        expect(await cache.getGames(['g_oldest']), hasLength(1));
+      },
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a late failure for the old sort is ignored',
+      setUp: () {
+        final title = hang();
+        remote.onFetchPage = bySort(
+          title: (_) => title.future,
+          recent: (_) async => pageOf([newest, middle]),
+        );
+        nextPage = title;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        nextPage.completeError(unreachable());
+      },
+      expect: () => [
+        const GameBrowseLoading(),
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest, middle], sort: GameSort.newest),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'the same sort does nothing',
+      setUp: () => remote.onFetchPage = (_, _) async => pageOf([azul]),
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.title));
+      },
+      skip: 2,
+      expect: () => <GameBrowseState>[],
+      verify: (_) => expect(remote.calls, ['fetchPage(1, 2)']),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'asking again for the sort being read does not stop that read',
+      setUp: () {
+        final recent = hang();
+        remote.onFetchPage = bySort(
+          title: (_) async => pageOf([oldest]),
+          recent: (_) => recent.future,
+        );
+        nextPage = recent;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        nextPage.complete(pageOf([newest]));
+      },
+      skip: 2,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest], sort: GameSort.newest),
+      ],
+      verify: (_) =>
+          expect(remote.calls, ['fetchPage(1, 2)', 'fetchPage(1, 2, newest)']),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'two changes while a read is out show the last one',
+      setUp: () {
+        final recent = hang();
+        remote.onFetchPage = bySort(
+          title: (_) async => pageOf([oldest]),
+          recent: (_) => recent.future,
+        );
+        nextPage = recent;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.title));
+        await pumpEventQueue();
+        nextPage.complete(pageOf([newest]));
+      },
+      skip: 2,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        const GameBrowseLoading(),
+        GameBrowseReady(games: [oldest]),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'more keeps the sort',
+      setUp: () => remote.onFetchPage = (page, _) async => page == 1
+          ? pageOf([newest, middle], hasMore: true)
+          : pageOf([oldest], page: 2),
+      build: () => build(sort: GameSort.newest),
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+      },
+      skip: 2,
+      expect: () => [
+        GameBrowseReady(
+          games: [newest, middle],
+          hasMore: true,
+          loadingMore: true,
+          sort: GameSort.newest,
+        ),
+        GameBrowseReady(games: [newest, middle, oldest], sort: GameSort.newest),
+      ],
+      verify: (_) => expect(remote.calls, [
+        'fetchPage(1, 2, newest)',
+        'fetchPage(2, 2, newest)',
+      ]),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a game a newest page repeats, after one was added at the top, is '
+      'shown once',
+      setUp: () => remote.onFetchPage = (page, _) async => page == 1
+          ? pageOf([newest, middle], hasMore: true)
+          : pageOf([middle, oldest], page: 2),
+      build: () => build(sort: GameSort.newest),
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+      },
+      skip: 3,
+      expect: () => [
+        GameBrowseReady(games: [newest, middle, oldest], sort: GameSort.newest),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a failed read falls back to the cache in the same order',
+      setUp: () async {
+        await cache.cacheGames([oldest, newest, middle]);
+        remote.onFetchPage = (_, _) async => throw unreachable();
+      },
+      build: () => build(sort: GameSort.newest),
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+      },
+      skip: 3,
+      expect: () => [
+        GameBrowseReady(
+          games: [newest, middle, oldest],
+          fromCache: true,
+          sort: GameSort.newest,
+        ),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a sort change that fails falls back to the cache in the new order',
+      setUp: () async {
+        await cache.cacheGames([oldest, newest, middle]);
+        remote.onFetchPage = (page, _) async =>
+            remote.calls.last.endsWith('newest)')
+            ? throw unreachable()
+            : pageOf([oldest, newest], hasMore: true);
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+      },
+      skip: 2,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(
+          games: [newest, middle],
+          hasMore: true,
+          fromCache: true,
+          sort: GameSort.newest,
+        ),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a retry reads in the sort the list is in',
+      setUp: () => remote.onFetchPage = (_, _) async => throw unreachable(),
+      build: () => build(sort: GameSort.newest),
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        remote.onFetchPage = (_, _) async => pageOf([newest]);
+        bloc.add(const GameBrowseLoadRequested());
+      },
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        const GameBrowseFailed(sort: GameSort.newest),
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(games: [newest], sort: GameSort.newest),
+      ],
+      verify: (_) => expect(remote.calls, [
+        'fetchPage(1, 2, newest)',
+        'fetchPage(1, 2, newest)',
+      ]),
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a refusal keeps the sort',
+      setUp: () =>
+          remote.onFetchPage = (_, _) async =>
+              throw const GamesForbiddenException('403'),
+      build: () => build(sort: GameSort.newest),
+      act: (bloc) => bloc.add(const GameBrowseLoadRequested()),
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        const GameBrowseDenied(sort: GameSort.newest),
+      ],
+    );
+
+    blocTest<GameBrowseBloc, GameBrowseState>(
+      'a next page asked for while the sort change loads is not read',
+      setUp: () {
+        final recent = hang();
+        remote.onFetchPage = bySort(
+          title: (_) async => pageOf([oldest, newest], hasMore: true),
+          recent: (_) => recent.future,
+        );
+        nextPage = recent;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const GameBrowseLoadRequested());
+        await pumpEventQueue();
+        bloc.add(const GameBrowseSortChanged(GameSort.newest));
+        await pumpEventQueue();
+        bloc.add(const GameBrowseMoreRequested());
+        await pumpEventQueue();
+        nextPage.complete(pageOf([newest, middle], hasMore: true));
+      },
+      skip: 2,
+      expect: () => [
+        const GameBrowseLoading(sort: GameSort.newest),
+        GameBrowseReady(
+          games: [newest, middle],
+          hasMore: true,
+          sort: GameSort.newest,
+        ),
+      ],
+      verify: (_) =>
+          expect(remote.calls, ['fetchPage(1, 2)', 'fetchPage(1, 2, newest)']),
+    );
+
+    group('a read of the old sort that never answers', () {
+      // The old read keeps holding the slot reads are dropped from, so
+      // anything the new list asks for would be dropped behind it.
+
+      blocTest<GameBrowseBloc, GameBrowseState>(
+        'does not keep the new list from paging, when it was the first page',
+        setUp: () {
+          final title = hang();
+          remote.onFetchPage = bySort(
+            title: (_) => title.future,
+            recent: (page) async => page == 1
+                ? pageOf([newest, middle], hasMore: true)
+                : pageOf([oldest], page: 2),
+          );
+        },
+        build: build,
+        act: (bloc) async {
+          bloc.add(const GameBrowseLoadRequested());
+          await pumpEventQueue();
+          bloc.add(const GameBrowseSortChanged(GameSort.newest));
+          await pumpEventQueue();
+          bloc.add(const GameBrowseMoreRequested());
+        },
+        skip: 2,
+        expect: () => [
+          GameBrowseReady(
+            games: [newest, middle],
+            hasMore: true,
+            sort: GameSort.newest,
+          ),
+          GameBrowseReady(
+            games: [newest, middle],
+            hasMore: true,
+            loadingMore: true,
+            sort: GameSort.newest,
+          ),
+          GameBrowseReady(
+            games: [newest, middle, oldest],
+            sort: GameSort.newest,
+          ),
+        ],
+      );
+
+      blocTest<GameBrowseBloc, GameBrowseState>(
+        'does not keep the new list from paging, when it was a next page',
+        setUp: () {
+          final title = hang();
+          remote.onFetchPage = bySort(
+            title: (page) => page == 1
+                ? Future.value(pageOf([oldest, newest], hasMore: true))
+                : title.future,
+            recent: (page) async => page == 1
+                ? pageOf([newest, middle], hasMore: true)
+                : pageOf([oldest], page: 2),
+          );
+        },
+        build: build,
+        act: (bloc) async {
+          bloc.add(const GameBrowseLoadRequested());
+          await pumpEventQueue();
+          bloc.add(const GameBrowseMoreRequested());
+          await pumpEventQueue();
+          bloc.add(const GameBrowseSortChanged(GameSort.newest));
+          await pumpEventQueue();
+          bloc.add(const GameBrowseMoreRequested());
+        },
+        skip: 5,
+        expect: () => [
+          GameBrowseReady(
+            games: [newest, middle],
+            hasMore: true,
+            loadingMore: true,
+            sort: GameSort.newest,
+          ),
+          GameBrowseReady(
+            games: [newest, middle, oldest],
+            sort: GameSort.newest,
+          ),
+        ],
+      );
+
+      blocTest<GameBrowseBloc, GameBrowseState>(
+        'does not keep a retry of the new list from reading',
+        setUp: () {
+          final title = hang();
+          remote.onFetchPage = bySort(
+            title: (_) => title.future,
+            recent: (_) async => throw unreachable(),
+          );
+        },
+        build: () => build(withCache: false),
+        act: (bloc) async {
+          bloc.add(const GameBrowseLoadRequested());
+          await pumpEventQueue();
+          bloc.add(const GameBrowseSortChanged(GameSort.newest));
+          await pumpEventQueue();
+          remote.onFetchPage = (_, _) async => pageOf([newest]);
+          bloc.add(const GameBrowseLoadRequested());
+        },
+        skip: 2,
+        expect: () => [
+          const GameBrowseFailed(sort: GameSort.newest),
+          const GameBrowseLoading(sort: GameSort.newest),
+          GameBrowseReady(games: [newest], sort: GameSort.newest),
+        ],
+      );
+    });
   });
 
   group('a game found gone', () {

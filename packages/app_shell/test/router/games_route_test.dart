@@ -3,6 +3,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:models/domain.dart';
 
 class _MockAppBootstrapCubit extends MockCubit<AppBootstrapState>
     implements AppBootstrapCubit {}
@@ -17,7 +18,13 @@ Key _detailKey(String id) => Key('games_route.detail_$id');
 void main() {
   late _MockAppBootstrapCubit cubit;
 
-  setUp(() => cubit = _MockAppBootstrapCubit());
+  /// The sort each browse build was handed, in order.
+  late List<GameSort> browsed;
+
+  setUp(() {
+    cubit = _MockAppBootstrapCubit();
+    browsed = [];
+  });
 
   Future<GoRouter> pumpRouter(
     WidgetTester tester, {
@@ -33,7 +40,10 @@ void main() {
       bootstrapCubit: cubit,
       refreshListenable: listenable,
       gameBrowseBuilder: withBuilders
-          ? (_) => const Scaffold(body: SizedBox(key: _browseKey))
+          ? (_, sort) {
+              browsed.add(sort);
+              return const Scaffold(body: SizedBox(key: _browseKey));
+            }
           : null,
       gameSearchBuilder: withBuilders
           ? (_) => const Scaffold(body: SizedBox(key: _searchKey))
@@ -65,6 +75,67 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(_browseKey), findsOneWidget);
+    });
+
+    testWidgets('/games passes title', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go(AppRoutes.games);
+      await tester.pumpAndSettle();
+
+      expect(browsed, [GameSort.title]);
+    });
+
+    testWidgets('/games?sort=newest passes newest', (tester) async {
+      final router = await pumpRouter(tester);
+
+      router.go('${AppRoutes.games}?sort=newest');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(_browseKey), findsOneWidget);
+      expect(browsed, [GameSort.newest]);
+    });
+
+    testWidgets(
+      '/games?sort=Newest passes title, and so does any sort it does not '
+      'know',
+      (tester) async {
+        final router = await pumpRouter(tester);
+
+        // The server takes lowercase names only, and so does the route.
+        for (final location in [
+          '${AppRoutes.games}?sort=Newest',
+          '${AppRoutes.games}?sort=oldest',
+          '${AppRoutes.games}?sort=',
+        ]) {
+          router.go(location);
+          await tester.pumpAndSettle();
+          router.go(AppRoutes.home);
+          await tester.pumpAndSettle();
+        }
+
+        expect(browsed, [GameSort.title, GameSort.title, GameSort.title]);
+      },
+    );
+
+    testWidgets('a location built for a sort opens browse in it', (
+      tester,
+    ) async {
+      final router = await pumpRouter(tester);
+
+      for (final sort in GameSort.values) {
+        router.go(AppRoutes.gamesSorted(sort));
+        await tester.pumpAndSettle();
+        router.go(AppRoutes.home);
+        await tester.pumpAndSettle();
+      }
+
+      expect(browsed, GameSort.values);
+    });
+
+    test('the title order is the plain browse location', () {
+      expect(AppRoutes.gamesSorted(GameSort.title), '/games');
+      expect(AppRoutes.gamesSorted(GameSort.newest), '/games?sort=newest');
     });
 
     testWidgets('resolves search, not a game whose id is "search"', (

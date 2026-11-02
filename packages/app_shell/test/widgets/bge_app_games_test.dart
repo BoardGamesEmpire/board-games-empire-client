@@ -6,6 +6,7 @@ import 'package:data_gateway/data_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
@@ -39,6 +40,9 @@ class _GamesRemote implements GamesRemoteDataSource {
   /// The ids every detail read asked for.
   final List<String> fetched = [];
 
+  /// The order each list read asked for.
+  final List<GameSort> sorts = [];
+
   /// Where every poll says the import's base game stands.
   ImportJobStatus importStatus = ImportJobStatus.completed;
 
@@ -47,16 +51,19 @@ class _GamesRemote implements GamesRemoteDataSource {
     int page = 1,
     int limit = GamesRemoteDataSource.maxPageSize,
     GameSort sort = GameSort.title,
-  }) async => PaginatedResult(
-    items: [_catan],
-    meta: const PaginationMeta(
-      page: 1,
-      limit: 50,
-      total: 1,
-      totalPages: 1,
-      hasMore: false,
-    ),
-  );
+  }) async {
+    sorts.add(sort);
+    return PaginatedResult(
+      items: [_catan],
+      meta: const PaginationMeta(
+        page: 1,
+        limit: 50,
+        total: 1,
+        totalPages: 1,
+        hasMore: false,
+      ),
+    );
+  }
 
   @override
   Future<List<GameSummary>> fetchRandom({
@@ -223,11 +230,28 @@ void main() {
     await openGames(tester);
 
     expect(find.byType(GameBrowseScreen), findsOneWidget);
+    // The drawer's entry lists by title, whatever was chosen the last time.
+    expect(games.sorts, [GameSort.title]);
 
     await tester.tap(find.byKey(GameBrowseScreen.rowKey('g_catan')));
     await tester.pumpAndSettle();
 
     expect(find.byType(GameDetailScreen), findsOneWidget);
+  });
+
+  testWidgets('a location that names a sort opens the catalog in it', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+
+    final router =
+        tester.widget<MaterialApp>(find.byType(MaterialApp)).routerConfig!
+            as GoRouter;
+    unawaited(router.push(AppRoutes.gamesSorted(GameSort.newest)));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameBrowseScreen), findsOneWidget);
+    expect(games.sorts, [GameSort.newest]);
   });
 
   testWidgets('a game found gone is gone from the list the user returns to', (

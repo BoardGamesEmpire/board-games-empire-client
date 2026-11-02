@@ -1439,8 +1439,8 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// The #42 browse screen: the games remote and the optional games cache,
-  /// behind [_catalogContainer]'s gate.
-  Widget? _buildGameBrowseRoute(BuildContext context) {
+  /// behind [_catalogContainer]'s gate, starting in [sort].
+  Widget? _buildGameBrowseRoute(BuildContext context, GameSort sort) {
     final container = _catalogContainer();
     if (container == null) return null;
 
@@ -1450,6 +1450,7 @@ class _BgeAppState extends State<BgeApp> {
       gone: _gamesFoundGone.stream,
       onOpen: _openGame,
       onSearch: (ctx) => unawaited(ctx.push<void>(AppRoutes.gameSearch)),
+      initialSort: sort,
     );
   }
 

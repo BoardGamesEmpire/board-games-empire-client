@@ -36,6 +36,18 @@
   "@catalogBrowseMoreFailed": {
     "description": "Shown at the end of the games list when the next page could not be loaded. The games already shown stay. Followed by a retry button."
   },
+  "catalogBrowseSort": "Sort games",
+  "@catalogBrowseSort": {
+    "description": "Tooltip and spoken label of the button on the games list that opens the menu of orders to list the games in."
+  },
+  "catalogBrowseSortTitle": "Title",
+  "@catalogBrowseSortTitle": {
+    "description": "Entry of the games list's sort menu: the games in alphabetical order of their titles."
+  },
+  "catalogBrowseSortNewest": "Newest first",
+  "@catalogBrowseSortNewest": {
+    "description": "Entry of the games list's sort menu: the games most recently added to the server first."
+  },
   "catalogRetry": "Try again",
   "@catalogRetry": {
     "description": "Button that asks the server again after a failure, on every screen of this feature."

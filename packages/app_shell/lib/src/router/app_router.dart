@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:models/domain.dart';
 
 import '../bootstrap/app_bootstrap_cubit.dart';
 import '../bootstrap/app_bootstrap_state.dart';
@@ -107,6 +108,15 @@ abstract final class AppRoutes {
   /// server; that stays reserved until #10 can tell whose server it names.
   static const games = '/games';
 
+  /// [games], starting in [sort]: what opens the list newest first (#615).
+  ///
+  /// The query sets the order of the first read only. The screen's own menu
+  /// changes it from there without rewriting the location, and nothing keeps
+  /// the choice, so the drawer's plain [games] always opens in title order.
+  /// That is why title is the plain location rather than `?sort=title`.
+  static String gamesSorted(GameSort sort) =>
+      sort == GameSort.title ? games : '$games?$_gamesSortParam=${sort.wire}';
+
   /// Search, beneath [games] (#42).
   ///
   /// This pattern and [gameDetail] **overlap**: `search` is a legal value
@@ -119,6 +129,9 @@ abstract final class AppRoutes {
 
   /// The id segment of [gameDetail].
   static const gameIdParam = 'gameId';
+
+  /// The query parameter naming the order [games] starts in.
+  static const _gamesSortParam = 'sort';
 
   static const _gameSearchSegment = 'search';
   static const _gameDetailSegment = ':$gameIdParam';
@@ -431,7 +444,14 @@ typedef CollectionListScreenBuilder = Widget? Function(BuildContext context);
 ///
 /// Guarded on the remote alone: the games cache is optional, and without it
 /// the screen still reads the server, with nothing to show offline.
-typedef GameBrowseScreenBuilder = Widget? Function(BuildContext context);
+///
+/// [sort] is the order the list starts in: the location's `sort` query
+/// ([AppRoutes.gamesSorted]), or title where there is none or it names no
+/// sort.
+typedef GameBrowseScreenBuilder = Widget? Function(
+  BuildContext context,
+  GameSort sort,
+);
 
 /// Builds the game search screen (#42) for the [AppRoutes.gameSearch]
 /// route. Same null contract as [GameBrowseScreenBuilder].
@@ -856,7 +876,14 @@ GoRouter buildAppRouter({
         path: AppRoutes.games,
         pageBuilder: (context, state) => _materialPage(
           state,
-          gameBrowseBuilder?.call(context) ?? const NotYetAvailableScreen(),
+          gameBrowseBuilder?.call(
+                context,
+                GameSort.fromWire(
+                      state.uri.queryParameters[AppRoutes._gamesSortParam],
+                    ) ??
+                    GameSort.title,
+              ) ??
+              const NotYetAvailableScreen(),
         ),
         routes: [
           GoRoute(
