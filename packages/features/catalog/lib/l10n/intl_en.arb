@@ -48,13 +48,37 @@
   "@catalogBrowseSortNewest": {
     "description": "Entry of the games list's sort menu: the games most recently added to the server first."
   },
+  "catalogNewestHeading": "Recently added",
+  "@catalogNewestHeading": {
+    "description": "Heading of the home page's row of the games most recently added to the server."
+  },
+  "catalogNewestSeeAll": "See all",
+  "@catalogNewestSeeAll": {
+    "description": "Link in the header of the home page's recently added row that opens the full list of games, newest first. Spoken as catalogNewestSeeAllSpoken, which says what it opens."
+  },
+  "catalogNewestSeeAllSpoken": "See all recently added games",
+  "@catalogNewestSeeAllSpoken": {
+    "description": "Spoken label of the catalogNewestSeeAll link, which alone doesn't say of what."
+  },
+  "catalogNewestFailed": "Couldn't load recently added games.",
+  "@catalogNewestFailed": {
+    "description": "Shown and announced in the home page's recently added row when the server's games could not be loaded and none are saved on this device. Followed by a catalogRetry button."
+  },
+  "catalogShelfPrevious": "Previous games",
+  "@catalogShelfPrevious": {
+    "description": "Tooltip and spoken label of the button on a row of games on the home page that scrolls the row back to the games before the ones in view."
+  },
+  "catalogShelfNext": "Next games",
+  "@catalogShelfNext": {
+    "description": "Tooltip and spoken label of the button on a row of games on the home page that scrolls the row on to the games after the ones in view."
+  },
   "catalogRetry": "Try again",
   "@catalogRetry": {
     "description": "Button that asks the server again after a failure, on every screen of this feature."
   },
   "catalogRetrying": "Trying again…",
   "@catalogRetrying": {
-    "description": "Replaces catalogRetry on the banner over games saved on this device while the server is being asked again, and is announced. The saved games stay shown meanwhile."
+    "description": "Replaces catalogRetry on a retry button while the server is being asked again, and is announced. On the banner over games saved on this device, and after catalogNewestFailed on the home page, whatever was shown stays shown meanwhile."
   },
   "catalogDeniedTitle": "You don't have access to this server's games",
   "@catalogDeniedTitle": {
