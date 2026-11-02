@@ -21,6 +21,7 @@ export 'src/create/event_create_households.dart';
 export 'src/detail/event_actions.dart';
 export 'src/overview/event_groups.dart';
 export 'src/screens/create_event_screen.dart';
+export 'src/screens/event_availability_screen.dart';
 export 'src/screens/event_detail_screen.dart';
 export 'src/screens/event_group_screen.dart';
 export 'src/screens/event_overview_screen.dart';

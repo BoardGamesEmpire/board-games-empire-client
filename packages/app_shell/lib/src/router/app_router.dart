@@ -188,6 +188,16 @@ abstract final class AppRoutes {
   static String eventDetailOf(String eventId) =>
       '$events/${Uri.encodeComponent(eventId)}';
 
+  /// Who answered one event's availability poll (#507), beneath its detail.
+  /// Build a concrete location with [eventAvailabilityOf].
+  static const eventAvailability = '$eventDetail/$_eventAvailabilitySegment';
+
+  static const _eventAvailabilitySegment = 'availability';
+
+  /// The location of the page of who answered one event's poll.
+  static String eventAvailabilityOf(String eventId) =>
+      '${eventDetailOf(eventId)}/$_eventAvailabilitySegment';
+
   /// The changes that couldn't sync, each with a retry and a discard
   /// (#190). Always the active session's own, like [collection].
   static const stuckChanges = '/stuck-changes';
@@ -481,6 +491,18 @@ typedef EventDetailScreenBuilder = Widget? Function(
   String eventId,
 );
 
+/// Builds the page of who answered one event's availability poll (#507) for
+/// the [AppRoutes.eventAvailability] route, given the `:eventId` the path
+/// carried. Same null contract as [EventOverviewScreenBuilder].
+///
+/// The id reaches the builder unvalidated. The page answers one that names
+/// no event, or one whose answers the viewer can't see, by saying it can't
+/// show them.
+typedef EventAvailabilityScreenBuilder = Widget? Function(
+  BuildContext context,
+  String eventId,
+);
+
 /// Builds the retry-or-discard screen (#190) for the
 /// [AppRoutes.stuckChanges] route. Supplied by [BgeApp]; returns null at
 /// navigation time when no active server is resolvable or its container
@@ -569,6 +591,7 @@ GoRouter buildAppRouter({
   EventGroupScreenBuilder? eventGroupBuilder,
   EventCreateScreenBuilder? eventCreateBuilder,
   EventDetailScreenBuilder? eventDetailBuilder,
+  EventAvailabilityScreenBuilder? eventAvailabilityBuilder,
   StuckChangesScreenBuilder? stuckChangesBuilder,
   DataGatewayListScreenBuilder? dataGatewayListBuilder,
   DataGatewayFormScreenBuilder? dataGatewayFormBuilder,
@@ -916,6 +939,22 @@ GoRouter buildAppRouter({
                     const NotYetAvailableScreen(),
               );
             },
+            // #507: who answered the event's poll, nested for the reason
+            // the household children are (#308): a `go` straight to it
+            // builds the event beneath it, so back is a plain pop to there.
+            routes: [
+              GoRoute(
+                path: AppRoutes._eventAvailabilitySegment,
+                pageBuilder: (context, state) {
+                  final id = state.pathParameters[AppRoutes.eventIdParam] ?? '';
+                  return _materialPage(
+                    state,
+                    eventAvailabilityBuilder?.call(context, id) ??
+                        const NotYetAvailableScreen(),
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),

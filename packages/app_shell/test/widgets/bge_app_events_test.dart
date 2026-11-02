@@ -170,6 +170,7 @@ void main() {
     registerFallbackValue(_upcoming('e-0').occurrences.single);
     registerFallbackValue(EventAccessSource.read);
     registerFallbackValue(const EventDraft(title: 'x'));
+    registerFallbackValue(AvailabilityResponse.available);
   });
 
   setUp(() {
@@ -886,6 +887,156 @@ void main() {
             find.byKey(EventOverviewScreen.groupKey(EventGroup.planning)),
             findsNothing,
           );
+        },
+      );
+    });
+
+    group('a poll (#507)', () {
+      testWidgets(
+        'a participant answers a proposed date through the app, then opens '
+        'who answered',
+        (tester) async {
+          final history = FakeBrowserHistory.install(tester);
+          final at = DateTime.utc(2026);
+          EventOccurrence proposed(String id, int day, int sortOrder) =>
+              EventOccurrence(
+                id: id,
+                eventId: 'e-0',
+                startDate: DateTime.utc(2099, 1, day, 19),
+                status: OccurrenceStatus.proposed,
+                sortOrder: sortOrder,
+                createdAt: at,
+                updatedAt: at,
+              );
+          EventAttendee participant(String id, String userId, String name) =>
+              EventAttendee(
+                id: id,
+                eventId: 'e-0',
+                userId: userId,
+                displayName: name,
+                status: EventParticipationStatus.attending,
+                role: EventRole.participant,
+                createdAt: at,
+                updatedAt: at,
+              );
+          // The viewer's own row, and Ada's.
+          final me = participant('att-me', 'u1', 'Sam');
+          final poll = EventSnapshot(
+            event: _upcoming('e-0').event.copyWith(
+              status: EventStatus.planning,
+              schedulingMode: EventSchedulingMode.poll,
+            ),
+            occurrences: [proposed('o-1', 1, 0), proposed('o-2', 8, 1)],
+            attendees: [me, participant('att-2', 'u2', 'Ada')],
+          );
+
+          // The server's poll: Ada's Maybe on the first date, and the
+          // viewer's answer once they have given it.
+          AvailabilityResponse? held;
+          AvailabilitySummary summary() => AvailabilitySummary(
+            occurrences: [
+              OccurrenceAvailability(
+                occurrenceId: 'o-1',
+                available: held == AvailabilityResponse.available ? 1 : 0,
+                maybe: 1,
+                unavailable: 0,
+                voters: [
+                  if (held case final response?)
+                    AvailabilityVoter(
+                      attendeeId: 'att-me',
+                      response: response,
+                      eligible: true,
+                    ),
+                  const AvailabilityVoter(
+                    attendeeId: 'att-2',
+                    response: AvailabilityResponse.maybe,
+                    eligible: true,
+                  ),
+                ],
+              ),
+            ],
+          );
+          final remote = _MockEventRemote();
+          when(() => remote.fetchEvent(any())).thenAnswer((_) async => poll);
+          when(() => remote.fetchAvailabilitySummary(any()))
+              .thenAnswer((_) async => summary());
+          when(() => remote.submitAvailability(any(), any(), any()))
+              .thenAnswer((call) async {
+                final response =
+                    call.positionalArguments[2] as AvailabilityResponse;
+                held = response;
+                return AvailabilityVote(
+                  id: 'v-1',
+                  occurrenceId: call.positionalArguments[1] as String,
+                  attendeeId: 'att-me',
+                  response: response,
+                  createdAt: at,
+                  updatedAt: at,
+                );
+              });
+
+          await pumpHome(
+            tester,
+            remote: remote,
+            detailCache: Stream.multi(
+              (cache) => cache.add(EventDetail(snapshot: poll, attendance: me)),
+            ),
+          );
+          await openTheOverview(tester);
+          await openRow(tester, 'e-0');
+
+          final available = find.byKey(
+            EventDetailScreen.pollAnswerKey(
+              'o-1',
+              AvailabilityResponse.available,
+            ),
+          );
+          await tester.ensureVisible(available);
+          await tester.pumpAndSettle();
+          await tester.tap(available);
+          await tester.pumpAndSettle();
+
+          verify(
+            () => remote.submitAvailability(
+              'e-0',
+              'o-1',
+              AvailabilityResponse.available,
+            ),
+          ).called(1);
+          expect(tester.widget<ChoiceChip>(available).selected, isTrue);
+          // The detail's reads: as it opened, and once the vote was in.
+          verify(() => remote.fetchAvailabilitySummary('e-0'))
+              .called(greaterThanOrEqualTo(2));
+
+          final whoAnswered = find.byKey(EventDetailScreen.whoAnsweredKey);
+          await tester.ensureVisible(whoAnswered);
+          await tester.pumpAndSettle();
+          await tester.tap(whoAnswered);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(EventAvailabilityScreen), findsOneWidget);
+          // On web it has an address of its own (#321).
+          expect(history.locations.last, AppRoutes.eventAvailabilityOf('e-0'));
+          // The page's own read, which holds the answer.
+          verify(() => remote.fetchAvailabilitySummary('e-0')).called(1);
+          Finder shows(String attendeeId, String occurrenceId, String text) =>
+              find.descendant(
+                of: find.byKey(
+                  EventAvailabilityScreen.cellKey(attendeeId, occurrenceId),
+                ),
+                matching: find.text(text),
+              );
+          expect(shows('att-me', 'o-1', 'Available'), findsOneWidget);
+          expect(shows('att-2', 'o-1', 'Maybe'), findsOneWidget);
+          expect(shows('att-me', 'o-2', '—'), findsOneWidget);
+
+          // Back is the event.
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+
+          expect(find.byType(EventAvailabilityScreen), findsNothing);
+          expect(find.byType(EventDetailScreen), findsOneWidget);
+          expect(history.locations.last, AppRoutes.eventDetailOf('e-0'));
         },
       );
     });

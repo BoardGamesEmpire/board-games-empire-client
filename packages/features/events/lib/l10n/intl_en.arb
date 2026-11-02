@@ -589,15 +589,53 @@
   },
   "eventsPollLoadFailed": "Couldn't load the poll's answers.",
   "@eventsPollLoadFailed": {
-    "description": "Banner above the dates of an event whose date is chosen by a poll, when how people answered could not be read from the server, for any reason: most often there is no connection. The dates themselves still show from this device. Followed by a Try again button."
+    "description": "Banner above the dates of an event whose date is chosen by a poll, when how people answered could not be read from the server, for any reason: most often there is no connection. The dates themselves still show from this device. Followed by a Try again button. Also the whole of the Who answered page (eventsPollWhoAnsweredTitle) when that read fails, again with Try again."
   },
   "eventsPollHidden": "You can't see this poll's answers.",
   "@eventsPollHidden": {
-    "description": "Note above the dates of an event whose date is chosen by a poll, when the server won't show this person how others answered. They may still be able to give their own answer."
+    "description": "Note above the dates of an event whose date is chosen by a poll, when the server won't show this person how others answered. They may still be able to give their own answer. Also the whole of the Who answered page (eventsPollWhoAnsweredTitle) wherever it can't show the answers: the server won't show them, this person can't see who is coming, or the event or its poll isn't there any more."
   },
   "eventsPollWhoAnswered": "Who answered",
   "@eventsPollWhoAnswered": {
     "description": "Button above the dates of an event whose date is chosen by a poll. Opens a page showing each person's answer for each proposed date. Shown only where this person can see who is coming to the event."
+  },
+  "eventsPollWhoAnsweredTitle": "Who answered",
+  "@eventsPollWhoAnsweredTitle": {
+    "description": "Title of the page the Who answered button (eventsPollWhoAnswered) opens: a table with a row for each person on an event whose date is chosen by a poll, a column for each proposed date, and each person's answer for each date in the cells. Read only: answers are given on the event's own page."
+  },
+  "eventsPollNoAnswer": "No answer",
+  "@eventsPollNoAnswer": {
+    "description": "What a screen reader says for a cell of the Who answered table (eventsPollWhoAnsweredTitle) where the person hasn't answered for that date. The cell itself shows a dash. Used as the {answer} of eventsPollCell."
+  },
+  "eventsPollVoteNotCounting": "doesn't count",
+  "@eventsPollVoteNotCounting": {
+    "description": "Said after a person's answer in a cell of the Who answered table (eventsPollWhoAnsweredTitle) when that answer doesn't count, because the person said they aren't attending the event: for example \"Unavailable, doesn't count\". Not shown on screen, where the answer is struck through instead. Lower case, since it follows the answer after a comma within eventsPollCell."
+  },
+  "eventsPollNotCountingLegend": "A crossed-out answer doesn't count while that person isn't attending.",
+  "@eventsPollNotCountingLegend": {
+    "description": "One line above the Who answered table (eventsPollWhoAnsweredTitle), shown only when the table holds an answer that doesn't count, which it draws crossed out (struck through). An answer doesn't count while the person who gave it has said they aren't attending the event, and counts again if they say they're coming. Explains the crossing out to someone who sees it: a screen reader already hears eventsPollVoteNotCounting in the cell."
+  },
+  "eventsPollCell": "{name}, {date}: {answer}",
+  "@eventsPollCell": {
+    "description": "What a screen reader says for one cell of the Who answered table (eventsPollWhoAnsweredTitle): whose answer it is, for which proposed date, and the answer. Not shown on screen, where the cell shows the answer alone under its date and beside its person. A screen reader moving cell by cell doesn't always say the row's or the column's heading, so each cell names both.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ada"
+      },
+      "date": {
+        "type": "String",
+        "example": "Fri, Nov 6 · 7:30 PM"
+      },
+      "answer": {
+        "type": "String",
+        "example": "Maybe"
+      }
+    }
+  },
+  "eventsPollUnknownVoter": "Someone not on the list",
+  "@eventsPollUnknownVoter": {
+    "description": "Name shown for a row of the Who answered table (eventsPollWhoAnsweredTitle) whose person answered the poll but isn't on the event's guest list as this device has it, so their name isn't known: most often someone added or removed since the list was last loaded."
   },
   "eventsPollVoteChanged": "This date isn't open for answers any more. Here it is as it stands now.",
   "@eventsPollVoteChanged": {
