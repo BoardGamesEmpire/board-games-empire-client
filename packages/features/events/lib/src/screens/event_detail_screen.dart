@@ -110,10 +110,11 @@ import '../widgets/event_refresh_banner.dart';
 /// [EventActionOutcome.rereads] says to: a date no longer open for answers
 /// has been confirmed, declined or cancelled meanwhile. A poll read that
 /// finds the event gone reads it again too, since nothing else would tell
-/// the screen. Either read waits for a date write or Delete to end (#589),
-/// and isn't made once the event is deleted (#501). *Who answered* opens a
-/// page of everyone's answers, through [onWhoAnswered], where the roster
-/// can be read.
+/// the screen. Either read waits for a running read to end, whose answer may
+/// predate what the vote or the poll found, and for a date write or Delete
+/// (#589), and isn't made once the event is deleted (#501). *Who answered*
+/// opens a page of everyone's answers, through [onWhoAnswered], where the
+/// roster can be read.
 ///
 /// ## Not found is an answer
 ///
@@ -444,19 +445,24 @@ bool _covered(BuildContext context) =>
     !(ModalRoute.isCurrentOf(context) ?? true);
 
 /// Reads the event again after a vote's end that asks for it, or a poll read
-/// that found the event gone (#507), once no date write or Delete is out, and
-/// not at all once the event is removed.
+/// that found the event gone (#507), once no read is running and no date write
+/// or Delete is out, and not at all once the event is removed.
 ///
-/// A vote or a poll read runs beside the actions' requests, so it can end
-/// while one of them is out. A read then could land after the write's answer
-/// and put the date back as it was (#589), or cache a deleted event again
-/// (#501).
-/// The write's own end reads the event where its outcome says to. Where
-/// that read is running, the detail drops this one, and the running read
-/// shows the date as it is.
+/// A vote or a poll read runs beside the event's read, so it can end while one
+/// is running, whose answer may have been served before what this found. The
+/// detail would drop a retry then, and a poll that stays gone asks only once,
+/// so this waits and reads after it.
+///
+/// It runs beside the actions' requests too, so it can end while one of them
+/// is out. A read then could land after the write's answer and put the date
+/// back as it was (#589), or cache a deleted event again (#501). The write's
+/// own end reads the event where its outcome says to. Where that read is
+/// running, it began after what this found, so the detail drops this one, and
+/// the running read shows the date as it is.
 Future<void> _rereadForPoll(BuildContext context) async {
   final actions = context.read<EventActionsBloc>();
   final detail = context.read<EventDetailBloc>();
+  await _readEnded(detail);
   final ended = actions.state.busy
       ? await actions.stream.firstWhere(
           (state) => !state.busy,

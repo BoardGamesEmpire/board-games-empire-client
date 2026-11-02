@@ -127,7 +127,8 @@ class EventAvailabilityScreen extends StatelessWidget {
   final EventRemoteDataSource? remote;
 
   /// Whether the session is still the user [repository] belongs to, asked
-  /// before the read goes out (#432). Null, as on native, is always yes.
+  /// before the read goes out and before its answer is used (#432). Null, as
+  /// on native, is always yes.
   final Future<bool> Function()? confirmSession;
 
   /// The clock that decides whether a date is this year's. Defaults to the

@@ -33,6 +33,7 @@ typedef _Vote = ({String eventId, AvailabilityResponse response});
 /// | An enveloped 404 | gone: the screen reads the event, which settles it | cleared |
 /// | Anything else | failed | the last one, kept |
 /// | None: the session said no, or threw (below) | failed | the last one, kept |
+/// | Any of the first three, once the session has moved (below) | failed | the last one, kept |
 ///
 /// A read after a hidden or a gone keeps that load until it answers, rather
 /// than going through loading, so what a refused viewer sees doesn't change
@@ -100,6 +101,11 @@ typedef _Vote = ({String eventId, AvailabilityResponse response});
 /// error, and a read is failed, keeping the last summary, as the detail's
 /// read is. A page waiting on the read would otherwise wait for ever, and a
 /// retry can ask again.
+///
+/// A read's answer is about whoever the session was as it went out, so the
+/// session is asked again before the answer is used, as the detail's read
+/// asks before it writes or forgets. A no fails the read the same way: another
+/// user's votes never reach this screen, nor another user's refusal.
 ///
 /// ## Closing
 ///
@@ -356,14 +362,18 @@ class EventPollBloc extends Bloc<EventPollEvent, EventPollState> {
       summary = await _remote.fetchAvailabilitySummary(eventId);
     } on EventRemoteForbiddenException catch (error) {
       _logger.info('Poll not shown to this viewer', error: error);
-      _readEnded(EventPollLoad.hidden, null, emit);
+      await _readRefused(EventPollLoad.hidden, emit);
       return;
     } on EventRemoteNotFoundException catch (error) {
       _logger.info('Poll read found the event gone', error: error);
-      _readEnded(EventPollLoad.gone, null, emit);
+      await _readRefused(EventPollLoad.gone, emit);
       return;
     } on Object catch (error, stackTrace) {
       _logger.warn('Poll read failed', error: error, stackTrace: stackTrace);
+      _readEnded(EventPollLoad.failed, state.summary, emit);
+      return;
+    }
+    if (!await _confirmed('Poll answer dropped')) {
       _readEnded(EventPollLoad.failed, state.summary, emit);
       return;
     }
@@ -383,6 +393,19 @@ class EventPollBloc extends Bloc<EventPollEvent, EventPollState> {
         refreshing: _stillRefreshing,
       ),
     );
+  }
+
+  /// Ends a read the server refused as [load], or as failed if the session
+  /// has moved since, when the refusal was another user's.
+  Future<void> _readRefused(
+    EventPollLoad load,
+    Emitter<EventPollState> emit,
+  ) async {
+    if (await _confirmed('Poll answer dropped')) {
+      _readEnded(load, null, emit);
+    } else {
+      _readEnded(EventPollLoad.failed, state.summary, emit);
+    }
   }
 
   /// Emits a read that ended without a summary as [load], showing [summary].

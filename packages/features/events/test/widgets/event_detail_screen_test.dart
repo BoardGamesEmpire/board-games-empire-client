@@ -2789,6 +2789,54 @@ void main() {
       expect(pollOutcome(), findsNothing);
     });
 
+    testWidgets('a vote that asks for a read during a read reads again once '
+        'that one ends', (tester) async {
+      // The running read may have been answered before the vote found the
+      // date moved, so it can't be trusted to show it.
+      final reads = <Completer<EventSnapshot>>[];
+      when(
+        () => repository.cacheEvent(any(), source: any(named: 'source')),
+      ).thenAnswer((invocation) async {
+        cache.add(
+          EventDetail(
+            snapshot: invocation.positionalArguments.single as EventSnapshot,
+            attendance: me(),
+          ),
+        );
+      });
+      final remote = serving(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+        voted: (_) =>
+            throw const EventWriteConflictException('moved', statusCode: 400),
+      );
+      await show(tester, poll([date('o-1')]), remote: remote, onBack: back);
+      await settle(tester);
+      expect(reads, hasLength(1));
+
+      await tapAnswer(tester, 'o-1', available);
+      await settle(tester);
+      expect(inPollOutcome(_pollChangedCopy), findsOneWidget);
+      expect(reads, hasLength(1));
+
+      // Served before the date moved.
+      reads.single.complete(poll([date('o-1')]).snapshot);
+      await settle(tester);
+      expect(answer('o-1', available), findsOneWidget);
+      expect(reads, hasLength(2));
+
+      reads.last.complete(
+        poll([date('o-1', status: OccurrenceStatus.confirmed)]).snapshot,
+      );
+      await settle(tester);
+      expect(inDates('Confirmed'), findsOneWidget);
+      expect(answer('o-1', available), findsNothing);
+      expect(reads, hasLength(2));
+    });
+
     for (final confirmFails in [false, true]) {
       testWidgets(
         'a vote that asks for a read while a confirm is out waits for it'
@@ -3117,6 +3165,33 @@ void main() {
 
       expect(reads, before + 1);
       expect(remote.summaryRequests, hasLength(summaries + 2));
+    });
+
+    testWidgets('a poll read that finds the event gone during a read reads '
+        'the event again once that one ends, once', (tester) async {
+      // The running read may have been answered before the event went, and
+      // the poll staying gone would start no other.
+      final reads = <Completer<EventSnapshot>>[];
+      final remote = serving(
+        read: (_) {
+          final read = Completer<EventSnapshot>();
+          reads.add(read);
+          return read.future;
+        },
+        summary: (_) => throw const EventRemoteNotFoundException('gone'),
+      );
+      await show(tester, poll([date('o-1')]), remote: remote, onBack: back);
+      await settle(tester);
+      expect(reads, hasLength(1));
+
+      reads.single.complete(poll([date('o-1')]).snapshot);
+      await settle(tester);
+      expect(reads, hasLength(2));
+
+      reads.last.complete(poll([date('o-1')]).snapshot);
+      await settle(tester);
+      await settle(tester);
+      expect(reads, hasLength(2));
     });
 
     testWidgets('a refused viewer sees no change while the poll is read '

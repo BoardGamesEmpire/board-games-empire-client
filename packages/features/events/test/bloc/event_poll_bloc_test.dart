@@ -840,8 +840,29 @@ void main() {
       bloc.add(_tap(_available));
       await pumpEventQueue();
 
-      expect(calls, ['session', 'vote', 'session', 'summary']);
+      expect(calls, ['session', 'vote', 'session', 'summary', 'session']);
     });
+
+    for (final (name, summary)
+        in <(String, AvailabilitySummary Function(String))>[
+          ('a summary', (_) => two),
+          ('a refusal', (_) => throw _forbidden),
+          ('a gone', (_) => throw _gone),
+        ]) {
+      blocTest<EventPollBloc, EventPollState>(
+        '$name answered after the session moved is another user\'s, and the '
+        'read is failed, keeping the last summary',
+        build: () => build(
+          serving(summary: summary),
+          confirmSession: answering([true, false]),
+        ),
+        seed: () => loaded(one),
+        act: (bloc) => bloc.add(const EventPollRequested('e-1')),
+        skip: 1,
+        expect: () => [failed(summary: one)],
+        verify: (_) => expect(calls, ['session', 'summary', 'session']),
+      );
+    }
 
     blocTest<EventPollBloc, EventPollState>(
       'a read whose session says no is failed, with no error, keeping the '
