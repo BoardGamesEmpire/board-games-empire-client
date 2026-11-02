@@ -252,6 +252,60 @@ void main() {
     expect(cache.pageReads, isEmpty, reason: 'the server rows are fresher');
   });
 
+  test('a failed reload keeps Empty', () async {
+    cache = _RecordingCache(_newest(5));
+    remote.onFetchPage = (_, _) async => pageOf([]);
+    final cubit = build();
+    cubit.load();
+    await _settle();
+    expect(cubit.state, const NewestGamesEmpty());
+    final states = record(cubit);
+
+    remote.onFetchPage = (_, _) async => throw unreachable();
+    cubit.load();
+    await _settle();
+
+    expect(remote.calls, hasLength(2));
+    expect(cubit.state, const NewestGamesEmpty());
+    expect(states, isEmpty, reason: 'no flicker to a failure and back');
+    expect(
+      cache.pageReads,
+      isEmpty,
+      reason: 'what the device saved says nothing against the server',
+    );
+
+    // And the next answer still lands.
+    remote.onFetchPage = (_, _) async => pageOf(_newest(2));
+    cubit.load();
+    await _settle();
+    expect(_ids(cubit.state), ['g-0', 'g-1']);
+  });
+
+  test('an offline reload keeps Empty', () async {
+    cache = _RecordingCache(_newest(5));
+    remote.onFetchPage = (_, _) async => pageOf([]);
+    final cubit = build();
+    cubit.load();
+    await _settle();
+    final states = record(cubit);
+
+    connectivity.change(ConnectivityState.offline);
+    await _settle();
+    cubit.load();
+    await _settle();
+
+    expect(remote.calls, hasLength(1), reason: 'offline asks nothing');
+    expect(cubit.state, const NewestGamesEmpty());
+    expect(states, isEmpty);
+    expect(cache.pageReads, isEmpty);
+
+    // Back online, the server is asked again, and answers.
+    remote.onFetchPage = (_, _) async => pageOf(_newest(1));
+    connectivity.change(ConnectivityState.online);
+    await _settle();
+    expect(_ids(cubit.state), ['g-0']);
+  });
+
   test('a reload leaves the state alone until its answer lands', () async {
     remote.onFetchPage = (_, _) async => pageOf(_newest(1));
     final cubit = build();

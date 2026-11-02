@@ -64,6 +64,18 @@
   "@catalogNewestFailed": {
     "description": "Shown and announced in the home page's recently added row when the server's games could not be loaded and none are saved on this device. Followed by a catalogRetry button."
   },
+  "catalogEmptyServerAdmin": "No games here yet. Connect a DataGateway to bring them in.",
+  "@catalogEmptyServerAdmin": {
+    "description": "Shown and announced in a card on the home page, in the place of the recently added row, when the server has no games, to someone who can connect a DataGateway. Followed by a catalogEmptyServerAdminAction button."
+  },
+  "catalogEmptyServerAdminAction": "Go to DataGateways",
+  "@catalogEmptyServerAdminAction": {
+    "description": "Button on the catalogEmptyServerAdmin card that opens the list of the server's DataGateways, where one is connected."
+  },
+  "catalogEmptyServer": "No games yet — check back soon.",
+  "@catalogEmptyServer": {
+    "description": "Shown and announced on the home page, in the place of the recently added row, when the server has no games, to someone who can't connect a DataGateway. Also what stands there until it is known whether they can."
+  },
   "catalogShelfPrevious": "Previous games",
   "@catalogShelfPrevious": {
     "description": "Tooltip and spoken label of the button on a row of games on the home page that scrolls the row back to the games before the ones in view."

@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:bge_test_support/widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
@@ -21,6 +24,9 @@ List<Game> _newest(int count) => [
 ];
 
 const _failedMessage = "Couldn't load recently added games.";
+const _adminMessage =
+    'No games here yet. Connect a DataGateway to bring them in.';
+const _plainMessage = 'No games yet \u{2014} check back soon.';
 
 void main() {
   late FakeGamesRemote remote;
@@ -45,6 +51,7 @@ void main() {
     Stream<String>? gone,
     void Function(BuildContext context)? onSeeAll,
     void Function(BuildContext context, String gameId)? onOpen,
+    void Function(BuildContext context)? onConnectDataGateway,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
     theme: BgeTheme.light(),
@@ -61,6 +68,7 @@ void main() {
             gone: gone,
             onSeeAll: onSeeAll ?? (_) {},
             onOpen: onOpen,
+            onConnectDataGateway: onConnectDataGateway,
           ),
         ],
       ),
@@ -75,9 +83,16 @@ void main() {
     Stream<String>? gone,
     void Function(BuildContext context)? onSeeAll,
     void Function(BuildContext context, String gameId)? onOpen,
+    void Function(BuildContext context)? onConnectDataGateway,
   }) async {
     await tester.pumpWidget(
-      harness(cache: cache, gone: gone, onSeeAll: onSeeAll, onOpen: onOpen),
+      harness(
+        cache: cache,
+        gone: gone,
+        onSeeAll: onSeeAll,
+        onOpen: onOpen,
+        onConnectDataGateway: onConnectDataGateway,
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -247,6 +262,336 @@ void main() {
     expect(find.byType(BgeShelf), findsNothing);
     expect(find.byKey(NewestGamesSection.headingKey), findsNothing);
     expect(tester.getSize(find.byType(NewestGamesSection)).height, 0);
+  });
+
+  group('an empty server', () {
+    setUp(() => remote.onFetchPage = (_, _) async => pageOf(const []));
+
+    final message = find.byKey(NewestGamesSection.emptyKey);
+    final action = find.byKey(NewestGamesSection.emptyActionKey);
+
+    /// The text of the message, for a section that is showing one.
+    String textOf(WidgetTester tester) => tester.widget<Text>(message).data!;
+
+    testWidgets('with a connect callback: the card and its action', (
+      tester,
+    ) async {
+      await show(tester, onConnectDataGateway: (_) {});
+
+      expect(remote.calls, ['fetchPage(1, 10, newest)']);
+      expect(textOf(tester), _adminMessage);
+      expect(
+        find.ancestor(of: message, matching: find.byType(Card)),
+        findsOneWidget,
+      );
+      expect(
+        find.ancestor(of: action, matching: find.byType(Card)),
+        findsOneWidget,
+      );
+      expect(tester.widget(action), isA<FilledButton>());
+      expect(
+        find.descendant(of: action, matching: find.text('Go to DataGateways')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the action calls onConnectDataGateway', (tester) async {
+      final seen = <BuildContext>[];
+      await show(tester, onConnectDataGateway: seen.add);
+      expect(seen, isEmpty);
+
+      await tester.tap(action);
+
+      expect(seen, hasLength(1));
+      expect(seen.single.mounted, isTrue);
+    });
+
+    testWidgets('with none: the plain message and no button', (tester) async {
+      await show(tester);
+
+      expect(textOf(tester), _plainMessage);
+      expect(find.byType(Card), findsNothing);
+      expect(action, findsNothing);
+      expect(find.byType(ButtonStyleButton), findsNothing);
+      expect(find.byType(InkWell), findsNothing);
+      expect(find.text('Go to DataGateways'), findsNothing);
+      expect(find.text(_adminMessage), findsNothing);
+      expect(
+        tester.getCenter(message).dx,
+        moreOrLessEquals(tester.getCenter(find.byType(Scaffold)).dx),
+        reason: 'centered',
+      );
+    });
+
+    for (final connect in <void Function(BuildContext)?>[(_) {}, null]) {
+      testWidgets('neither shows the heading or See all '
+          '(${connect == null ? 'plain' : 'card'})', (tester) async {
+        await show(tester, onConnectDataGateway: connect);
+
+        expect(message, findsOneWidget);
+        expect(find.byType(BgeShelf), findsNothing);
+        expect(find.byKey(NewestGamesSection.headingKey), findsNothing);
+        expect(find.byKey(NewestGamesSection.linkKey), findsNothing);
+        expect(find.text('Recently added'), findsNothing);
+        expect(find.text('See all'), findsNothing);
+        expect(find.byKey(NewestGamesSection.loadingKey), findsNothing);
+        expect(find.byKey(NewestGamesSection.failedKey), findsNothing);
+      });
+    }
+
+    testWidgets('a callback arriving swaps the message for the card, and keeps '
+        'the section state', (tester) async {
+      await show(tester);
+      expect(textOf(tester), _plainMessage);
+      final cubit = tester.element(message).read<NewestGamesCubit>();
+
+      await tester.pumpWidget(harness(onConnectDataGateway: (_) {}));
+      await tester.pumpAndSettle();
+
+      expect(textOf(tester), _adminMessage);
+      expect(action, findsOneWidget);
+      expect(find.text(_plainMessage), findsNothing);
+      expect(
+        tester.element(message).read<NewestGamesCubit>(),
+        same(cubit),
+        reason: 'the same section, not a new one',
+      );
+      expect(remote.calls, hasLength(1), reason: 'and no new read');
+
+      // And the other way, where the access is withdrawn.
+      await tester.pumpWidget(harness());
+      await tester.pumpAndSettle();
+
+      expect(textOf(tester), _plainMessage);
+      expect(action, findsNothing);
+      expect(tester.element(message).read<NewestGamesCubit>(), same(cubit));
+      expect(remote.calls, hasLength(1));
+    });
+
+    testWidgets('the message is a live region in both, and the button is not '
+        'part of it', (tester) async {
+      final handle = tester.ensureSemantics();
+
+      await show(tester);
+      expect(
+        tester.getSemantics(message),
+        isSemantics(label: _plainMessage, isLiveRegion: true),
+      );
+
+      await tester.pumpWidget(harness(onConnectDataGateway: (_) {}));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSemantics(message),
+        isSemantics(label: _adminMessage, isLiveRegion: true),
+      );
+      expect(
+        tester.getSemantics(action),
+        isSemantics(
+          label: 'Go to DataGateways',
+          isButton: true,
+          isEnabled: true,
+          isFocusable: true,
+          hasTapAction: true,
+          isLiveRegion: false,
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the card appearing is announced anew', (tester) async {
+      final handle = tester.ensureSemantics();
+      await show(tester);
+      final plain = tester.getSemantics(message).id;
+
+      await tester.pumpWidget(harness(onConnectDataGateway: (_) {}));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getSemantics(message).id,
+        isNot(plain),
+        reason: 'a new live node, which a screen reader reads out',
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the action is reached by the keyboard, and Enter presses it', (
+      tester,
+    ) async {
+      var seen = 0;
+      await show(tester, onConnectDataGateway: (_) => seen++);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final focus = FocusManager.instance.primaryFocus;
+      expect(focus, isNotNull);
+      expect(
+        find.descendant(
+          of: action,
+          matching: find.byElementPredicate(
+            (element) => element == focus!.context,
+          ),
+        ),
+        findsOneWidget,
+        reason: 'the first stop is the button on the card',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      expect(seen, 1);
+    });
+
+    testWidgets('a refused user is shown neither', (tester) async {
+      remote.onFetchPage = (_, _) async =>
+          throw const GamesForbiddenException('no');
+
+      await show(tester, onConnectDataGateway: (_) {});
+
+      expect(message, findsNothing);
+      expect(find.byType(Card), findsNothing);
+      expect(tester.getSize(find.byType(NewestGamesSection)).height, 0);
+    });
+
+    testWidgets('a failed read with a connect callback shows neither', (
+      tester,
+    ) async {
+      remote.onFetchPage = (_, _) async => throw unreachable();
+
+      await show(tester, onConnectDataGateway: (_) {});
+
+      expect(message, findsNothing);
+      expect(find.byType(Card), findsNothing);
+      expect(action, findsNothing);
+      expect(find.textContaining('No games'), findsNothing);
+      expect(find.textContaining('DataGateway'), findsNothing);
+      expect(find.byKey(NewestGamesSection.failedKey), findsOneWidget);
+      expect(find.byKey(NewestGamesSection.retryKey), findsOneWidget);
+    });
+
+    testWidgets('offline with nothing cached shows neither', (tester) async {
+      connectivity.current = ConnectivityState.offline;
+
+      await show(tester, cache: FakeGamesCache(), onConnectDataGateway: (_) {});
+
+      expect(remote.calls, isEmpty, reason: 'offline asks nothing');
+      expect(message, findsNothing);
+      expect(find.byType(Card), findsNothing);
+      expect(action, findsNothing);
+      expect(find.textContaining('No games'), findsNothing);
+      expect(find.textContaining('DataGateway'), findsNothing);
+      expect(find.byKey(NewestGamesSection.failedKey), findsOneWidget);
+    });
+
+    /// Focuses the card's button, and returns what holds the focus.
+    Future<FocusNode?> focusAction(WidgetTester tester) async {
+      Focus.of(tester.element(find.text('Go to DataGateways'))).requestFocus();
+      await tester.pump();
+      return FocusManager.instance.primaryFocus;
+    }
+
+    testWidgets(
+      'a failed reload leaves the card and its button\'s focus alone',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        await show(tester, onConnectDataGateway: (_) {});
+        final button = tester.element(action);
+        final announced = tester.getSemantics(message).id;
+        final focused = await focusAction(tester);
+        expect(focused, isNotNull);
+
+        remote.onFetchPage = (_, _) async => throw unreachable();
+        unawaited(
+          navigatorKey.currentState!.push(
+            MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+          ),
+        );
+        await tester.pumpAndSettle();
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+
+        expect(remote.calls, hasLength(2), reason: 'it did read again');
+        expect(textOf(tester), _adminMessage);
+        expect(find.byKey(NewestGamesSection.failedKey), findsNothing);
+        expect(tester.element(action), same(button));
+        expect(FocusManager.instance.primaryFocus, same(focused));
+        expect(
+          tester.getSemantics(message).id,
+          announced,
+          reason: 'no new live node, so nothing is announced again',
+        );
+        handle.dispose();
+      },
+    );
+
+    testWidgets(
+      'an offline blip leaves the card and its button\'s focus alone',
+      (tester) async {
+        await show(
+          tester,
+          cache: FakeGamesCache(),
+          onConnectDataGateway: (_) {},
+        );
+        final button = tester.element(action);
+        final focused = await focusAction(tester);
+
+        connectivity.change(ConnectivityState.offline);
+        await tester.pumpAndSettle();
+        expect(textOf(tester), _adminMessage);
+        expect(tester.element(action), same(button));
+        expect(FocusManager.instance.primaryFocus, same(focused));
+
+        remote.onFetchPage = (_, _) async => pageOf(const []);
+        connectivity.change(ConnectivityState.online);
+        await tester.pumpAndSettle();
+
+        expect(remote.calls, hasLength(2), reason: 'reconnecting read again');
+        expect(textOf(tester), _adminMessage);
+        expect(tester.element(action), same(button));
+        expect(FocusManager.instance.primaryFocus, same(focused));
+      },
+    );
+
+    for (final connect in <void Function(BuildContext)?>[(_) {}, null]) {
+      testWidgets('320dp at 2.0: it does not overflow '
+          '(${connect == null ? 'plain' : 'card'})', (tester) async {
+        const view = Size(320, 640);
+        useViewSize(tester, view);
+        await tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(
+              size: view,
+              textScaler: const TextScaler.linear(2),
+            ),
+            child: harness(onConnectDataGateway: connect),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          MediaQuery.textScalerOf(tester.element(message)).scale(10),
+          20,
+          reason: 'the scale reaches the section',
+        );
+        final text = tester.getRect(message);
+        expect(text.left, greaterThanOrEqualTo(0));
+        expect(text.right, lessThanOrEqualTo(view.width));
+        if (connect == null) return;
+
+        final card = tester.getRect(find.byType(Card));
+        final button = tester.getRect(action);
+        expect(card.left, greaterThanOrEqualTo(0));
+        expect(card.right, lessThanOrEqualTo(view.width));
+        expect(card.contains(button.topLeft), isTrue);
+        expect(card.contains(button.bottomRight - const Offset(1, 1)), isTrue);
+        expect(card.contains(text.bottomRight - const Offset(1, 1)), isTrue);
+        expect(
+          button.top,
+          greaterThanOrEqualTo(text.bottom),
+          reason: 'the button sits under the message',
+        );
+      });
+    }
   });
 
   group('Failed', () {

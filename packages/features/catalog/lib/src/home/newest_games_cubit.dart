@@ -29,6 +29,10 @@ final class NewestGamesLoading extends NewestGamesState {
 /// is an answer whose games have all been found gone: "no games here" is a
 /// claim about the server, and a false one sends an admin to connect a
 /// DataGateway they already have.
+///
+/// A later read that fails, or a connection that goes, leaves it standing: that
+/// repeats what the server said rather than deriving it from the failure, and
+/// the page keeps its card, and the focus on its button, through a blip.
 final class NewestGamesEmpty extends NewestGamesState {
   const NewestGamesEmpty();
 }
@@ -80,12 +84,12 @@ final class NewestGamesReady extends NewestGamesState {
 /// ## When the server can't be asked
 ///
 /// Offline, or after a failed read, the row shows the games already saved on
-/// this device, newest first ([GameRepository.getGamesPage]). With none saved
-/// it is [NewestGamesFailed], not [NewestGamesEmpty]: a device that has seen
-/// no games says nothing about the server.
-///
-/// Rows already up stay up when a read fails or the connection goes, and a
-/// refusal stays a refusal: a failure says nothing about either.
+/// this device, newest first ([GameRepository.getGamesPage]), unless it already
+/// holds an answer. Rows, a refusal, and the server's saying it has no games,
+/// which keeps its card, all stay as they are when a read fails or the
+/// connection goes: a failure says nothing about any of them. With no answer up
+/// and none saved, it is [NewestGamesFailed], not [NewestGamesEmpty]: a device
+/// that has seen no games says nothing about the server.
 ///
 /// ## Reading again
 ///
@@ -105,7 +109,8 @@ final class NewestGamesReady extends NewestGamesState {
 /// An answer that comes at once, as it does offline, would otherwise replace
 /// the retrying state before the page had drawn it, and the page would see the
 /// same failure as before. So whichever read answers, the state it replaces
-/// has been up for [retryDwell]. A read begun by the page is not held.
+/// has been up for [retryDwell]. Only that state is held: a read that answers
+/// while no retry is showing, whoever began it, shows at once.
 ///
 /// ## A game found gone
 ///
@@ -237,10 +242,16 @@ class NewestGamesCubit extends Cubit<NewestGamesState> {
     return _show(generation, _rows(answer, fromCache: false));
   }
 
-  /// The games saved on this device, unless a row or a refusal is already up.
+  /// The games saved on this device, unless the server has already answered:
+  /// with rows, with a refusal or with none. Those answers stand until the
+  /// server gives another.
   Future<void> _fallBack(int generation) async {
     final shown = state;
-    if (shown is NewestGamesDenied || shown is NewestGamesReady) return;
+    if (shown is NewestGamesDenied ||
+        shown is NewestGamesReady ||
+        shown is NewestGamesEmpty) {
+      return;
+    }
     final saved = await _readCache();
     return _show(generation, _rows(saved, fromCache: true));
   }

@@ -8,6 +8,7 @@ import 'package:ui_tokens/ui_tokens.dart';
 
 import 'package:game_catalog/l10n/game_catalog_localizations.dart';
 
+import 'empty_server_card.dart';
 import 'game_cover_tile.dart';
 import 'newest_games_cubit.dart';
 
@@ -18,9 +19,27 @@ import 'newest_games_cubit.dart';
 ///
 /// The heading and "See all" are the same widgets whether the row is loading,
 /// has failed or is showing games, so the link keeps focus as the row under it
-/// changes. A refused user is shown nothing, header included. Nor is anything
-/// drawn yet for a server with no games: the home page decides what to say
-/// there.
+/// changes. A refused user is shown nothing, header included.
+///
+/// ## A server with no games
+///
+/// When the server answers that it has none (#617), the whole row gives way to
+/// a statement of that, with no heading or link left over, as there is nothing
+/// to see all of. Someone who can connect a DataGateway gets a card with a
+/// button that opens the list of them; everyone else gets a plain message.
+/// [onConnectDataGateway] says which: null is the plain message, and so is what
+/// stands while it isn't yet known whether the user can.
+///
+/// Only the server's own answer says it has no games. A first read that fails,
+/// and being offline for it, are the failed state however the user's access
+/// stands, because "no games here" is a claim about the server, and a false one
+/// sends an admin to connect a DataGateway they may already have. Once the
+/// server has said it, a read that fails afterwards leaves it standing, so that
+/// a blip doesn't swap the card for a failure and back.
+///
+/// The callback is read when the section builds, and not kept by the cubit, so
+/// that it arriving, or going, swaps the one for the other without reading the
+/// server again.
 ///
 /// ## A failed read
 ///
@@ -41,6 +60,7 @@ class NewestGamesSection extends StatelessWidget {
     this.connectivity,
     this.gone,
     this.onOpen,
+    this.onConnectDataGateway,
     super.key,
   });
 
@@ -58,6 +78,13 @@ class NewestGamesSection extends StatelessWidget {
 
   /// Key on the failed message's retry button.
   static const Key retryKey = Key('catalog.newest_retry');
+
+  /// Key on the text saying the server has no games, in the card and out of
+  /// it.
+  static const Key emptyKey = Key('catalog.newest_empty');
+
+  /// Key on the empty card's button.
+  static const Key emptyActionKey = Key('catalog.newest_empty_action');
 
   /// Per-game key: `catalog.newest_cover_<gameId>`.
   static Key coverKey(String gameId) => Key('catalog.newest_cover_$gameId');
@@ -82,6 +109,10 @@ class NewestGamesSection extends StatelessWidget {
   /// Opens one game, or null where there is nowhere to open it.
   final void Function(BuildContext context, String gameId)? onOpen;
 
+  /// Opens the list of DataGateways, for a user who can connect one. Null is
+  /// the plain message to a server with no games.
+  final void Function(BuildContext context)? onConnectDataGateway;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<NewestGamesCubit>(
@@ -93,27 +124,45 @@ class NewestGamesSection extends StatelessWidget {
         connectivity: connectivity,
         gone: gone,
       )..load(),
-      child: _Section(onSeeAll: onSeeAll, onOpen: onOpen),
+      child: _Section(
+        onSeeAll: onSeeAll,
+        onOpen: onOpen,
+        onConnectDataGateway: onConnectDataGateway,
+      ),
     );
   }
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.onSeeAll, required this.onOpen});
+  const _Section({
+    required this.onSeeAll,
+    required this.onOpen,
+    required this.onConnectDataGateway,
+  });
 
   final void Function(BuildContext context) onSeeAll;
   final void Function(BuildContext context, String gameId)? onOpen;
+  final void Function(BuildContext context)? onConnectDataGateway;
 
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<NewestGamesCubit>();
     final onOpen = this.onOpen;
+    final onConnect = onConnectDataGateway;
 
     return ReadAgainWhenUncovered(
       onUncovered: cubit.load,
       child: BlocBuilder<NewestGamesCubit, NewestGamesState>(
         builder: (context, state) => switch (state) {
-          NewestGamesDenied() || NewestGamesEmpty() => const SizedBox.shrink(),
+          NewestGamesDenied() => const SizedBox.shrink(),
+          NewestGamesEmpty() when onConnect != null => EmptyServerCard(
+            onConnect: () => onConnect(context),
+            messageKey: NewestGamesSection.emptyKey,
+            actionKey: NewestGamesSection.emptyActionKey,
+          ),
+          NewestGamesEmpty() => const EmptyServerMessage(
+            messageKey: NewestGamesSection.emptyKey,
+          ),
           NewestGamesLoading() => _shelf(
             context,
             placeholder: const _Loading(),
