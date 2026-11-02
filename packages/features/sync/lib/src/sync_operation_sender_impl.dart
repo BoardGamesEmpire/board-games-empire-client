@@ -84,10 +84,16 @@ class SyncOperationSenderImpl implements SyncOperationSender {
   /// Whether the drain would hold [entry] back behind an earlier op for its
   /// collection entry, so sending it now could land it out of order (#45).
   ///
-  /// The rule is the drain's: an earlier op holds it back unless that op is
-  /// exhausted. An exhausted add still holds back an update or a removal
-  /// while the entry is local-only, since the add's acknowledgement can
-  /// still change the id they name.
+  /// This is the drain's queue-order rule: an earlier op holds it back
+  /// unless that op is exhausted. An exhausted add still holds back an
+  /// update or a removal while the entry is local-only, since the add's
+  /// acknowledgement can still change the id they name.
+  ///
+  /// The drain has a second rule, that a live claim by any other op of the
+  /// entry, earlier or later, holds the rest (#677). It isn't checked here
+  /// because the claim checks it ([SyncQueueRepository.claim]), in the same
+  /// transaction that takes the op. A check here could pass while another
+  /// sender claims an op of the entry just after it.
   Future<bool> _heldBack(SyncQueueEntry entry) async {
     final SyncOperation op;
     try {
@@ -145,8 +151,8 @@ class SyncOperationSenderImpl implements SyncOperationSender {
 
   SyncDelivery _notClaimed(String entryId, SyncOperation operation) {
     _log.debug(
-      'Queued op is held by another sender, rewritten since it was read, or '
-      'no longer claimable',
+      'Queued op is held by another sender, rewritten since it was read, no '
+      'longer claimable, or behind a live claim on another op of its entry',
       context: _context(entryId, operation),
     );
     return const SyncNotClaimed();

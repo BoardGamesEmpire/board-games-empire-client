@@ -663,6 +663,108 @@ void main() {
       expect(h.collectionRemote.writes, isEmpty);
     });
 
+    test('an op waits while a later op for its entry is claimed by another '
+        'sender', () async {
+      // #677's order of events: an update is parked, the game is added
+      // again and sent inline, and the update is retried by hand while the
+      // add is still out.
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 2);
+      final update = (await h.queue.getPendingEntries()).single;
+      h.collectionRemote.respond = (_) =>
+          throw const GameCollectionNotFoundException(
+            'Collection update returned 404',
+            statusCode: 404,
+          );
+      await drain.drain();
+      expect((await entry(update.id)).isExhausted, isTrue);
+      final add = await h.queuedAdd();
+      expect(await h.queue.claim(add.id), isTrue);
+      expect(await h.queue.retry(update.id), isTrue);
+      h.collectionRemote.respond = (write) =>
+          serverEntry(quantity: write.fields['quantity']! as int);
+
+      await drain.drain();
+      await pumpEventQueue();
+
+      expect(h.collectionRemote.writes, hasLength(1), reason: 'the 404 only');
+      expect((await entry(update.id)).status, SyncStatus.pending);
+      expect(drain.isStale, isFalse);
+
+      h.advance(SyncQueueEntry.claimLease - const Duration(seconds: 1));
+      expect(drain.isStale, isFalse, reason: "the add's claim still holds");
+
+      h.advance(const Duration(seconds: 2));
+      expect(drain.isStale, isTrue);
+      await drain.drain();
+      expect(h.collectionRemote.writes.skip(1).map((w) => w.method), [
+        'PATCH',
+        'POST',
+      ]);
+    });
+
+    test('an op with an expired claim of its own waits while another op of '
+        'its entry holds a live one', () async {
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 2);
+      final first = (await h.queue.getPendingEntries()).single;
+      expect(await h.queue.claim(first.id), isTrue);
+      h.advance(SyncQueueEntry.claimLease + const Duration(seconds: 1));
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 3);
+      final second = (await h.queue.getPendingEntries()).singleWhere(
+        (e) => e.id != first.id,
+      );
+      expect(await h.queue.claim(second.id), isTrue);
+
+      await drain.drain();
+      await pumpEventQueue();
+
+      expect(h.collectionRemote.writes, isEmpty);
+      expect((await entry(first.id)).status, SyncStatus.inProgress);
+      expect(drain.isStale, isFalse);
+
+      h.advance(SyncQueueEntry.claimLease - const Duration(seconds: 1));
+      expect(drain.isStale, isFalse, reason: "the later op's claim holds");
+
+      h.advance(const Duration(seconds: 2));
+      expect(drain.isStale, isTrue);
+    });
+
+    test('a cooling op behind a claim that outlasts its cooldown waits for '
+        'the claim', () async {
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 2);
+      final first = (await h.queue.getPendingEntries()).single;
+      h.collectionRemote.respond = (_) =>
+          throw const GameCollectionRemoteTransientException(
+            'Collection update failed',
+            statusCode: 500,
+          );
+      await drain.drain();
+      expect((await entry(first.id)).retryCount, 1);
+      // The first update cools for a minute. Halfway through, another
+      // sender claims a later update, whose claim runs out well after that.
+      h.advance(const Duration(seconds: 30));
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 3);
+      final second = (await h.queue.getPendingEntries()).singleWhere(
+        (e) => e.id != first.id,
+      );
+      expect(await h.queue.claim(second.id), isTrue);
+
+      await drain.drain();
+      await pumpEventQueue();
+
+      h.advance(const Duration(seconds: 30));
+      expect(
+        drain.isStale,
+        isFalse,
+        reason: 'the cooldown is over, but the claim still holds',
+      );
+
+      h.advance(SyncQueueEntry.claimLease - const Duration(seconds: 30));
+      expect(drain.isStale, isTrue);
+    });
+
     test('a removal behind an add goes out under the server id once the '
         'add lands', () async {
       final add = await h.queuedAdd();

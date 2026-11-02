@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:sync_queue/sync_queue.dart';
 
 import 'support/harness.dart';
 
@@ -661,6 +664,93 @@ void main() {
         expect(h.collectionRemote.writes, isEmpty);
       },
     );
+  });
+
+  group('an inline send and a retried op for one entry', () {
+    late SyncQueueDrain drain;
+
+    // A drain over the same queue, sender and collection, as a session
+    // holds one beside the inline sends.
+    setUp(() {
+      drain = SyncQueueDrain(
+        queue: h.queue,
+        sender: h.sender,
+        collection: h.collection,
+        now: h.deviceNow,
+      );
+    });
+
+    // Before the database closes under it.
+    tearDown(() => drain.close());
+
+    /// A parked update to a confirmed entry: the stuck op #677 starts from.
+    Future<SyncQueueEntry> parkedUpdate() async {
+      await h.confirmedEntry();
+      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 2);
+      final update = (await h.queue.getPendingEntries()).single;
+      await h.queue.park(update.id, error: 'refused');
+      return update;
+    }
+
+    test('#677: a retried earlier op and an inline later add end with the '
+        'row matching the server', () async {
+      final update = await parkedUpdate();
+      final gate = Completer<GameCollection>();
+      h.collectionRemote.respond = (write) =>
+          write.method == 'POST' ? gate.future : serverEntry(quantity: 2);
+      final add = await h.queuedAdd();
+      final inline = h.sender.sendNow(
+        add.id,
+        add.op,
+        onClaimFailed: (_, _) => fail('the claim did not fail'),
+      );
+      await pumpEventQueue();
+      expect(h.collectionRemote.writes.map((w) => w.method), ['POST']);
+
+      expect(await h.queue.retry(update.id), isTrue);
+      await drain.drain();
+      expect(h.collectionRemote.writes.map((w) => w.method), [
+        'POST',
+      ], reason: "the update waits for the add's answer");
+
+      gate.complete(serverEntry(quantity: 3));
+      expect(await inline, isA<SyncDelivered>());
+      await drain.drain();
+
+      expect(h.collectionRemote.writes.map((w) => w.method), ['POST', 'PATCH']);
+      expect(await h.onlyEntry(), serverEntry(quantity: 2));
+    });
+
+    test('#677: an inline later add behind a retried earlier op in flight '
+        'is left for the drain, and the row ends matching the '
+        'server', () async {
+      final update = await parkedUpdate();
+      expect(await h.queue.retry(update.id), isTrue);
+      final gate = Completer<GameCollection>();
+      h.collectionRemote.respond = (write) =>
+          write.method == 'PATCH' ? gate.future : serverEntry(quantity: 3);
+      final pass = drain.drain();
+      await pumpEventQueue();
+      expect(h.collectionRemote.writes.map((w) => w.method), ['PATCH']);
+
+      final add = await h.queuedAdd();
+      final inline = await h.sender.sendNow(
+        add.id,
+        add.op,
+        onClaimFailed: (_, _) => fail('the claim did not fail'),
+      );
+      expect(inline, isA<SyncNotClaimed>());
+      final held = await h.entry(add.id);
+      expect(held.status, SyncStatus.pending);
+      expect(held.retryCount, 0);
+
+      gate.complete(serverEntry(quantity: 2));
+      await pass;
+      await drain.drain();
+
+      expect(h.collectionRemote.writes.map((w) => w.method), ['PATCH', 'POST']);
+      expect(await h.onlyEntry(), serverEntry(quantity: 3));
+    });
   });
 
   group('an event create', () {

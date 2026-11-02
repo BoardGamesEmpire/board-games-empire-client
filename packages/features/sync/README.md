@@ -27,8 +27,10 @@ One rule for every write (#45):
 An immediate send of an op for a collection entry waits where the drain would
 hold it back: behind an earlier op for the same entry that isn't exhausted,
 or, for an update or removal, behind an add for an entry the server hasn't
-confirmed. It is left queued, and the drain sends the entry's ops in order
-(see below). The send reads the op back as the queue holds it, since an
+confirmed, or while another op of the entry, earlier or later, holds a live
+claim (#677). It is left queued and uncounted, and the drain sends the entry's
+ops in order (see below). The claim enforces the claim rule, so both senders
+get it. The send reads the op back as the queue holds it, since an
 earlier add's acknowledgement may have moved it to the server's id.
 
 ## The sender
@@ -65,7 +67,9 @@ counts and whether a drain stops on it.
   whether the session still stands.
 - One collection entry's ops go out in order. An update or removal waits behind
   an add that isn't acknowledged yet, since it still names the entry by a local
-  id the server has never seen.
+  id the server has never seen. An op is also held, left queued and
+  uncounted, while another op of its entry, earlier or later, holds a live
+  claim (#677); the claim enforces that, as it does for an immediate send.
 - A counted failure waits out a cooldown that grows with the retry count: one
   minute, ten, an hour, then six.
 

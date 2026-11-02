@@ -27,17 +27,28 @@ import 'package:observability/observability.dart';
 ///
 /// ## One entry's ops stay in order
 ///
-/// The queue entries for one collection entry go out in queue order. Within
-/// a pass, once an op for an entry isn't delivered, for whatever reason, the
-/// entry's later ops wait for a later pass. Across passes, an update or a
-/// removal queued behind an add that isn't acknowledged yet is held while
-/// its entry is local-only, parked adds included: the server has yet to
-/// confirm the entry, and the add's acknowledgement is what gives it the id
-/// the server knows it by, remapping the op onto it. The read a pass works
-/// from includes exhausted entries for that reason, and which entries are
-/// local-only. An add names the game rather than the id, so this rule holds
-/// no add, though the order can: an add queued behind an op the rule holds
-/// waits with it.
+/// The queue entries for one collection entry go out in queue order, one
+/// at a time. Within a pass, once an op for an entry isn't delivered, for
+/// whatever reason, the entry's later ops wait for a later pass. While any
+/// op of the entry holds a live claim, earlier or later in the queue, the
+/// entry's other ops wait until that op settles or its claim runs out. Two
+/// ops of one entry in flight together can be applied by the server in one
+/// order and answered in the other, and the row is then left clean with
+/// the answer of the op applied first, which the server has since
+/// overwritten (#677). A later op holds an earlier one when a stuck op is
+/// retried by hand while a newer one is out, such as an add sent inline.
+/// The queue's claim refuses the held op either way
+/// ([SyncQueueRepository.claim]); the schedule waits out the claim too, so
+/// that [isStale] doesn't ask for passes that would send nothing.
+///
+/// Across passes, an update or a removal queued behind an add that isn't
+/// acknowledged yet is held while its entry is local-only, parked adds
+/// included: the server has yet to confirm the entry, and the add's
+/// acknowledgement is what gives it the id the server knows it by,
+/// remapping the op onto it. The read a pass works from includes exhausted
+/// entries for that reason, and which entries are local-only. An add names
+/// the game rather than the id, so this rule holds no add, though the order
+/// can: an add queued behind an op the rule holds waits with it.
 ///
 /// So while a parked add holds its entry's ops, a later add for the entry
 /// waits with them, and nothing more goes out for the entry until the
@@ -291,7 +302,12 @@ class SyncQueueDrain {
         if (target != null) waiting.add(target);
       }
 
-      switch (_verdict(listed, waiting, _now())) {
+      switch (_verdict(
+        listed,
+        waiting,
+        _now(),
+        lastClaimed: snapshot.lastClaimed(listed),
+      )) {
         case _Spent():
           continue;
         case _Waiting():
@@ -375,15 +391,39 @@ class SyncQueueDrain {
   }
 
   /// What the rules say about [listed] at [now], given the targets this walk
-  /// already holds back in [waiting].
+  /// already holds back in [waiting], and [lastClaimed], the latest claim
+  /// the read found on an entry sharing its target.
   ///
   /// A pass and [_nextSendable] both walk the queue by this, so what
   /// [isStale] expects a pass to send is what a pass would send.
-  static _Verdict _verdict(_Listed listed, Set<String> waiting, DateTime now) {
+  ///
+  /// An entry waits while a claim on its target is live, whatever its own
+  /// state, judged as [SyncQueueRepository.claim] judges it: a claim exactly
+  /// a lease old still holds, and one stamped ahead of a clock set back
+  /// holds until the clock passes its lease. The claim would refuse the
+  /// entry all that time (#677), so a schedule that called it sendable would
+  /// have [isStale] asking for passes that send nothing. An entry that is
+  /// both cooling and behind such a claim waits for whichever ends later,
+  /// for the same reason. One whose own claim has expired still waits
+  /// behind another op's live claim.
+  static _Verdict _verdict(
+    _Listed listed,
+    Set<String> waiting,
+    DateTime now, {
+    required DateTime? lastClaimed,
+  }) {
     if (listed.entry.isExhausted) return const _Spent();
     if (waiting.contains(listed.target)) return const _Held();
-    final readyAt = _readyAt(listed.entry, now);
-    if (readyAt != null && readyAt.isAfter(now)) return _Waiting(readyAt);
+    var readyAt = _readyAt(listed.entry, now);
+    if (readyAt != null && !readyAt.isAfter(now)) readyAt = null;
+    if (lastClaimed != null) {
+      final claimEnds = lastClaimed.add(SyncQueueEntry.claimLease);
+      if (!claimEnds.isBefore(now) &&
+          (readyAt == null || claimEnds.isAfter(readyAt))) {
+        readyAt = claimEnds;
+      }
+    }
+    if (readyAt != null) return _Waiting(readyAt);
     if (listed.behindAdd) return const _Held();
     return const _Sendable();
   }
@@ -470,7 +510,12 @@ class SyncQueueDrain {
     DateTime? earliest;
     for (final listed in snapshot.entries) {
       final target = listed.target;
-      switch (_verdict(listed, waiting, now)) {
+      switch (_verdict(
+        listed,
+        waiting,
+        now,
+        lastClaimed: snapshot.lastClaimed(listed),
+      )) {
         case _Spent():
           break;
         case _Sendable():
@@ -496,6 +541,7 @@ class _Snapshot {
   }) {
     final entries = <_Listed>[];
     final sharing = <String, int>{};
+    final claimed = <String, DateTime>{};
     final added = <String>{};
     for (final entry in outstanding) {
       final op = _decode(entry);
@@ -520,12 +566,20 @@ class _Snapshot {
         if (op is AddToCollectionOperation && localOnly.contains(op.localId)) {
           added.add(target);
         }
+        final claimedAt = entry.status == SyncStatus.inProgress
+            ? entry.lastAttemptAt
+            : null;
+        final latest = claimed[target];
+        if (claimedAt != null &&
+            (latest == null || claimedAt.isAfter(latest))) {
+          claimed[target] = claimedAt;
+        }
       }
     }
-    return _Snapshot._(entries, sharing);
+    return _Snapshot._(entries, sharing, claimed);
   }
 
-  _Snapshot._(this.entries, this._sharing);
+  _Snapshot._(this.entries, this._sharing, this._claimed);
 
   final List<_Listed> entries;
 
@@ -540,6 +594,19 @@ class _Snapshot {
 
   /// Whether another entry in this read shares [listed]'s target.
   bool isShared(_Listed listed) => (_sharing[listed.target] ?? 0) > 1;
+
+  /// For each target, the latest claim stamp among its entries this read
+  /// found claimed, live or not. The latest is the one that decides: if any
+  /// claim on the target is live, that one is, and it is the last to run
+  /// out. An entry claimed with no stamp holds nothing, as the queue reads
+  /// it, so it adds none.
+  final Map<String, DateTime> _claimed;
+
+  /// The latest claim stamp this read found on an entry sharing [listed]'s
+  /// target, or null when it found none of them claimed. [listed]'s own
+  /// counts too: that is exact, since an entry's own live claim is caught
+  /// by [_readyAt] first, and an expired one is never the latest live claim.
+  DateTime? lastClaimed(_Listed listed) => _claimed[listed.target];
 
   /// Decodes [entry]'s op, or null for a payload that won't decode.
   static SyncOperation? _decode(SyncQueueEntry entry) {
@@ -597,7 +664,8 @@ final class _Sendable extends _Verdict {
   const _Sendable();
 }
 
-/// Cooling, or claimed by another sender, until [until].
+/// Cooling, claimed by another sender, or behind another sender's claim on
+/// an op of its entry, until [until].
 final class _Waiting extends _Verdict {
   const _Waiting(this.until);
 
