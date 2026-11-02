@@ -139,11 +139,11 @@ void main() {
 
     test('leaves a local-only entry alone when the server holds the same '
         'game under its own id', () async {
-      final local = await repo.addToCollection(
+      final local = (await repo.addToCollection(
         platformGameId: kFixturePlatformGameId,
         medium: GameMedium.physical,
         quantity: 2,
-      );
+      )).entry;
 
       await repo.mergeFromServer([
         _server(id: 'gc-other-device'),

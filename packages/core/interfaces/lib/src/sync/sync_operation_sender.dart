@@ -4,9 +4,9 @@ import 'package:models/domain.dart';
 /// (#121).
 ///
 /// The one path every sender takes: claim the entry, send the op, then
-/// acknowledge it, park it, count the failure or hand it back. The inline
-/// household create and the queue drain both come through here, so each
-/// outcome's rule applies to both the same way.
+/// acknowledge it, park it, count the failure or hand it back. A write's
+/// immediate send ([SendQueuedOpNow.sendNow]) and the queue drain both come
+/// through here, so each outcome's rule applies to both the same way.
 ///
 /// ## How a failed request is judged
 ///
@@ -32,12 +32,22 @@ abstract interface class SyncOperationSender {
   /// create goes out keyed by its `localId`, so a retry after a lost
   /// response returns what the first attempt made (#131, #499).
   ///
+  /// An op for a collection entry is sent as the queue holds it now, which
+  /// an earlier add's acknowledgement may have moved to the server's id
+  /// (#429), and only where the drain would send it (#45). An earlier op
+  /// for the same entry holds it back unless that op is exhausted, and an
+  /// exhausted add still holds back an update or a removal while the entry
+  /// is local-only. A held op is not claimed and comes back
+  /// [SyncNotClaimed]: it stays queued, and the drain sends the entry's ops
+  /// in order. This is the path for a write's immediate send; the drain
+  /// sends through [deliverEntry] and keeps the order itself.
+  ///
   /// Never throws for anything the send or its acknowledgement does: those
   /// all come back as a [SyncDelivery]. A queue write that records the
   /// outcome is bookkeeping, so its failure is logged and leaves the entry
-  /// claimed until its lease runs out. Throws only when the claim itself
-  /// fails, in which case nothing was sent; a queue disposed with its
-  /// session throws [StateError] there.
+  /// claimed until its lease runs out. Throws only when reading or claiming
+  /// the entry fails, in which case nothing was sent; a queue disposed with
+  /// its session throws [StateError] there.
   Future<SyncDelivery> deliver(String entryId, SyncOperation operation);
 
   /// Delivers the op [entry] holds, as [deliver] does.
@@ -53,6 +63,50 @@ abstract interface class SyncOperationSender {
   /// entry no build can read is bounded rather than retried forever, and
   /// never parked, since no server judged it.
   Future<SyncDelivery> deliverEntry(SyncQueueEntry entry);
+}
+
+/// The send a write makes of the op it just queued (#45).
+///
+/// ## The rule
+///
+/// A change the app shows before the server confirms it is written locally
+/// and queued in one transaction, then sent at once through [sendNow]. The
+/// repository that queues it hands back the queue entry's id and the op,
+/// and the caller sends them. A write is never queued and left for a drain
+/// to find: nothing wakes the drain on an enqueue, so the change would wait
+/// for the next connectivity edge or resume, and on web, which has no drain
+/// yet (#447), for ever.
+///
+/// No connectivity check comes first. The send's answer is the real one: a
+/// send that can't reach the server leaves the op queued, and the drain
+/// retries it. So "send now if online, else queue" needs nothing more, and
+/// nothing changes here when web gains a drain.
+///
+/// A change whose outcome is the server's to decide, or that reaches other
+/// people, goes to the server directly instead and is never queued: an
+/// invite, a member's approval, an RSVP, an admin setting.
+///
+/// The household create, the event create and the collection add send this
+/// way.
+extension SendQueuedOpNow on SyncOperationSender {
+  /// Sends the op a write just queued under [entryId], as
+  /// [SyncOperationSender.deliver] does.
+  ///
+  /// A claim that throws sent nothing and leaves the op queued for the
+  /// drain, so it is handed to [onClaimFailed] to log and comes back as
+  /// [SyncNotClaimed]. Never throws.
+  Future<SyncDelivery> sendNow(
+    String entryId,
+    SyncOperation operation, {
+    required void Function(Object error, StackTrace stackTrace) onClaimFailed,
+  }) async {
+    try {
+      return await deliver(entryId, operation);
+    } on Object catch (error, stackTrace) {
+      onClaimFailed(error, stackTrace);
+      return const SyncNotClaimed();
+    }
+  }
 }
 
 /// What [SyncOperationSender.deliver] did with one queued op.
@@ -77,7 +131,8 @@ final class SyncDelivered extends SyncDelivery {
 
 /// Another sender holds the entry, or it can no longer be taken: completed,
 /// exhausted or gone, or, for [SyncOperationSender.deliverEntry], rewritten
-/// since it was read. Nothing was sent.
+/// since it was read. From [SendQueuedOpNow.sendNow], also a claim that
+/// threw. Nothing was sent.
 final class SyncNotClaimed extends SyncDelivery {
   const SyncNotClaimed();
 }

@@ -34,18 +34,20 @@ void main() {
     createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026),
   );
-  const tabletop = PlatformGameSummary(
+  final tabletop = PlatformGame(
     id: 'pg_1',
+    gameId: 'g_catan',
     platformId: 'plat_tabletop',
     platformName: 'Tabletop',
-    game: GameSummary(id: 'g_catan', title: 'Catan'),
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
   );
 
   Future<void> show(
     WidgetTester tester, {
     String gameId = 'g_catan',
     FakeGamesCache? cache,
-    void Function(BuildContext context, PlatformGameSummary platformGame)?
+    void Function(BuildContext context, Game game, PlatformGame platformGame)?
     onAdd,
   }) async {
     await tester.pumpWidget(
@@ -77,7 +79,7 @@ void main() {
 
   testWidgets('shows the game\'s facts', (tester) async {
     remote.onFetchGame = (_) async =>
-        (game: catan, platformGames: const <PlatformGameSummary>[]);
+        (game: catan, platformGames: const <PlatformGame>[]);
 
     await show(tester);
 
@@ -109,7 +111,7 @@ void main() {
       updatedAt: DateTime.utc(2026),
     );
     remote.onFetchGame = (_) async =>
-        (game: imported, platformGames: const <PlatformGameSummary>[]);
+        (game: imported, platformGames: const <PlatformGame>[]);
 
     await show(tester, gameId: 'g_brass');
 
@@ -150,7 +152,7 @@ void main() {
         updatedAt: DateTime.utc(2026),
       );
       remote.onFetchGame = (_) async =>
-          (game: bounded, platformGames: const <PlatformGameSummary>[]);
+          (game: bounded, platformGames: const <PlatformGame>[]);
 
       await show(tester, gameId: 'g_bounded');
 
@@ -172,7 +174,7 @@ void main() {
     tester,
   ) async {
     remote.onFetchGame = (_) async =>
-        (game: catan, platformGames: const <PlatformGameSummary>[]);
+        (game: catan, platformGames: const <PlatformGame>[]);
 
     await show(tester);
 
@@ -185,7 +187,7 @@ void main() {
 
   testWidgets('opens a web link outside the app', (tester) async {
     remote.onFetchGame = (_) async =>
-        (game: catan, platformGames: const <PlatformGameSummary>[]);
+        (game: catan, platformGames: const <PlatformGame>[]);
 
     await show(tester);
     tapLink(tester, 'the rules');
@@ -195,18 +197,21 @@ void main() {
 
   testWidgets('lists the platforms, with an add for each where adding is '
       'offered', (tester) async {
-    remote.onFetchGame = (_) async =>
-        (game: catan, platformGames: const [tabletop]);
+    remote.onFetchGame = (_) async => (game: catan, platformGames: [tabletop]);
     final added = <String>[];
 
     await show(tester);
     expect(find.text('Tabletop'), findsOneWidget);
     expect(find.byKey(GameDetailScreen.addKey('pg_1')), findsNothing);
 
-    await show(tester, onAdd: (_, platformGame) => added.add(platformGame.id));
+    await show(
+      tester,
+      onAdd: (_, game, platformGame) =>
+          added.add('${game.id}/${platformGame.id}'),
+    );
     await tester.tap(find.byKey(GameDetailScreen.addKey('pg_1')));
 
-    expect(added, ['pg_1']);
+    expect(added, ['g_catan/pg_1']);
   });
 
   testWidgets('rebuilt in place for another game, reads that game', (
@@ -214,7 +219,7 @@ void main() {
   ) async {
     remote.onFetchGame = (id) async => (
       game: game(id, title: 'Title of $id'),
-      platformGames: const <PlatformGameSummary>[],
+      platformGames: const <PlatformGame>[],
     );
 
     await show(tester, gameId: 'g_a');
@@ -304,7 +309,7 @@ void main() {
 
     testWidgets('is not said of a game that is there', (tester) async {
       remote.onFetchGame = (_) async =>
-          (game: catan, platformGames: const <PlatformGameSummary>[]);
+          (game: catan, platformGames: const <PlatformGame>[]);
 
       expect(await open(tester), isEmpty);
     });
@@ -319,7 +324,7 @@ void main() {
     expect(find.byKey(GameDetailScreen.errorKey), findsOneWidget);
 
     remote.onFetchGame = (_) async =>
-        (game: catan, platformGames: const <PlatformGameSummary>[]);
+        (game: catan, platformGames: const <PlatformGame>[]);
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
 

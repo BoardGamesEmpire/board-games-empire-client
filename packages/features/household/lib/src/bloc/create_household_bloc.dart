@@ -14,8 +14,9 @@ import 'create_household_state.dart';
 ///    member and enqueues a `CreateHouseholdOperation` (one transaction).
 ///    The household is visible from this point on.
 /// 2. A best-effort inline send of the op as queued, through
-///    [SyncOperationSender.deliver], the one delivery path the queue drain
-///    takes too (#121). It claims the queued op first, so this send and a
+///    [SendQueuedOpNow.sendNow], the immediate send every write that queues
+///    an op makes (#45), on the one delivery path the queue drain takes too
+///    (#121). It claims the queued op first, so this send and a
 ///    drain can't both deliver it (#430), and keys the create by the
 ///    optimistic row's id, the op's `localId`, so a send whose response is
 ///    lost cannot become a second household on the retry (#131).
@@ -92,21 +93,18 @@ class CreateHouseholdBloc
       sync: CreateHouseholdSync.queued,
     );
 
-    final SyncDelivery delivery;
-    try {
-      // The op exactly as the repository queued it, so this send carries
-      // what a drain's retry would: the trimmed name, and the fields the row
-      // has no column for.
-      delivery = await _sender.deliver(draft.syncQueueId, draft.operation);
-    } on Object catch (error, stackTrace) {
-      _logger.error(
+    // The op exactly as the repository queued it, so this send carries what
+    // a drain's retry would: the trimmed name, and the fields the row has no
+    // column for.
+    final delivery = await _sender.sendNow(
+      draft.syncQueueId,
+      draft.operation,
+      onClaimFailed: (error, stackTrace) => _logger.error(
         'Could not claim the queued household create; left queued',
         error: error,
         stackTrace: stackTrace,
-      );
-      emit(queued);
-      return;
-    }
+      ),
+    );
 
     switch (delivery) {
       case SyncDelivered(:final householdId):

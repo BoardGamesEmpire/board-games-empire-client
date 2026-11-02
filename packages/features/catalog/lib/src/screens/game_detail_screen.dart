@@ -22,10 +22,12 @@ import '../widgets/game_description.dart';
 ///
 /// ## Adding to the collection is a callback
 ///
-/// Picking a platform calls [onAdd] with that platform game, which #45
-/// supplies. Null, there is no add button, as the household list offers no
-/// create without a way to send one (#269). The list is empty until the
-/// server sends platform games (backend#791).
+/// Picking a platform calls [onAdd] with the game and that platform game,
+/// which #45 supplies: the game because the add names it, and a
+/// [PlatformGame] has no title. Null, there is no add button, as the
+/// household list offers no create without a way to send one (#269). An
+/// empty list means the game is on no platform, or the caller may not read
+/// its platform games.
 ///
 /// ## A game found gone
 ///
@@ -95,7 +97,11 @@ class GameDetailScreen extends StatelessWidget {
 
   /// Adds the game on one platform to the collection (#45). Null offers no
   /// add.
-  final void Function(BuildContext context, PlatformGameSummary platformGame)?
+  final void Function(
+    BuildContext context,
+    Game game,
+    PlatformGame platformGame,
+  )?
   onAdd;
 
   /// Opens a description link outside the app.
@@ -120,7 +126,11 @@ class GameDetailScreen extends StatelessWidget {
 class _GameDetailPage extends StatelessWidget {
   const _GameDetailPage({required this.openLink, this.onAdd});
 
-  final void Function(BuildContext context, PlatformGameSummary platformGame)?
+  final void Function(
+    BuildContext context,
+    Game game,
+    PlatformGame platformGame,
+  )?
   onAdd;
   final Future<void> Function(Uri uri) openLink;
 
@@ -215,10 +225,14 @@ class _GameDetailBody extends StatelessWidget {
   static const double _imageExtent = 160;
 
   final Game game;
-  final List<PlatformGameSummary> platformGames;
+  final List<PlatformGame> platformGames;
   final bool fromCache;
   final VoidCallback onRetry;
-  final void Function(BuildContext context, PlatformGameSummary platformGame)?
+  final void Function(
+    BuildContext context,
+    Game game,
+    PlatformGame platformGame,
+  )?
   onAdd;
   final Future<void> Function(Uri uri) openLink;
 
@@ -285,7 +299,7 @@ class _GameDetailBody extends StatelessWidget {
                     ? null
                     : TextButton(
                         key: GameDetailScreen.addKey(platformGame.id),
-                        onPressed: () => add(context, platformGame),
+                        onPressed: () => add(context, game, platformGame),
                         child: Text(l10n.catalogDetailAddToCollection),
                       ),
               ),

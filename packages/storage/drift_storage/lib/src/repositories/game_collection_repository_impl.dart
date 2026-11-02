@@ -80,6 +80,12 @@ import 'watch_disposal.dart';
 /// it has nothing to send. Removing an entry uses [removeFromCollection], not
 /// `addToCollection(quantity: 0)` or `updateCollectionEntry(quantity: 0)`.
 ///
+/// An add can't take the entry past `GameCollectionRepository.maxQuantity`.
+/// A quantity past it throws before the transaction like the checks above.
+/// A live row whose copies and the quantity together pass it throws
+/// [ArgumentError] inside the transaction, before anything is written: only
+/// there is the row read as it is.
+///
 /// ## Tombstones
 ///
 /// `deletedAt` is the canonical tombstone marker (matches the model's
@@ -311,7 +317,14 @@ class GameCollectionRepositoryImpl
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   @override
-  Future<GameCollection> addToCollection({
+  Future<
+    ({
+      GameCollection entry,
+      String syncQueueId,
+      AddToCollectionOperation operation,
+    })
+  >
+  addToCollection({
     required String platformGameId,
     required GameMedium medium,
     int quantity = 1,
@@ -330,6 +343,13 @@ class GameCollectionRepositoryImpl
         quantity,
         'quantity',
         'must be positive (use removeFromCollection to delete an entry)',
+      );
+    }
+    if (quantity > GameCollectionRepository.maxQuantity) {
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'must not exceed ${GameCollectionRepository.maxQuantity}',
       );
     }
 
@@ -428,6 +448,18 @@ class GameCollectionRepositoryImpl
         // Live row: increment quantity by the requested amount.
         // Preserve existing rating/comment unless the caller supplied
         // a new value.
+        //
+        // The total is checked against this row, read in the transaction:
+        // the caller's own check may have used an earlier read, or none.
+        if (existing.quantity >
+            GameCollectionRepository.maxQuantity - quantity) {
+          throw ArgumentError.value(
+            quantity,
+            'quantity',
+            'with the ${existing.quantity} already held, must not exceed '
+                '${GameCollectionRepository.maxQuantity}',
+          );
+        }
         entryId = existing.id;
         finalQuantity = existing.quantity + quantity;
         raised = true;
@@ -444,22 +476,25 @@ class GameCollectionRepositoryImpl
         );
       }
 
-      await _syncQueue.enqueue(
-        AddToCollectionOperation(
-          localId: entryId,
-          platformGameId: platformGameId,
-          medium: wireMedium,
-          quantity: finalQuantity,
-          rating: rating,
-          comment: comment,
-          raised: raised,
-        ),
+      final operation = AddToCollectionOperation(
+        localId: entryId,
+        platformGameId: platformGameId,
+        medium: wireMedium,
+        quantity: finalQuantity,
+        rating: rating,
+        comment: comment,
+        raised: raised,
       );
+      final queued = await _syncQueue.enqueue(operation);
 
       final row = await (_db.select(
         _db.gameCollectionsTable,
       )..where((t) => t.id.equals(entryId))).getSingle();
-      return _mapRow(row);
+      return (
+        entry: _mapRow(row),
+        syncQueueId: queued.id,
+        operation: operation,
+      );
     });
   }
 

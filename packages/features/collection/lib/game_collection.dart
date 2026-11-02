@@ -2,6 +2,10 @@ library;
 
 export 'package:hydration/hydration.dart' show Hydration, HydrationState;
 
+export 'src/add/add_to_collection_bloc.dart';
+export 'src/add/add_to_collection_event.dart';
+export 'src/add/add_to_collection_sheet.dart';
+export 'src/add/add_to_collection_state.dart';
 export 'src/bloc/game_collection_list_bloc.dart';
 export 'src/bloc/game_collection_list_event.dart';
 export 'src/bloc/game_collection_list_state.dart';

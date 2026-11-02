@@ -1457,7 +1457,9 @@ class _BgeAppState extends State<BgeApp> {
   /// while the auth redirect pops the route.
   ///
   /// No `onOpen` yet: rows stay inert content until #46 gives them a
-  /// detail route (#44).
+  /// detail route (#44). The empty state browses to the catalog (#45) where
+  /// the active container has one, [_catalogContainer]'s gate, and offers
+  /// nothing to press where it doesn't.
   Widget? _buildCollectionListRoute(BuildContext context) {
     final active = widget.bootstrapCubit.activeServerScope?.active;
     if (active == null) return null;
@@ -1472,10 +1474,45 @@ class _BgeAppState extends State<BgeApp> {
     return GameCollectionListScreen(
       repository: container.get<GameCollectionRepository>(),
       hydration: hydration,
+      onBrowse: _catalogContainer() == null
+          ? null
+          : (ctx) => unawaited(ctx.push<void>(AppRoutes.games)),
       onRetry: _collectionRetry(container),
       onEnter: _collectionEntryRefresh(container),
     );
   }
+
+  /// The detail's add (#45): opens the add sheet over the detail, or null,
+  /// so the detail offers no add, where [container] has no
+  /// [GameCollectionRepository] or no [SyncOperationSender] to send the add
+  /// through at once. Both platforms register both in a user session.
+  ///
+  /// Both are resolved again at each press, from the server active then, not
+  /// held from the route's build: a reference held across a session change
+  /// is disposed (#45's 2026-08-20 amendment, from #150), and a mounted route
+  /// keeps this callback until it is rebuilt. A press once the active
+  /// container lacks either does nothing.
+  void Function(BuildContext context, Game game, PlatformGame platformGame)?
+  _collectionAdd(DependencyContainer container) {
+    if (!_canAddToCollection(container)) return null;
+    return (context, game, platformGame) {
+      final active = widget.bootstrapCubit.activeServerScope?.active?.container;
+      if (active == null || !_canAddToCollection(active)) return;
+      unawaited(
+        showAddToCollectionSheet(
+          context,
+          repository: active.get<GameCollectionRepository>(),
+          sender: active.get<SyncOperationSender>(),
+          game: game,
+          platformGame: platformGame,
+        ),
+      );
+    };
+  }
+
+  static bool _canAddToCollection(DependencyContainer container) =>
+      container.isRegistered<GameCollectionRepository>() &&
+      container.isRegistered<SyncOperationSender>();
 
   /// The games cache (#42): the user-session [GameRepository], or null where
   /// no user session is active. The catalog screens read the server without
@@ -1572,8 +1609,10 @@ class _BgeAppState extends State<BgeApp> {
   /// The #42 detail screen for [gameId]. Same gate as
   /// [_buildGameBrowseRoute].
   ///
-  /// No `onAdd`: adding a game to the collection is #45's, and until it
-  /// supplies one the screen offers no add.
+  /// Its add opens the collection's add sheet where the session has a
+  /// collection, through [_collectionAdd], which resolves the repository per
+  /// press (#45). Without one, as on a signed-out server, the screen offers
+  /// no add.
   Widget? _buildGameDetailRoute(BuildContext context, String gameId) {
     final container = _catalogContainer();
     if (container == null) return null;
@@ -1583,6 +1622,7 @@ class _BgeAppState extends State<BgeApp> {
       remote: container.get<GamesRemoteDataSource>(),
       cache: _gamesCache(container),
       onGone: _reportGameGone,
+      onAdd: _collectionAdd(container),
     );
   }
 

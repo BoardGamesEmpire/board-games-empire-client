@@ -168,8 +168,8 @@ Asking the server *again* is deliberately three answers, not one:
 Backend: `data-gateways` CRUD + connect/disconnect (renamed from
 `game-gateways` by backend #710), `GET /games/search`
 (local+external unified), `GET /games`, `POST /games/import` (async) all exist.
-Three gaps #42 found: `GET /games/:id` sends no platform games, so a game already
-on the server cannot be added to a collection (backend #791, which blocks #45);
+Three gaps #42 found: `GET /games/:id` sent no platform games, so a game already
+on the server could not be added to a collection, until backend #791 added them;
 search cannot be paged (backend #792), so the client reads one page; and search
 drops each DataGateway result's summary (backend #862, which blocks #558).
 
@@ -179,7 +179,7 @@ drops each DataGateway result's summary (backend #862, which blocks #558).
 Unblocked: backend #114 closed on 2026-07-06.
 
 - #44 ~~Collection list (reactive read)~~
-- #45 Add-to-collection (`platformGameId` + `GameMedium` + quantity)
+- #45 ~~Add-to-collection (`platformGameId` + `GameMedium` + quantity)~~
 - #46 Collection item detail / edit / remove (resurrection-aware)
 - #47 Sync-status indicators (`isDirty` / `isLocalOnly` / pending count)
 - #48 `GameCollectionExporter` (first `UserDataExporter` impl)

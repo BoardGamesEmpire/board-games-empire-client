@@ -78,15 +78,17 @@ its dialog closes is #596.
 
 Nothing is cached here. The detail caches the game it reads, for this user,
 as it does any game it opens. The poll's platform games are read but unused:
-adding to a collection (#45) starts from the detail, once `GET /games/:id`
-sends them (backend#791).
+adding to a collection (#45) starts from the detail, which reads them from
+`GET /games/:id` (backend#791).
 
 ## Detail
 
-`GameDetailBloc` reads `GET /api/games/:id` and caches the game. It lists the
-game's platform games once the server sends them (backend#791); until then the
-list is empty. Adding one to the collection is #45's, through a callback the
-shell passes in.
+`GameDetailBloc` reads `GET /api/games/:id` and caches the game, then its
+platform games: full records the server sends with it (backend#791), which the
+detail lists. Adding one to the collection is #45's, through a callback the
+shell passes in, which is handed the game and the platform game. The cached
+row is what the add's foreign key needs. Offline, the detail shows the cached
+game with no platform games.
 
 A 404 or a 403 means this user can't read the game, so the bloc also forgets
 it on this device for them (`GameRepository.forgetGame`), and offline browse

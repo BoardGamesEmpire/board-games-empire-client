@@ -65,13 +65,13 @@ void main() {
   Future<List<GameCollectionsTableData>> rows() =>
       db.select(db.gameCollectionsTable).get();
 
-  Future<GameCollection> add({int quantity = 1, int? rating}) =>
-      repo.addToCollection(
+  Future<GameCollection> add({int quantity = 1, int? rating}) async =>
+      (await repo.addToCollection(
         platformGameId: kFixturePlatformGameId,
         medium: GameMedium.physical,
         quantity: quantity,
         rating: rating,
-      );
+      )).entry;
 
   /// A clean row the server has confirmed, with nothing queued for it.
   Future<void> seedConfirmed({int quantity = 1, int? rating}) async {

@@ -45,15 +45,17 @@ void main() {
       );
 
   final catan = game('g_catan', title: 'Catan');
-  const tabletop = PlatformGameSummary(
+  final tabletop = PlatformGame(
     id: 'pg_1',
+    gameId: 'g_catan',
     platformId: 'plat_tabletop',
     platformName: 'Tabletop',
-    game: GameSummary(id: 'g_catan', title: 'Catan'),
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
   );
 
   blocTest<GameDetailBloc, GameDetailState>(
-    'shows the game and its platform games, and caches the game',
+    'shows the game and its platform games, and caches both',
     setUp: () =>
         remote.onFetchGame = (_) async =>
             (game: catan, platformGames: [tabletop]),
@@ -61,14 +63,83 @@ void main() {
     act: (bloc) => bloc.add(const GameDetailLoadRequested()),
     expect: () => [
       const GameDetailLoading(),
-      GameDetailReady(game: catan, platformGames: const [tabletop]),
+      GameDetailReady(game: catan, platformGames: [tabletop]),
     ],
     verify: (_) async {
       expect(remote.calls, ['fetchGame(g_catan)']);
       expect(await cache.getGame('g_catan'), catan);
+      expect(await cache.getPlatformGame('pg_1'), tabletop);
       expect(told, isEmpty);
     },
   );
+
+  group('caching the platform games', () {
+    late _GatedCache gated;
+
+    setUp(() {
+      gated = _GatedCache(db, userId: 'user-a');
+      remote.onFetchGame = (_) async =>
+          (game: catan, platformGames: [tabletop]);
+    });
+
+    GameDetailBloc buildGated() =>
+        GameDetailBloc(gameId: 'g_catan', remote: remote, cache: gated);
+
+    test('caches no platform games once the detail has closed', () async {
+      final gameWrite = Completer<void>();
+      gated.beforeCacheGame = () => gameWrite.future;
+      final bloc = buildGated()..add(const GameDetailLoadRequested());
+      await pumpEventQueue();
+      expect(gated.gameWrites, 1);
+
+      await bloc.close();
+      gameWrite.complete();
+      await pumpEventQueue();
+
+      expect(await cache.getPlatformGame('pg_1'), isNull);
+      expect(gated.platformGameWrites, 0);
+    });
+
+    blocTest<GameDetailBloc, GameDetailState>(
+      'a failed platform-game write still shows the detail',
+      setUp: () =>
+          gated.beforeCachePlatformGames = () async =>
+              throw StateError('disposed'),
+      build: buildGated,
+      act: (bloc) => bloc.add(const GameDetailLoadRequested()),
+      expect: () => [
+        const GameDetailLoading(),
+        GameDetailReady(game: catan, platformGames: [tabletop]),
+      ],
+      verify: (_) async => expect(await cache.getGame('g_catan'), catan),
+    );
+
+    blocTest<GameDetailBloc, GameDetailState>(
+      'a failed game write skips the platform games, whose rows need the '
+      'game',
+      setUp: () =>
+          gated.beforeCacheGame = () async => throw StateError('disposed'),
+      build: buildGated,
+      act: (bloc) => bloc.add(const GameDetailLoadRequested()),
+      expect: () => [
+        const GameDetailLoading(),
+        GameDetailReady(game: catan, platformGames: [tabletop]),
+      ],
+      verify: (_) => expect(gated.platformGameWrites, 0),
+    );
+
+    blocTest<GameDetailBloc, GameDetailState>(
+      'a game on no platform writes no platform games',
+      setUp: () =>
+          remote.onFetchGame = (_) async =>
+              (game: catan, platformGames: const <PlatformGame>[]),
+      build: buildGated,
+      act: (bloc) => bloc.add(const GameDetailLoadRequested()),
+      skip: 1,
+      expect: () => [GameDetailReady(game: catan)],
+      verify: (_) => expect(gated.platformGameWrites, 0),
+    );
+  });
 
   for (final (name, failure) in [
     ('a game the server does not have', const GameNotFoundException('404')),
@@ -209,11 +280,36 @@ void main() {
         bloc.add(const GameDetailLoadRequested());
         await pumpEventQueue();
         remote.onFetchGame = (_) async =>
-            (game: catan, platformGames: const <PlatformGameSummary>[]);
+            (game: catan, platformGames: const <PlatformGame>[]);
         bloc.add(const GameDetailLoadRequested());
       },
       skip: 2,
       expect: () => [const GameDetailLoading(), GameDetailReady(game: catan)],
     );
   });
+}
+
+/// The real games cache, with a hook before each write the bloc makes, and a
+/// count of them.
+class _GatedCache extends GameRepositoryImpl {
+  _GatedCache(super.db, {required super.userId});
+
+  Future<void> Function()? beforeCacheGame;
+  Future<void> Function()? beforeCachePlatformGames;
+  int gameWrites = 0;
+  int platformGameWrites = 0;
+
+  @override
+  Future<void> cacheGame(Game game) async {
+    gameWrites++;
+    await beforeCacheGame?.call();
+    return super.cacheGame(game);
+  }
+
+  @override
+  Future<void> cachePlatformGames(List<PlatformGame> platformGames) async {
+    platformGameWrites++;
+    await beforeCachePlatformGames?.call();
+    return super.cachePlatformGames(platformGames);
+  }
 }

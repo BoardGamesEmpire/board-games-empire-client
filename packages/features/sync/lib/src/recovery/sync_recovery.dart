@@ -15,10 +15,10 @@ import 'stuck_sync_op.dart';
 /// for it.
 ///
 /// - **Retry** puts the op back as new and sends it through the drain where
-///   the session runs one. Where none does yet, which is web until #447, a
-///   household or event create goes out inline through the sender, and a
-///   collection op waits for a drain: only a drain keeps one entry's ops in
-///   order.
+///   the session runs one. Where none does yet, which is web until #447, it
+///   goes out inline through the sender. A collection op goes through
+///   [SyncOperationSender.deliver], which leaves it queued while an earlier
+///   op for its entry goes first, as the drain would.
 /// - **Discard** deletes the op and undoes what it did locally, through the
 ///   repository that owns its rows, then refreshes that cache from the
 ///   server so the undone row shows the server's copy.
@@ -87,28 +87,38 @@ class SyncRecovery {
     } else {
       final sender = _sender;
       final entry = await _queue.getEntry(entryId);
-      if (sender == null || entry == null || !_sendsInline(entry)) return true;
-      await sender.deliverEntry(entry);
+      if (sender == null || entry == null) return true;
+      await _sendInline(sender, entry);
     }
     final after = await _queue.getEntry(entryId);
     return !(after?.isStuck ?? false);
   }
 
-  /// Whether [entry] can go out without a drain. A household or event
-  /// create can: no other op waits on it, which is why the household's
-  /// create screen already sends one inline. A collection op can't, because
-  /// only a drain holds it behind the add its entry is still waiting on, and
-  /// sends what that add's acknowledgement releases.
-  static bool _sendsInline(SyncQueueEntry entry) {
+  /// Sends [entry] without a drain. One that won't decode is left reopened.
+  ///
+  /// A household or event create goes out as it is: no other op waits on
+  /// it, which is why its create screen sends one inline too. A collection
+  /// op goes through [SyncOperationSender.deliver], which holds it behind an
+  /// earlier op for its entry. With no drain, nothing sends what an add's
+  /// acknowledgement releases, or the op once what held it is done; those
+  /// wait for a drain (#447).
+  static Future<void> _sendInline(
+    SyncOperationSender sender,
+    SyncQueueEntry entry,
+  ) async {
+    final SyncOperation op;
     try {
-      return switch (entry.operation) {
-        CreateHouseholdOperation() || CreateEventOperation() => true,
-        AddToCollectionOperation() ||
-        UpdateCollectionOperation() ||
-        RemoveFromCollectionOperation() => false,
-      };
+      op = entry.operation;
     } on Object {
-      return false;
+      return;
+    }
+    switch (op) {
+      case CreateHouseholdOperation() || CreateEventOperation():
+        await sender.deliverEntry(entry);
+      case AddToCollectionOperation() ||
+          UpdateCollectionOperation() ||
+          RemoveFromCollectionOperation():
+        await sender.deliver(entry.id, op);
     }
   }
 

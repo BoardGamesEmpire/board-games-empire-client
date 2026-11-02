@@ -57,7 +57,7 @@ Map<String, dynamic> _gameRow({
 };
 
 /// What `GET /games/:id` adds to the row: the includes in
-/// `GameService.getGame`, and no platform games.
+/// `GameService.getGame`, and the [platformGames] given, if any.
 Map<String, dynamic> _detailRow({Object? platformGames}) => {
   ..._gameRow(),
   'artists': [
@@ -98,6 +98,37 @@ Map<String, dynamic> _detailRow({Object? platformGames}) => {
   'tags': <Object>[],
   'expansions': <Object>[],
   'platformGames': ?platformGames,
+};
+
+/// One of the detail's `platformGames`, as backend#791 sends it: the columns
+/// `PLATFORM_GAME_DETAIL_SELECT` names (`libs/api/game` at `b1019ab3`).
+Map<String, dynamic> _platformGameRow({
+  String id = 'pg_1',
+  String platformId = 'plat_tabletop',
+  String platformName = 'Tabletop',
+}) => {
+  'id': id,
+  'gameId': 'g_catan',
+  'image': null,
+  'thumbnail': null,
+  'minPlayers': null,
+  'maxPlayers': null,
+  'minPlayTime': null,
+  'maxPlayTime': null,
+  'supportsSolo': false,
+  'supportsLocal': false,
+  'supportsOnline': false,
+  'hasAsyncPlay': false,
+  'hasRealtime': false,
+  'hasTutorial': false,
+  'createdAt': '2026-01-02T03:04:05.000Z',
+  'updatedAt': '2026-02-03T04:05:06.000Z',
+  'platform': {
+    'id': platformId,
+    'name': platformName,
+    'abbreviation': null,
+    'platformType': 'Tabletop',
+  },
 };
 
 /// The Game [_gameRow] maps to.
@@ -559,12 +590,23 @@ void main() {
       expect(adapter.sent.single.path, '/api/games/g_catan');
     });
 
-    test('has no platform games while the server sends none '
-        '(backend#791)', () async {
+    test('has no platform games while the server sends none', () async {
       final remote = answering(jsonEncode({'game': _detailRow()}));
 
       final read = await remote.fetchGame('g_catan');
 
+      expect(read.platformGames, isEmpty);
+    });
+
+    test('has no platform games when the server sends an empty list: a game '
+        'on no platform, or one the caller may not read them for', () async {
+      final remote = answering(
+        jsonEncode({'game': _detailRow(platformGames: <Object>[])}),
+      );
+
+      final read = await remote.fetchGame('g_catan');
+
+      expect(read.game, _catan);
       expect(read.platformGames, isEmpty);
     });
 
@@ -574,13 +616,11 @@ void main() {
           'game': _detailRow(
             platformGames: [
               {
-                'id': 'pg_1',
-                'platform': {
-                  'id': 'plat_tabletop',
-                  'name': 'Tabletop',
-                  'abbreviation': null,
-                  'platformType': 'Tabletop',
-                },
+                ..._platformGameRow(),
+                'minPlayers': 3,
+                'supportsSolo': true,
+                // The column can hold an empty string, as the game's can.
+                'image': '',
               },
             ],
           ),
@@ -590,32 +630,29 @@ void main() {
       final read = await remote.fetchGame('g_catan');
 
       expect(read.platformGames, [
-        const PlatformGameSummary(
+        PlatformGame(
           id: 'pg_1',
+          gameId: 'g_catan',
           platformId: 'plat_tabletop',
           platformName: 'Tabletop',
-          game: GameSummary(
-            id: 'g_catan',
-            title: 'Catan',
-            subtitle: 'Trade, build, settle',
-            image: 'https://cf.geekdo-images.com/catan.jpg',
-            thumbnail: 'https://cf.geekdo-images.com/catan_t.jpg',
-          ),
+          minPlayers: 3,
+          supportsSolo: true,
+          createdAt: DateTime.utc(2026, 1, 2, 3, 4, 5),
+          updatedAt: DateTime.utc(2026, 2, 3, 4, 5, 6),
         ),
       ]);
     });
 
-    test('skips a platform game it cannot read, and still reads the game '
-        '(backend#791 has not settled the shape)', () async {
+    test('skips a platform game it cannot read, and still reads the '
+        'game', () async {
       final remote = answering(
         jsonEncode({
           'game': _detailRow(
             platformGames: [
-              {'id': 'pg_1', 'platformId': 'plat_tabletop'},
-              {
-                'id': 'pg_2',
-                'platform': {'id': 'plat_steam', 'name': 'Steam'},
-              },
+              {..._platformGameRow(id: 'pg_1')}..remove('createdAt'),
+              _platformGameRow(id: 'pg_2'),
+              {..._platformGameRow(id: 'pg_3'), 'platform': null},
+              {..._platformGameRow(id: 'pg_4'), 'updatedAt': 'yesterday'},
             ],
           ),
         }),
@@ -623,8 +660,33 @@ void main() {
 
       final read = await remote.fetchGame('g_catan');
 
-      expect(read.game, _catan);
       expect(read.platformGames.map((pg) => pg.id), ['pg_2']);
+      expect(read.game.id, 'g_catan');
+    });
+
+    test('keeps the order the server sent', () async {
+      final remote = answering(
+        jsonEncode({
+          'game': _detailRow(
+            platformGames: [
+              _platformGameRow(
+                id: 'pg_b',
+                platformId: 'plat_bga',
+                platformName: 'Board Game Arena',
+              ),
+              _platformGameRow(id: 'pg_a'),
+            ],
+          ),
+        }),
+      );
+
+      final read = await remote.fetchGame('g_catan');
+
+      expect(read.platformGames.map((pg) => pg.id), ['pg_b', 'pg_a']);
+      expect(read.platformGames.map((pg) => pg.platformName), [
+        'Board Game Arena',
+        'Tabletop',
+      ]);
     });
 
     test('an application 404 is a missing game', () {

@@ -65,11 +65,12 @@ void main() {
   Future<GameCollectionsTableData> onlyRow() async =>
       (await db.select(db.gameCollectionsTable).get()).single;
 
-  Future<GameCollection> add({int quantity = 1}) => repo.addToCollection(
-    platformGameId: kFixturePlatformGameId,
-    medium: GameMedium.physical,
-    quantity: quantity,
-  );
+  Future<GameCollection> add({int quantity = 1}) async =>
+      (await repo.addToCollection(
+        platformGameId: kFixturePlatformGameId,
+        medium: GameMedium.physical,
+        quantity: quantity,
+      )).entry;
 
   Future<void> exhaust(String syncQueueId) async {
     for (var i = 0; i < SyncQueueEntry.maxRetries; i++) {

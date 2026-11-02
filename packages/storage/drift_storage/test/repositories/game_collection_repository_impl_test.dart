@@ -93,10 +93,10 @@ void main() {
   group('GameCollectionRepositoryImpl', () {
     group('addToCollection() — fresh insert path', () {
       test('creates entry with isDirty and isLocalOnly true', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         expect(entry.isDirty, isTrue);
         expect(entry.isLocalOnly, isTrue);
@@ -117,13 +117,32 @@ void main() {
         ).called(1);
       });
 
+      test('returns the queue entry and the op it queued, for the caller '
+          'to send at once (#45)', () async {
+        final added = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: 2,
+          rating: 7,
+        );
+
+        final queued =
+            verify(() => mockSync.enqueue(captureAny())).captured.single
+                as AddToCollectionOperation;
+        expect(added.syncQueueId, 'sq-stub');
+        expect(added.operation, same(queued));
+        expect(added.operation.localId, added.entry.id);
+        expect(added.operation.quantity, 2);
+        expect(added.operation.rating, 7);
+      });
+
       test('stores optional fields', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           rating: 8,
           comment: 'Great game',
-        );
+        )).entry;
 
         expect(entry.rating, 8);
         expect(entry.comment, 'Great game');
@@ -132,11 +151,11 @@ void main() {
 
     group('addToCollection() — duplicate triplet', () {
       test('resurrects a tombstoned row (clears deletedAt, keeps id, overwrites fields)', () async {
-        final first = await repo.addToCollection(
+        final first = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           rating: 5,
-        );
+        )).entry;
         await repo.removeFromCollection(first.id);
 
         // Sanity: getCollectionEntry must hide the tombstone.
@@ -148,12 +167,12 @@ void main() {
           isNull,
         );
 
-        final second = await repo.addToCollection(
+        final second = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 1,
           rating: 9,
-        );
+        )).entry;
 
         expect(second.id, equals(first.id));
         expect(second.deletedAt, isNull);
@@ -169,17 +188,17 @@ void main() {
       });
 
       test('increments quantity on a live duplicate', () async {
-        final first = await repo.addToCollection(
+        final first = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
         expect(first.quantity, equals(1));
 
-        final second = await repo.addToCollection(
+        final second = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 2,
-        );
+        )).entry;
 
         expect(second.id, equals(first.id));
         expect(second.quantity, equals(3));
@@ -191,17 +210,17 @@ void main() {
       test(
         'increment preserves existing rating/comment when caller omits them',
         () async {
-          final first = await repo.addToCollection(
+          final first = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
             rating: 7,
             comment: 'good',
-          );
+          )).entry;
 
-          final second = await repo.addToCollection(
+          final second = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
 
           expect(second.id, equals(first.id));
           expect(second.rating, equals(7));
@@ -248,12 +267,12 @@ void main() {
 
         expect(await db.select(db.gameCollectionsTable).get(), hasLength(2));
 
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 1,
           rating: 9,
-        );
+        )).entry;
 
         expect(entry.id, equals('new-tomb'));
         expect(entry.deletedAt, isNull);
@@ -312,12 +331,12 @@ void main() {
               ),
             );
 
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 1,
           rating: 9,
-        );
+        )).entry;
 
         expect(entry.id, equals('tomb-second'));
         expect(entry.rating, equals(9));
@@ -356,10 +375,10 @@ void main() {
               );
         }
 
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         expect(entry.id, equals('tomb-later'));
       });
@@ -391,10 +410,10 @@ void main() {
               );
         }
 
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         expect(entry.id, equals('tomb-later'));
       });
@@ -416,13 +435,13 @@ void main() {
         // future regression that resets any of them — playCount,
         // playAgain, favorite, lastPlayed, rating, comment —
         // fails here loudly with a clear name.
-        final first = await repo.addToCollection(
+        final first = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 2,
           rating: 8,
           comment: 'great party game',
-        );
+        )).entry;
 
         // Simulate play history accumulated over the entry's
         // lifetime: 5 plays, favorited, marked "would play
@@ -445,12 +464,12 @@ void main() {
         // fields — only the required triplet identity and a
         // fresh quantity.
         await repo.removeFromCollection(first.id);
-        final second = await repo.addToCollection(
+        final second = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 1,
           // rating + comment intentionally omitted.
-        );
+        )).entry;
 
         // Same row resurrected, lifecycle flags reset.
         expect(second.id, equals(first.id));
@@ -486,10 +505,10 @@ void main() {
 
     group('updateCollectionEntry()', () {
       test('updates specified fields only', () async {
-        final original = await repo.addToCollection(
+        final original = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         final updated = await repo.updateCollectionEntry(
           id: original.id,
@@ -504,10 +523,10 @@ void main() {
       });
 
       test('enqueues exactly one UpdateCollectionOperation', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         await repo.updateCollectionEntry(id: entry.id, favorite: true);
 
@@ -558,10 +577,10 @@ void main() {
       });
 
       test('throws StateError when the target entry is tombstoned', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
         await repo.removeFromCollection(entry.id);
 
         await expectLater(
@@ -612,14 +631,96 @@ void main() {
         },
       );
 
+      test('addToCollection throws ArgumentError on a quantity past what the '
+          'server stores', () async {
+        await expectLater(
+          () => repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: GameCollectionRepository.maxQuantity + 1,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        expect(await repo.getCollection(), isEmpty);
+        verifyNever(() => mockSync.enqueue(any()));
+      });
+
+      // The form checks the total too, but against a lookup that may not
+      // have answered yet: the live row is read here, in the transaction.
+      test(
+        'addToCollection throws ArgumentError when a live row and the copies '
+        'added pass what the server stores, and leaves the row as it was',
+        () async {
+          const have = GameCollectionRepository.maxQuantity - 7;
+          await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: have,
+          );
+          clearInteractions(mockSync);
+
+          await expectLater(
+            () => repo.addToCollection(
+              platformGameId: kFixturePlatformGameId,
+              medium: _kMedium,
+              quantity: 8,
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          final rows = await repo.getCollection();
+          expect(rows.single.quantity, have);
+          verifyNever(() => mockSync.enqueue(any()));
+        },
+      );
+
+      test('addToCollection raises a live row to exactly what the server '
+          'stores', () async {
+        await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: GameCollectionRepository.maxQuantity - 7,
+        );
+
+        final added = await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+          quantity: 7,
+        );
+
+        expect(added.entry.quantity, GameCollectionRepository.maxQuantity);
+        expect(added.operation.quantity, GameCollectionRepository.maxQuantity);
+      });
+
+      test(
+        'addToCollection overwrites a removed row however many it held',
+        () async {
+          final first = await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: GameCollectionRepository.maxQuantity,
+          );
+          await repo.removeFromCollection(first.entry.id);
+
+          final added = await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+            quantity: 3,
+          );
+
+          expect(added.entry.quantity, 3);
+        },
+      );
+
       test(
         'updateCollectionEntry throws ArgumentError on quantity == 0',
         () async {
-          final entry = await repo.addToCollection(
+          final entry = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
             quantity: 5,
-          );
+          )).entry;
           // Reset the mock so we can verify NO further enqueues fire
           // from the failed update.
           reset(mockSync);
@@ -640,11 +741,11 @@ void main() {
       test(
         'updateCollectionEntry throws ArgumentError on negative quantity',
         () async {
-          final entry = await repo.addToCollection(
+          final entry = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
             quantity: 5,
-          );
+          )).entry;
           reset(mockSync);
           _stubMockSyncDefaults(mockSync);
 
@@ -665,10 +766,10 @@ void main() {
           // An operation with nothing in it is one the transport rejects
           // as an empty patch, so accepting it would mark the row dirty
           // and queue something that can never be delivered.
-          final local = await repo.addToCollection(
+          final local = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
           await repo.reconcileFromServer(
             local.copyWith(isDirty: false, isLocalOnly: false),
           );
@@ -691,11 +792,11 @@ void main() {
         // null means "don't touch this field" by API contract, which
         // is the path callers use to update other fields without
         // affecting quantity.
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
           quantity: 5,
-        );
+        )).entry;
 
         final updated = await repo.updateCollectionEntry(
           id: entry.id,
@@ -709,10 +810,10 @@ void main() {
 
     group('removeFromCollection()', () {
       test('tombstones entry by setting deletedAt', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         await repo.removeFromCollection(entry.id);
 
@@ -733,10 +834,10 @@ void main() {
       });
 
       test('enqueues RemoveFromCollectionOperation', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         await repo.removeFromCollection(entry.id);
 
@@ -779,10 +880,10 @@ void main() {
 
       test('is idempotent on an already-tombstoned entry '
           '(no double-enqueue, no DB write)', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
         await repo.removeFromCollection(entry.id);
 
         final firstTombstone = (await (db.select(
@@ -828,10 +929,10 @@ void main() {
       test(
         'removeFromCollection rolls back the tombstone when enqueue throws',
         () async {
-          final entry = await repo.addToCollection(
+          final entry = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
 
           when(() => mockSync.enqueue(any()))
               .thenThrow(Exception('queue offline'));
@@ -851,10 +952,10 @@ void main() {
 
     group('reconcileFromServer()', () {
       test('clears isDirty and isLocalOnly flags', () async {
-        final local = await repo.addToCollection(
+        final local = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         final serverEntry = local.copyWith(
           id: 'server-confirmed-id',
@@ -883,10 +984,10 @@ void main() {
 
       test('marks the matching sync-queue entry completed when '
           '[completedSyncQueueId] is provided', () async {
-        final local = await repo.addToCollection(
+        final local = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         final serverEntry = local.copyWith(
           id: 'server-confirmed-id',
@@ -907,10 +1008,10 @@ void main() {
           // The full-resync path (server-driven reconciliation that
           // didn't originate from a local mutation) must not invoke
           // markCompleted with a stale or guessed id.
-          final local = await repo.addToCollection(
+          final local = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
 
           final serverEntry = local.copyWith(
             id: 'server-confirmed-id',
@@ -1055,10 +1156,10 @@ void main() {
             // deletedAt non-null. reconcileFromServer must
             // PHYSICALLY delete the local row at that point,
             // not just store another tombstone.
-            final local = await repo.addToCollection(
+            final local = (await repo.addToCollection(
               platformGameId: kFixturePlatformGameId,
               medium: _kMedium,
-            );
+            )).entry;
             await repo.removeFromCollection(local.id);
 
             // Tombstone exists locally.
@@ -1241,12 +1342,12 @@ void main() {
           // Step 4: user re-adds. _findCanonicalRow picks up the
           // tombstone and addToCollection resurrects it with the
           // same id.
-          final resurrected = await repo.addToCollection(
+          final resurrected = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
             quantity: 1,
             rating: 9,
-          );
+          )).entry;
           expect(resurrected.id, equals('shared-id'));
           expect(resurrected.deletedAt, isNull);
           expect(resurrected.isLocalOnly, isTrue);
@@ -1304,10 +1405,10 @@ void main() {
             // canonical id. reconcileFromServer must rewrite any
             // pending Update/Remove ops that referenced the old
             // local id BEFORE dropping the row.
-            final local = await repo.addToCollection(
+            final local = (await repo.addToCollection(
               platformGameId: kFixturePlatformGameId,
               medium: _kMedium,
-            );
+            )).entry;
             // Clear earlier mock interactions from the addToCollection
             // call so the verify below only inspects the reconcile path.
             clearInteractions(mockSync);
@@ -1334,10 +1435,10 @@ void main() {
           // through the server unchanged. No remap needed; the
           // method is skipped entirely (and importantly, no
           // self-targeting rewrite is performed against the queue).
-          final local = await repo.addToCollection(
+          final local = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
           clearInteractions(mockSync);
           _stubMockSyncDefaults(mockSync);
 
@@ -1399,10 +1500,10 @@ void main() {
           // — the server may have ack'd the delete while the
           // earlier queued ops were still in flight under the
           // local-only id.
-          final local = await repo.addToCollection(
+          final local = (await repo.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
           clearInteractions(mockSync);
           _stubMockSyncDefaults(mockSync);
 
@@ -1451,10 +1552,10 @@ void main() {
       });
 
       test('excludes tombstoned entries', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
         await repo.removeFromCollection(entry.id);
 
         expect(await repo.getCollection(), isEmpty);
@@ -1464,21 +1565,21 @@ void main() {
     group('getLocalOnlyIds()', () {
       test('lists the entries the server has yet to confirm, removed ones '
           "included, and only the current user's", () async {
-        final unsent = await repo.addToCollection(
+        final unsent = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
-        final removed = await repo.addToCollection(
+        )).entry;
+        final removed = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: GameMedium.digital,
-        );
+        )).entry;
         await repo.removeFromCollection(removed.id);
 
         await seedPlatformGame(db, id: 'pg-confirmed');
-        final confirmed = await repo.addToCollection(
+        final confirmed = (await repo.addToCollection(
           platformGameId: 'pg-confirmed',
           medium: _kMedium,
-        );
+        )).entry;
         await repo.reconcileFromServer(
           confirmed.copyWith(
             id: 'server-confirmed-id',
@@ -1514,10 +1615,10 @@ void main() {
       });
 
       test('excludes tombstoned entries', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
         await repo.removeFromCollection(entry.id);
 
         await expectLater(repo.watchCollection().take(1), emits(isEmpty));
@@ -1548,10 +1649,10 @@ void main() {
       });
 
       test('emits null after the entry is tombstoned', () async {
-        final entry = await repo.addToCollection(
+        final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         final futureEmissions = repo.watchEntry(entry.id).take(2).toList();
         await pumpEventQueue();
@@ -1586,10 +1687,10 @@ void main() {
       test(
         'fresh insert createdAt/updatedAt come from the injected clock',
         () async {
-          final entry = await clockRepo(FixedClockService(t1)).addToCollection(
+          final entry = (await clockRepo(FixedClockService(t1)).addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
 
           final row = await rawRow(entry.id);
           expect(row.createdAt, t1);
@@ -1602,10 +1703,10 @@ void main() {
         () async {
           final clock = FixedClockService(t1);
           final repoWithClock = clockRepo(clock);
-          final entry = await repoWithClock.addToCollection(
+          final entry = (await repoWithClock.addToCollection(
             platformGameId: kFixturePlatformGameId,
             medium: _kMedium,
-          );
+          )).entry;
 
           final t2 = t1.add(const Duration(minutes: 5));
           clock.current = t2;
@@ -1621,19 +1722,19 @@ void main() {
       test('resurrection updatedAt comes from the injected clock', () async {
         final clock = FixedClockService(t1);
         final repoWithClock = clockRepo(clock);
-        final entry = await repoWithClock.addToCollection(
+        final entry = (await repoWithClock.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
         clock.current = t1.add(const Duration(minutes: 5));
         await repoWithClock.removeFromCollection(entry.id);
 
         final t3 = t1.add(const Duration(minutes: 10));
         clock.current = t3;
-        final revived = await repoWithClock.addToCollection(
+        final revived = (await repoWithClock.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
-        );
+        )).entry;
 
         expect(revived.id, entry.id, reason: 'tombstone resurrected in place');
         final row = await rawRow(entry.id);

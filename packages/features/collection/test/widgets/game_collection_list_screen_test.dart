@@ -69,6 +69,7 @@ void main() {
 
   Widget harness({
     void Function(BuildContext context, String entryId)? onOpen,
+    void Function(BuildContext context)? onBrowse,
     Future<void> Function()? onRetry,
     VoidCallback? onEnter,
     TextScaler textScaler = TextScaler.noScaling,
@@ -77,6 +78,7 @@ void main() {
       repository: repository,
       hydration: status.watch(),
       onOpen: onOpen,
+      onBrowse: onBrowse,
       onRetry: onRetry,
       onEnter: onEnter,
     ),
@@ -88,8 +90,9 @@ void main() {
     WidgetTester tester,
     List<GameCollectionListItem> rows, {
     void Function(BuildContext context, String entryId)? onOpen,
+    void Function(BuildContext context)? onBrowse,
   }) async {
-    await tester.pumpWidget(harness(onOpen: onOpen));
+    await tester.pumpWidget(harness(onOpen: onOpen, onBrowse: onBrowse));
     status.finished(CollectionHydrateOutcome.complete);
     items.add(rows);
     await tester.pump();
@@ -146,9 +149,25 @@ void main() {
       expect(find.text(_emptyTitleCopy), findsOneWidget);
     });
 
-    testWidgets('offers nothing to press: adding games is #45', (tester) async {
+    testWidgets('offers browsing, which calls onBrowse', (tester) async {
+      var browsed = 0;
+      await show(tester, const [], onBrowse: (_) => browsed++);
+
+      expect(
+        find.text('Games you add from the catalog will appear here.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(GameCollectionListScreen.browseKey));
+      await tester.pump();
+
+      expect(find.text('Browse games'), findsOneWidget);
+      expect(browsed, 1);
+    });
+
+    testWidgets('with no onBrowse offers nothing to press', (tester) async {
       await show(tester, const []);
 
+      expect(find.byKey(GameCollectionListScreen.browseKey), findsNothing);
       expect(
         find.descendant(
           of: find.byKey(GameCollectionListScreen.emptyKey),
