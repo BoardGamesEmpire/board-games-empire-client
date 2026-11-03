@@ -18,6 +18,8 @@ export 'src/entry/collection_entry_event.dart'
         CollectionEntryWatchEnded,
         CollectionEntryWatchFailed;
 export 'src/entry/collection_entry_state.dart';
+export 'src/entry/edit_collection_entry_sheet.dart';
+export 'src/entry/remove_from_collection_dialog.dart';
 export 'src/home/stats_card.dart';
 export 'src/home/stats_cubit.dart';
 export 'src/screens/game_collection_list_screen.dart';

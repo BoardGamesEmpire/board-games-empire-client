@@ -301,5 +301,69 @@
         "example": "Wingspan"
       }
     }
+  },
+  "editCollectionTitle": "Edit {title}",
+  "@editCollectionTitle": {
+    "description": "Heading of the sheet that edits a collection entry's copies, rating, comment, favorite and would-play-again, naming the game, for example \"Edit Wingspan\". Read by screen readers as the sheet's heading.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "editCollectionFavorite": "Favorite",
+  "@editCollectionFavorite": {
+    "description": "Label of the switch in the edit sheet that marks the game as a favorite."
+  },
+  "editCollectionPlayAgain": "Would play again",
+  "@editCollectionPlayAgain": {
+    "description": "Label of the switch in the edit sheet that says the user would play the game again."
+  },
+  "editCollectionCommentCantClear": "A comment can't be removed yet. Change it instead.",
+  "@editCollectionCommentCantClear": {
+    "description": "Error under the edit sheet's comment field when the entry has a comment and the user emptied it. The server can't clear a comment yet, so the sheet asks for a different one."
+  },
+  "editCollectionSubmit": "Save",
+  "@editCollectionSubmit": {
+    "description": "Label of the edit sheet's submit button."
+  },
+  "editCollectionInProgress": "Saving…",
+  "@editCollectionInProgress": {
+    "description": "Replaces the edit sheet's submit label while the change is being saved, and is the disabled button's accessible name meanwhile."
+  },
+  "editCollectionFailedTitle": "Couldn't save your changes",
+  "@editCollectionFailedTitle": {
+    "description": "Heading of the banner above the edit sheet's submit button when the save failed. The sheet stays open with what the user entered."
+  },
+  "editCollectionFailedBody": "Nothing was changed. Try again.",
+  "@editCollectionFailedBody": {
+    "description": "Body of the banner above the edit sheet's submit button when the save failed: nothing was written, and saving again retries it."
+  },
+  "editCollectionFailedGoneBody": "It's no longer in your collection, perhaps removed on another device.",
+  "@editCollectionFailedGoneBody": {
+    "description": "Body of the edit sheet's failed-save banner, in place of editCollectionFailedBody, when the save failed because the entry was removed while the sheet was open. Saving again can't succeed. The app can't tell where it was removed, so it says 'perhaps'."
+  },
+  "removeFromCollectionTitle": "Remove {title}?",
+  "@removeFromCollectionTitle": {
+    "description": "Title of the dialog that asks the user to confirm removing a game from their collection, naming the game.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Wingspan"
+      }
+    }
+  },
+  "removeFromCollectionBody": "This says you no longer own it. Your plays, rating and comment are kept, and come back if you add it again.",
+  "@removeFromCollectionBody": {
+    "description": "Body of the remove-from-collection confirm dialog: removing marks the game as no longer owned, and keeps its plays, rating and comment for if it is added again."
+  },
+  "removeFromCollectionConfirm": "Remove",
+  "@removeFromCollectionConfirm": {
+    "description": "Label of the remove-from-collection dialog's confirm button."
+  },
+  "removeFromCollectionCancel": "Keep it",
+  "@removeFromCollectionCancel": {
+    "description": "Label of the remove-from-collection dialog's cancel button, which leaves the game in the collection."
   }
 }
