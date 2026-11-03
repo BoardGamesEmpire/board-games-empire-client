@@ -652,6 +652,109 @@ void main() {
       expect(File('${tempDir.path}/newcomer.json').existsSync(), isTrue);
     }, testOn: 'posix');
 
+    test('a record this sink wrote keeps its cached age while unreadable, '
+        'and is still evicted as the oldest (#378)', () async {
+      final sink = buildSink();
+      await sink.persist(record('cached', queuedAt: DateTime.utc(1999)));
+      final cached = File('${tempDir.path}/cached.json');
+      if (!await denyReads(cached)) {
+        markTestSkipped(
+          'this runner still reads a chmod 000 file (root?), so the read '
+          'fault this case needs cannot be established',
+        );
+        return;
+      }
+
+      // 1 cached + 50 newer = 51 files, all 51 of known age (the cached one
+      // from the age the sink stored when it wrote it) -> exactly ONE
+      // eviction, and the oldest is `cached`.
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await sink.persist(
+          record(
+            'k$i',
+            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          ),
+        );
+      }
+
+      expect(
+        cached.existsSync(),
+        isFalse,
+        reason: 'its age is known from the cache, so it is not "unreadable"',
+      );
+      expect(File('${tempDir.path}/k0.json').existsSync(), isTrue);
+    }, testOn: 'posix');
+
+    test(
+      'a cached-age record counts toward the cap and is evicted, so the '
+      'uncached unreadable sibling costs no readable record (#378)',
+      () async {
+        final sink = buildSink();
+        await sink.persist(record('cached', queuedAt: DateTime.utc(1999)));
+        await writeRecord('locked', queuedAt: DateTime.utc(1998));
+        for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++) {
+          await writeRecord(
+            'k$i',
+            queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+          );
+        }
+        final cached = File('${tempDir.path}/cached.json');
+        final locked = File('${tempDir.path}/locked.json');
+        if (!await denyReads(cached) || !await denyReads(locked)) {
+          markTestSkipped(
+            'this runner still reads a chmod 000 file (root?), so the read '
+            'fault this case needs cannot be established',
+          );
+          return;
+        }
+
+        // 52 files once `newcomer` lands: cached + locked + 49 k + newcomer.
+        // 51 are of known age (all but `locked`), cap 50 -> exactly ONE
+        // eviction, and it falls on `cached`, the oldest of those.
+        await sink.persist(
+          record('newcomer', queuedAt: DateTime.utc(2026, 9, 11)),
+        );
+
+        expect(cached.existsSync(), isFalse);
+        expect(locked.existsSync(), isTrue);
+        expect(
+          File('${tempDir.path}/k0.json').existsSync(),
+          isTrue,
+          reason: 'k0 would be a second eviction charged to the locked file',
+        );
+        expect(File('${tempDir.path}/newcomer.json').existsSync(), isTrue);
+      },
+      testOn: 'posix',
+    );
+
+    test('the cache drops a name whose file another process deleted, so a '
+        'new file under that name is aged from disk (#378)', () async {
+      final sink = buildSink();
+      await sink.persist(record('stale', queuedAt: DateTime.utc(1999)));
+      // Another process removes the file behind the sink's back.
+      File('${tempDir.path}/stale.json').deleteSync();
+      // A cap pass at or under the bound still prunes the cache.
+      await sink.persist(record('trigger', queuedAt: DateTime.utc(2026, 6, 1)));
+      await writeRecord('stale', queuedAt: DateTime.utc(2030));
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 2; i++) {
+        await writeRecord(
+          'k$i',
+          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+        );
+      }
+
+      // 51 files once `newcomer` lands: stale + trigger + 48 k + newcomer
+      // = 51, all readable, cap 50 -> exactly ONE eviction. With `stale`
+      // aged from disk (2030) the oldest is k0; a surviving 1999 cache entry
+      // would make it `stale` instead.
+      await sink.persist(
+        record('newcomer', queuedAt: DateTime.utc(2026, 9, 11)),
+      );
+
+      expect(File('${tempDir.path}/stale.json').existsSync(), isTrue);
+      expect(File('${tempDir.path}/k0.json').existsSync(), isFalse);
+    });
+
     test(
       'never evicts the record it was just handed, even backdated',
       () async {
