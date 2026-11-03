@@ -43,7 +43,7 @@ import 'queued_feedback_report.dart';
 ///
 /// An implementation holds at most [QueuedFeedbackReport.maxQueuedReports]
 /// records and, once full, evicts oldest-first by
-/// [QueuedFeedbackReport.compareByAge] — the shared age rule, so two sinks
+/// [QueuedFeedbackReport.keysToEvict] — the shared age rule, so two sinks
 /// cannot disagree about which record dies. Note what it orders by:
 /// [QueuedFeedbackReport.queuedAt], *not* a storage timestamp. The drain
 /// [update]s a record to count a failed attempt, so anything derived from

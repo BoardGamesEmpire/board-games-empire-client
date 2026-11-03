@@ -361,7 +361,7 @@ class FileFeedbackSink implements FeedbackSink {
   /// [update] since #376): the rename restamps the file, so mtime says
   /// "just written" about the record that has been queued longest. A record
   /// with no `queuedAt` sorts at [QueuedFeedbackReport.epoch] — the sentinel
-  /// both sinks share — because it predates the field and so really is
+  /// every sink shares — because it predates the field and so really is
   /// oldest.
   ///
   /// **A file whose age cannot be DETERMINED is neither evicted nor
@@ -407,17 +407,16 @@ class FileFeedbackSink implements FeedbackSink {
       return;
     }
 
-    final candidates = <(File, DateTime)>[];
-    var readable = 0;
+    final byName = <String, File>{};
+    final entries = <(String, DateTime)>[];
     for (final file in files) {
       final at = await _queuedAt(file);
       // null = unreadable: no opinion, so it neither occupies a slot nor
       // supplies one.
       if (at == null) continue;
-      readable++;
-      // Counts against the cap, but is not up for deletion.
-      if (_nameOf(file) == justPersisted) continue;
-      candidates.add((file, at));
+      final name = _nameOf(file);
+      byName[name] = file;
+      entries.add((name, at));
     }
 
     // Measured over the records this sink can actually account for, NOT
@@ -425,21 +424,18 @@ class FileFeedbackSink implements FeedbackSink {
     // unreadable files to the records that CAN be deleted and evict extra
     // readable reports to pay for them — trading a transient lock for
     // permanent data loss, and at worst emptying the directory of
-    // everything still readable.
-    final excess = readable - QueuedFeedbackReport.maxQueuedReports;
-    if (excess <= 0) {
-      _pruneCache(files);
-      return;
-    }
-
-    // Path tie-break keeps eviction deterministic among equal stamps.
-    candidates.sort((a, b) {
-      final byTime = a.$2.compareTo(b.$2);
-      return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
-    });
-
-    for (final (file, _) in candidates.take(excess)) {
-      await _reap(file);
+    // everything still readable. That count is `entries.length`: files of
+    // unknown age were filtered out above, and the just-persisted record
+    // is in it — it counts against the cap, but keysToEvict never returns
+    // it. Names share one directory, so the name tie-break keeps eviction
+    // deterministic among equal stamps exactly as the path did.
+    final evict = QueuedFeedbackReport.keysToEvict(
+      entries,
+      exempt: justPersisted,
+      tieBreak: (a, b) => a.compareTo(b),
+    );
+    for (final name in evict) {
+      await _reap(byName[name]!);
     }
     _pruneCache(files);
   }
@@ -605,20 +601,15 @@ class FileFeedbackSink implements FeedbackSink {
     // cap indefinitely unless the user happened to submit again, which is
     // exactly what a stalled queue makes unlikely. Records are already
     // decoded at this point, so it costs a sort.
-    final excess = kept.length - QueuedFeedbackReport.maxQueuedReports;
-    if (excess > 0) {
-      final byAge = [...kept]
-        ..sort((a, b) {
-          // The shared age rule, with a path tie-break this cannot see.
-          final byTime = QueuedFeedbackReport.compareByAge(a.$2, b.$2);
-          return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
-        });
-      final evicted = <String>{};
-      for (final (file, _) in byAge.take(excess)) {
-        await _reap(file);
-        evicted.add(file.path);
+    final evict = QueuedFeedbackReport.keysToEvict([
+      for (final (file, record) in kept) (file.path, record.ageKey),
+    ], tieBreak: (a, b) => a.compareTo(b));
+    if (evict.isNotEmpty) {
+      final doomed = evict.toSet();
+      for (final (file, _) in kept) {
+        if (doomed.contains(file.path)) await _reap(file);
       }
-      kept.removeWhere((entry) => evicted.contains(entry.$1.path));
+      kept.removeWhere((entry) => doomed.contains(entry.$1.path));
     }
 
     return [for (final (_, record) in kept) record];

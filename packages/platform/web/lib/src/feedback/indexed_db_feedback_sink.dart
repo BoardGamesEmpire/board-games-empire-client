@@ -47,7 +47,7 @@ import 'package:web/web.dart' as web;
 ///
 /// `ageMs` is always written. IndexedDB leaves a record out of an index when
 /// the indexed property is missing, and a record outside `byAge` is one the
-/// persist cap can never evict — so every write builds its value with
+/// persist cap can neither count nor evict — so every write builds its value with
 /// [_storedValue], which takes both properties as required arguments.
 ///
 /// It does duplicate `queuedAt`, which is what #292 objected to in a cache of
@@ -140,8 +140,8 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// see the class doc.
   static const String _storeName = 'records';
 
-  /// The index the persist cap walks: `ageMs` ascending, and IndexedDB breaks
-  /// ties by ascending primary key.
+  /// The index the persist cap reads ages from, through a key cursor, so it
+  /// never reads a payload.
   static const String _ageIndexName = 'byAge';
 
   /// The stored value's two properties; see the class doc.
@@ -355,19 +355,20 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
       // carrying a pre-cap backlog: otherwise it would sit over the cap until
       // the user happened to submit again, and a stalled queue is exactly what
       // makes that unlikely. The records are already decoded, so it costs a
-      // sort. Same rule as `_enforceCap`, minus the just-persisted exemption —
-      // nothing was handed to this call.
-      final excess = kept.length - QueuedFeedbackReport.maxQueuedReports;
-      if (excess > 0) {
-        final byAge = [...kept]..sort(_oldestFirst);
-        final evicted = <String>{};
-        for (final (key, _) in byAge.take(excess)) {
+      // sort. Uses `QueuedFeedbackReport.keysToEvict`, minus the
+      // just-persisted exemption — nothing was handed to this call.
+      // `_enforceCap` calls it too, with its ages read from the `byAge` index.
+      final evict = QueuedFeedbackReport.keysToEvict([
+        for (final (key, record) in kept) (key, record.ageKey),
+      ], tieBreak: (a, b) => a.compareTo(b));
+      if (evict.isNotEmpty) {
+        for (final key in evict) {
           await _deleteQuietly(store, key.toJS);
-          evicted.add(key);
         }
+        final doomed = evict.toSet();
         kept = [
           for (final entry in kept)
-            if (!evicted.contains(entry.$1)) entry,
+            if (!doomed.contains(entry.$1)) entry,
         ];
       }
 
@@ -410,27 +411,31 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// oldest-first by [QueuedFeedbackReport.queuedAt] (#359), and reading no
   /// report to do it (#386).
   ///
-  /// The order is the `byAge` index's: its primary keys come back by `ageMs`
-  /// ascending, ties in ascending primary-key order, which is the age-then-key
-  /// rule [pending]'s own cap applies to decoded records. `ageMs` is
-  /// `queuedAt` and never anything derived from last-written time: [update]
-  /// rewrites a record to count a failed attempt, so a write-time ordering
-  /// would say "newest" about the record that has been queued longest. A
-  /// record with no `queuedAt` carries `ageMs` 0 — it predates the field, so
-  /// it genuinely is oldest — and so does a version-1 value that would not
-  /// decode, which [pending] reaps on its next call anyway.
+  /// Chosen by [QueuedFeedbackReport.keysToEvict], the rule every sink shares
+  /// (#387), with the primary key as the tie-break. The ages come from the
+  /// `byAge` index through a key cursor, which yields each record's `ageMs`
+  /// and primary key and never its value, so the cap runs the shared helper
+  /// without cloning a report. `ageMs` is `queuedAt` and never anything
+  /// derived from last-written time: [update] rewrites a record to count a
+  /// failed attempt, so a write-time ordering would say "newest" about the
+  /// record that has been queued longest. A record with no `queuedAt` carries
+  /// `ageMs` 0 — it predates the field, so it genuinely is oldest — and so
+  /// does a version-1 value that would not decode, which [pending] reaps on
+  /// its next call anyway.
   ///
-  /// The excess is the store's key count over the bound. A value missing from
-  /// the index — one whose `ageMs` is absent or not a valid key, which this
-  /// sink never writes — counts toward that total, so the bound still holds,
-  /// but it is never a candidate. [pending]'s cap works from decoded records
-  /// and covers it.
+  /// The arithmetic covers the records the index can age: a numeric `ageMs`
+  /// under a text key, which is every record this sink writes. A value
+  /// without one — `ageMs` missing, or not a number, which this sink never
+  /// writes — neither counts toward the excess nor is a candidate, so no
+  /// readable report is deleted to pay for it. That is native's rule for a
+  /// file whose age it cannot determine. [pending]'s cap works from decoded
+  /// records and still bounds the store.
   ///
-  /// The cost is two key listings once the bound is exceeded, and one under
-  /// it, which is every persist on a queue that drains. Neither path clones a
-  /// report. Before the index, the over-bound path read every payload to learn
-  /// their ages: up to roughly 12.5 MB at the per-report protocol ceiling, on
-  /// every submit to a full queue.
+  /// The cost under the bound, which is every persist on a queue that
+  /// drains, is one count. Over it, one key-cursor walk of the index.
+  /// Neither clones a report. Before the index, the over-bound path read
+  /// every payload to learn their ages: up to roughly 12.5 MB at the
+  /// per-report protocol ceiling, on every submit to a full queue.
   ///
   /// **Nothing here may fail the caller.** [persist] has already put the
   /// record by the time this runs, so an escape would have `submit` report
@@ -449,51 +454,76 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// builds, because the upgrade creates it from every older version. If one
   /// turns up anyway, the cap steps aside, and [pending]'s cap, which works
   /// from decoded records, still bounds the store.
-  ///
-  /// Native additionally exempts a record whose age it cannot *determine*,
-  /// excluding it from the candidates and from the overflow arithmetic alike,
-  /// so that a file a backup process is holding open cannot make eviction
-  /// delete readable reports to pay for it. That case cannot arise here and
-  /// the branch is absent rather than forgotten: inside a transaction that
-  /// succeeded, the whole index has been read, and a store fault fails the
-  /// read instead and deletes nothing. A value outside the index is not a
-  /// record whose age is unknown for now but one written wrongly, which is
-  /// why it still counts.
   Future<void> _enforceCap(
     web.IDBObjectStore store, {
     required String justPersisted,
   }) async {
-    final keys = await _keysIn(store);
-    if (keys == null) return;
-
-    final excess = keys.length - QueuedFeedbackReport.maxQueuedReports;
-    if (excess <= 0) return;
+    final count = await _awaitOptional(store.count());
+    if (!count.isA<JSNumber>() ||
+        (count! as JSNumber).toDartInt <=
+            QueuedFeedbackReport.maxQueuedReports) {
+      return;
+    }
 
     if (!store.indexNames.contains(_ageIndexName)) return;
-    // Primary keys in eviction order, and no values with them.
-    final byAge = await _awaitOptional(store.index(_ageIndexName).getAllKeys());
-    if (byAge == null) return;
+    final aged = await _agesIn(store.index(_ageIndexName));
+    if (aged == null) return;
 
-    var evicted = 0;
-    for (final rawKey in (byAge as JSArray<JSAny?>).toDart) {
-      if (evicted == excess) break;
-      // Counts against the cap, but is never up for deletion: `persist`
-      // returning has to mean the record is stored, and `submit` reports
-      // `queued` on the strength of that.
-      if (_asText(rawKey) == justPersisted) continue;
-      await _deleteQuietly(store, rawKey);
-      evicted++;
+    final evict = QueuedFeedbackReport.keysToEvict(
+      aged,
+      exempt: justPersisted,
+      tieBreak: (a, b) => a.compareTo(b),
+    );
+    for (final key in evict) {
+      await _deleteQuietly(store, key.toJS);
     }
   }
 
-  /// The shared oldest-first order, with the key tie-break this sink can see.
-  static int _oldestFirst(
-    (String, QueuedFeedbackReport) a,
-    (String, QueuedFeedbackReport) b,
-  ) {
-    final byAge = QueuedFeedbackReport.compareByAge(a.$2, b.$2);
-    return byAge != 0 ? byAge : a.$1.compareTo(b.$1);
+  /// Every record [index] can age, as `(primary key, age)`, read through a
+  /// key cursor so no value is cloned; null when the walk failed.
+  ///
+  /// A record is left out when its primary key is not text or its index key
+  /// is not a number a [DateTime] can hold — see [_enforceCap] for why that
+  /// takes it out of the arithmetic rather than failing it.
+  ///
+  /// Callback-driven, like [_migrateFromV1]: one cursor request fires
+  /// `success` once per row. A failure is canceled exactly as
+  /// [_awaitOptional] cancels one, so it cannot abort the persist's put.
+  static Future<List<(String, DateTime)>?> _agesIn(web.IDBIndex index) {
+    final done = Completer<List<(String, DateTime)>?>();
+    final aged = <(String, DateTime)>[];
+    final rows = index.openKeyCursor();
+    rows.onsuccess = ((web.Event _) {
+      final cursor = rows.result as web.IDBCursor?;
+      if (cursor == null) {
+        if (!done.isCompleted) done.complete(aged);
+        return;
+      }
+      final key = _asText(cursor.primaryKey);
+      final age = _ageOf(cursor.key);
+      if (key != null && age != null) aged.add((key, age));
+      cursor.continue_();
+    }).toJS;
+    rows.onerror = ((web.Event event) {
+      event
+        ..preventDefault()
+        ..stopPropagation();
+      if (!done.isCompleted) done.complete(null);
+    }).toJS;
+    return done.future;
   }
+
+  /// An index key as the age it encodes: a finite number of milliseconds
+  /// within [DateTime]'s range, and null for anything else.
+  static DateTime? _ageOf(JSAny? indexKey) {
+    if (!indexKey.isA<JSNumber>()) return null;
+    final ms = (indexKey! as JSNumber).toDartDouble;
+    if (!ms.isFinite || ms.abs() > _maxEpochMs) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms.toInt(), isUtc: true);
+  }
+
+  /// The largest magnitude [DateTime.fromMillisecondsSinceEpoch] accepts.
+  static const double _maxEpochMs = 8.64e15;
 
   /// How long this record has been waiting for a send it has not had.
   ///
@@ -696,8 +726,8 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
 
   /// Every key in the store, raw and as text where it is text.
   ///
-  /// Separate from [_valuesIn] so the cap can count without reading a single
-  /// payload. Both yield ascending key order, so their results line up index
+  /// [_entriesIn] pairs it with [_valuesIn] by position. Both yield ascending
+  /// key order, so their results line up index
   /// for index — which is what lets a record be compared against the key it is
   /// filed under.
   static Future<List<({JSAny? rawKey, String? key})>?> _keysIn(

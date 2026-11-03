@@ -106,7 +106,7 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
 
   /// Sort position for a record written before [queuedAt] existed.
   ///
-  /// Shared by both sinks so the age rule cannot drift between them. UTC
+  /// Shared by every sink so the age rule cannot drift between them. UTC
   /// because every stamp is UTC (see [queuedAt]); `compareTo` works on the
   /// absolute instant regardless, but a mixed-zone sentinel reads as a bug.
   static final DateTime epoch = DateTime.fromMillisecondsSinceEpoch(
@@ -120,16 +120,37 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   /// oldest, which [epoch] expresses directly.
   DateTime get ageKey => queuedAt ?? epoch;
 
-  /// Oldest-first ordering for eviction, shared by every sink (#359).
+  /// Keys to delete so [entries] fits [maxQueuedReports]: oldest first by
+  /// age, then [tieBreak]. [exempt] counts toward the total and is never
+  /// returned. Callers pass only entries whose age they know.
   ///
-  /// Deliberately one function rather than a rule each sink restates: the
+  /// Deliberately one function rather than a rule each sink restates (#359):
   /// two implementations have already disagreed once about how to apply it,
-  /// and a divergence here silently deletes the wrong report.
+  /// and a divergence here silently deletes the wrong report. Every sink's
+  /// cap calls it, the web sink's persist cap included: that one reads ages
+  /// from an index, so it gets them without reading a report.
   ///
-  /// Callers add their own deterministic tie-break — storage path, or
-  /// insertion order — because this cannot see one.
-  static int compareByAge(QueuedFeedbackReport a, QueuedFeedbackReport b) =>
-      a.ageKey.compareTo(b.ageKey);
+  /// [tieBreak] is per sink — storage path, key, or arrival order — because
+  /// this cannot see one. It decides only between equal ages. [entries] is
+  /// read once and never mutated, and [exempt] is compared with `==`.
+  static List<K> keysToEvict<K>(
+    Iterable<(K, DateTime)> entries, {
+    K? exempt,
+    required Comparator<K> tieBreak,
+  }) {
+    final all = entries.toList();
+    final excess = all.length - maxQueuedReports;
+    if (excess <= 0) return <K>[];
+    final candidates =
+        [
+          for (final e in all)
+            if (exempt == null || e.$1 != exempt) e,
+        ]..sort((a, b) {
+          final byAge = a.$2.compareTo(b.$2);
+          return byAge != 0 ? byAge : tieBreak(a.$1, b.$1);
+        });
+    return [for (final e in candidates.take(excess)) e.$1];
+  }
 
   /// Whether this record has used up [maxRetries].
   ///

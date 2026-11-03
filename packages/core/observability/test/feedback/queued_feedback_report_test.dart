@@ -79,4 +79,77 @@ void main() {
       expect(report.toJson().containsKey('report'), isFalse);
     });
   });
+
+  group('keysToEvict (#387)', () {
+    DateTime t(int i) => DateTime.utc(2026).add(Duration(minutes: i));
+    int byKey(String a, String b) => a.compareTo(b);
+    const max = QueuedFeedbackReport.maxQueuedReports;
+
+    test('returns nothing at or under the bound', () {
+      final entries = [for (var i = 0; i < max; i++) ('k$i', t(i))];
+
+      expect(
+        QueuedFeedbackReport.keysToEvict(entries, tieBreak: byKey),
+        isEmpty,
+      );
+    });
+
+    test('returns the oldest excess, oldest first', () {
+      // Ages 0..max+1 in a fixed, hand-written non-sorted order: odds
+      // descending, then evens ascending.
+      final ages = [
+        for (var i = max + 1; i >= 0; i--)
+          if (i.isOdd) i,
+        for (var i = 0; i <= max + 1; i++)
+          if (i.isEven) i,
+      ];
+      expect(ages.length, max + 2);
+      final entries = [for (final i in ages) ('k$i', t(i))];
+
+      expect(QueuedFeedbackReport.keysToEvict(entries, tieBreak: byKey), [
+        'k0',
+        'k1',
+      ]);
+    });
+
+    test('breaks equal ages with tieBreak', () {
+      final entries = [
+        for (var i = max; i >= 0; i--)
+          ('k${i.toString().padLeft(3, '0')}', t(0)),
+      ];
+
+      expect(QueuedFeedbackReport.keysToEvict(entries, tieBreak: byKey), [
+        'k000',
+      ]);
+    });
+
+    test('never returns exempt, even when it is the oldest, and still '
+        'counts it', () {
+      final entries = [for (var i = 0; i <= max; i++) ('k$i', t(i))];
+
+      expect(
+        QueuedFeedbackReport.keysToEvict(
+          entries,
+          exempt: 'k0',
+          tieBreak: byKey,
+        ),
+        ['k1'],
+      );
+    });
+
+    test('an exempt key alone is never returned', () {
+      // With unique keys this cannot arise at the real bound: the candidates
+      // always cover the excess. Duplicated keys make the one over-bound
+      // entry set consist only of the exempt key, so this pins the exempt
+      // filter, not the at-or-under-bound short-circuit, as what refuses it.
+      expect(
+        QueuedFeedbackReport.keysToEvict(
+          [for (var i = 0; i <= max; i++) ('only', t(i))],
+          exempt: 'only',
+          tieBreak: byKey,
+        ),
+        isEmpty,
+      );
+    });
+  });
 }

@@ -479,10 +479,10 @@ void main() {
     });
 
     test('a non-numeric ageMs is NOT reaped', () async {
-      // The ISO stamp where the integer belongs. A string is a valid
-      // IndexedDB key, so the index does hold this record — after every
-      // number, since IndexedDB orders numbers before strings — and the cap
-      // would reach it last. Ordering is all ageMs is for.
+      // The ISO stamp where the integer belongs. The index holds it, since a
+      // string is a valid IndexedDB key, but the persist cap reads only
+      // numeric ages and leaves it out as it leaves out a missing one;
+      // pending's cap still covers it. Ordering is all ageMs is for.
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
@@ -734,16 +734,16 @@ void main() {
       expect(keys, contains('k0'), reason: 'no readable record paid for it');
     });
 
-    test('a value missing from the age index counts toward the excess but is '
-        'never evicted — the oldest indexed record pays instead', () async {
+    test('a value missing from the age index is left out of the excess, as '
+        'native leaves out a file it cannot age — pending bounds it', () async {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
       // Good json and no ageMs: drainable, and outside the index. Oldest of
-      // all by its json, so only the index can be what passes it over.
-      // Together with the ordinary records it puts the store exactly at the
-      // bound, so the persist below makes one eviction if the excess counts
-      // the store, and none if it counted only the index.
+      // all by its json. Together with the ordinary records it puts the store
+      // exactly at the bound, so the persist below makes one eviction if the
+      // excess counted the store, and none when it counts what the index can
+      // age.
       await writeRawRecord(
         name,
         'ageless',
@@ -758,11 +758,44 @@ void main() {
       await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
       final keys = (await sink.rawKeys()).toSet();
 
-      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
-      expect(keys, contains('ageless'), reason: 'never a candidate');
-      expect(keys, isNot(contains('k0')), reason: 'the oldest indexed record');
-      expect(keys, contains('k1'), reason: 'and only that one');
-      expect(keys, contains('newcomer'));
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports + 1));
+      expect(
+        keys,
+        containsAll(['ageless', 'k0', 'newcomer']),
+        reason: 'no indexed record paid for a value the cap cannot age',
+      );
+
+      // pending works from decoded records, where the json dates it oldest.
+      final pending = await sink.pending();
+      expect(pending, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(pending.map((r) => r.storageKey), isNot(contains('ageless')));
+    });
+
+    test('a non-numeric ageMs is left out of the excess too — the index holds '
+        'it, but the cap ages only numbers', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // In the index, unlike a missing ageMs: a string is a valid key, sorted
+      // after every number. Counting it would put the store one over at the
+      // persist below and cost k0, the oldest record the cap can age.
+      await writeRawRecord(
+        name,
+        'stamped',
+        ageMs: '2026-06-01T00:00:00.000Z'.toJS,
+        json: jsonText(record('stamped', queuedAt: DateTime.utc(1999))).toJS,
+      );
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++) {
+        await sink.persist(
+          record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i)),
+        );
+      }
+
+      await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports + 1));
+      expect(keys, containsAll(['stamped', 'k0', 'newcomer']));
     });
 
     test('a store without the age index fails no persist — the cap steps '
@@ -1084,7 +1117,7 @@ void main() {
   });
 
   group("the cap's fast path", () {
-    test('a persist under the bound reads no payloads — one key listing and '
+    test('a persist under the bound reads no payloads — one count and '
         'nothing else', () async {
       final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
       addTearDown(sink.onDispose);
@@ -1098,7 +1131,7 @@ void main() {
         before,
         reason:
             'a get of a new key returns nothing, so reads no payload, and '
-            'under the cap there is one key listing and nothing else',
+            'under the cap there is one count and nothing else',
       );
     });
 
@@ -1131,7 +1164,7 @@ void main() {
         IndexedDbFeedbackSink.debugPayloadReads,
         before,
         reason:
-            'the age index hands over the candidates in eviction order, so '
+            'the age index hands over every age through a key cursor, so '
             'no report is cloned to learn its age',
       );
       // Only now, with the count pinned — rawKeys reads payloads itself: the
@@ -1376,8 +1409,9 @@ void main() {
 
     test('an index orders every number before any string, and breaks ties by '
         'primary key', () async {
-      // The cap's whole eviction order, and why an ISO stamp in `ageMs` is
-      // reached last rather than reaped.
+      // Why the cap reads ages through the index rather than trusting its
+      // order: a string `ageMs` sorts after every number, so the cap takes
+      // only numeric keys and sorts them itself.
       final result = await throughAgeIndex({
         'a-string': storedValue(
           ageMs: '2026-06-01T00:00:00.000Z'.toJS,
