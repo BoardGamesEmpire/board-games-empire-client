@@ -36,7 +36,8 @@ The queued `CreateHouseholdOperation` is the durable source of truth; the
 inline send is only an accelerator. The sync queue's drain
 (`packages/features/sync`, #121) sends what the inline send could not, on the
 session's re-hydrate triggers, on both platforms. On web each pass runs under
-a Web Lock, so one tab at a time drains (#447).
+a Web Lock, so one tab at a time drains; where the browser has no Web Locks,
+as on a plain-http origin, a pass runs unlocked (#447).
 
 A create the server refuses as it stands is **parked**, not rolled back: the
 household stays `isLocalOnly`, its op stays queued with the server's error,
