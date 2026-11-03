@@ -34,11 +34,15 @@ abstract class FeedbackService {
   /// [severity] must be supplied when [category] is crash or bug
   /// (constructor assert on the model).
   ///
-  /// [clientRequestId] is the idempotency token for the offline queue;
-  /// implementations generate one (cuid2, matching the repo's id
-  /// convention) when the caller doesn't supply it. It doubles as the
-  /// durable sink's address for the record, so implementations must
-  /// generate a value usable as one.
+  /// Every report gets a fresh [FeedbackReport.clientRequestId], the
+  /// idempotency token for the offline queue: implementations generate one
+  /// (cuid2, matching the repo's id convention). It doubles as the durable
+  /// sink's address for the record, so implementations must generate a value
+  /// usable as one.
+  ///
+  /// A caller cannot supply its own (#381). Nothing did, and a token two
+  /// reports share makes the second a repeat of the first, which the sink
+  /// answers by keeping the first ([FeedbackSink.persist]).
   FeedbackReport buildReport({
     required FeedbackCategory category,
     FeedbackSeverity? severity,
@@ -46,7 +50,6 @@ abstract class FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? clientRequestId,
   });
 
   /// Submits [report], returning whether it was [FeedbackSubmitResult.sent]

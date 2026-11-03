@@ -216,10 +216,30 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   Future<void> persist(QueuedFeedbackReport record) async {
     final key = _addressOf(record);
     await _transaction((store) async {
+      // A create (#379), decided inside the transaction that writes, so no
+      // other tab's write can land between the check and the put (#381).
+      //
+      // A record [pending] would emit under this key is the same submission
+      // — the key is its idempotency token — so the first stays, as the
+      // backend keeps the first report a repeated `clientRequestId` names.
+      // Anything else under the key — a value that will not decode, or a
+      // record filed under another key — is not a stored record. [pending]
+      // would reap it, taking with it the report this call promised to
+      // store, so the put replaces it.
+      //
+      // One read answers both questions. A get of a key that is not stored
+      // comes back empty and reads no payload, so a new key, which is every
+      // persist the app makes today, costs nothing more than a key lookup.
+      final stored = await _awaitRequest(store.get(key.toJS));
+      if (stored != null && _decode(_asText(stored))?.storageKey == key) {
+        return;
+      }
       await _awaitRequest(
         store.put(jsonEncode(record.toJson()).toJS, key.toJS),
       );
-      await _enforceCap(store, justPersisted: key);
+      // Only a create grows the store. A put over an unreadable value
+      // replaced it, so the cap has nothing to do.
+      if (stored == null) await _enforceCap(store, justPersisted: key);
     });
   }
 

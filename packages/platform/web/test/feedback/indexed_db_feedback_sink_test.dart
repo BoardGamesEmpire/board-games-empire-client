@@ -202,22 +202,52 @@ void main() {
       expect(() => sink.persist(record(null)), throwsArgumentError);
     });
 
-    test(
-      'persist with an existing key replaces rather than duplicates',
-      () async {
-        final sink = await IndexedDbFeedbackSink.open(
-          databaseName: freshName(),
-        );
-        addTearDown(sink.onDispose);
+    test('persist with an existing key keeps the first record — the first '
+        'submission wins, as on the backend (#379)', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
 
-        await sink.persist(record('dup', message: 'first'));
-        await sink.persist(record('dup', message: 'second'));
-        final pending = await sink.pending();
+      await sink.persist(record('dup', message: 'first'));
+      await sink.persist(record('dup', message: 'second'));
+      final pending = await sink.pending();
 
-        expect(pending, hasLength(1));
-        expect(pending.single.report.message, 'second');
-      },
-    );
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'first');
+    });
+
+    test('persist replaces an undecodable value under its key — keeping it '
+        'would let pending reap a report persist said was stored '
+        '(#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRaw(name, 'key-a', 'not json');
+
+      await sink.persist(record('key-a', message: 'replacement'));
+      final pending = await sink.pending();
+
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'replacement');
+    });
+
+    test("persist replaces a value under its key that holds another key's "
+        'record — pending would reap it as un-addressable, so it is not a '
+        'stored record (#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRaw(
+        name,
+        'key-a',
+        jsonEncode(record('other', message: 'misfiled').toJson()),
+      );
+
+      await sink.persist(record('key-a', message: 'replacement'));
+      final pending = await sink.pending();
+
+      expect(pending.map((r) => r.storageKey), ['key-a']);
+      expect(pending.single.report.message, 'replacement');
+    });
 
     test(
       'remove deletes by storage key, and is a no-op for an absent one',
@@ -475,6 +505,51 @@ void main() {
       expect(keys, isNot(contains('corrupt')));
       expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
       expect(keys, contains('k0'), reason: 'no readable record paid for it');
+    });
+
+    test('persist replacing an undecodable value runs no cap pass — the '
+        'store cannot have grown (#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // Over the bound, written behind the sink's back so no cap pass has
+      // run yet. At or under the bound a cap pass deletes nothing, and
+      // "nothing was evicted" could not fail; here one would take `k0`, the
+      // oldest.
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await writeRaw(
+          name,
+          'k$i',
+          jsonEncode(
+            record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i)).toJson(),
+          ),
+        );
+      }
+      await writeRaw(name, 'broken', 'not json');
+      const over = QueuedFeedbackReport.maxQueuedReports + 1;
+
+      await sink.persist(
+        record(
+          'broken',
+          message: 'replacement',
+          queuedAt: DateTime.utc(2026, 9),
+        ),
+      );
+      // rawKeys, not pending: pending enforces the cap itself.
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(over));
+      expect(
+        keys,
+        contains('k0'),
+        reason: 'the oldest, so a cap pass would have taken it',
+      );
+      // Only now, with the count pinned: the value was replaced, not kept.
+      final pending = await sink.pending();
+      expect(
+        pending.firstWhere((r) => r.storageKey == 'broken').report.message,
+        'replacement',
+      );
     });
   });
 

@@ -41,16 +41,14 @@ void main() {
       expect(pending.last.serverId, isNull);
     });
 
-    test('persist with an existing key replaces the record without '
-        'duplicating it', () async {
+    test('persist with an existing key keeps the first record — the first '
+        'submission wins, as on the backend (#379)', () async {
       final sink = MemoryFeedbackSink();
       await sink.persist(record('key-a', message: 'first'));
       await sink.persist(record('key-a', message: 'second'));
-
       final pending = await sink.pending();
-
       expect(pending, hasLength(1));
-      expect(pending.single.report.message, 'second');
+      expect(pending.single.report.message, 'first');
     });
 
     test('remove deletes the record; unknown keys are a no-op', () async {

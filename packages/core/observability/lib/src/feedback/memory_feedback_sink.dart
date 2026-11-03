@@ -39,7 +39,13 @@ class MemoryFeedbackSink implements FeedbackSink {
   @override
   Future<void> persist(QueuedFeedbackReport record) async {
     final key = _requireKey(record);
-    if (!_byKey.containsKey(key)) _order.add(key);
+    // A create (#379): the record already held under this key is the same
+    // submission, and the first one stays. Returning before the eviction
+    // pass, too — the map has not grown. Nothing here can be held in a state
+    // `pending` would discard, so unlike the durable sinks there is no
+    // unreadable record to replace.
+    if (_byKey.containsKey(key)) return;
+    _order.add(key);
     _byKey[key] = record;
     _evictOverflow(justPersisted: key);
   }

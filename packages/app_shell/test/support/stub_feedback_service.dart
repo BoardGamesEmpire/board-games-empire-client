@@ -19,7 +19,6 @@ class StubFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? clientRequestId,
   }) => FeedbackReport(
     category: category,
     severity: severity ?? FeedbackSeverity.critical,

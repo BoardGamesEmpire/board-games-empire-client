@@ -162,8 +162,9 @@ abstract class QueuedFeedbackReport with _$QueuedFeedbackReport {
   /// records by `storageKey`; the value they get is the report's
   /// [FeedbackReport.clientRequestId], because reusing the idempotency
   /// token as the address is what makes a drain racing a resubmission
-  /// safe — the same record can't be queued twice under two names, and a
-  /// replayed send dedupes server-side (backend #251).
+  /// safe — the same record can't be queued under two names, a second
+  /// persist under the same key keeps the first (#379), and a replayed send
+  /// dedupes server-side (backend #251), which keeps its first report too.
   ///
   /// Not a stored field: deriving it keeps a single source of truth, so
   /// the address can never drift from the token that has to match it.

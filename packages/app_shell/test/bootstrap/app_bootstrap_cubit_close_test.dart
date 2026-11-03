@@ -79,7 +79,6 @@ class _CountingFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? clientRequestId,
   }) => throw UnimplementedError();
 
   @override

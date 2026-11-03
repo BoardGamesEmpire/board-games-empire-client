@@ -215,7 +215,7 @@ void main() {
       expect(first.clientRequestId, isNot(second.clientRequestId));
     });
 
-    test('uses the injected key generator and preserves a caller key', () {
+    test('uses the injected key generator', () {
       final service = buildService(
         clientRequestIdGenerator: () => 'generated-key',
       );
@@ -225,15 +225,8 @@ void main() {
         severity: FeedbackSeverity.low,
         errorMessage: 'It misbehaved',
       );
-      final supplied = service.buildReport(
-        category: FeedbackCategory.bug,
-        severity: FeedbackSeverity.low,
-        errorMessage: 'It misbehaved',
-        clientRequestId: 'caller-key',
-      );
 
       expect(generated.clientRequestId, 'generated-key');
-      expect(supplied.clientRequestId, 'caller-key');
     });
   });
 
@@ -1499,14 +1492,12 @@ class _RecordingSink implements FeedbackSink {
   Future<void> persist(QueuedFeedbackReport record) async {
     if (persistError != null) throw persistError!;
     persisted.add(record);
-    // Keyed, not appended: both real sinks address a record by its storage
-    // key and overwrite, so a rewrite replaces rather than duplicating.
-    final at = _pending.indexWhere((r) => r.storageKey == record.storageKey);
-    if (at == -1) {
-      _pending.add(record);
-    } else {
-      _pending[at] = record;
-    }
+    // Keyed, not appended, and the first record under a key stays: every real
+    // sink addresses a record by its storage key and keeps one already stored
+    // there (#379). Recorded in [persisted] either way, so a test can tell an
+    // attempted persist from one that landed.
+    if (_pending.any((r) => r.storageKey == record.storageKey)) return;
+    _pending.add(record);
   }
 
   @override

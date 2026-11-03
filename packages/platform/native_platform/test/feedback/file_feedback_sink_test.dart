@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:native_platform/native_platform.dart';
@@ -32,6 +33,9 @@ import 'package:observability/observability.dart';
 ///   the record moves to the back of `pending`'s drain order — deliberate,
 ///   and the one place this sink and `MemoryFeedbackSink` differ. Eviction
 ///   order is untouched, keying on `queuedAt`.
+/// - **`persist` creates** (#379): a repeated key keeps the first readable
+///   record and replaces an unreadable, mismatched or vanished one, with no
+///   cap pass on either.
 /// - **Un-drainable records are reaped, not skipped** (#161): anything
 ///   `pending` declines to emit is deleted, because none of it has an
 ///   address `remove` could ever clear. One exception — a *filesystem*
@@ -95,6 +99,48 @@ void main() {
     reportJson['correlationKey'] = key;
     return jsonEncode(envelope);
   }
+
+  /// Writes a record straight to disk, bypassing [FileFeedbackSink.persist]:
+  /// no cap pass runs and the sink's age cache knows nothing of it, so a
+  /// directory can be set up over the bound, or with ages the sink must read.
+  Future<void> writeRecord(String key, {DateTime? queuedAt}) async {
+    await File('${tempDir.path}/$key.json').writeAsString(
+      jsonEncode(
+        QueuedFeedbackReport(report: report(key), queuedAt: queuedAt).toJson(),
+      ),
+    );
+  }
+
+  // Denies reads on [file], returning whether that actually took effect.
+  //
+  // `chmod` is the only way to manufacture a read fault against a real
+  // file, and it is POSIX-only — hence `testOn: 'posix'` on every case that
+  // uses this. native_platform ships to Windows desktop too, where an
+  // unguarded Process.run throws before the sink is ever exercised.
+  //
+  // It is advisory against a privileged runner as well: root reads a 000
+  // file regardless, which would leave the file an ordinary readable record
+  // and fail these cases for a reason that has nothing to do with the sink.
+  // Callers skip visibly rather than assert a precondition the environment
+  // refused to set up.
+  Future<bool> denyReads(File file) async {
+    await Process.run('chmod', ['000', file.path]);
+    addTearDown(() => Process.run('chmod', ['644', file.path]));
+    try {
+      await file.readAsBytes();
+      return false;
+    } on FileSystemException {
+      return true;
+    }
+  }
+
+  /// The record stored in `<key>.json`, read straight off disk — for a test
+  /// that must not call [FileFeedbackSink.pending], which runs a cap pass of
+  /// its own.
+  QueuedFeedbackReport onDisk(String key) => QueuedFeedbackReport.fromJson(
+    jsonDecode(File('${tempDir.path}/$key.json').readAsStringSync())
+        as Map<String, dynamic>,
+  );
 
   group('FileFeedbackSink', () {
     test('is a FeedbackSink', () {
@@ -160,15 +206,15 @@ void main() {
       expect(leftovers, isEmpty);
     });
 
-    test('two overlapping persists of the same record both succeed — they '
-        'do not share a temp path, so neither renames the other out from '
-        'under it', () async {
+    test('two overlapping persists of one key both complete, and the first '
+        'record stays (#379)', () async {
       final sink = buildSink();
 
       // A resubmission racing a send still in flight, both falling back to
-      // the queue. With a shared temp path the second rename fails on a
-      // file the first already moved, and _queue reports a persistence
-      // failure for a record that is in fact safely queued.
+      // the queue. A failure from either would have _queue report a
+      // persistence failure for a report that is in fact safely queued. The
+      // lock orders the two, and the second finds the first stored and
+      // keeps it, so one file holds the first and no temp is left behind.
       await expectLater(
         Future.wait([
           sink.persist(record('key-a', message: 'first')),
@@ -179,11 +225,95 @@ void main() {
 
       final pending = await sink.pending();
       expect(pending.map((r) => r.storageKey), ['key-a']);
+      expect(pending.single.report.message, 'first');
       final names = tempDir
           .listSync()
           .map((e) => e.uri.pathSegments.last)
           .toList();
       expect(names, ['key-a.json']);
+    });
+
+    test(
+      'persist with an existing key keeps the first readable record (#379)',
+      () async {
+        final sink = buildSink();
+        await sink.persist(record('key-a', message: 'first'));
+
+        await sink.persist(record('key-a', message: 'second'));
+
+        final pending = await sink.pending();
+        expect(pending, hasLength(1));
+        expect(pending.single.report.message, 'first');
+      },
+    );
+
+    test('persist replaces an undecodable file under its key — keeping it '
+        'would let pending reap a report persist said was stored '
+        '(#379)', () async {
+      final sink = buildSink();
+      await File('${tempDir.path}/key-a.json').writeAsString('not json');
+
+      await sink.persist(record('key-a', message: 'replacement'));
+
+      final pending = await sink.pending();
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'replacement');
+    });
+
+    test("persist replaces a file under its key that holds another key's "
+        'record — pending would reap it as un-addressable, so it is not a '
+        'stored record (#379)', () async {
+      final sink = buildSink();
+      await File('${tempDir.path}/key-a.json').writeAsString(
+        jsonEncode(record('other', message: 'misfiled').toJson()),
+      );
+
+      await sink.persist(record('key-a', message: 'replacement'));
+
+      final pending = await sink.pending();
+      expect(pending.map((r) => r.storageKey), ['key-a']);
+      expect(pending.single.report.message, 'replacement');
+    });
+
+    test('persist keeps an UNREADABLE file under its key rather than '
+        'replacing it — a read fault is not corruption (#379)', () async {
+      final sink = buildSink();
+      await sink.persist(record('key-a', message: 'first'));
+      final file = File('${tempDir.path}/key-a.json');
+      if (!await denyReads(file)) {
+        markTestSkipped(
+          'this runner still reads a chmod 000 file (root?), so the read '
+          'fault this case needs cannot be established',
+        );
+        return;
+      }
+
+      // A rename needs write access to the directory, not to the file it
+      // lands on, so nothing but the sink's own check stands between this
+      // call and replacing a record that may be perfectly valid.
+      await sink.persist(record('key-a', message: 'second'));
+
+      await Process.run('chmod', ['644', file.path]);
+      expect(onDisk('key-a').report.message, 'first');
+    }, testOn: 'posix');
+
+    test('persist writes the record when the file under its key vanishes '
+        'between the existence check and the read — gone is neither locked '
+        'nor corrupt, and nothing is stored (#379)', () async {
+      final sink = buildSink();
+      final target = '${tempDir.path}/key-a.json';
+
+      // Another process sharing the directory deletes the file after the
+      // sink saw it exist — the lock orders nothing outside this instance.
+      // Staged by handing the sink, for this one path, a file that answers
+      // the check and then is gone; every other path is a real file.
+      await IOOverrides.runWithIOOverrides(
+        () => sink.persist(record('key-a', message: 'replacement')),
+        _VanishingFileOverrides(target),
+      );
+
+      expect(File(target).existsSync(), isTrue);
+      expect(onDisk('key-a').report.message, 'replacement');
     });
 
     test('pending returns every persisted envelope with its server '
@@ -508,9 +638,10 @@ void main() {
           ),
         );
       }
-      // Re-persist the OLDEST one, exactly as counting a failed attempt
-      // does. Its mtime is now the newest on disk; its queuedAt is not.
-      await sink.persist(
+      // Rewrite the OLDEST one, exactly as counting a failed attempt does
+      // (through update since #376). Its mtime is now the newest on disk;
+      // its queuedAt is not.
+      await sink.update(
         record(
           'old0',
           queuedAt: DateTime.utc(2020, 1, 1),
@@ -549,43 +680,69 @@ void main() {
         expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
       },
     );
+
+    // The two cases below start OVER the bound, written straight to disk so
+    // no cap pass has run yet. At or under the bound a cap pass deletes
+    // nothing, and "every file survived" could not fail. Here one would take
+    // `k0`, the oldest, so a file count that holds proves no pass ran.
+    // `pending` is not called: it enforces the cap itself.
+
+    test('persist under a key it keeps runs no cap pass — the directory '
+        'cannot have grown (#379)', () async {
+      final sink = buildSink();
+      const over = QueuedFeedbackReport.maxQueuedReports + 1;
+      for (var i = 0; i < over; i++) {
+        await writeRecord(
+          'k$i',
+          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+        );
+      }
+      const newest = 'k${over - 1}';
+
+      await sink.persist(
+        record(newest, message: 'second', queuedAt: DateTime.utc(2026, 9)),
+      );
+
+      expect(tempDir.listSync().whereType<File>(), hasLength(over));
+      expect(
+        File('${tempDir.path}/k0.json').existsSync(),
+        isTrue,
+        reason: 'the oldest, so a cap pass would have taken it',
+      );
+      expect(onDisk(newest).report.message, 'pending', reason: 'kept');
+    });
+
+    test('persist replacing an undecodable file runs no cap pass — the '
+        'directory cannot have grown (#379)', () async {
+      final sink = buildSink();
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await writeRecord(
+          'k$i',
+          queuedAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: i)),
+        );
+      }
+      await File('${tempDir.path}/broken.json').writeAsString('not json');
+      const over = QueuedFeedbackReport.maxQueuedReports + 1;
+
+      await sink.persist(
+        record(
+          'broken',
+          message: 'replacement',
+          queuedAt: DateTime.utc(2026, 9),
+        ),
+      );
+
+      expect(tempDir.listSync().whereType<File>(), hasLength(over));
+      expect(
+        File('${tempDir.path}/k0.json').existsSync(),
+        isTrue,
+        reason: 'the oldest, so a cap pass would have taken it',
+      );
+      expect(onDisk('broken').report.message, 'replacement');
+    });
   });
 
   group('the cap never destroys what it cannot read (#359 review)', () {
-    Future<void> writeRecord(String key, {DateTime? queuedAt}) async {
-      await File('${tempDir.path}/$key.json').writeAsString(
-        jsonEncode(
-          QueuedFeedbackReport(
-            report: report(key),
-            queuedAt: queuedAt,
-          ).toJson(),
-        ),
-      );
-    }
-
-    // Denies reads on [file], returning whether that actually took effect.
-    //
-    // `chmod` is the only way to manufacture a read fault against a real
-    // file, and it is POSIX-only — hence `testOn: 'posix'` on the two cases
-    // that use this. native_platform ships to Windows desktop too, where an
-    // unguarded Process.run throws before the cap is ever exercised.
-    //
-    // It is advisory against a privileged runner as well: root reads a 000
-    // file regardless, which would leave `locked` an ordinary eviction
-    // candidate and fail these cases for a reason that has nothing to do
-    // with the sink. Callers skip visibly rather than assert a precondition
-    // the environment refused to set up.
-    Future<bool> denyReads(File file) async {
-      await Process.run('chmod', ['000', file.path]);
-      addTearDown(() => Process.run('chmod', ['644', file.path]));
-      try {
-        await file.readAsBytes();
-        return false;
-      } on FileSystemException {
-        return true;
-      }
-    }
-
     test('an UNREADABLE record is never an eviction candidate — a read '
         'fault is not corruption, and this path deletes', () async {
       final sink = buildSink();
@@ -929,4 +1086,41 @@ void main() {
       expect(await sink.pending(), isEmpty);
     });
   });
+}
+
+/// Hands out [_VanishedFile] for [path] and a real file for every other
+/// path, so the sink's temps and renames still touch the disk.
+final class _VanishingFileOverrides extends IOOverrides {
+  _VanishingFileOverrides(this.path);
+
+  final String path;
+
+  @override
+  File createFile(String path) => path == this.path
+      ? _VanishedFile(super.createFile(path))
+      : super.createFile(path);
+}
+
+/// A file that was there when asked and is gone when read: what another
+/// process deleting it between the two calls looks like from inside the sink.
+class _VanishedFile implements File {
+  _VanishedFile(this._real);
+
+  final File _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Future<bool> exists() async => true;
+
+  @override
+  Future<Uint8List> readAsBytes() async => throw PathNotFoundException(
+    path,
+    const OSError('No such file or directory', 2),
+    'Cannot open file',
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
