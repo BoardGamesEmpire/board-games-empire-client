@@ -559,6 +559,34 @@ void main() {
       });
     }
 
+    testWidgets('focus the user moves before the interview button goes stays '
+        'where they put it', (tester) async {
+      remote.onFetchOne = (_) async => row();
+      remote.onInterview = (_) async => throw forbidden();
+      await pumpScreen(tester);
+      await focusOn(tester, textIn(interviewButton, 'Interview again'));
+      // A refusal, so the hand-off would go to its banner's Dismiss.
+      await pressKey(tester);
+      await tester.pumpAndSettle();
+      expect(banner, findsOneWidget);
+      expect(focusIsIn(tester, interviewButton), isTrue);
+
+      access.current = readOnly;
+      // The answer reaches the screen, and the user moves on before the
+      // frame that takes the button away.
+      await tester.binding.delayed(Duration.zero);
+      Focus.of(
+        tester.element(
+          find.descendant(of: refreshButton, matching: find.byType(Icon)),
+        ),
+      ).requestFocus();
+      await tester.binding.delayed(Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(interviewButton, findsNothing);
+      expect(focusIsIn(tester, refreshButton), isTrue);
+    });
+
     testWidgets('interview again shows busy, then the banner', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
       remote.onFetchOne = (_) async => row();

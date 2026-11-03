@@ -18,6 +18,7 @@ import '../bloc/language_link_list_event.dart';
 import '../bloc/language_link_list_state.dart';
 import '../widgets/data_gateway_message.dart';
 import '../widgets/data_gateway_status.dart';
+import '../widgets/focus_is_free.dart';
 import '../widgets/language_link_worklist.dart';
 
 /// One DataGateway's own page (#457): its name, whether the server uses it and
@@ -778,8 +779,8 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
           (previous.gateway.enabled && !current.gateway.enabled));
 
   /// Runs before the frame that takes the control away, while it still has
-  /// focus, and hands it on after that frame. Not if access has given the
-  /// control back by then.
+  /// focus, and hands it on after that frame. Not if the user has moved focus
+  /// meanwhile, and not if access has given the control back by then.
   void _onControlTakenAway(BuildContext context, DataGatewayDetailState state) {
     if (state is! DataGatewayDetailReady) return;
     // Without update every control goes or stops. With it, only the button
@@ -790,9 +791,10 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
     if (!hadFocus) return;
     final onInterview = widget.interview.hasFocus;
     final banner = state.outcome != null;
+    final focused = FocusManager.instance.primaryFocus;
     final bloc = context.read<DataGatewayDetailBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !focusIsFree(this.context, untouched: focused)) return;
       final now = bloc.state;
       final back =
           now is DataGatewayDetailReady &&
