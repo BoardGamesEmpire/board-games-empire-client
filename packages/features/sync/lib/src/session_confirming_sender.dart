@@ -19,10 +19,9 @@ import 'package:models/domain.dart';
 /// drain does not. The inline create reads either as saved but not yet
 /// sent, and a drain stops its pass on either.
 ///
-/// Every sender of the session goes through this one — the inline create
-/// today, and the web drain (#447) once it lands — so the check holds for
-/// all of them without each asking. Native composes no guard, and so no
-/// wrapper.
+/// Every sender of the session goes through this one — the inline creates
+/// and the queue drain (#447) — so the check holds for all of them without
+/// each asking. Native composes no guard, and so no wrapper.
 ///
 /// Known gap: the guard answers before [_inner] claims the entry and sends
 /// it, and each step awaits. A sign-in in another tab that lands in that

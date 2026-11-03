@@ -7,7 +7,8 @@ import 'package:game_collection/game_collection.dart'
     show GameCollectionHydrateInstaller;
 import 'package:household/household.dart' show HouseholdHydrateInstaller;
 import 'package:interfaces/orchestration.dart' show UserScopeInstaller;
-import 'package:sync_queue/sync_queue.dart' show SyncSenderInstaller;
+import 'package:sync_queue/sync_queue.dart'
+    show SyncQueueDrainInstaller, SyncSenderInstaller;
 
 /// The per-user session-scope installers for web (#137), run on every
 /// sign-in by `UserSessionScope.activate()` and disposed on any transition
@@ -54,13 +55,18 @@ import 'package:sync_queue/sync_queue.dart' show SyncSenderInstaller;
 /// `registerServerNetworkWeb` registers in the origin scope, and registers
 /// its re-check with the rehydrator above.
 ///
-/// [SyncSenderInstaller] runs last, as on native: it registers the sender
-/// the create screen's inline send goes through (#121), over the repositories
-/// above it. On web it asks before each delivery whether the session is
-/// still this user's, since another tab can move the shared cookie (#432).
-/// Native also starts a drain over that sender; web does not yet, because
-/// two tabs share one database and the drain needs a Web Lock. That is #447.
-/// Until then a web create whose inline send fails stays queued.
+/// [SyncSenderInstaller] registers the sender the create screen's inline
+/// send goes through (#121), over the repositories above it. On web it asks
+/// before each delivery whether the session is still this user's, since
+/// another tab can move the shared cookie (#432).
+///
+/// [SyncQueueDrainInstaller] runs last, as on native: it starts the drain over
+/// that sender, so a queued write that could not be sent goes out on a later
+/// pass, on the session's re-hydrate triggers. Unlike native, each pass runs
+/// under the Web Lock the server scope registers
+/// (`bge.sync_drain.<serverId>.<userId>`), so one tab at a time drains each
+/// server database and user (#447). Where the browser has no Web Locks it
+/// drains without one and logs a warning.
 ///
 /// The household, collection and event hydrates ask the same question before
 /// each pass (#432).
@@ -77,4 +83,5 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   EventHydrateInstaller(),
   DataGatewayAccessInstaller(),
   SyncSenderInstaller(),
+  SyncQueueDrainInstaller(),
 ];

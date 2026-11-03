@@ -274,7 +274,7 @@
   },
   "addToCollectionQueued": "Added {title} to your collection on this device. It hasn't reached the server yet.",
   "@addToCollectionQueued": {
-    "description": "Shown briefly on the game's screen after the add sheet closes with the game added on this device but not yet confirmed by the server: it couldn't be reached, or an earlier change to the same entry is still waiting. Must not promise when it will reach the server: the native app sends it later on its own, but the web app has nothing that does yet (#447).",
+    "description": "Shown briefly on the game's screen after the add sheet closes with the game added on this device but not yet confirmed by the server: it couldn't be reached, or an earlier change to the same entry is still waiting. Must not promise when it will reach the server: the app sends it later on its own, on every platform (#447).",
     "placeholders": {
       "title": {
         "type": "String",

@@ -61,8 +61,8 @@ dependencies:
     path: ../../features/events
 
   # The sync queue feature, for the shared `SyncSenderInstaller` the create
-  # screen sends through (#121), on the same rule. Its drain is native-only
-  # until #447.
+  # screen sends through (#121) and the `SyncQueueDrainInstaller` over it
+  # (#447), on the same rule.
   sync_queue:
     path: ../../features/sync
 

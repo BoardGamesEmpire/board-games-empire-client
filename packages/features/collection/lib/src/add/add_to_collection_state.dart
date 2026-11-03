@@ -24,8 +24,8 @@ enum AddToCollectionSync {
   synced,
 
   /// It stays queued: the send didn't reach the server, or an earlier
-  /// change to the entry is still waiting. The drain sends it later on
-  /// native; web has no drain yet (#447), so there it waits.
+  /// change to the entry is still waiting. The drain sends it later, on
+  /// both platforms.
   queued,
 
   /// The server refused it. It is kept on this device and won't be sent

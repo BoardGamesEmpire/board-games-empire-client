@@ -63,9 +63,9 @@ class AuthScreen extends StatefulWidget {
   /// session that ended without the user signing out (#142). Read once when
   /// the screen appears; above zero, a notice says so above the forms.
   ///
-  /// Null where nothing can count them: web until it restores sessions
-  /// offline (#144) and drains its queue (#447), and compositions without
-  /// the per-server count. The screen never learns whose changes they are.
+  /// Null where nothing can count them: compositions without the per-server
+  /// count. Native and web both register one. The screen never learns whose
+  /// changes they are.
   final Future<int> Function()? unsentChangesCount;
 
   /// Shown in place of the page while [unsentChangesCount] is read, so the

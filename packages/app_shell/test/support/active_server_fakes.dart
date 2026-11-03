@@ -11,6 +11,7 @@ import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:models/dto.dart';
 import 'package:network_interface/network_interface.dart';
+import 'package:sync_queue/sync_queue.dart' show SyncQueueDrain;
 
 /// Shared fakes for shell widget tests that need a *faithful* post-auth
 /// state — one where the bootstrap cubit reports [AppBootstrapReady] AND
@@ -204,6 +205,7 @@ ActiveServer buildActiveServer(
   SessionRehydrator? sessionRehydrator,
   UnsentChangesNoticeRepository? unsentChangesNotice,
   SyncQueueRepository? syncQueueRepository,
+  SyncQueueDrain? syncQueueDrain,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
   DataGatewayAccess? dataGatewayAccess,
   GamesRemoteDataSource? gamesRemoteDataSource,
@@ -279,6 +281,9 @@ ActiveServer buildActiveServer(
   }
   if (sessionRehydrator != null) {
     container.registerSingleton<SessionRehydrator>(sessionRehydrator);
+  }
+  if (syncQueueDrain != null) {
+    container.registerSingleton<SyncQueueDrain>(syncQueueDrain);
   }
   if (syncQueueRepository != null) {
     container.registerSingleton<SyncQueueRepository>(syncQueueRepository);

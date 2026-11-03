@@ -168,27 +168,79 @@ class SyncQueueRepositoryImpl
   @override
   Future<bool> claim(String id, {String? payload}) async {
     checkNotDisposed();
-    // One conditional UPDATE, so the check and the take are a single
-    // statement: of two senders racing for the entry, the second finds
-    // the predicate false and changes no row (#430). Both timestamps come
-    // from one clock read, so the lease is judged at the instant the new
-    // claim is stamped. The payload check is part of the same statement,
-    // so nothing can rewrite the op between the check and the take.
+    // One transaction holds the whole decision. First, an op for a
+    // collection entry is refused while another op of the same entry holds
+    // a live claim: two ops of one entry sent together can land out of
+    // order (#677). Drift transactions on one connection serialise, so of
+    // two such claims racing, the second reads the first's stamp. Then
+    // comes one conditional UPDATE, so the take re-checks the claimable
+    // predicate itself: of two senders racing for the same op, the second
+    // finds it false and changes no row (#430). Both timestamps come from
+    // one clock read, so the lease is judged at the instant the new claim
+    // is stamped. The payload check is part of the UPDATE, so nothing can
+    // rewrite the op between the check and the take.
     final now = _localNowUtc();
-    final changed =
-        await (_db.update(_db.syncQueueTable)..where((t) {
-              final claimable = t.id.equals(id) & _claimablePredicate(now: now);
-              return payload == null
-                  ? claimable
-                  : claimable & t.payload.equals(payload);
-            }))
-            .write(
-              SyncQueueTableCompanion(
-                status: const Value('inProgress'),
-                lastAttemptAt: Value(now),
-              ),
-            );
-    return changed == 1;
+    return _db.transaction(() async {
+      final row =
+          await (_db.select(_db.syncQueueTable)
+                ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+              .getSingleOrNull();
+      final target = row == null ? null : _targetOf(row.payload);
+      if (row != null &&
+          target != null &&
+          await _otherHoldsLiveClaim(id, target, now)) {
+        return false;
+      }
+      final changed =
+          await (_db.update(_db.syncQueueTable)..where((t) {
+                final claimable =
+                    t.id.equals(id) & _claimablePredicate(now: now);
+                return payload == null
+                    ? claimable
+                    : claimable & t.payload.equals(payload);
+              }))
+              .write(
+                SyncQueueTableCompanion(
+                  status: const Value('inProgress'),
+                  lastAttemptAt: Value(now),
+                ),
+              );
+      return changed == 1;
+    });
+  }
+
+  /// Whether a row other than [id] for [target] holds a live claim at
+  /// [now]: `inProgress`, stamped, and not older than
+  /// [SyncQueueEntry.claimLease]. That is the inverse of
+  /// [_claimablePredicate]'s expiry arm, and it holds at any retry count,
+  /// because a sender still working an op that has used its retries still
+  /// holds its entry.
+  ///
+  /// The candidates are selected in SQL and matched to [target] in Dart,
+  /// since the target lives inside the serialized payload. The lease
+  /// comparison goes through `JULIANDAY` for the reason [_claimablePredicate]
+  /// gives.
+  Future<bool> _otherHoldsLiveClaim(
+    String id,
+    String target,
+    DateTime now,
+  ) async {
+    final leaseCutoff = Variable<DateTime>(
+      now.subtract(SyncQueueEntry.claimLease),
+    );
+    final rows =
+        await (_db.select(_db.syncQueueTable)..where(
+              (t) =>
+                  t.userId.equals(_userId) &
+                  t.id.equals(id).not() &
+                  t.status.equals('inProgress') &
+                  t.lastAttemptAt.isNotNull() &
+                  t.lastAttemptAt.julianday.isBiggerOrEqual(
+                    leaseCutoff.julianday,
+                  ),
+            ))
+            .get();
+    return rows.any((r) => _targetOf(r.payload) == target);
   }
 
   @override
@@ -386,21 +438,26 @@ class SyncQueueRepositoryImpl
   /// Whether [payload] is an op that targets the collection entry
   /// [collectionId]. False for one that won't decode: the worker surfaces
   /// that failure on its next pickup attempt.
-  static bool _targets(String payload, String collectionId) {
+  static bool _targets(String payload, String collectionId) =>
+      _targetOf(payload) == collectionId;
+
+  /// The collection entry [payload]'s op targets: an add's local id, or an
+  /// update's or removal's collection id. Null for a household or event op,
+  /// which belong to no entry, and for a payload that won't decode.
+  static String? _targetOf(String payload) {
     final SyncOperation op;
     try {
       op = SyncOperation.deserialize(payload);
     } catch (_) {
-      return false;
+      return null;
     }
-    final target = switch (op) {
+    return switch (op) {
       AddToCollectionOperation() => op.localId,
       UpdateCollectionOperation() => op.collectionId,
       RemoveFromCollectionOperation() => op.collectionId,
       CreateHouseholdOperation() => null,
       CreateEventOperation() => null,
     };
-    return target == collectionId;
   }
 
   @override
@@ -533,8 +590,9 @@ class SyncQueueRepositoryImpl
   }
 
   /// Predicate for "a sender may take this entry now": what
-  /// [getPendingEntries] lists and what [claim] accepts (#430). One
-  /// predicate for both, so they cannot drift apart.
+  /// [getPendingEntries] lists and the row condition [claim]'s UPDATE takes
+  /// (#430). One predicate for both, so they cannot drift apart. [claim]
+  /// also refuses a collection op behind another op's live claim (#677).
   ///
   /// The current user's entries under [SyncQueueEntry.maxRetries] that
   /// are `pending` or `failed`, or `inProgress` with a claim older than

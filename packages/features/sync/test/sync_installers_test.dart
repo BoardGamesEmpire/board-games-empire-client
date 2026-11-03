@@ -29,10 +29,26 @@ class _FakeIdentityGuard implements SessionIdentityGuard {
   }
 }
 
+/// Records the names it is asked to run under, and runs each body at once.
+class _FakeLock implements CrossTabLock {
+  final names = <String>[];
+
+  @override
+  Future<bool> run(
+    String name,
+    Future<void> Function() body, {
+    Future<void>? abandon,
+  }) async {
+    names.add(name);
+    await body();
+    return true;
+  }
+}
+
 const _server = ScopedServer(serverId: 'server-1', displayName: 'My Server');
 
-/// What the two installers wire into a user session (#121): the sender on
-/// every platform, and on native the drain that runs it.
+/// What the two installers wire into a user session (#121): the sender, and
+/// the drain that runs it, on every platform.
 void main() {
   late Harness h;
   late DependencyContainerImpl container;
@@ -275,6 +291,21 @@ void main() {
       await pumpEventQueue();
 
       verify(auth.getSession).called(1);
+    });
+
+    test('uses the registered cross-tab lock, named for the server and the '
+        'user', () async {
+      final lock = _FakeLock();
+      container.registerSingleton<CrossTabLock>(lock);
+      register();
+      final queued = await h.queuedCreate();
+      await installSender();
+
+      await installDrain();
+      await pumpEventQueue();
+
+      expect(lock.names, ['bge.sync_drain.server-1.$kUserId']);
+      expect((await h.entry(queued.id)).status, SyncStatus.completed);
     });
 
     test('the scope teardown stops the drain', () async {

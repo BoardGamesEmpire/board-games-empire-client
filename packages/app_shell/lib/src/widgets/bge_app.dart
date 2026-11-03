@@ -972,9 +972,9 @@ class _BgeAppState extends State<BgeApp> {
   /// any work lives in the registry's `isStale` (#300 D8) rather than being
   /// re-answered here.
   ///
-  /// On native the rehydrator also holds the sync-queue drain (#121), so
-  /// entering the household list drives that too, when it has something to
-  /// send. That is a trigger behaving like a trigger; the button
+  /// On both platforms the rehydrator also holds the sync-queue drain (#121,
+  /// #447), so entering the household list drives that too, when it has
+  /// something to send. That is a trigger behaving like a trigger; the button
   /// deliberately does not (#300).
   VoidCallback? _householdEntryRefresh(DependencyContainer container) {
     if (!container.isRegistered<SessionRehydrator>()) return null;
@@ -1903,24 +1903,25 @@ class _BgeAppState extends State<BgeApp> {
   }
 
   /// Whether [container] holds what the #190 retry-or-discard screen needs:
-  /// the session's queue, and the three repositories a discard undoes
-  /// through. The user tier registers all four, so this holds exactly while
-  /// a session is active, on both platforms.
+  /// the session's queue, the three repositories a discard undoes through,
+  /// and the drain a retry goes through. The user tier registers the first
+  /// four. [SyncQueueDrainInstaller] registers the drain only when a sender,
+  /// queue and collection repository are all registered, so this holds while
+  /// a session is active with all of those, on both platforms.
   static bool _canRecoverStuckChanges(DependencyContainer container) =>
       container.isRegistered<SyncQueueRepository>() &&
       container.isRegistered<GameCollectionRepository>() &&
       container.isRegistered<HouseholdRepository>() &&
-      container.isRegistered<EventRepository>();
+      container.isRegistered<EventRepository>() &&
+      container.isRegistered<SyncQueueDrain>();
 
   /// The #190 retry-or-discard wiring. Null (→ [NotYetAvailableScreen])
   /// when no active server is resolvable or [_canRecoverStuckChanges] says
   /// no.
   ///
-  /// A retry goes through the session's [SyncQueueDrain] where one runs,
-  /// which is native, and inline through the [SyncOperationSender] where
-  /// none does, which is web until #447. A discard refreshes the cache it
-  /// undid through that cache's refresher, the pass a retry button runs, so
-  /// the undone row comes back as the server has it.
+  /// A retry goes through the session's [SyncQueueDrain]. A discard refreshes
+  /// the cache it undid through that cache's refresher, the pass a retry
+  /// button runs, so the undone row comes back as the server has it.
   ///
   /// Resolved per route build, like every route here, so nothing is held
   /// across a session change.
@@ -1937,12 +1938,7 @@ class _BgeAppState extends State<BgeApp> {
         collection: container.get<GameCollectionRepository>(),
         households: container.get<HouseholdRepository>(),
         events: container.get<EventRepository>(),
-        sender: container.isRegistered<SyncOperationSender>()
-            ? container.get<SyncOperationSender>()
-            : null,
-        drain: container.isRegistered<SyncQueueDrain>()
-            ? container.get<SyncQueueDrain>().drainAfterChange
-            : null,
+        drain: container.get<SyncQueueDrain>().drainAfterChange,
         refreshCollection: _collectionRefreshAfterChange(container),
         refreshHouseholds: _householdRetry(container),
         refreshEvents: _eventsRetry(container),
@@ -3155,8 +3151,9 @@ T? _serverService<T extends Object>(ActiveServer active) =>
 /// Failures are logged with the server and never the user id, the rule the
 /// auth scope's channel has always kept, and never thrown. A failed write
 /// logs its error by type alone, since the error's own text can carry the
-/// id the write bound. Web registers no repository (#144, #447), so there
-/// all of this is a no-op.
+/// id the write bound. Both platforms register the repository in their
+/// server-scope storage install, over the same `ServerDatabase`; where a
+/// composition registers none, all of this is a no-op.
 class _UnsentChanges {
   static final BgeLogger _log = BgeLogger('bge.shell.unsent_changes');
 

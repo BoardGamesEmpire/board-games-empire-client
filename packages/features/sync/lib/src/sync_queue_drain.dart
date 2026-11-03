@@ -27,17 +27,28 @@ import 'package:observability/observability.dart';
 ///
 /// ## One entry's ops stay in order
 ///
-/// The queue entries for one collection entry go out in queue order. Within
-/// a pass, once an op for an entry isn't delivered, for whatever reason, the
-/// entry's later ops wait for a later pass. Across passes, an update or a
-/// removal queued behind an add that isn't acknowledged yet is held while
-/// its entry is local-only, parked adds included: the server has yet to
-/// confirm the entry, and the add's acknowledgement is what gives it the id
-/// the server knows it by, remapping the op onto it. The read a pass works
-/// from includes exhausted entries for that reason, and which entries are
-/// local-only. An add names the game rather than the id, so this rule holds
-/// no add, though the order can: an add queued behind an op the rule holds
-/// waits with it.
+/// The queue entries for one collection entry go out in queue order, one
+/// at a time. Within a pass, once an op for an entry isn't delivered, for
+/// whatever reason, the entry's later ops wait for a later pass. While any
+/// op of the entry holds a live claim, earlier or later in the queue, the
+/// entry's other ops wait until that op settles or its claim runs out. Two
+/// ops of one entry in flight together can be applied by the server in one
+/// order and answered in the other, and the row is then left clean with
+/// the answer of the op applied first, which the server has since
+/// overwritten (#677). A later op holds an earlier one when a stuck op is
+/// retried by hand while a newer one is out, such as an add sent inline.
+/// The queue's claim refuses the held op either way
+/// ([SyncQueueRepository.claim]); the schedule waits out the claim too, so
+/// that [isStale] doesn't ask for passes that would send nothing.
+///
+/// Across passes, an update or a removal queued behind an add that isn't
+/// acknowledged yet is held while its entry is local-only, parked adds
+/// included: the server has yet to confirm the entry, and the add's
+/// acknowledgement is what gives it the id the server knows it by,
+/// remapping the op onto it. The read a pass works from includes exhausted
+/// entries for that reason, and which entries are local-only. An add names
+/// the game rather than the id, so this rule holds no add, though the order
+/// can: an add queued behind an op the rule holds waits with it.
 ///
 /// So while a parked add holds its entry's ops, a later add for the entry
 /// waits with them, and nothing more goes out for the entry until the
@@ -91,17 +102,35 @@ import 'package:observability/observability.dart';
 /// Nothing wakes it on an enqueue; the inline create sends its own op, and a
 /// wake would race it. It runs when its installer starts it and whenever the
 /// session's rehydrator asks, which consults [isStale] first.
+///
+/// ## Across tabs
+///
+/// Where the tabs of one origin share a database, a pass runs holding a
+/// [CrossTabLock] so that only one tab drains at a time (#447); another
+/// tab's inline sends still go out, and the claim keeps them apart. A tab that
+/// finds the lock taken waits for it, rather than skipping its pass: the
+/// holder's pass may have read the queue before the change this one was
+/// asked about. The wait counts as the pass being in flight, so [drain]
+/// joins it and [isStale] is false. [close] abandons a request still
+/// waiting, and a grant that arrives after it sends nothing. A lock that
+/// fails before it grants is logged, and the pass runs without it, as it
+/// does where there is no lock at all: a browser context that refuses
+/// every request would otherwise never drain, and every op type is safe to
+/// deliver twice. Native has one process and passes no lock.
 class SyncQueueDrain {
   /// [collection] says which entries the server has yet to confirm, which
   /// the ordering rules need. [revalidateSession] asks the auth layer
   /// whether the session still stands after a refused send; null skips the
-  /// question. [now] is the device clock, which stamps every attempt; a test
-  /// drives it so a cooldown costs no real time.
+  /// question. [exclusive], when given, runs each pass holding the named
+  /// cross-tab lock; null runs it unlocked (#447). [now] is the device clock,
+  /// which stamps every attempt; a test drives it so a cooldown costs no real
+  /// time.
   SyncQueueDrain({
     required this._queue,
     required this._sender,
     required this._collection,
     this._revalidateSession,
+    this._exclusive,
     DateTime Function()? now,
     BgeLogger? logger,
   }) : _now = now ?? _deviceNow,
@@ -149,6 +178,7 @@ class SyncQueueDrain {
   final SyncOperationSender _sender;
   final GameCollectionRepository _collection;
   final Future<void> Function()? _revalidateSession;
+  final ({CrossTabLock lock, String name})? _exclusive;
   final DateTime Function() _now;
   final BgeLogger _log;
 
@@ -158,6 +188,11 @@ class SyncQueueDrain {
   Future<void>? _inFlight;
 
   bool _closed = false;
+
+  /// The pass in flight's abandon, which [close] completes to give up a
+  /// request still waiting for the lock. One per pass, so the lock's
+  /// listener on it goes with the pass rather than piling up until close.
+  Completer<void>? _abandon;
 
   /// When a pass last purged completed history, on the device clock. Null
   /// until the first pass.
@@ -242,10 +277,56 @@ class SyncQueueDrain {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    final abandon = _abandon;
+    if (abandon != null && !abandon.isCompleted) abandon.complete();
     await _counts.cancel();
   }
 
+  /// One pass, under the lock when there is one.
+  ///
+  /// A pass waiting for the lock is in flight, so [drain] joins it and
+  /// [isStale] stays false. The last pass's schedule is dropped first, so a
+  /// pass that ends without settling leaves the drain stale and the next
+  /// trigger tries again. A lock that fails before it grants is logged and
+  /// the pass runs without it.
   Future<void> _pass() async {
+    _settledAt = null;
+    final exclusive = _exclusive;
+    if (exclusive == null) return _passBody();
+    final abandon = _abandon = Completer<void>();
+    var granted = false;
+    try {
+      await exclusive.lock.run(exclusive.name, () {
+        granted = true;
+        return _passBody();
+      }, abandon: abandon.future);
+    } on Object catch (error, stackTrace) {
+      // A close that abandoned the request is no fault.
+      if (_closed) return;
+      if (granted) {
+        // The body catches its own faults and has settled, so this is the
+        // lock failing to release.
+        _log.error(
+          'Sync queue pass failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return;
+      }
+      _log.warn(
+        'The cross-tab lock failed; this pass runs without it',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await _passBody();
+    } finally {
+      if (identical(_abandon, abandon)) _abandon = null;
+    }
+  }
+
+  Future<void> _passBody() async {
+    // A grant can arrive after [close], and a pass then sends nothing.
+    if (_closed) return;
     final tally = _Tally();
     final now = _now();
     if (_purgeDue(now)) {
@@ -291,7 +372,12 @@ class SyncQueueDrain {
         if (target != null) waiting.add(target);
       }
 
-      switch (_verdict(listed, waiting, _now())) {
+      switch (_verdict(
+        listed,
+        waiting,
+        _now(),
+        lastClaimed: snapshot.lastClaimed(listed),
+      )) {
         case _Spent():
           continue;
         case _Waiting():
@@ -375,15 +461,39 @@ class SyncQueueDrain {
   }
 
   /// What the rules say about [listed] at [now], given the targets this walk
-  /// already holds back in [waiting].
+  /// already holds back in [waiting], and [lastClaimed], the latest claim
+  /// the read found on an entry sharing its target.
   ///
   /// A pass and [_nextSendable] both walk the queue by this, so what
   /// [isStale] expects a pass to send is what a pass would send.
-  static _Verdict _verdict(_Listed listed, Set<String> waiting, DateTime now) {
+  ///
+  /// An entry waits while a claim on its target is live, whatever its own
+  /// state, judged as [SyncQueueRepository.claim] judges it: a claim exactly
+  /// a lease old still holds, and one stamped ahead of a clock set back
+  /// holds until the clock passes its lease. The claim would refuse the
+  /// entry all that time (#677), so a schedule that called it sendable would
+  /// have [isStale] asking for passes that send nothing. An entry that is
+  /// both cooling and behind such a claim waits for whichever ends later,
+  /// for the same reason. One whose own claim has expired still waits
+  /// behind another op's live claim.
+  static _Verdict _verdict(
+    _Listed listed,
+    Set<String> waiting,
+    DateTime now, {
+    required DateTime? lastClaimed,
+  }) {
     if (listed.entry.isExhausted) return const _Spent();
     if (waiting.contains(listed.target)) return const _Held();
-    final readyAt = _readyAt(listed.entry, now);
-    if (readyAt != null && readyAt.isAfter(now)) return _Waiting(readyAt);
+    var readyAt = _readyAt(listed.entry, now);
+    if (readyAt != null && !readyAt.isAfter(now)) readyAt = null;
+    if (lastClaimed != null) {
+      final claimEnds = lastClaimed.add(SyncQueueEntry.claimLease);
+      if (!claimEnds.isBefore(now) &&
+          (readyAt == null || claimEnds.isAfter(readyAt))) {
+        readyAt = claimEnds;
+      }
+    }
+    if (readyAt != null) return _Waiting(readyAt);
     if (listed.behindAdd) return const _Held();
     return const _Sendable();
   }
@@ -449,8 +559,8 @@ class SyncQueueDrain {
       _settledCount = snapshot.pendingCount;
       _settledAt = now;
     } on Object catch (error, stackTrace) {
-      // The schedule stays as it was: stale until a pass settles, so the
-      // next trigger tries again.
+      // The pass dropped the last schedule, so the drain stays stale until
+      // a pass settles, and the next trigger tries again.
       if (!_closed) {
         _log.error(
           'Could not schedule the next sync queue pass',
@@ -470,7 +580,12 @@ class SyncQueueDrain {
     DateTime? earliest;
     for (final listed in snapshot.entries) {
       final target = listed.target;
-      switch (_verdict(listed, waiting, now)) {
+      switch (_verdict(
+        listed,
+        waiting,
+        now,
+        lastClaimed: snapshot.lastClaimed(listed),
+      )) {
         case _Spent():
           break;
         case _Sendable():
@@ -496,6 +611,7 @@ class _Snapshot {
   }) {
     final entries = <_Listed>[];
     final sharing = <String, int>{};
+    final claimed = <String, DateTime>{};
     final added = <String>{};
     for (final entry in outstanding) {
       final op = _decode(entry);
@@ -520,12 +636,20 @@ class _Snapshot {
         if (op is AddToCollectionOperation && localOnly.contains(op.localId)) {
           added.add(target);
         }
+        final claimedAt = entry.status == SyncStatus.inProgress
+            ? entry.lastAttemptAt
+            : null;
+        final latest = claimed[target];
+        if (claimedAt != null &&
+            (latest == null || claimedAt.isAfter(latest))) {
+          claimed[target] = claimedAt;
+        }
       }
     }
-    return _Snapshot._(entries, sharing);
+    return _Snapshot._(entries, sharing, claimed);
   }
 
-  _Snapshot._(this.entries, this._sharing);
+  _Snapshot._(this.entries, this._sharing, this._claimed);
 
   final List<_Listed> entries;
 
@@ -540,6 +664,19 @@ class _Snapshot {
 
   /// Whether another entry in this read shares [listed]'s target.
   bool isShared(_Listed listed) => (_sharing[listed.target] ?? 0) > 1;
+
+  /// For each target, the latest claim stamp among its entries this read
+  /// found claimed, live or not. The latest is the one that decides: if any
+  /// claim on the target is live, that one is, and it is the last to run
+  /// out. An entry claimed with no stamp holds nothing, as the queue reads
+  /// it, so it adds none.
+  final Map<String, DateTime> _claimed;
+
+  /// The latest claim stamp this read found on an entry sharing [listed]'s
+  /// target, or null when it found none of them claimed. [listed]'s own
+  /// counts too: that is exact, since an entry's own live claim is caught
+  /// by [_readyAt] first, and an expired one is never the latest live claim.
+  DateTime? lastClaimed(_Listed listed) => _claimed[listed.target];
 
   /// Decodes [entry]'s op, or null for a payload that won't decode.
   static SyncOperation? _decode(SyncQueueEntry entry) {
@@ -597,7 +734,8 @@ final class _Sendable extends _Verdict {
   const _Sendable();
 }
 
-/// Cooling, or claimed by another sender, until [until].
+/// Cooling, claimed by another sender, or behind another sender's claim on
+/// an op of its entry, until [until].
 final class _Waiting extends _Verdict {
   const _Waiting(this.until);
 

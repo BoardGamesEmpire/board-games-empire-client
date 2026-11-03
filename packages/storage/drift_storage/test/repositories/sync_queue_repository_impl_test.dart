@@ -492,6 +492,138 @@ void main() {
       });
     });
 
+    group('claim holds back behind a live claim on the same entry (#677)', () {
+      final start = DateTime.utc(2026, 10, 5, 12);
+      late FixedClockService clock;
+      late SyncQueueRepositoryImpl clockRepo;
+
+      setUp(() {
+        clock = FixedClockService(start);
+        clockRepo = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        );
+      });
+
+      Future<SyncQueueEntry> addFor(String localId) => clockRepo.enqueue(
+        AddToCollectionOperation(
+          localId: localId,
+          platformGameId: 'pg-1',
+          medium: 'Physical',
+          quantity: 1,
+        ),
+      );
+
+      Future<SyncQueueEntry> updateFor(String collectionId) =>
+          clockRepo.enqueue(
+            UpdateCollectionOperation(collectionId: collectionId, rating: 8),
+          );
+
+      Future<SyncStatus> statusOf(String id) async =>
+          (await clockRepo.getAllEntries())
+              .singleWhere((e) => e.id == id)
+              .status;
+
+      test('an update is refused while a later add for its entry is '
+          'claimed', () async {
+        // Queue order is by creation, so enqueue the update first and
+        // claim the add that was queued after it.
+        final update = await updateFor('e1');
+        clock.current = start.add(const Duration(seconds: 1));
+        final add = await addFor('e1');
+        expect(await clockRepo.claim(add.id), isTrue);
+
+        expect(await clockRepo.claim(update.id), isFalse);
+        expect(await statusOf(update.id), SyncStatus.pending);
+      });
+
+      test('an add is refused while an earlier update for its entry is '
+          'claimed', () async {
+        final add = await addFor('e1');
+        clock.current = start.add(const Duration(seconds: 1));
+        final update = await updateFor('e1');
+        expect(await clockRepo.claim(update.id), isTrue);
+
+        expect(await clockRepo.claim(add.id), isFalse);
+        expect(await statusOf(add.id), SyncStatus.pending);
+      });
+
+      test('an expired claim holds nothing back', () async {
+        final add = await addFor('e1');
+        final update = await updateFor('e1');
+        expect(await clockRepo.claim(add.id), isTrue);
+
+        clock.current = start.add(
+          SyncQueueEntry.claimLease + const Duration(seconds: 1),
+        );
+
+        expect(await clockRepo.claim(update.id), isTrue);
+      });
+
+      test('a claim at the lease boundary still holds back', () async {
+        final add = await addFor('e1');
+        final update = await updateFor('e1');
+        expect(await clockRepo.claim(add.id), isTrue);
+
+        clock.current = start.add(SyncQueueEntry.claimLease);
+
+        expect(await clockRepo.claim(update.id), isFalse);
+      });
+
+      test('ops for another entry are not held', () async {
+        final addA = await addFor('a');
+        final updateB = await updateFor('b');
+        expect(await clockRepo.claim(addA.id), isTrue);
+
+        expect(await clockRepo.claim(updateB.id), isTrue);
+      });
+
+      test('a household create is never held', () async {
+        final add = await addFor('e1');
+        final household = await clockRepo.enqueue(
+          const CreateHouseholdOperation(localId: 'hh-1', name: 'Smiths'),
+        );
+        expect(await clockRepo.claim(add.id), isTrue);
+
+        expect(await clockRepo.claim(household.id), isTrue);
+      });
+
+      test('a live claim by another user holds nothing back', () async {
+        final theirs = SyncQueueRepositoryImpl(
+          db,
+          clock,
+          userId: 'user-2',
+          localNowUtc: clock.nowUtc,
+        );
+        final theirAdd = await theirs.enqueue(
+          const AddToCollectionOperation(
+            localId: 'e1',
+            platformGameId: 'pg-1',
+            medium: 'Physical',
+            quantity: 1,
+          ),
+        );
+        expect(await theirs.claim(theirAdd.id), isTrue);
+        final update = await updateFor('e1');
+
+        expect(await clockRepo.claim(update.id), isTrue);
+      });
+
+      test('of two concurrent claims for one entry, one wins', () async {
+        final add = await addFor('e1');
+        final update = await updateFor('e1');
+
+        final results = await Future.wait([
+          clockRepo.claim(add.id),
+          clockRepo.claim(update.id),
+        ]);
+
+        expect(results.where((won) => won), hasLength(1));
+      });
+    });
+
     group('release() (#430)', () {
       test('returns a claimed entry to pending without counting a '
           'retry', () async {

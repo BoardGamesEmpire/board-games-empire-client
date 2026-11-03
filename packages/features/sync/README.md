@@ -15,10 +15,9 @@ One rule for every write (#45):
   once with `sendNow` (`SendQueuedOpNow` in `package:interfaces/sync.dart`).
   The repository that queues it returns the queue entry's id and the op; the
   caller sends them. Nothing is queued and left for the drain to find: nothing
-  wakes the drain on an enqueue, and web has no drain yet (#447). There is no
-  connectivity check first. A send that can't reach the server leaves the op
-  queued, and the drain retries it. The household create, the event create and
-  the collection add work this way.
+  wakes the drain on an enqueue. There is no connectivity check first. A send
+  that can't reach the server leaves the op queued, and the drain retries it.
+  The household create, the event create and the collection add work this way.
 - **A change whose outcome is the server's to decide, or that reaches other
   people**, goes to the server directly and is never queued: invites, a
   member's approval, an RSVP or poll vote, admin settings, a game import. It
@@ -27,8 +26,10 @@ One rule for every write (#45):
 An immediate send of an op for a collection entry waits where the drain would
 hold it back: behind an earlier op for the same entry that isn't exhausted,
 or, for an update or removal, behind an add for an entry the server hasn't
-confirmed. It is left queued, and the drain sends the entry's ops in order
-(see below). The send reads the op back as the queue holds it, since an
+confirmed, or while another op of the entry, earlier or later, holds a live
+claim (#677). It is left queued and uncounted, and the drain sends the entry's
+ops in order (see below). The claim enforces the claim rule, so both senders
+get it. The send reads the op back as the queue holds it, since an
 earlier add's acknowledgement may have moved it to the server's id.
 
 ## The sender
@@ -65,7 +66,9 @@ counts and whether a drain stops on it.
   whether the session still stands.
 - One collection entry's ops go out in order. An update or removal waits behind
   an add that isn't acknowledged yet, since it still names the entry by a local
-  id the server has never seen.
+  id the server has never seen. An op is also held, left queued and
+  uncounted, while another op of its entry, earlier or later, holds a live
+  claim (#677); the claim enforces that, as it does for an immediate send.
 - A counted failure waits out a cooldown that grows with the retry count: one
   minute, ten, an hour, then six.
 
@@ -76,8 +79,7 @@ enqueue.
 
 A drain's first pass, and then at most one pass an hour, also deletes completed
 entries older than a day. They are kept that long so a late acknowledgement of
-an op delivered twice still finds its place. Web has no drain until #447, so
-nothing deletes them there yet.
+an op delivered twice still finds its place.
 
 ## Stuck ops
 
@@ -85,10 +87,9 @@ An op the server refused, or one that ran out of retries, is **stuck**: no pass
 sends it, and nothing drops it (#190). `SyncRecovery` is the way out:
 
 - **Retry** puts it back as new, with no cooldown, and sends it through the
-  drain on native. On web, until #447, it goes out inline through the sender.
-  A collection op goes through `deliver`, which leaves it queued while an
-  earlier op for its entry goes first; with no drain, nothing sends it once
-  that op is done. A retry the server refuses again says so.
+  session's drain, on native and web alike. The drain holds a collection op
+  behind an earlier op for its entry and sends it once that op is done. A
+  retry the server refuses again says so.
 - **Discard** deletes it and undoes what it did on this device, through the
   repository that owns its rows, then refreshes that cache. The repository
   checks that the op is still stuck in the statement that deletes it, so an op
@@ -104,8 +105,14 @@ home screen while anything is stuck.
 
 - `SyncSenderInstaller` registers the sender. Both platforms run it, after
   `UserSessionScopeInstaller`.
-- `SyncQueueDrainInstaller` starts the drain. Native only for now; the web
-  drain needs a Web Lock and a check of whose session is sending, which is
-  #447.
+- `SyncQueueDrainInstaller` starts the drain. Both platforms run it, after
+  the sender. On web each pass runs under a Web Lock named for the server and
+  the user (`bge.sync_drain.<serverId>.<userId>`), so one tab at a time drains
+  each server database and user. On `unsafeIndexedDb` another tab's inline
+  send can still deliver an op twice; the creates carry `clientRequestId` and
+  a collection add is an idempotent upsert. A browser without Web Locks (a
+  plain-http origin) drains without the lock and logs one warning, and a
+  pass whose lock request fails before it is granted runs without it and
+  warns (#447).
 
 The class docs carry the rest.

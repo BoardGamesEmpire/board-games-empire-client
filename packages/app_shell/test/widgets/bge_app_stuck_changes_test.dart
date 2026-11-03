@@ -3,6 +3,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:events/events.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_collection/game_collection.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:mocktail/mocktail.dart';
@@ -24,6 +25,8 @@ class _MockGameCollectionRepository extends Mock
 class _MockHouseholdRepository extends Mock implements HouseholdRepository {}
 
 class _MockEventRepository extends Mock implements EventRepository {}
+
+class _MockDrain extends Mock implements SyncQueueDrain {}
 
 /// A parked add for the game [_title] names.
 final _stuckAdd = SyncQueueEntry(
@@ -66,6 +69,7 @@ void main() {
   late _MockGameCollectionRepository collection;
   late _MockEventRepository events;
   late _MockHouseholdRepository households;
+  late _MockDrain drain;
   late List<SyncQueueEntry> stuck;
 
   setUp(() {
@@ -92,6 +96,8 @@ void main() {
     events = _MockEventRepository();
     when(events.watchAttendingEventListItems)
         .thenAnswer((_) => Stream.value(const []));
+    drain = _MockDrain();
+    when(() => drain.drainAfterChange()).thenAnswer((_) async {});
     households = _MockHouseholdRepository();
     when(households.watchHouseholds).thenAnswer((_) => Stream.value(const []));
   });
@@ -99,6 +105,7 @@ void main() {
   Future<void> pumpHome(
     WidgetTester tester, {
     bool withSession = true,
+    bool withDrain = true,
     GameCollectionRefresher? refresher,
     EventRefresher? eventRefresher,
   }) async {
@@ -107,6 +114,7 @@ void main() {
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           syncQueueRepository: withSession ? queue : null,
+          syncQueueDrain: withSession && withDrain ? drain : null,
           gameCollectionRepository: withSession ? collection : null,
           householdRepository: withSession ? households : null,
           eventRepository: withSession ? events : null,
@@ -155,6 +163,31 @@ void main() {
 
     expect(find.byType(StuckSyncOpsScreen), findsOneWidget);
     expect(find.text('Add $_title to your collection'), findsOneWidget);
+  });
+
+  testWidgets('without a drain registered, the stuck-changes route is not '
+      'available', (tester) async {
+    await pumpHome(tester, withDrain: false);
+    expect(find.byKey(StuckSyncOpsNotice.bannerKey), findsNothing);
+
+    GoRouter.of(tester.element(find.byType(HomeScreen)))
+        .go(AppRoutes.stuckChanges);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NotYetAvailableScreen), findsOneWidget);
+    expect(find.byType(StuckSyncOpsScreen), findsNothing);
+  });
+
+  testWidgets("a retry goes through the session's drain", (tester) async {
+    when(() => queue.retry('q1')).thenAnswer((_) async => true);
+    await pumpHome(tester);
+    await tester.tap(find.byKey(StuckSyncOpsNotice.reviewKey));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(StuckSyncOpsScreen.retryKey('q1')));
+    await tester.pumpAndSettle();
+
+    verify(() => drain.drainAfterChange()).called(1);
   });
 
   testWidgets("a discard undoes through the session's repository and "

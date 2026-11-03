@@ -295,6 +295,40 @@ void main() {
       expect(container.isRegistered<GameRepository>(), isFalse);
     });
 
+    // #142: the sign-in notice counts unsent changes over the same database
+    // the sync queue lives in, so web registers the record beside it.
+    test(
+      'registers the unsent-changes record over the same database (#142)',
+      () async {
+        final container = DependencyContainerImpl();
+        addTearDown(container.dispose);
+
+        await const WebStorageInstaller().install(
+          container,
+          _identity(_uniqueServerId()),
+        );
+
+        final notice = container.get<UnsentChangesNoticeRepository>();
+        await notice.recordSessionStarted(_kUserId);
+        final clock = LocalClockService();
+        await SyncQueueRepositoryImpl(
+          container.get<ServerDatabase>(),
+          clock,
+          userId: _kUserId,
+          localNowUtc: clock.nowUtc,
+        ).enqueue(
+          const AddToCollectionOperation(
+            localId: 'local-1',
+            platformGameId: 'pg-1',
+            medium: 'Physical',
+            quantity: 1,
+          ),
+        );
+
+        expect(await notice.unsentChangesCount(), 1);
+      },
+    );
+
     test('reports the storage it got', () async {
       WebDatabaseOpening? reported;
       final container = DependencyContainerImpl();

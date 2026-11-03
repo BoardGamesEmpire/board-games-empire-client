@@ -14,7 +14,7 @@ import 'sync_operation_sender_impl.dart';
 ///
 /// Both composition roots hold it, `buildNativeUserScopeInstallers` and
 /// `buildWebUserScopeInstallers`, because the create screens send through it
-/// on both. Only native runs a drain over it so far; the web drain is #447.
+/// on both, and the queue drain runs over it on both too (#447).
 ///
 /// It resolves the [SyncQueueRepository], [HouseholdRepository],
 /// [GameCollectionRepository] and [EventRepository] that

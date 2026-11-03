@@ -25,14 +25,14 @@ void main() {
   late int collectionRefreshes;
   late int householdRefreshes;
   late int eventRefreshes;
+  late SyncQueueDrain drain;
 
-  SyncRecovery recovery({SyncQueueDrain? drain}) => SyncRecovery(
+  SyncRecovery recovery() => SyncRecovery(
     queue: h.queue,
     collection: h.collection,
     households: h.households,
     events: h.events,
-    sender: h.sender,
-    drain: drain?.drainAfterChange,
+    drain: drain.drainAfterChange,
     refreshCollection: () async => collectionRefreshes++,
     refreshHouseholds: () async => householdRefreshes++,
     refreshEvents: () async => eventRefreshes++,
@@ -40,12 +40,21 @@ void main() {
 
   setUp(() async {
     h = await Harness.open();
+    drain = SyncQueueDrain(
+      queue: h.queue,
+      sender: h.sender,
+      collection: h.collection,
+      now: h.deviceNow,
+    );
     collectionRefreshes = 0;
     householdRefreshes = 0;
     eventRefreshes = 0;
   });
 
-  tearDown(() async => h.close());
+  tearDown(() async {
+    await drain.close();
+    await h.close();
+  });
 
   void refuseEverything() {
     h.householdRemote.respond = (_) =>
@@ -159,6 +168,7 @@ void main() {
         collection: collection,
         households: _MockHouseholds(),
         events: _MockEvents(),
+        drain: () async {},
       ).watch().listen(described.add);
       addTearDown(subscription.cancel);
 
@@ -186,85 +196,15 @@ void main() {
   });
 
   group('retry', () {
-    test('sends the op through the drain where there is one', () async {
+    test('sends the op through the drain', () async {
       final create = await h.queuedCreate(name: 'Smiths');
       await park(create.id);
       acceptEverything();
-      final drain = SyncQueueDrain(
-        queue: h.queue,
-        sender: h.sender,
-        collection: h.collection,
-        now: h.deviceNow,
-      );
-      addTearDown(drain.close);
 
-      await recovery(drain: drain).retry(create.id);
+      await recovery().retry(create.id);
 
       expect((await h.entry(create.id)).status, SyncStatus.completed);
       expect(await recovery().watch().first, isEmpty);
-    });
-
-    test('where nothing drains the queue, sends a household create '
-        'inline', () async {
-      final create = await h.queuedCreate(name: 'Smiths');
-      await park(create.id);
-      acceptEverything();
-
-      expect(await recovery().retry(create.id), isTrue);
-
-      expect((await h.entry(create.id)).status, SyncStatus.completed);
-    });
-
-    test('sends a stuck event create inline where no drain runs', () async {
-      final created = await h.events.create(eventDraft());
-      await park(created.syncQueueId);
-      acceptEverything();
-
-      expect(await recovery().retry(created.syncQueueId), isTrue);
-
-      expect((await h.entry(created.syncQueueId)).status, SyncStatus.completed);
-      expect(
-        h.eventRemote.creates,
-        hasLength(2),
-        reason: 'the park, then this',
-      );
-      final events = await h.events.watchAttendingEvents().first;
-      expect(events.map((e) => e.id), ['ev-server']);
-    });
-
-    test('where nothing drains the queue, sends a collection op inline '
-        'when nothing for its entry goes first', () async {
-      final add = await h.queuedAdd();
-      await park(add.id);
-      acceptEverything();
-
-      expect(await recovery().retry(add.id), isTrue);
-
-      expect((await h.entry(add.id)).status, SyncStatus.completed);
-      expect(
-        h.collectionRemote.writes,
-        hasLength(2),
-        reason: 'the park, then this',
-      );
-    });
-
-    test('where nothing drains the queue, reopens a collection op an '
-        'earlier op for its entry holds back, and sends nothing', () async {
-      await h.confirmedEntry();
-      await h.collection.updateCollectionEntry(id: 'gc-server', quantity: 4);
-      final update = (await h.queue.getPendingEntries()).single;
-      final raise = await h.queuedAdd();
-      await park(raise.id);
-      final writes = h.collectionRemote.writes.length;
-      acceptEverything();
-
-      expect(await recovery().retry(raise.id), isTrue);
-
-      final reopened = await h.entry(raise.id);
-      expect(reopened.status, SyncStatus.pending);
-      expect(reopened.retryCount, 0);
-      expect((await h.entry(update.id)).status, SyncStatus.pending);
-      expect(h.collectionRemote.writes, hasLength(writes));
     });
 
     test('a retry the server refuses again parks the op again, and says '

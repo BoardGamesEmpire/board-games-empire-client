@@ -22,7 +22,7 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(7));
+      expect(installers, hasLength(8));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
@@ -30,6 +30,7 @@ void main() {
       expect(installers[4], isA<EventHydrateInstaller>());
       expect(installers[5], isA<DataGatewayAccessInstaller>());
       expect(installers[6], isA<SyncSenderInstaller>());
+      expect(installers[7], isA<SyncQueueDrainInstaller>());
     });
 
     test('runs the same DataGateway access installer native does, after the '
@@ -45,15 +46,19 @@ void main() {
       );
     });
 
-    test('holds the sync queue sender, not the drain (#121, #447)', () {
-      // The create screen sends through the sender on both platforms, so it
-      // is composed here as on native. The drain over it is not, yet: on web
-      // it needs a Web Lock and a check of whose session is sending, which
-      // is #447.
+    test('holds the sender and the drain over it, drain last (#447)', () {
+      // The create screen sends through the sender on both platforms, and the
+      // drain over it sends what an inline send could not. On web the drain
+      // runs each pass under the Web Lock the server scope registers, so it
+      // composes after the sender it wraps.
       final installers = buildWebUserScopeInstallers();
 
       expect(installers.whereType<SyncSenderInstaller>(), hasLength(1));
-      expect(installers.whereType<SyncQueueDrainInstaller>(), isEmpty);
+      expect(installers.whereType<SyncQueueDrainInstaller>(), hasLength(1));
+      expect(
+        installers.indexWhere((i) => i is SyncQueueDrainInstaller),
+        greaterThan(installers.indexWhere((i) => i is SyncSenderInstaller)),
+      );
     });
 
     test('runs the same installer native does, not a web copy of it', () {

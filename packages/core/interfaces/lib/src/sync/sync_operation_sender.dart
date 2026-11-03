@@ -37,10 +37,15 @@ abstract interface class SyncOperationSender {
   /// (#429), and only where the drain would send it (#45). An earlier op
   /// for the same entry holds it back unless that op is exhausted, and an
   /// exhausted add still holds back an update or a removal while the entry
-  /// is local-only. A held op is not claimed and comes back
-  /// [SyncNotClaimed]: it stays queued, and the drain sends the entry's ops
-  /// in order. This is the path for a write's immediate send; the drain
-  /// sends through [deliverEntry] and keeps the order itself.
+  /// is local-only. Any other op of the entry, earlier or later, also holds
+  /// it back while that op's claim is live: the server can apply two of an
+  /// entry's ops in flight together in one order and answer them in the
+  /// other (#677). The claim checks that in the same transaction that takes
+  /// it ([SyncQueueRepository.claim]), so it binds every sender. A held op
+  /// is neither claimed nor counted and comes back [SyncNotClaimed]: it
+  /// stays queued, and the drain sends the entry's ops in order. This is the
+  /// path for a write's immediate send; the drain sends through
+  /// [deliverEntry] and keeps the order itself.
   ///
   /// Never throws for anything the send or its acknowledgement does: those
   /// all come back as a [SyncDelivery]. A queue write that records the
@@ -56,7 +61,10 @@ abstract interface class SyncOperationSender {
   /// claimed only while it still holds the payload [entry] was read with
   /// ([SyncQueueRepository.claim]): an op rewritten since, as an add's
   /// acknowledgement rewrites the ops queued behind it (#429), comes back
-  /// [SyncNotClaimed], for a sender that reads it again to send.
+  /// [SyncNotClaimed], for a sender that reads it again to send. So does a
+  /// collection op while another op of its entry holds a live claim (#677):
+  /// the claim refuses it here as it does for [deliver], whatever the
+  /// sender's read showed, since that claim may have been taken after it.
   ///
   /// A payload that won't decode is never sent: the entry is claimed and the
   /// attempt counted as a client fault ([SyncFailure.invalidOp]), so an
@@ -74,13 +82,12 @@ abstract interface class SyncOperationSender {
 /// repository that queues it hands back the queue entry's id and the op,
 /// and the caller sends them. A write is never queued and left for a drain
 /// to find: nothing wakes the drain on an enqueue, so the change would wait
-/// for the next connectivity edge or resume, and on web, which has no drain
-/// yet (#447), for ever.
+/// for the next connectivity edge or resume.
 ///
 /// No connectivity check comes first. The send's answer is the real one: a
 /// send that can't reach the server leaves the op queued, and the drain
 /// retries it. So "send now if online, else queue" needs nothing more, and
-/// nothing changes here when web gains a drain.
+/// nothing changes with the platform.
 ///
 /// A change whose outcome is the server's to decide, or that reaches other
 /// people, goes to the server directly instead and is never queued: an

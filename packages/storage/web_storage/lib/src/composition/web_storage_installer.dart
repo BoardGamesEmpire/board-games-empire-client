@@ -1,5 +1,6 @@
 import 'package:drift_storage/drift_storage.dart';
 import 'package:interfaces/orchestration.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 
 import '../databases/wasm_executor_factory.dart';
@@ -39,9 +40,10 @@ typedef WebStorageReport = void Function(WebDatabaseOpening opening);
 ///
 /// ## Registrations
 ///
-/// The [ServerDatabase] alone. `GameRepository` reads per user, so it is
-/// registered in the user-session scope by `UserSessionScopeInstaller`,
-/// which web runs too (#434).
+/// The [ServerDatabase], and the `UnsentChangesNoticeRepository` over it
+/// (#142). `GameRepository` reads per user, so it is registered in the
+/// user-session scope by `UserSessionScopeInstaller`, which web runs too
+/// (#434).
 ///
 /// ## No key, no recovery flow
 ///
@@ -64,7 +66,7 @@ class WebStorageInstaller {
   final WebStorageReport? _onReport;
 
   /// Opens the database for [identity]'s origin and registers it in
-  /// [container].
+  /// [container], with the `UnsentChangesNoticeRepository` over it (#142).
   ///
   /// The database is keyed by [ServerIdentity.serverId] — the server-vended
   /// UUID, the same value the web scope keys everything else by. Web talks to
@@ -105,6 +107,12 @@ class WebStorageInstaller {
       container.registerSingleton<ServerDatabase>(
         db,
         dispose: (database) => database.close(),
+      );
+      // Beside the database it reads, and inside this guard for the same
+      // reason: a throw here must still close the database. It holds nothing
+      // but the database, so it needs no dispose hook of its own (#142).
+      container.registerSingleton<UnsentChangesNoticeRepository>(
+        UnsentChangesNoticeRepositoryImpl(db),
       );
     } catch (_) {
       await _safeClose(db);

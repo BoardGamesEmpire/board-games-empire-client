@@ -68,8 +68,7 @@ abstract class GameCollectionRepository {
   /// Writes locally, enqueues [AddToCollectionOperation], and returns the
   /// entry as written, with the queue entry's `syncQueueId` and the
   /// `operation` as it was queued. The caller sends that op at once with
-  /// `SendQueuedOpNow.sendNow` (#45): nothing else wakes the drain, and web
-  /// has none yet (#447).
+  /// `SendQueuedOpNow.sendNow` (#45): nothing wakes the drain on an enqueue.
   ///
   /// ### Re-adding a previously removed entry (resurrection)
   ///
