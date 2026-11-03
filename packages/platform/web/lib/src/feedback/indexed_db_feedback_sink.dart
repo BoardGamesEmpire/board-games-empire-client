@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:interfaces/orchestration.dart' show Disposable;
@@ -8,8 +9,9 @@ import 'package:observability/observability.dart';
 import 'package:web/web.dart' as web;
 
 /// Durable web [FeedbackSink] (#292): one IndexedDB record per user-approved
-/// report, the JSON of a [QueuedFeedbackReport] stored under its
-/// [QueuedFeedbackReport.storageKey].
+/// report, stored under its [QueuedFeedbackReport.storageKey] as a small
+/// object, `{ageMs, json}`: the [QueuedFeedbackReport]'s JSON, and the age the
+/// cap evicts by (#386).
 ///
 /// The web counterpart of `FileFeedbackSink`, and deliberately the same
 /// observable contract — only user-approved reports reach any sink (the #34
@@ -25,9 +27,34 @@ import 'package:web/web.dart' as web;
 /// sink will ever hold. A second, device-global drift database would answer
 /// that, at the price of a second `WasmDatabase.open` — its own worker and its
 /// own sqlite instance — on every authenticated session, because the drain
-/// calls [pending] on every auth success. This queue is a key → opaque-JSON
-/// store of at most [QueuedFeedbackReport.maxQueuedReports] records, so it
-/// buys nothing from a relational engine.
+/// calls [pending] on every auth success. This queue is a key → JSON store of
+/// at most [QueuedFeedbackReport.maxQueuedReports] records with one index, so
+/// it buys nothing from a relational engine.
+///
+/// ## The stored value, and its one index (#386)
+///
+/// `json` is the record exactly as schema version 1 stored it bare, so
+/// decoding never changed, and it is authoritative for everything except
+/// eviction order. `ageMs` is [QueuedFeedbackReport.ageKey] in milliseconds
+/// since the epoch — `0` for a record with no `queuedAt` — and the `byAge`
+/// index over it is what lets the cap choose what to evict without reading a
+/// single report.
+///
+/// An integer, and not the ISO stamp the JSON already carries, because text
+/// stamps sort by time only while every one has the same precision and zone.
+/// Web stamps are millisecond-precision UTC today, so text would sort
+/// correctly, but by luck rather than by construction.
+///
+/// `ageMs` is always written. IndexedDB leaves a record out of an index when
+/// the indexed property is missing, and a record outside `byAge` is one the
+/// persist cap can never evict — so every write builds its value with
+/// [_storedValue], which takes both properties as required arguments.
+///
+/// It does duplicate `queuedAt`, which is what #292 objected to in a cache of
+/// stamps like native's. The difference is where the copies come from: both
+/// are derived from one record and written in the same `put`, so they cannot
+/// drift apart through this sink. A cache is a second store kept in step on
+/// its own schedule, and so a second source of truth.
 ///
 /// ## Operations are atomic, without a lock
 ///
@@ -58,6 +85,13 @@ import 'package:web/web.dart' as web;
 /// record with no key, or one whose decoded key disagrees with the key it is
 /// filed under, has no address a drain could ever clear. Skipping without
 /// deleting leaks it for the life of the browser profile.
+///
+/// What it declines, in schema version 2: a value that is not an object; an
+/// object whose `json` is not a string, or will not decode; and a decoded
+/// record whose `storageKey` disagrees with the key it is filed under. What
+/// it never declines over is `ageMs`. Missing, non-numeric or simply wrong,
+/// the record is still drainable: `ageMs` only orders eviction, and a bad one
+/// must never destroy a valid report.
 ///
 /// The transient-fault exception that native draws so carefully does not need
 /// drawing here, and that is a property of the store rather than a rule this
@@ -102,10 +136,22 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   static const String defaultDatabaseName = 'bge_feedback';
 
   /// The only object store. Out-of-line keys: the key is the record's
-  /// [QueuedFeedbackReport.storageKey], and the value is its JSON.
+  /// [QueuedFeedbackReport.storageKey], and the value is `{ageMs, json}` —
+  /// see the class doc.
   static const String _storeName = 'records';
 
-  static const int _schemaVersion = 1;
+  /// The index the persist cap walks: `ageMs` ascending, and IndexedDB breaks
+  /// ties by ascending primary key.
+  static const String _ageIndexName = 'byAge';
+
+  /// The stored value's two properties; see the class doc.
+  static const String _ageField = 'ageMs';
+  static const String _jsonField = 'json';
+
+  /// Version 2 (#386) stores `{ageMs, json}` and indexes `ageMs`; version 1
+  /// stored the JSON bare, with no index. [open] migrates the one to the
+  /// other.
+  static const int _schemaVersion = 2;
 
   final web.IDBDatabase _database;
 
@@ -136,42 +182,63 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// front of the first crash report — which is the worst possible moment to
   /// discover it.
   ///
-  /// Throws if the browser refuses, or if it does not answer within
-  /// [openTimeout]. The caller decides what that means; the composition root
-  /// degrades to `MemoryFeedbackSink` and says so.
+  /// Throws if the browser refuses, if the upgrade from version 1 fails, or
+  /// if it does not answer within [openTimeout]. The caller decides what that
+  /// means; the composition root degrades to `MemoryFeedbackSink` and says
+  /// so.
+  ///
+  /// ## Upgrading from version 1 (#386)
+  ///
+  /// The upgrade adds the `byAge` index to the existing store and rewrites
+  /// every version-1 text value in place as `{ageMs, json}`
+  /// ([_migrateFromV1]). A value that is not text was never a record, and is
+  /// left as it is for [pending] to reap. A fresh install creates the store
+  /// and the index together. Both happen in the `versionchange` transaction,
+  /// which makes the upgrade all or nothing: a failure aborts it, this open
+  /// fails, and the database stays at version 1 with every record intact for
+  /// the next attempt. The composition root then runs this session on
+  /// `MemoryFeedbackSink`, so a failed migration costs durability for one
+  /// session rather than the boot.
   ///
   /// ## Why a timeout, on an operation that looks instant
   ///
   /// An open that needs a version upgrade waits for every other connection to
   /// the same database to close, and fires `blocked` rather than failing. A
   /// second tab left open on the previous schema version therefore stalls this
-  /// one **indefinitely** — no error, no progress. That cannot happen while
-  /// this is the only schema version there has ever been, which is exactly why
-  /// it has to be handled now: the first migration would otherwise turn a
-  /// second tab into a hung boot, and the tab that hangs is not the tab anyone
-  /// is looking at.
+  /// one **indefinitely** — no error, no progress. Version 2 is the first
+  /// upgrade this database has taken, so it is the first time a connection on
+  /// an older version can exist at all.
   ///
   /// `blocked` is surfaced as an error immediately, so the ordinary case does
   /// not wait out the timeout; the timeout is the backstop for everything else
   /// a browser can do instead of answering.
   ///
-  /// In practice two tabs on the *same* build never reach it, because the
-  /// `versionchange` handler below makes the older connection step aside and
-  /// the upgrade simply proceeds. What `blocked` covers is the connection that
-  /// will not yield — a tab still running a build from before that handler
-  /// existed, which is exactly the tab that will be open during the first
-  /// migration.
+  /// In practice that version-1 tab does not reach it: every build that ever
+  /// wrote version 1 carries the `versionchange` handler below, so the older
+  /// connection steps aside and the upgrade simply proceeds. What `blocked`
+  /// covers is a connection that will not yield, from whatever holds one. The
+  /// tab holding it keeps its queue; this tab degrades to `MemoryFeedbackSink`
+  /// for the session, like any other open that fails.
   static Future<IndexedDbFeedbackSink> open({
     String databaseName = defaultDatabaseName,
     Duration openTimeout = defaultOpenTimeout,
     @visibleForTesting int schemaVersion = _schemaVersion,
   }) async {
     final request = web.window.indexedDB.open(databaseName, schemaVersion);
-    request.onupgradeneeded = ((web.Event _) {
+    request.onupgradeneeded = ((web.IDBVersionChangeEvent event) {
+      // Runs for a fresh install (from 0), for the migration (from 1), and
+      // for a test's upgrade past the current version, where the index is
+      // already there. Awaits nothing: the `versionchange` transaction dies
+      // across a non-IndexedDB await like any other (class doc).
       final database = request.result! as web.IDBDatabase;
       if (!database.objectStoreNames.contains(_storeName)) {
         database.createObjectStore(_storeName);
       }
+      final store = request.transaction!.objectStore(_storeName);
+      if (!store.indexNames.contains(_ageIndexName)) {
+        store.createIndex(_ageIndexName, _ageField.toJS);
+      }
+      if (event.oldVersion == 1) _migrateFromV1(store);
     }).toJS;
 
     final opening = _awaitOpen(request);
@@ -231,12 +298,11 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
       // comes back empty and reads no payload, so a new key, which is every
       // persist the app makes today, costs nothing more than a key lookup.
       final stored = await _awaitRequest(store.get(key.toJS));
-      if (stored != null && _decode(_asText(stored))?.storageKey == key) {
-        return;
+      if (stored != null) {
+        debugPayloadReads++;
+        if (_decode(_jsonOf(stored))?.storageKey == key) return;
       }
-      await _awaitRequest(
-        store.put(jsonEncode(record.toJson()).toJS, key.toJS),
-      );
+      await _awaitRequest(store.put(_storedRecord(record), key.toJS));
       // Only a create grows the store. A put over an unreadable value
       // replaced it, so the cap has nothing to do.
       if (stored == null) await _enforceCap(store, justPersisted: key);
@@ -252,9 +318,7 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
       // instant of writing rather than a moment before.
       final existing = await _awaitRequest(store.getKey(key.toJS));
       if (existing == null) return;
-      await _awaitRequest(
-        store.put(jsonEncode(record.toJson()).toJS, key.toJS),
-      );
+      await _awaitRequest(store.put(_storedRecord(record), key.toJS));
       // No cap enforcement, deliberately (#376): an update cannot grow the
       // queue, so there is nothing for eviction to do.
     });
@@ -343,15 +407,30 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   });
 
   /// Holds the store at [QueuedFeedbackReport.maxQueuedReports], deleting
-  /// oldest-first by [QueuedFeedbackReport.queuedAt] (#359).
+  /// oldest-first by [QueuedFeedbackReport.queuedAt] (#359), and reading no
+  /// report to do it (#386).
   ///
-  /// Ordered by `queuedAt` and never by anything derived from last-written
-  /// time: [update] rewrites a record to count a failed attempt, so a
-  /// write-time ordering would say "newest" about the record that has been
-  /// queued longest. A record with no `queuedAt` sorts at
-  /// [QueuedFeedbackReport.epoch] — it predates the field, so it genuinely is
-  /// oldest — and so does a value that will not decode, which [pending] reaps
-  /// on its next call anyway.
+  /// The order is the `byAge` index's: its primary keys come back by `ageMs`
+  /// ascending, ties in ascending primary-key order, which is the age-then-key
+  /// rule [pending]'s own cap applies to decoded records. `ageMs` is
+  /// `queuedAt` and never anything derived from last-written time: [update]
+  /// rewrites a record to count a failed attempt, so a write-time ordering
+  /// would say "newest" about the record that has been queued longest. A
+  /// record with no `queuedAt` carries `ageMs` 0 — it predates the field, so
+  /// it genuinely is oldest — and so does a version-1 value that would not
+  /// decode, which [pending] reaps on its next call anyway.
+  ///
+  /// The excess is the store's key count over the bound. A value missing from
+  /// the index — one whose `ageMs` is absent or not a valid key, which this
+  /// sink never writes — counts toward that total, so the bound still holds,
+  /// but it is never a candidate. [pending]'s cap works from decoded records
+  /// and covers it.
+  ///
+  /// The cost is two key listings once the bound is exceeded, and one under
+  /// it, which is every persist on a queue that drains. Neither path clones a
+  /// report. Before the index, the over-bound path read every payload to learn
+  /// their ages: up to roughly 12.5 MB at the per-report protocol ceiling, on
+  /// every submit to a full queue.
   ///
   /// **Nothing here may fail the caller.** [persist] has already put the
   /// record by the time this runs, so an escape would have `submit` report
@@ -364,58 +443,46 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   /// method cannot complete simply leaves the cap for the next persist. Being
   /// one record over the bound harms nothing.
   ///
+  /// The same goes for the index itself. `store.index` *throws* for an index
+  /// that does not exist rather than failing a request, so the cap checks for
+  /// `byAge` first. A version-2 store without it is one this class never
+  /// builds, because the upgrade creates it from every older version. If one
+  /// turns up anyway, the cap steps aside, and [pending]'s cap, which works
+  /// from decoded records, still bounds the store.
+  ///
   /// Native additionally exempts a record whose age it cannot *determine*,
   /// excluding it from the candidates and from the overflow arithmetic alike,
   /// so that a file a backup process is holding open cannot make eviction
   /// delete readable reports to pay for it. That case cannot arise here and
   /// the branch is absent rather than forgotten: inside a transaction that
-  /// succeeded, every value has been read, so every record has a determinable
-  /// age. A store fault fails the read instead, and deletes nothing.
-  ///
-  /// Native's remedy for what this costs — `FileFeedbackSink`'s per-name
-  /// `queuedAt` cache, which spares it a re-`stat` per candidate — is
-  /// deliberately **not** inherited (#292 D5). A keyed store hands back the
-  /// record and its stamp in the same read, so a cache would be a second
-  /// source of truth for something already in hand, and it would import the
-  /// untested carve-out #378 is filed for: a record whose age is known from
-  /// the cache while the record itself cannot be read. #386 holds both the
-  /// cost that is real once the cap engages and the remedy that fits a keyed
-  /// store, which is an index rather than a cache.
+  /// succeeded, the whole index has been read, and a store fault fails the
+  /// read instead and deletes nothing. A value outside the index is not a
+  /// record whose age is unknown for now but one written wrongly, which is
+  /// why it still counts.
   Future<void> _enforceCap(
     web.IDBObjectStore store, {
     required String justPersisted,
   }) async {
-    // Keys first, and values only if the bound is actually exceeded. The
-    // ordering is the whole cost model: under the cap — which is every persist
-    // on a queue that drains — this returns after one key listing, having read
-    // no payloads. Reading both up front would clone the entire queue on every
-    // submit, up to roughly 12.5 MB at the per-report protocol ceiling.
     final keys = await _keysIn(store);
     if (keys == null) return;
 
     final excess = keys.length - QueuedFeedbackReport.maxQueuedReports;
     if (excess <= 0) return;
 
-    final values = await _valuesIn(store);
-    if (values == null || values.length != keys.length) return;
+    if (!store.indexNames.contains(_ageIndexName)) return;
+    // Primary keys in eviction order, and no values with them.
+    final byAge = await _awaitOptional(store.index(_ageIndexName).getAllKeys());
+    if (byAge == null) return;
 
-    final candidates = <(String, QueuedFeedbackReport?, JSAny?)>[];
-    for (var i = 0; i < keys.length; i++) {
+    var evicted = 0;
+    for (final rawKey in (byAge as JSArray<JSAny?>).toDart) {
+      if (evicted == excess) break;
       // Counts against the cap, but is never up for deletion: `persist`
       // returning has to mean the record is stored, and `submit` reports
       // `queued` on the strength of that.
-      if (keys[i].key == justPersisted) continue;
-      candidates.add((keys[i].key ?? '', _decode(values[i]), keys[i].rawKey));
-    }
-
-    // Key tie-break keeps eviction deterministic among equal stamps.
-    candidates.sort((a, b) {
-      final byAge = _ageOf(a.$2).compareTo(_ageOf(b.$2));
-      return byAge != 0 ? byAge : a.$1.compareTo(b.$1);
-    });
-
-    for (final (_, _, rawKey) in candidates.take(excess)) {
+      if (_asText(rawKey) == justPersisted) continue;
       await _deleteQuietly(store, rawKey);
+      evicted++;
     }
   }
 
@@ -427,12 +494,6 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
     final byAge = QueuedFeedbackReport.compareByAge(a.$2, b.$2);
     return byAge != 0 ? byAge : a.$1.compareTo(b.$1);
   }
-
-  /// The instant a record is ordered by when evicting; [QueuedFeedbackReport
-  /// .epoch] for one that will not decode, which is the same answer the
-  /// envelope gives for a record written before `queuedAt` existed.
-  static DateTime _ageOf(QueuedFeedbackReport? record) =>
-      record?.ageKey ?? QueuedFeedbackReport.epoch;
 
   /// How long this record has been waiting for a send it has not had.
   ///
@@ -461,13 +522,14 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
     return key;
   }
 
-  /// Decodes a stored value, or null when there is nothing decodable there.
+  /// Decodes a stored record's JSON, or null when there is nothing decodable
+  /// there.
   ///
   /// Null means *corrupt*, not *unavailable*: the value has already been read
   /// out of the store by the time this runs, so the only ways to get here are
-  /// a value that is not text at all and text that will not parse. Both make
-  /// the record permanently un-drainable, which is the only distinction the
-  /// callers need.
+  /// a value with no JSON text in it — see [_jsonOf] — and text that will not
+  /// parse. Both make the record permanently un-drainable, which is the only
+  /// distinction the callers need.
   static QueuedFeedbackReport? _decode(String? value) {
     if (value == null) return null;
     try {
@@ -480,6 +542,66 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
       // only distinction the caller needs.
       return null;
     }
+  }
+
+  /// The value this sink stores; see the class doc. Both properties, always.
+  static JSObject _storedValue({required int ageMs, required String json}) =>
+      JSObject()
+        ..[_ageField] = ageMs.toJS
+        ..[_jsonField] = json.toJS;
+
+  /// [record] as this sink stores it, and the only way it writes one: the age
+  /// and the JSON come from the same record in the same `put`, which is why
+  /// the two cannot drift apart.
+  static JSObject _storedRecord(QueuedFeedbackReport record) => _storedValue(
+    ageMs: record.ageKey.millisecondsSinceEpoch,
+    json: jsonEncode(record.toJson()),
+  );
+
+  /// The record's JSON out of a stored value: the `json` property when
+  /// [value] is an object and that property is text, and null for anything
+  /// else — a version-1 bare string, a number, an object without `json` or
+  /// with the wrong type there.
+  ///
+  /// `ageMs` is deliberately not looked at. It never decides whether a record
+  /// drains, only when the cap reaches it.
+  static String? _jsonOf(JSAny? value) {
+    if (!value.isA<JSObject>()) return null;
+    return _asText((value! as JSObject)[_jsonField]);
+  }
+
+  /// The `ageMs` a version-1 value migrates with: its decoded
+  /// [QueuedFeedbackReport.ageKey] in milliseconds, or 0 — the
+  /// [QueuedFeedbackReport.epoch] — when it will not decode.
+  static int _ageMsOfJson(String json) =>
+      _decode(json)?.ageKey.millisecondsSinceEpoch ?? 0;
+
+  /// Rewrites every version-1 value — the record's JSON, bare — in place as
+  /// `{ageMs, json}`, inside the upgrade's `versionchange` transaction.
+  ///
+  /// `json` is the text unchanged and `ageMs` comes from its decoded
+  /// `queuedAt`. Text that will not decode is wrapped with `ageMs` 0 all the
+  /// same: the migration does not judge corruption, because [pending] already
+  /// does and reaps it on its first call. A value that is not text is left as
+  /// it is, for the same reason.
+  ///
+  /// Callback-driven rather than awaited: one cursor request fires `success`
+  /// once per row, which [_awaitRequest]'s one-shot future cannot follow. And
+  /// no error handler, deliberately: a failed read or rewrite goes uncanceled
+  /// and aborts the `versionchange` transaction, which fails [open] and leaves
+  /// version 1 standing, every record intact. A Dart exception thrown out of
+  /// the handler aborts it the same way.
+  static void _migrateFromV1(web.IDBObjectStore store) {
+    final rows = store.openCursor();
+    rows.onsuccess = ((web.Event _) {
+      final cursor = rows.result as web.IDBCursorWithValue?;
+      if (cursor == null) return; // Past the last row.
+      final text = _asText(cursor.value);
+      if (text != null) {
+        cursor.update(_storedValue(ageMs: _ageMsOfJson(text), json: text));
+      }
+      cursor.continue_();
+    }).toJS;
   }
 
   /// Runs [body] inside one `readwrite` transaction and waits for it to
@@ -542,18 +664,20 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
   }
 
   /// Everything in the store: the raw key, that key as text when it is text,
-  /// and the value as text when it is text.
+  /// and the record's JSON when the value carries it as text.
   ///
   /// Null when the store could not be read; the caller leaves the store alone
   /// rather than acting on a partial picture.
   ///
-  /// **Keys and values are typed defensively on purpose.** IndexedDB accepts
-  /// numbers, dates, objects and arrays as both, and `as JSString` on one of
-  /// those throws a `TypeError` out of the transaction body — which would
-  /// abort the transaction and leave [pending] failing on every drain, with
-  /// the reap that should have removed the offending record never running.
-  /// A value this sink cannot read as text is therefore reported as null and
-  /// reaped exactly like a value that will not parse, which is what makes the
+  /// **Keys and values are typed defensively on purpose.** IndexedDB takes
+  /// numbers, dates and arrays as keys as readily as strings, and any
+  /// cloneable value — a string or a number as readily as an object — as a
+  /// value. `as JSString` on such a key, or `as JSObject` on such a value,
+  /// throws a `TypeError` out of the transaction body — which would abort the
+  /// transaction and leave [pending] failing on every drain, with the reap
+  /// that should have removed the offending record never running. A value
+  /// this sink cannot read its JSON out of is therefore reported as null and
+  /// reaped exactly like JSON that will not parse, which is what makes the
   /// class doc's "corrupt by elimination" true rather than nearly true.
   /// Nothing but this class writes to the store today; that is a reason for
   /// the case to be cheap, not a reason to let it be fatal.
@@ -587,22 +711,26 @@ class IndexedDbFeedbackSink implements FeedbackSink, Disposable {
     ];
   }
 
-  /// Counts payload reads, so a suite can pin the cap's fast path.
+  /// Counts every payload read. No cap path makes one; [persist]'s duplicate
+  /// check makes exactly one, and only when the key is already present (a
+  /// get of a key that is not stored returns nothing).
   ///
-  /// That path is a cost property with no behavioural signature — reading the
-  /// payloads early gives exactly the same answers — so nothing else would
-  /// catch its loss. It has already been lost once, in a refactor that merged
-  /// the two reads.
+  /// That is a cost property with no behavioural signature — reading the
+  /// payloads gives exactly the same answers — so nothing else would catch
+  /// its loss. It has been lost once already, in a refactor that merged the
+  /// key and value reads. Since #386 the cap reads no payload over the bound
+  /// either, and the counter pins both paths.
   @visibleForTesting
   static int debugPayloadReads = 0;
 
-  /// Every value in the store, as text where it is text.
+  /// Every stored record's JSON, through [_jsonOf]: null for a value that does
+  /// not carry it as text.
   static Future<List<String?>?> _valuesIn(web.IDBObjectStore store) async {
     debugPayloadReads++;
     final result = await _awaitOptional(store.getAll());
     if (result == null) return null;
     return [
-      for (final value in (result as JSArray<JSAny?>).toDart) _asText(value),
+      for (final value in (result as JSArray<JSAny?>).toDart) _jsonOf(value),
     ];
   }
 
