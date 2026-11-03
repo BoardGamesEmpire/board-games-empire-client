@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/foundation.dart'
@@ -36,7 +37,12 @@ final class _EventLog extends BlocObserver {
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
+
+  /// A caller who may read DataGateways and not update them.
+  final readOnly = FakeCallerAccessRepository.dataGateway(
+    read: AccessExtent.all,
+  );
 
   const waiting = LanguageLinkFilter.waiting;
   const ignoredFilter = LanguageLinkFilter.ignored;
@@ -144,13 +150,18 @@ void main() {
 
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    // A caller who may read and update DataGateways: everything the worklist
+    // offers.
+    access = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+      ),
+    );
     // A DataGateway with little to say, so the worklist sits high on the page.
     remote.onFetchOne = (id) async => gateway(id, name: 'BGG');
     remote.onFetchLanguageTags = (_, _, _) async => tagPageOf([czech, slovak]);
   });
-
-  tearDown(() => access.dispose());
 
   Widget app(Widget home, {TextScaler textScaler = TextScaler.noScaling}) =>
       MaterialApp(
@@ -682,19 +693,40 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('a reader who may not change sees rows and no menus', (
-      tester,
-    ) async {
-      access.changeDenied();
+    testWidgets('row menus show only with update', (tester) async {
+      final menus = find.byType(
+        PopupMenuButton<LanguageLinkAction>,
+        skipOffstage: false,
+      );
+      access.current = const CallerAccess.unknown();
       listing({
         waiting: [a, b],
       });
       await pumpScreen(tester);
 
+      // Rows, and no menus, while access is unknown.
       expect(row('a'), findsOneWidget);
       expect(row('b'), findsOneWidget);
-      expect(menu('a'), findsNothing);
-      expect(find.byType(PopupMenuButton<LanguageLinkAction>), findsNothing);
+      expect(menus, findsNothing);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        update: AccessExtent.some,
+      );
+      await tester.pumpAndSettle();
+
+      expect(menu('a'), findsOneWidget);
+      expect(menu('b'), findsOneWidget);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        read: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
+      await tester.pumpAndSettle();
+
+      expect(row('a'), findsOneWidget);
+      expect(menus, findsNothing);
+      expect(linkReads(), hasLength(1));
     });
 
     testWidgets('a screen reader counts the rows, and only the rows', (
@@ -1816,8 +1848,10 @@ void main() {
       expect(focusIsIn(tester, filter(waiting)), isTrue);
     });
 
-    testWidgets("a refusal elsewhere takes the menu with focus, so focus goes "
-        'to the selected chip', (tester) async {
+    testWidgets('a refusal elsewhere asks access again, and the menu with '
+        'focus goes once it answers, so focus goes to the selected chip', (
+      tester,
+    ) async {
       listing({
         waiting: [a, b, c],
       });
@@ -1829,12 +1863,19 @@ void main() {
       held.completeError(forbidden());
       await tester.pumpAndSettle();
 
+      // The refusal alone takes nothing away: access does.
+      expect(access.refreshCount, 1);
+      expect(focusIsIn(tester, menu('c')), isTrue);
+
+      access.current = readOnly;
+      await tester.pumpAndSettle();
+
       expect(menu('c'), findsNothing);
       expect(focusIsIn(tester, filter(waiting)), isTrue);
     });
 
-    testWidgets('a refusal from another screen takes the menu with focus, and '
-        'focus can be seen on the chip it goes to', (tester) async {
+    testWidgets('access falling takes the menu with focus, and focus can be '
+        'seen on the chip it goes to', (tester) async {
       final longList = [for (var n = 1; n <= 40; n++) languageLink('r$n')];
       listing({waiting: longList});
       await pumpScreen(tester, size: const Size(360, 640));
@@ -1844,7 +1885,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
       await tester.pump();
 
-      access.changeDenied();
+      access.current = readOnly;
       await tester.pumpAndSettle();
 
       expect(menu('r20'), findsNothing);
@@ -2015,8 +2056,8 @@ void main() {
       expect(focusOnNothing(), isTrue);
     });
 
-    testWidgets('a refusal takes every menu, so focus goes to the selected '
-        'chip', (tester) async {
+    testWidgets("a refusal gives focus back to the row's menu, and access "
+        'then taking every menu sends it to the selected chip', (tester) async {
       listing({
         waiting: [a, b],
       });
@@ -2024,6 +2065,12 @@ void main() {
       await pumpScreen(tester);
 
       await chooseByKeyboard(tester, 'a', LanguageLinkWorklist.ignoreKey);
+      await tester.pumpAndSettle();
+
+      expect(access.refreshCount, 1);
+      expect(focusIsIn(tester, menu('a')), isTrue);
+
+      access.current = readOnly;
       await tester.pumpAndSettle();
 
       expect(menu('a'), findsNothing);
@@ -2527,6 +2574,15 @@ void main() {
         await tester.pumpAndSettle();
 
         expectOutcomeShown(tester, refusedCopy);
+        // The refusal alone takes nothing away, so focus is back on the row.
+        expect(focusIsIn(tester, menu('r20')), isTrue);
+        expect(focusOnScreen(tester), isTrue);
+
+        // The ask the refusal made answers.
+        access.current = readOnly;
+        await tester.pumpAndSettle();
+
+        expectOutcomeShown(tester, refusedCopy);
         expect(find.byType(PopupMenuButton<LanguageLinkAction>), findsNothing);
         // No menu is left to take focus, and focus can be seen where it went.
         expect(focusIsIn(tester, filter(waiting)), isTrue);
@@ -2544,6 +2600,14 @@ void main() {
         final before = pageOffset(tester);
 
         held.completeError(forbidden());
+        await tester.pumpAndSettle();
+
+        expectOutcomeShown(tester, refusedCopy);
+        expect(menu('r20'), findsOneWidget);
+        expect(pageOffset(tester), before);
+
+        // The ask the refusal made answers.
+        access.current = readOnly;
         await tester.pumpAndSettle();
 
         expectOutcomeShown(tester, refusedCopy);

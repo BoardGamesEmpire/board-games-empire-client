@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:interfaces/repositories.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
 import 'package:observability/observability.dart';
 
-import '../access/data_gateway_access.dart';
 import 'data_gateway_detail_event.dart';
 import 'data_gateway_detail_state.dart';
 
@@ -80,44 +82,69 @@ import 'data_gateway_detail_state.dart';
 ///
 /// A handler waiting on the server outlives [close], and asking for a read then
 /// would throw, so it asks for none once [close] has started. A refusal that
-/// lands after that still reaches [access], which outlasts the screen.
+/// lands after that still asks [access] again, which outlasts the screen.
 ///
 /// ## Access
 ///
-/// A refused read is [DataGatewayDetailDenied]. A refused change hides every
-/// change action for the rest of the session, here and on every other screen,
-/// through [DataGatewayAccess]: Moderators may read DataGateways and not change
-/// them, and nothing tells the client which role it has until a change is
-/// refused (#41). Both are reported to [access], so the home drawer agrees with
-/// what this screen found.
+/// Re-interview and the capability switches are offered while the caller's
+/// access, as the server answers it, allows update (#456). They follow
+/// [access] as its answer changes, up or down, without reading the row again.
+/// A press it no longer allows is dropped, and so is one waiting on a write
+/// when update falls before the write answers. What was already sent runs on,
+/// and answers for itself.
 ///
-/// A null [access] is a composition with no session to report to. The screen
-/// still works; what it learns lasts as long as the bloc.
+/// A refused read is [DataGatewayDetailDenied], and a refused change is
+/// reported in the outcome. Neither takes anything away: each asks [access]
+/// again, and the controls follow what it answers. The refusal is the server's
+/// word that the answer here may be out of date, as when the caller's role
+/// changed since it was asked. A refused read asks even when its answer is
+/// dropped: what it says is about the caller, not the row.
+///
+/// [DataGatewayDetailDenied] reads the row again once a changed answer
+/// allows read. A refusal can come before the server has written a new
+/// user's roles (backend#490), and the answer that follows them is the one
+/// that says the read would now go through.
+///
+/// A read that succeeds while the answer is still unknown asks [access]
+/// again too. The first ask can fail with the server up, as on a 502 from a
+/// proxy, and nothing else asks again until a rehydrate trigger. The server
+/// has just answered this caller, so an ask now is likely to be answered
+/// too.
+///
+/// A null [access] is a composition with no session to ask. The row still
+/// shows, and nothing is offered, as while the answer is unknown.
 class DataGatewayDetailBloc
     extends Bloc<DataGatewayDetailEvent, DataGatewayDetailState> {
   DataGatewayDetailBloc({
     required this._remote,
     required this._id,
-    DataGatewayAccess? access,
+    CallerAccessRepository? access,
     BgeLogger? logger,
   }) : _access = access,
        _logger = logger ?? BgeLogger('bge.data_gateway.detail'),
-       _mayChange = access?.value.mayChange ?? true,
        super(const DataGatewayDetailLoading()) {
     on<DataGatewayDetailLoadRequested>(_onLoadRequested);
     on<DataGatewayDetailInterviewRequested>(_onInterviewRequested);
     on<DataGatewayDetailCapabilitySwitched>(_onCapabilitySwitched);
     on<DataGatewayDetailOutcomeDismissed>(_onOutcomeDismissed);
     on<DataGatewayDetailAccessChanged>(_onAccessChanged);
-    access?.addListener(_accessListener);
+    _accessChanges = access?.changes.listen((_) {
+      if (!isClosed) add(const DataGatewayDetailAccessChanged());
+    });
   }
 
   final DataGatewayRemoteDataSource _remote;
   final String _id;
-  final DataGatewayAccess? _access;
+  final CallerAccessRepository? _access;
   final BgeLogger _logger;
+  StreamSubscription<CallerAccess>? _accessChanges;
 
-  bool _mayChange;
+  /// Whether the caller's access lets them update the DataGateway: interview
+  /// it and switch its capabilities. False while the answer is unknown, and
+  /// with no [_access] to ask.
+  bool get _mayUpdate =>
+      _access?.current.allows(ResourceType.dataGateway, AccessAction.update) ??
+      false;
 
   /// The row on screen, as the server last answered it. Null until a read
   /// succeeds, and again after one fails, is refused or finds it gone.
@@ -151,15 +178,13 @@ class DataGatewayDetailBloc
 
   /// Nothing has come up that stops an action being sent, other than one
   /// already running.
-  bool get _mayAsk => _mayChange && !_rowInDoubt;
+  bool get _mayAsk => _mayUpdate && !_rowInDoubt;
 
   /// Each switch pressed during a write, as last pressed.
   final Map<String, bool> _waitingSwitches = {};
 
   /// The interview button was pressed during a write.
   bool _interviewWaiting = false;
-
-  void _accessListener() => add(const DataGatewayDetailAccessChanged());
 
   Future<void> _onLoadRequested(
     DataGatewayDetailLoadRequested event,
@@ -170,14 +195,15 @@ class DataGatewayDetailBloc
     try {
       final row = await _remote.fetchOne(_id);
       if (_drops(read)) return;
-      _access?.readGranted();
       _row = row;
       _rowInDoubt = false;
       _emitReady(emit);
+      // The server answered this caller: see Access in the class doc.
+      if (_access?.current.isKnown == false) unawaited(_access?.refresh());
     } on DataGatewayForbiddenException {
+      unawaited(_access?.refresh());
       if (_drops(read)) return;
       _row = null;
-      _access?.readDenied();
       emit(const DataGatewayDetailDenied());
     } on DataGatewayNotFoundException {
       if (_drops(read)) return;
@@ -367,9 +393,10 @@ class DataGatewayDetailBloc
     }
   }
 
+  /// A refusal takes nothing away here: it asks [_access] again, and the
+  /// controls follow what that answers.
   _ActionEnd _refused() {
-    _mayChange = false;
-    _access?.changeDenied();
+    unawaited(_access?.refresh());
     return const _ActionEnd(outcome: DataGatewayDetailOutcome.refused);
   }
 
@@ -382,24 +409,32 @@ class DataGatewayDetailBloc
     _emitReady(emit);
   }
 
+  /// Offers the controls as update rises and withdraws them as it falls. The
+  /// action in flight, what waits for it and the last outcome stay as they
+  /// were.
   void _onAccessChanged(
     DataGatewayDetailAccessChanged event,
     Emitter<DataGatewayDetailState> emit,
   ) {
-    final access = _access;
-    if (access == null || access.value.mayChange || !_mayChange) return;
-    _mayChange = false;
+    // A refused read tries again: see Access in the class doc.
+    if (state is DataGatewayDetailDenied &&
+        (_access?.current.allows(ResourceType.dataGateway, AccessAction.read) ??
+            false)) {
+      if (!isClosed) add(const DataGatewayDetailLoadRequested());
+      return;
+    }
     _emitReady(emit);
   }
 
-  /// Shows the row, when there is a row to show.
+  /// Shows the row, when there is a row to show, with the controls the
+  /// caller's access allows now.
   void _emitReady(Emitter<DataGatewayDetailState> emit) {
     final row = _row;
     if (row == null) return;
     emit(
       DataGatewayDetailReady(
         gateway: row,
-        mayChange: _mayChange,
+        mayUpdate: _mayUpdate,
         busy: _busy,
         interviewWaiting: _interviewWaiting,
         outcome: _outcome,
@@ -409,7 +444,9 @@ class DataGatewayDetailBloc
 
   @override
   Future<void> close() {
-    _access?.removeListener(_accessListener);
+    // Not awaited first, so that the bloc reads as closed from the turn this
+    // starts in, as Leaving during an action says.
+    unawaited(_accessChanges?.cancel());
     return super.close();
   }
 }

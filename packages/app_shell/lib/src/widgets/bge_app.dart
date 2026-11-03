@@ -2026,7 +2026,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayDetailScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
-      access: _dataGatewayAccess(container),
+      access: _callerAccess(container),
       id: dataGatewayId,
     );
   }

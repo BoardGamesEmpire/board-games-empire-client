@@ -344,20 +344,21 @@ void main() {
       expect(find.text('Named dg_a'), findsNothing);
     });
 
-    testWidgets('a deep link by a user who may not read shows access-denied', (
-      tester,
-    ) async {
+    testWidgets('a deep link by a user who may not read shows access-denied, '
+        "and asks the session's access again (#456)", (tester) async {
+      final callerAccess = FakeCallerAccessRepository();
       remote
         ..read = (() async => throw _forbidden)
         ..fetchOneError = _forbidden;
-      await pumpHome(tester);
+      await pumpHome(tester, callerAccess: callerAccess);
 
       GoRouter.of(tester.element(find.byType(HomeScreen)))
           .go(AppRoutes.dataGatewayDetailOf('dg_a'));
       await tester.pumpAndSettle();
 
       expect(find.byKey(DataGatewayDetailScreen.deniedKey), findsOneWidget);
-      expect(access.value.read, DataGatewayRead.denied);
+      // The list beneath, the row and its worklist are each refused.
+      expect(callerAccess.refreshCount, 3);
     });
 
     testWidgets('a session with no DataGateway client falls back', (

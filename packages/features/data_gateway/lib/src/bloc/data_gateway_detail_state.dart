@@ -34,7 +34,7 @@ final class DataGatewayDetailGone extends DataGatewayDetailState {
 final class DataGatewayDetailReady extends DataGatewayDetailState {
   const DataGatewayDetailReady({
     required this.gateway,
-    this.mayChange = true,
+    this.mayUpdate = false,
     this.busy,
     this.interviewWaiting = false,
     this.outcome,
@@ -42,9 +42,10 @@ final class DataGatewayDetailReady extends DataGatewayDetailState {
 
   final DataGateway gateway;
 
-  /// Whether to offer re-interview and the capability switches. False once
-  /// the session has seen a change refused (#41).
-  final bool mayChange;
+  /// Whether to offer re-interview and the capability switches: what the
+  /// caller's access says of update now (#456), and false while that is
+  /// unknown.
+  final bool mayUpdate;
 
   /// The action in flight. There is at most one.
   final DataGatewayDetailBusy? busy;
@@ -61,7 +62,7 @@ final class DataGatewayDetailReady extends DataGatewayDetailState {
   @override
   List<Object?> get props => [
     gateway,
-    mayChange,
+    mayUpdate,
     busy,
     interviewWaiting,
     outcome,
@@ -94,7 +95,10 @@ enum DataGatewayDetailOutcome {
   /// have applied.
   capabilityFailed,
 
-  /// The user's role may not change DataGateways.
+  /// The server refused the change because of the user's role.
+  ///
+  /// Since #456 a refusal takes nothing away by itself: it asks the caller's
+  /// access again, and the controls follow that answer.
   refused,
 }
 

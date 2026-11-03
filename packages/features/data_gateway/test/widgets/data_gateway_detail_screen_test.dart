@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:data_gateway/l10n/data_gateway_localizations.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,12 @@ import '../support/screen_input.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
+
+  /// A caller who may read DataGateways and not update them.
+  final readOnly = FakeCallerAccessRepository.dataGateway(
+    read: AccessExtent.all,
+  );
 
   // Made from local times, so each reads the same on any machine, and held in
   // UTC, as the server sends them. In a year that has passed, so they read the
@@ -106,13 +112,18 @@ void main() {
 
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    // A caller who may read and update DataGateways: everything this screen
+    // offers.
+    access = FakeCallerAccessRepository(
+      FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+        update: AccessExtent.all,
+      ),
+    );
     // The language worklist under the capabilities has its own tests. Here it
     // is empty, so it reads as the one line it is.
     remote.onFetchLanguageLinks = (_, _, _, _) async => linkPageOf(const []);
   });
-
-  tearDown(() => access.dispose());
 
   Widget app(
     Widget home, {
@@ -506,15 +517,15 @@ void main() {
       },
     );
 
-    testWidgets('a focused switch moves on when another screen learns the '
-        'role may not change anything, which stops it', (tester) async {
+    testWidgets('a focused switch moves on when access falls, which stops '
+        'it', (tester) async {
       remote.onFetchOne = (_) async => row();
       await pumpScreen(tester);
       await tester.ensureVisible(capability(search));
       await tester.pumpAndSettle();
       await focusOn(tester, textIn(capability(search), 'Search'));
 
-      access.changeDenied();
+      access.current = readOnly;
       await tester.pumpAndSettle();
 
       expect(tile(tester, search).onChanged, isNull);
@@ -1099,10 +1110,10 @@ void main() {
     }
   });
 
-  group('access', () {
-    testWidgets('a reader who may not change sees status, and no switch or '
+  group('access (#456)', () {
+    testWidgets('a reader who may not update sees status, and no switch or '
         'button works', (tester) async {
-      access.changeDenied();
+      access.current = readOnly;
       remote.onFetchOne = (_) async => row();
 
       await pumpScreen(tester);
@@ -1118,8 +1129,31 @@ void main() {
       expect(writes(), isEmpty);
     });
 
-    testWidgets('a refused change hides the button, stops the switches and '
-        'says why', (tester) async {
+    testWidgets('while access is unknown nothing works and nothing is said '
+        'about the role, and the controls come when update arrives', (
+      tester,
+    ) async {
+      access.current = const CallerAccess.unknown();
+      remote.onFetchOne = (_) async => row();
+
+      await pumpScreen(tester);
+
+      expect(interviewButton, findsNothing);
+      expect(tile(tester, search).onChanged, isNull);
+      expect(find.textContaining('Your role'), findsNothing);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        update: AccessExtent.some,
+      );
+      await tester.pumpAndSettle();
+
+      expect(interviewButton, findsOneWidget);
+      expect(tile(tester, search).onChanged, isNotNull);
+      expect(reads(), hasLength(1));
+    });
+
+    testWidgets('a refused change says why and asks access again, and the '
+        'button and switches go once it answers', (tester) async {
       remote.onFetchOne = (_) async => row();
       remote.onInterview = (_) async => throw forbidden();
       await pumpScreen(tester);
@@ -1131,9 +1165,19 @@ void main() {
         find.text("Your role can't change data gateways."),
         findsOneWidget,
       );
+      expect(access.refreshCount, 1);
+      // The refusal alone takes nothing away: access does.
+      expect(interviewButton, findsOneWidget);
+
+      access.current = readOnly;
+      await tester.pumpAndSettle();
+
       expect(interviewButton, findsNothing);
       expect(tile(tester, search).onChanged, isNull);
-      expect(access.value.mayChange, isFalse);
+      expect(
+        find.text("Your role can't change data gateways."),
+        findsOneWidget,
+      );
     });
   });
 
@@ -1632,14 +1676,14 @@ void main() {
         ('a switch', 'Search'),
         ('Interview again', 'Interview again'),
       ]) {
-        testWidgets("$screen: a refusal moves focus from $control to the "
-            "refusal's Dismiss", (tester) async {
+        testWidgets('$screen: focus leaves a control that access takes away: '
+            "from $control to the refusal's Dismiss", (tester) async {
           remote.onSetDisabledCapabilities = (_, _) async => throw forbidden();
           remote.onInterview = (_) async => throw forbidden();
           await open(tester);
-          final target = control == 'a switch'
-              ? textIn(capability(search), label)
-              : textIn(interviewButton, label);
+          final (target, taken) = control == 'a switch'
+              ? (textIn(capability(search), label), capability(search))
+              : (textIn(interviewButton, label), interviewButton);
           await tester.ensureVisible(target);
           await tester.pumpAndSettle();
           await focusOn(tester, target);
@@ -1647,7 +1691,17 @@ void main() {
           await tester.sendKeyEvent(LogicalKeyboardKey.space);
           await tester.pumpAndSettle();
 
+          // The refusal asks access again, and takes nothing away itself.
           expect(find.text(refusedCopy), findsOneWidget);
+          expect(access.refreshCount, 1);
+          expect(focusIsIn(tester, taken), isTrue);
+
+          // What the ask found.
+          access.current = readOnly;
+          await tester.pumpAndSettle();
+
+          // A switch stays, and stops; the button goes.
+          expect(taken, control == 'a switch' ? findsOneWidget : findsNothing);
           expect(focusIsIn(tester, dismissOf(banner)), isTrue);
           final focused = FocusManager.instance.primaryFocus!.rect;
           expect(focused.top, greaterThanOrEqualTo(0));
@@ -1903,7 +1957,8 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Data gateways'), findsOneWidget);
-      expect(access.value.read, DataGatewayRead.denied);
+      // The row's read and the worklist's each ask access again.
+      expect(access.refreshCount, 2);
       // Nothing to act on, as on the list.
       expect(refreshButton, findsNothing);
     });
