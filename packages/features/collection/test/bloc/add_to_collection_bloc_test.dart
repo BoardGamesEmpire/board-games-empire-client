@@ -180,7 +180,7 @@ void main() {
       const AddToCollectionState(status: AddToCollectionStatus.submitting),
       AddToCollectionState(
         status: AddToCollectionStatus.added,
-        sync: AddToCollectionSync.synced,
+        sync: CollectionSync.synced,
       ),
     ],
     verify: (_) {
@@ -199,21 +199,21 @@ void main() {
   );
 
   for (final (outcome, answer, sync)
-      in <(String, SyncDelivery, AddToCollectionSync)>[
+      in <(String, SyncDelivery, CollectionSync)>[
         (
           'a send that fails leaves it queued',
           const SyncFailed(SyncFailure.unreachable, 'offline'),
-          AddToCollectionSync.queued,
+          CollectionSync.queued,
         ),
         (
           'a send left for the drain leaves it queued',
           const SyncNotClaimed(),
-          AddToCollectionSync.queued,
+          CollectionSync.queued,
         ),
         (
           'a send the server refuses is refused',
           const SyncParked('400'),
-          AddToCollectionSync.refused,
+          CollectionSync.refused,
         ),
       ]) {
     blocTest<AddToCollectionBloc, AddToCollectionState>(
@@ -251,7 +251,7 @@ void main() {
       const AddToCollectionState(status: AddToCollectionStatus.submitting),
       AddToCollectionState(
         status: AddToCollectionStatus.added,
-        sync: AddToCollectionSync.queued,
+        sync: CollectionSync.queued,
       ),
     ],
     errors: () => isEmpty,
@@ -299,7 +299,7 @@ void main() {
         const AddToCollectionState(status: AddToCollectionStatus.submitting),
         AddToCollectionState(
           status: AddToCollectionStatus.added,
-          sync: AddToCollectionSync.synced,
+          sync: CollectionSync.synced,
         ),
       ],
       verify: (_) => verify(
@@ -373,7 +373,7 @@ void main() {
         medium: GameMedium.physical,
         existing: entry(),
         status: AddToCollectionStatus.added,
-        sync: AddToCollectionSync.synced,
+        sync: CollectionSync.synced,
       ),
     ],
   );

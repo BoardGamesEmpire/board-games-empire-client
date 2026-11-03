@@ -4,6 +4,7 @@ import 'package:interfaces/sync.dart';
 import 'package:models/domain.dart';
 import 'package:observability/observability.dart';
 
+import '../sync/collection_sync.dart';
 import 'add_to_collection_event.dart';
 import 'add_to_collection_state.dart';
 
@@ -140,11 +141,7 @@ class AddToCollectionBloc
     emit(
       state.withStatus(
         AddToCollectionStatus.added,
-        sync: switch (delivery) {
-          SyncDelivered() => AddToCollectionSync.synced,
-          SyncParked() => AddToCollectionSync.refused,
-          SyncNotClaimed() || SyncFailed() => AddToCollectionSync.queued,
-        },
+        sync: CollectionSync.of(delivery),
       ),
     );
   }

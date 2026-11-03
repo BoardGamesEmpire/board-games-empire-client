@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import 'package:models/domain.dart';
 
+import '../sync/collection_sync.dart';
+
 /// Where an add stands.
 enum AddToCollectionStatus {
   /// The form is open for changes.
@@ -16,22 +18,6 @@ enum AddToCollectionStatus {
   /// The game is in the collection: see [AddToCollectionState.sync] for
   /// whether the server has it.
   added,
-}
-
-/// What became of an add's immediate send (#45).
-enum AddToCollectionSync {
-  /// The server has it.
-  synced,
-
-  /// It stays queued: the send didn't reach the server, or an earlier
-  /// change to the entry is still waiting. The drain sends it later, on
-  /// both platforms.
-  queued,
-
-  /// The server refused it. It is kept on this device and won't be sent
-  /// again on its own: the user retries or discards it where changes that
-  /// couldn't sync are listed (#190).
-  refused,
 }
 
 /// What the add sheet is showing (#45).
@@ -54,13 +40,13 @@ final class AddToCollectionState extends Equatable {
   final AddToCollectionStatus status;
 
   /// What became of the add's send, set with [AddToCollectionStatus.added].
-  final AddToCollectionSync? sync;
+  final CollectionSync? sync;
 
   /// This state at [next], keeping the medium and the entry found. [sync]
   /// goes with [AddToCollectionStatus.added].
   AddToCollectionState withStatus(
     AddToCollectionStatus next, {
-    AddToCollectionSync? sync,
+    CollectionSync? sync,
   }) => AddToCollectionState(
     medium: medium,
     existing: existing,
