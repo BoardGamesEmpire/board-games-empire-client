@@ -226,10 +226,9 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
         : _menus.entries.where((entry) => entry.value.hasFocus).firstOrNull;
     if (!addGoes && menuGoes == null) return;
 
-    final ownRow = menuGoes != null && widget.onOpen != null
-        ? _rows[menuGoes.key]
+    final ownRowId = menuGoes != null && widget.onOpen != null
+        ? menuGoes.key
         : null;
-    final target = state.outcome != null ? _dismiss : ownRow ?? _heading;
     final focused = FocusManager.instance.primaryFocus;
     final bloc = context.read<DataGatewayListBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -239,6 +238,10 @@ class _DataGatewayListViewState extends State<_DataGatewayListView> {
           now is DataGatewayListReady &&
           (addGoes ? !now.mayCreate : !_offersMenus(now));
       if (!stillGone) return;
+      // The row is looked up now: the state that took the menu away may have
+      // taken its row too, and [_forgetRowsGone] has dropped its node.
+      final ownRow = ownRowId == null ? null : _rows[ownRowId];
+      final target = state.outcome != null ? _dismiss : ownRow ?? _heading;
       target.requestFocus();
       if (FocusManager.instance.highlightMode ==
           FocusHighlightMode.traditional) {

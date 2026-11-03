@@ -8,6 +8,10 @@ import 'package:models/domain.dart';
 /// condition itself where the answer is [AccessExtent.some].
 abstract interface class CallerAccessRepository {
   /// The latest answer, [CallerAccess.unknown] until one has been kept.
+  ///
+  /// Replaced only by an answer that differs from it, the one [changes]
+  /// emits: an equal answer leaves this the same instance, so a caller can
+  /// tell by identity whether anything has landed since it read this.
   CallerAccess get current;
 
   /// Each answer that differs from the last.

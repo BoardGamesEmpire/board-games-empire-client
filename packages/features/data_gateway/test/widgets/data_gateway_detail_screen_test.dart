@@ -532,6 +532,33 @@ void main() {
       expect(focusIsIn(tester, refreshButton), isTrue);
     });
 
+    for (final (control, label) in [
+      ('switch', 'Search'),
+      ('interview button', 'Interview again'),
+    ]) {
+      testWidgets('a focused $control keeps focus when update falls and comes '
+          'back before the next frame', (tester) async {
+        final mayUpdate = access.current;
+        remote.onFetchOne = (_) async => row();
+        await pumpScreen(tester);
+        final (target, kept) = control == 'switch'
+            ? (textIn(capability(search), label), capability(search))
+            : (textIn(interviewButton, label), interviewButton);
+        await tester.ensureVisible(target);
+        await tester.pumpAndSettle();
+        await focusOn(tester, target);
+
+        // Each answer reaches the screen, but no frame is drawn between them.
+        access.current = readOnly;
+        await tester.binding.delayed(Duration.zero);
+        access.current = mayUpdate;
+        await tester.binding.delayed(Duration.zero);
+        await tester.pumpAndSettle();
+
+        expect(focusIsIn(tester, kept), isTrue);
+      });
+    }
+
     testWidgets('interview again shows busy, then the banner', (tester) async {
       final interview = Completer<DataGatewayInterviewResult>();
       remote.onFetchOne = (_) async => row();

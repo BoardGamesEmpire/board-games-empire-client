@@ -473,6 +473,39 @@ void main() {
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused read reads again when access fell and came back while it '
+      'was out',
+      setUp: () {
+        refusal = Completer();
+        remote.onFetchPage = (_, _) => refusal.future;
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        // Back to an answer equal to the one the read went out under, so
+        // only that answers landed meanwhile says the refusal is older.
+        access.current = FakeCallerAccessRepository.dataGateway();
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+          update: AccessExtent.all,
+          delete: AccessExtent.all,
+        );
+        await pumpEventQueue();
+        remote.listing([bgg]);
+        refusal.completeError(forbidden());
+      },
+      expect: () => [
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+        const DataGatewayListLoading(),
+        ready([bgg]),
+      ],
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
       'a refused read asks access again even when a newer read has '
       'superseded it',
       setUp: () {

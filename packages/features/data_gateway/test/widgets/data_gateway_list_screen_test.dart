@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
+import 'package:network_interface/network_interface.dart';
 import 'package:ui_tokens/ui_tokens.dart';
 
 import '../support/fake_data_gateway_remote.dart';
@@ -411,6 +412,30 @@ void main() {
         findsNothing,
       );
       expectFocusOn(tester, 'Steam');
+    });
+
+    testWidgets('a row menu with focus hands it to the heading when its row '
+        'goes as update and delete fall', (tester) async {
+      remote.listing([bgg, steam]);
+      await pumpScreen(tester, onOpen: (_, _) {});
+      focusOn(tester, find.byKey(DataGatewayListScreen.rowMenuKey('dg_2')));
+      await tester.pump();
+
+      // A read lands without Steam under access that has just fallen: one
+      // state drops the row and takes every menu away.
+      final reread = Completer<PaginatedResult<DataGateway>>();
+      remote.onFetchPage = (_, _) => reread.future;
+      tester
+          .element(find.text('BGG'))
+          .read<DataGatewayListBloc>()
+          .add(const DataGatewayListLoadRequested());
+      await tester.binding.delayed(Duration.zero);
+      access.current = mayOnlyAdd;
+      reread.complete(pageOf([bgg]));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Steam'), findsNothing);
+      expectFocusOn(tester, 'Data gateways');
     });
 
     testWidgets('with rows that do not open, a row menu with focus hands it '

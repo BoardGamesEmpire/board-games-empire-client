@@ -11,9 +11,15 @@ import 'package:models/domain.dart';
 /// off finds that same answer, so nothing says it changed. The screen reads
 /// again on this instead, once: the read that follows goes out under the
 /// answer that is current, so a refusal of it is not one this answers.
+///
+/// Compared by identity, not equality. Access that fell and came back while
+/// the read was out ends on an answer equal to [sentUnder], and the refusal
+/// may be from the fall. A repository keeps an answer only when it differs
+/// from the last, so [CallerAccessRepository.current] is still [sentUnder]
+/// itself exactly when nothing has landed since.
 bool readAllowedSince(CallerAccessRepository? access, CallerAccess? sentUnder) {
   final current = access?.current;
   return current != null &&
-      current != sentUnder &&
+      !identical(current, sentUnder) &&
       current.allows(ResourceType.dataGateway, AccessAction.read);
 }

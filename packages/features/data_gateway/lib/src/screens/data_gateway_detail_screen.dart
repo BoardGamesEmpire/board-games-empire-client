@@ -778,7 +778,8 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
           (previous.gateway.enabled && !current.gateway.enabled));
 
   /// Runs before the frame that takes the control away, while it still has
-  /// focus.
+  /// focus, and hands it on after that frame. Not if access has given the
+  /// control back by then.
   void _onControlTakenAway(BuildContext context, DataGatewayDetailState state) {
     if (state is! DataGatewayDetailReady) return;
     // Without update every control goes or stops. With it, only the button
@@ -787,9 +788,17 @@ class _OutcomeFooterState extends State<_OutcomeFooter> {
         ? widget.interview.hasFocus
         : widget.controls.hasFocus;
     if (!hadFocus) return;
+    final onInterview = widget.interview.hasFocus;
     final banner = state.outcome != null;
+    final bloc = context.read<DataGatewayDetailBloc>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      final now = bloc.state;
+      final back =
+          now is DataGatewayDetailReady &&
+          now.mayUpdate &&
+          (!onInterview || now.gateway.enabled);
+      if (back) return;
       if (banner) {
         _focusDismiss();
       } else {
