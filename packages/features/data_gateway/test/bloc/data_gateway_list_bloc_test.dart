@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,20 +11,40 @@ import '../support/fake_data_gateway_remote.dart';
 
 void main() {
   late FakeDataGatewayRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
 
   final bgg = gateway('dg_1', name: 'BGG');
   final steam = gateway('dg_2', name: 'Steam', enabled: false);
 
+  /// A caller who may do anything to a DataGateway.
+  final everything = FakeCallerAccessRepository.dataGateway(
+    create: AccessExtent.all,
+    read: AccessExtent.all,
+    update: AccessExtent.all,
+    delete: AccessExtent.all,
+  );
+
   setUp(() {
     remote = FakeDataGatewayRemote();
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository(everything);
   });
-
-  tearDown(() => access.dispose());
 
   DataGatewayListBloc build() =>
       DataGatewayListBloc(remote: remote, access: access);
+
+  /// [gateways] as a caller who may do anything sees them.
+  DataGatewayListReady ready(
+    List<DataGateway> gateways, {
+    Set<String> busy = const {},
+    DataGatewayListOutcome? outcome,
+  }) => DataGatewayListReady(
+    gateways: gateways,
+    mayCreate: true,
+    mayUpdate: true,
+    mayDelete: true,
+    busy: busy,
+    outcome: outcome,
+  );
 
   group('loading', () {
     blocTest<DataGatewayListBloc, DataGatewayListState>(
@@ -33,9 +54,8 @@ void main() {
       act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
       expect: () => [
         const DataGatewayListLoading(),
-        DataGatewayListReady(gateways: [bgg, steam]),
+        ready([bgg, steam]),
       ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.granted),
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
@@ -46,20 +66,8 @@ void main() {
       act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
       skip: 1,
       expect: () => [
-        DataGatewayListReady(gateways: [bgg, steam]),
+        ready([bgg, steam]),
       ],
-    );
-
-    blocTest<DataGatewayListBloc, DataGatewayListState>(
-      'a refused read is access-denied, and the session learns it',
-      setUp: () => remote.refusingReads(),
-      build: build,
-      act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
-      expect: () => [
-        const DataGatewayListLoading(),
-        const DataGatewayListDenied(),
-      ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.denied),
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
@@ -85,7 +93,7 @@ void main() {
         const DataGatewayListLoading(),
         const DataGatewayListFailed(),
       ],
-      verify: (_) => expect(access.value.read, DataGatewayRead.unknown),
+      verify: (_) => expect(access.refreshCount, 0),
     );
   });
 
@@ -113,9 +121,9 @@ void main() {
       },
       skip: 2,
       expect: () => [
-        DataGatewayListReady(gateways: [steam], busy: const {'dg_2'}),
-        DataGatewayListReady(
-          gateways: [steam.copyWith(enabled: true)],
+        ready([steam], busy: const {'dg_2'}),
+        ready(
+          [steam.copyWith(enabled: true)],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.connect,
             result: DataGatewayActionResult.done,
@@ -149,8 +157,8 @@ void main() {
       },
       skip: 3,
       expect: () => [
-        DataGatewayListReady(
-          gateways: [steam.copyWith(enabled: true)],
+        ready(
+          [steam.copyWith(enabled: true)],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.connect,
             result: DataGatewayActionResult.attemptFailed,
@@ -212,8 +220,8 @@ void main() {
       },
       skip: 3,
       expect: () => [
-        DataGatewayListReady(
-          gateways: [steam],
+        ready(
+          [steam],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.delete,
             result: DataGatewayActionResult.done,
@@ -243,9 +251,9 @@ void main() {
       },
       skip: 3,
       expect: () => [
-        const DataGatewayListReady(
-          gateways: [],
-          outcome: DataGatewayListOutcome(
+        ready(
+          const [],
+          outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.delete,
             result: DataGatewayActionResult.gone,
             name: 'BGG',
@@ -255,10 +263,61 @@ void main() {
     );
   });
 
-  group('a reader who may not change DataGateways (#41)', () {
+  group('what the caller may do (#456)', () {
     blocTest<DataGatewayListBloc, DataGatewayListState>(
-      'the first refused change hides the change actions and tells the '
-      'session',
+      'offers each action on its own permission',
+      setUp: () {
+        remote.listing([bgg]);
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+          update: AccessExtent.some,
+        );
+      },
+      build: build,
+      act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
+      expect: () => [
+        const DataGatewayListLoading(),
+        DataGatewayListReady(gateways: [bgg], mayCreate: true, mayUpdate: true),
+      ],
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'offers nothing while access is unknown, then follows the answer',
+      setUp: () {
+        remote.listing([bgg]);
+        access.current = const CallerAccess.unknown();
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          update: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayListLoading(),
+        DataGatewayListReady(gateways: [bgg]),
+        DataGatewayListReady(gateways: [bgg], mayUpdate: true),
+      ],
+      // Without reading the list again.
+      verify: (_) => expect(remote.calls, ['fetchPage(1, 100)']),
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'offers nothing without a session to ask',
+      setUp: () => remote.listing([bgg]),
+      build: () => DataGatewayListBloc(remote: remote),
+      act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
+      skip: 1,
+      expect: () => [
+        DataGatewayListReady(gateways: [bgg]),
+      ],
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused change asks access again and keeps following it',
       setUp: () {
         remote.listing([bgg]);
         remote.onConnect = (_) async => throw forbidden();
@@ -273,28 +332,128 @@ void main() {
             'dg_1',
           ),
         );
+        await pumpEventQueue();
+        expect(access.refreshCount, 1);
+        // What the ask found.
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+          delete: AccessExtent.all,
+        );
       },
       skip: 3,
-      expect: () => [
-        DataGatewayListReady(
-          gateways: [bgg],
-          mayChange: false,
-          outcome: const DataGatewayListOutcome(
-            action: DataGatewayRowAction.connect,
-            result: DataGatewayActionResult.refused,
-            name: 'BGG',
+      expect: () {
+        const refused = DataGatewayListOutcome(
+          action: DataGatewayRowAction.connect,
+          result: DataGatewayActionResult.refused,
+          name: 'BGG',
+        );
+        return [
+          ready([bgg], outcome: refused),
+          DataGatewayListReady(
+            gateways: [bgg],
+            mayCreate: true,
+            mayDelete: true,
+            outcome: refused,
           ),
-        ),
-      ],
-      verify: (_) => expect(access.value.mayChange, isFalse),
+        ];
+      },
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
-      'a refused read is not a refused change: a user let in later in the '
-      'session is offered the change actions',
+      'a refused read asks access again',
+      setUp: () => remote.refusingReads(),
+      build: build,
+      act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
+      expect: () => [
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+      ],
+      verify: (_) => expect(access.refreshCount, 1),
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused read reads again once a changed answer allows read',
+      setUp: () {
+        // A first owner whose roles the server had not written yet.
+        access = FakeCallerAccessRepository();
+        remote.refusingReads();
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        remote.listing([bgg]);
+        access.current = everything;
+      },
+      expect: () => [
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+        const DataGatewayListLoading(),
+        ready([bgg]),
+      ],
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused read stays denied while a changed answer still refuses read',
+      setUp: () {
+        access = FakeCallerAccessRepository();
+        remote.refusingReads();
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        access.current = FakeCallerAccessRepository.dataGateway(
+          create: AccessExtent.all,
+        );
+      },
+      expect: () => [
+        const DataGatewayListLoading(),
+        const DataGatewayListDenied(),
+      ],
+      verify: (_) => expect(remote.calls, ['fetchPage(1, 100)']),
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a refused read asks access again even when a newer read has '
+      'superseded it',
+      setUp: () {
+        final refused = Completer<PaginatedResult<DataGateway>>();
+        var reads = 0;
+        remote.onFetchPage = (_, _) {
+          reads++;
+          if (reads == 1) {
+            // Refused after the second read has answered.
+            Future<void>.delayed(
+              Duration.zero,
+              () => refused.completeError(forbidden()),
+            );
+            return refused.future;
+          }
+          return Future.value(pageOf([bgg]));
+        };
+      },
+      build: build,
+      act: (bloc) async {
+        bloc
+          ..add(const DataGatewayListLoadRequested())
+          ..add(const DataGatewayListLoadRequested());
+        await pumpEventQueue(times: 50);
+      },
+      verify: (bloc) {
+        expect(bloc.state, ready([bgg]));
+        expect(access.refreshCount, 1);
+      },
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'a read that succeeds while access is unknown asks access again',
+      // The first ask failed with the server up, and nothing else would ask
+      // again until a rehydrate trigger.
       setUp: () {
         remote.listing([bgg]);
-        access.readDenied();
+        access.current = const CallerAccess.unknown();
       },
       build: build,
       act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
@@ -302,34 +461,96 @@ void main() {
       expect: () => [
         DataGatewayListReady(gateways: [bgg]),
       ],
+      verify: (_) => expect(access.refreshCount, 1),
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
-      'opens with the change actions hidden once the session has learned it',
-      setUp: () {
-        remote.listing([bgg]);
-        access.changeDenied();
-      },
+      'a read that succeeds while access is known asks nothing',
+      setUp: () => remote.listing([bgg]),
       build: build,
       act: (bloc) => bloc.add(const DataGatewayListLoadRequested()),
       skip: 1,
       expect: () => [
-        DataGatewayListReady(gateways: [bgg], mayChange: false),
+        ready([bgg]),
       ],
+      verify: (_) => expect(access.refreshCount, 0),
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
-      'hides them when another screen learns it',
+      'drops a delete it may not send',
+      setUp: () {
+        remote.listing([bgg]);
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+          update: AccessExtent.all,
+        );
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        bloc.add(
+          const DataGatewayListActionRequested(
+            DataGatewayRowAction.delete,
+            'dg_1',
+          ),
+        );
+      },
+      skip: 1,
+      expect: () => [
+        DataGatewayListReady(gateways: [bgg], mayUpdate: true),
+      ],
+      verify: (_) => expect(remote.calls, ['fetchPage(1, 100)']),
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'drops a connect or disconnect it may not send',
+      setUp: () {
+        remote.listing([bgg]);
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+          delete: AccessExtent.all,
+        );
+      },
+      build: build,
+      act: (bloc) async {
+        bloc.add(const DataGatewayListLoadRequested());
+        await pumpEventQueue();
+        bloc
+          ..add(
+            const DataGatewayListActionRequested(
+              DataGatewayRowAction.connect,
+              'dg_1',
+            ),
+          )
+          ..add(
+            const DataGatewayListActionRequested(
+              DataGatewayRowAction.disconnect,
+              'dg_1',
+            ),
+          );
+      },
+      skip: 1,
+      expect: () => [
+        DataGatewayListReady(gateways: [bgg], mayDelete: true),
+      ],
+      verify: (_) => expect(remote.calls, ['fetchPage(1, 100)']),
+    );
+
+    blocTest<DataGatewayListBloc, DataGatewayListState>(
+      'stops listening on close',
       setUp: () => remote.listing([bgg]),
       build: build,
       act: (bloc) async {
         bloc.add(const DataGatewayListLoadRequested());
         await pumpEventQueue();
-        access.changeDenied();
+        await bloc.close();
+        access.current = const CallerAccess.unknown();
+        await pumpEventQueue();
       },
-      skip: 2,
       expect: () => [
-        DataGatewayListReady(gateways: [bgg], mayChange: false),
+        const DataGatewayListLoading(),
+        ready([bgg]),
       ],
     );
   });
@@ -353,8 +574,8 @@ void main() {
     },
     skip: 3,
     expect: () => [
-      DataGatewayListReady(
-        gateways: [bgg],
+      ready(
+        [bgg],
         outcome: const DataGatewayListOutcome(
           action: DataGatewayRowAction.disconnect,
           result: DataGatewayActionResult.failed,
@@ -391,10 +612,7 @@ void main() {
         await pumpEventQueue();
         bloc.add(const DataGatewayListLoadRequested());
         await pumpEventQueue();
-        expect(
-          bloc.state,
-          DataGatewayListReady(gateways: [bgg, steam], busy: const {'dg_2'}),
-        );
+        expect(bloc.state, ready([bgg, steam], busy: const {'dg_2'}));
         // The server lists the connect's write once it has made it.
         remote.listing([bgg, steam.copyWith(enabled: true)]);
         pending.complete(
@@ -407,8 +625,8 @@ void main() {
       },
       verify: (bloc) => expect(
         bloc.state,
-        DataGatewayListReady(
-          gateways: [bgg, steam.copyWith(enabled: true)],
+        ready(
+          [bgg, steam.copyWith(enabled: true)],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.connect,
             result: DataGatewayActionResult.done,
@@ -446,8 +664,7 @@ void main() {
           ..add(const DataGatewayListLoadRequested());
         await pumpEventQueue(times: 50);
       },
-      verify: (bloc) =>
-          expect(bloc.state, DataGatewayListReady(gateways: [steam])),
+      verify: (bloc) => expect(bloc.state, ready([steam])),
     );
 
     blocTest<DataGatewayListBloc, DataGatewayListState>(
@@ -491,8 +708,8 @@ void main() {
       },
       verify: (bloc) => expect(
         bloc.state,
-        DataGatewayListReady(
-          gateways: [bggOff],
+        ready(
+          [bggOff],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.disconnect,
             result: DataGatewayActionResult.done,
@@ -539,11 +756,8 @@ void main() {
       },
       verify: (bloc) => expect(
         bloc.state,
-        DataGatewayListReady(
-          gateways: [
-            bgg,
-            steam.copyWith(enabled: true, name: 'Steam EU'),
-          ],
+        ready(
+          [bgg, steam.copyWith(enabled: true, name: 'Steam EU')],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.connect,
             result: DataGatewayActionResult.done,
@@ -589,8 +803,8 @@ void main() {
       },
       verify: (bloc) => expect(
         bloc.state,
-        DataGatewayListReady(
-          gateways: [steam],
+        ready(
+          [steam],
           outcome: const DataGatewayListOutcome(
             action: DataGatewayRowAction.delete,
             result: DataGatewayActionResult.done,
@@ -633,9 +847,8 @@ void main() {
         },
         verify: (bloc) => expect(
           bloc.state,
-          DataGatewayListReady(
-            gateways: [bggOff],
-            mayChange: result != DataGatewayActionResult.refused,
+          ready(
+            [bggOff],
             outcome: DataGatewayListOutcome(
               action: DataGatewayRowAction.disconnect,
               result: result,
@@ -668,7 +881,7 @@ void main() {
     },
     skip: 4,
     expect: () => [
-      DataGatewayListReady(gateways: [bgg]),
+      ready([bgg]),
     ],
   );
 }

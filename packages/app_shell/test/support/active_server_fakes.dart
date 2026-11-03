@@ -208,6 +208,7 @@ ActiveServer buildActiveServer(
   SyncQueueDrain? syncQueueDrain,
   DataGatewayRemoteDataSource? dataGatewayRemoteDataSource,
   DataGatewayAccess? dataGatewayAccess,
+  CallerAccessRepository? callerAccess,
   GamesRemoteDataSource? gamesRemoteDataSource,
   GameRepository? gameRepository,
   String serverId = 'server-uuid-1',
@@ -300,6 +301,9 @@ ActiveServer buildActiveServer(
   }
   if (dataGatewayAccess != null) {
     container.registerSingleton<DataGatewayAccess>(dataGatewayAccess);
+  }
+  if (callerAccess != null) {
+    container.registerSingleton<CallerAccessRepository>(callerAccess);
   }
   if (gamesRemoteDataSource != null) {
     container.registerSingleton<GamesRemoteDataSource>(gamesRemoteDataSource);

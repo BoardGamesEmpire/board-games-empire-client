@@ -1953,8 +1953,15 @@ class _BgeAppState extends State<BgeApp> {
       ? container.get<DataGatewayAccess>()
       : null;
 
+  /// The session's [CallerAccessRepository] (#456), or null where the session
+  /// has none to ask, which offers no action that needs it.
+  static CallerAccessRepository? _callerAccess(DependencyContainer container) =>
+      container.isRegistered<CallerAccessRepository>()
+      ? container.get<CallerAccessRepository>()
+      : null;
+
   /// The #41 DataGateway list: the per-server [DataGatewayRemoteDataSource]
-  /// and the session's [DataGatewayAccess] from the active server's
+  /// and the session's [CallerAccessRepository] from the active server's
   /// container. Null (→ [NotYetAvailableScreen]) when no active server is
   /// resolvable or it has no DataGateway client.
   ///
@@ -1973,7 +1980,7 @@ class _BgeAppState extends State<BgeApp> {
 
     return DataGatewayListScreen(
       remote: container.get<DataGatewayRemoteDataSource>(),
-      access: _dataGatewayAccess(container),
+      access: _callerAccess(container),
       onAdd: (ctx) => unawaited(ctx.push<void>(AppRoutes.dataGatewayAdd)),
       onEdit: (ctx, id) =>
           unawaited(ctx.push<void>(AppRoutes.dataGatewayEditOf(id))),

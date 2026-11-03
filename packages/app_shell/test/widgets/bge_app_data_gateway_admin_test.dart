@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_shell/app_shell.dart';
+import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:flutter/material.dart';
@@ -126,13 +127,18 @@ void main() {
 
   tearDown(() => access.dispose());
 
-  Future<void> pumpHome(WidgetTester tester, {bool withAccess = true}) async {
+  Future<void> pumpHome(
+    WidgetTester tester, {
+    bool withAccess = true,
+    FakeCallerAccessRepository? callerAccess,
+  }) async {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           dataGatewayRemoteDataSource: remote,
           dataGatewayAccess: withAccess ? access : null,
+          callerAccess: callerAccess,
         ),
       ),
     );
@@ -216,16 +222,17 @@ void main() {
   });
 
   testWidgets('a deep link by a user who may not read shows access-denied, '
-      'and the entry stays hidden (#41)', (tester) async {
+      "and asks the session's access again (#41, #456)", (tester) async {
+    final callerAccess = FakeCallerAccessRepository();
     remote.read = () async => throw _forbidden;
-    await pumpHome(tester);
+    await pumpHome(tester, callerAccess: callerAccess);
 
     GoRouter.of(tester.element(find.byType(HomeScreen)))
         .go(AppRoutes.adminDataGateways);
     await tester.pumpAndSettle();
 
     expect(find.text("You don't have access to data gateways"), findsOneWidget);
-    expect(access.value.read, DataGatewayRead.denied);
+    expect(callerAccess.refreshCount, 1);
   });
 
   testWidgets('the list beneath a deep-linked form reads itself again when '
