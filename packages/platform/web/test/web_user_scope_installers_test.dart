@@ -1,11 +1,10 @@
-// The list is platform-neutral by construction — both entries come from
-// packages that compile for the VM — which is exactly why its membership can
+// The list is platform-neutral by construction — every entry comes from a
+// package that compiles for the VM — which is exactly why its membership can
 // be asserted here rather than only in a browser suite (#137).
 @TestOn('vm')
 library;
 
 import 'package:access/access.dart';
-import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:drift_storage/drift_storage.dart';
 import 'package:events/events.dart';
@@ -24,29 +23,15 @@ void main() {
       // Order is structural: the re-hydrate registry has to exist before any
       // hydrating installer can register itself with it (#302), and each
       // hydrate installer resolves a repository the tier above it registers.
-      expect(installers, hasLength(9));
+      expect(installers, hasLength(8));
       expect(installers[0], isA<SessionRehydratorInstaller>());
       expect(installers[1], isA<UserSessionScopeInstaller>());
       expect(installers[2], isA<HouseholdHydrateInstaller>());
       expect(installers[3], isA<GameCollectionHydrateInstaller>());
       expect(installers[4], isA<EventHydrateInstaller>());
       expect(installers[5], isA<CallerAccessInstaller>());
-      expect(installers[6], isA<DataGatewayAccessInstaller>());
-      expect(installers[7], isA<SyncSenderInstaller>());
-      expect(installers[8], isA<SyncQueueDrainInstaller>());
-    });
-
-    test('runs the same DataGateway access installer native does, after the '
-        'rehydrator it registers with (#41)', () {
-      final installers = buildWebUserScopeInstallers();
-
-      expect(installers.whereType<DataGatewayAccessInstaller>(), hasLength(1));
-      expect(
-        installers.indexWhere((i) => i is DataGatewayAccessInstaller),
-        greaterThan(
-          installers.indexWhere((i) => i is SessionRehydratorInstaller),
-        ),
-      );
+      expect(installers[6], isA<SyncSenderInstaller>());
+      expect(installers[7], isA<SyncQueueDrainInstaller>());
     });
 
     test('has one CallerAccessInstaller, after the rehydrator, asking for the '

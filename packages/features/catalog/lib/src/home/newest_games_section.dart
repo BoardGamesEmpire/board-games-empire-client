@@ -40,7 +40,8 @@ import 'shelf_loading.dart';
 ///
 /// The callback is read when the section builds, and not kept by the cubit, so
 /// that it arriving, or going, swaps the one for the other without reading the
-/// server again.
+/// server again. Whichever of the two has focus as it goes hands it to the
+/// other (#456).
 ///
 /// ## A failed read
 ///
@@ -134,7 +135,7 @@ class NewestGamesSection extends StatelessWidget {
   }
 }
 
-class _Section extends StatelessWidget {
+class _Section extends StatefulWidget {
   const _Section({
     required this.onSeeAll,
     required this.onOpen,
@@ -146,10 +147,68 @@ class _Section extends StatelessWidget {
   final void Function(BuildContext context)? onConnectDataGateway;
 
   @override
+  State<_Section> createState() => _SectionState();
+}
+
+class _SectionState extends State<_Section> {
+  /// On the empty card's button.
+  final FocusNode _connect = FocusNode(debugLabel: 'newest games connect');
+
+  /// On the plain empty message, which takes focus only when sent there.
+  final FocusNode _message = FocusNode(debugLabel: 'newest games empty');
+
+  @override
+  void didUpdateWidget(_Section oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _keepConnectFocus(oldWidget);
+  }
+
+  /// Hands focus between the card's button and the message as the callback
+  /// comes and goes (#456).
+  ///
+  /// The callback follows the caller's access to create, which can change
+  /// whenever the session asks again. Each of the two takes the other's
+  /// place, and left to go with the one that had it, focus would fall to the
+  /// page, which shows none, and the next Tab would start again from the top.
+  /// So focus on the button goes to the message, which says why there is
+  /// nothing to press, and the next Tab goes on from there. Focus on the
+  /// message goes to the button, the one control in the card that replaces
+  /// it.
+  ///
+  /// Runs before the frame that swaps them, while the one going still has
+  /// focus.
+  void _keepConnectFocus(_Section oldWidget) {
+    final had = oldWidget.onConnectDataGateway != null;
+    final has = widget.onConnectDataGateway != null;
+    final FocusNode from;
+    final FocusNode to;
+    if (had && !has) {
+      (from, to) = (_connect, _message);
+    } else if (!had && has) {
+      (from, to) = (_message, _connect);
+    } else {
+      return;
+    }
+    if (!from.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Not built when the section left its empty state in the same frame.
+      if (!mounted || !(to.context?.mounted ?? false)) return;
+      to.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _connect.dispose();
+    _message.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cubit = context.read<NewestGamesCubit>();
-    final onOpen = this.onOpen;
-    final onConnect = onConnectDataGateway;
+    final onOpen = widget.onOpen;
+    final onConnect = widget.onConnectDataGateway;
 
     return ReadAgainWhenUncovered(
       onUncovered: cubit.load,
@@ -160,9 +219,11 @@ class _Section extends StatelessWidget {
             onConnect: () => onConnect(context),
             messageKey: NewestGamesSection.emptyKey,
             actionKey: NewestGamesSection.emptyActionKey,
+            actionFocusNode: _connect,
           ),
-          NewestGamesEmpty() => const EmptyServerMessage(
+          NewestGamesEmpty() => EmptyServerMessage(
             messageKey: NewestGamesSection.emptyKey,
+            focusNode: _message,
           ),
           NewestGamesLoading() => _shelf(
             context,
@@ -208,7 +269,7 @@ class _Section extends StatelessWidget {
       actions: [
         TextButton(
           key: NewestGamesSection.linkKey,
-          onPressed: () => onSeeAll(context),
+          onPressed: () => widget.onSeeAll(context),
           child: Text(
             l10n.catalogNewestSeeAll,
             // "See all" alone doesn't say of what.

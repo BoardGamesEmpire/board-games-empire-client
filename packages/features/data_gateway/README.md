@@ -17,27 +17,58 @@ anyway.
 
 ## Who sees what
 
-Owner and Admin may read and change DataGateways. Moderator may read them and
-not change them. Other roles may do neither. No route tells the client which
-of these the user is, so `DataGatewayAccess` learns it from the API's own
-refusals:
+A control shows only where the server says the caller may take its action
+(#456). The session's `CallerAccessRepository`, from `packages/core/access`,
+asks `GET /api/users/me/access?resourceTypes=DataGateway` on every sign-in,
+unawaited, and every screen here reads its answer: for each action on
+DataGateways, `all`, `some` or `none`. An action shows on `all` or `some`. On
+`some` the server decides which DataGateways, and the client checks no
+condition of its own.
 
-- `DataGatewayAccessInstaller` runs on every sign-in and reads one row,
-  unawaited. A 200 shows the Admin entry in the home drawer; a 403 hides it,
-  once a second read two seconds later is refused too. The server writes a
-  new user's roles after sign-up has answered, so a read sent straight after
-  it is refused even for the first owner (backend#490).
-  A read that fails for another reason leaves the answer unknown, and the
-  session's rehydrator asks again on the next connectivity edge or resume.
-- A deep link to a screen reaches it either way. A refused read shows an
-  access-denied state.
-- Change actions show to everyone who can read. The first 403 on a change
-  hides them on the list, the form and the detail page until the session ends.
-  On the detail page the capability switches stay in place and stop taking
-  presses, and the worklist's row menus go.
+Each control needs one action:
 
-#456 replaces the last rule with the caller's abilities once backend#757
-exposes them.
+- **create**: Add on the list, the add form's save, and the connect card home
+  offers on a server with no games.
+- **update**: edit, connect and disconnect on the list, the edit form's save,
+  Interview again and the capability switches on the detail page, and the
+  worklist's Link, Ignore and Add this language.
+- **delete**: delete on the list.
+- **read**: the Admin entry in the home drawer, and the DataGateway names on
+  the game search's results.
+
+While the answer is unknown, every action is hidden, and nothing is said about
+the role. A list row with neither update nor delete has no menu. Without
+update, the capability switches stay in place, showing where each capability
+stands, and take no presses, and the edit form is read-only and says why. An
+add the caller may not make shows access-denied in place of the form.
+
+The controls follow each answer as it lands, up or down, without reading the
+DataGateways again. The session asks again on every connectivity edge and
+resume, and whenever the user enters the household list, the collection or the
+events. A failed ask keeps the last answer.
+
+While nothing is known yet, a DataGateway read that succeeds asks again too,
+so a first ask that failed with the server up, as on a proxy's 502, doesn't
+wait for one of those triggers. And an answer of `none` for every action is
+asked once more two seconds later before it is kept: the server writes a new
+user's roles after sign-up has answered, so an ask sent straight after it
+finds none even for the first owner (backend#490). An answer is kept only
+while the session is still this user's, since on web another tab can move the
+shared cookie (#432).
+
+A 403 asks again. A refused read shows access-denied, a refused change says
+why in its banner, and a refused read of the search's names leaves the results
+unnamed. None of them hides anything by itself: the refusal is the server's
+word that the answer here is out of date, as when a role changed, and the
+controls follow what the next answer says. A deep link reaches a screen
+whatever the answer; a refused read there shows access-denied.
+
+A control that access takes away while it has keyboard focus hands focus on,
+so it isn't left on nothing. On the list it goes to the banner's Dismiss while
+an outcome shows, else from a row's menu to its row, else to the page's
+heading. On the form it goes from the save to the last field, and from an add
+that closes to the page's heading. In the worklist it goes to the selected
+filter. The detail page's own rule is below.
 
 ## What a row says
 
@@ -81,8 +112,8 @@ shows, top to bottom:
   one short: at 200% text on a phone, to a few letters.
 - **Status.** Enabled or disabled, and for an enabled one the row's line.
 - **Interview.** When it was first and last interviewed, the failure that is
-  current, and Interview again, on an enabled DataGateway while changes are
-  allowed.
+  current, and Interview again, on an enabled DataGateway while the caller's
+  access allows update.
 - **Lists.** One row for each list the DataGateway declares: languages,
   platforms, categories and mechanics. Each says when it last loaded and,
   while one is current, when and why it failed. A list with nothing recorded
@@ -102,10 +133,11 @@ What an action answered shows in the page's footer: what an action on the
 DataGateway answered, then what an action on a language link answered, each
 with its own Dismiss. The footer is always built and always on screen, so a
 banner there is seen and announced wherever the admin is working on the long
-page, and its coming and going moves no control. When a refusal, or a row
-found disabled, takes away the control that had focus, focus goes to the
-banner's Dismiss, or with no banner to the first switch still taking presses,
-or else to refresh.
+page, and its coming and going moves no control. When access that no longer
+allows update, or a row found disabled, takes away the control that had focus,
+focus goes to the banner's Dismiss, or with no banner to the first switch still
+taking presses, or else to refresh. A refusal takes nothing away by itself, so
+the control keeps focus through it until the next answer says otherwise.
 
 **Interview again** waits 60 seconds for the answer. In a browser that is the
 connect timeout as well, because a browser reports a slow answer as a connect
@@ -215,8 +247,10 @@ model reads neither, so nothing here could show or log one.
 - `DataGatewayEnabledBadge` and `DataGatewayStatusLine`, in
   `data_gateway_status.dart`: a row's badge and status line, shared by the
   list and the detail page.
-- `DataGatewayAccess` and `DataGatewayAccessInstaller`: the session's access,
-  above.
+- `dataGatewayResourceTypes`: the resource types these screens gate their
+  controls on, which both compositions hand to `CallerAccessInstaller`.
+- `readDataGatewayNames`: every DataGateway's name, by id, for the game
+  search.
 
 The remote is `DataGatewayRemoteDataSource` in `network_interface`,
 implemented in `dio_network` and registered per server on both platforms. It
@@ -230,9 +264,12 @@ language catalogue the picker searches.
   and would otherwise open as the detail page of a DataGateway called "new".
   The forms and the detail page are pushed from the list, so a deep link to
   one builds the list beneath it.
-- **Drawer**: the Admin entry, shown while `DataGatewayAccess` says the read
-  was granted.
-- **Scope**: `DataGatewayAccessInstaller` in both user-scope installer lists,
-  after `SessionRehydratorInstaller`.
+- **Home and search**: the drawer's Admin entry while the session's
+  `CallerAccessRepository` allows read, the connect card while it allows
+  create, and the search's DataGateway names while it allows read. A refused
+  read of the names asks it again.
+- **Scope**: `CallerAccessInstaller(resourceTypes: dataGatewayResourceTypes)`
+  in both user-scope installer lists, after `SessionRehydratorInstaller` and
+  `UserSessionScopeInstaller`.
 - **Localizations**: `DataGatewayLocalizations.delegate`, registered by
   `BgeApp`.

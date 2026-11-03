@@ -1,6 +1,5 @@
 import 'package:access/access.dart' show CallerAccessInstaller;
-import 'package:data_gateway/data_gateway.dart'
-    show DataGatewayAccessInstaller, dataGatewayResourceTypes;
+import 'package:data_gateway/data_gateway.dart' show dataGatewayResourceTypes;
 import 'package:di/di.dart' show SessionRehydratorInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
@@ -53,16 +52,11 @@ import 'package:sync_queue/sync_queue.dart'
 ///
 /// [CallerAccessInstaller] is shared with native (#456): one unawaited ask
 /// for what the caller may do with the DataGateway types, registered as the
-/// `CallerAccessRepository` the DataGateway screens read. It resolves the
+/// `CallerAccessRepository` that the DataGateway screens, home's Admin entry
+/// and connect card, and the search's DataGateway names read. It resolves the
 /// `UserRemoteDataSource` that `registerServerNetworkWeb` registers in the
 /// origin scope, and registers its re-ask with the rehydrator above, so it
 /// runs after both that and [UserSessionScopeInstaller].
-///
-/// [DataGatewayAccessInstaller] is native's own as well (#41): one unawaited
-/// read of a DataGateway row that decides whether the home drawer offers the
-/// Admin entry. It resolves the `DataGatewayRemoteDataSource` that
-/// `registerServerNetworkWeb` registers in the origin scope, and registers
-/// its re-check with the rehydrator above.
 ///
 /// [SyncSenderInstaller] registers the sender the create screen's inline
 /// send goes through (#121), over the repositories above it. On web it asks
@@ -91,7 +85,6 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   GameCollectionHydrateInstaller(),
   EventHydrateInstaller(),
   CallerAccessInstaller(resourceTypes: dataGatewayResourceTypes),
-  DataGatewayAccessInstaller(),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
 ];

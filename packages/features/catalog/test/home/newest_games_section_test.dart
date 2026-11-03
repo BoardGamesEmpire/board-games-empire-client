@@ -52,6 +52,7 @@ void main() {
     void Function(BuildContext context)? onSeeAll,
     void Function(BuildContext context, String gameId)? onOpen,
     void Function(BuildContext context)? onConnectDataGateway,
+    Widget? above,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
     theme: BgeTheme.light(),
@@ -61,6 +62,7 @@ void main() {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          ?above,
           NewestGamesSection(
             remote: source ?? remote,
             cache: cache,
@@ -398,6 +400,120 @@ void main() {
       expect(action, findsNothing);
       expect(tester.element(message).read<NewestGamesCubit>(), same(cubit));
       expect(remote.calls, hasLength(1));
+    });
+
+    // The callback follows the caller's access to create, which can change
+    // whenever the session asks again.
+    group('the card coming and going (#456)', () {
+      final other = find.byKey(const Key('other'));
+
+      Widget withOther({void Function(BuildContext context)? connect}) =>
+          harness(
+            onConnectDataGateway: connect,
+            above: TextButton(
+              key: const Key('other'),
+              onPressed: () {},
+              child: const Text('Other'),
+            ),
+          );
+
+      testWidgets('with focus on its action hands focus to the message', (
+        tester,
+      ) async {
+        await show(tester, onConnectDataGateway: (_) {});
+        Focus.of(
+          tester.element(
+            find.descendant(of: action, matching: find.byType(Text)),
+          ),
+        ).requestFocus();
+        await tester.pump();
+
+        await tester.pumpWidget(harness());
+        await tester.pumpAndSettle();
+
+        final focus = FocusManager.instance.primaryFocus;
+        expect(focus, isNot(isA<FocusScopeNode>()));
+        expect(
+          find.ancestor(
+            of: message,
+            matching: find.byElementPredicate(
+              (element) => element == focus!.context,
+            ),
+          ),
+          findsOneWidget,
+          reason: 'on the message that takes the card\'s place',
+        );
+        expect(textOf(tester), _plainMessage);
+      });
+
+      testWidgets('coming back with focus on the message hands focus to its '
+          'action', (tester) async {
+        await show(tester);
+        Focus.of(tester.element(message)).requestFocus();
+        await tester.pump();
+        expect(
+          FocusManager.instance.primaryFocus?.context,
+          tester.element(
+            find.ancestor(of: message, matching: find.byType(Focus)).first,
+          ),
+          reason: 'on the message',
+        );
+
+        await tester.pumpWidget(harness(onConnectDataGateway: (_) {}));
+        await tester.pumpAndSettle();
+
+        final focus = FocusManager.instance.primaryFocus;
+        expect(focus, isNot(isA<FocusScopeNode>()));
+        expect(
+          find.descendant(
+            of: action,
+            matching: find.byElementPredicate(
+              (element) => element == focus!.context,
+            ),
+          ),
+          findsOneWidget,
+          reason: "on the action of the card that takes the message's place",
+        );
+      });
+
+      testWidgets('the message is no Tab stop', (tester) async {
+        await tester.pumpWidget(withOther());
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+
+        expect(
+          find.ancestor(
+            of: message,
+            matching: find.byElementPredicate(
+              (element) =>
+                  element == FocusManager.instance.primaryFocus?.context,
+            ),
+          ),
+          findsNothing,
+        );
+      });
+
+      testWidgets('with focus elsewhere leaves it alone', (tester) async {
+        await tester.pumpWidget(withOther(connect: (_) {}));
+        await tester.pumpAndSettle();
+        Focus.of(
+          tester.element(
+            find.descendant(of: other, matching: find.byType(Text)),
+          ),
+        ).requestFocus();
+        await tester.pump();
+        final focused = FocusManager.instance.primaryFocus;
+
+        await tester.pumpWidget(withOther());
+        await tester.pumpAndSettle();
+
+        expect(action, findsNothing);
+        expect(FocusManager.instance.primaryFocus, same(focused));
+      });
     });
 
     testWidgets('the message is a live region in both, and the button is not '

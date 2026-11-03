@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:app_shell/app_shell.dart';
 import 'package:bge_test_support/access.dart';
 import 'package:bloc_test/bloc_test.dart';
@@ -104,14 +102,14 @@ const _forbidden = DataGatewayForbiddenException('refused', statusCode: 403);
 
 /// The Admin entry in the home drawer, and the deep link past it (#41).
 ///
-/// The entry shows only once the session's one-row read of DataGateways has
-/// succeeded. A user whose read was refused, or whose read has not answered
-/// yet, sees no entry; a deep link still reaches the screen, which then says
-/// they have no access.
+/// The entry shows while the session's access allows read on DataGateways
+/// (#456). While the answer is unknown, and where it says no, there is no
+/// entry; a deep link still reaches the screen, which then says they have no
+/// access.
 void main() {
   late _MockAppBootstrapCubit cubit;
   late _ListingRemote remote;
-  late DataGatewayAccess access;
+  late FakeCallerAccessRepository access;
 
   setUp(() {
     cubit = _MockAppBootstrapCubit();
@@ -122,23 +120,16 @@ void main() {
     HydratedBloc.storage = storage;
 
     remote = _ListingRemote(() async => _empty());
-    access = DataGatewayAccess(remote: remote);
+    access = FakeCallerAccessRepository();
   });
 
-  tearDown(() => access.dispose());
-
-  Future<void> pumpHome(
-    WidgetTester tester, {
-    bool withAccess = true,
-    FakeCallerAccessRepository? callerAccess,
-  }) async {
+  Future<void> pumpHome(WidgetTester tester, {bool withAccess = true}) async {
     when(() => cubit.activeServerScope).thenReturn(
       FakeActiveServerScope(
         buildActiveServer(
           FakeAuthRepository(initialSession: sampleSession()),
           dataGatewayRemoteDataSource: remote,
-          dataGatewayAccess: withAccess ? access : null,
-          callerAccess: callerAccess,
+          callerAccess: withAccess ? access : null,
         ),
       ),
     );
@@ -158,11 +149,11 @@ void main() {
 
   final adminEntry = find.byKey(HomeScreen.entryKey('admin'));
 
-  group('the Admin entry (#41)', () {
-    testWidgets('shows once the read succeeded, labelled Admin', (
-      tester,
-    ) async {
-      access.readGranted();
+  group('the Admin entry (#41, #456)', () {
+    testWidgets('shows on read, labelled Admin', (tester) async {
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
       await pumpHome(tester);
       await openDrawer(tester);
 
@@ -173,8 +164,7 @@ void main() {
       );
     });
 
-    testWidgets('stays hidden when the read was refused', (tester) async {
-      access.readDenied();
+    testWidgets('stays hidden while access is unknown', (tester) async {
       await pumpHome(tester);
       await openDrawer(tester);
 
@@ -182,24 +172,36 @@ void main() {
       expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
     });
 
-    testWidgets('stays hidden until the read answers, then appears', (
+    testWidgets('stays hidden while read is none, whatever else is allowed', (
       tester,
     ) async {
-      final pending = Completer<PaginatedResult<DataGateway>>();
-      remote.read = () => pending.future;
-      unawaited(access.check());
+      access.current = FakeCallerAccessRepository.dataGateway(
+        create: AccessExtent.all,
+        update: AccessExtent.all,
+        delete: AccessExtent.all,
+      );
       await pumpHome(tester);
       await openDrawer(tester);
 
       expect(adminEntry, findsNothing);
+      expect(find.byKey(HomeScreen.entryKey('settings')), findsOneWidget);
+    });
 
-      pending.complete(_empty());
+    testWidgets('appears when access arrives', (tester) async {
+      // A sign-up: home is up before the first answer lands.
+      await pumpHome(tester);
+      await openDrawer(tester);
+      expect(adminEntry, findsNothing);
+
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
       await tester.pumpAndSettle();
 
       expect(adminEntry, findsOneWidget);
     });
 
-    testWidgets('stays hidden in a session with no access check', (
+    testWidgets('stays hidden in a session with no access to ask', (
       tester,
     ) async {
       await pumpHome(tester, withAccess: false);
@@ -208,8 +210,70 @@ void main() {
       expect(adminEntry, findsNothing);
     });
 
+    group('focus when read falls with the drawer open', () {
+      void focusEntry(WidgetTester tester, String id) {
+        final label = find.descendant(
+          of: find.byKey(HomeScreen.entryKey(id)),
+          matching: find.byType(Text),
+        );
+        Focus.of(tester.element(label.first)).requestFocus();
+      }
+
+      bool inEntry(String id) {
+        var found = false;
+        FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
+          element,
+        ) {
+          found = element.widget.key == HomeScreen.entryKey(id);
+          return !found;
+        });
+        return found;
+      }
+
+      testWidgets('focus on the Admin entry goes to Settings, which takes its '
+          'place', (tester) async {
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
+        await pumpHome(tester);
+        await openDrawer(tester);
+        focusEntry(tester, 'admin');
+        await tester.pump();
+        expect(inEntry('admin'), isTrue);
+
+        access.current = FakeCallerAccessRepository.dataGateway();
+        await tester.pumpAndSettle();
+
+        expect(adminEntry, findsNothing);
+        expect(
+          FocusManager.instance.primaryFocus,
+          isNot(isA<FocusScopeNode>()),
+        );
+        expect(inEntry('settings'), isTrue);
+      });
+
+      testWidgets('focus on another entry is left alone', (tester) async {
+        access.current = FakeCallerAccessRepository.dataGateway(
+          read: AccessExtent.all,
+        );
+        await pumpHome(tester);
+        await openDrawer(tester);
+        focusEntry(tester, 'send_feedback');
+        await tester.pump();
+        final focused = FocusManager.instance.primaryFocus;
+
+        access.current = FakeCallerAccessRepository.dataGateway();
+        await tester.pumpAndSettle();
+
+        expect(adminEntry, findsNothing);
+        expect(FocusManager.instance.primaryFocus, same(focused));
+      });
+    });
+
     testWidgets('opens the DataGateway list', (tester) async {
-      access.readGranted();
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
       await pumpHome(tester);
       await openDrawer(tester);
 
@@ -223,16 +287,15 @@ void main() {
 
   testWidgets('a deep link by a user who may not read shows access-denied, '
       "and asks the session's access again (#41, #456)", (tester) async {
-    final callerAccess = FakeCallerAccessRepository();
     remote.read = () async => throw _forbidden;
-    await pumpHome(tester, callerAccess: callerAccess);
+    await pumpHome(tester);
 
     GoRouter.of(tester.element(find.byType(HomeScreen)))
         .go(AppRoutes.adminDataGateways);
     await tester.pumpAndSettle();
 
     expect(find.text("You don't have access to data gateways"), findsOneWidget);
-    expect(callerAccess.refreshCount, 1);
+    expect(access.refreshCount, 1);
   });
 
   testWidgets('the list beneath a deep-linked form reads itself again when '
@@ -242,7 +305,9 @@ void main() {
       reads++;
       return _empty();
     };
-    access.readGranted();
+    access.current = FakeCallerAccessRepository.dataGateway(
+      read: AccessExtent.all,
+    );
     await pumpHome(tester);
 
     GoRouter.of(tester.element(find.byType(HomeScreen)))
@@ -260,7 +325,9 @@ void main() {
 
   testWidgets('going from one edit form straight to another edits the second '
       '(#41)', (tester) async {
-    access.readGranted();
+    access.current = FakeCallerAccessRepository.dataGateway(
+      read: AccessExtent.all,
+    );
     await pumpHome(tester);
     final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
 
@@ -281,7 +348,9 @@ void main() {
       tester,
     ) async {
       remote.read = () async => _listing([_named('dg_a'), _named('dg_b')]);
-      access.readGranted();
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
       await pumpHome(tester);
       GoRouter.of(tester.element(find.byType(HomeScreen)))
           .go(AppRoutes.adminDataGateways);
@@ -306,7 +375,9 @@ void main() {
         reads++;
         return _listing([_named('dg_a')]);
       };
-      access.readGranted();
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
       await pumpHome(tester);
       GoRouter.of(tester.element(find.byType(HomeScreen)))
           .go(AppRoutes.dataGatewayDetailOf('dg_a'));
@@ -325,7 +396,9 @@ void main() {
     testWidgets('going from one detail straight to another shows the second', (
       tester,
     ) async {
-      access.readGranted();
+      access.current = FakeCallerAccessRepository.dataGateway(
+        read: AccessExtent.all,
+      );
       await pumpHome(tester);
       final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
 
@@ -346,19 +419,24 @@ void main() {
 
     testWidgets('a deep link by a user who may not read shows access-denied, '
         "and asks the session's access again (#456)", (tester) async {
-      final callerAccess = FakeCallerAccessRepository();
       remote
         ..read = (() async => throw _forbidden)
         ..fetchOneError = _forbidden;
-      await pumpHome(tester, callerAccess: callerAccess);
+      await pumpHome(tester);
 
       GoRouter.of(tester.element(find.byType(HomeScreen)))
           .go(AppRoutes.dataGatewayDetailOf('dg_a'));
       await tester.pumpAndSettle();
 
+      final detail = find.byType(DataGatewayDetailScreen);
       expect(find.byKey(DataGatewayDetailScreen.deniedKey), findsOneWidget);
-      // The list beneath, the row and its worklist are each refused.
-      expect(callerAccess.refreshCount, 3);
+      // The page asks the session's own access. How many refusals ask it
+      // again depends on what the route builds beneath the page as well.
+      expect(
+        tester.widget<DataGatewayDetailScreen>(detail).access,
+        same(access),
+      );
+      expect(access.refreshCount, isPositive);
     });
 
     testWidgets('a session with no DataGateway client falls back', (
