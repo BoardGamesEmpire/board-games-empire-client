@@ -3,6 +3,8 @@ import 'package:models/domain.dart';
 
 import 'package:events/l10n/events_localizations.dart';
 
+import '../overview/event_groups.dart';
+
 // The words for an event's values, where the overview and the detail screen
 // show them (#497, #498).
 //
@@ -131,6 +133,34 @@ String eventWhenLabel(
       ? l10n.eventsWhen(local, time)
       : l10n.eventsWhenWithYear(local, time);
 }
+
+/// When [row]'s event happens, as its row and its card say it (#497, #669):
+/// its date ([eventWhenLabel]), else that a date is being chosen, else that it
+/// has none.
+String eventRowWhenLabel(
+  BuildContext context,
+  EventsLocalizations l10n,
+  EventRow row, {
+  required DateTime now,
+}) {
+  final start = row.date?.startDate;
+  if (start == null) {
+    return row.dateBeingChosen
+        ? l10n.eventsDateBeingChosen
+        : l10n.eventsNoDateYet;
+  }
+  return eventWhenLabel(context, start, now: now);
+}
+
+/// Where [row]'s event is, whose it is and whether the user is going, in that
+/// order, as its row and its card list them (#497, #669). Each is left out
+/// when it isn't known, so an empty list means there is no line to draw.
+List<String> eventRowDetails(EventsLocalizations l10n, EventRow row) => [
+  ?row.venue,
+  ?row.householdName,
+  // An answer this client can't read is not a guess at one.
+  ?eventRsvpLabel(l10n, row.rsvp),
+];
 
 /// What the dialogs and a date's menu call [occurrence]: its label, else
 /// when it starts, as its entry on the detail says it, else that it has no

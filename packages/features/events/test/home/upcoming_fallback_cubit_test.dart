@@ -56,14 +56,14 @@ void main() {
     return cubit;
   }
 
-  test('activate requests page 1 with limit 3', () async {
+  test('activate requests page 1 with limit 10', () async {
     remote.browse = (_) => browsePage(_snapshots(3));
     final cubit = build();
 
     cubit.activate();
     await _settle();
 
-    expect(remote.browseRequests, [(page: 1, limit: 3)]);
+    expect(remote.browseRequests, [(page: 1, limit: 10)]);
     expect(remote.requests, isEmpty, reason: 'never the attending list');
   });
 
@@ -94,13 +94,13 @@ void main() {
   });
 
   test('caps the rows, whatever the server sends', () async {
-    remote.browse = (_) => browsePage(_snapshots(5));
+    remote.browse = (_) => browsePage(_snapshots(12));
     final cubit = build();
 
     cubit.activate();
     await _settle();
 
-    expect(_rowIds(cubit.state), ['e-0', 'e-1', 'e-2']);
+    expect(_rowIds(cubit.state), [for (var n = 0; n < 10; n++) 'e-$n']);
   });
 
   test('a failed read is an empty ready', () async {

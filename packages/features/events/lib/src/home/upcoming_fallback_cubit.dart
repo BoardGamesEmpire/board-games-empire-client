@@ -92,7 +92,7 @@ class UpcomingFallbackCubit extends Cubit<UpcomingFallbackState> {
   }
 
   /// How many rows the fallback asks for and shows.
-  static const int rowCap = 3;
+  static const int rowCap = 10;
 
   final EventRemoteDataSource? _remote;
   final ConnectivityService? _connectivity;

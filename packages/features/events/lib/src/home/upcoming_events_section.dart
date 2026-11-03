@@ -15,12 +15,14 @@ import '../bloc/event_overview_event.dart';
 import '../bloc/event_overview_state.dart';
 import '../overview/event_groups.dart';
 import '../widgets/event_loading_indicator.dart';
+import '../widgets/event_card.dart';
 import '../widgets/event_refresh_banner.dart';
-import '../widgets/event_row.dart';
 import 'upcoming_fallback_cubit.dart';
 
 /// The home page's upcoming events (#613): the user's next few events, or, with
-/// none of their own, what's coming up that they could see.
+/// none of their own, what's coming up that they could see. They sit side by
+/// side in a row that moves, a [BgeShelf] like the game shelves below it
+/// (#669), one [EventCard] each.
 ///
 /// ## Two sources, and the cache decides between them
 ///
@@ -43,6 +45,20 @@ import 'upcoming_fallback_cubit.dart';
 /// planning and past events. It stays one control as its words change, so focus
 /// stays on it.
 ///
+/// ## One row in every state
+///
+/// The shelf is there whatever the state, so its header, and the link in it,
+/// stays the same element. A state with nothing to show puts its spinner,
+/// banner or text in the row's place. The fallback's note sits between the
+/// heading and the cards, so it doesn't scroll away with them. The row returns
+/// to its start when its source changes, as when the user's own event replaces
+/// the fallback, because what was in view has gone.
+///
+/// The cards are as tall as the tallest, so their outlines end in a line. Each
+/// is told the row's width, which a card in a horizontal scroll view can't
+/// measure, so that at 200% text one card fills the row rather than running
+/// past it.
+///
 /// ## Home starts no hydrate
 ///
 /// Unlike the overview's, this bloc is given no entry trigger: activating the
@@ -63,7 +79,7 @@ class UpcomingEventsSection extends StatelessWidget {
     super.key,
   });
 
-  /// The most rows the section shows, in either state.
+  /// The most events the section shows, in either state.
   static const int rowCap = UpcomingFallbackCubit.rowCap;
 
   /// Key on the section's heading.
@@ -84,10 +100,10 @@ class UpcomingEventsSection extends StatelessWidget {
   /// Key on the banner's retry button.
   static const Key retryKey = Key('events.home_retry');
 
-  /// Key on the line above the fallback's rows.
+  /// Key on the line above the fallback's cards.
   static const Key fallbackNoteKey = Key('events.home_fallback_note');
 
-  /// Per-row key: `events.home_row_<eventId>`.
+  /// Per-card key: `events.home_row_<eventId>`.
   static Key rowKey(String eventId) => Key('events.home_row_$eventId');
 
   /// The user-session event repository. Read-only here: nothing in this section
@@ -219,67 +235,71 @@ class _Section extends StatelessWidget {
       textKey: UpcomingEventsSection.emptyKey,
     );
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // First, and the same widget in every state, so that the link keeps
-        // focus while what's under it changes.
-        _Header(hasOwnRows: ownRows.isNotEmpty, onOpenEvents: onOpenEvents),
-        const BgeGap.xs(),
-        switch (own) {
-          EventOverviewLoading() => const _Spinner(),
-          EventOverviewError(:final retrying) => _FailedRead(
-            retrying: retrying,
-          ),
-          EventOverviewReady() when ownRows.isNotEmpty => _rows(ownRows),
-          EventOverviewReady(firstFill: true) => const _Spinner(),
-          EventOverviewReady() when !_wantsFallback(own) => empty,
-          EventOverviewReady() => switch (suggested) {
-            UpcomingFallbackIdle() ||
-            UpcomingFallbackLoading() => const _Spinner(),
-            UpcomingFallbackReady(:final rows) when rows.isEmpty => empty,
-            UpcomingFallbackReady(:final rows) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _Message(
-                  l10n.eventsHomeFallbackNote,
-                  textKey: UpcomingEventsSection.fallbackNoteKey,
-                ),
-                _rows(rows),
-              ],
-            ),
-          },
-        },
-      ],
-    );
-  }
+    // A state with nothing to show: its placeholder, and no note or rows.
+    (Widget?, Widget?, List<EventRow>) only(Widget placeholder) =>
+        (placeholder, null, const []);
 
-  /// [rows], each keyed so that a row keeps its focus when one above it leaves.
-  Widget _rows(List<EventRow> rows) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final (index, row) in rows.indexed)
-          EventRowTile(
-            key: UpcomingEventsSection.rowKey(row.event.id),
-            row: row,
-            now: now,
-            onOpen: onOpen,
-            separated: index < rows.length - 1,
+    final (placeholder, note, rows) = switch (own) {
+      EventOverviewLoading() => only(const _Spinner()),
+      EventOverviewError(:final retrying) => only(
+        _FailedRead(retrying: retrying),
+      ),
+      EventOverviewReady() when ownRows.isNotEmpty => (null, null, ownRows),
+      EventOverviewReady(firstFill: true) => only(const _Spinner()),
+      EventOverviewReady() when !_wantsFallback(own) => only(empty),
+      EventOverviewReady() => switch (suggested) {
+        UpcomingFallbackIdle() ||
+        UpcomingFallbackLoading() => only(const _Spinner()),
+        UpcomingFallbackReady(:final rows) when rows.isEmpty => only(empty),
+        UpcomingFallbackReady(:final rows) => (
+          null,
+          _Message(
+            l10n.eventsHomeFallbackNote,
+            textKey: UpcomingEventsSection.fallbackNoteKey,
           ),
-      ],
+          rows,
+        ),
+      },
+    };
+
+    // A card can't measure the row it sits in, so the row's width is read
+    // here, around the shelf, and handed to each card.
+    return LayoutBuilder(
+      builder: (context, constraints) => BgeShelf(
+        heading: l10n.eventsHomeHeading,
+        headingKey: UpcomingEventsSection.headingKey,
+        previousLabel: l10n.eventsHomePrevious,
+        nextLabel: l10n.eventsHomeNext,
+        // The same in every state, so that the link keeps focus while what's
+        // under it changes.
+        actions: [
+          _Link(hasOwnRows: ownRows.isNotEmpty, onOpenEvents: onOpenEvents),
+        ],
+        placeholder: placeholder,
+        note: note,
+        // Back to the start when the user's own events take the fallback's
+        // place, or give it back.
+        resetToken: ownRows.isNotEmpty,
+        equalHeights: true,
+        children: [
+          // Keyed, so that a card keeps its focus when one before it leaves.
+          for (final row in rows)
+            EventCard(
+              key: UpcomingEventsSection.rowKey(row.event.id),
+              row: row,
+              now: now,
+              maxWidth: constraints.maxWidth,
+              onOpen: onOpen,
+            ),
+        ],
+      ),
     );
   }
 }
 
-/// The heading and the link, side by side where both fit. A [Wrap] so that the
-/// link drops below the heading rather than overflowing, as at 200% text on a
-/// narrow window.
-class _Header extends StatelessWidget {
-  const _Header({required this.hasOwnRows, required this.onOpenEvents});
+/// The link to the events screen, in the shelf's header.
+class _Link extends StatelessWidget {
+  const _Link({required this.hasOwnRows, required this.onOpenEvents});
 
   final bool hasOwnRows;
   final void Function(BuildContext context) onOpenEvents;
@@ -288,31 +308,13 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = EventsLocalizations.of(context);
 
-    return Padding(
-      // In line with the rows' titles, which the tiles inset.
-      padding: EdgeInsetsDirectional.only(start: BgeTokens.of(context).spaceMd),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(
-              l10n.eventsHomeHeading,
-              key: UpcomingEventsSection.headingKey,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-          ),
-          TextButton(
-            key: UpcomingEventsSection.linkKey,
-            onPressed: () => onOpenEvents(context),
-            child: Text(
-              hasOwnRows ? l10n.eventsHomeSeeAll : l10n.eventsHomeYourEvents,
-              // "See all" alone doesn't say of what.
-              semanticsLabel: hasOwnRows ? l10n.eventsHomeSeeAllSpoken : null,
-            ),
-          ),
-        ],
+    return TextButton(
+      key: UpcomingEventsSection.linkKey,
+      onPressed: () => onOpenEvents(context),
+      child: Text(
+        hasOwnRows ? l10n.eventsHomeSeeAll : l10n.eventsHomeYourEvents,
+        // "See all" alone doesn't say of what.
+        semanticsLabel: hasOwnRows ? l10n.eventsHomeSeeAllSpoken : null,
       ),
     );
   }
@@ -350,8 +352,8 @@ class _FailedRead extends StatelessWidget {
   }
 }
 
-/// A line of text in line with the rows' titles. A live region, because it
-/// takes the place of the spinner, which said it was loading.
+/// A line of text, in line with the heading. A live region, because it takes
+/// the place of the spinner, which said it was loading.
 class _Message extends StatelessWidget {
   const _Message(this.text, {required this.textKey});
 
@@ -359,16 +361,13 @@ class _Message extends StatelessWidget {
   final Key textKey;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.symmetric(horizontal: BgeTokens.of(context).spaceMd),
-    child: Semantics(
-      container: true,
-      liveRegion: true,
-      child: Text(
-        text,
-        key: textKey,
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    liveRegion: true,
+    child: Text(
+      text,
+      key: textKey,
+      style: Theme.of(context).textTheme.bodyMedium,
     ),
   );
 }

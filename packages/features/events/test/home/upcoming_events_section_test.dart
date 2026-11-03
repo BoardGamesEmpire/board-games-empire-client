@@ -4,6 +4,7 @@ import 'package:bge_test_support/widgets.dart';
 import 'package:events/events.dart';
 import 'package:events/l10n/events_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interfaces/repositories.dart';
 import 'package:interfaces/services.dart';
@@ -72,6 +73,7 @@ void main() {
     Future<void> Function()? onRetry,
     TextScaler textScaler = TextScaler.noScaling,
     bool hasRemote = true,
+    Stream<List<Household>>? Function()? households,
   }) => MaterialApp(
     navigatorKey: navigatorKey,
     theme: BgeTheme.light(),
@@ -90,6 +92,7 @@ void main() {
         children: [
           UpcomingEventsSection(
             repository: repository,
+            households: households,
             hydration: status.watch(),
             remote: hasRemote ? remote : null,
             connectivity: connectivity,
@@ -117,12 +120,14 @@ void main() {
     void Function(BuildContext context)? onOpenEvents,
     void Function(BuildContext context, String eventId)? onOpen,
     TextScaler textScaler = TextScaler.noScaling,
+    Stream<List<Household>>? Function()? households,
   }) async {
     await tester.pumpWidget(
       harness(
         onOpenEvents: onOpenEvents,
         onOpen: onOpen,
         textScaler: textScaler,
+        households: households,
       ),
     );
     status.finished(EventHydrateOutcome.complete);
@@ -143,20 +148,42 @@ void main() {
 
   Finder rowOf(String id) => find.byKey(UpcomingEventsSection.rowKey(id));
 
+  Finder row() => find.descendant(
+    of: find.byType(BgeShelf),
+    matching: find.byType(Scrollable),
+  );
+
+  ScrollPosition rowPosition(WidgetTester tester) =>
+      tester.state<ScrollableState>(row()).position;
+
+  /// Whether the primary focus is in what [finder] finds.
+  bool focusIn(WidgetTester tester, Finder finder) {
+    final focused = FocusManager.instance.primaryFocus?.context;
+    if (focused == null) return false;
+    final target = tester.element(finder);
+    if (focused == target) return true;
+    var inside = false;
+    focused.visitAncestorElements((element) {
+      inside = element == target;
+      return !inside;
+    });
+    return inside;
+  }
+
   group('own events', () {
-    testWidgets('at most 3 rows, soonest first, with the See all link', (
+    testWidgets('at most 10 cards, soonest first, with the See all link', (
       tester,
     ) async {
-      await show(tester, upcoming(5).reversed.toList());
+      await show(tester, upcoming(12).reversed.toList());
 
-      final tops = [
-        for (var n = 0; n < 3; n++) tester.getTopLeft(rowOf('e-up-$n')).dy,
+      final starts = [
+        for (var n = 0; n < 10; n++) tester.getTopLeft(rowOf('e-up-$n')).dx,
       ];
-      expect(tops, orderedEquals([...tops]..sort()));
-      expect(tops.toSet(), hasLength(3));
-      expect(rowOf('e-up-3'), findsNothing);
-      expect(rowOf('e-up-4'), findsNothing);
-      expect(UpcomingEventsSection.rowCap, 3);
+      expect(starts, orderedEquals([...starts]..sort()));
+      expect(starts.toSet(), hasLength(10));
+      expect(rowOf('e-up-10'), findsNothing);
+      expect(rowOf('e-up-11'), findsNothing);
+      expect(UpcomingEventsSection.rowCap, 10);
 
       expect(
         find.descendant(
@@ -212,19 +239,6 @@ void main() {
       expect(remote.browseRequests, isEmpty);
     });
 
-    testWidgets('a separator follows every row but the last', (tester) async {
-      await show(tester, upcoming(2));
-
-      expect(
-        find.descendant(of: rowOf('e-up-0'), matching: find.byType(Divider)),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: rowOf('e-up-1'), matching: find.byType(Divider)),
-        findsNothing,
-      );
-    });
-
     testWidgets('planning and past events alone count as no upcoming events', (
       tester,
     ) async {
@@ -235,13 +249,149 @@ void main() {
         item('e-past', occurrences: [confirmed('o', day(20))]),
       ]);
 
-      expect(remote.browseRequests, [(page: 1, limit: 3)]);
+      expect(remote.browseRequests, [(page: 1, limit: 10)]);
       expect(rowOf('e-offer-0'), findsOneWidget);
       expect(rowOf('e-plan'), findsNothing);
       expect(rowOf('e-past'), findsNothing);
       // True of someone hosting an event with no date, unlike "not going to
       // anything".
       expect(find.text(_note), findsOneWidget);
+    });
+  });
+
+  group('the row', () {
+    testWidgets('the fallback note sits between the heading and the cards', (
+      tester,
+    ) async {
+      remote.browse = (_) => browsePage(offered(3));
+      await show(tester, const []);
+
+      final note = tester.getRect(
+        find.byKey(UpcomingEventsSection.fallbackNoteKey),
+      );
+      expect(
+        tester.getBottomLeft(find.byKey(UpcomingEventsSection.headingKey)).dy,
+        lessThan(note.top),
+      );
+      expect(note.bottom, lessThan(tester.getTopLeft(rowOf('e-offer-0')).dy));
+    });
+
+    testWidgets('with more cards than fit, Next events moves the row', (
+      tester,
+    ) async {
+      useViewSize(tester, const Size(390, 800));
+      await show(tester, upcoming(6));
+      await tester.pumpAndSettle();
+
+      final next = find.byKey(BgeShelf.nextKey);
+      expect(tester.widget<IconButton>(next).tooltip, 'Next events');
+      expect(
+        tester.widget<IconButton>(find.byKey(BgeShelf.previousKey)).tooltip,
+        'Previous events',
+      );
+
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+
+      expect(rowPosition(tester).pixels, greaterThan(0));
+    });
+
+    testWidgets('cards share one height', (tester) async {
+      await show(
+        tester,
+        [
+          item(
+            'e-full',
+            location: 'Back room',
+            householdId: 'h-1',
+            occurrences: [confirmed('o', day(24))],
+            attendance: attendance(EventParticipationStatus.attending),
+          ),
+          item('e-bare', occurrences: [confirmed('o', day(25))]),
+        ],
+        households: () => Stream.value([
+          Household(
+            id: 'h-1',
+            name: 'The Smiths',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: rowOf('e-full'),
+          matching: find.text('Back room · The Smiths · Going'),
+        ),
+        findsOneWidget,
+      );
+      // The title and the date line, and no empty line under them.
+      expect(
+        find.descendant(of: rowOf('e-bare'), matching: find.byType(Text)),
+        findsNWidgets(2),
+      );
+      expect(
+        tester.getSize(rowOf('e-bare')).height,
+        tester.getSize(rowOf('e-full')).height,
+      );
+    });
+
+    testWidgets("the user's own event arriving returns the row to its start "
+        "and keeps the link's focus", (tester) async {
+      useViewSize(tester, const Size(390, 800));
+      remote.browse = (_) => browsePage(offered(6));
+      await show(tester, const []);
+      await tester.pumpAndSettle();
+      rowPosition(tester).jumpTo(300);
+      Focus.of(tester.element(find.text(_yourEvents))).requestFocus();
+      await tester.pumpAndSettle();
+      final focused = FocusManager.instance.primaryFocus;
+
+      // Enough to overflow too, so that the row could have stayed where it was.
+      items.add(upcoming(6));
+      await settle(tester);
+      await tester.pumpAndSettle();
+
+      expect(rowOf('e-up-0'), findsOneWidget);
+      expect(find.byKey(UpcomingEventsSection.fallbackNoteKey), findsNothing);
+      expect(rowPosition(tester).pixels, 0);
+      expect(FocusManager.instance.primaryFocus, same(focused));
+    });
+
+    testWidgets('tabbing to the last card brings it into view', (tester) async {
+      useViewSize(tester, const Size(390, 800));
+      await show(tester, upcoming(10), onOpen: (_, _) {});
+      await tester.pumpAndSettle();
+      final last = rowOf('e-up-9');
+      expect(
+        tester.getRect(last).left,
+        greaterThan(tester.getRect(row()).right),
+      );
+
+      for (var i = 0; i < 40 && !focusIn(tester, last); i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+
+      expect(focusIn(tester, last), isTrue, reason: 'never reached by tabbing');
+      final viewport = tester.getRect(row());
+      final card = tester.getRect(last);
+      expect(card.left, greaterThanOrEqualTo(viewport.left));
+      expect(card.right, lessThanOrEqualTo(viewport.right));
+    });
+
+    testWidgets("the heading starts at the section's start edge", (
+      tester,
+    ) async {
+      await show(tester, upcoming(1));
+
+      expect(
+        tester.getTopLeft(find.byKey(UpcomingEventsSection.headingKey)).dx,
+        tester.getTopLeft(find.byType(UpcomingEventsSection)).dx,
+      );
     });
   });
 
@@ -871,11 +1021,19 @@ void main() {
           textScaler: const TextScaler.linear(2),
         );
 
+        await tester.pumpAndSettle();
+
         expect(tester.takeException(), isNull);
         expect(
           tester.getRect(find.byKey(UpcomingEventsSection.linkKey)).right,
           lessThanOrEqualTo(320),
         );
+        // One card fills the row, and the next button says there are more.
+        expect(
+          tester.getSize(rowOf(own ? 'e-up-0' : 'e-offer-0')).width,
+          tester.getSize(row()).width,
+        );
+        expect(find.byKey(BgeShelf.nextKey), findsOneWidget);
       });
     }
   });
