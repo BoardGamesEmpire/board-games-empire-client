@@ -1,6 +1,7 @@
 import 'package:app_shell/app_shell.dart';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:game_catalog/game_catalog.dart';
 import 'package:game_collection/game_collection.dart';
@@ -389,6 +390,28 @@ void main() {
 
       expect(find.byType(CollectionEntryScreen), findsNothing);
       expect(find.byType(GameCollectionListScreen), findsOneWidget);
+    });
+
+    testWidgets('a go from one entry to another drives the second', (
+      tester,
+    ) async {
+      // go_router keys the route's page by its path pattern, so the go keeps
+      // the page; the screen must not keep the first entry's bloc with it.
+      await pumpHome(tester, withSender: true);
+      await openTheList(tester);
+      final router = GoRouter.of(
+        tester.element(find.byType(GameCollectionListScreen)),
+      );
+
+      router.go(AppRoutes.collectionEntryOf('e-1'));
+      await tester.pumpAndSettle();
+      router.go(AppRoutes.collectionEntryOf('e-2'));
+      await tester.pumpAndSettle();
+
+      final bloc = tester
+          .element(find.byType(CollectionEntryDetail))
+          .read<CollectionEntryBloc>();
+      expect(bloc.entryId, 'e-2');
     });
 
     testWidgets('without a sender the entry route is not available', (

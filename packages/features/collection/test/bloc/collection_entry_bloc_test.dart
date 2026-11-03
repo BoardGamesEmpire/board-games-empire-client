@@ -1133,6 +1133,36 @@ void main() {
     verify: (_) => verifyNoSend(),
   );
 
+  blocTest<CollectionEntryBloc, CollectionEntryState>(
+    'a removal that throws after the row went while it was under way ends '
+    'removed, with no send',
+    setUp: () {
+      _gate = Completer<void>();
+      when(() => repository.removeFromCollection('gc_1')).thenAnswer((_) async {
+        await _gate.future;
+        throw StateError('not found');
+      });
+    },
+    build: build,
+    act: (bloc) async {
+      await show(bloc, row());
+      bloc.add(const CollectionEntryRemoveConfirmed());
+      await pumpEventQueue();
+      // Purged by a sync while the removal waited: its null arrives first,
+      // and the removal's own read then finds nothing.
+      await show(bloc, null);
+      _gate.complete();
+      await pumpEventQueue();
+      bloc.add(const CollectionEntryActionCleared());
+    },
+    skip: 2,
+    expect: () => [
+      ready(row(), action: CollectionEntryAction.removed),
+      CollectionEntryState(view: CollectionEntryView.gone, item: row()),
+    ],
+    verify: (_) => verifyNoSend(),
+  );
+
   group('clearing removed', () {
     void answerRemove() => when(() => repository.removeFromCollection('gc_1'))
         .thenAnswer((_) async => (syncQueueId: 'sq_2', operation: _removeOp));

@@ -1506,6 +1506,10 @@ class _BgeAppState extends State<BgeApp> {
     if (container == null || !_canWriteCollection(container)) return null;
 
     return CollectionEntryScreen(
+      // A new entry is a new bloc, which watches and writes the entry it was
+      // made for. Without the key, a `go` between two entries keeps the
+      // first one's screen, still showing, editing and removing it.
+      key: ValueKey<String>(entryId),
       repository: container.get<GameCollectionRepository>(),
       sender: container.get<SyncOperationSender>(),
       entryId: entryId,

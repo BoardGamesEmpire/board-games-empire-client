@@ -81,7 +81,8 @@ import 'collection_entry_state.dart';
 ///
 /// A write that throws (the session ended, or the entry was removed
 /// elsewhere) is logged and ends `saveFailed` or `removeFailed`; nothing is
-/// thrown out of the bloc. A removal that throws once the view is `gone` ends
+/// thrown out of the bloc. A removal that throws once the watch has answered
+/// null, before the removal (`gone`) or while it was under way, ends
 /// `removed` instead, with no sync: the entry is not in the collection, which
 /// is what was asked.
 class CollectionEntryBloc
@@ -344,9 +345,10 @@ class CollectionEntryBloc
         error: error,
         stackTrace: stackTrace,
       );
-      // Removed elsewhere while the confirm was up, and purged: it is not in
-      // the collection, which is what was asked.
-      if (state.view == CollectionEntryView.gone) {
+      // Removed elsewhere and purged, while the confirm was up (`gone`) or
+      // while this removal waited (its null ignored, as `removing`): it is
+      // not in the collection, which is what was asked.
+      if (_absent) {
         return emit(state.withAction(CollectionEntryAction.removed));
       }
       return emit(state.withAction(CollectionEntryAction.removeFailed));
