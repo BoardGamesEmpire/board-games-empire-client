@@ -1,6 +1,8 @@
+import 'package:access/access.dart';
 import 'package:data_gateway/data_gateway.dart';
 import 'package:di/di.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:models/domain.dart';
 import 'package:native_platform/native_platform.dart';
 
 /// Native's user-scope list holds the DataGateway access installer (#41),
@@ -29,5 +31,25 @@ void main() {
 
     expect(rehydrator, isNonNegative);
     expect(access, greaterThan(rehydrator));
+  });
+
+  test('has one CallerAccessInstaller, after the rehydrator, asking for the '
+      'DataGateway types (#456)', () {
+    final installers = buildNativeUserScopeInstallers();
+
+    final rehydrator = installers.indexWhere(
+      (i) => i is SessionRehydratorInstaller,
+    );
+    final callerAccess = installers.whereType<CallerAccessInstaller>();
+
+    expect(callerAccess, hasLength(1));
+    expect(
+      installers.indexWhere((i) => i is CallerAccessInstaller),
+      greaterThan(rehydrator),
+    );
+    expect(
+      callerAccess.single.resourceTypes,
+      contains(ResourceType.dataGateway),
+    );
   });
 }

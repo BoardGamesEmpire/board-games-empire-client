@@ -1,4 +1,6 @@
-import 'package:data_gateway/data_gateway.dart' show DataGatewayAccessInstaller;
+import 'package:access/access.dart' show CallerAccessInstaller;
+import 'package:data_gateway/data_gateway.dart'
+    show DataGatewayAccessInstaller, dataGatewayResourceTypes;
 import 'package:di/di.dart' show SessionRehydratorInstaller;
 import 'package:drift_storage/drift_storage.dart'
     show UserSessionScopeInstaller;
@@ -49,6 +51,13 @@ import 'package:sync_queue/sync_queue.dart'
 /// `SessionRehydrateTrigger` lives in `app_shell` and is driven by
 /// connectivity edges and app-lifecycle resumes on both platforms.
 ///
+/// [CallerAccessInstaller] is shared with native (#456): one unawaited ask
+/// for what the caller may do with the DataGateway types, registered as the
+/// `CallerAccessRepository` the DataGateway screens read. It resolves the
+/// `UserRemoteDataSource` that `registerServerNetworkWeb` registers in the
+/// origin scope, and registers its re-ask with the rehydrator above, so it
+/// runs after both that and [UserSessionScopeInstaller].
+///
 /// [DataGatewayAccessInstaller] is native's own as well (#41): one unawaited
 /// read of a DataGateway row that decides whether the home drawer offers the
 /// Admin entry. It resolves the `DataGatewayRemoteDataSource` that
@@ -81,6 +90,7 @@ List<UserScopeInstaller> buildWebUserScopeInstallers() => const [
   HouseholdHydrateInstaller(),
   GameCollectionHydrateInstaller(),
   EventHydrateInstaller(),
+  CallerAccessInstaller(resourceTypes: dataGatewayResourceTypes),
   DataGatewayAccessInstaller(),
   SyncSenderInstaller(),
   SyncQueueDrainInstaller(),
