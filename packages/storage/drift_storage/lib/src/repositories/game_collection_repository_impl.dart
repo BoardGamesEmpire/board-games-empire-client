@@ -1405,37 +1405,50 @@ class GameCollectionRepositoryImpl
   @override
   Stream<List<GameCollectionListItem>> watchCollectionListItems() =>
       untilDisposed(() {
-        final entries = _db.gameCollectionsTable;
-        final platformGames = _db.platformGamesTable;
-        final games = _db.gamesTable;
-
-        final query =
-            _db.select(entries).join([
-                innerJoin(
-                  platformGames,
-                  platformGames.id.equalsExp(entries.platformGameId),
-                ),
-                innerJoin(games, games.id.equalsExp(platformGames.gameId)),
-              ])
-              ..where(
-                entries.userId.equals(_userId) & entries.deletedAt.isNull(),
-              )
-              ..orderBy([
-                OrderingTerm.asc(games.title.collate(Collate.noCase)),
-                OrderingTerm.asc(entries.id),
-              ]);
+        final query = _listItemQuery()
+          ..orderBy([
+            OrderingTerm.asc(_db.gamesTable.title.collate(Collate.noCase)),
+            OrderingTerm.asc(_db.gameCollectionsTable.id),
+          ]);
 
         return query.watch().map(
-          (rows) => [
-            for (final row in rows)
-              _mapListItem(
-                row.readTable(entries),
-                row.readTable(platformGames),
-                row.readTable(games),
-              ),
-          ],
+          (rows) => [for (final row in rows) _mapListItemRow(row)],
         );
       });
+
+  @override
+  Stream<GameCollectionListItem?> watchCollectionListItem(String id) =>
+      untilDisposed(() {
+        final query = _listItemQuery()
+          ..where(_db.gameCollectionsTable.id.equals(id));
+
+        return query.watchSingleOrNull().map(
+          (row) => row == null ? null : _mapListItemRow(row),
+        );
+      });
+
+  /// The join [watchCollectionListItems] and [watchCollectionListItem]
+  /// share (#46): the user's live entries with their platform game and
+  /// game. Callers add their own filter and order.
+  JoinedSelectStatement<HasResultSet, dynamic> _listItemQuery() {
+    final entries = _db.gameCollectionsTable;
+    final platformGames = _db.platformGamesTable;
+    final games = _db.gamesTable;
+
+    return _db.select(entries).join([
+      innerJoin(
+        platformGames,
+        platformGames.id.equalsExp(entries.platformGameId),
+      ),
+      innerJoin(games, games.id.equalsExp(platformGames.gameId)),
+    ])..where(entries.userId.equals(_userId) & entries.deletedAt.isNull());
+  }
+
+  GameCollectionListItem _mapListItemRow(TypedResult row) => _mapListItem(
+    row.readTable(_db.gameCollectionsTable),
+    row.readTable(_db.platformGamesTable),
+    row.readTable(_db.gamesTable),
+  );
 
   @override
   Stream<GameCollection?> watchEntry(String id) => untilDisposed(

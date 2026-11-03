@@ -566,6 +566,19 @@ abstract class GameCollectionRepository {
   /// is disposed.
   Stream<List<GameCollectionListItem>> watchCollectionListItems();
 
+  /// Watches one entry as a list row (#46): the entry with the title,
+  /// subtitle, platform name and thumbnail [watchCollectionListItems]
+  /// gives it, so a detail screen shows what the list showed.
+  ///
+  /// Emits null when there is no live entry for [id] for this user: it
+  /// was never cached, it has been removed, or it is another user's.
+  /// A screen holding the entry open learns of a removal made elsewhere
+  /// from that null.
+  ///
+  /// Re-emits when the entry, its platform game or its game change.
+  /// Closes, rather than errors, when the repository is disposed.
+  Stream<GameCollectionListItem?> watchCollectionListItem(String id);
+
   /// Watches a single entry. Emits null when removed.
   Stream<GameCollection?> watchEntry(String id);
 }
