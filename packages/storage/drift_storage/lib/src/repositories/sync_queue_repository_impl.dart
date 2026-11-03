@@ -181,9 +181,10 @@ class SyncQueueRepositoryImpl
     // rewrite the op between the check and the take.
     final now = _localNowUtc();
     return _db.transaction(() async {
-      final row = await (_db.select(
-        _db.syncQueueTable,
-      )..where((t) => t.id.equals(id))).getSingleOrNull();
+      final row =
+          await (_db.select(_db.syncQueueTable)
+                ..where((t) => t.id.equals(id) & t.userId.equals(_userId)))
+              .getSingleOrNull();
       final target = row == null ? null : _targetOf(row.payload);
       if (row != null &&
           target != null &&
