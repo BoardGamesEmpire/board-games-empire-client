@@ -17,6 +17,7 @@ export 'src/entry/collection_entry_event.dart'
         CollectionEntryRowChanged,
         CollectionEntryWatchEnded,
         CollectionEntryWatchFailed;
+export 'src/entry/collection_entry_screen.dart';
 export 'src/entry/collection_entry_state.dart';
 export 'src/entry/edit_collection_entry_sheet.dart';
 export 'src/entry/remove_from_collection_dialog.dart';
