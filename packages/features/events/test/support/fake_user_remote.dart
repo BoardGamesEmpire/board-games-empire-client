@@ -3,9 +3,8 @@ import 'package:network_interface/network_interface.dart';
 
 /// A [UserRemoteDataSource] whose answer the test scripts, for the create
 /// form's invitee search (#499). The user_search and household packages
-/// keep their own: `bge_test_support`, where shared test code lives,
-/// depends on neither `network_interface` nor `models`, which this
-/// implements and answers with.
+/// keep their own: `bge_test_support`, where shared test code lives, does
+/// not depend on `network_interface`, which this implements.
 ///
 /// [searchUsers] records its call in [calls] and then runs [onSearchUsers].
 /// An unscripted call throws [StateError], so a test can't pass by reaching a
@@ -25,6 +24,21 @@ class FakeUserRemote implements UserRemoteDataSource {
     final handler =
         onSearchUsers ?? (throw StateError('searchUsers was not scripted'));
     return handler(query);
+  }
+
+  Future<Map<ResourceType, ResourceAccess>> Function(
+    Set<ResourceType> resourceTypes,
+  )?
+  onFetchAccess;
+
+  @override
+  Future<Map<ResourceType, ResourceAccess>> fetchAccess(
+    Set<ResourceType> resourceTypes,
+  ) {
+    calls.add('fetchAccess');
+    final handler =
+        onFetchAccess ?? (throw StateError('fetchAccess was not scripted'));
+    return handler(resourceTypes);
   }
 }
 

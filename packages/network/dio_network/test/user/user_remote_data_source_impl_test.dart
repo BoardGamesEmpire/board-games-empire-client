@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:bge_test_support/network.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_network/dio_network.dart';
+import 'package:dio_network/src/user/user_access_json.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:models/domain.dart';
 import 'package:network_interface/network_interface.dart';
@@ -166,6 +167,139 @@ void main() {
         throwsArgumentError,
       );
       expect(adapter.sent, isEmpty);
+    });
+  });
+
+  group('fetchAccess', () {
+    const gateway = {ResourceType.dataGateway};
+
+    String access(Map<String, Object?> types) => jsonEncode({'access': types});
+
+    const wire = {
+      'create': 'all',
+      'read': 'all',
+      'update': 'some',
+      'delete': 'none',
+      'manage': 'none',
+    };
+
+    test('sends the asked types comma-separated', () async {
+      final remote = answering(access({'DataGateway': wire}));
+
+      await remote.fetchAccess(gateway);
+
+      expect(adapter.sent.single.method, 'GET');
+      expect(adapter.sent.single.path, '/api/users/me/access');
+      expect(adapter.sent.single.query, {'resourceTypes': 'DataGateway'});
+    });
+
+    test('maps each action\'s extent', () async {
+      final remote = answering(access({'DataGateway': wire}));
+
+      final result = await remote.fetchAccess(gateway);
+
+      expect(result, {
+        ResourceType.dataGateway: const ResourceAccess(
+          create: AccessExtent.all,
+          read: AccessExtent.all,
+          update: AccessExtent.some,
+          delete: AccessExtent.none,
+          manage: AccessExtent.none,
+        ),
+      });
+    });
+
+    test('puts each wire field on its own action', () {
+      // Five distinct shapes, so a swapped pair of fields cannot pass.
+      for (final action in AccessAction.values) {
+        final body = {
+          for (final other in AccessAction.values)
+            other.name: other == action ? 'all' : 'none',
+        };
+
+        final result = callerAccessFromJson({
+          'access': {'DataGateway': body},
+        }, gateway);
+
+        final access = result[ResourceType.dataGateway]!;
+        for (final other in AccessAction.values) {
+          expect(
+            access.of(other),
+            other == action ? AccessExtent.all : AccessExtent.none,
+            reason: '$other when only $action is all',
+          );
+        }
+      }
+    });
+
+    test('ignores a type it did not ask for', () async {
+      final remote = answering(
+        access({'DataGateway': wire, 'SystemSetting': wire}),
+      );
+
+      final result = await remote.fetchAccess(gateway);
+
+      expect(result.keys, [ResourceType.dataGateway]);
+    });
+
+    test('an asked type missing from the answer is permanent', () async {
+      final remote = answering(access({}));
+
+      await expectLater(
+        remote.fetchAccess(gateway),
+        throwsA(isA<UserRemotePermanentException>()),
+      );
+    });
+
+    test('an extent it does not know is permanent', () async {
+      final remote = answering(
+        access({
+          'DataGateway': {...wire, 'read': 'most'},
+        }),
+      );
+
+      await expectLater(
+        remote.fetchAccess(gateway),
+        throwsA(isA<UserRemotePermanentException>()),
+      );
+    });
+
+    test('a missing action is permanent', () async {
+      final remote = answering(
+        access({
+          'DataGateway': {...wire}..remove('manage'),
+        }),
+      );
+
+      await expectLater(
+        remote.fetchAccess(gateway),
+        throwsA(isA<UserRemotePermanentException>()),
+      );
+    });
+
+    test('refuses an empty set before any request', () async {
+      final remote = answering(access({'DataGateway': wire}));
+
+      await expectLater(remote.fetchAccess({}), throwsArgumentError);
+      expect(adapter.sent, isEmpty);
+    });
+
+    test('an enveloped 404 is transient', () async {
+      final remote = answering(_envelope(404), status: 404);
+
+      await expectLater(
+        remote.fetchAccess(gateway),
+        throwsA(isA<UserRemoteTransientException>()),
+      );
+    });
+
+    test('an enveloped 400 is permanent', () async {
+      final remote = answering(_envelope(400), status: 400);
+
+      await expectLater(
+        remote.fetchAccess(gateway),
+        throwsA(isA<UserRemotePermanentException>()),
+      );
     });
   });
 

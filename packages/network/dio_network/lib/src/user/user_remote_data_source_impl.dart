@@ -4,6 +4,7 @@ import 'package:network_interface/network_interface.dart';
 
 import '../network/api_error_envelope.dart';
 import '../network/decode_json_body.dart';
+import 'user_access_json.dart';
 import 'user_summary_json.dart';
 
 /// [UserRemoteDataSource] over a **per-server** Dio instance (#499).
@@ -21,6 +22,7 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
   final Dio _dio;
 
   static const String _searchPath = '/api/users/search';
+  static const String _accessPath = '/api/users/me/access';
 
   /// See `GameCollectionRemoteDataSourceImpl._plainBody`: `Response<String>`
   /// alone is not enough when the injected Dio's own response type is
@@ -64,6 +66,36 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
         key: 'users',
         item: userSummaryFromJson,
       ),
+      action: action,
+      status: response.status,
+    );
+  }
+
+  @override
+  Future<Map<ResourceType, ResourceAccess>> fetchAccess(
+    Set<ResourceType> resourceTypes,
+  ) async {
+    if (resourceTypes.isEmpty) {
+      throw ArgumentError.value(
+        resourceTypes,
+        'resourceTypes',
+        'must not be empty (the server rejects an empty list)',
+      );
+    }
+
+    const action = 'Caller access';
+    final response = await _send(
+      request: () => _dio.get<String>(
+        _accessPath,
+        options: _plainBody,
+        queryParameters: {
+          'resourceTypes': resourceTypes.map((type) => type.wireName).join(','),
+        },
+      ),
+      action: action,
+    );
+    return _parse(
+      () => callerAccessFromJson(response.body, resourceTypes),
       action: action,
       status: response.status,
     );
@@ -226,8 +258,8 @@ class UserRemoteDataSourceImpl implements UserRemoteDataSource {
       );
     }
     if (status == 404) {
-      // Search is a list route, which is never absent for a caller who reached
-      // it: no matches is a 200 with an empty page. Nest answers an
+      // These are list and self routes, never absent for a caller who reached
+      // them: no matches is a 200 with an empty page. Nest answers an
       // unregistered route with this same envelope, so a 404 here, enveloped
       // or not, means the route is not reachable, such as on a server without
       // it.
