@@ -504,17 +504,82 @@ void main() {
     });
 
     group('updateCollectionEntry()', () {
+      test('update returns the queue id and op it enqueued', () async {
+        final entry = (await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+        )).entry;
+        when(
+          () => mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
+        ).thenAnswer(
+          (_) async => SyncQueueEntry(
+            id: 'sq-update',
+            payload: '{}',
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+
+        final result = await repo.updateCollectionEntry(
+          id: entry.id,
+          rating: 7,
+        );
+
+        expect(result.syncQueueId, 'sq-update');
+        expect(result.operation.collectionId, entry.id);
+        expect(result.operation.rating, 7);
+        expect(result.operation.quantity, isNull);
+        expect(result.entry.rating, 7);
+      });
+
+      test(
+        'update refuses a quantity past maxQuantity before the transaction',
+        () async {
+          final entry = (await repo.addToCollection(
+            platformGameId: kFixturePlatformGameId,
+            medium: _kMedium,
+          )).entry;
+
+          await expectLater(
+            () => repo.updateCollectionEntry(
+              id: entry.id,
+              quantity: GameCollectionRepository.maxQuantity + 1,
+            ),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          expect((await repo.getCollection()).single.quantity, 1);
+          verifyNever(
+            () => mockSync.enqueue(any(that: isA<UpdateCollectionOperation>())),
+          );
+        },
+      );
+
+      test('update takes maxQuantity itself', () async {
+        final entry = (await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+        )).entry;
+
+        final result = await repo.updateCollectionEntry(
+          id: entry.id,
+          quantity: GameCollectionRepository.maxQuantity,
+        );
+
+        expect(result.entry.quantity, GameCollectionRepository.maxQuantity);
+        expect(result.operation.quantity, GameCollectionRepository.maxQuantity);
+      });
+
       test('updates specified fields only', () async {
         final original = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,
           medium: _kMedium,
         )).entry;
 
-        final updated = await repo.updateCollectionEntry(
+        final updated = (await repo.updateCollectionEntry(
           id: original.id,
           rating: 9,
           favorite: true,
-        );
+        )).entry;
 
         expect(updated.rating, 9);
         expect(updated.favorite, isTrue);
@@ -798,10 +863,10 @@ void main() {
           quantity: 5,
         )).entry;
 
-        final updated = await repo.updateCollectionEntry(
+        final updated = (await repo.updateCollectionEntry(
           id: entry.id,
           rating: 9,
-        );
+        )).entry;
 
         expect(updated.quantity, equals(5));
         expect(updated.rating, equals(9));
@@ -809,6 +874,43 @@ void main() {
     });
 
     group('removeFromCollection()', () {
+      test('remove returns the queue id and op it enqueued', () async {
+        final entry = (await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+        )).entry;
+        when(
+          () =>
+              mockSync.enqueue(any(that: isA<RemoveFromCollectionOperation>())),
+        ).thenAnswer(
+          (_) async => SyncQueueEntry(
+            id: 'sq-remove',
+            payload: '{}',
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+
+        final result = await repo.removeFromCollection(entry.id);
+
+        expect(result!.syncQueueId, 'sq-remove');
+        expect(result.operation.collectionId, entry.id);
+      });
+
+      test('re-remove returns null and queues nothing', () async {
+        final entry = (await repo.addToCollection(
+          platformGameId: kFixturePlatformGameId,
+          medium: _kMedium,
+        )).entry;
+        await repo.removeFromCollection(entry.id);
+
+        expect(await repo.removeFromCollection(entry.id), isNull);
+
+        verify(
+          () =>
+              mockSync.enqueue(any(that: isA<RemoveFromCollectionOperation>())),
+        ).called(1);
+      });
+
       test('tombstones entry by setting deletedAt', () async {
         final entry = (await repo.addToCollection(
           platformGameId: kFixturePlatformGameId,

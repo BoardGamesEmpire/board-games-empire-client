@@ -130,10 +130,16 @@ abstract class GameCollectionRepository {
   /// Updates an existing collection entry.
   ///
   /// Only non-null fields are updated. [quantity] must be `> 0` when
-  /// provided; implementations should throw [ArgumentError] before
-  /// opening the transaction for non-positive values, and likewise when
-  /// every field is `null`, since that update has nothing to send.
+  /// provided and no more than [maxQuantity], the bound [addToCollection]
+  /// keeps the entry within; implementations should throw [ArgumentError]
+  /// before opening the transaction for a value outside it, and likewise
+  /// when every field is `null`, since that update has nothing to send.
   /// Enqueues [UpdateCollectionOperation].
+  ///
+  /// Returns the updated [GameCollection] and what it queued: the queue
+  /// entry's id and the [UpdateCollectionOperation] itself. A caller that
+  /// wants the edit sent at once passes them to `SendQueuedOpNow.sendNow`
+  /// (#46), as it does for an add; otherwise the drain sends it.
   ///
   /// Play history (`playCount`, `lastPlayed`) is not editable here. The
   /// server owns it and rejects both fields on this update (#258), so
@@ -146,9 +152,17 @@ abstract class GameCollectionRepository {
   /// follow-up will add a separate `clearFields` method (or an enum
   /// parameter on this one) plus a `ClearFieldsOperation` sync op,
   /// so callers can explicitly null out a previously-set rating or
-  /// comment. Until then, the workaround is to remove and re-add
-  /// the entry without the field.
-  Future<GameCollection> updateCollectionEntry({
+  /// comment. Until then a rating or comment can't be cleared: removing
+  /// and re-adding the entry doesn't do it, since a re-add keeps the
+  /// rating and comment it isn't given (see [addToCollection]). See #679.
+  Future<
+    ({
+      GameCollection entry,
+      String syncQueueId,
+      UpdateCollectionOperation operation,
+    })
+  >
+  updateCollectionEntry({
     required String id,
     int? quantity,
     int? rating,
@@ -170,8 +184,15 @@ abstract class GameCollectionRepository {
   /// ### Idempotence
   ///
   /// Calling on an already-tombstoned id is a silent no-op: no DB
-  /// write, no second [RemoveFromCollectionOperation] enqueued.
-  /// (The original removal was already sent.)
+  /// write, no second [RemoveFromCollectionOperation] enqueued, and the
+  /// result is `null` since nothing was queued. (The original removal was
+  /// already sent.)
+  ///
+  /// ### Result
+  ///
+  /// Otherwise the result is the queue entry's id and the
+  /// [RemoveFromCollectionOperation] it holds, for a caller that sends it
+  /// at once with `SendQueuedOpNow.sendNow` (#46).
   ///
   /// ### Physical purge
   ///
@@ -197,7 +218,8 @@ abstract class GameCollectionRepository {
   ///
   /// [StateError] if the id is not found for the current user (i.e.
   /// belongs to another user or was never cached).
-  Future<void> removeFromCollection(String id);
+  Future<({String syncQueueId, RemoveFromCollectionOperation operation})?>
+  removeFromCollection(String id);
 
   /// Reconciles a confirmed server response after a sync.
   ///
@@ -421,6 +443,13 @@ abstract class GameCollectionRepository {
   /// does, at the next read here: the row it leaves is in the database. A
   /// read that moves the mark for such a row moves it once, until a merge
   /// here sees that row's server copy.
+  ///
+  /// So a removal confirmed through another instance, such as another
+  /// browser tab's send or drain, doesn't move this instance's mark. A
+  /// hydrate this instance has in flight can then write the removed entry
+  /// back, and it shows as live until the next hydrate reads the removal.
+  /// #46 lets a user remove an entry and accepts this rather than
+  /// persisting the mark.
   Future<int> removalMark();
 
   /// Merges server state that no local mutation asked for, such as a
