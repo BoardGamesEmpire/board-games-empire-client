@@ -9,6 +9,15 @@ export 'src/add/add_to_collection_state.dart';
 export 'src/bloc/game_collection_list_bloc.dart';
 export 'src/bloc/game_collection_list_event.dart';
 export 'src/bloc/game_collection_list_state.dart';
+export 'src/entry/collection_entry_bloc.dart';
+export 'src/entry/collection_entry_event.dart'
+    hide
+        CollectionEntryHydrationEnded,
+        CollectionEntryHydrationUpdated,
+        CollectionEntryRowChanged,
+        CollectionEntryWatchEnded,
+        CollectionEntryWatchFailed;
+export 'src/entry/collection_entry_state.dart';
 export 'src/home/stats_card.dart';
 export 'src/home/stats_cubit.dart';
 export 'src/screens/game_collection_list_screen.dart';
