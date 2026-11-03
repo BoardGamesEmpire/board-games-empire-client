@@ -33,6 +33,14 @@ dependencies:
   flutter_test:
     sdk: flutter
 
+  # `FakeCallerAccessRepository` (#456) implements `interfaces`'
+  # `CallerAccessRepository` and answers in `models`' `CallerAccess`. Both are
+  # pure Dart and depend on nothing here, so neither can cycle back.
+  interfaces:
+    path: ../../core/interfaces
+  models:
+    path: ../../core/models
+
   # `BgeTheme`, installed by the viewport helper so a measure assertion against
   # BgeTokens cannot silently fall back to `BgeTokens.standard` (#213).
   # `ui_tokens` depends only on `flutter`, so this cannot cycle back through
