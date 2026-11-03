@@ -101,7 +101,6 @@ class _RecordingFeedbackService implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? clientRequestId,
   }) => throw UnimplementedError();
 
   @override

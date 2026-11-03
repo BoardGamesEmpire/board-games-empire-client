@@ -63,7 +63,6 @@ class FeedbackServiceImpl implements FeedbackService {
     String? errorMessage,
     String? stackTrace,
     String? userComment,
-    String? clientRequestId,
   }) {
     final message = _composeMessage(errorMessage, userComment);
     if (message == null) {
@@ -83,7 +82,7 @@ class FeedbackServiceImpl implements FeedbackService {
       platform: environment.platform,
       locale: environment.locale,
       deviceInfo: environment.deviceInfo,
-      clientRequestId: clientRequestId ?? _clientRequestIdGenerator(),
+      clientRequestId: _clientRequestIdGenerator(),
       breadcrumbs: _trimBreadcrumbs(_breadcrumbSource()),
     );
   }

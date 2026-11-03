@@ -113,15 +113,22 @@ class FileFeedbackSink implements FeedbackSink {
   /// lazily just defers reclaiming a dead file.
   static const Duration _staleTempAge = Duration(hours: 1);
 
-  /// Distinguishes concurrent writes to the same storage key.
+  /// Gives every write of this instance its own temp path, even two writes
+  /// of the same storage key.
   ///
-  /// Two overlapping persists of one record — a resubmission racing a send
-  /// that is still in flight, where both fall back to the queue — would
-  /// otherwise share a temp path: the first rename moves the shared temp,
-  /// the second then fails on a file that is no longer there, and `_queue`
-  /// reports [FeedbackPersistenceException] for a record that is in fact
-  /// safely queued. Worse, either cleanup path can delete the other
-  /// writer's file.
+  /// Two writes of one key in flight at once on a shared path would collide:
+  /// the first rename moves the shared temp, the second then fails on a file
+  /// that is no longer there, and `_queue` reports
+  /// [FeedbackPersistenceException] for a record that is in fact safely
+  /// queued. Worse, either cleanup path can delete the other writer's file.
+  ///
+  /// The case this was written for — two overlapping persists of one record,
+  /// a resubmission racing a send still in flight — no longer writes twice:
+  /// [_serialized] orders the two, and since #379 the second finds the
+  /// first stored and keeps it. One key still takes more than one write,
+  /// though — [update] rewrites it, and a [persist] replaces a file
+  /// [pending] would reap — and a per-call name keeps those apart without
+  /// resting on the lock being the only thing that orders them.
   ///
   /// An isolate-local counter suffices. The collision being prevented is
   /// between two calls on this instance, and a temp left behind by an
@@ -189,34 +196,84 @@ class FileFeedbackSink implements FeedbackSink {
     if (!await dir.exists()) await dir.create(recursive: true);
 
     final name = _fileNameFor(key);
-    // Read before the rename: afterwards the file always exists, and this is
-    // what tells a new record from a rewritten one. Since #376 the drain's
-    // write-backs go through [update], so on the drain's path the answer is
-    // always false. It is not dead, though: `persist` still permits a
-    // rewrite, and `buildReport` lets a caller supply its own
-    // `clientRequestId`, so two reports sharing one token that both fail
-    // transport arrive here twice. The check is what keeps the cap honest
-    // when they do. Whether the contract should narrow to a create is #379.
-    final existed = await File('${dir.path}/$name').exists();
-    await _writeAtomically(dir, name, record);
-
-    // A rewrite replaces a file that was already there, so the directory
-    // cannot have grown and there is nothing for the cap to do. Skipping
-    // spares a full listing, which in the never-drains deployment this cap
-    // exists for is the difference between one listing per record and one
-    // per record per drain.
-    if (!existed) {
-      // Deliberately after the rename, and deliberately unable to fail: the
-      // record is already committed, so surfacing anything from here would
-      // have `_queue` report FeedbackPersistenceException — "could not be
-      // saved" — about a report that is safely on disk.
-      try {
-        await _enforceCap(dir, justPersisted: name);
-      } on Object {
-        // Best-effort, exactly like _reap. The next persist tries again,
-        // and being one record over the cap harms nothing.
-      }
+    final file = File('${dir.path}/$name');
+    // This check is what makes `persist` a create (#379). A file already at
+    // this name decides the call, and both of its answers leave the
+    // directory the size it was, so neither runs the cap:
+    //
+    // - It holds a record `pending` would emit under this key: the same
+    //   submission, since the key is its idempotency token, so the first
+    //   stays — as the backend keeps the first report a repeated
+    //   `clientRequestId` names. No write.
+    // - It holds anything else — bytes that will not decode, or a record
+    //   filed under another key: not a stored record. `pending` would reap
+    //   it, and the report this call promised to store would go with it, so
+    //   the new record replaces it.
+    //
+    // Made here, under the lock and in the same serialized operation as the
+    // write, because a caller cannot make it for itself (#381). The lock is
+    // per-instance, so another process sharing the directory can still
+    // change the file in between; [_holdsRecordFor] covers the one such
+    // change that would otherwise leave nothing stored.
+    if (await file.exists()) {
+      if (await _holdsRecordFor(file, key)) return;
+      await _writeAtomically(dir, name, record);
+      return;
     }
+
+    await _writeAtomically(dir, name, record);
+    // Only a create grows the directory, so only a create pays for a
+    // listing. Deliberately after the rename, and deliberately unable to
+    // fail: the record is already committed, so surfacing anything from
+    // here would have `_queue` report FeedbackPersistenceException — "could
+    // not be saved" — about a report that is safely on disk.
+    try {
+      await _enforceCap(dir, justPersisted: name);
+    } on Object {
+      // Best-effort, exactly like _reap. The next persist tries again, and
+      // being one record over the cap harms nothing.
+    }
+  }
+
+  /// Whether [file] holds a record [pending] would emit under [key] — the
+  /// question that decides whether a repeated [persist] keeps what is there
+  /// or replaces it (#379).
+  ///
+  /// Decodes through [_decodeRecord], the same step [pending] takes, so the
+  /// two cannot come to disagree about what "readable" means: a file this
+  /// accepts is one [pending] keeps, and one this rejects is one [pending]
+  /// would reap. The key comparison is [pending]'s address check for this
+  /// file, which is `<key>.json` by construction and [key] already safe.
+  ///
+  /// A file that is **gone** by the read answers **false**: [persist] saw it
+  /// exist, and another process sharing the directory deleted it since —
+  /// the lock orders nothing outside this instance (see the class doc).
+  /// Gone is neither locked nor corrupt. Nothing is stored under the key,
+  /// so the record has to be written, or this call would return having
+  /// stored nothing. [PathNotFoundException] is caught first for exactly
+  /// that reason: it is a [FileSystemException], and the case below would
+  /// otherwise claim it.
+  ///
+  /// Any other [FileSystemException] answers **true**, under the
+  /// transient-fault rule in the class doc: a locked file is not corrupt.
+  /// When it holds a valid record, that record is this submission's first
+  /// copy — the key is its idempotency token — so replacing it would cost
+  /// first-wins and the retry bookkeeping it carries, not a report. The
+  /// cost of keeping it falls only on a file that is locked *and* not a
+  /// stored record: [pending] reaps it once it can read it, and the report
+  /// this call declined to write is lost with it, though `submit` said it
+  /// was queued. That takes two faults on one key at once, and it is the
+  /// exception [FeedbackSink.persist] names in its contract.
+  Future<bool> _holdsRecordFor(File file, String key) async {
+    final List<int> bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } on PathNotFoundException {
+      return false;
+    } on FileSystemException {
+      return true;
+    }
+    return _decodeRecord(bytes)?.storageKey == key;
   }
 
   @override
@@ -304,7 +361,7 @@ class FileFeedbackSink implements FeedbackSink {
   /// [update] since #376): the rename restamps the file, so mtime says
   /// "just written" about the record that has been queued longest. A record
   /// with no `queuedAt` sorts at [QueuedFeedbackReport.epoch] — the sentinel
-  /// both sinks share — because it predates the field and so really is
+  /// every sink shares — because it predates the field and so really is
   /// oldest.
   ///
   /// **A file whose age cannot be DETERMINED is neither evicted nor
@@ -350,17 +407,16 @@ class FileFeedbackSink implements FeedbackSink {
       return;
     }
 
-    final candidates = <(File, DateTime)>[];
-    var readable = 0;
+    final byName = <String, File>{};
+    final entries = <(String, DateTime)>[];
     for (final file in files) {
       final at = await _queuedAt(file);
       // null = unreadable: no opinion, so it neither occupies a slot nor
       // supplies one.
       if (at == null) continue;
-      readable++;
-      // Counts against the cap, but is not up for deletion.
-      if (_nameOf(file) == justPersisted) continue;
-      candidates.add((file, at));
+      final name = _nameOf(file);
+      byName[name] = file;
+      entries.add((name, at));
     }
 
     // Measured over the records this sink can actually account for, NOT
@@ -368,21 +424,18 @@ class FileFeedbackSink implements FeedbackSink {
     // unreadable files to the records that CAN be deleted and evict extra
     // readable reports to pay for them — trading a transient lock for
     // permanent data loss, and at worst emptying the directory of
-    // everything still readable.
-    final excess = readable - QueuedFeedbackReport.maxQueuedReports;
-    if (excess <= 0) {
-      _pruneCache(files);
-      return;
-    }
-
-    // Path tie-break keeps eviction deterministic among equal stamps.
-    candidates.sort((a, b) {
-      final byTime = a.$2.compareTo(b.$2);
-      return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
-    });
-
-    for (final (file, _) in candidates.take(excess)) {
-      await _reap(file);
+    // everything still readable. That count is `entries.length`: files of
+    // unknown age were filtered out above, and the just-persisted record
+    // is in it — it counts against the cap, but keysToEvict never returns
+    // it. Names share one directory, so the name tie-break keeps eviction
+    // deterministic among equal stamps exactly as the path did.
+    final evict = QueuedFeedbackReport.keysToEvict(
+      entries,
+      exempt: justPersisted,
+      tieBreak: (a, b) => a.compareTo(b),
+    );
+    for (final name in evict) {
+      await _reap(byName[name]!);
     }
     _pruneCache(files);
   }
@@ -519,19 +572,11 @@ class FileFeedbackSink implements FeedbackSink {
         continue;
       }
 
-      final QueuedFeedbackReport record;
-      try {
-        record = QueuedFeedbackReport.fromJson(
-          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
-        );
-      } on Object {
-        // Not valid persisted state: bytes that are not UTF-8
-        // (utf8.decode defaults to allowMalformed: false), malformed
-        // JSON, a non-object, or a shape this decoder cannot satisfy
-        // (including the pre-#97 bare-report shape, whose compatibility
-        // path was removed with #161). None of it can ever drain, and
-        // atomic writes rule out the benign truncated-file explanation,
-        // so reap it.
+      final record = _decodeRecord(bytes);
+      if (record == null) {
+        // Not valid persisted state — see [_decodeRecord] for what that
+        // covers. None of it can ever drain, and atomic writes rule out the
+        // benign truncated-file explanation, so reap it.
         await _reap(file);
         continue;
       }
@@ -556,23 +601,38 @@ class FileFeedbackSink implements FeedbackSink {
     // cap indefinitely unless the user happened to submit again, which is
     // exactly what a stalled queue makes unlikely. Records are already
     // decoded at this point, so it costs a sort.
-    final excess = kept.length - QueuedFeedbackReport.maxQueuedReports;
-    if (excess > 0) {
-      final byAge = [...kept]
-        ..sort((a, b) {
-          // The shared age rule, with a path tie-break this cannot see.
-          final byTime = QueuedFeedbackReport.compareByAge(a.$2, b.$2);
-          return byTime != 0 ? byTime : a.$1.path.compareTo(b.$1.path);
-        });
-      final evicted = <String>{};
-      for (final (file, _) in byAge.take(excess)) {
-        await _reap(file);
-        evicted.add(file.path);
+    final evict = QueuedFeedbackReport.keysToEvict([
+      for (final (file, record) in kept) (file.path, record.ageKey),
+    ], tieBreak: (a, b) => a.compareTo(b));
+    if (evict.isNotEmpty) {
+      final doomed = evict.toSet();
+      for (final (file, _) in kept) {
+        if (doomed.contains(file.path)) await _reap(file);
       }
-      kept.removeWhere((entry) => evicted.contains(entry.$1.path));
+      kept.removeWhere((entry) => doomed.contains(entry.$1.path));
     }
 
     return [for (final (_, record) in kept) record];
+  }
+
+  /// The envelope in [bytes], or null when they are not valid persisted
+  /// state: bytes that are not UTF-8 (`utf8.decode` defaults to
+  /// `allowMalformed: false`), malformed JSON, a non-object, or a shape this
+  /// decoder cannot satisfy (including the pre-#97 bare-report shape, whose
+  /// compatibility path was removed with #161).
+  ///
+  /// Raw bytes in, never a string read by the IO service — see the class doc
+  /// on why that keeps a data fault apart from a read fault. Shared by
+  /// [pending] and [_holdsRecordFor], so what [pending] reaps and what
+  /// [persist] replaces are one rule rather than two that could drift.
+  static QueuedFeedbackReport? _decodeRecord(List<int> bytes) {
+    try {
+      return QueuedFeedbackReport.fromJson(
+        jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
+      );
+    } on Object {
+      return null;
+    }
   }
 
   @override

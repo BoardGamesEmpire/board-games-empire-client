@@ -26,6 +26,13 @@ import 'queued_feedback_report.dart';
 /// `QueuedFeedbackReport` instead of reaching into every platform
 /// implementation.
 ///
+/// One record per key: a repeated key keeps the first readable record, as
+/// the backend's keyed create does (#379). The sink is what holds that, not
+/// its callers, because only the sink can make the check and the write one
+/// step (#381) — one transaction on web, one operation under a per-instance
+/// lock on native, which does not order another process sharing its
+/// directory; see [persist].
+///
 /// ## Capacity (#359)
 ///
 /// A sink is **bounded**, and the bound is part of this contract rather
@@ -36,7 +43,7 @@ import 'queued_feedback_report.dart';
 ///
 /// An implementation holds at most [QueuedFeedbackReport.maxQueuedReports]
 /// records and, once full, evicts oldest-first by
-/// [QueuedFeedbackReport.compareByAge] — the shared age rule, so two sinks
+/// [QueuedFeedbackReport.keysToEvict] — the shared age rule, so two sinks
 /// cannot disagree about which record dies. Note what it orders by:
 /// [QueuedFeedbackReport.queuedAt], *not* a storage timestamp. The drain
 /// [update]s a record to count a failed attempt, so anything derived from
@@ -74,14 +81,39 @@ abstract interface class FeedbackSink {
   /// #320's to handle.
   bool get survivesRestart;
 
-  /// Persists [record]. Throws [ArgumentError] if it has no
-  /// [QueuedFeedbackReport.storageKey] — the sink is addressed by it.
+  /// Stores [record] under its [QueuedFeedbackReport.storageKey], unless a
+  /// record is already stored there. Throws [ArgumentError] if it has no
+  /// storage key — the sink is addressed by it.
   ///
-  /// On return, [record] **is** stored. An implementation enforcing the
+  /// On return, a record under that key **is** stored: [record] itself, or
+  /// the one that was already there — unless what was there could not be
+  /// read at all, which an implementation keeps under the transient-fault
+  /// rule (see [pending]) and which holds a stored record only if it was
+  /// one. An implementation enforcing the
   /// capacity bound below must never satisfy it by discarding the record it
   /// was just handed: `submit` reports the report as queued on the strength
   /// of this call, and a sink that dropped the new record would have the
   /// prompt promise a later send for a report that no longer exists.
+  ///
+  /// ## A create: the first record under a key stays (#379)
+  ///
+  /// When a record is already stored under the key, this leaves it in place
+  /// and returns normally. The key is the report's idempotency token, so the
+  /// two are the same submission, and the first one wins — the answer the
+  /// backend gives a repeated `clientRequestId`, which returns the original
+  /// report. Whichever copy reaches the queue or the server first, the same
+  /// version is kept. Returning normally rather than throwing is deliberate:
+  /// `submit` would report any throw as "could not be saved", about a report
+  /// that is saved.
+  ///
+  /// *Stored* means readable. A value under the key that will not decode, or
+  /// that names a different key, is not a stored record — [pending] would
+  /// discard it, and the report this call promised to store would go with
+  /// it — so [record] replaces it.
+  ///
+  /// Keeping the stored record and replacing an unreadable one both leave
+  /// the sink the size it was, so neither runs the eviction pass; only a
+  /// create does.
   Future<void> persist(QueuedFeedbackReport record);
 
   /// Rewrites a record **that is already stored**, addressed by
@@ -122,8 +154,10 @@ abstract interface class FeedbackSink {
   /// rewrite of the record the caller read from a rewrite of a *different*
   /// record that arrived under the same key since. That is deliberate rather
   /// than overlooked: the storage key is the report's idempotency token, so
-  /// two records sharing one are the same submission by definition, and
-  /// [persist] has always overwritten on that basis.
+  /// two records sharing one are the same submission by definition. [persist]
+  /// rests on the same basis (#379) — it keeps the record already stored
+  /// under a key without comparing the two — so a different record arrives
+  /// under a key only once nothing readable is stored there.
   ///
   /// ## Capacity
   ///

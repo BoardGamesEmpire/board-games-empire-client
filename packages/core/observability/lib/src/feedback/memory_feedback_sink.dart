@@ -39,7 +39,13 @@ class MemoryFeedbackSink implements FeedbackSink {
   @override
   Future<void> persist(QueuedFeedbackReport record) async {
     final key = _requireKey(record);
-    if (!_byKey.containsKey(key)) _order.add(key);
+    // A create (#379): the record already held under this key is the same
+    // submission, and the first one stays. Returning before the eviction
+    // pass, too — the map has not grown. Nothing here can be held in a state
+    // `pending` would discard, so unlike the durable sinks there is no
+    // unreadable record to replace.
+    if (_byKey.containsKey(key)) return;
+    _order.add(key);
     _byKey[key] = record;
     _evictOverflow(justPersisted: key);
   }
@@ -74,8 +80,8 @@ class MemoryFeedbackSink implements FeedbackSink {
   /// Holds the queue at [QueuedFeedbackReport.maxQueuedReports], evicting
   /// oldest-first (#359).
   ///
-  /// Ordered by [QueuedFeedbackReport.compareByAge] — the one age rule both
-  /// sinks share — with insertion order as the tie-break, so equal stamps
+  /// Chosen by [QueuedFeedbackReport.keysToEvict] — the one age rule every
+  /// sink shares — with insertion order as the tie-break, so equal stamps
   /// and the legacy records that all sort at
   /// [QueuedFeedbackReport.epoch] evict in the order they arrived.
   ///
@@ -95,27 +101,20 @@ class MemoryFeedbackSink implements FeedbackSink {
   /// the new record the oldest, and it would be dropped by the very call
   /// that was asked to keep it, while the caller was told it was queued.
   void _evictOverflow({required String justPersisted}) {
-    while (_byKey.length > QueuedFeedbackReport.maxQueuedReports) {
-      String? oldestKey;
-      for (final key in _order) {
-        if (key == justPersisted) continue;
-        if (oldestKey == null) {
-          oldestKey = key;
-          continue;
-        }
-        if (QueuedFeedbackReport.compareByAge(
-              _byKey[key]!,
-              _byKey[oldestKey]!,
-            ) <
-            0) {
-          oldestKey = key;
-        }
-      }
-      // Only the just-persisted record remains, so the cap cannot be met
-      // without discarding it — which this method refuses to do.
-      if (oldestKey == null) return;
-      _byKey.remove(oldestKey);
-      _order.remove(oldestKey);
+    // The common case, and free: no map or entry list to build only to hear
+    // that nothing is over.
+    if (_byKey.length <= QueuedFeedbackReport.maxQueuedReports) return;
+    final arrival = {for (final (i, key) in _order.indexed) key: i};
+    final evict = QueuedFeedbackReport.keysToEvict(
+      [for (final key in _order) (key, _byKey[key]!.ageKey)],
+      exempt: justPersisted,
+      tieBreak: (a, b) => arrival[a]!.compareTo(arrival[b]!),
+    );
+    // The just-persisted record is exempt, so it is never among the keys
+    // returned.
+    for (final key in evict) {
+      _byKey.remove(key);
+      _order.remove(key);
     }
   }
 

@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:observability/observability.dart';
@@ -72,17 +73,14 @@ void main() {
     retryCount: retryCount,
   );
 
-  /// Writes straight to the store, bypassing [FeedbackSink.persist].
+  /// Opens [databaseName] at whatever version it already has, with none of
+  /// the sink's handlers on it.
   ///
-  /// The reap cases need values `persist` would never produce — undecodable
-  /// text, a record filed under the wrong key — so they cannot be set up
-  /// through the sink's own front door.
-  Future<void> writeRawValue(
-    String databaseName,
-    String key,
-    JSAny value,
-  ) async {
-    final open = web.window.indexedDB.open(databaseName, 1);
+  /// No version, so it joins the schema the sink built rather than asking for
+  /// one: every caller opens the sink first, and a fixed version here would
+  /// either downgrade-fail or upgrade past the sink.
+  Future<web.IDBDatabase> openExisting(String databaseName) {
+    final open = web.window.indexedDB.open(databaseName);
     final completer = Completer<web.IDBDatabase>();
     open.onsuccess = (web.Event _) {
       completer.complete(open.result! as web.IDBDatabase);
@@ -90,26 +88,105 @@ void main() {
     open.onerror = (web.Event _) {
       completer.completeError(StateError('open failed'));
     }.toJS;
-    final db = await completer.future;
+    return completer.future;
+  }
 
+  /// Writes straight to the store, bypassing [FeedbackSink.persist], under a
+  /// key that need not be text at all.
+  ///
+  /// The reap cases need values `persist` would never produce — undecodable
+  /// text, a record filed under the wrong key — so they cannot be set up
+  /// through the sink's own front door.
+  Future<void> writeRawKeyed(
+    String databaseName,
+    JSAny key,
+    JSAny value,
+  ) async {
+    final db = await openExisting(databaseName);
     final tx = db.transaction('records'.toJS, 'readwrite');
     final done = Completer<void>();
     tx.oncomplete = ((web.Event _) => done.complete()).toJS;
     tx.onerror = ((web.Event _) => done.completeError(StateError('tx'))).toJS;
-    tx.objectStore('records').put(value, key.toJS);
+    tx.objectStore('records').put(value, key);
     await done.future;
     db.close();
   }
 
+  /// [writeRawKeyed] under a text key, the only kind the sink writes.
+  Future<void> writeRawValue(String databaseName, String key, JSAny value) =>
+      writeRawKeyed(databaseName, key.toJS, value);
+
+  /// A version-2 stored value carrying only the properties given, so a test
+  /// can leave one out as well as get one wrong.
+  JSObject storedValue({JSAny? ageMs, JSAny? json}) {
+    final value = JSObject();
+    if (ageMs != null) value['ageMs'] = ageMs;
+    if (json != null) value['json'] = json;
+    return value;
+  }
+
+  /// The version-2 value the sink stores for [record]: its age in
+  /// milliseconds, and its JSON exactly as version 1 stored it.
+  JSObject storedRecord(QueuedFeedbackReport record) => storedValue(
+    ageMs: record.ageKey.millisecondsSinceEpoch.toJS,
+    json: jsonEncode(record.toJson()).toJS,
+  );
+
+  /// Writes a version-2 value built by [storedValue].
+  Future<void> writeRawRecord(
+    String databaseName,
+    String key, {
+    JSAny? ageMs,
+    JSAny? json,
+  }) => writeRawValue(databaseName, key, storedValue(ageMs: ageMs, json: json));
+
+  /// Writes a version-1 value — the record's JSON as bare text — into a
+  /// version-2 store. Only tests about that shape should reach for this.
+  Future<void> writeRaw(String databaseName, String key, String value) =>
+      writeRawValue(databaseName, key, value.toJS);
+
+  /// The stored value under [key], read straight from the store and
+  /// converted to Dart: a `Map` for a version-2 value, a `String` for a
+  /// version-1 one.
+  Future<Object?> readRawValue(String databaseName, String key) async {
+    final db = await openExisting(databaseName);
+    final request = db
+        .transaction('records'.toJS, 'readonly')
+        .objectStore('records')
+        .get(key.toJS);
+    final read = Completer<JSAny?>();
+    request.onsuccess = ((web.Event _) => read.complete(request.result)).toJS;
+    request.onerror = ((web.Event _) => read.completeError(
+      StateError('read failed'),
+    )).toJS;
+    final value = await read.future;
+    db.close();
+    return value.dartify();
+  }
+
   /// A connection this suite owns outright, with none of the sink's own
   /// handlers on it — in particular no `onversionchange` yield.
-  Future<web.IDBDatabase> openRawConnection(String name, int version) async {
+  ///
+  /// At version 1 this builds exactly what the version-1 sink built: the
+  /// store, and no index. [ageIndex] adds one shaped like the sink's
+  /// `byAge`, for tests about how IndexedDB treats an index rather than how
+  /// the sink does.
+  Future<web.IDBDatabase> openRawConnection(
+    String name,
+    int version, {
+    bool ageIndex = false,
+  }) async {
     final request = web.window.indexedDB.open(name, version);
     final ready = Completer<web.IDBDatabase>();
     request.onupgradeneeded = ((web.Event _) {
       final db = request.result! as web.IDBDatabase;
       if (!db.objectStoreNames.contains('records')) {
         db.createObjectStore('records');
+      }
+      if (ageIndex) {
+        request.transaction!
+            .objectStore('records')
+            .createIndex('byAge', 'ageMs'.toJS);
       }
     }).toJS;
     request.onsuccess = ((web.Event _) {
@@ -123,27 +200,40 @@ void main() {
     return ready.future;
   }
 
-  /// Writes under a key that need not be text at all.
-  Future<void> writeRawKeyed(
-    String databaseName,
-    JSAny key,
-    String value,
-  ) async {
-    final database = await openRawConnection(databaseName, 1);
-    final transaction = database.transaction('records'.toJS, 'readwrite');
+  /// A version-1 database as that build left it, holding [values] — each a
+  /// record's JSON as bare text — and still open on the returned connection.
+  /// [nonText] adds values that version-1 build never wrote but IndexedDB
+  /// would have held all the same.
+  ///
+  /// Left open so a test can decide what that connection does when the
+  /// version-2 sink asks it to step aside.
+  Future<web.IDBDatabase> openVersion1(
+    String name,
+    Map<String, String> values, {
+    Map<String, JSAny> nonText = const {},
+  }) async {
+    final db = await openRawConnection(name, 1);
+    final tx = db.transaction('records'.toJS, 'readwrite');
     final done = Completer<void>();
-    transaction.oncomplete = ((web.Event _) => done.complete()).toJS;
-    transaction.onerror = ((web.Event _) => done.completeError(
-      StateError('tx'),
-    )).toJS;
-    transaction.objectStore('records').put(value.toJS, key);
+    tx.oncomplete = ((web.Event _) => done.complete()).toJS;
+    tx.onerror = ((web.Event _) => done.completeError(StateError('tx'))).toJS;
+    final store = tx.objectStore('records');
+    for (final MapEntry(:key, :value) in values.entries) {
+      store.put(value.toJS, key.toJS);
+    }
+    for (final MapEntry(:key, :value) in nonText.entries) {
+      store.put(value, key.toJS);
+    }
     await done.future;
-    database.close();
+    return db;
   }
 
-  /// The common case: a stored record is JSON text.
-  Future<void> writeRaw(String databaseName, String key, String value) =>
-      writeRawValue(databaseName, key, value.toJS);
+  /// [record]'s JSON, as version 1 stored it and version 2 keeps it.
+  String jsonText(QueuedFeedbackReport record) => jsonEncode(record.toJson());
+
+  /// `k00`, `k01`, …: keys whose text order is their numeric order, so a test
+  /// can say which one is lexically first.
+  String paddedKey(int i) => 'k${i.toString().padLeft(2, '0')}';
 
   group('IndexedDbFeedbackSink', () {
     test('is a FeedbackSink', () async {
@@ -202,22 +292,52 @@ void main() {
       expect(() => sink.persist(record(null)), throwsArgumentError);
     });
 
-    test(
-      'persist with an existing key replaces rather than duplicates',
-      () async {
-        final sink = await IndexedDbFeedbackSink.open(
-          databaseName: freshName(),
-        );
-        addTearDown(sink.onDispose);
+    test('persist with an existing key keeps the first record — the first '
+        'submission wins, as on the backend (#379)', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
 
-        await sink.persist(record('dup', message: 'first'));
-        await sink.persist(record('dup', message: 'second'));
-        final pending = await sink.pending();
+      await sink.persist(record('dup', message: 'first'));
+      await sink.persist(record('dup', message: 'second'));
+      final pending = await sink.pending();
 
-        expect(pending, hasLength(1));
-        expect(pending.single.report.message, 'second');
-      },
-    );
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'first');
+    });
+
+    test('persist replaces an undecodable value under its key — keeping it '
+        'would let pending reap a report persist said was stored '
+        '(#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRawRecord(name, 'key-a', ageMs: 0.toJS, json: 'not json'.toJS);
+
+      await sink.persist(record('key-a', message: 'replacement'));
+      final pending = await sink.pending();
+
+      expect(pending, hasLength(1));
+      expect(pending.single.report.message, 'replacement');
+    });
+
+    test("persist replaces a value under its key that holds another key's "
+        'record — pending would reap it as un-addressable, so it is not a '
+        'stored record (#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRawValue(
+        name,
+        'key-a',
+        storedRecord(record('other', message: 'misfiled')),
+      );
+
+      await sink.persist(record('key-a', message: 'replacement'));
+      final pending = await sink.pending();
+
+      expect(pending.map((r) => r.storageKey), ['key-a']);
+      expect(pending.single.report.message, 'replacement');
+    });
 
     test(
       'remove deletes by storage key, and is a no-op for an absent one',
@@ -242,7 +362,12 @@ void main() {
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
       await sink.persist(record('good'));
-      await writeRaw(name, 'corrupt', 'this is not json');
+      await writeRawRecord(
+        name,
+        'corrupt',
+        ageMs: 0.toJS,
+        json: 'this is not json'.toJS,
+      );
 
       expect((await sink.pending()).map((r) => r.storageKey), ['good']);
       // Reaped, not merely skipped: a second call still sees only the good one
@@ -251,10 +376,11 @@ void main() {
       expect(await sink.rawKeys(), ['good']);
     });
 
-    test('a value that is not text at all is reaped, not left to wedge every '
-        'future drain', () async {
-      // IndexedDB takes numbers, objects and dates as values. Reading one as a
-      // string throws out of the transaction body, and an abort there would
+    test('a value that is not an object at all is reaped, not left to wedge '
+        'every future drain', () async {
+      // IndexedDB takes numbers and strings as values as readily as objects.
+      // Reading `json` off a number as though it were the stored object
+      // throws out of the transaction body, and an abort there would
       // mean pending() fails forever over a record the reap should have
       // removed on its first pass.
       final name = freshName();
@@ -273,10 +399,10 @@ void main() {
         final name = freshName();
         final sink = await IndexedDbFeedbackSink.open(databaseName: name);
         addTearDown(sink.onDispose);
-        await writeRaw(
+        await writeRawValue(
           name,
           'filed-under-this',
-          jsonEncode(record('but-claims-this').toJson()),
+          storedRecord(record('but-claims-this')),
         );
 
         expect(await sink.pending(), isEmpty);
@@ -289,10 +415,109 @@ void main() {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
-      await writeRaw(name, 'orphan', jsonEncode(record(null).toJson()));
+      await writeRawValue(name, 'orphan', storedRecord(record(null)));
 
       expect(await sink.pending(), isEmpty);
       expect(await sink.rawKeys(), isEmpty);
+    });
+
+    test('a bare string value — the version-1 shape — is reaped', () async {
+      // A well-formed record filed under its own key, so the shape is the
+      // only thing wrong with it. The upgrade rewrites every version-1 value,
+      // so bare text in a version-2 store is nothing this sink wrote.
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await sink.persist(record('good'));
+      await writeRaw(name, 'bare', jsonText(record('bare')));
+
+      expect((await sink.pending()).map((r) => r.storageKey), ['good']);
+      expect(await sink.rawKeys(), ['good']);
+    });
+
+    test('an object whose json is not a string is reaped', () async {
+      // The record itself as a structured object, valid and filed under its
+      // own key, so "not a string" is the only fault. This is the design #386
+      // rejected — storing the record as an object — and a `json` that only
+      // reads back as the record's text is a record this sink would drain.
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await sink.persist(record('good'));
+      final structured = record('structured', queuedAt: DateTime.utc(2026, 6));
+      await writeRawRecord(
+        name,
+        'structured',
+        ageMs: DateTime.utc(2026, 6).millisecondsSinceEpoch.toJS,
+        // Through JSON text, so nested values are plain maps and lists too.
+        json: (jsonDecode(jsonText(structured)) as Object).jsify(),
+      );
+
+      expect((await sink.pending()).map((r) => r.storageKey), ['good']);
+      expect(await sink.rawKeys(), ['good']);
+    });
+
+    test('a record with good json and no ageMs is NOT reaped and still drains '
+        '— ageMs only orders eviction', () async {
+      // IndexedDB leaves this record out of the age index, so the persist cap
+      // can never choose it, and pending's own cap still covers it. Neither is
+      // a reason to destroy a report that decodes under its own key.
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRawRecord(
+        name,
+        'ageless',
+        json: jsonText(record('ageless', message: 'still here')).toJS,
+      );
+
+      final pending = await sink.pending();
+
+      expect(pending.map((r) => r.storageKey), ['ageless']);
+      expect(pending.single.report.message, 'still here');
+      expect(await sink.rawKeys(), ['ageless']);
+    });
+
+    test('a non-numeric ageMs is NOT reaped', () async {
+      // The ISO stamp where the integer belongs. The index holds it, since a
+      // string is a valid IndexedDB key, but the persist cap reads only
+      // numeric ages and leaves it out as it leaves out a missing one;
+      // pending's cap still covers it. Ordering is all ageMs is for.
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRawRecord(
+        name,
+        'stamped',
+        ageMs: '2026-06-01T00:00:00.000Z'.toJS,
+        json: jsonText(record('stamped', queuedAt: DateTime.utc(2026, 6))).toJS,
+      );
+
+      expect((await sink.pending()).map((r) => r.storageKey), ['stamped']);
+      expect(await sink.rawKeys(), ['stamped']);
+    });
+
+    test('a wrong numeric ageMs — one that disagrees with the json — is NOT '
+        'reaped, and the json decides the record', () async {
+      // Queued in 2026, aged as 1999: the cap would reach this record early,
+      // which is all a wrong ageMs can cost. The record drains as its json
+      // says it is.
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      await writeRawRecord(
+        name,
+        'misdated',
+        ageMs: DateTime.utc(1999).millisecondsSinceEpoch.toJS,
+        json: jsonText(record('misdated', queuedAt: DateTime.utc(2026, 6)))
+            .toJS,
+      );
+
+      final pending = await sink.pending();
+
+      expect(pending.map((r) => r.storageKey), ['misdated']);
+      expect(pending.single.queuedAt, DateTime.utc(2026, 6));
+      expect(await sink.rawKeys(), ['misdated']);
     });
 
     test('a store fault is skipped, not reaped — unreadability is never a '
@@ -457,12 +682,44 @@ void main() {
       expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
     });
 
+    test('eviction follows ageMs, then key, among equal ages', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
+      // One age for every record, persisted in DESCENDING key order: the
+      // first one stored is the lexically last. A tie broken by arrival
+      // would evict k50; the index breaks it by primary key.
+      final keys = [
+        for (var i = QueuedFeedbackReport.maxQueuedReports; i >= 0; i--)
+          paddedKey(i),
+      ];
+      for (final key in keys) {
+        await sink.persist(record(key, queuedAt: DateTime.utc(2026, 1, 1)));
+      }
+      final stored = (await sink.rawKeys()).toSet();
+
+      expect(stored, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(
+        keys.toSet().difference(stored),
+        {'k01'},
+        reason:
+            'k00 was the one just persisted, so k01 is the first of the rest',
+      );
+    });
+
     test('an undecodable value counts against the cap and sorts oldest — '
         'unlike native, its age is never in doubt', () async {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
-      await writeRaw(name, 'corrupt', 'not json at all');
+      // ageMs 0 is what the upgrade gives an undecodable version-1 value, and
+      // the cap orders by ageMs alone: it never reads the json to find out
+      // that it will not decode.
+      await writeRawRecord(
+        name,
+        'corrupt',
+        ageMs: 0.toJS,
+        json: 'not json at all'.toJS,
+      );
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++) {
         await sink.persist(
           record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i)),
@@ -475,6 +732,189 @@ void main() {
       expect(keys, isNot(contains('corrupt')));
       expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
       expect(keys, contains('k0'), reason: 'no readable record paid for it');
+    });
+
+    test('a value missing from the age index is left out of the excess, as '
+        'native leaves out a file it cannot age — pending bounds it', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // Good json and no ageMs: drainable, and outside the index. Oldest of
+      // all by its json. Together with the ordinary records it puts the store
+      // exactly at the bound, so the persist below makes one eviction if the
+      // excess counted the store, and none when it counts what the index can
+      // age.
+      await writeRawRecord(
+        name,
+        'ageless',
+        json: jsonText(record('ageless', queuedAt: DateTime.utc(1999))).toJS,
+      );
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++) {
+        await sink.persist(
+          record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i)),
+        );
+      }
+
+      await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports + 1));
+      expect(
+        keys,
+        containsAll(['ageless', 'k0', 'newcomer']),
+        reason: 'no indexed record paid for a value the cap cannot age',
+      );
+
+      // pending works from decoded records, where the json dates it oldest.
+      final pending = await sink.pending();
+      expect(pending, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(pending.map((r) => r.storageKey), isNot(contains('ageless')));
+    });
+
+    test('a non-numeric ageMs is left out of the excess too — the index holds '
+        'it, but the cap ages only numbers', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // In the index, unlike a missing ageMs: a string is a valid key, sorted
+      // after every number. Counting it would put the store one over at the
+      // persist below and cost k0, the oldest record the cap can age.
+      await writeRawRecord(
+        name,
+        'stamped',
+        ageMs: '2026-06-01T00:00:00.000Z'.toJS,
+        json: jsonText(record('stamped', queuedAt: DateTime.utc(1999))).toJS,
+      );
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++) {
+        await sink.persist(
+          record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i)),
+        );
+      }
+
+      await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports + 1));
+      expect(keys, containsAll(['stamped', 'k0', 'newcomer']));
+    });
+
+    test('a store without the age index fails no persist — the cap steps '
+        'aside, and pending still bounds the store', () async {
+      // A version-2 store with no `byAge`, which this class never builds: the
+      // upgrade creates the index from every older version. `store.index`
+      // throws for a missing index rather than failing a request, and a throw
+      // there would abort the persist's own put.
+      final name = freshName();
+      (await openRawConnection(name, 2)).close();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // Already over the bound, written behind the sink's back.
+      const over = QueuedFeedbackReport.maxQueuedReports + 1;
+      for (var i = 0; i < over; i++) {
+        await writeRawValue(
+          name,
+          'k$i',
+          storedRecord(record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i))),
+        );
+      }
+
+      await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, contains('newcomer'), reason: 'persist kept its promise');
+      expect(keys, hasLength(over + 1), reason: 'the cap evicted nothing');
+
+      final pending = await sink.pending();
+      expect(pending, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(pending.map((r) => r.storageKey), contains('newcomer'));
+      expect(
+        await sink.rawKeys(),
+        hasLength(QueuedFeedbackReport.maxQueuedReports),
+      );
+    });
+
+    test('persist keeping a readable record runs no cap pass — the store '
+        'cannot have grown (#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // Over the bound, written behind the sink's back so no cap pass has
+      // run yet; a cap pass here would take `k0`, the oldest.
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports + 1; i++) {
+        await writeRawValue(
+          name,
+          'k$i',
+          storedRecord(
+            record(
+              'k$i',
+              message: 'first',
+              queuedAt: DateTime.utc(2026, 6, 1 + i),
+            ),
+          ),
+        );
+      }
+      const stored = QueuedFeedbackReport.maxQueuedReports + 1;
+
+      await sink.persist(
+        record('k5', message: 'second', queuedAt: DateTime.utc(2026, 9)),
+      );
+      // rawKeys, not pending: pending enforces the cap itself.
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(stored), reason: 'nothing was evicted');
+      expect(keys, contains('k0'));
+      final kept = (await sink.pending()).singleWhere(
+        (r) => r.storageKey == 'k5',
+      );
+      expect(kept.report.message, 'first');
+    });
+
+    test('persist replacing an undecodable value runs no cap pass — the '
+        'store cannot have grown (#379)', () async {
+      final name = freshName();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+      // Over the bound, written behind the sink's back so no cap pass has
+      // run yet. At or under the bound a cap pass deletes nothing, and
+      // "nothing was evicted" could not fail; here one would take `k0`, the
+      // oldest.
+      for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
+        await writeRawValue(
+          name,
+          'k$i',
+          storedRecord(record('k$i', queuedAt: DateTime.utc(2026, 6, 1 + i))),
+        );
+      }
+      await writeRawRecord(
+        name,
+        'broken',
+        ageMs: 0.toJS,
+        json: 'not json'.toJS,
+      );
+      const over = QueuedFeedbackReport.maxQueuedReports + 1;
+
+      await sink.persist(
+        record(
+          'broken',
+          message: 'replacement',
+          queuedAt: DateTime.utc(2026, 9),
+        ),
+      );
+      // rawKeys, not pending: pending enforces the cap itself.
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(over));
+      expect(
+        keys,
+        contains('k0'),
+        reason: 'the oldest, so a cap pass would have taken it',
+      );
+      // Only now, with the count pinned: the value was replaced, not kept.
+      final pending = await sink.pending();
+      expect(
+        pending.firstWhere((r) => r.storageKey == 'broken').report.message,
+        'replacement',
+      );
     });
   });
 
@@ -525,7 +965,7 @@ void main() {
       // ordinary two-tab case simply works.
       final upgraded = await IndexedDbFeedbackSink.open(
         databaseName: name,
-        schemaVersion: 2,
+        schemaVersion: 3,
         openTimeout: const Duration(seconds: 10),
       );
       addTearDown(upgraded.onDispose);
@@ -537,17 +977,17 @@ void main() {
     test('an open blocked by a connection that does NOT yield fails instead '
         'of waiting forever — the case the timeout exists for', () async {
       final name = freshName();
-      // A raw connection with no `onversionchange` handler: a tab running a
-      // build from before that yield existed. It will not step aside, so the
-      // upgrade below has nothing to do but wait — IndexedDB fires `blocked`
-      // and stays pending rather than failing.
+      // A raw connection with no `onversionchange` handler: one that will not
+      // step aside, whatever holds it. The upgrade below has nothing to do but
+      // wait — IndexedDB fires `blocked` and stays pending rather than
+      // failing.
       final holder = await openRawConnection(name, 1);
       addTearDown(() => holder.close());
 
       await expectLater(
         IndexedDbFeedbackSink.open(
           databaseName: name,
-          schemaVersion: 2,
+          schemaVersion: 3,
           openTimeout: const Duration(seconds: 30),
         ),
         throwsA(
@@ -622,11 +1062,11 @@ void main() {
         addTearDown(sink.onDispose);
         // Written behind the sink's back, the way a pre-cap backlog arrives.
         for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports + 5; i++) {
-          await writeRaw(
+          await writeRawValue(
             name,
             'old$i',
-            jsonEncode(
-              record('old$i', queuedAt: DateTime.utc(2026, 6, 1 + i)).toJson(),
+            storedRecord(
+              record('old$i', queuedAt: DateTime.utc(2026, 6, 1 + i)),
             ),
           );
         }
@@ -657,7 +1097,7 @@ void main() {
       // The record under it has no clientRequestId, so its storageKey is null
       // too: compared directly, the two agree, and the record would be kept as
       // drainable under an address `remove` could never target.
-      await writeRawKeyed(name, 7.toJS, jsonEncode(record(null).toJson()));
+      await writeRawKeyed(name, 7.toJS, storedRecord(record(null)));
       await sink.persist(record('good'));
 
       expect((await sink.pending()).map((r) => r.storageKey), ['good']);
@@ -669,7 +1109,7 @@ void main() {
       final name = freshName();
       final sink = await IndexedDbFeedbackSink.open(databaseName: name);
       addTearDown(sink.onDispose);
-      await writeRaw(name, '', jsonEncode(record('').toJson()));
+      await writeRawValue(name, '', storedRecord(record('')));
 
       expect(await sink.pending(), isEmpty);
       expect(await sink.rawKeys(), isEmpty);
@@ -677,8 +1117,8 @@ void main() {
   });
 
   group("the cap's fast path", () {
-    test('a persist under the bound reads no payloads — only once the cap '
-        'engages is the queue worth cloning', () async {
+    test('a persist under the bound reads no payloads — one count and '
+        'nothing else', () async {
       final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
       addTearDown(sink.onDispose);
       await sink.persist(record('first'));
@@ -689,11 +1129,26 @@ void main() {
       expect(
         IndexedDbFeedbackSink.debugPayloadReads,
         before,
-        reason: 'under the cap, one key listing and nothing else',
+        reason:
+            'a get of a new key returns nothing, so reads no payload, and '
+            'under the cap there is one count and nothing else',
       );
     });
 
-    test('a persist that overflows the bound does read them', () async {
+    test('a persist of a key already stored reads exactly one payload — '
+        'the duplicate check, and only because the key was there', () async {
+      final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
+      addTearDown(sink.onDispose);
+      await sink.persist(record('first'));
+
+      final before = IndexedDbFeedbackSink.debugPayloadReads;
+      await sink.persist(record('first', message: 'again'));
+
+      expect(IndexedDbFeedbackSink.debugPayloadReads, before + 1);
+    });
+
+    test('a persist that overflows the bound reads no payloads either — the '
+        'index answers it', () async {
       final sink = await IndexedDbFeedbackSink.open(databaseName: freshName());
       addTearDown(sink.onDispose);
       for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports; i++) {
@@ -707,16 +1162,268 @@ void main() {
 
       expect(
         IndexedDbFeedbackSink.debugPayloadReads,
-        greaterThan(before),
-        reason: 'ages have to come from somewhere once eviction is real',
+        before,
+        reason:
+            'the age index hands over every age through a key cursor, so '
+            'no report is cloned to learn its age',
       );
+      // Only now, with the count pinned — rawKeys reads payloads itself: the
+      // cap did run, and took the oldest.
+      final keys = (await sink.rawKeys()).toSet();
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(keys, isNot(contains('k0')));
+    });
+  });
+
+  group('schema version 2 migration (#386)', () {
+    // Each test builds the database as the version-1 build left it — the
+    // store, no index, every value bare JSON text — and then opens the
+    // current sink over it: the upgrade a returning dev install takes.
+
+    test(
+      'records written by version 1 survive the upgrade and drain',
+      () async {
+        final name = freshName();
+        final first = record(
+          'v1-a',
+          message: 'first',
+          queuedAt: DateTime.utc(2026, 6, 1),
+        );
+        final second = record(
+          'v1-b',
+          message: 'second',
+          queuedAt: DateTime.utc(2026, 6, 2),
+        );
+        (await openVersion1(name, {
+          'v1-a': jsonText(first),
+          'v1-b': jsonText(second),
+        })).close();
+
+        final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+        addTearDown(sink.onDispose);
+
+        // Rewritten in place rather than merely still readable: the json
+        // exactly as version 1 stored it, the age taken from its queuedAt.
+        for (final (key, stored) in [('v1-a', first), ('v1-b', second)]) {
+          expect(await readRawValue(name, key), {
+            'ageMs': stored.queuedAt!.millisecondsSinceEpoch,
+            'json': jsonText(stored),
+          });
+        }
+        final pending = await sink.pending();
+        expect(
+          {for (final r in pending) r.storageKey: r.report.message},
+          {'v1-a': 'first', 'v1-b': 'second'},
+        );
+      },
+    );
+
+    test('the upgrade indexes version-1 records by age, so the cap evicts the '
+        'oldest', () async {
+      final name = freshName();
+      // One short of the bound, so the persist below makes exactly one
+      // eviction. `old` is the oldest by age but not by key — `k00` sorts
+      // before it — so only an age order can choose it.
+      (await openVersion1(name, {
+        'old': jsonText(record('old', queuedAt: DateTime.utc(1999))),
+        for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++)
+          paddedKey(i): jsonText(
+            record(paddedKey(i), queuedAt: DateTime.utc(2026, 6, 1 + i)),
+          ),
+      })).close();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+
+      final before = IndexedDbFeedbackSink.debugPayloadReads;
+      await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
+
+      expect(
+        IndexedDbFeedbackSink.debugPayloadReads,
+        before,
+        reason: 'the index chose, so no version-1 record had to be decoded',
+      );
+      final keys = (await sink.rawKeys()).toSet();
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(keys, isNot(contains('old')));
+      expect(
+        keys,
+        contains('k00'),
+        reason: 'exactly one eviction: the oldest of the rest stays',
+      );
+      expect(keys, contains('newcomer'));
+    });
+
+    test('an undecodable version-1 value survives the upgrade and is reaped by '
+        'pending', () async {
+      final name = freshName();
+      (await openVersion1(name, {'garbled': 'not json'})).close();
+
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+
+      // The upgrade does not judge corruption: it wraps the text with
+      // ageMs 0 and leaves the verdict to pending, which already makes it.
+      expect(await readRawValue(name, 'garbled'), {
+        'ageMs': 0,
+        'json': 'not json',
+      });
+      expect(await sink.pending(), isEmpty);
+      expect(await sink.rawKeys(), isEmpty);
+    });
+
+    test('a version-1 value that is not text survives the upgrade untouched, '
+        'and is reaped by pending', () async {
+      // Version 1 never wrote one, but IndexedDB would have held it. The
+      // migration leaves it alone rather than judging it; a rewrite that
+      // assumed text would abort the upgrade, and fail the open, over it.
+      final name = freshName();
+      final kept = record('kept', message: 'text, so migrated');
+      (await openVersion1(
+        name,
+        {'kept': jsonText(kept)},
+        nonText: {'a-number': 42.toJS},
+      )).close();
+
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+
+      expect(await readRawValue(name, 'a-number'), 42);
+      final pending = await sink.pending();
+      expect(pending.map((r) => r.storageKey), ['kept']);
+      expect(pending.single.report.message, 'text, so migrated');
+      expect(await sink.rawKeys(), ['kept']);
+    });
+
+    test('a version-1 record without queuedAt migrates with ageMs 0 and evicts '
+        'first', () async {
+      final name = freshName();
+      final legacy = record('legacy');
+      (await openVersion1(name, {
+        'legacy': jsonText(legacy),
+        for (var i = 0; i < QueuedFeedbackReport.maxQueuedReports - 1; i++)
+          paddedKey(i): jsonText(
+            record(paddedKey(i), queuedAt: DateTime.utc(2026, 6, 1 + i)),
+          ),
+      })).close();
+      final sink = await IndexedDbFeedbackSink.open(databaseName: name);
+      addTearDown(sink.onDispose);
+
+      expect(await readRawValue(name, 'legacy'), {
+        'ageMs': 0,
+        'json': jsonText(legacy),
+      });
+
+      await sink.persist(record('newcomer', queuedAt: DateTime.utc(2026, 9)));
+      final keys = (await sink.rawKeys()).toSet();
+
+      expect(keys, hasLength(QueuedFeedbackReport.maxQueuedReports));
+      expect(keys, isNot(contains('legacy')));
+      expect(keys, contains('k00'), reason: 'exactly one eviction');
+    });
+
+    test('a second connection on version 1 that steps aside on versionchange '
+        'lets the upgrade through, and its records drain', () async {
+      final name = freshName();
+      final queued = record(
+        'waiting',
+        message: 'queued by the old build',
+        queuedAt: DateTime.utc(2026, 6),
+      );
+      final holder = await openVersion1(name, {'waiting': jsonText(queued)});
+      addTearDown(() => holder.close());
+      // What the version-1 build's sink does on versionchange. The test never
+      // closes the holder itself, so this handler is the only thing that can
+      // let the upgrade through.
+      var steppedAside = false;
+      holder.onversionchange = ((web.Event _) {
+        steppedAside = true;
+        holder.close();
+      }).toJS;
+
+      final sink = await IndexedDbFeedbackSink.open(
+        databaseName: name,
+        openTimeout: const Duration(seconds: 10),
+      );
+      addTearDown(sink.onDispose);
+
+      expect(steppedAside, isTrue);
+      final pending = await sink.pending();
+      expect(pending.map((r) => r.storageKey), ['waiting']);
+      expect(pending.single.report.message, 'queued by the old build');
     });
   });
 
   group('the IndexedDB behaviour this sink is built on', () {
-    // Characterization tests. The class doc calls these measured rather than
-    // documented, and both were got wrong once by reasoning about them, so
-    // they are pinned here rather than left as prose.
+    // Characterization tests. The class doc calls the first two measured
+    // rather than documented, and both were got wrong once by reasoning about
+    // them; the age index's docs rest on the last two. All are pinned here
+    // rather than left as prose.
+
+    /// Puts [values] into a raw store carrying a `byAge`-shaped index, and
+    /// reads back the index's primary keys and the store's own count.
+    Future<({List<Object?> indexed, int stored})> throughAgeIndex(
+      Map<String, JSObject> values,
+    ) async {
+      final database = await openRawConnection(freshName(), 1, ageIndex: true);
+      addTearDown(() => database.close());
+      final store = database
+          .transaction('records'.toJS, 'readwrite')
+          .objectStore('records');
+      for (final MapEntry(:key, :value) in values.entries) {
+        store.put(value, key.toJS);
+      }
+      Future<JSAny?> read(web.IDBRequest request) {
+        final done = Completer<JSAny?>();
+        request.onsuccess = ((web.Event _) => done.complete(
+          request.result,
+        )).toJS;
+        request.onerror = ((web.Event _) => done.completeError(
+          StateError('read failed'),
+        )).toJS;
+        return done.future;
+      }
+
+      final indexed = await read(store.index('byAge').getAllKeys());
+      final stored = await read(store.count());
+      return (
+        indexed: [
+          for (final key in (indexed! as JSArray<JSAny?>).toDart) key.dartify(),
+        ],
+        stored: (stored! as JSNumber).toDartInt,
+      );
+    }
+
+    test('an index leaves out a record whose indexed property is missing or '
+        'is not a valid key', () async {
+      // Why `ageMs` is always written, and why a value outside `byAge` is
+      // never a cap candidate.
+      final result = await throughAgeIndex({
+        'missing': storedValue(json: 'x'.toJS),
+        'boolean': storedValue(ageMs: true.toJS, json: 'x'.toJS),
+        'number': storedValue(ageMs: 5.toJS, json: 'x'.toJS),
+      });
+
+      expect(result.stored, 3, reason: 'the store holds all three');
+      expect(result.indexed, ['number'], reason: 'the index holds one');
+    });
+
+    test('an index orders every number before any string, and breaks ties by '
+        'primary key', () async {
+      // Why the cap reads ages through the index rather than trusting its
+      // order: a string `ageMs` sorts after every number, so the cap takes
+      // only numeric keys and sorts them itself.
+      final result = await throughAgeIndex({
+        'a-string': storedValue(
+          ageMs: '2026-06-01T00:00:00.000Z'.toJS,
+          json: 'x'.toJS,
+        ),
+        'd-big': storedValue(ageMs: 9999999999999.toJS, json: 'x'.toJS),
+        'z-five': storedValue(ageMs: 5.toJS, json: 'x'.toJS),
+        'y-five': storedValue(ageMs: 5.toJS, json: 'x'.toJS),
+      });
+
+      expect(result.indexed, ['y-five', 'z-five', 'd-big', 'a-string']);
+    });
 
     test('a canceled request error needs stopPropagation as well as '
         'preventDefault: preventDefault alone still fires transaction.onerror', () async {
